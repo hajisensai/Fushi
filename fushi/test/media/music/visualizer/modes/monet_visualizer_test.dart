@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
@@ -756,7 +757,235 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
   });
+
+  group('对照 folia 补齐', () {
+    test('chaotic 回正：0.8 秒 easeOut 从离开时的姿态缓回 0', () {
+      const (double, double, double) from = (9, -18, 1.2);
+      expect(monetCalmShake(from, 0), from);
+      expect(monetCalmShake(from, 0.8), (0.0, 0.0, 0.0));
+      final (double x1, double y1, double r1) = monetCalmShake(from, 0.2);
+      final (double x2, double y2, double r2) = monetCalmShake(from, 0.5);
+      // easeOut：前段走得快，0.2 秒（1/4 时长）已回去三成以上。
+      expect(x1, lessThan(9 * 0.7));
+      expect(x2.abs(), lessThan(x1.abs()));
+      expect(y2.abs(), lessThan(y1.abs()));
+      expect(r2.abs(), lessThan(r1.abs()));
+    });
+
+    test('手动滚动窗口：锚点前后各四行，状态只按当前行定', () {
+      final List<MonetVisibleEntry> e = buildMonetScrollableEntries(20, 10, 3);
+      expect(e.first.index, 6);
+      expect(e.last.index, 14);
+      expect(e.firstWhere((MonetVisibleEntry x) => x.offset == 0).index, 10);
+      expect(
+        e.every((MonetVisibleEntry x) => x.status == MonetLineStatus.waiting),
+        isTrue,
+      );
+      final List<MonetVisibleEntry> head = buildMonetScrollableEntries(5, 0, 2);
+      expect(head.map((MonetVisibleEntry x) => x.index), <int>[0, 1, 2, 3, 4]);
+      expect(head[1].status, MonetLineStatus.passed);
+      expect(head[2].status, MonetLineStatus.active);
+      expect(monetClampScrollSteps(5), 1);
+      expect(monetClampScrollSteps(-3), -1);
+    });
+
+    test('书写方向按第一个字母定', () {
+      expect(monetIsRtlText('שלום עולם'), isTrue);
+      expect(monetIsRtlText('12 مرحبا'), isTrue);
+      expect(monetIsRtlText('Hello שלום'), isFalse);
+      expect(monetIsRtlText('夜空'), isFalse);
+      expect(monetIsRtlText('...'), isFalse);
+    });
+
+    test('计时词整词换行（不在词中间断开）；右起行贴右', () {
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        const LyricTimeline(
+          format: 'ttml',
+          timingQuality: LyricTimingQuality.word,
+          lines: <LyricLine>[
+            LyricLine(
+              startMs: 0,
+              endMs: 2000,
+              syllables: <LyricSyllable>[
+                LyricSyllable(text: 'あいうえお', startMs: 0, endMs: 1000),
+                LyricSyllable(text: 'かきくけこ', startMs: 1000, endMs: 2000),
+              ],
+            ),
+            LyricLine(
+              startMs: 2000,
+              endMs: 3000,
+              syllables: <LyricSyllable>[
+                LyricSyllable(text: 'שלום ', startMs: 2000, endMs: 2500),
+                LyricSyllable(text: 'עולם', startMs: 2500, endMs: 3000),
+              ],
+            ),
+          ],
+        ),
+      );
+      // 一行放得下 7 个字：不拆词时两词各占一行。
+      final MonetLineText cjk = MonetLineText.layout(
+        line: rt.lines[0],
+        fontPx: 20,
+        translationFontPx: 12,
+        contentWidth: 148,
+        alignEnd: false,
+        trackColor: const Color(0xFFFFFFFF),
+      );
+      expect(cjk.lineCount, 2);
+      final Set<double> tops = <double>{
+        for (final MonetWordGeom w in cjk.words)
+          for (final MonetGlyphRun r in w.runs) r.rect.top,
+      };
+      expect(tops, hasLength(2));
+      // 第一个音节的五个字都在第一行，第二个音节的都在第二行。
+      final List<double> rowOf = <double>[
+        for (final MonetWordGeom w in cjk.words) w.runs.first.rect.top,
+      ];
+      expect(rowOf.sublist(0, 5).toSet(), hasLength(1));
+      expect(rowOf.sublist(5).toSet(), hasLength(1));
+      expect(rowOf.first, lessThan(rowOf.last));
+      // 字形累计宽度只算字形本身，零宽禁断符不占位。
+      for (final MonetWordGeom w in cjk.words) {
+        expect(w.offsets.last, closeTo(20, 0.5));
+      }
+      expect(cjk.rtl, isFalse);
+      expect(cjk.flushRight, isFalse);
+      cjk.dispose();
+
+      final MonetLineText he = MonetLineText.layout(
+        line: rt.lines[1],
+        fontPx: 20,
+        translationFontPx: 12,
+        contentWidth: 600,
+        alignEnd: false,
+        trackColor: const Color(0xFFFFFFFF),
+      );
+      expect(he.rtl, isTrue);
+      expect(he.flushRight, isTrue);
+      // 右起：第一个词在第二个词右边。
+      expect(
+        he.words.first.bounds.left,
+        greaterThan(he.words.last.bounds.left),
+      );
+      he.dispose();
+    });
+
+    test('副字幕超过两行：保留两行高度并标记截断（不加省略号）', () {
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        LyricTimeline(
+          format: 'ttml',
+          timingQuality: LyricTimingQuality.word,
+          lines: <LyricLine>[
+            LyricLine(
+              startMs: 0,
+              endMs: 1000,
+              syllables: const <LyricSyllable>[
+                LyricSyllable(text: 'la', startMs: 0, endMs: 1000),
+              ],
+              translations: <LyricTranslation>[
+                LyricTranslation('zh', '很长的译文' * 12),
+              ],
+            ),
+          ],
+        ),
+      );
+      final MonetLineText lt = MonetLineText.layout(
+        line: rt.lines[0],
+        fontPx: 20,
+        translationFontPx: 12,
+        contentWidth: 160,
+        alignEnd: false,
+        trackColor: const Color(0xFFFFFFFF),
+      );
+      final MonetSubtitleTrack track = lt.tracks.single;
+      expect(track.lineCount, greaterThan(2));
+      expect(track.isClipped, isTrue);
+      expect(
+        track.height,
+        closeTo(
+          track.paddingTop +
+              2 * 12 * kMonetTranslationLineHeightFactor +
+              monetTranslationPaddingBottom(12),
+          1e-6,
+        ),
+      );
+      lt.dispose();
+    });
+
+    Future<MonetRailPainter> pumpRail(
+      WidgetTester tester, {
+      ValueChanged<int>? onSeek,
+    }) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 720));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final FakeVisualizerClock clock = FakeVisualizerClock(1500);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox.expand(
+              child: monetVisualizerEntry.builder(
+                visualizerContextFor(
+                  monetVisualizerEntry,
+                  clock: clock,
+                ).copyWith(onSeek: onSeek),
+              ),
+            ),
+          ),
+        ),
+      );
+      // 入场与弹簧按真实墙钟走（`LyricVisualizerFrame` 的 Stopwatch）：等歌词栏淡入（0.65 秒延迟）
+      // 画出第一帧，它才知道有哪些行。
+      await _waitWall(tester, 1500);
+      return tester.widget<CustomPaint>(_railFinder).painter!
+          as MonetRailPainter;
+    }
+
+    testWidgets('滚轮翻行进入手动滚动，停手 1.8 秒回到当前句', (WidgetTester tester) async {
+      final MonetRailPainter painter = await pumpRail(tester);
+      final Offset center = tester.getCenter(_railFinder);
+      final TestPointer mouse = TestPointer(1, PointerDeviceKind.mouse);
+      await tester.sendEventToBinding(mouse.hover(center));
+      await tester.sendEventToBinding(mouse.scroll(const Offset(0, 80)));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(painter.controller.isManualScrolling, isTrue);
+      // 停手计时也是墙钟：1.8 秒内还在手动，过了回到当前句。
+      await _waitWall(tester, 600);
+      expect(painter.controller.isManualScrolling, isTrue);
+      await _waitWall(tester, 1600);
+      expect(painter.controller.isManualScrolling, isFalse);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('点当前句跳到这一句开头（音频时间）', (WidgetTester tester) async {
+      final List<int> seeks = <int>[];
+      await pumpRail(tester, onSeek: seeks.add);
+      final Rect rail = tester.getRect(_railFinder);
+      // 锚点（当前句）的中心在栏高 46% 处。
+      await tester.tapAt(Offset(rail.left + 40, rail.top + rail.height * 0.46));
+      await tester.pump(const Duration(milliseconds: 16));
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        sampleWordTimeline(),
+      );
+      expect(seeks, <int>[rt.lines[rt.activeLineAt(1500)].startMs]);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  });
 }
+
+/// 让真实墙钟走 [ms] 毫秒并推帧。
+Future<void> _waitWall(WidgetTester tester, int ms) async {
+  final Stopwatch sw = Stopwatch()..start();
+  while (sw.elapsedMilliseconds < ms) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
+final Finder _railFinder = find.byWidgetPredicate(
+  (Widget w) => w is CustomPaint && w.painter is MonetRailPainter,
+);
 
 /// 用注册项的声明造一份全默认参数。
 abstract final class LyricVisualizerTuningFixture {

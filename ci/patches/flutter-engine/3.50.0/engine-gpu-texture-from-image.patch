@@ -1,0 +1,133 @@
+diff --git a/engine/src/flutter/impeller/display_list/dl_image_impeller.h b/engine/src/flutter/impeller/display_list/dl_image_impeller.h
+index 85a2dc5e..9fd9cda5 100644
+--- a/engine/src/flutter/impeller/display_list/dl_image_impeller.h
++++ b/engine/src/flutter/impeller/display_list/dl_image_impeller.h
+@@ -28,6 +28,20 @@ class DlImageImpeller : public flutter::DlImage {
+   virtual std::shared_ptr<Texture> GetImpellerTexture(
+       ContentContext& renderer) const = 0;
+ 
++  /// The backing texture, if it already exists and can be obtained without a
++  /// renderer (no rendering, no command submission). Returns nullptr for
++  /// images whose texture only materializes when drawn.
++  ///
++  /// Safe to call off the raster thread: Flutter GPU's `Texture.fromImage`
++  /// calls it on the UI thread. Do not build a throwaway `ContentContext`
++  /// just to call `GetImpellerTexture` there; its constructor submits a
++  /// command buffer, and on GLES a submission from a thread that cannot
++  /// react never completes, which stalls `GpuSubmissionTracker` and makes
++  /// every `HostBuffer::Reset` retire and reallocate its arena forever.
++  virtual std::shared_ptr<Texture> GetResolvedTexture() const {
++    return nullptr;
++  }
++
+   std::shared_ptr<Texture> GetCachedTexture(ContentContext& renderer) const;
+ 
+   static sk_sp<DlImageImpeller> Make(
+@@ -52,6 +66,11 @@ class DlImageImpellerTexture final : public DlImageImpeller {
+   std::shared_ptr<Texture> GetImpellerTexture(
+       ContentContext& renderer) const override;
+ 
++  // |DlImageImpeller|
++  std::shared_ptr<Texture> GetResolvedTexture() const override {
++    return texture_;
++  }
++
+   flutter::DlColorSpace GetColorSpace() const override;
+   bool isOpaque() const override;
+   bool isUIThreadSafe() const override;
+diff --git a/engine/src/flutter/lib/gpu/texture.cc b/engine/src/flutter/lib/gpu/texture.cc
+index e5ba0615..39e1cd62 100644
+--- a/engine/src/flutter/lib/gpu/texture.cc
++++ b/engine/src/flutter/lib/gpu/texture.cc
+@@ -25,7 +25,6 @@
+ 
+ #if IMPELLER_SUPPORTS_RENDERING
+ #include "flutter/display_list/image/dl_image.h"      // nogncheck
+-#include "impeller/display_list/aiks_context.h"       // nogncheck
+ #include "impeller/display_list/dl_image_impeller.h"  // nogncheck
+ #endif
+ #include "third_party/tonic/converter/dart_converter.h"
+@@ -176,8 +175,13 @@ static std::shared_ptr<impeller::Texture> GetTextureFromImage(
+   if (!impeller_image) {
+     return nullptr;
+   }
+-  impeller::AiksContext aiks_context(gpu_context->GetContextShared(), nullptr);
+-  return impeller_image->GetImpellerTexture(aiks_context.GetContentContext());
++  // Never construct an AiksContext / ContentContext here: this runs on the UI
++  // thread, and the ContentContext constructor submits a command buffer. On
++  // GLES that submission can only complete on a thread that may react, so it
++  // stays pending forever, stalls the context's GpuSubmissionTracker, and from
++  // then on every HostBuffer::Reset of the real renderer retires its arena
++  // and allocates a fresh one (unbounded growth of ~MBs per frame).
++  return impeller_image->GetResolvedTexture();
+ }
+ #endif
+ 
+diff --git a/engine/src/flutter/lib/ui/painting/display_list_deferred_image_gpu_impeller.cc b/engine/src/flutter/lib/ui/painting/display_list_deferred_image_gpu_impeller.cc
+index e5b9f84a..d1b10727 100644
+--- a/engine/src/flutter/lib/ui/painting/display_list_deferred_image_gpu_impeller.cc
++++ b/engine/src/flutter/lib/ui/painting/display_list_deferred_image_gpu_impeller.cc
+@@ -56,6 +56,15 @@ DlDeferredImageGPUImpeller::GetImpellerTexture(
+   return wrapper_->texture();
+ }
+ 
++// |DlImageImpeller|
++std::shared_ptr<impeller::Texture> DlDeferredImageGPUImpeller::GetResolvedTexture()
++    const {
++  if (!wrapper_) {
++    return nullptr;
++  }
++  return wrapper_->texture();
++}
++
+ // |DlImage|
+ flutter::DlColorSpace DlDeferredImageGPUImpeller::GetColorSpace() const {
+   if (!wrapper_) {
+diff --git a/engine/src/flutter/lib/ui/painting/display_list_deferred_image_gpu_impeller.h b/engine/src/flutter/lib/ui/painting/display_list_deferred_image_gpu_impeller.h
+index 98ab68b6..8ab5ed23 100644
+--- a/engine/src/flutter/lib/ui/painting/display_list_deferred_image_gpu_impeller.h
++++ b/engine/src/flutter/lib/ui/painting/display_list_deferred_image_gpu_impeller.h
+@@ -44,6 +44,9 @@ class DlDeferredImageGPUImpeller final : public impeller::DlImageImpeller {
+   std::shared_ptr<impeller::Texture> GetImpellerTexture(
+       impeller::ContentContext& renderer) const override;
+ 
++  // |DlImageImpeller|
++  std::shared_ptr<impeller::Texture> GetResolvedTexture() const override;
++
+   // |DlImage|
+   flutter::DlColorSpace GetColorSpace() const override;
+ 
+diff --git a/engine/src/flutter/lib/ui/painting/pixel_deferred_image_gpu_impeller.cc b/engine/src/flutter/lib/ui/painting/pixel_deferred_image_gpu_impeller.cc
+index bbc866ae..bed4d06a 100644
+--- a/engine/src/flutter/lib/ui/painting/pixel_deferred_image_gpu_impeller.cc
++++ b/engine/src/flutter/lib/ui/painting/pixel_deferred_image_gpu_impeller.cc
+@@ -34,6 +34,15 @@ PixelDeferredImageGPUImpeller::GetImpellerTexture(
+   return wrapper_->texture();
+ }
+ 
++// |DlImageImpeller|
++std::shared_ptr<impeller::Texture> PixelDeferredImageGPUImpeller::GetResolvedTexture()
++    const {
++  if (!wrapper_) {
++    return nullptr;
++  }
++  return wrapper_->texture();
++}
++
+ bool PixelDeferredImageGPUImpeller::isOpaque() const {
+   return false;
+ }
+diff --git a/engine/src/flutter/lib/ui/painting/pixel_deferred_image_gpu_impeller.h b/engine/src/flutter/lib/ui/painting/pixel_deferred_image_gpu_impeller.h
+index acfecd6d..1b5de977 100644
+--- a/engine/src/flutter/lib/ui/painting/pixel_deferred_image_gpu_impeller.h
++++ b/engine/src/flutter/lib/ui/painting/pixel_deferred_image_gpu_impeller.h
+@@ -38,6 +38,9 @@ class PixelDeferredImageGPUImpeller final : public impeller::DlImageImpeller {
+   std::shared_ptr<impeller::Texture> GetImpellerTexture(
+       impeller::ContentContext& renderer) const override;
+ 
++  // |DlImageImpeller|
++  std::shared_ptr<impeller::Texture> GetResolvedTexture() const override;
++
+   // |DlImage|
+   bool isOpaque() const override;
+ 

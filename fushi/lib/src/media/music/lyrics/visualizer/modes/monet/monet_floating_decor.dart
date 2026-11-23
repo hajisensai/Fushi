@@ -1,15 +1,15 @@
 /// 莫奈的浮动装饰（移植 folia `MonetFloatingDecor.tsx`）：主题图标（`LyricVisualizerTheme.lyricsIcons`）
 /// 以极低透明度在画面里缓慢漂浮、旋转。主题没有图标时什么都不画。
 ///
-/// folia 画 Lucide 线稿（1px 描边）；这里画主题图标映射到的语义图标字形（没有字形的图标跳过），
-/// 透明度很低（0.06–0.17），观感接近。
+/// folia 画 Lucide 线稿（`strokeWidth={1} absoluteStrokeWidth`：不论图标多大都是 1px 线）；这里
+/// 取主题图标映射到的语义图标字形，只描它的轮廓（1px 描边、不填充），得到同样的细线稿观感。
+/// 不搬 Lucide 的图形本身（许可约定），所以线条走向与原版图标不同。
 library;
 
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
-
-import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 
 /// 一个漂浮粒子（folia `FloatingParticle`，各值由下标确定、不随机）。
 @immutable
@@ -136,10 +136,9 @@ class MonetFloatingDecorPainter extends CustomPainter {
       canvas.save();
       canvas.translate(center.dx, center.dy);
       canvas.rotate(pose.rotation * math.pi / 180);
-      paintLyricVisualizerIconGlyph(
+      paintMonetOutlineGlyph(
         canvas,
         p.icon,
-        Offset.zero,
         p.size,
         color.withValues(alpha: color.a * alpha),
       );
@@ -154,4 +153,66 @@ class MonetFloatingDecorPainter extends CustomPainter {
       old.color != color ||
       old.still != still ||
       !identical(old.particles, particles);
+}
+
+final Map<(int, String?, int), ui.Paragraph> _outlineCache =
+    <(int, String?, int), ui.Paragraph>{};
+
+/// 以原点为中心画 [icon] 字形的 1px 轮廓线（边长 [size]，颜色 [color]）。排版按（码位、字族、
+/// 字号）缓存成白色描边，上色走图层的 `srcIn` 滤镜，逐帧变透明度不重新排版。
+void paintMonetOutlineGlyph(
+  Canvas canvas,
+  IconData icon,
+  double size,
+  Color color,
+) {
+  if (size <= 0 || color.a <= 0) return;
+  final int px = size.round().clamp(1, 1024);
+  final (int, String?, int) key = (icon.codePoint, icon.fontFamily, px);
+  ui.Paragraph? p = _outlineCache[key];
+  if (p == null) {
+    if (_outlineCache.length > 64) {
+      for (final ui.Paragraph old in _outlineCache.values) {
+        old.dispose();
+      }
+      _outlineCache.clear();
+    }
+    final ui.ParagraphBuilder b =
+        ui.ParagraphBuilder(
+            ui.ParagraphStyle(
+              fontFamily: icon.fontFamily,
+              fontSize: px.toDouble(),
+              height: 1,
+            ),
+          )
+          ..pushStyle(
+            ui.TextStyle(
+              fontFamily: icon.fontFamily,
+              fontSize: px.toDouble(),
+              height: 1,
+              foreground: Paint()
+                ..style = PaintingStyle.stroke
+                // `absoluteStrokeWidth`：屏幕上恒为 1px（字号缩放在下面抵消）。
+                ..strokeWidth = 1
+                ..strokeJoin = StrokeJoin.round
+                ..color = const Color(0xFFFFFFFF),
+            ),
+          )
+          ..addText(String.fromCharCode(icon.codePoint));
+    p = b.build()..layout(const ui.ParagraphConstraints(width: 4096));
+    _outlineCache[key] = p;
+  }
+  final double scale = size / px;
+  final Rect bounds = Rect.fromCenter(
+    center: Offset.zero,
+    width: size + 4,
+    height: size + 4,
+  );
+  canvas.saveLayer(
+    bounds,
+    Paint()..colorFilter = ColorFilter.mode(color, BlendMode.srcIn),
+  );
+  canvas.scale(scale);
+  canvas.drawParagraph(p, Offset(-p.maxIntrinsicWidth / 2, -p.height / 2));
+  canvas.restore();
 }

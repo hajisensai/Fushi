@@ -208,6 +208,9 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
   Widget build(BuildContext context) {
     final LyricVisualizerEntry entry = lyricVisualizerEntryOf(widget.mode);
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    // 宿主让场景铺满整窗（含桌面顶栏拖动条 / 系统安全区）；浮在场景上的
+    // 控件与字幕按安全区内缩，免得压到窗口按钮 / 刘海。
+    final EdgeInsets safe = MediaQuery.paddingOf(context);
     final LyricVisualizerTheme? visualTheme =
         widget.theme ??
         widget.aiTheme?.themeFor(widget.trackUid, scheme.brightness);
@@ -294,9 +297,9 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
           RepaintBoundary(child: entry.builder(c)),
           if (entry.sharedSubtitle)
             Positioned(
-              left: 32,
-              right: 32,
-              bottom: 40,
+              left: 32 + safe.left,
+              right: 32 + safe.right,
+              bottom: 40 + safe.bottom,
               child: IgnorePointer(child: LyricVisualizerSubtitle(context: c)),
             ),
         ],
@@ -324,8 +327,8 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
                 ),
               ),
               Positioned(
-                top: 12,
-                right: 12,
+                top: 12 + safe.top,
+                right: 12 + safe.right,
                 child: AnimatedOpacity(
                   opacity: _hover ? 1 : 0,
                   duration: fushiMotionDuration(context, FushiMotion.short),
@@ -601,7 +604,7 @@ class _LyricVisualizerPickerState extends State<_LyricVisualizerPicker> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 4, 24, 8),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
             child: Text(
               t.music_visualizer_title,
               style: theme.textTheme.titleLarge,
@@ -640,9 +643,9 @@ class _LyricVisualizerPickerState extends State<_LyricVisualizerPicker> {
               child: GridView.builder(
                 shrinkWrap: true,
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                   maxCrossAxisExtent: 220,
-                  mainAxisExtent: 112,
+                  mainAxisExtent: lyricVisualizerStyleTileExtent(context),
                   crossAxisSpacing: 12,
                   mainAxisSpacing: 12,
                 ),
@@ -671,6 +674,34 @@ class _LyricVisualizerPickerState extends State<_LyricVisualizerPicker> {
     );
   }
 }
+
+/// 样式卡高度：按实际字体行高（含系统字号放大）量出「图标行 + 标题一行 + 说明两行」，
+/// 卡片不再是写死高度——写死 112 时说明行只剩十来像素，中文字形上下被裁掉。
+double lyricVisualizerStyleTileExtent(BuildContext context) {
+  final TextTheme text = Theme.of(context).textTheme;
+  final TextScaler scaler = MediaQuery.textScalerOf(context);
+  double lineHeight(TextStyle? style) {
+    final TextPainter painter = TextPainter(
+      text: TextSpan(text: '国Ag', style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: scaler,
+      maxLines: 1,
+    )..layout();
+    final double h = painter.height;
+    painter.dispose();
+    return h;
+  }
+
+  return _kStyleTilePadding * 2 +
+      _kStyleTileIconRowHeight +
+      _kStyleTileTitleGap +
+      lineHeight(text.titleMedium) +
+      lineHeight(text.bodySmall) * 2;
+}
+
+const double _kStyleTilePadding = 14;
+const double _kStyleTileIconRowHeight = 48;
+const double _kStyleTileTitleGap = 6;
 
 class _StyleTile extends StatelessWidget {
   const _StyleTile({
@@ -701,7 +732,7 @@ class _StyleTile extends StatelessWidget {
           child: InkWell(
             onTap: onTap,
             child: Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(_kStyleTilePadding),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
@@ -720,7 +751,9 @@ class _StyleTile extends StatelessWidget {
                         ),
                     ],
                   ),
-                  // 卡片高度固定：标题 + 说明贴底，字大（系统字号放大）时说明先收行，不溢出。
+                  // 卡片高度按字体行高量出（lyricVisualizerStyleTileExtent）：标题 +
+                  // 两行说明贴底，完整显示。
+                  const SizedBox(height: _kStyleTileTitleGap),
                   Expanded(
                     child: Align(
                       alignment: AlignmentDirectional.bottomStart,

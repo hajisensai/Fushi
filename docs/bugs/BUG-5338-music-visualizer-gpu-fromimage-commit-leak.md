@@ -1,0 +1,6 @@
+## BUG-5338 · music-visualizer-gpu-fromimage-commit-leak
+- **报告**：2026-11-23（用户：开音乐全屏歌词动画后 Windows 整机卡死、音频播放炸了）
+- **真实性**：✅ 真 bug。事故 hang dump 里进程 PrivateUsage 24 秒内 36.5→43.7 GB，吃满系统提交上限（0xC000012D / Win32 1455），随后 DWM / 服务崩溃、整机换页，音频断（音频为连带后果，未见独立音频缺陷）。根因在 Flutter 3.50.0 引擎：`lib/gpu/texture.cc:179` 的 `GetTextureFromImage` 每次在 UI 线程新建 `impeller::AiksContext`，`ContentContext` 构造时为 1×1 空纹理提交一个 blit（`impeller/entity/contents/content_context.cc:594-608`）；GLES 下 UI 线程不能 react，完成回调进 `ops_[UI 线程]` 永不 flush（`reactor_gles.cc:173-185`），`GpuSubmissionTracker::CompletedThrough()` 从此卡死，之后每帧 `HostBuffer::Reset`（`core/host_buffer.cc:241-280`）都把整格 arena 退役再新分配 1 MB，永不回收——镜台文字栅格化（`diorama_text_raster.dart:116-123`）调过一次 `Texture.fromImage` 后，整个进程每帧漏约 3 MB，换样式 / 退出歌词页 / 回主页都照漏。
+- **[x] ① 已修复** — 引擎补丁 `ci/patches/flutter-engine/3.50.0/engine-gpu-texture-from-image.patch`：`DlImageImpeller::GetResolvedTexture()` 直接给出已有纹理，`GetTextureFromImage` 不再构造 `AiksContext`；随引擎 `hdr-output-3` 发布。A/B（同一 exe 只换 flutter_windows.dll）：fromImage 后空闲 300 帧 +907 MB → −7 MB。
+- **[x] ② 已加自动化测试** — 源码守卫 `fushi/test/build/gpu_texture_from_image_engine_guard_test.dart`；回归 itest `fushi/integration_test/flutter_gpu_from_image_leak_itest.dart`（fromImage 后空闲 300 帧增长 <150 MB，需装新引擎的 SDK）。
+- **备注**：GLES 上任何在不能 react 的线程提交的命令缓冲都会卡死 tracker，本补丁只消掉已知触发路径；值得报给 flutter/flutter。

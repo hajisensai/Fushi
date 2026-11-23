@@ -186,6 +186,11 @@ if ($Steps -contains 'patch') {
   # registrar): external texture frames are marked and redrawn on the raster
   # thread instead of waiting for the merged platform / UI thread (BUG-5200).
   Invoke-Patch $flutter (Join-Path $patchDir 'engine-texture-frame-raster-thread.patch')
+  # Independent of the Windows patches (lib/gpu + DlImageImpeller): Flutter GPU
+  # Texture.fromImage stops building a throwaway ContentContext on the UI
+  # thread, whose never-completing GLES submission stalled HostBuffer recycling
+  # and leaked an arena per frame for the rest of the process.
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-gpu-texture-from-image.patch')
   Invoke-Patch (Join-Path $src 'flutter\third_party\angle') (Join-Path $patchDir 'angle-scrgb-swapchain.patch')
 }
 

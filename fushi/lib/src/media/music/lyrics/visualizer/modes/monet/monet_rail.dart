@@ -150,7 +150,11 @@ class MonetSubtitleTrack {
   final double fontPx;
   final bool secondary;
 
-  int get lineCount => math.max(1, painter.computeLineMetrics().length);
+  /// 排出来的总行数（不截）。
+  late final int lineCount = math.max(1, painter.computeLineMetrics().length);
+
+  /// 超过 [kMonetTranslationLineLimit] 行：画的时候截在盒子底边并渐隐（folia `getLineMask`）。
+  bool get isClipped => lineCount > kMonetTranslationLineLimit;
 
   double get paddingTop => secondary
       ? fontPx * kLyricVisualizerSecondarySubtitleGapEm
@@ -175,6 +179,8 @@ class MonetLineText {
     required this.tracks,
     required this.lineEndMs,
     this.isChorus = false,
+    this.rtl = false,
+    this.flushRight = false,
   });
 
   /// 排版一行。[maxWidth] 为正文换行宽度，[contentWidth] 为栏宽（右对齐时用）。[theme] 有按词着色
@@ -208,17 +214,58 @@ class MonetLineText {
     while (last >= first && glyphs[last].isSpace) {
       last--;
     }
+    // folia 的计时词（`line.words`，即逐字歌词的音节）是 inline-block（`MonetWordSweep`），
+    // 浏览器只在词与词之间换行、不拆词。同一音节的相邻字形之间插 U+2060（WORD JOINER，零宽、
+    // 禁止断行）得到同样的换行，音节之间照常断。整行只有一个音节（行级歌词）时 folia 改用估出的
+    // 词（`resolveMonetSweepWords`），这里对应按估出的词分组。
+    final List<int> wordOf = List<int>.filled(glyphs.length, -1);
+    final bool bySyllable =
+        glyphs.map((LyricVisualizerGlyph g) => g.syllableIndex).toSet().length >
+        1;
+    if (bySyllable) {
+      for (int g = 0; g < glyphs.length; g++) {
+        wordOf[g] = glyphs[g].syllableIndex;
+      }
+    } else {
+      for (int wi = 0; wi < words.length; wi++) {
+        final LyricVisualizerWord w = words[wi];
+        for (int g = w.firstGlyph; g < w.firstGlyph + w.glyphCount; g++) {
+          if (g >= 0 && g < glyphs.length) wordOf[g] = wi;
+        }
+      }
+    }
     final List<int> utf = List<int>.filled(glyphs.length + 1, 0);
+    final List<int> utfEnd = List<int>.filled(glyphs.length, 0);
+    final List<int> clean = List<int>.filled(glyphs.length + 1, 0);
     final StringBuffer sb = StringBuffer();
+    final StringBuffer cleanSb = StringBuffer();
     for (int i = 0; i < glyphs.length; i++) {
       utf[i] = sb.length;
-      if (i >= first && i <= last) sb.write(glyphs[i].text);
+      clean[i] = cleanSb.length;
+      if (i >= first && i <= last) {
+        sb.write(glyphs[i].text);
+        cleanSb.write(glyphs[i].text);
+      }
+      utfEnd[i] = sb.length;
+      if (i >= first &&
+          i < last &&
+          wordOf[i] >= 0 &&
+          wordOf[i] == wordOf[i + 1] &&
+          !glyphs[i].isSpace &&
+          !glyphs[i + 1].isSpace) {
+        sb.write(kMonetWordJoiner);
+      }
     }
     utf[glyphs.length] = sb.length;
+    clean[glyphs.length] = cleanSb.length;
     final String text = sb.isEmpty ? line.text : sb.toString();
+    final String cleanText = cleanSb.isEmpty ? line.text : cleanSb.toString();
+    // folia `resolveLyricTextDirection`：第一个字母是从右往左的文字就整行右起。
+    final bool rtl = monetIsRtlText(cleanText);
+    final bool flushRight = rtl || alignEnd;
     final List<LyricVisualizerWordColorRange> colorRanges =
         theme != null && theme.hasWordColors && sb.isNotEmpty
-        ? theme.colorRangesFor(text)
+        ? theme.colorRangesFor(cleanText)
         : const <LyricVisualizerWordColorRange>[];
 
     final TextPainter painter = TextPainter(
@@ -236,8 +283,8 @@ class MonetLineText {
         height: kMonetLineHeightFactor,
         forceStrutHeight: true,
       ),
-      textAlign: alignEnd ? TextAlign.right : TextAlign.left,
-      textDirection: TextDirection.ltr,
+      textAlign: flushRight ? TextAlign.right : TextAlign.left,
+      textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
     )..layout(minWidth: maxW, maxWidth: maxW);
 
     final double inflate = fontPx * 0.08;
@@ -254,7 +301,7 @@ class MonetLineText {
           if (g < first || g > last) continue;
           final LyricVisualizerGlyph gl = glyphs[g];
           for (final TextBox b in painter.getBoxesForSelection(
-            TextSelection(baseOffset: utf[g], extentOffset: utf[g + 1]),
+            TextSelection(baseOffset: utf[g], extentOffset: utfEnd[g]),
           )) {
             final Rect r = Rect.fromLTRB(
               b.left,
@@ -262,9 +309,12 @@ class MonetLineText {
               b.right,
               b.bottom + inflate,
             );
+            // 同一视觉行里接着上一个字形（右起的行往左接）就并进当前段。
             if (run != null &&
                 (r.top - run.top).abs() < 1 &&
-                (r.left - run.right).abs() < 1.5) {
+                (rtl
+                    ? (r.right - run.left).abs() < 1.5
+                    : (r.left - run.right).abs() < 1.5)) {
               run = run.expandToInclude(r);
             } else {
               if (run != null) runs.add(MonetGlyphRun(run, runC0, c));
@@ -291,8 +341,8 @@ class MonetLineText {
                 ? null
                 : LyricVisualizerTheme.colorForSpan(
                     colorRanges,
-                    utf[wFirst],
-                    utf[wEnd],
+                    clean[wFirst],
+                    clean[wEnd],
                   ),
           ),
         );
@@ -334,9 +384,8 @@ class MonetLineText {
                   letterSpacing: 0,
                 ),
               ),
-              maxLines: kMonetTranslationLineLimit,
-              ellipsis: '…',
-              textAlign: alignEnd ? TextAlign.right : TextAlign.left,
+              // 不加省略号：超过两行的截在盒子底边渐隐（folia 每行副字幕各自的 mask）。
+              textAlign: flushRight ? TextAlign.right : TextAlign.left,
               textDirection: TextDirection.ltr,
             )..layout(minWidth: maxW, maxWidth: maxW),
           );
@@ -347,7 +396,9 @@ class MonetLineText {
       painter: painter,
       words: geoms,
       lineCount: math.max(1, painter.computeLineMetrics().length),
-      x0: alignEnd ? contentWidth - maxW : 0,
+      x0: flushRight ? contentWidth - maxW : 0,
+      rtl: rtl,
+      flushRight: flushRight,
       tracks: tracks,
       // folia `getLineRenderEndTime`：光晕留到句尾离场窗口结束。
       lineEndMs: line.renderEndMs,
@@ -368,6 +419,12 @@ class MonetLineText {
 
   /// 副歌行（folia `line.isChorus`）：强调色光晕、扫字色混强调色、光晕更大。
   final bool isChorus;
+
+  /// 从右往左写的行（维吾尔 / 阿拉伯 / 希伯来…）：右起排、绕右上角缩放、扫光从右往左。
+  final bool rtl;
+
+  /// 行贴右排（右起的行，或镜像版面）：缩放绕右上角。
+  final bool flushRight;
 
   /// 副字幕各行合计的保留高度。
   double get tracksHeight {
@@ -503,13 +560,140 @@ class MonetRailController {
 
   static const int _cacheLimit = 40;
 
+  /// 手动滚动的锚点（folia `manualScrollAnchorIndex`）；null = 跟着当前句走。
+  int? _manualAnchor;
+
+  /// 停手后回到自动跟随的墙钟时刻。
+  double _manualResetAt = 0;
+
+  /// 上一帧的当前行与锚点（手动滚动起步用，folia `getFallbackAnchorIndex`）。
+  int _activeIndex = -1;
+  int _autoAnchor = 0;
+  int _lineCount = 0;
+
+  /// 上一帧的栏宽与字号（命中测试用）。
+  double _width = 0;
+  double _fontPx = 0;
+
+  double _wheelAcc = 0;
+  int _wheelDir = 0;
+  double? _touchLastY;
+  double _touchAcc = 0;
+  int _touchDir = 0;
+
+  /// 是否在手动滚动。
+  bool get isManualScrolling => _manualAnchor != null;
+
   /// 换歌：丢掉所有行与排版，下一帧直接就位（不播进场）。
   void reset() {
     _clearTexts();
     _items.clear();
     _fresh = true;
     _lastNow = null;
+    _endManual();
   }
+
+  void _endManual() {
+    _manualAnchor = null;
+    _wheelAcc = 0;
+    _wheelDir = 0;
+    _touchAcc = 0;
+    _touchDir = 0;
+  }
+
+  int _fallbackAnchor() =>
+      _manualAnchor ?? (_activeIndex >= 0 ? _activeIndex : _autoAnchor);
+
+  void _scheduleReset(double now) =>
+      _manualResetAt = now + kMonetScrollIdleResetSeconds;
+
+  void _moveAnchor(int steps, double now) {
+    if (_lineCount == 0) return;
+    _manualAnchor = (_fallbackAnchor() + steps).clamp(0, _lineCount - 1);
+    _scheduleReset(now);
+  }
+
+  /// 滚轮（folia `handleRailWheel`）：累计 72 px 翻一行，换方向清零。返回是否吃掉这次滚动。
+  bool wheel(double deltaY, double now) {
+    if (_lineCount == 0) return false;
+    final int dir = monetScrollDirection(deltaY);
+    if (dir != 0 && _wheelDir != 0 && dir != _wheelDir) _wheelAcc = 0;
+    if (dir != 0) _wheelDir = dir;
+    _wheelAcc += deltaY;
+    final int steps = monetClampScrollSteps(
+      (_wheelAcc / kMonetScrollStepPx).truncate(),
+    );
+    if (steps != 0) {
+      _wheelAcc = 0;
+      _moveAnchor(steps, now);
+    } else {
+      _scheduleReset(now);
+    }
+    return true;
+  }
+
+  /// 触摸按下（folia `handleRailTouchStart`）：锚点停在当前位置。
+  void touchStart(double y, double now) {
+    if (_lineCount == 0) return;
+    _touchLastY = y;
+    _touchAcc = 0;
+    _touchDir = 0;
+    _manualAnchor = _fallbackAnchor();
+    _scheduleReset(now);
+  }
+
+  /// 触摸拖动（folia `handleRailTouchMove`）：累计 52 px 翻一行。
+  void touchMove(double y, double now) {
+    final double? last = _touchLastY;
+    if (_lineCount == 0 || last == null) return;
+    final double delta = last - y;
+    _touchLastY = y;
+    final int dir = monetScrollDirection(delta);
+    if (dir != 0 && _touchDir != 0 && dir != _touchDir) _touchAcc = 0;
+    if (dir != 0) _touchDir = dir;
+    _touchAcc += delta;
+    final int steps = monetClampScrollSteps(
+      (_touchAcc / kMonetTouchStepPx).truncate(),
+    );
+    if (steps != 0) {
+      _touchAcc = 0;
+      _moveAnchor(steps, now);
+    } else {
+      _scheduleReset(now);
+    }
+  }
+
+  /// 触摸抬起 / 取消。
+  void touchEnd(double now) {
+    _touchLastY = null;
+    _touchDir = 0;
+    _touchAcc = 0;
+    _scheduleReset(now);
+  }
+
+  /// 点到哪一行（栏内坐标）；没点到行为 null。
+  int? lineAt(Offset p, double now) {
+    if (_width <= 0) return null;
+    final List<_RailItem> order = _items.values.toList()
+      ..sort((_RailItem a, _RailItem b) => b.zIndex.compareTo(a.zIndex));
+    for (final _RailItem item in order) {
+      if (item.exiting) continue;
+      final MonetLineText? lt = _texts[item.index];
+      if (lt == null) continue;
+      final double s = item.scale.value(now);
+      final double top = item.y.value(now);
+      final double h =
+          lt.visualHeight(_fontPx, item.status == MonetLineStatus.active) * s;
+      if (p.dy < top || p.dy > top + h) continue;
+      final double left = lt.flushRight ? _width * (1 - s) : 0;
+      if (p.dx < left || p.dx > left + _width * s) continue;
+      return item.index;
+    }
+    return null;
+  }
+
+  /// 点行跳播后回到自动跟随（folia `handleLineSeek`）。
+  void seeked() => _endManual();
 
   void dispose() => _clearTexts();
 
@@ -577,11 +761,25 @@ class MonetRailController {
         _fresh || !f.motion || (_lastNow != null && now < _lastNow!);
     _lastNow = now;
     _fresh = false;
+    _width = w;
+    _fontPx = f.fontPx;
+    _lineCount = f.runtime.lines.length;
+    if (_manualAnchor != null && now >= _manualResetAt) _endManual();
+    _activeIndex = f.runtime.activeLineAt(f.timeMs);
 
-    final List<MonetVisibleEntry> entries = buildMonetVisibleEntries(
+    final List<MonetVisibleEntry> auto = buildMonetVisibleEntries(
       f.runtime,
       f.timeMs,
     );
+    for (final MonetVisibleEntry e in auto) {
+      if (e.offset == 0) _autoAnchor = e.index;
+    }
+    final int? manual = _manualAnchor;
+    // 手动滚动（folia `disableEntryMotion`）：新出现的行直接就位、离开的行直接拿掉。
+    final bool still = manual != null;
+    final List<MonetVisibleEntry> entries = manual == null
+        ? auto
+        : buildMonetScrollableEntries(_lineCount, manual, _activeIndex);
     final List<MonetLineText> texts = <MonetLineText>[
       for (final MonetVisibleEntry e in entries) _text(f, e.index, w),
     ];
@@ -608,7 +806,7 @@ class MonetRailController {
       if (item == null) {
         item = _RailItem(e.index, e.status, e.offset);
         _items[e.index] = item;
-        if (!snap) {
+        if (!snap && !still) {
           item.y.snap(ys[i] + (e.offset >= 0 ? 34 : -34));
           item.scale.snap(tone.scale * 0.98);
           item.opacity.snap(0);
@@ -652,7 +850,7 @@ class MonetRailController {
     final List<int> gone = <int>[];
     for (final _RailItem item in _items.values) {
       if (seen.contains(item.index)) continue;
-      if (snap || f.runtime.lines.length <= item.index) {
+      if (snap || still || f.runtime.lines.length <= item.index) {
         gone.add(item.index);
         continue;
       }
@@ -679,7 +877,16 @@ class MonetRailController {
     final List<_RailItem> order = _items.values.toList()
       ..sort((_RailItem a, _RailItem b) => a.zIndex.compareTo(b.zIndex));
     for (final _RailItem item in order) {
-      _paintItem(canvas, item, _text(f, item.index, w), f, w, glow);
+      _paintItem(
+        canvas,
+        item,
+        _text(f, item.index, w),
+        f,
+        w,
+        glow,
+        // folia `renderStaticPassed`：手动滚动时当前句以外的行整句亮色、不扫不发光。
+        staticBright: still && item.index != _activeIndex,
+      );
     }
     // 上下渐隐（folia 栏的 mask：0→11% 渐显，88%→100% 渐隐）。
     canvas.drawRect(
@@ -712,8 +919,9 @@ class MonetRailController {
     MonetLineText lt,
     MonetRailFrame f,
     double w,
-    double glow,
-  ) {
+    double glow, {
+    bool staticBright = false,
+  }) {
     final double now = f.now;
     final double fontPx = f.fontPx;
     final bool active = item.status == MonetLineStatus.active;
@@ -727,7 +935,7 @@ class MonetRailController {
     final bool clipped = !active && lt.lineCount > kMonetInactiveTextLineLimit;
 
     canvas.save();
-    if (f.alignEnd) {
+    if (lt.flushRight) {
       canvas.translate(w, item.y.value(now));
       canvas.scale(s);
       canvas.translate(-w, 0);
@@ -762,7 +970,7 @@ class MonetRailController {
 
     final Offset o = Offset(lt.x0, padTop);
     final Color primary = f.palette.text;
-    _paintText(canvas, item, lt, f, o, primary, bounds);
+    _paintText(canvas, item, lt, f, o, primary, bounds, staticBright);
 
     if (clipped) {
       canvas.restore();
@@ -800,14 +1008,46 @@ class MonetRailController {
               )
             : 1;
         if (p > 0) {
-          final double ty = top + track.paddingTop + 8 * (1 - p);
+          final double shift = 8 * (1 - p);
+          final double ty = top + track.paddingTop + shift;
           if (p < 1) {
             canvas.saveLayer(
               bounds,
               Paint()..color = Color.fromRGBO(0, 0, 0, p),
             );
           }
+          // 超过两行：截在这行副字幕的盒子底边，底部 max(0.65em, 10px) 渐隐（folia `getLineMask`）。
+          final Rect box = Rect.fromLTRB(
+            -glow,
+            top + shift,
+            w + glow,
+            top + shift + track.height,
+          );
+          if (track.isClipped) {
+            canvas.saveLayer(box, Paint());
+            canvas.clipRect(box);
+          }
           track.painter.paint(canvas, Offset(lt.x0, ty));
+          if (track.isClipped) {
+            final double fade = math.max(track.fontPx * 0.65, 10);
+            final Rect fr = Rect.fromLTRB(
+              box.left,
+              box.bottom - fade,
+              box.right,
+              box.bottom,
+            );
+            canvas.drawRect(
+              fr,
+              Paint()
+                ..blendMode = BlendMode.dstIn
+                ..shader = ui.Gradient.linear(
+                  fr.topCenter,
+                  fr.bottomCenter,
+                  const <Color>[Color(0xFF000000), Color(0x00000000)],
+                ),
+            );
+            canvas.restore();
+          }
           if (p < 1) canvas.restore();
         }
         top += track.height;
@@ -875,6 +1115,7 @@ class MonetRailController {
     Offset o,
     Color primary,
     Rect bounds,
+    bool staticBright,
   ) {
     final int t = f.timeMs;
     final double fontPx = f.fontPx;
@@ -886,6 +1127,12 @@ class MonetRailController {
         : lineColor;
     Color colorOf(MonetWordGeom w) => w.color ?? wordColor;
     final bool anyThemed = lt.words.any((MonetWordGeom w) => w.color != null);
+
+    if (staticBright) {
+      _tinted(canvas, lt.painter, o, wordColor, bounds);
+      _paintThemedAll(canvas, lt, o, bounds);
+      return;
+    }
 
     if (status == MonetLineStatus.active) {
       // 当前句的投影：`0 14px 34px 背景色@0.22`。
@@ -1032,9 +1279,10 @@ class MonetRailController {
           rr,
           Paint()
             ..blendMode = BlendMode.dstIn
+            // 右起的行从字形右缘往左扫（folia `sweepAngle` 270deg）。
             ..shader = ui.Gradient.linear(
-              rr.centerLeft,
-              rr.centerRight,
+              lt.rtl ? rr.centerRight : rr.centerLeft,
+              lt.rtl ? rr.centerLeft : rr.centerRight,
               <Color>[
                 for (final (double, double) s in stops)
                   Color.fromRGBO(0, 0, 0, s.$2.clamp(0.0, 1.0)),
@@ -1044,6 +1292,27 @@ class MonetRailController {
         );
       }
       canvas.restore();
+    }
+  }
+
+  /// 按词着色命中的词用主题色盖一遍（手动滚动的静态行）。
+  static void _paintThemedAll(
+    Canvas canvas,
+    MonetLineText lt,
+    Offset o,
+    Rect bounds,
+  ) {
+    final Map<int, Path> byColor = <int, Path>{};
+    for (final MonetWordGeom w in lt.words) {
+      final Color? c = w.color;
+      if (c == null) continue;
+      final Path p = byColor.putIfAbsent(c.toARGB32(), Path.new);
+      for (final MonetGlyphRun r in w.runs) {
+        p.addRect(r.rect.shift(o));
+      }
+    }
+    for (final MapEntry<int, Path> e in byColor.entries) {
+      _tinted(canvas, lt.painter, o, Color(e.key), bounds, clip: e.value);
     }
   }
 

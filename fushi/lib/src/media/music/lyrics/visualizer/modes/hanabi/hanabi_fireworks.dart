@@ -923,7 +923,8 @@ class HanabiSprites {
             ui.Color(0xFFFFFFFF),
             ui.Color(0x00FFFFFF),
           ],
-          <double>[0, 1 - 2 / r, 1],
+          // folia drawDot：软边停点 max(0, 1 − 2 / r)，r 是 2× 渲染倍率下 32 px 纹理的半径（16 × 2）。
+          const <double>[0, 1 - 2 / 32, 1],
         ),
     );
     // star4
@@ -986,7 +987,8 @@ class SparkBatch {
   final List<double> _streakPos = <double>[];
   final List<int> _streakColors = <int>[];
 
-  /// 辉光（tuning.glow）：每个光点额外叠一圈加色的大光晕。
+  /// 辉光强度（tuning.glow，0..2）：folia `mg/glow.ts` 挂在烟花层上的 dual-filter bloom，flush 时整批重放成
+  /// 5 级模糊再加色叠回去（见 [_bloom]）。0 = 不开。
   double halo = 0;
 
   /// 之后加入的精灵 / 拖尾整体平移（像素）。
@@ -1033,18 +1035,6 @@ class SparkBatch {
       alpha,
       tint,
     );
-    if (halo > 0 && tex == SparkTexture.glow && !additive) {
-      _push(
-        _additive,
-        SparkTexture.glow,
-        x,
-        y,
-        size * 2.6,
-        0,
-        alpha * 0.22 * halo,
-        tint,
-      );
-    }
     return true;
   }
 
@@ -1077,7 +1067,10 @@ class SparkBatch {
     layer.colors.add(_argb(tint, alpha));
   }
 
-  /// 一段拖尾：从 a（亮）到 b（暗）的软边带。
+  /// 一段拖尾（folia `emitSegment` + `drawStreak` 纹理）：从 a（新、亮）到 b（旧）。精灵中心在两点中点，
+  /// 宽 = thickness、长 = |ab| + thickness × 0.5；纹理纵向 1 → 0.6 → 0.28（停点 0 / 0.6 / 1）、横向
+  /// 0 → 0.85 → 1 → 0.85 → 0（停点 0 / 0.3 / 0.5 / 0.7 / 1）。这里按停点拆成 4 × 2 格的顶点网格逐顶点着色，
+  /// 与纹理在停点上一致、格内线性插值（等价于 Canvas 线性渐变的分段线性）。
   bool streak(
     double ax,
     double ay,
@@ -1098,25 +1091,44 @@ class SparkBatch {
     final double dy = ay - by;
     final double length = math.sqrt(dx * dx + dy * dy);
     if (length < 0.6 || alpha < 0.01) return true;
-    final double nx = -dy / length * thickness / 2;
-    final double ny = dx / length * thickness / 2;
-    final int head = _argb(tint, alpha);
-    final int tail = _argb(tint, alpha * 0.28);
-    _streakPos.addAll(<double>[
-      ax + nx,
-      ay + ny,
-      ax - nx,
-      ay - ny,
-      bx - nx,
-      by - ny,
-      ax + nx,
-      ay + ny,
-      bx - nx,
-      by - ny,
-      bx + nx,
-      by + ny,
-    ]);
-    _streakColors.addAll(<int>[head, head, tail, head, tail, tail]);
+    // 沿线指向星头的单位向量与法线。
+    final double ux = dx / length;
+    final double uy = dy / length;
+    final double nx = -uy;
+    final double ny = ux;
+    final double mx = (ax + bx) / 2;
+    final double my = (ay + by) / 2;
+    final double half = (length + thickness * 0.5) / 2;
+    final double side = thickness / 2;
+    final int rgb = tint & 0xFFFFFF;
+    final List<double> px = List<double>.filled(15, 0);
+    final List<double> py = List<double>.filled(15, 0);
+    final List<int> pc = List<int>.filled(15, 0);
+    for (int r = 0; r < 3; r++) {
+      // v = 0 在星头（纹理的「上」）。
+      final double along = (0.5 - _streakRows[r]) * 2 * half;
+      for (int c = 0; c < 5; c++) {
+        final double across = (_streakCols[c] - 0.5) * 2 * side;
+        final int i = r * 5 + c;
+        px[i] = mx + ux * along + nx * across;
+        py[i] = my + uy * along + ny * across;
+        pc[i] = _argb(rgb, alpha * _streakRowAlpha[r] * _streakColAlpha[c]);
+      }
+    }
+    for (int r = 0; r < 2; r++) {
+      for (int c = 0; c < 4; c++) {
+        final int a = r * 5 + c;
+        final int b = a + 1;
+        final int d = a + 5;
+        final int e = d + 1;
+        for (final int i in <int>[a, b, e, a, e, d]) {
+          _streakPos
+            ..add(px[i])
+            ..add(py[i]);
+          _streakColors.add(pc[i]);
+        }
+      }
+    }
     return true;
   }
 
@@ -1124,25 +1136,62 @@ class SparkBatch {
       _normal.isEmpty && _additive.isEmpty && _streakColors.isEmpty;
 
   void flush(ui.Canvas canvas, HanabiSprites sprites, {double alpha = 1}) {
-    if (_streakColors.isNotEmpty) {
-      final ui.Vertices vertices = ui.Vertices.raw(
-        ui.VertexMode.triangles,
-        Float32List.fromList(_streakPos),
-        colors: Int32List.fromList(_streakColors),
-      );
-      canvas.drawVertices(
-        vertices,
-        ui.BlendMode.dst,
-        ui.Paint()..color = ui.Color.fromRGBO(255, 255, 255, alpha),
-      );
-      vertices.dispose();
+    final ui.Vertices? vertices = _streakColors.isEmpty
+        ? null
+        : ui.Vertices.raw(
+            ui.VertexMode.triangles,
+            Float32List.fromList(_streakPos),
+            colors: Int32List.fromList(_streakColors),
+          );
+    void replay() {
+      if (vertices != null) {
+        canvas.drawVertices(
+          vertices,
+          ui.BlendMode.dst,
+          ui.Paint()..color = ui.Color.fromRGBO(255, 255, 255, alpha),
+        );
+      }
+      _drawLayer(canvas, sprites, _normal, ui.BlendMode.srcOver, alpha);
+      _drawLayer(canvas, sprites, _additive, ui.BlendMode.plus, alpha);
     }
-    _drawLayer(canvas, sprites, _normal, ui.BlendMode.srcOver);
-    _drawLayer(canvas, sprites, _additive, ui.BlendMode.plus);
+
+    replay();
+    if (halo > 0 && !isEmpty) _bloom(canvas, replay);
+    vertices?.dispose();
     _normal.clear();
     _additive.clear();
     _streakPos.clear();
     _streakColors.clear();
+  }
+
+  /// folia `mg/glow.ts` 的烟花辉光：共享 dual-filter bloom（strength 1.1 × glow、levels 5、spread 0.85、
+  /// tint [1, 0.96, 0.9]）。上采样链把第 1..4 级各按 spread、最小一级按 1 叠起来再乘 strength，这里把整批精灵
+  /// 重放进 5 个不同半径的模糊层（第 k 级 σ ≈ 0.8 × 2^k 物理像素，按 1.5× 渲染倍率折成逻辑像素），按同样的权重
+  /// 与 tint 加色叠回去。
+  void _bloom(ui.Canvas canvas, void Function() replay) {
+    final double strength = 1.1 * halo;
+    for (int level = 1; level <= 5; level++) {
+      final double weight = (level == 5 ? 1.0 : 0.85) * strength;
+      final double sigma = 0.8 * math.pow(2, level) / 1.5;
+      canvas.saveLayer(
+        null,
+        ui.Paint()
+          ..blendMode = ui.BlendMode.plus
+          ..imageFilter = ui.ImageFilter.blur(
+            sigmaX: sigma,
+            sigmaY: sigma,
+            tileMode: ui.TileMode.decal,
+          )
+          ..colorFilter = ui.ColorFilter.matrix(<double>[
+            weight, 0, 0, 0, 0, //
+            0, weight * 0.96, 0, 0, 0,
+            0, 0, weight * 0.9, 0, 0,
+            0, 0, 0, 1, 0,
+          ]),
+      );
+      replay();
+      canvas.restore();
+    }
   }
 
   void _drawLayer(
@@ -1150,6 +1199,7 @@ class SparkBatch {
     HanabiSprites sprites,
     _Layer layer,
     ui.BlendMode blend,
+    double alpha,
   ) {
     if (layer.isEmpty) return;
     canvas.drawRawAtlas(
@@ -1161,10 +1211,19 @@ class SparkBatch {
       null,
       ui.Paint()
         ..blendMode = blend
+        ..color = ui.Color.fromRGBO(255, 255, 255, alpha)
         ..filterQuality = ui.FilterQuality.low,
     );
   }
 }
+
+/// streak 纹理的纵向停点与亮度（folia drawStreak：0 / 0.6 / 1 → 1 / 0.6 / 0.28）。
+const List<double> _streakRows = <double>[0, 0.6, 1];
+const List<double> _streakRowAlpha = <double>[1, 0.6, 0.28];
+
+/// streak 纹理的横向软边停点与亮度（0 / 0.3 / 0.5 / 0.7 / 1 → 0 / 0.85 / 1 / 0.85 / 0）。
+const List<double> _streakCols = <double>[0, 0.3, 0.5, 0.7, 1];
+const List<double> _streakColAlpha = <double>[0, 0.85, 1, 0.85, 0];
 
 // ─── 画开花与尾迹 ───────────────────────────────────────────────────────
 

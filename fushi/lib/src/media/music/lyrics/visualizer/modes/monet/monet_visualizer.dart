@@ -11,8 +11,17 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart' show listEquals;
-import 'package:flutter/rendering.dart' show RendererBinding;
+import 'package:flutter/gestures.dart'
+    show
+        GestureBinding,
+        PointerDeviceKind,
+        PointerScrollEvent,
+        PointerSignalEvent;
+import 'package:flutter/rendering.dart'
+    show BoxHitTestResult, RenderObject, RenderProxyBox, RendererBinding;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -94,6 +103,29 @@ class _MonetStageState extends State<_MonetStage> {
   late final double _mountStart = widget.ticks.value.elapsed;
   int _lastTimeMs = 0;
   bool _capsuleHovered = false;
+
+  /// chaotic 晃动开始的时刻（null = 没在晃）。
+  double? _chaoticSince;
+
+  /// 离开 chaotic 时的姿态与时刻：0.8 秒 easeOut 回正（folia `{ duration: 0.8, ease: 'easeOut' }`）。
+  (double, double, double) _calmFrom = (0, 0, 0);
+  double _calmSince = -1e9;
+  (double, double, double) _lastShake = (0, 0, 0);
+
+  /// 肖像这一帧的晃动：chaotic 时 9 秒一圈（从进入 chaotic 起算，首圈延后 0.2 秒），离开后从
+  /// 当时的姿态缓回 0。
+  (double, double, double) _shakeAt(double now, bool chaotic) {
+    if (chaotic) {
+      final double since = _chaoticSince ??= now;
+      return _lastShake = monetChaoticShake(now - since);
+    }
+    if (_chaoticSince != null) {
+      _chaoticSince = null;
+      _calmFrom = _lastShake;
+      _calmSince = now;
+    }
+    return _lastShake = monetCalmShake(_calmFrom, now - _calmSince);
+  }
 
   /// 自定义肖像（素材包里最后导入的图）；[_portraitPackKey] 是已经去读的包。
   String? _customPortrait;
@@ -258,6 +290,7 @@ class _MonetStageState extends State<_MonetStage> {
         ? v.title!.trim()
         : 'Monet';
 
+    final double titleFont = monetClamp(23.2, w * 0.033, 44.8 * ls);
     final double aArtist = intro(0.15, 1.2);
     final double aLine = intro(0.5, 1.5);
     final double aTitle = intro(0.3, 1.3);
@@ -285,6 +318,8 @@ class _MonetStageState extends State<_MonetStage> {
                   color: primary.withValues(alpha: 0.96),
                   fontSize: monetClamp(16, w * 0.018, 28.8 * ls),
                   fontStyle: FontStyle.italic,
+                  // Tailwind 预检的正文行高 1.5。
+                  height: 1.5,
                   letterSpacing: 0,
                 ),
               ),
@@ -331,7 +366,7 @@ class _MonetStageState extends State<_MonetStage> {
                 textAlign: align,
                 style: TextStyle(
                   color: primary,
-                  fontSize: monetClamp(23.2, w * 0.033, 44.8 * ls),
+                  fontSize: titleFont,
                   fontWeight: FontWeight.w600,
                   height: 1.06,
                   letterSpacing: 0,
@@ -344,7 +379,8 @@ class _MonetStageState extends State<_MonetStage> {
                   ],
                 ),
               ),
-              const SizedBox(height: 4),
+              // `space-y-1` 4px，加上标题下内边距 0.25em 减回的 0.12em 余下的 0.13em。
+              SizedBox(height: 4 + titleFont * 0.13),
               Text(
                 album.toUpperCase(),
                 maxLines: 1,
@@ -353,6 +389,8 @@ class _MonetStageState extends State<_MonetStage> {
                 style: TextStyle(
                   color: pal.secondary.withValues(alpha: 0.84),
                   fontSize: 14,
+                  // `text-sm`：14px / 20px。
+                  height: 20 / 14,
                   letterSpacing: 0,
                 ),
               ),
@@ -369,7 +407,8 @@ class _MonetStageState extends State<_MonetStage> {
         child: SizedBox(
           width: railW,
           height: railH,
-          child: RepaintBoundary(
+          child: _railInput(
+            v: v,
             child: CustomPaint(
               painter: MonetRailPainter(
                 controller: _rail,
@@ -452,8 +491,11 @@ class _MonetStageState extends State<_MonetStage> {
           innerW: innerW,
           side: side,
           appear: aPortrait,
-          shake: motion && v.intensity == LyricVisualizerIntensity.chaotic
-              ? monetChaoticShake(tick.elapsed - _mountStart)
+          shake: motion
+              ? _shakeAt(
+                  tick.elapsed,
+                  v.intensity == LyricVisualizerIntensity.chaotic,
+                )
               : (0, 0, 0),
         ),
     ];
@@ -527,6 +569,62 @@ class _MonetStageState extends State<_MonetStage> {
     );
   }
 
+  /// 歌词栏的输入（folia `MonetLyricsRail` 的 wheel / touch 监听与 `MonetRailLine` 的点击）：
+  /// 滚轮 / 触摸拖动翻行、停手 1.8 秒回到当前句；点一行跳到这一句开头。只有点在行上才吃点击，
+  /// 栏里空白处的点击照常交给宿主（点画面退出）。
+  Widget _railInput({
+    required LyricVisualizerContext v,
+    required Widget child,
+  }) {
+    double now() => widget.ticks.value.elapsed;
+    final ValueChanged<int>? seek = v.onSeek;
+    Widget painted = RepaintBoundary(child: child);
+    if (seek != null) {
+      painted = _MonetLineHit(
+        hit: (Offset p) => _rail.lineAt(p, now()) != null,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapUp: (TapUpDetails d) {
+            final int? index = _rail.lineAt(d.localPosition, now());
+            if (index == null || index >= v.runtime.lines.length) return;
+            final int at = v.audioTimeOf(v.runtime.lines[index].startMs);
+            seek(at < 0 ? 0 : at);
+            _rail.seeked();
+          },
+          child: painted,
+        ),
+      );
+    }
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerSignal: (PointerSignalEvent e) {
+        if (e is! PointerScrollEvent) return;
+        GestureBinding.instance.pointerSignalResolver.register(
+          e,
+          (PointerSignalEvent ev) =>
+              _rail.wheel((ev as PointerScrollEvent).scrollDelta.dy, now()),
+        );
+      },
+      onPointerDown: (PointerDownEvent e) {
+        if (e.kind == PointerDeviceKind.touch) {
+          _rail.touchStart(e.localPosition.dy, now());
+        }
+      },
+      onPointerMove: (PointerMoveEvent e) {
+        if (e.kind == PointerDeviceKind.touch) {
+          _rail.touchMove(e.localPosition.dy, now());
+        }
+      },
+      onPointerUp: (PointerUpEvent e) {
+        if (e.kind == PointerDeviceKind.touch) _rail.touchEnd(now());
+      },
+      onPointerCancel: (PointerCancelEvent e) {
+        if (e.kind == PointerDeviceKind.touch) _rail.touchEnd(now());
+      },
+      child: painted,
+    );
+  }
+
   /// 描述胶囊：自动隐藏时鼠标移上去才出现，没有鼠标的设备常显（folia `[@media(hover:none)]`）。
   Widget _capsule(
     LyricVisualizerPalette pal,
@@ -550,13 +648,16 @@ class _MonetStageState extends State<_MonetStage> {
             onExit: (_) => setState(() => _capsuleHovered = false),
             child: Padding(
               // folia 的 hover 区比胶囊大一圈（before:-inset-x-6 -bottom-6）。
-              padding: const EdgeInsets.only(top: 16, bottom: 8),
+              padding: const EdgeInsets.only(top: 16),
               child: AnimatedOpacity(
                 opacity: visible ? 1 : 0,
                 duration: motion
                     ? const Duration(milliseconds: 200)
                     : Duration.zero,
-                child: DecoratedBox(
+                // `backdrop-blur-md`：胶囊后面的画面模糊 12px（只裁胶囊这一小块）。
+                child: _MonetFrostedBox(
+                  radius: BorderRadius.circular(999),
+                  sigma: 12,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(color: pal.text.withValues(alpha: 0.16)),
@@ -584,6 +685,8 @@ class _MonetStageState extends State<_MonetStage> {
                           style: TextStyle(
                             color: pal.text.withValues(alpha: 0.9),
                             fontSize: 12,
+                            // `text-xs`：12px / 16px。
+                            height: 16 / 12,
                             letterSpacing: 0,
                           ),
                         ),
@@ -622,6 +725,7 @@ class _MonetStageState extends State<_MonetStage> {
         custom: _customPortrait,
       ),
       motion: v.motion,
+      now: widget.ticks.value.elapsed,
     );
     Widget frame;
     if (cfg.squarePortrait) {
@@ -671,8 +775,6 @@ class _MonetStageState extends State<_MonetStage> {
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(34.4),
-            border: Border.all(color: pal.text.withValues(alpha: 0.1)),
-            color: pal.background.withValues(alpha: 0.15),
             boxShadow: <BoxShadow>[
               BoxShadow(
                 offset: const Offset(0, 24),
@@ -681,13 +783,23 @@ class _MonetStageState extends State<_MonetStage> {
               ),
             ],
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(6),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(29.6),
-              child: ColoredBox(
-                color: pal.text.withValues(alpha: 0.08),
-                child: image,
+          // `backdrop-blur-sm`：框边一圈透出来的画面模糊 4px。
+          child: _MonetFrostedBox(
+            radius: BorderRadius.circular(34.4),
+            sigma: 4,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(34.4),
+              border: Border.all(color: pal.text.withValues(alpha: 0.1)),
+              color: pal.background.withValues(alpha: 0.15),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(6),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(29.6),
+                child: ColoredBox(
+                  color: pal.text.withValues(alpha: 0.08),
+                  child: image,
+                ),
               ),
             ),
           ),
@@ -735,20 +847,109 @@ class _MonetStageState extends State<_MonetStage> {
   }
 }
 
-/// 封面肖像：新封面先解码好再叠上去交叉淡入（folia `MonetPortraitImage`），框里不留空白。
+/// 毛玻璃底：只在 [radius] 圆角框里模糊后面的画面（CSS `backdrop-filter: blur()`），再画
+/// [decoration]。模糊半径 = CSS 的 px（标准差）。
+class _MonetFrostedBox extends StatelessWidget {
+  const _MonetFrostedBox({
+    required this.radius,
+    required this.sigma,
+    required this.decoration,
+    required this.child,
+  });
+
+  final BorderRadius radius;
+  final double sigma;
+  final BoxDecoration decoration;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: radius,
+    child: BackdropFilter(
+      filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+      child: DecoratedBox(decoration: decoration, child: child),
+    ),
+  );
+}
+
+/// 只有 [hit] 说点在行上时才参与命中测试：栏里空白处的点击落到宿主上。
+class _MonetLineHit extends SingleChildRenderObjectWidget {
+  const _MonetLineHit({required this.hit, super.child});
+
+  final bool Function(Offset local) hit;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderMonetLineHit(hit);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderMonetLineHit renderObject,
+  ) => renderObject.hit = hit;
+}
+
+class _RenderMonetLineHit extends RenderProxyBox {
+  _RenderMonetLineHit(this.hit);
+
+  bool Function(Offset local) hit;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) =>
+      hit(position) && super.hitTest(result, position: position);
+}
+
+/// 肖像叠层里的一张图（folia `MonetPortraitLayer`）。
+class _PortraitLayer {
+  _PortraitLayer(this.key, this.path, this.from, this.to, this.since);
+
+  final int key;
+  final String path;
+  double from;
+  double to;
+  double since;
+
+  double opacityAt(double now, double fade) {
+    if (fade <= 0) return to;
+    final double p = ((now - since) / fade).clamp(0.0, 1.0);
+    return from + (to - from) * Curves.easeInOut.transform(p);
+  }
+
+  void retarget(double target, double now, double fade) {
+    if (to == target) return;
+    from = opacityAt(now, fade);
+    to = target;
+    since = now;
+  }
+}
+
+/// 封面肖像的交叉淡入（folia `MonetPortraitImage` + `monetPortraitCrossfade.ts`）：新封面先在
+/// 屏外解码好，再叠到正在显示的封面上面 0.9 秒 easeInOut 淡入，下面的不动、等最上面一张完全不透明
+/// 后一起拿掉（框里永远不空、也不透出底色）；连续切歌时一层层往上叠，最多 4 层。没有封面时整叠
+/// 淡到 0 但留着，下一张从它上面淡入。解码失败的图不入叠，保留正在显示的那张。
 class _MonetPortraitImage extends StatefulWidget {
-  const _MonetPortraitImage({required this.path, required this.motion});
+  const _MonetPortraitImage({
+    required this.path,
+    required this.motion,
+    required this.now,
+  });
 
   final String? path;
   final bool motion;
+
+  /// 墙钟秒数（宿主每帧重建时带进来，淡入按它推进）。
+  final double now;
 
   @override
   State<_MonetPortraitImage> createState() => _MonetPortraitImageState();
 }
 
 class _MonetPortraitImageState extends State<_MonetPortraitImage> {
-  String? _shown;
+  final List<_PortraitLayer> _layers = <_PortraitLayer>[];
   String? _wanted;
+  int _nextKey = 0;
+
+  double get _fade => widget.motion ? kMonetPortraitFadeSeconds : 0;
 
   @override
   void didChangeDependencies() {
@@ -765,47 +966,60 @@ class _MonetPortraitImageState extends State<_MonetPortraitImage> {
   void _want(String? path) {
     if (path == _wanted) return;
     _wanted = path;
-    final ImageProvider? provider = lyricVisualizerCoverProvider(path);
-    if (provider == null) {
-      // 没封面：保留上一张（folia 淡出但留着），这里直接清掉，框露出底色。
-      if (_shown != null) setState(() => _shown = null);
-      return;
+    final double target = path == null ? 0 : 1;
+    for (final _PortraitLayer l in _layers) {
+      l.retarget(target, widget.now, _fade);
     }
+    final ImageProvider? provider = lyricVisualizerCoverProvider(path);
+    if (path == null || provider == null) return;
     unawaited(
       precacheImage(
         provider,
         context,
         onError: (Object _, StackTrace? _) {},
       ).then((_) {
-        if (mounted && _wanted == path) setState(() => _shown = path);
+        if (!mounted || _wanted != path) return;
+        // folia `pushMonetPortraitLayer`：要的就是最上面那张时不重叠。
+        if (_layers.isNotEmpty && _layers.last.path == path) return;
+        setState(() {
+          _layers.add(_PortraitLayer(_nextKey++, path, 0, 1, widget.now));
+          while (_layers.length > kMonetPortraitMaxLayers) {
+            _layers.removeAt(0);
+          }
+        });
       }),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final String? shown = _shown;
-    return AnimatedSwitcher(
-      duration: widget.motion
-          ? const Duration(milliseconds: 900)
-          : Duration.zero,
-      switchInCurve: Curves.easeInOut,
-      switchOutCurve: Curves.easeInOut,
-      layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
-        fit: StackFit.expand,
-        children: <Widget>[...previous, ?current],
-      ),
-      child: shown == null
-          ? const SizedBox.expand(key: ValueKey<String>('monet-empty'))
-          : Image(
-              key: ValueKey<String>(shown),
+    final double now = widget.now;
+    final double fade = _fade;
+    // folia `settleMonetPortraitLayers`：最上面一张淡满之后，下面的全拿掉。
+    if (_layers.length > 1) {
+      final _PortraitLayer top = _layers.last;
+      if (top.to >= 1 && top.opacityAt(now, fade) >= 1) {
+        _layers.removeRange(0, _layers.length - 1);
+      }
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        for (final _PortraitLayer l in _layers)
+          Opacity(
+            key: ValueKey<int>(l.key),
+            opacity: l.opacityAt(now, fade).clamp(0.0, 1.0),
+            child: Image(
               image:
-                  lyricVisualizerCoverProvider(shown) ?? FileImage(File(shown)),
+                  lyricVisualizerCoverProvider(l.path) ??
+                  FileImage(File(l.path)),
               fit: BoxFit.cover,
               width: double.infinity,
               height: double.infinity,
               gaplessPlayback: true,
             ),
+          ),
+      ],
     );
   }
 }

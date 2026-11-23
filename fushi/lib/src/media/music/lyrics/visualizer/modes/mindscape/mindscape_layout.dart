@@ -158,6 +158,34 @@ MindscapeSourceLine mindscapeSourceOf(LyricVisualizerLine line) {
   );
 }
 
+final RegExp _inkCjk = RegExp('[一-龥぀-ヿ가-힯]');
+final RegExp _inkTall = RegExp(r'''[A-Z0-9bdfhklt'"!?()\[\]{}/|$&#@%]''');
+final RegExp _inkDotted = RegExp('[ij]');
+final RegExp _inkLetter = RegExp(r'[a-zà-ÿ]');
+
+/// 文字墨迹顶到基线的高度（em）——folia 用 Canvas `measureText().actualBoundingBoxAscent` 把
+/// 每个词「墨迹顶」对到锚点上，Flutter 没有墨迹边界接口，这里按字类估：CJK 0.84、大写 /
+/// 数字 / 带升部的字母 0.73、i / j 0.72、其余小写 0.53；没有可见字形时取 folia 的回退 0.78。
+/// 取全词最大值（与 actualBoundingBoxAscent 一样看最高的那个字形）。
+double mindscapeInkAscentEm(String text) {
+  double best = 0;
+  for (final String ch in text.characters) {
+    final double a = _inkCjk.hasMatch(ch)
+        ? 0.84
+        : _inkTall.hasMatch(ch)
+        ? 0.73
+        : _inkDotted.hasMatch(ch)
+        ? 0.72
+        : _inkLetter.hasMatch(ch)
+        ? 0.53
+        : ch.trim().isEmpty
+        ? 0
+        : 0.53;
+    if (a > best) best = a;
+  }
+  return best <= 0 ? 0.78 : best;
+}
+
 /// 字号（folia `chooseFontPx`）：随屏宽，字多 / 词多时收小。
 double mindscapeChooseFontPx(double width, int graphemeCount, int wordCount) {
   final int g = graphemeCount <= 0 ? 1 : graphemeCount;
@@ -421,6 +449,7 @@ Map<int, double> mindscapeEmphasisMap(
 /// 一个片段在屏幕上的落点（相对焦点，folia `WordPlacement`）。`y` 是基线。
 class MindscapePlacement {
   const MindscapePlacement({
+    required this.id,
     required this.wordIndex,
     required this.word,
     required this.text,
@@ -438,6 +467,9 @@ class MindscapePlacement {
     required this.isInterlude,
   });
 
+  /// 落点标识（folia `${word.text}-${wordIndex}-${lineIndex}-${fragmentIndex}-${fragmentIndexInWord}`）。
+  /// 不含歌词行号：相邻两句同位置的同一个词沿用同一份动画状态，从上一句的位置滑过去。
+  final String id;
   final int wordIndex;
   final MindscapeSourceWord word;
   final String text;
@@ -741,6 +773,9 @@ List<MindscapePlacement> mindscapeBuildPlacements({
 
     out.add(
       MindscapePlacement(
+        id:
+            '${f.word.text}-${f.wordIndex}-${plan.lineIndex}-'
+            '${plan.fragmentIndex}-${f.fragmentIndexInWord}',
         wordIndex: f.wordIndex,
         word: f.word,
         text: f.text,

@@ -6,6 +6,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
@@ -227,8 +228,12 @@ class _Part {
     this.oy = 0,
     this.slide = 0,
     this.alpha = 1,
+    this.back = false,
   });
   final int color;
+
+  /// 画在后层（folia blocks.ts 的 `back` 容器：double 的影子层整体压在所有色块下面）。
+  final bool back;
   final double lag;
   final double ox;
   final double oy;
@@ -288,20 +293,21 @@ class _Piece {
 /// 字宽（em），按字缓存。
 final Map<String, double> _advanceCache = <String, double>{};
 
+/// 字重：主题给了就用主题的，否则 800（folia `resolveThemeFontWeight(theme, 800)`）。
+FontWeight hanabiGlyphWeight(TextStyle base) =>
+    base.fontWeight ?? FontWeight.w800;
+
 double measureGlyphAdvance(String char, TextStyle base) {
   if (char.trim().isEmpty) return char == '　' ? 1 : 0.3;
   if (isUprightGlyph(char)) return 1;
-  final String key = '${base.fontFamily}|$char';
+  final FontWeight weight = hanabiGlyphWeight(base);
+  final String key = '${base.fontFamily}|${weight.value}|$char';
   final double? hit = _advanceCache[key];
   if (hit != null) return hit;
   final TextPainter tp = TextPainter(
     text: TextSpan(
       text: char,
-      style: base.copyWith(
-        fontSize: 100,
-        fontWeight: FontWeight.w800,
-        height: 1,
-      ),
+      style: base.copyWith(fontSize: 100, fontWeight: weight, height: 1),
     ),
     textDirection: TextDirection.ltr,
   )..layout();
@@ -339,8 +345,11 @@ GlyphEntry _paintGlyph(
   required double outline,
   required bool glow,
 }) {
+  // 一格的边长：字框 1.3 倍 + 描边 / 光晕的外扩，取整（folia glyphs.ts `cellSide`）。
   final double side =
-      px * 1.3 + 2 * math.max(outline * px, glow ? px * 0.32 : 0) + 4;
+      (px * 1.3 + 2 * math.max(outline * px, glow ? px * 0.32 : 0) + 4)
+          .ceilToDouble();
+  final FontWeight weight = hanabiGlyphWeight(base);
   final double ss = side * _supersample > 1024 ? 1024 / side : _supersample;
   final int pixels = math.max(1, (side * ss).ceil());
   ui.Image draw(void Function(ui.Canvas canvas) body) {
@@ -360,7 +369,7 @@ GlyphEntry _paintGlyph(
         text: char,
         style: base
             .merge(style)
-            .copyWith(fontSize: px, height: 1, fontWeight: FontWeight.w800),
+            .copyWith(fontSize: px, height: 1, fontWeight: weight),
       ),
       textDirection: TextDirection.ltr,
     )..layout();
@@ -386,6 +395,8 @@ GlyphEntry _paintGlyph(
           text(c, const TextStyle(color: Color(0xFFFFFFFF)));
         })
       : null;
+  // 光晕字：Canvas 2D 的 fillText 带 shadowBlur = 0.22 px（高斯 σ = shadowBlur / 2）、shadowColor 白、
+  // globalAlpha 0.85，画两遍。每遍先出模糊的影子再出实心字，两者都乘 0.85。
   final ui.Image? glowImage = glow
       ? draw((ui.Canvas c) {
           for (int i = 0; i < 2; i++) {
@@ -393,13 +404,14 @@ GlyphEntry _paintGlyph(
               c,
               TextStyle(
                 foreground: Paint()
-                  ..color = const Color(0xFFFFFFFF)
+                  ..color = const Color(0xD9FFFFFF)
                   ..maskFilter = ui.MaskFilter.blur(
                     BlurStyle.normal,
-                    px * 0.12,
+                    px * 0.22 / 2,
                   ),
               ),
             );
+            text(c, const TextStyle(color: Color(0xD9FFFFFF)));
           }
         })
       : null;
@@ -1007,6 +1019,19 @@ class HanabiText {
                   h + depth,
                 ),
               ));
+          // 台阶的顶面一条亮边（白 α 0.45，经 tint 后是同色叠一层 0.45）。
+          part.extras.add((
+            ui.Path()..addRect(
+              Rect.fromLTWH(
+                -g.advance / 2,
+                -(h + depth),
+                g.advance,
+                size * 0.07,
+              ),
+            ),
+            color,
+            0.45,
+          ));
           piece(
             <_Part>[part],
             _Anchor.bottom,
@@ -1129,7 +1154,8 @@ class HanabiText {
               ..addRect(Rect.fromLTWH(0, -t / 2, l, t));
             piece(
               <_Part>[
-                _Part(color2, lag: 0.09, ox: off, oy: off * 1.1)..path = rect,
+                _Part(color2, lag: 0.09, ox: off, oy: off * 1.1, back: true)
+                  ..path = rect,
                 _Part(color)..path = rect,
               ],
               _Anchor.start,
@@ -1464,8 +1490,22 @@ class HanabiText {
         style == BlockStyle.marker;
     canvas.save();
     canvas.translate(_shake.$1, _shake.$2);
+    for (int layer = 0; layer < 2; layer++) {
+      _paintBlockLayer(canvas, time, style, perGlyph, back: layer == 0);
+    }
+    canvas.restore();
+  }
+
+  void _paintBlockLayer(
+    ui.Canvas canvas,
+    double time,
+    BlockStyle style,
+    bool perGlyph, {
+    required bool back,
+  }) {
     for (final _Piece piece in _pieces) {
       for (final _Part part in piece.parts) {
+        if (part.back != back) continue;
         final double t = time - part.lag;
         if (t < piece.enterStart || t >= piece.exitEnd) continue;
         final double q = clamp01(
@@ -1592,7 +1632,6 @@ class HanabiText {
         canvas.restore();
       }
     }
-    canvas.restore();
   }
 
   // ─── 逐字 ───
@@ -1668,10 +1707,21 @@ class HanabiText {
     canvas.save();
     canvas.translate(x, y);
     if (rotation != 0) canvas.rotate(rotation);
-    if (skew != 0) canvas.skew(math.sin(skew), 0);
+    // Pixi 的 skew.x：x' = x + sin(k)·y，y' = cos(k)·y（矩阵 c = sin k、d = cos k）。
+    if (skew != 0) canvas.transform(_skewMatrix(skew));
     canvas.scale(sx == 0 ? 1e-4 : sx, sy == 0 ? 1e-4 : sy);
     body();
     canvas.restore();
+  }
+
+  static Float64List _skewMatrix(double skew) {
+    final Float64List m = Float64List(16);
+    m[0] = 1;
+    m[4] = math.sin(skew);
+    m[5] = math.cos(skew);
+    m[10] = 1;
+    m[15] = 1;
+    return m;
   }
 
   /// 字（阴影 → 描边 → 辉光 → 分身 → 正文 → 光标 / 下划线）。
@@ -1806,6 +1856,8 @@ class HanabiText {
           case 3: // 分身：分裂、色差、残影
             int tint = mixRgb(rig.tint, rig.sungTint, sing.color);
             tint = mixRgb(tint, rig.flashTint, sing.flash);
+            // 残影与正文同色（folia 在设 fx 着色前已按背面换色）。
+            if (pose.backside) tint = rig.backTint;
             if (splitting) {
               final double sep = pose.split;
               final double c = math.cos(rotation);

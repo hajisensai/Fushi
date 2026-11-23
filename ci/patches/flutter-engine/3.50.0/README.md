@@ -241,6 +241,38 @@ mock 新入口、旧入口被调就失败；新增 `MarkFrameAvailableFromProduc
 **删除条件**：上游让外部纹理 mark 不经平台线程直接在 raster 线程重画（或 Windows 默认不再合并
 平台 / UI 线程且 mark 不再经 Animator）时删掉。
 
+### `engine-gpu-texture-from-image.patch`（flutter 仓库根目录，与前八份互不重叠，叠在其后）
+
+修上游 3.50.0 Flutter GPU `Texture.fromImage` 的进程级内存泄漏（2026-11-23 整机卡死事故：开全屏歌词动画
+「镜台」后 Fushi 私有提交每秒涨约 180 MB，吃满系统提交上限，DWM 与多个服务崩溃）。
+
+根因链（3.47 没有这段，3.50 引入）：
+
+1. `lib/gpu/texture.cc` 的 `GetTextureFromImage` 为了调 `DlImageImpeller::GetImpellerTexture(ContentContext&)`，
+   每次都在 **UI 线程**上现造一个 `impeller::AiksContext`。
+2. `ContentContext` 构造函数（`impeller/entity/contents/content_context.cc` 约 600 行）给 1×1 空纹理提交一个
+   blit 命令缓冲。
+3. GLES 的 `CommandBufferGLES::OnSubmitCommands`（`command_buffer_gles.cc:82`）先
+   `GpuSubmissionTracker::RecordSubmission()`；UI 线程不能 react，完成回调只能 `ReactorGLES::AddOperation`
+   进 `ops_[UI 线程 id]`，而这个队列只有同一线程 react 时才会被 flush，于是这次提交**永远不完成**。
+4. `GpuSubmissionTracker::CompletedThrough()` 返回 `pending_.front() - 1`，从此卡死在这个 id 之前。
+5. 之后**真渲染器每一帧**的 `HostBuffer::Reset`（`impeller/core/host_buffer.cc:241-280`）都判定下一格 arena
+   「GPU 还没用完」，把整格挪进 `retired_buffers_`、再新分配一块 1 MB 的 host-visible 缓冲；`retired_buffers_`
+   靠 `CompletedThrough` 回收，永远不回收。泄漏与 Flutter GPU 是否还在用无关，主页空推帧也照漏。
+
+补丁：`DlImageImpeller` 加 `GetResolvedTexture()`（默认 nullptr；`DlImageImpellerTexture` 返回自有纹理，
+两个 deferred 实现返回 wrapper 已有的纹理），`GetTextureFromImage` 改调它，不再构造 `AiksContext`。三个
+`GetImpellerTexture` 实现本来就不用 renderer 参数，行为不变；skwasm 的实现不受影响（走默认 nullptr，与它
+不支持 Flutter GPU 一致）。
+
+实测（Windows 离屏 runner，`fushi/integration_test/flutter_gpu_from_image_leak_itest.dart`，每段 300 帧量
+`PrivateUsage`）：原版引擎 `toImageSync` / 异步 `toImage` 各 ±10 MB；第一次 `Texture.fromImage` 之后每 300 帧
++910 MB，且在主页空推帧上持续。同一份 exe 只换 `flutter_windows.dll` 的对照（`flutter drive --use-application-binary`）：原版 `fromImage` 段 +909.7 MB、之后空闲 +906.5 MB；补丁版 +34.9 MB、之后空闲 −6.9 MB，其余段均在 ±15 MB。守卫
+`fushi/test/build/gpu_texture_from_image_engine_guard_test.dart`。
+
+**删除条件**：上游 `GetTextureFromImage` 不再在 UI 线程构造 `ContentContext`（或 GLES 提交在不可 react 的线程上
+也能完成）时删掉。
+
 ### `angle-scrgb-swapchain.patch`（ANGLE 仓库根目录 `git apply`）
 
 ANGLE 的 D3D11 后端原本**从不设置交换链色彩空间**，也不声明
@@ -280,16 +312,16 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 
 ## 当前产物
 
-3.50.0 当前的补丁引擎是 `hdr-output-2`（2026-11-22 本机在全新源码树上编，**全部八份**引擎补丁 + ANGLE 补丁，
-与 3.47.6 的 `hdr-output-5` 同一功能集，含 BUG-5200 的 `engine-texture-frame-raster-thread`；
-三种模式 + 匹配的 pdb，`flutter-engine-windows-3.50.0-hdr-output-2.zip`，SHA-256
-`2fd147aa164c8269892a68e830827c0c5d339cf7d56e5b4fbea2537f0753ab58`）。已发 release
-`flutter-engine-3.50.0-hdr-output-2`（prerelease、非 Latest；tag 不以数字 / `v`+数字开头），
+3.50.0 当前的补丁引擎是 `hdr-output-3`（2026-11-23 本机在 `hdr-output-2` 的源码树上增量编，**全部九份**引擎补丁 +
+ANGLE 补丁，比 `-2` 多 BUG-5338 的 `engine-gpu-texture-from-image`；三种模式 + 匹配的 pdb，
+`flutter-engine-windows-3.50.0-hdr-output-3.zip`，SHA-256
+`e553fdce6d657c289f708944ec40ad56a5f31e9aec1e56854157e621b2b56094`）。已发 release
+`flutter-engine-3.50.0-hdr-output-3`（prerelease、非 Latest；tag 不以数字 / `v`+数字开头），
 `artifacts.json` 的 `engineVersion` / `url` / `sha256` 均指向它，CI 与
 `tool/engine_overlay.ps1 -Manifest` 可直接安装。
 
 改补丁后重编要换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`；在那之前出的包
-仍是旧引擎。旧 release 留着给旧提交复现用（3.50.0：`flutter-engine-3.50.0-hdr-output-1` 是前七份、不含
+仍是旧引擎。旧 release 留着给旧提交复现用（3.50.0：`flutter-engine-3.50.0-hdr-output-2` 是前八份、不含 BUG-5338 的第九份，`-1` 是前七份、不含
 BUG-5200 的第八份；3.47.6 时代：`flutter-engine-3.47.6-hdr-output-5` 是全部八份，`-4` 是前七份，
 `-3` 是前四份补丁，`-2` 是前三份、无 keyed mutex，`-1` 只有 Skia 路径的 HDR、不含 underlay；3.44.0 时代的是
 `flutter-engine-3.44.0-hdr-output-2`）。
