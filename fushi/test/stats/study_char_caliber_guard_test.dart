@@ -140,6 +140,9 @@ void main() {
             1,
         'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_scene.dart':
             1,
+        // hanabi_collage_plan：拼贴字块宽度按码点数估算、片头标题按码点数定字号（排版几何）。
+        'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_collage_plan.dart':
+            2,
         'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text_layout.dart':
             1,
         'lib/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_figures.dart':
