@@ -32,6 +32,7 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/pdf/pdf_engine.dart';
+import 'package:fushi/src/pdf/pdf_page_ready.dart';
 import 'package:fushi/src/pdf/pdf_search_sheet.dart';
 import 'package:fushi/src/pdf/pdf_text_search.dart';
 import 'package:fushi/src/pdf/pdf_text_sections.dart';
@@ -89,6 +90,10 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   /// 每页结构化文本缓存（`loadStructuredText` 有解析成本，点一次查一次会卡）。
   /// key = 0-based 页索引。
   final Map<int, PdfPageText> _pageTextCache = <int, PdfPageText>{};
+
+  /// 本页 dispose 时完成：等逐步加载中的页（[pdfLoadedPage]）随之放弃——viewer
+  /// 卸载后 pdfrx 停止逐步加载，没加载的页永远不会来。
+  final Completer<void> _disposeSignal = Completer<void>();
 
   late final Future<_PdfBookLoad?> _loadFuture = _load();
 
@@ -228,6 +233,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     _search
       ..removeListener(_onSearchChanged)
       ..dispose();
+    _disposeSignal.complete();
     ExitFlushRegistry.instance.defer(_flushPosition);
     super.dispose();
   }
@@ -406,12 +412,24 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   // ── Phase 2：点选查词 ─────────────────────────────────────────────────
 
+  /// 读第 [pageIndex] 页（0 起）的文本层（不缓存）：逐步加载下先等这页真正加载
+  /// （HBK-AUDIT-210：占位页读出的是空文本，会被当成「无文本层」）。文档未就绪 /
+  /// 本页已销毁返回 null。
+  Future<PdfPageText?> _loadPageText(int pageIndex) async {
+    if (!mounted || !_pdfController.isReady) return null;
+    return _pdfController.useDocument<PdfPageText?>(
+      (PdfDocument document) =>
+          pdfLoadPageText(document, pageIndex, cancel: _disposeSignal.future),
+    );
+  }
+
   /// 取（并缓存）某页的结构化文本。[pageIndex] 为 0-based。
-  Future<PdfPageText?> _pageText(int pageIndex, PdfPage page) async {
+  Future<PdfPageText?> _pageText(int pageIndex) async {
     final PdfPageText? cached = _pageTextCache[pageIndex];
     if (cached != null) return cached;
     try {
-      final PdfPageText text = await page.loadStructuredText();
+      final PdfPageText? text = await _loadPageText(pageIndex);
+      if (text == null || !mounted) return null;
       _pageTextCache[pageIndex] = text;
       return text;
     } catch (e, stack) {
@@ -438,19 +456,28 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     final List<PdfPage> pages = _pdfController.pages;
 
     for (int i = 0; i < pages.length && i < layout.pageLayouts.length; i++) {
-      final Rect pageRect = layout.pageLayouts[i];
-      if (!pageRect.contains(documentPosition)) continue;
+      final Rect tappedRect = layout.pageLayouts[i];
+      if (!tappedRect.contains(documentPosition)) continue;
 
-      final PdfPage page = pages[i];
-      final PdfPageText? text = await _pageText(i, page);
-      if (!mounted) return false;
+      final PdfPageText? text = await _pageText(i);
+      if (!mounted || !_pdfController.isReady) return false;
+      // 等文本层时这页可能刚从逐步加载的占位实例换成真实例（尺寸 / 旋转与页框
+      // 这时才准），坐标换算一律用等完之后的实例与布局；点击点是按点下时的旧
+      // 页框给的，按页内相对位置搬到新页框（布局重排后旧文档坐标已不在原处）。
+      final PdfPage page = _pdfController.pages[i];
+      final Rect pageRect = _pdfController.layout.pageLayouts[i];
       if (text == null || text.charRects.isEmpty) {
         _notifyNoTextLayer();
         return false;
       }
+      final Offset pagePosition = pdfRemapToPageRect(
+        documentPosition,
+        from: tappedRect,
+        to: pageRect,
+      );
 
       // 文档坐标 → 页内 PDF 坐标（原点左下、Y 轴向上、单位 point）。
-      final PdfPoint pt = documentPosition
+      final PdfPoint pt = pagePosition
           .translate(-pageRect.left, -pageRect.top)
           .toPdfPoint(page: page, scaledPageSize: pageRect.size);
 
@@ -623,13 +650,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
     if (!mounted || !_pdfController.isReady) return null;
     try {
       final PdfPageText? text =
-          _pageTextCache[pageIndex] ??
-          await _pdfController.useDocument<PdfPageText?>((
-            PdfDocument document,
-          ) async {
-            if (pageIndex >= document.pages.length) return null;
-            return document.pages[pageIndex].loadStructuredText();
-          });
+          _pageTextCache[pageIndex] ?? await _loadPageText(pageIndex);
       if (text == null) return null;
       return (
         fullText: text.fullText,
@@ -1017,19 +1038,18 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       cue.textFragmentId,
     );
     if (frag == null || !_pdfController.isReady) return null;
-    final List<PdfPage> pages = _pdfController.pages;
     final List<PdfCuePageSpan> spans = await pdfSplitCueRangeAcrossPages(
       startPage: frag.sectionIndex,
       normStart: frag.normCharStart,
       normEnd: frag.normCharEnd,
-      pageCount: pages.length,
+      pageCount: _pdfController.pageCount,
       normLengthOf: (int page) async =>
-          (await _normalizedTextOf(page, pages[page]))?.normalized.text.length,
+          (await _normalizedTextOf(page))?.normalized.text.length,
     );
     final Map<int, List<PdfRect>> rectsByPage = <int, List<PdfRect>>{};
     for (final PdfCuePageSpan span in spans) {
       final ({PdfPageText text, NormalizedTextWithOffsets normalized})? page =
-          await _normalizedTextOf(span.page, pages[span.page]);
+          await _normalizedTextOf(span.page);
       if (page == null) continue;
       final ({int start, int end})? range = pdfRawRangeForNormRange(
         page.normalized,
@@ -1054,8 +1074,8 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
 
   /// 某页（0 起）的文本层 + 其归一化映射（缓存）；文本层读不到返回 null。
   Future<({PdfPageText text, NormalizedTextWithOffsets normalized})?>
-  _normalizedTextOf(int pageIndex, PdfPage page) async {
-    final PdfPageText? text = await _pageText(pageIndex, page);
+  _normalizedTextOf(int pageIndex) async {
+    final PdfPageText? text = await _pageText(pageIndex);
     if (text == null) return null;
     final NormalizedTextWithOffsets normalized = _normalizedPageText
         .putIfAbsent(

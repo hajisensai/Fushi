@@ -54,9 +54,16 @@ typedef SrsGen4MigrationProgress = ({
 
 /// `gen4_migrate_status` 的结果。
 final class SrsGen4MigrationStatus {
-  const SrsGen4MigrationStatus({required this.state, this.running});
+  const SrsGen4MigrationStatus({
+    required this.state,
+    this.failure,
+    this.running,
+  });
 
   final SrsGenState state;
+
+  /// [SrsGenState.migrationFailed] 时内核判定的原因与报告路径；其余状态 = null。
+  final SrsGen4MigrationFailure? failure;
 
   /// 本进程里这个目录正在跑的迁移；没有 = null（别的进程在迁移看 [state] == [SrsGenState.migratingElsewhere]）。
   final SrsGen4MigrationProgress? running;
@@ -80,7 +87,11 @@ final class SrsGen4MigrationStatus {
         );
       }
     }
-    return SrsGen4MigrationStatus(state: state, running: running);
+    return SrsGen4MigrationStatus(
+      state: state,
+      failure: SrsGen4MigrationFailure.tryParse(j['failure']),
+      running: running,
+    );
   }
 }
 
@@ -171,6 +182,7 @@ final class SrsGen4MigrationOutcome {
     this.code,
     this.reason,
     this.reportPath,
+    this.failure,
     this.report,
     this.neededBytes,
     this.freeBytes,
@@ -186,6 +198,9 @@ final class SrsGen4MigrationOutcome {
 
   /// [SrsGen4MigrationVerdict.aborted] 时诊断报告的文件路径（只含 ID 与计数）。
   final String? reportPath;
+
+  /// [SrsGen4MigrationVerdict.aborted] 时内核给的中止原因（与之后状态命令判出的同一形状）；其余结论 = null。
+  final SrsGen4MigrationFailure? failure;
 
   /// 报告本体（提交 / 放弃时有）。
   final Object? report;
@@ -211,6 +226,7 @@ final class SrsGen4MigrationOutcome {
       code: j['code'] as String?,
       reason: j['reason'] as String?,
       reportPath: j['reportPath'] as String?,
+      failure: SrsGen4MigrationFailure.tryParse(j['failure']),
       report: j['report'],
       neededBytes: (j['needed'] as num?)?.toInt(),
       freeBytes: (j['free'] as num?)?.toInt(),
@@ -220,6 +236,10 @@ final class SrsGen4MigrationOutcome {
 
 /// 迁移的三条全局命令。全部按库目录 [dir]（`<数据库目录>`，与 [SrsCore.open] 同一个）。
 abstract final class SrsGen4Migration {
+  /// 迁移报告在库目录里的文件名（migrate.rs `REPORT_FILE`，测试核对两边一致）。只有 ID 与计数，不含笔记内容。
+  /// 只用来给导出的文件起名：报告是哪一种失败、在哪里，由内核在状态里给（[SrsGen4MigrationFailure]），不在这里读。
+  static const String reportFileName = 'srs4-migration-report.json';
+
   /// 目录的代际状态与本进程里正在跑的进度（只读，快：只看文件与锁、读旧库的一行 schema，可在 UI isolate 上轮询）。
   static SrsGen4MigrationStatus status(String dir, {String? libraryPath}) {
     final Object? r = SrsCoreBindings.load(

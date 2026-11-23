@@ -6,6 +6,7 @@
 // kCoveredElsewhere['ai/Send fetched pages to AI'] 指向这里。
 import 'dart:io';
 
+import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -87,6 +88,7 @@ void main() {
             required VideoSubtitleSegmenterMode mode,
             MossBackendPreference mossBackend = MossBackendPreference.auto,
             VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+            AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
           }) async =>
               VideoSubtitleRecognizerChoice(recognizer: FakeVideoRecognizer()),
       completerFactory: (AiProviderConfig _) =>

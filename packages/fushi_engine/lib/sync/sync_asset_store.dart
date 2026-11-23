@@ -63,6 +63,48 @@ SyncTransferProgress? syncTransferFractionOnly(
 /// 10 MiB 上限；但也不能不设防，否则坏 / 恶意远端能把进程内存撑爆。
 const int kSyncBytesAssetMaxBytes = 256 * 1024 * 1024;
 
+/// [SyncAssetStore.getBytesAsset] 读到的资产超过上限（[kSyncBytesAssetMaxBytes]）。
+///
+/// 不是传输故障、重试也没用：坏 / 恶意远端放了一份超大文件。各后端原样抛出，不映射
+/// 成「不存在」（null），调用方据此报错而不是当作对端没有这份资产。
+class SyncAssetTooLarge implements Exception {
+  const SyncAssetTooLarge(this.assetId, this.maxBytes);
+
+  final String assetId;
+  final int maxBytes;
+
+  @override
+  String toString() =>
+      'SyncAssetTooLarge: $assetId exceeds the $maxBytes byte limit';
+}
+
+/// 把 [source] 整份收进内存，累计超过 [maxBytes] 就立刻抛 [SyncAssetTooLarge]
+/// （跳出 `await for` 即取消上游订阅，连接 / 文件句柄随之关闭，不再往下收）。
+///
+/// [declaredLength] 是来源事先声明的长度（HTTP `Content-Length`、文件 / 远端
+/// stat 的大小）：给了且已超限就一个字节都不收。声明值只用来提前拒，不用来放行——
+/// 实际收到的字节照样逐块计数（声明可能是错的或撒谎）。
+///
+/// 所有 [SyncAssetStore.getBytesAsset] 实现共用这一处计数，上限契约只写一次。
+Future<Uint8List> readSyncAssetBytesCapped(
+  Stream<List<int>> source, {
+  required String assetId,
+  int maxBytes = kSyncBytesAssetMaxBytes,
+  int? declaredLength,
+}) async {
+  if (declaredLength != null && declaredLength > maxBytes) {
+    throw SyncAssetTooLarge(assetId, maxBytes);
+  }
+  final BytesBuilder builder = BytesBuilder(copy: false);
+  await for (final List<int> chunk in source) {
+    if (builder.length + chunk.length > maxBytes) {
+      throw SyncAssetTooLarge(assetId, maxBytes);
+    }
+    builder.add(chunk);
+  }
+  return builder.takeBytes();
+}
+
 /// 与业务无关的资产存取层：在“命名空间”（文件夹/前缀）下存/取/列二进制资产，
 /// 外加通用 JSON 读写与小资产的整份字节读写。每个 `SyncBackend` 都实现它，供同步编排器统一调用。
 abstract class SyncAssetStore {
@@ -101,8 +143,9 @@ abstract class SyncAssetStore {
   /// 给「内容要交给别的 isolate 解码」的调用方用（聚合快照，BUG-5159）：走
   /// [getJsonAsset] 会在调用方（app 里即 UI isolate）做整份 UTF-8 + JSON 解码。
   /// 不存在时返回 null，或像 [getJsonAsset] 一样抛错（随后端：HTTP 类后端把 404
-  /// 报成错误），调用方两种都要接住。能边收边计数的后端在超过
-  /// [kSyncBytesAssetMaxBytes] 时抛错，防止坏 / 恶意远端把进程撑爆。
+  /// 报成错误），调用方两种都要接住。超过 [kSyncBytesAssetMaxBytes] 一律抛错、
+  /// 不整份读进内存（能边收边计数的后端用 [readSyncAssetBytesCapped]，只能落临时
+  /// 文件的后端先看大小），防止坏 / 恶意远端把进程撑爆。
   Future<Uint8List?> getBytesAsset(String assetId);
 
   /// 在 [namespaceId] 下把 [bytes] 原样写成名为 [name] 的资产（覆盖）。与

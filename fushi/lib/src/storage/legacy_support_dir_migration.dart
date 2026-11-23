@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi_engine/utils/process/system_command.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -416,11 +417,10 @@ Future<int> recoverLegacyMacosPrefs({
 
 Future<String?> _defaultsReadLegacyDomain(String prefixedKey) async {
   try {
-    final ProcessResult result = await Process.run('defaults', <String>[
-      'read',
-      kLegacyMacosBundleId,
-      prefixedKey,
-    ]);
+    final ProcessResult result = await Process.run(
+      systemCommand('defaults'),
+      <String>['read', kLegacyMacosBundleId, prefixedKey],
+    );
     if (result.exitCode != 0) return null; // 旧域 / 旧键不存在。
     final String out = (result.stdout as String).trim();
     return out.isEmpty ? null : out;

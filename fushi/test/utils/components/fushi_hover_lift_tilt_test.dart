@@ -130,4 +130,61 @@ void main() {
     await tester.pump(FushiMotion.medium - FushiMotion.short);
     expect(tiltSinY(tester), closeTo(0, 1e-9));
   });
+
+  // HBK-AUDIT-228：整组倾斜（歌词页「封面 + 压在上面的唱片」）时，组里各件同一个
+  // 变换：封面框自带的那层 FushiTilt 不再各自倾斜，兄弟节点（唱片）不留在平面上。
+  testWidgets('group 倾斜：整组共用一个变换，子树里的倾斜层不再各自旋转', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const Key disc = ValueKey<String>('disc');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: FushiHoverLift(
+              builder: (BuildContext _, bool __) => const FushiTilt(
+                group: true,
+                child: SizedBox(
+                  width: 200,
+                  height: height,
+                  child: Row(
+                    children: <Widget>[
+                      FushiTilt(
+                        child: SizedBox(width: coverWidth, height: height),
+                      ),
+                      SizedBox(key: disc, width: 100, height: height),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final TestGesture mouse = await tester.createGesture(
+      kind: PointerDeviceKind.mouse,
+    );
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: const Offset(790, 390));
+    await tester.pump();
+    await mouse.moveTo(const Offset(20, 20));
+    await tester.pumpAndSettle();
+
+    bool tilted(Transform t) => t.transform.entry(3, 2) != 0;
+    final List<Transform> all = tester
+        .widgetList<Transform>(find.byType(Transform))
+        .where(tilted)
+        .toList();
+    expect(all, hasLength(1), reason: '只该有整组那一层倾斜');
+    final List<Transform> overDisc = tester
+        .widgetList<Transform>(
+          find.ancestor(of: find.byKey(disc), matching: find.byType(Transform)),
+        )
+        .where(tilted)
+        .toList();
+    expect(overDisc, <Transform>[all.single], reason: '唱片跟着整组倾斜');
+  });
 }

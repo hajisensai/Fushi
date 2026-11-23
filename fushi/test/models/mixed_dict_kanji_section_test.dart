@@ -112,7 +112,7 @@ void main() {
   });
 
   group('kanjiPartSettingsOf(重导继承)', () {
-    test('只带汉字部分的两个键', () {
+    test('只带汉字部分的键（开关 / 位置 / 汉字卡折叠态）', () {
       final Map<String, String> carried = kanjiPartSettingsOf(
         _dict(
           'm',
@@ -120,6 +120,7 @@ void main() {
             ..._mixed,
             kDictKanjiHiddenKey: 'true',
             kDictKanjiOrderKey: '2',
+            kDictKanjiCollapseKey: 'expanded',
             'revision': 'old',
           },
         ),
@@ -127,7 +128,42 @@ void main() {
       expect(carried, <String, String>{
         kDictKanjiHiddenKey: 'true',
         kDictKanjiOrderKey: '2',
+        kDictKanjiCollapseKey: 'expanded',
       });
+    });
+
+    test('拍板台 6uasoIUvSR：汉字卡折叠态——混合词典读汉字部分自己的键，纯 kanji '
+        '词典读自身三态，纯 term 词典恒继承', () {
+      final Dictionary mixed = _dict(
+        'm',
+        metadata: <String, String>{
+          ..._mixed,
+          kDictKanjiCollapseKey: 'collapsed',
+        },
+      )..expandedLanguages = <String>['ja'];
+      expect(
+        mixed.kanjiCardCollapseStateFor(JapaneseLanguage.instance),
+        DictionaryCollapseState.collapsed,
+        reason: '术语部分的「展开」不能漏进汉字卡（BUG-3573）',
+      );
+      expect(
+        _dict(
+          'm2',
+          metadata: _mixed,
+        ).kanjiCardCollapseStateFor(JapaneseLanguage.instance),
+        DictionaryCollapseState.inherit,
+      );
+      final Dictionary kanji = _dict('k', type: DictionaryType.kanji)
+        ..expandedLanguages = <String>['ja'];
+      expect(
+        kanji.kanjiCardCollapseStateFor(JapaneseLanguage.instance),
+        DictionaryCollapseState.expanded,
+      );
+      final Dictionary term = _dict('t')..collapsedLanguages = <String>['ja'];
+      expect(
+        term.kanjiCardCollapseStateFor(JapaneseLanguage.instance),
+        DictionaryCollapseState.inherit,
+      );
     });
 
     test('没有旧记录 / 没设过 → 空', () {
@@ -218,6 +254,33 @@ void main() {
       await repo.setDictionaryKanjiPartHidden(reloaded(), false);
       expect(reloaded().isKanjiPartHidden, isFalse);
       expect(reloaded().metadata.containsKey(kDictKanjiHiddenKey), isFalse);
+    });
+
+    test('汉字部分的折叠三态：写穿 DB，不动术语部分的折叠名单', () async {
+      Dictionary reloaded() => repo.termDictionaries.firstWhere(
+        (Dictionary d) => d.name == '現代新国語辞典',
+      );
+      await repo.setDictionaryKanjiPartCollapseState(
+        reloaded(),
+        DictionaryCollapseState.expanded,
+      );
+      await repo.loadFromDb();
+      expect(
+        reloaded().kanjiCardCollapseStateFor(JapaneseLanguage.instance),
+        DictionaryCollapseState.expanded,
+      );
+      expect(
+        reloaded().collapseStateFor(JapaneseLanguage.instance),
+        DictionaryCollapseState.inherit,
+        reason: '术语部分的三态不受影响（BUG-3573）',
+      );
+      expect(reloaded().metadata[kDictHasKanjiKey], 'true');
+
+      await repo.setDictionaryKanjiPartCollapseState(
+        reloaded(),
+        DictionaryCollapseState.inherit,
+      );
+      expect(reloaded().metadata.containsKey(kDictKanjiCollapseKey), isFalse);
     });
   });
 }

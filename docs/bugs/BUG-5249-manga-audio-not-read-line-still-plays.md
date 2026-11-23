@@ -1,0 +1,6 @@
+## BUG-5249 · manga-audio-not-read-line-still-plays
+- **报告**：2026-11-22（合并后审查 HBK-AUDIT-214，来源 PR #4125 `docs/reviews/2026-11-22-project-review.md`）
+- **真实性**：✅ 真 bug。阅读页「编辑这句配音」把已配音气泡的类型改成「不读」（`CastLineKind.skip`）后，`MangaLineEditAction.kind.changesVoice == true`，`editMangaAudioLineInPlace`（develop@283a920286 `fushi/lib/src/media/manga/audio/manga_audio_line_editor.dart:509-530`）照样走 `regenerateMangaLineWithReview` 单句合成；引擎 `MangaAudioRenderer.regenerate` / `_planBackfill` 不看 `kind.isAudible`，保留候选后清单这句换成新音频，播放器继续念它。整卷生成的判据（`planMangaRender` 跳过 `!kind.isAudible`）与单句操作不一致。
+- **[x] ① 已修复** — 引擎：`regenerate` 对「不读」句抛 `line_not_read`，`_planBackfill` 返回 `lineMissing`，单句操作与整卷同一判据；新增 `MangaAudioRenderer.dropUnreadLines`（只看指定句，改成「不读」的从清单拿掉、出账、存清单、清音频）。App：`dropMangaUnreadLines`（停播 → 拿掉 → 账本落盘 → 库按新清单整份重登记）；行编辑器在这句是「不读」时不再合成，改为从成品拿掉（这卷正在生成时提示等生成结束）。`line_not_read` 有失败文案。
+- **[x] ② 已加自动化测试** — 引擎 `manga_audio_renderer_test.dart`：`改成「不读」的句子：不再单句合成 / 补回，从清单拿掉并清掉音频`；App `fushi/test/media/manga/audio/manga_audio_render_app_test.dart`：`单句改成「不读」：从成品清单与库里拿掉，播放器不再念它（HBK-AUDIT-214）`（库里音频列表与 cue 只剩还读的句子）。
+- **备注**：新增 i18n `manga_audio_line_not_read_dropped` / `manga_audio_line_not_read_render_busy` / `manga_audio_failure_line_not_read`。

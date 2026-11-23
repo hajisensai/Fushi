@@ -5,6 +5,8 @@ import 'package:fushi/src/media/manga/library/online_manga_library_service.dart'
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show MangaPageChanged;
 import 'package:fushi_engine/sync/online_manga_host_reader.dart';
 
 /// 互联 host 侧：用本机在线漫画运行时给对端现取**没下载的章**。
@@ -63,6 +65,7 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
     required String sourceMetadata,
     required Map<String, Object?> chapter,
     required int index,
+    required String? expectedPageKey,
   }) async {
     final Future<OnlineMangaChapterPageRefs> table = _pages(
       bookKey,
@@ -71,6 +74,14 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
     );
     final OnlineMangaChapterPageRefs pages = await table;
     RangeError.checkValidIndex(index, null, 'index', pages.length);
+    // 调用方按 [chapterPageKeys] 那份页表定的这一页（HBK-AUDIT-205）；那份页表可能
+    // 已被淘汰、这里拿到的是重解析出的另一份。在取图所用的这份上核对身份，换了页
+    // 就不取：按页序取会把另一页端出去。
+    if (expectedPageKey != null && pages[index].pageKey != expectedPageKey) {
+      throw MangaPageChanged(
+        'online manga page $index changed at the source: $bookKey',
+      );
+    }
     try {
       return await pages.fetch(index);
     } catch (_) {

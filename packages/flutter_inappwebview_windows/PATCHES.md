@@ -191,3 +191,24 @@ verified at runtime on this machine.
     and never scaled by `captureScaleFactor_` (texture raster scale).
 - Guard: `fushi/test/widgets/inappwebview_windows_native_guards_test.dart`
   (the package's own tests are skipped by CI).
+
+## Headless WebView mute opt-out via `allowBackgroundAudioPlaying` (2026-11-22)
+
+- `windows/headless_in_app_webview/headless_in_app_webview.cpp` (`prepare`)
+  formerly muted every `HeadlessInAppWebView` unconditionally via
+  `ICoreWebView2_8::put_IsMuted(TRUE)` so background manga/novel scrapers
+  sharing `--autoplay-policy=no-user-gesture-required` could not play ad audio.
+  That also silenced the Windows Apple Music MusicKit JS `HeadlessInAppWebView`
+  bridge (`fushi/lib/src/media/music/apple_music/apple_music_web_bridge.dart`).
+- `windows/in_app_webview/in_app_webview_settings.{h,cpp}` now parse and
+  round-trip `allowBackgroundAudioPlaying` (default `false`).
+- `windows/headless_in_app_webview/headless_in_app_webview.cpp`: sets
+  `webView->isHeadless = true` and skips `put_IsMuted(TRUE)` when
+  `allowBackgroundAudioPlaying` is `true` (background scrapers remain muted by
+  default).
+- `windows/in_app_webview/in_app_webview.{h,cpp}`: adds `isHeadless` and, in
+  `InAppWebView::setSettings`, updates `ICoreWebView2_8::put_IsMuted` only when
+  `isHeadless` is `true` so visible WebViews (whose `allowBackgroundAudioPlaying`
+  defaults to `false`) are never muted.
+- Guards: `fushi/test/widgets/inappwebview_windows_native_guards_test.dart` and
+  `fushi/test/media/video/web_video_shared_cookie_jar_test.dart`.

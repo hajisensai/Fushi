@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -187,14 +188,7 @@ class _AudioCdRipDialogState extends State<AudioCdRipDialog> {
   /// （全局快捷键、悬浮反馈球），裸 `pop` 会弹掉那一页而把对话框留成关不掉的孤儿。
   void _close(String? directory) {
     if (!mounted) return;
-    final ModalRoute<Object?>? route = ModalRoute.of(context);
-    if (route == null) return;
-    final NavigatorState navigator = Navigator.of(context);
-    if (route.isCurrent) {
-      navigator.pop(directory);
-    } else {
-      navigator.removeRoute(route, directory);
-    }
+    closeOwnRoute<String?>(context, directory);
   }
 
   @override

@@ -9,6 +9,7 @@ import 'package:fushi/src/utils/misc/system_tts_voices.dart';
 import 'package:fushi/src/utils/misc/windows_speech_worker.dart';
 import 'package:fushi_engine/tts/tts_audio_probe.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
+import 'package:fushi_engine/utils/process/system_command.dart';
 
 /// Desktop TTS-to-file (the system voice: read-aloud presets and the term-audio
 /// fallback).
@@ -71,7 +72,10 @@ Future<String> ttsToFileDesktop({
 Future<List<TtsVoice>> listDesktopTtsVoices() async {
   try {
     if (Platform.isMacOS) {
-      final ProcessResult r = await Process.run('say', <String>['-v', '?']);
+      final ProcessResult r = await Process.run(systemCommand('say'), <String>[
+        '-v',
+        '?',
+      ]);
       return r.exitCode == 0
           ? parseMacOSSayVoices('${r.stdout}')
           : const <TtsVoice>[];
@@ -140,7 +144,10 @@ Future<String> _sayMacOS(
   final String? code = desktopTtsLanguageCode(languageTag);
   try {
     if (voice == null && code != null) {
-      final ProcessResult list = await Process.run('say', <String>['-v', '?']);
+      final ProcessResult list = await Process.run(
+        systemCommand('say'),
+        <String>['-v', '?'],
+      );
       voice = list.exitCode == 0
           ? pickMacOSVoice('${list.stdout}', code)
           : null;
@@ -152,7 +159,7 @@ Future<String> _sayMacOS(
       }
     }
     final ProcessResult r = await Process.run(
-      'say',
+      systemCommand('say'),
       sayMacOSArguments(outputPath: outputPath, text: text, voice: voice),
     );
     if (r.exitCode == 0 && hasAudibleWav(out)) {
@@ -160,7 +167,10 @@ Future<String> _sayMacOS(
     }
     if (chosenVoice != null) {
       // 点名的声音不在了 `say` 也是非零退出：先分清是不是这个原因。
-      final ProcessResult list = await Process.run('say', <String>['-v', '?']);
+      final ProcessResult list = await Process.run(
+        systemCommand('say'),
+        <String>['-v', '?'],
+      );
       final bool installed =
           list.exitCode == 0 &&
           parseMacOSSayVoices(

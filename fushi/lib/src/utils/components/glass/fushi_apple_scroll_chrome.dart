@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
     show SmoothWheelScrollScope;
@@ -74,8 +75,9 @@ class FushiAppleScrollEdge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color base = (color ?? Theme.of(context).scaffoldBackgroundColor)
-        .withValues(alpha: 1);
+    final Color base = (color ?? fushiAppleScrollEdgeColor(context)).withValues(
+      alpha: 1,
+    );
     final bool top = side == FushiScrollEdgeSide.top;
     final bool solid = glassMaterialOf(context) == FushiGlassMaterial.off;
     Widget band = Stack(
@@ -389,4 +391,47 @@ bool fushiNotificationFromVisibleSubtree(Notification notification) {
   };
   if (source == null || !source.mounted) return true;
   return TickerMode.getValuesNotifier(source).value.enabled;
+}
+
+/// 标出一块「侧窗格」：它里面的竖向滚动是导航（设置宽屏左栏的分类列表等），
+/// 不是页面正文，不驱动页面级导航层——顶部 scroll edge 带、外壳大标题收起、
+/// 底栏最小化都只跟正文走。
+///
+/// 起因（2026-11-21 用户截图）：玻璃设计 + 自定义壁纸下滚设置左栏，外壳把它
+/// 当成正文滚到了顶部下面，整宽亮出顶部边缘带（而左栏本身离顶还隔着卡片外边距，
+/// 内容根本没压到顶边下）。判据由 [fushiNotificationDrivesPageChrome] 读。
+class FushiSidePaneScrollScope extends InheritedWidget {
+  const FushiSidePaneScrollScope({required super.child, super.key});
+
+  /// [context] 是否在某个侧窗格里。只读不建依赖（通知回调里调用）。
+  static bool contains(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<FushiSidePaneScrollScope>() != null;
+
+  @override
+  bool updateShouldNotify(FushiSidePaneScrollScope oldWidget) => false;
+}
+
+/// 这条通知该不该驱动页面级导航层（顶部边缘带 / 大标题收起 / 底栏最小化）：
+/// 来自可见子树（[fushiNotificationFromVisibleSubtree]），且不在侧窗格
+/// （[FushiSidePaneScrollScope]）里。页面级的滚动观察一律用它过滤。
+bool fushiNotificationDrivesPageChrome(Notification notification) {
+  if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+  final BuildContext? source = switch (notification) {
+    ScrollNotification(:final BuildContext? context) => context,
+    ScrollMetricsNotification(:final BuildContext context) => context,
+    _ => null,
+  };
+  if (source == null || !source.mounted) return true;
+  return !FushiSidePaneScrollScope.contains(source);
+}
+
+/// [FushiAppleScrollEdge] 的缺省底色：页面底色，不透明化。脚手架底色完全透明
+/// 时（[FushiPageBackdrop] 在画用户的背景图片，把子树的 scaffoldBackgroundColor
+/// 换成 `Colors.transparent`）它的 RGB 是黑色，直接不透明化就是一条黑带
+/// （2026-11-21 用户截图），此时退回设计 token 的页面底色。半透明的玻璃底色
+/// 保留自己的 RGB、只抬不透明度（半透明的 Mica 底会让渐隐发灰）。
+Color fushiAppleScrollEdgeColor(BuildContext context) {
+  final Color scaffold = Theme.of(context).scaffoldBackgroundColor;
+  if (scaffold.a > 0) return scaffold.withValues(alpha: 1);
+  return FushiDesignTokens.of(context).surfaces.page.withValues(alpha: 1);
 }

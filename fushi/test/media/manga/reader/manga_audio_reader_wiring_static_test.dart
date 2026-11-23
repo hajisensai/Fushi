@@ -97,6 +97,28 @@ void main() {
     );
   });
 
+  test('起播成品音频的会话归属绑在页面去留上（HBK-AUDIT-215）', () {
+    final String start = _methodBody(
+      readAloud,
+      'Future<bool> _startAudioIfRegistered() async {',
+    );
+    // 起会话只走带归属的入口；裸 `_session.start(` 起到一半退出会留下没人接管的会话。
+    expect(start, contains('startMangaAudioSessionOwned('));
+    expect(start, isNot(contains('_session.start(')));
+    expect(start, contains('wanted: () => _wantsAudioStart'));
+    // 「开始退出」在返回路径（先于 dispose、此时仍 mounted）就记下。
+    final String stop = _methodBody(
+      readAloud,
+      'void stopAudioUnlessBackground(String logTag) {',
+    );
+    expect(stop.indexOf('_leaving = true'), greaterThanOrEqualTo(0));
+    expect(
+      stop.indexOf('_leaving = true'),
+      lessThan(stop.indexOf('audiobookBackgroundPlay')),
+      reason: '开着「退出后续播」也要记下退出，起到一半的会话不归本页',
+    );
+  });
+
   test('键盘路径经 resolveMangaAudioKeyTakeover 让有声接管空格 / 左右键', () {
     final String resolve = _methodBody(
       page,

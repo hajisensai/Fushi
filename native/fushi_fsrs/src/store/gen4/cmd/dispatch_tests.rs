@@ -628,6 +628,35 @@ fn cache_config_set_rebuilds_only_when_the_config_changes() {
     assert!(v["settled"].is_object(), "{v}");
 }
 
+/// BUG-5209：开库的 `cache_config_set` 在同一个事务里复活带删除标记的默认牌组——一笔本机写（推进本机状态行、回包
+/// `revive` 带 `localRevision` / `localEpoch`，宿主照本机写命令接）；默认牌组活着时回包不变、什么都不写。
+#[test]
+fn cache_config_set_revives_a_deleted_default_deck_in_the_same_transaction() {
+    let m = migrated();
+    let deck = default_deck_id(P);
+    g4(m.h, "local_state_ensure", T1, json!({}));
+    let items = vec![json!({"e": edit("deck", &deck, "deleted", json!(T1)), "note": null})];
+    let (v, _) = g4_files(m.h, "apply", T1, json!({}), Some(&items));
+    let r0 = v["localRevision"].as_i64().unwrap();
+
+    let v = g4(m.h, "cache_config_set", T1 + 1, json!({"caches": cfg()}));
+    assert_eq!(v["changed"], json!(false), "配置没变，派生层不重建：{v}");
+    let revive = &v["revive"];
+    assert_eq!(revive["revived"], json!(true), "{v}");
+    let r1 = revive["localRevision"].as_i64().unwrap();
+    assert!(r1 > r0, "{r0} -> {r1}");
+    assert!(revive["localEpoch"].is_string(), "{v}");
+    assert!(
+        revive.get(crate::store::gen4::refresh::TALLY_KEY).is_none(),
+        "刷新计数在分发器里取走、不交给宿主：{v}"
+    );
+    assert_eq!(g4(m.h, "local_state", T1, json!({}))["revision"], json!(r1));
+
+    let v = g4(m.h, "cache_config_set", T1 + 2, json!({"caches": cfg()}));
+    assert_eq!(v, json!({"changed": false}), "已经活着：不再写");
+    assert_eq!(g4(m.h, "local_state", T1, json!({}))["revision"], json!(r1));
+}
+
 // ---------------------------------------------------------------------- 打开状态
 
 fn state_of(e: &str) -> Value {
@@ -664,6 +693,7 @@ fn every_generation_state_opens_explicitly() {
     assert!(!dir.0.join(GEN4_FILE).exists());
     assert_eq!(std::fs::read(dir.0.join(LEGACY_FILE)).unwrap(), old);
     assert_eq!(gen_status(&dir.0)["state"], json!("needsMigration"));
+    assert_eq!(gen_status(&dir.0)["failure"], Value::Null);
     assert_eq!(gen_status(&dir.0)["running"], Value::Null);
     // 另一个进程拿着换代锁：迁移进行中。
     {
@@ -712,6 +742,41 @@ fn every_generation_state_opens_explicitly() {
     assert_eq!(state_of(&e), json!("sealedOldOnly"), "{e}");
     assert!(!dir.0.join(GEN4_FILE).exists());
     assert_eq!(gen_status(&dir.0)["state"], json!("sealedOldOnly"));
+}
+
+/// 上次迁移中止：打开错误与状态命令带同一个内核判定的原因（`{failure: {reason, reportPath}, state}`），调用方不另读
+/// 报告文件。
+#[test]
+fn the_open_error_carries_the_failure_reason() {
+    let d = library();
+    let dir = legacy_copy(&d, "s1reason");
+    let identity = {
+        let c =
+            Connection::open_with_flags(dir.0.join(LEGACY_FILE), OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .unwrap();
+        crate::store::seal::legacy_identity(&c).unwrap()
+    };
+    let report = json!({
+        "version": 1,
+        "verdict": "aborted",
+        "profileVerdict": "incomplete",
+        "legacyIdentity": identity,
+    });
+    let path = dir.0.join(crate::store::gen4::migrate::REPORT_FILE);
+    std::fs::write(&path, report.to_string()).unwrap();
+    let (rc, e) = open(&dir.0, 0).unwrap_err();
+    assert_eq!(rc, STORE_NOT_MIGRATED, "{e}");
+    let at = e.find('{').unwrap_or_else(|| panic!("{e}"));
+    let payload: Value = serde_json::from_str(&e[at..]).unwrap();
+    assert_eq!(payload["state"], json!("migrationFailed"), "{e}");
+    assert_eq!(
+        payload["failure"],
+        json!({"reason": "incomplete", "reportPath": path.display().to_string()}),
+        "{e}"
+    );
+    let st = gen_status(&dir.0);
+    assert_eq!(st["state"], payload["state"]);
+    assert_eq!(st["failure"], payload["failure"]);
 }
 
 /// 全新安装建空库；旁边后来出现一份没封存、也不是迁移来源的协议 3 库：不开（不并入、不改它），单独的返回码。

@@ -79,14 +79,17 @@ void main() {
 
   test('引擎：HDR 窗口 surface 带 scRGB-linear 色彩空间，且以它为能力前提', () {
     final String engine = _read('$patchDir/engine-hdr-output.patch');
+    // 3.50 起窗口 surface 的属性表由 CreateWindowSurfaceWithConfig 拼：色彩空间
+    // 键与值必须成对追加，且在 EGL_NONE 之前（漏掉值 / 放到 EGL_NONE 之后都无效）。
+    const String colorspace =
+        '+    surface_attributes.push_back(EGL_GL_COLORSPACE_KHR);\n'
+        '+    surface_attributes.push_back(EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT);\n';
+    expect(engine, contains(colorspace));
     expect(
-      RegExp(
-        r'^\+\s+EGL_GL_COLORSPACE_KHR,$',
-        multiLine: true,
-      ).hasMatch(engine),
+      engine.indexOf(colorspace) <
+          engine.indexOf('surface_attributes.push_back(EGL_NONE);'),
       isTrue,
     );
-    expect(engine, contains('EGL_GL_COLORSPACE_SCRGB_LINEAR_EXT'));
     expect(engine, contains('"EGL_EXT_gl_colorspace_scrgb_linear"'));
   });
 

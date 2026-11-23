@@ -1,0 +1,6 @@
+## BUG-5236 · gen4 时间线恢复比同层前身先后时只看胜出 dot 的一份副本，与缓存层的钳位证据不同（HBK-AUDIT-204）
+- **报告**：2026-11-22（2026-11-22 合并后代码审查 HBK-AUDIT-204，针对 PR #4142）
+- **真实性**：✅ 真 bug（源码确认 + 单元复现）。BUG-5190 给新代恢复加的 `Index::class_winner_in`（修复前 `native/fushi_fsrs/src/store/gen4/class.rs:403`）只把胜出的那一份代表（`reg_ix.k`）单独拼成落库行再取排序键；缓存层（`class_lines_by` → `edit_lines_as`，`derive.rs:1179`）把同一个规范 dot 的几份副本并成一行、`server_time` 取各份最小值。排序键的物理时刻按 `server_time + 10 分钟` 钳位（`ordering::sort_physical`），代表那份 `server_time` 晚、另一份早时，两路的排序键不同：夹在两个钳位值之间的另一张同层前身的写入，在缓存（重建）里算更新、在恢复里算更旧，恢复写回的继承标志与同一时刻的重建不同。修复前单元测试实测：恢复给 `server_time: Some(20000000)`，缓存给 `Some(0)`。
+- **[x] ① 已修复** — `class_registers` 拆出 `class_registers_judged`，带上这次按类判定的全部参与写入与各自状态；`class_winner_in` 把它们一起按类拼行（与 `class_lines_by` 非捷径路径同一套 `edit_lines_as` 并副本、取最小 `server_time`），再交寄存器内核 `registers::register_winner` 取胜者排序键——恢复与缓存层出自同一份证据。`keep`（时间线截点）照旧只留那一刻已有的副本，与同一时刻的重建一致。
+- **[x] ② 已增加自动化测试** — `store/gen4/class.rs` `the_restore_sort_key_aggregates_every_copy_of_the_winning_dot`：同一 dot 两份副本（代表 `server_time` 晚、另一份早到被钳位），断言 `class_winner_in` 的排序键等于缓存行经 `register_winner` 得到的，且钳位后物理时刻为 `CLOCK_TOLERANCE_MS`。修复前红（见上）。BUG-5190 的 `restore_writes_back_the_flag_of_the_latest_written_predecessor_of_a_layer` 仍绿。
+- **备注**：协议 3 恢复的测试参照（`store/sync2/timeline.rs` `winner_at`）不在生产路径，未动。

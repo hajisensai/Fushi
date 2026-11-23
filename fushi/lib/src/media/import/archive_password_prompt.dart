@@ -20,6 +20,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/archive/archive_passwords.dart';
 
@@ -28,6 +29,10 @@ abstract interface class ArchivePasswordVault {
   Future<String?> read(String key);
   Future<void> write(String key, String value);
   Future<void> delete(String key);
+
+  /// 删掉所有以 [prefix] 开头的键，返回删了几个。安全存储读不了（Linux 没有
+  /// keyring 等）时抛出，由调用方告诉用户，不当作「没有可删的」。
+  Future<int> deleteWithPrefix(String prefix);
 }
 
 /// [FlutterSecureStorage] 实现：iOS / macOS Keychain、Android Keystore、Windows DPAPI、
@@ -55,7 +60,31 @@ final class SecureArchivePasswordVault implements ArchivePasswordVault {
 
   @override
   Future<void> delete(String key) => _storage.delete(key: key);
+
+  /// flutter_secure_storage 没有按前缀删的接口：列出本 app 的全部键再逐个删。
+  @override
+  Future<int> deleteWithPrefix(String prefix) async {
+    // 空前缀会命中同一存储里别的功能（上锁口令、音乐插件保险库）的全部键。
+    if (prefix.isEmpty) {
+      throw ArgumentError.value(prefix, 'prefix', 'must not be empty');
+    }
+    final Map<String, String> all = await _storage.readAll();
+    int deleted = 0;
+    for (final String key in all.keys) {
+      if (!key.startsWith(prefix)) continue;
+      await _storage.delete(key: key);
+      deleted++;
+    }
+    return deleted;
+  }
 }
+
+/// 设置 › 通用 › 作品隐私「清除已记住的压缩包密码」：删掉导入加密包时勾「记住
+/// 密码」存下的全部口令，返回删了几个。安全存储读不了时抛出（见
+/// [ArchivePasswordVault.deleteWithPrefix]）。
+Future<int> forgetAllArchivePasswords({
+  ArchivePasswordVault vault = const SecureArchivePasswordVault(),
+}) => vault.deleteWithPrefix(AppArchivePasswordProvider.storageKeyPrefix);
 
 /// 弹口令对话框（测试注入）。
 typedef ArchivePasswordAsker =
@@ -89,9 +118,12 @@ final class AppArchivePasswordProvider implements ArchivePasswordProvider {
   /// 同一时刻只开一个口令对话框：批量导入里几个加密包会并发来问。
   Future<void> _promptChain = Future<void>.value();
 
+  /// 记住的口令在安全存储里的键前缀：清除全部时按它挑键，别的功能的键不受影响。
+  static const String storageKeyPrefix = 'archive_password_v1_';
+
   /// 安全存储里的键（指纹是 64 位十六进制，不含特殊字符）。
   static String storageKey(String fingerprint) =>
-      'archive_password_v1_$fingerprint';
+      '$storageKeyPrefix$fingerprint';
 
   @override
   Future<String?> remembered(String fingerprint) async {
@@ -198,7 +230,7 @@ class _ArchivePasswordDialogState extends State<ArchivePasswordDialog> {
     final String? notice = _notice;
     final Duration motion = fushiMotionDuration(context, FushiMotion.short);
     return FushiAlertDialog(
-      icon: const FushiDialogHeroIcon(icon: Icons.lock_outline),
+      icon: const FushiDialogHeroIcon(icon: FushiIcons.lock),
       title: Text(t.archive_password_title),
       scrollable: true,
       content: Column(
@@ -245,8 +277,8 @@ class _ArchivePasswordDialogState extends State<ArchivePasswordDialog> {
                 suffixIcon: FushiIconButton(
                   key: const ValueKey<String>('archive-password-visibility'),
                   icon: _obscure
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
+                      ? FushiIcons.visibility
+                      : FushiIcons.visibilityOff,
                   tooltip: _obscure
                       ? t.archive_password_show
                       : t.archive_password_hide,

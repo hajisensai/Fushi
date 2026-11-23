@@ -2,13 +2,15 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
 import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
-    show ImportMatchOptionsCard, ImportProgressCard;
+    show ImportMatchOptionsCard;
+import 'package:fushi/src/media/import/import_progress_card.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show attachAsrCueTokenTiming, finalizeAlignedCues, parseCuesForFormat;
 import 'package:fushi_engine/media/audiobook/book_text_sections.dart'
@@ -1007,7 +1009,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
             ? t.audiobook_import_success
             : '${t.audiobook_import_success} · $tail';
         FushiToast.show(msg: msg, severity: ToastSeverity.success);
-        Navigator.pop(context, true); // true = reload player
+        closeOwnRoute(context, true); // true = reload player
       }
     } on FileSystemException catch (e, stack) {
       ErrorLogService.instance.log('AudiobookImport.doImport', e, stack);

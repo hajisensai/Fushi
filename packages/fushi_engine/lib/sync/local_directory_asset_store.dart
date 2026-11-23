@@ -116,7 +116,13 @@ class LocalDirectoryAssetStore implements SyncAssetStore {
   Future<Uint8List?> getBytesAsset(String assetId) async {
     final File f = File(assetId);
     if (!f.existsSync()) return null;
-    return f.readAsBytes();
+    // 别的设备经 WebDAV 写进来的文件不受本机控制：先看大小再读，读的过程中照样
+    // 计数（读的同时还可能在被写长）。
+    return readSyncAssetBytesCapped(
+      f.openRead(),
+      assetId: assetId,
+      declaredLength: await f.length(),
+    );
   }
 
   @override

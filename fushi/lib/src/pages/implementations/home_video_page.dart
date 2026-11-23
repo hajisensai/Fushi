@@ -22,6 +22,7 @@ import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/background_keyed_derivation.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/media/video/cover_ui/video_series_meta.dart';
@@ -499,6 +500,37 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   void _onCoverExistenceChanged() {
     if (!mounted) return;
     _coverExistsRevision.value++;
+    setState(() {});
+  }
+
+  /// BUG-5253 余项：卡片 build 不在 UI 线程上排序刮削图组 / `jsonDecode` 标签
+  /// （[videoSeriesMetaPlan]）、不逐集解析集号（[parsedEpisodeNumbersOf]）。两者都
+  /// 按输入键控、在后台 isolate 整批算好：刮削映射 / 合集分组换代时预取
+  /// （[_prefetchSeriesPlans] / [_prefetchEpisodeNumbers]），build 只读结果。
+  late final BackgroundKeyedDerivation<
+    String,
+    VideoSeriesMetaInput,
+    VideoSeriesMetaPlan
+  >
+  _seriesPlans =
+      BackgroundKeyedDerivation<
+        String,
+        VideoSeriesMetaInput,
+        VideoSeriesMetaPlan
+      >(
+        compute: videoSeriesMetaPlan,
+        inputEquals: videoSeriesMetaInputSame,
+        onReady: _onBackgroundDerivationReady,
+      );
+  late final BackgroundKeyedDerivation<int, List<String>, List<int?>>
+  _episodeNumbers = BackgroundKeyedDerivation<int, List<String>, List<int?>>(
+    compute: parsedEpisodeNumbersOf,
+    inputEquals: _sameStrings,
+    onReady: _onBackgroundDerivationReady,
+  );
+
+  void _onBackgroundDerivationReady() {
+    if (!mounted) return;
     setState(() {});
   }
 
@@ -1243,6 +1275,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _coverExists.dispose();
     _remoteCoverExists.dispose();
     _coverExistsRevision.dispose();
+    _seriesPlans.dispose();
+    _episodeNumbers.dispose();
     _specsListened?.removeListener(_onVideoSpecsChangedForFilter);
     _headerSearch.dispose();
     _searchController.dispose();
@@ -1574,6 +1608,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         );
       }
     });
+    _prefetchSeriesPlans();
   }
 
   /// 整表轮次落地前按刮削展示日志补齐：[cursor] 之后的写入由增量重读覆盖到
@@ -1939,6 +1974,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       _scrapeCursor = caughtUpCursor;
       _subscribedCollectionIds = subscribedCollectionIds;
     });
+    _prefetchSeriesPlans();
   }
 
   /// 「已更新未看」行的订阅→合集解析输入（新 Drift 订阅：条目→任务、元数据身份→
@@ -3427,6 +3463,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 仅为穷尽 switch。
       case DropIntent.importNewManga:
       case DropIntent.unsupportedMangaArchive:
+      case DropIntent.importBookArchive:
       case DropIntent.ignore:
         break;
     }
@@ -7921,12 +7958,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               _legacyWatchAtByTitle,
               _scrapeMaps,
             ],
-            () => _groupVideos(
-              books,
-              groupedRemoteVideos,
-              primaryByEntry,
-              memberSortIndex,
-            ),
+            () {
+              final List<CollectionGroup<_VideoSlot>> folded = _groupVideos(
+                books,
+                groupedRemoteVideos,
+                primaryByEntry,
+                memberSortIndex,
+              );
+              // 分组换代才发：集号解析在后台跑，卡片 build 只读结果。
+              _prefetchEpisodeNumbers(folded);
+              return folded;
+            },
           ))
             group,
         ];
@@ -9300,12 +9342,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           p.completed || (p.positionMs ?? 0) > 0 || (p.lastPlayedAt ?? 0) > 0,
     );
     final int index = progresses.isEmpty ? 0 : continueMemberIndex(progresses);
-    if (anyTrace && completed < total) {
-      // BUG-4921：N 是续播那集的真实集号（与详情页集卡序号同一判据），不是顺位号。
-      final int episodeNumber = collectionMemberEpisodeNumber(<String>[
-        for (final CollectionOrderingItem<_VideoSlot> item in group.items)
-          item.payload.local?.videoPath ?? item.payload.remote!.parseName,
-      ], index);
+    // BUG-4921：N 是续播那集的真实集号（与详情页集卡序号同一判据
+    // [collectionMemberEpisodeNumber]），不是顺位号。整批解析在后台 isolate 做
+    // （BUG-5253 余项，[_prefetchEpisodeNumbers]）；这份成员名单还没解析完时先
+    // 写「已看完 x/N」，不拿顺位号冒充集号。
+    final List<int?>? episodeNumbers = anyTrace && completed < total
+        ? _episodeNumbers.lookup(
+            group.collection!.id,
+            _collectionEpisodeNames(group),
+          )
+        : null;
+    if (episodeNumbers != null) {
+      final int episodeNumber = episodeNumbers[index] ?? index + 1;
       return (
         label:
             '${t.collection_continue_progress(n: episodeNumber)}'
@@ -9323,6 +9371,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       started: anyTrace,
       index: anyTrace ? index : 0,
     );
+  }
+
+  /// 合集成员的集号解析输入（与 [CollectionEpisodeSlot.filename] 同源：本地是视频
+  /// 路径，远端是 [RemoteVideoInfo.parseName]），按成员顺序。
+  static List<String> _collectionEpisodeNames(
+    CollectionGroup<_VideoSlot> group,
+  ) => <String>[
+    for (final CollectionOrderingItem<_VideoSlot> item in group.items)
+      item.payload.local?.videoPath ?? item.payload.remote!.parseName,
+  ];
+
+  /// 合集分组换代时把各合集的成员名单整批发往后台解析集号（名单没变的跳过）。
+  void _prefetchEpisodeNumbers(List<CollectionGroup<_VideoSlot>> groups) {
+    _episodeNumbers.prefetch(<int, List<String>>{
+      for (final CollectionGroup<_VideoSlot> group in groups)
+        if (group.collection case final MediaCollectionRow collection)
+          collection.id: _collectionEpisodeNames(group),
+    });
   }
 
   /// 合集叠层后几层的封面（近 → 远，最多两张）：按合集内顺序取成员自己的封面
@@ -12888,7 +12954,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// - 概览：合集刮削标签前两个 · ★ 评分。
   ///
   /// [bookUid] 给出而这本视频自己没有作品资料时（剧集里的一集），借它主合集的。
+  ///
+  /// 排序 / 解析部分（[VideoSeriesMetaPlan]）由后台 isolate 预算（BUG-5253 余项），
+  /// 这里只做哈希查找与本地文件存在性查询；还没算好时先给上一份结果（同键旧
+  /// 输入的）或空资料，算好后整页重建一次。
   FushiSeriesMeta _videoBlockMeta({int? collectionId, String? bookUid}) {
+    final ({String key, VideoSeriesMetaInput input, int? collectionId}) source =
+        _seriesPlanSource(collectionId: collectionId, bookUid: bookUid);
+    final int? cid = source.collectionId;
+    final VideoSeriesMetaPlan plan = _isEmptySeriesInput(source.input)
+        ? VideoSeriesMetaPlan.empty
+        : _seriesPlans.lookup(source.key, source.input, allowStale: true) ??
+              VideoSeriesMetaPlan.empty;
+    return resolveVideoSeriesMeta(
+      plan,
+      localImage: _localFileCover,
+      ownPoster: cid == null
+          ? null
+          : _collectionOwnCover(_collectionsById[cid]),
+      fallbackYear: bookUid == null ? null : _airYearByUid[bookUid],
+    );
+  }
+
+  /// [_videoBlockMeta] 的取数口径：合集取合集自己的作品 / 图组 / 刮削资料；散片取
+  /// 自己的，自己没有作品资料时（剧集里的一集）借主合集的作品与刮削资料（自己有
+  /// 图组仍用自己的）。返回后台计划的缓存键（用的输入与合集完全相同时直接共用
+  /// 合集的键）、输入，以及借到的合集 id（取自有封面用）。
+  ({String key, VideoSeriesMetaInput input, int? collectionId})
+  _seriesPlanSource({int? collectionId, String? bookUid}) {
     int? cid = collectionId;
     VideoMetadataWorkRow? work = cid != null
         ? _metadataWorkByCollection[cid]
@@ -12896,6 +12989,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     List<MediaImageRow>? images = cid != null
         ? _mediaImagesByCollection[cid]
         : _mediaImagesByBookUid[bookUid];
+    final bool ownBookData = cid == null && (work != null || images != null);
     if (cid == null && bookUid != null && work == null) {
       cid = _collectionIdByUid[bookUid];
       if (cid != null) {
@@ -12903,17 +12997,52 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         images = images ?? _mediaImagesByCollection[cid];
       }
     }
-    return videoSeriesMeta(
-      work: work,
-      mediaImages: images,
-      workImages: work == null ? null : _metadataImagesByWork[work.id],
-      scrape: cid == null ? null : _collectionScrapeMetaById[cid],
-      localImage: _localFileCover,
-      ownPoster: cid == null
-          ? null
-          : _collectionOwnCover(_collectionsById[cid]),
-      fallbackYear: bookUid == null ? null : _airYearByUid[bookUid],
+    final VideoMetadataWorkRow? resolvedWork = work;
+    return (
+      key: collectionId != null
+          ? 'c:$collectionId'
+          : (ownBookData || cid == null ? 'b:$bookUid' : 'c:$cid'),
+      input: (
+        work: resolvedWork,
+        mediaImages: images,
+        workImages: resolvedWork == null
+            ? null
+            : _metadataImagesByWork[resolvedWork.id],
+        scrape: cid == null ? null : _collectionScrapeMetaById[cid],
+      ),
+      collectionId: cid,
     );
+  }
+
+  static bool _isEmptySeriesInput(VideoSeriesMetaInput input) =>
+      input.work == null &&
+      input.mediaImages == null &&
+      input.workImages == null &&
+      input.scrape == null;
+
+  /// 刮削映射换代（整表落地 / 增量补丁）后把所有带刮削资料的合集与散片的
+  /// [VideoSeriesMetaPlan] 整批发往后台；输入没变的键（增量时没被点名的）跳过。
+  void _prefetchSeriesPlans() {
+    final Map<String, VideoSeriesMetaInput> inputs =
+        <String, VideoSeriesMetaInput>{};
+    void add(({String key, VideoSeriesMetaInput input, int? collectionId}) s) {
+      if (!_isEmptySeriesInput(s.input)) inputs[s.key] = s.input;
+    }
+
+    for (final int cid in <int>{
+      ..._metadataWorkByCollection.keys,
+      ..._mediaImagesByCollection.keys,
+      ..._collectionScrapeMetaById.keys,
+    }) {
+      add(_seriesPlanSource(collectionId: cid));
+    }
+    for (final String uid in <String>{
+      ..._metadataWorkByBook.keys,
+      ..._mediaImagesByBookUid.keys,
+    }) {
+      add(_seriesPlanSource(bookUid: uid));
+    }
+    _seriesPlans.prefetch(inputs);
   }
 
   /// 视频书的用户标签（BUG-1808）：墙卡与首页横滚卡共用同一口径，别再各处 inline
@@ -13217,6 +13346,16 @@ class _RowCardSpec {
   /// 合集条目给 [collectionId]，本地散片给 [bookUid]，远端占位都不给。
   final int? collectionId;
   final String? bookUid;
+}
+
+/// 两份成员名单逐项相同（集号解析的输入比较，[BackgroundKeyedDerivation]）。
+bool _sameStrings(List<String> a, List<String> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (int i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }
 
 /// 视频库分组 union 载荷（多端库联合视图 §2.3 任务10）：本地视频行 [local] 或
