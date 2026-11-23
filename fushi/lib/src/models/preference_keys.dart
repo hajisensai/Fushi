@@ -1187,6 +1187,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）
   // 补新集（video_library_update_probe.dart）；与「番剧新集提醒」开关分开。
   'video_library_auto_update',
+  // bool（拍板台 zTedU_pOQF）：auto_open 默认 false = YouTube 直播回放带聊天回放时，开始
+  // 播放就打开聊天栏；show_author 默认 true = 聊天栏每条消息上方显示发送者。
+  'video_live_chat_auto_open',
+  'video_live_chat_show_author',
   'video_lock_window_aspect_ratio',
   // int（默认 -1 = 自动）：媒体服务器（Jellyfin/Emby）串流画质档在
   // JellyfinVideoClient.kQualityPresets 里的下标；选档 = 向服务器声明码率 / 宽度上限，

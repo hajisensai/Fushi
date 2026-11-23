@@ -7497,6 +7497,18 @@ class AppModel
   Future<void> setVideoPortraitSubtitleList(bool value) =>
       prefsRepo.setVideoPortraitSubtitleList(value);
 
+  /// YouTube 直播回放带聊天回放时开始播放就打开聊天栏，默认关（拍板台 zTedU_pOQF）。
+  bool get videoLiveChatAutoOpen => prefsRepo.videoLiveChatAutoOpen;
+
+  Future<void> setVideoLiveChatAutoOpen(bool value) =>
+      prefsRepo.setVideoLiveChatAutoOpen(value);
+
+  /// 聊天栏显示发送者，默认开（拍板台 zTedU_pOQF）。
+  bool get videoLiveChatShowAuthor => prefsRepo.videoLiveChatShowAuthor;
+
+  Future<void> setVideoLiveChatShowAuthor(bool value) =>
+      prefsRepo.setVideoLiveChatShowAuthor(value);
+
   /// 手机 / 平板切出 app 或锁屏后视频声音继续播，默认关（拍板台 42UUu_kcwD）。
   bool get videoBackgroundPlay => prefsRepo.videoBackgroundPlay;
 
