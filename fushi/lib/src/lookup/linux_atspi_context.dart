@@ -138,6 +138,7 @@ Future<AtspiSelectionContext?> findFocusedSelectionContext(
   required int ownPid,
   int maxExpand = 600,
   int nodeBudget = kAtspiWalkNodeBudget,
+  void Function(String message)? log,
 }) async {
   final List<AtspiRef> apps = await tree.applications();
   // Applications are independent (one per D-Bus connection): ask them all at
@@ -145,9 +146,14 @@ Future<AtspiSelectionContext?> findFocusedSelectionContext(
   final List<List<AtspiRef>> activeWindows = await Future.wait(
     apps.map((AtspiRef app) => _activeWindows(tree, app, ownPid)),
   );
-  for (final AtspiRef window in activeWindows.expand((List<AtspiRef> w) => w)) {
+  final List<AtspiRef> windows = activeWindows
+      .expand((List<AtspiRef> w) => w)
+      .toList();
+  int focusedCount = 0;
+  for (final AtspiRef window in windows) {
     final AtspiRef? focused = await _focusedIn(tree, window, nodeBudget);
     if (focused == null) continue;
+    focusedCount++;
     final AtspiSelectionContext? context = await _selectionContext(
       tree,
       focused,
@@ -155,6 +161,12 @@ Future<AtspiSelectionContext?> findFocusedSelectionContext(
     );
     if (context != null) return context;
   }
+  // Counts only (privacy): tells "no active window" (focus already moved,
+  // e.g. to Fushi) from "focused object has no text / selection".
+  log?.call(
+    'atspi: no selection (apps=${apps.length} activeWindows=${windows.length} '
+    'focused=$focusedCount)',
+  );
   return null;
 }
 
@@ -478,6 +490,7 @@ Future<AtspiSelectionContext?> captureLinuxAtspiContext({
       DBusAtspiTree(client),
       ownPid: pid,
       maxExpand: maxExpand,
+      log: log,
     ).timeout(timeout);
   } on TimeoutException {
     log?.call('atspi: timed out after ${timeout.inMilliseconds} ms');

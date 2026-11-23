@@ -259,6 +259,27 @@ void main() {
       );
     });
 
+    test('logs counts only when nothing is found', () async {
+      final List<String> logs = <String>[];
+      final AtspiSelectionContext? ctx = await findFocusedSelectionContext(
+        _FakeTree(
+          apps: const <AtspiRef>[AtspiRef(':1.4', '/root')],
+          nodes: _appWithText(
+            ':1.4',
+            text: novel,
+            selection: (target, target + 2),
+            windowActive: false,
+          ),
+        ),
+        ownPid: _ownPid,
+        log: logs.add,
+      );
+      expect(ctx, isNull);
+      expect(logs, <String>[
+        'atspi: no selection (apps=1 activeWindows=0 focused=0)',
+      ]);
+    });
+
     test('expands at most maxExpand characters each side and accepts a '
         'reversed selection', () async {
       final String long = '${'あ' * 1000}見当${'い' * 1000}';
