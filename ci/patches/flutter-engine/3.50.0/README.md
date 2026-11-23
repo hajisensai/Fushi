@@ -312,16 +312,16 @@ pack（连同 pdb 打 zip——`flutter build windows` 要求缓存里有 `flutt
 
 ## 当前产物
 
-3.50.0 当前的补丁引擎是 `hdr-output-2`（2026-11-22 本机在全新源码树上编，**全部八份**引擎补丁 + ANGLE 补丁，
-与 3.47.6 的 `hdr-output-5` 同一功能集，含 BUG-5200 的 `engine-texture-frame-raster-thread`；
-三种模式 + 匹配的 pdb，`flutter-engine-windows-3.50.0-hdr-output-2.zip`，SHA-256
-`2fd147aa164c8269892a68e830827c0c5d339cf7d56e5b4fbea2537f0753ab58`）。已发 release
-`flutter-engine-3.50.0-hdr-output-2`（prerelease、非 Latest；tag 不以数字 / `v`+数字开头），
+3.50.0 当前的补丁引擎是 `hdr-output-3`（2026-11-23 本机在 `hdr-output-2` 的源码树上增量编，**全部九份**引擎补丁 +
+ANGLE 补丁，比 `-2` 多 BUG-5338 的 `engine-gpu-texture-from-image`；三种模式 + 匹配的 pdb，
+`flutter-engine-windows-3.50.0-hdr-output-3.zip`，SHA-256
+`e553fdce6d657c289f708944ec40ad56a5f31e9aec1e56854157e621b2b56094`）。已发 release
+`flutter-engine-3.50.0-hdr-output-3`（prerelease、非 Latest；tag 不以数字 / `v`+数字开头），
 `artifacts.json` 的 `engineVersion` / `url` / `sha256` 均指向它，CI 与
 `tool/engine_overlay.ps1 -Manifest` 可直接安装。
 
 改补丁后重编要换一个新的 `patchVersion` 发新 release，再改本目录的 `artifacts.json`；在那之前出的包
-仍是旧引擎。旧 release 留着给旧提交复现用（3.50.0：`flutter-engine-3.50.0-hdr-output-1` 是前七份、不含
+仍是旧引擎。旧 release 留着给旧提交复现用（3.50.0：`flutter-engine-3.50.0-hdr-output-2` 是前八份、不含 BUG-5338 的第九份，`-1` 是前七份、不含
 BUG-5200 的第八份；3.47.6 时代：`flutter-engine-3.47.6-hdr-output-5` 是全部八份，`-4` 是前七份，
 `-3` 是前四份补丁，`-2` 是前三份、无 keyed mutex，`-1` 只有 Skia 路径的 HDR、不含 underlay；3.44.0 时代的是
 `flutter-engine-3.44.0-hdr-output-2`）。
