@@ -30,7 +30,8 @@ import 'package:test/test.dart';
 const String _token = 'module-layer-token';
 const String _peerToken = 'peer-token-1';
 
-/// 迁移前（815279ce19，即 develop d095b87a48 + 设计稿）的服务器在 [_startFull] 同样装配下 `/api/capabilities` 的原文。
+/// 迁移前（815279ce19，即 develop d095b87a48 + 设计稿）的服务器在 [_startFull] 同样装配下 `/api/capabilities` 的原文，
+/// 加上之后新增、与模块层无关的能力位（`liveLibrary.onlineItems`，在线源条目同步 1037455d2a）。
 const String _kLegacyCapabilitiesJson =
     '{"srsChangesV1":true,"mangaOcr":{"supported":false,"modelsReady":fal'
     'se},"jobs":{"kinds":[]},"downloads":{"supported":true,"backend":"emb'
@@ -42,7 +43,7 @@ const String _kLegacyCapabilitiesJson =
     'ameStream":false,"hostUpdate":false,"webdav":{"treeListingLevels":2}'
     ',"liveLibrary":{"dictionaries":false,"books":false,"audio":false,"lo'
     'calAudioContentIdV2":false,"videos":false,"manga":false,"videoMetada'
-    'ta":false,"tags":false,"pdfBooks":false,"mediaLinks":false,"streamVi'
+    'ta":false,"tags":false,"pdfBooks":false,"mediaLinks":false,"onlineItems":false,"streamVi'
     'deos":false,"deletionTombstones":false,"videoDeletion":false,"videoT'
     'ranscode":false,"videoSubtitleDefault":false,"videoSubtitleDefaultEp'
     'isode":false,"videoSubtitleClear":false,"videoSidecarSubtitles":fals'
