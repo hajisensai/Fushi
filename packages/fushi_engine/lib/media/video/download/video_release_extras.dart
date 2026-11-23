@@ -6,22 +6,10 @@
 ///
 /// 刻意**不**复用 `classifyLocalVideoExtra`：它按 `basenameWithoutExtension`
 /// 切扩展名，发布标题里的 `AAC2.0` / `DDP5.1` 会被当成扩展名截断，后半截标题
-/// 直接丢掉。
+/// 直接丢掉。标记词表本身与它共用 [videoExtraMarkerKind]（同一份词，BUG-5260）。
 library;
 
-/// 显式特典标记（小写后匹配，按字母数字边界；尾随数字允许，如 `PV2` `NCOP1`）。
-///
-/// 只收发布组专门用来标特典的词。`Special` `Extra` `SP` `OVA` `Movie`
-/// `Complete` 这类宽词**一律不收**：它们天然出现在正片标题里（`Special A`、
-/// `Extra Olympia Kyklos`，BUG-1969），拿来判「只有特典」必然误伤。
-final RegExp _extrasMarker = RegExp(
-  r'(?<![a-z0-9])'
-  r'(?:ncop|nced|creditless|pvs?|cms?|trailers?|teasers?|menus?|bonus(?:es)?)'
-  r'\d*(?![a-z0-9])',
-);
-
-/// 中日文特典标记（子串匹配：CJK 没有词边界，`CM集` `予告編` 都应命中）。
-const List<String> _cjkExtrasMarkers = <String>['特典', '予告', 'ノンクレジット', 'メニュー'];
+import 'package:fushi_engine/media/video/metadata/video_extra_markers.dart';
 
 /// 正片迹象：命中任意一条就说明这条发布里有正片，哪怕它顺带打包了特典
 /// （`01-12 + NCOP/NCED`、`S01 Complete`）——「含特典」不等于「只有特典」。
@@ -48,10 +36,7 @@ final List<RegExp> _mainContentSignals = <RegExp>[
 /// 判据偏保守：拿不准时返回 false（当正片），因为误判「只有特典」的代价是用户
 /// 想要的正片被跳过，而漏判只是多下几个特典。
 bool looksLikeExtrasOnlyRelease(String title) {
+  if (videoExtraMarkerKind(title) == null) return false;
   final String lower = title.toLowerCase();
-  final bool marked =
-      _extrasMarker.hasMatch(lower) ||
-      _cjkExtrasMarkers.any((String marker) => lower.contains(marker));
-  if (!marked) return false;
   return !_mainContentSignals.any((RegExp signal) => signal.hasMatch(lower));
 }

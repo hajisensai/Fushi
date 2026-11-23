@@ -126,6 +126,7 @@ class LyricLine {
     this.translations = const <LyricTranslation>[],
     this.romanization,
     this.style,
+    this.songPart,
   });
 
   final int startMs;
@@ -140,6 +141,10 @@ class LyricLine {
 
   /// 来自 ASS 时的样式名。
   final String? style;
+
+  /// 来源标注的段落（Apple TTML `<div itunes:song-part>`：`Verse` / `Chorus` / `Bridge`…，
+  /// 原样保留）；没有标注为 null。
+  final String? songPart;
 
   /// 整行文本（音节拼接）。
   String get text => syllables.map((LyricSyllable s) => s.text).join();
@@ -168,6 +173,7 @@ class LyricLine {
         ? null
         : (romanization ?? this.romanization),
     style: style,
+    songPart: songPart,
   );
 
   @override
@@ -180,7 +186,8 @@ class LyricLine {
       _listEq(other.syllables, syllables) &&
       _listEq(other.translations, translations) &&
       other.romanization == romanization &&
-      other.style == style;
+      other.style == style &&
+      other.songPart == songPart;
 
   @override
   int get hashCode => Object.hash(
@@ -192,6 +199,7 @@ class LyricLine {
     Object.hashAll(translations),
     romanization,
     style,
+    songPart,
   );
 }
 
@@ -427,6 +435,26 @@ LyricTimeline decodeLyricTimeline(Uint8List bytes) {
         ),
       );
     }
+    // flags bit3：尾部逐行段落表（Rust `wire.rs`；没有段落时不写，旧数据照常解）。
+    if (flags & 8 != 0) {
+      for (int i = 0; i < lines.length; i++) {
+        final String? part = r.optStr();
+        if (part != null) {
+          final LyricLine l = lines[i];
+          lines[i] = LyricLine(
+            startMs: l.startMs,
+            endMs: l.endMs,
+            agent: l.agent,
+            role: l.role,
+            syllables: l.syllables,
+            translations: l.translations,
+            romanization: l.romanization,
+            style: l.style,
+            songPart: part,
+          );
+        }
+      }
+    }
     if (r.p != bytes.length) {
       throw const FormatException('trailing bytes after lyric timeline');
     }
@@ -484,8 +512,12 @@ Uint8List encodeLyricTimeline(LyricTimeline t) {
   i64(t.offsetMs);
   optStr(t.language);
   u8(t.timingQuality.index);
+  final bool hasParts = t.lines.any((LyricLine l) => l.songPart != null);
   u8(
-    (t.isUserEdited ? 1 : 0) | (t.hasEffects ? 2 : 0) | (t.rubyDropped ? 4 : 0),
+    (t.isUserEdited ? 1 : 0) |
+        (t.hasEffects ? 2 : 0) |
+        (t.rubyDropped ? 4 : 0) |
+        (hasParts ? 8 : 0),
   );
   optStr(t.title);
   optStr(t.artist);
@@ -516,6 +548,11 @@ Uint8List encodeLyricTimeline(LyricTimeline t) {
     }
     optStr(l.romanization);
     optStr(l.style);
+  }
+  if (hasParts) {
+    for (final LyricLine l in t.lines) {
+      optStr(l.songPart);
+    }
   }
   return b.takeBytes();
 }
