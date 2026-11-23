@@ -264,7 +264,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       cue,
     )).isNotEmpty;
     if (!alreadyInDb) {
-      // 锚点落在句子所属那一行的时间轴上（原盘「全部播放」= 那一集，BUG-5340）。
+      // 锚点落在句子所属那一行的时间轴上（原盘「全部播放」= 那一集，BUG-5356）。
       final ({String bookUid, int ms})? anchor = cue == null
           ? null
           : _libraryAnchorAt(cue.startMs);
@@ -465,7 +465,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       }
     } else if ((await _matchingVideoFavorites(sentence, cue)).isEmpty) {
       // 镜像可能落后于页外来源（收藏夹页、同步合并）：库里已有就不写第二条。
-      // 锚点按句子所属那一行换算（原盘「全部播放」= 那一集，BUG-5340）。
+      // 锚点按句子所属那一行换算（原盘「全部播放」= 那一集，BUG-5356）。
       final ({String bookUid, int ms}) anchor = _libraryAnchorAt(cue.startMs);
       await repo.add(
         FavoriteSentence(
@@ -516,7 +516,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   /// 只取本 bookKey + video 来源那批，按 `text` 建集供同步查询。
   ///
   /// 镜像在**播放器时间轴**上（键里的起点与 [_isCueFavorited] 拿到的 cue 同轴）：
-  /// 原盘「全部播放」时取整条播放列表各集的收藏，按各集起点平移回来（BUG-5340），
+  /// 原盘「全部播放」时取整条播放列表各集的收藏，按各集起点平移回来（BUG-5356），
   /// 播放头跨集只换库身份、不用重读，新一集已收藏的句子照样亮星。
   ///
   /// 填完补刷查词浮层星标（video-25：浮层星标也读这份镜像，查词可能早于首次填充）。
@@ -603,7 +603,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       appModel.database,
     ).getAll();
     final int? episodeIndex = _favoriteSectionIndex;
-    // 库里的锚点在句子所属那一行的时间轴上（原盘「全部播放」= 那一集，BUG-5340）。
+    // 库里的锚点在句子所属那一行的时间轴上（原盘「全部播放」= 那一集，BUG-5356）。
     final ({String bookUid, int ms})? anchor = cue == null
         ? null
         : _libraryAnchorAt(cue.startMs);

@@ -223,7 +223,7 @@ bool _isPopupMediaPlaceholder(Object? filename) =>
 /// 多行同时匹配回 409 `favorite_subtitle_ambiguous`，找不到回 404 `favorite_subtitle_missing`。
 ///
 /// [playerStartMs] 给了就用它代替收藏里存的起点：收藏的锚点在它那一集自己的时间轴上，
-/// 而本页播的是包含这一集的整条播放列表（原盘「全部播放」，BUG-5340），调用方先把
+/// 而本页播的是包含这一集的整条播放列表（原盘「全部播放」，BUG-5356），调用方先把
 /// 锚点平移到播放器时间轴再来匹配。
 VideoRemoteCue matchVideoRemoteFavoriteCue(
   List<VideoRemoteCue> rows,

@@ -338,7 +338,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final int queuedEpisode = _currentEpisode;
     final AudioCue? historyCue = _lastLookupCue;
     // 制卡历史的回跳锚点按句子所属那一行的时间轴记（原盘「全部播放」= 那一集，
-    // BUG-5340），与收藏句同一口径。
+    // BUG-5356），与收藏句同一口径。
     final ({String bookUid, int ms})? historyAnchor = historyCue == null
         ? null
         : _libraryAnchorAt(historyCue.startMs);

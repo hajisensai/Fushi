@@ -89,7 +89,7 @@ void main() {
     expect(binding.hasEpisode('other'), isFalse);
   });
 
-  test('原盘分集时间轴：锚点正反换算互逆，别的视频的锚点不平移（BUG-5340）', () async {
+  test('原盘分集时间轴：锚点正反换算互逆，别的视频的锚点不平移（BUG-5356）', () async {
     final BlurayMenuTitleBinding binding =
         (await ensureBlurayMenuTitleInLibrary(db, mpls('00001')))!;
     final String ep1 = binding.episodes[0].row.bookUid;

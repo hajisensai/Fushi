@@ -312,7 +312,7 @@ final class VideoRemotePlaybackBinding {
   /// Favorites are written and matched through it. Null means the player's
   /// timeline is the row's ([bookUid], same milliseconds). A disc's "play all"
   /// playlist spans several episode rows, each with its own timeline
-  /// (BUG-5340).
+  /// (BUG-5356).
   final ({String bookUid, int ms}) Function(int startMs)? libraryAnchor;
 
   /// [libraryAnchor] with its default applied.

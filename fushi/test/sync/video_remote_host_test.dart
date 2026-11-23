@@ -846,7 +846,7 @@ void main() {
     },
   );
 
-  test('原盘「全部播放」：手机收藏按句子所在那一集的时间轴落库与匹配（BUG-5340）', () async {
+  test('原盘「全部播放」：手机收藏按句子所在那一集的时间轴落库与匹配（BUG-5356）', () async {
     // 句子在整条播放列表的 1000ms，属于从 600ms 起的那一集 → 记 (episode-two, 400)。
     player.anchor = (int startMs) =>
         (bookUid: 'episode-two', ms: startMs - 600);
@@ -998,7 +998,7 @@ final class _BlockingFavorites extends FavoriteSentenceRepository {
 final class _Player {
   String identity = 'episode-one';
 
-  /// 播放器时间轴 → 库锚点（原盘「全部播放」，BUG-5340）；null = 同轴同行。
+  /// 播放器时间轴 → 库锚点（原盘「全部播放」，BUG-5356）；null = 同轴同行。
   ({String bookUid, int ms}) Function(int startMs)? anchor;
   int sectionIndex = 0;
   bool playing = true;

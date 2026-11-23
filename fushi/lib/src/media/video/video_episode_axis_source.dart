@@ -3,7 +3,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 
 import 'package:fushi/src/media/video/video_playback_source.dart';
 
-/// 「原盘分集时间轴」上的播放源视图（BUG-5340）：播放器播的是一条被扫描切成集的
+/// 「原盘分集时间轴」上的播放源视图（BUG-5356）：播放器播的是一条被扫描切成集的
 /// 整条播放列表（原盘菜单「全部播放」），库身份却是其中一集——这一集在播放列表上
 /// 占 `[startMs, startMs + lengthMs)`。把位置 / 时长 / 当前句都平移到这一集自己的
 /// 时间轴上，[VideoWatchTracker] 的完成判定（按集长 90%）、覆盖并集（按集键存）、

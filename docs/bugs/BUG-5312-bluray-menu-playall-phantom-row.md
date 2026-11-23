@@ -14,4 +14,4 @@
   - ③「第 3 集是真人缩略图、标题却是『馳せサンズ』」疑为盘上的放送直前特番时长超过最短正片的一半，被 `bluray_disc_extras.dart` `classifyDiscExtras` 当成正片、刮削按序编成第 3 集。本机没有这张盘，无法只读跑 `readBlurayDisc` / `classifyBlurayDiscExtras` 拿到真实时长与结构，判据未改（凭猜测改「多长算特典」会误伤剧集盘的特别篇 / 总集篇）。需要真盘的 `BDMV/PLAYLIST` + `CLIPINF` 复现后再定。
   - 已经建出来的整卷行由下一轮扫描的整卷折叠（`disc_library_import.dart` `_foldWholeTitleProgress`）把进度折到各集并回收，无需另做迁移。
   - 同一反馈日志里原盘菜单会话缩略图预览的 `Error opening output files: Invalid argument` 是 `video_thumbnail_preview_controller.dart` 的预览抽帧，与书架封面不是同一条路径，本次未处理。
-- **合并审查**（2026-11-23）：分集绑定下除进度外的时间锚点（观看完成判定 / 覆盖并集、收藏句、制卡回跳）仍在整条播放列表时间轴上，登记为 BUG-5340，待拍板。
+- **合并审查**（2026-11-23）：分集绑定下除进度外的时间锚点（观看完成判定 / 覆盖并集、收藏句、制卡回跳）仍在整条播放列表时间轴上，登记为 BUG-5356，待拍板。

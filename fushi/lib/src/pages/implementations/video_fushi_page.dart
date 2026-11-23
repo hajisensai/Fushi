@@ -7452,7 +7452,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// Library video watched to the end: media tracking links it from the
   /// scraped metadata (or a mapping the user made).
   ///
-  /// 身份在建采集器那一刻定死（BUG-5340）：原盘「全部播放」跨集时旧采集器离开时的
+  /// 身份在建采集器那一刻定死（BUG-5356）：原盘「全部播放」跨集时旧采集器离开时的
   /// 完成判定落在换身份之后，按当时的 [_activeBookUid] 报就把上一集的「看完」记到了
   /// 下一集头上。
   Future<void> Function() _libraryTrackingCompletionFor() {
@@ -7487,7 +7487,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       uid,
       episodeIndex,
     );
-    // 原盘「全部播放」：采集器看的是当前这一集的时间轴（BUG-5340），区间变了同样重建。
+    // 原盘「全部播放」：采集器看的是当前这一集的时间轴（BUG-5356），区间变了同样重建。
     final BlurayMenuEpisode? axis = _discMenuActiveEpisode;
     final VideoWatchTracker? current = _watchTracker;
     if (current != null) {
@@ -7556,7 +7556,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 后台放声音期间换集（远端连播）：新采集器同样只计时长不计字。
           ..countSubtitleChars = !_backgroundAudioActive
           // 原盘「全部播放」：位置 / 时长 / 当前句换到这一集自己的时间轴，完成判定按集长、
-          // 覆盖并集与直接打开这一集同轴（BUG-5340）。
+          // 覆盖并集与直接打开这一集同轴（BUG-5356）。
           ..attach(
             axis == null || axisLengthMs <= 0
                 ? controller
@@ -7820,7 +7820,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Future<void> _persistPosition(String uid, int posMs) async {
     if (_sourceReviewActive) return;
     // 原盘「全部播放」：位置在整条播放列表上，记到播放头所在的那一集、按那一集自己的
-    // 时间轴（BUG-5312 / BUG-5340）。
+    // 时间轴（BUG-5312 / BUG-5356）。
     final ({String uid, int positionMs, int durationMs})? episode =
         _discMenuEpisodeProgress(uid, posMs);
     if (episode != null) {

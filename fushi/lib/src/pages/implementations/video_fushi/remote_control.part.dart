@@ -566,7 +566,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       cueSentence: null,
     ), overrides);
     final String sentence = videoRemoteMineSentence(selection, parsed.sentence);
-    // 回跳锚点按句子所属那一行的时间轴记（原盘「全部播放」= 那一集，BUG-5340）。
+    // 回跳锚点按句子所属那一行的时间轴记（原盘「全部播放」= 那一集，BUG-5356）。
     final ({String bookUid, int ms}) historyAnchor = _libraryAnchorAt(
       cue.startMs,
     );
@@ -641,7 +641,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       return;
     }
     // 原盘「全部播放」：收藏落在这条播放列表的某一集上（锚点是那一集的时间轴），平移
-    // 回播放器时间轴后页内跳过去，不另开那一集（BUG-5340）。
+    // 回播放器时间轴后页内跳过去，不另开那一集（BUG-5356）。
     final int? favoriteOffset = favorite.normCharOffset;
     final int? discTitleMs = _discMenuEpisodes == null || favoriteOffset == null
         ? null

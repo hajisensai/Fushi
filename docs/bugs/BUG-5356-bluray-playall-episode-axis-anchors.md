@@ -1,4 +1,4 @@
-## BUG-5340 · 原盘「全部播放」按集换库身份后，时间锚点仍在整条播放列表时间轴上
+## BUG-5356 · 原盘「全部播放」按集换库身份后，时间锚点仍在整条播放列表时间轴上
 - **报告**：2026-11-23（合并审查 PR #4278 / BUG-5312 时发现；开发者本人）
 - **真实性**：✅ 真 bug（沿代码路径确认，未上真盘）。PR #4278 让菜单「全部播放」（被扫描切成集的 `00001.mpls`）的库身份跟着播放头在各集之间换（`fushi/lib/src/pages/implementations/video_fushi/disc_menu.part.dart` `_discMenuEpisodeProgress`、`VideoPlayerController.retargetDiscTitleBook`），但只有 `_persistPosition`（`video_fushi_page.dart` 的 `_persistPosition` / `_persistKnownDuration`）把位置换算成集内时间轴；其余按 `_activeBookUid`（= 当前集）落库或判定、却直接读播放器时间（整条播放列表时间轴）的消费者都没换算：
   - 观看统计 `VideoWatchTracker`（`fushi/lib/src/media/video/video_watch_tracker.dart` `_sample` / `stop` → `_checkCompletionAt`）：完成判定 = 整条播放列表的 `positionMs / durationMs ≥ 0.9`，第 1、2 集永远不报「看完」（媒体追踪不推进），末集刚过一大半就报；覆盖并集按集键（`videoWatchCoverageEpisodePrefKey(uid, 0)`）存却是播放列表时间，日后直接打开这一集时字幕计字去重对不上。
