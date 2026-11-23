@@ -323,7 +323,8 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
     ],
   );
 
-  /// 一条的副标题：问题 > 人名待填读法（有建议 / 出处冲突 / 无）> 出处 > 人名所属角色。
+  /// 一条的副标题：问题 > 人名待填读法（有建议 / 出处冲突 / 无）> 支持当前读法的出处 >
+  /// 人名所属角色。
   String? _subtitle(CastTextSubstitution e, CastSubstitutionProblem? problem) {
     if (problem != null) return castSubstitutionProblemText(problem);
     if (!e.isName) return null;
@@ -342,9 +343,11 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
       }
       return t.tts_substitutions_name_pending;
     }
-    if (e.evidence.isNotEmpty) {
+    // 只在读法与某条出处一致时显示出处：手填了别的读法时那条出处不是它的来源。
+    final CastNameEvidence? source = e.evidenceForReading;
+    if (source != null) {
       return t.tts_substitutions_name_evidence(
-        source: castNameEvidenceText(e.evidence.first),
+        source: castNameEvidenceText(source),
       );
     }
     final String? who = e.character;

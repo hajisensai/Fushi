@@ -190,6 +190,19 @@ class CastTextSubstitution {
   /// 出处读法互相冲突（留待复核，不给建议）。
   bool get hasConflictingEvidence => evidenceReadings.length > 1;
 
+  /// 支持当前读法 [replacement] 的那条出处（平 / 片假名、空格与「・」差别不算）；读法
+  /// 留空、或用户手填的读法与所有出处都不一样时为 null——那时出处不能当成这个读法的
+  /// 来源显示。
+  CastNameEvidence? get evidenceForReading {
+    final String? current = normalizeCastNameReading(replacement);
+    if (current == null) return null;
+    final String folded = foldCastNameReading(current);
+    for (final CastNameEvidence e in evidence) {
+      if (foldCastNameReading(e.reading) == folded) return e;
+    }
+    return null;
+  }
+
   /// 改写法时出处一并作废（出处只对原来那个写法成立）。
   CastTextSubstitution copyWith({
     String? source,

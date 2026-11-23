@@ -127,6 +127,20 @@ void main() {
       );
     });
 
+    test('evidenceForReading 只认与当前读法一致的出处（手填别的读法不挂出处）', () {
+      const CastTextSubstitution pending = CastTextSubstitution.name(
+        written: '祥子',
+        reading: '',
+        evidence: <CastNameEvidence>[_rubyA],
+      );
+      expect(pending.evidenceForReading, isNull);
+      expect(
+        pending.copyWith(replacement: 'サキコ').evidenceForReading?.key,
+        _rubyA.key,
+      );
+      expect(pending.copyWith(replacement: 'しょうこ').evidenceForReading, isNull);
+    });
+
     test('normalizeCastNameReading 去空格与・，只收假名', () {
       expect(normalizeCastNameReading('とがわ さきこ'), 'とがわさきこ');
       expect(normalizeCastNameReading('トガワ・サキコ'), 'トガワサキコ');
