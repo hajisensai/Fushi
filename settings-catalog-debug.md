@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 922 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 924 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -321,6 +321,7 @@ How to read this:
 | `manga.tap_zone_paging` | Tap edges to turn pages | 点击边缘翻页 | Viewing and page turning | bool |  | `true` | Tap the left or right edge of the page to turn |
 | `manga.tap_zone_layout` | Tap zone layout | 点击区域布局 | Viewing and page turning | choice | `left_right`, `l_shaped`, `kindle`, `top_bottom` | `left_right` | Where a tap turns the page |
 | `manga.resume_target` | Reopen at | 重新打开时 | Viewing and page turning | choice | `furthest`, `last` | `furthest` | Online manga only: continue with the next chapter once the last one is finished, or return to the page you left. |
+| `manga.reverse_arrow_page_turn` | Reverse arrow-key page turns | 反转键盘左右键翻页方向 | Viewing and page turning | bool |  | `false` | Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected. |
 | `manga.volume_key_paging` | Volume keys turn pages | 音量键翻页 | Viewing and page turning | bool |  | `true` | Use volume up and down to turn pages in the manga reader · *only on android* |
 | `manga.reader_scale` | Image scaling | 图片缩放 | Display and zoom | choice | `fit_screen`, `stretch`, `fit_width`, `fit_height`, `original`, `smart` | `fit_screen` |  |
 | `manga.default_zoom` | Default zoom | 默认缩放 | Display and zoom | number | 50.0 – 400.0 | `100.0` |  |
@@ -593,6 +594,7 @@ How to read this:
 | `lookup.page_auto_show_keyboard` | Focus search when opening Lookup | 进入查词页时自动聚焦搜索框 | Lookup page | bool |  | `true` | Focus the search box when opening the lookup page or clearing the query (shows the keyboard on phones) |
 | `lookup.page_pull_to_clear` | Pull down at the top to clear the search | 结果顶部下拉清空查询 | Lookup page | bool |  | `true` | Pulling down past the top of the results clears the query and returns to search history |
 | `lookup.maximum_terms` | Maximum dictionary headwords in result | 结果中的词头数量上限 | Lookup page | number | 0 –  | `10` | Maximum headwords listed per lookup; lower is faster |
+| `lookup.scan_length` | Scan window length | 扫描窗口长度 | Lookup page | number | 8 – 32 | `16` | How many characters from the cursor lookup and word splitting try as the longest candidate (8–32, default 16). Larger values match longer phrases but make each lookup slower. |
 | `lookup.scan_non_japanese` | Scan non-Japanese text | 扫描非日文文本 | Selection and hover | bool |  | `true` | When off, selection stops at non-Japanese characters |
 | `lookup.hover_auto_lookup` | Look up on hover | 悬停即查词 | Selection and hover | bool |  | `false` | Look up words automatically when the mouse hovers over text, without clicking or holding a modifier key. · *only on windows, macos* |
 | `lookup.hover_lookup_modifier` | Hover lookup key | 悬停查词按键 | Selection and hover | choice | `shift`, `ctrl`, `alt` | `shift` | Hold this key and move the mouse over text to look it up (readers, subtitles, web pages) · *only on windows, macos* |

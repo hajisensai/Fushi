@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 922,
+ "count": 924,
  "settings": [
   {
    "key": "appearance.language",
@@ -5637,6 +5637,24 @@
    "default": "furthest"
   },
   {
+   "key": "manga.reverse_arrow_page_turn",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Reverse arrow-key page turns",
+    "zh-CN": "反转键盘左右键翻页方向"
+   },
+   "path": {
+    "en": "Manga › Viewing and page turning",
+    "zh-CN": "漫画 › 浏览与翻页"
+   },
+   "description": {
+    "en": "Swap what the Left and Right arrow keys do in the manga reader. Separate from the book reader's setting; the gamepad D-pad is not affected.",
+    "zh-CN": "在漫画阅读器里对调键盘左右方向键的翻页方向。与小说的同名开关各管各的，不影响手柄十字键。"
+   },
+   "default": false
+  },
+  {
    "key": "manga.volume_key_paging",
    "kind": "value",
    "type": "bool",
@@ -10969,6 +10987,26 @@
    },
    "min": 0,
    "default": 10
+  },
+  {
+   "key": "lookup.scan_length",
+   "kind": "value",
+   "type": "number",
+   "title": {
+    "en": "Scan window length",
+    "zh-CN": "扫描窗口长度"
+   },
+   "path": {
+    "en": "Lookup › Lookup page",
+    "zh-CN": "查词 › 查词页"
+   },
+   "description": {
+    "en": "How many characters from the cursor lookup and word splitting try as the longest candidate (8–32, default 16). Larger values match longer phrases but make each lookup slower.",
+    "zh-CN": "查词和分词从光标处最多取几个字作为最长候选（8–32，默认 16）。调大能匹配更长的词组，但每次查词会更慢。"
+   },
+   "min": 8,
+   "max": 32,
+   "default": 16
   },
   {
    "key": "lookup.scan_non_japanese",
@@ -19968,6 +20006,11 @@
     {
      "name": "selection",
      "help": "选中高亮色；#RRGGBB / #AARRGGBB，空串或 none = 清除",
+     "required": false
+    },
+    {
+     "name": "selection_text",
+     "help": "查词高亮文字色（不给 = 跟随正文字色；配深色高亮可做反色）；#RRGGBB / #AARRGGBB，空串或 none = 清除",
      "required": false
     },
     {
