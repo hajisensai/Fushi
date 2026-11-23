@@ -3397,6 +3397,138 @@ void main() {
     },
   );
 
+  // 用户报：迁到 fushi_host 之前就暂停、种子没移植过去的任务，批量「继续」
+  // 计为失败（The torrent is no longer available in the original backend）。
+  // 用户显式继续 / 重试应在**同一个**已校验的后端上按原资源重建，不限内置引擎。
+  group('fushi_host task missing from the host', () {
+    const VideoDownloadBackendIdentity hostIdentity =
+        VideoDownloadBackendIdentity(
+          kind: 'fushi_host',
+          profileId: 'installation-fingerprint',
+          fingerprint: 'installation-fingerprint',
+        );
+
+    Future<_PipelineEnvironment> hostEnvironment(_FakeTorrentBackend backend) =>
+        _PipelineEnvironment.create(
+          backend: backend,
+          backendResolver: (_) async => VideoDownloadBackendBinding(
+            backend: backend,
+            identity: hostIdentity,
+          ),
+        );
+
+    Future<void> insertHostJob(
+      _PipelineEnvironment environment,
+      String jobId,
+    ) async {
+      await environment.insertJob(
+        jobId: jobId,
+        stage: VideoDownloadJobStage.download,
+        backendKind: 'fushi_host',
+      );
+      await environment.database.updateVideoDownloadJob(
+        jobId,
+        const VideoDownloadJobsCompanion(
+          backendProfileId: Value<String?>('installation-fingerprint'),
+        ),
+      );
+    }
+
+    test('resume rewinds to enqueue on the same host backend', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+      final _PipelineEnvironment environment = await hostEnvironment(backend);
+      addTearDown(environment.close);
+      const String jobId = 'resume-missing-host-job';
+      await insertHostJob(environment, jobId);
+      await environment.database.updateVideoDownloadJob(
+        jobId,
+        const VideoDownloadJobsCompanion(
+          lifecycle: Value<String>(VideoDownloadJobLifecycle.cancelled),
+        ),
+      );
+
+      final Map<String, Object> failures = await environment.service.resumeJobs(
+        <String>[jobId],
+      );
+      await backend.addEntered.future.timeout(const Duration(seconds: 2));
+
+      expect(failures, isEmpty);
+      final VideoDownloadJobRow job = (await environment.database
+          .getVideoDownloadJob(jobId))!;
+      expect(job.lifecycle, VideoDownloadJobLifecycle.active);
+      expect(job.stage, VideoDownloadJobStage.enqueue);
+      expect(job.backendKind, 'fushi_host');
+      expect(job.torrentHash, _torrentHash);
+      expect(backend.resumeCalls, 0);
+      expect(backend.addCalls, 1);
+    });
+
+    test(
+      'retry rewinds a missing host torrent and enqueues it again',
+      () async {
+        final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+        final _PipelineEnvironment environment = await hostEnvironment(backend);
+        addTearDown(environment.close);
+        const String jobId = 'retry-missing-host-job';
+        await insertHostJob(environment, jobId);
+        await environment.database.updateVideoDownloadJob(
+          jobId,
+          const VideoDownloadJobsCompanion(
+            lifecycle: Value<String>(VideoDownloadJobLifecycle.failed),
+            attemptCount: Value<int>(6),
+            lastError: Value<String?>(
+              'Bad state: torrent is not visible in the original backend',
+            ),
+          ),
+        );
+
+        await environment.service.retryJob(jobId);
+        await backend.addEntered.future.timeout(const Duration(seconds: 2));
+
+        final VideoDownloadJobRow job = (await environment.database
+            .getVideoDownloadJob(jobId))!;
+        expect(job.stage, VideoDownloadJobStage.enqueue);
+        expect(job.backendTaskId, isNull);
+        expect(backend.addCalls, 1);
+      },
+    );
+
+    test('resume still refuses when the host identity changed', () async {
+      final _FakeTorrentBackend backend = _FakeTorrentBackend(pauseAdd: true);
+      final _PipelineEnvironment environment =
+          await _PipelineEnvironment.create(
+            backend: backend,
+            backendResolver: (_) async => VideoDownloadBackendBinding(
+              backend: backend,
+              identity: const VideoDownloadBackendIdentity(
+                kind: 'fushi_host',
+                profileId: 'another-host',
+                fingerprint: 'another-host',
+              ),
+            ),
+          );
+      addTearDown(environment.close);
+      const String jobId = 'resume-other-host-job';
+      await insertHostJob(environment, jobId);
+      await environment.database.updateVideoDownloadJob(
+        jobId,
+        const VideoDownloadJobsCompanion(
+          lifecycle: Value<String>(VideoDownloadJobLifecycle.cancelled),
+        ),
+      );
+
+      await expectLater(
+        environment.service.resumeJob(jobId),
+        throwsA(isA<VideoDownloadPipelineActionRequired>()),
+      );
+      expect(backend.addCalls, 0);
+      expect(
+        (await environment.database.getVideoDownloadJob(jobId))!.lifecycle,
+        VideoDownloadJobLifecycle.cancelled,
+      );
+    });
+  });
+
   test(
     'cancel refuses to touch a task when backend identity changed',
     () async {

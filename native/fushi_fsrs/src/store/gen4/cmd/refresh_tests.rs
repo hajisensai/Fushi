@@ -161,7 +161,7 @@ fn rebuilds_invalidate_and_local_only_writes_do_not() {
         m.h,
         "local_anchor",
         T1,
-        json!({"anchor": {"o": 7, "b": "boot"}}),
+        json!({"anchor": {"s": 7, "t": 1, "e": 6}}),
     );
     g4(m.h, "local_state_ensure", T1, json!({}));
     g4(

@@ -673,6 +673,7 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
       if (!mounted) return;
       final FushiPingResult? ping = outcome.result;
       if (ping == null) {
+        logFushiPingFailure(baseUrl, outcome);
         // BUG-1741：明文地址打不通时回头确认对端是不是 TLS-only。那不是「这里没有
         // 设备」，是「地址的 scheme 写错了」——两句话指向完全相反的排查方向，而旧
         // 实现把它们说成同一句。

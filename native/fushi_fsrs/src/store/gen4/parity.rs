@@ -781,7 +781,8 @@ fn check_profile(name: &str, w: &Connection, profile: &str) {
                 let columns: Vec<String> = unknown
                     .iter()
                     .filter_map(|(what, old, new)| {
-                        compare::column_diffs(what, old, new).map(|c| format!("{what} {c:?}"))
+                        compare::column_diffs(what, old, new, false)
+                            .map(|c| format!("{what} {c:?}"))
                     })
                     .collect();
                 (

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_plan.dart';
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
 
@@ -121,6 +122,56 @@ void main() {
     ]);
     expect(plan[0].spokenChunks, <String>['あした来', 'る。']);
     expect(plan[1].spokenChunks, <String>['あいうえ', 'おかきく', 'けこ']);
+  });
+
+  test('页面印着的注音：显示底本，合成按注音念（拉丁字母底本同样认）', () {
+    final MokuroImage page = _page(<MokuroBlock>[
+      _ruby,
+      ..._body,
+      _vertical(600, 100, 640, 540, 'CRYCHICじゃない', fontSize: 40),
+      _vertical(642, 140, 660, 340, 'クライシック', fontSize: 18),
+    ]);
+    final List<MangaReadAloudUtterance> plan = planMangaPageReadAloud(
+      page,
+      pageIndex: 0,
+      rightToLeft: true,
+      pronunciation: const <TtsPronunciationRule>[],
+      maxInputLength: 0,
+    );
+    expect(plan.map((MangaReadAloudUtterance u) => u.displayText), <String>[
+      'CRYCHICじゃない',
+      'なに?',
+      '大丈夫だよな?',
+    ]);
+    expect(plan[0].spokenChunks, <String>['クライシックじゃない']);
+    expect(plan[2].spokenChunks, <String>['だいじょうぶだよな?']);
+  });
+
+  test('前面页注过音的词，后面页没注也按它念；发音词典优先', () {
+    final MangaRubyReadings learned = MangaRubyReadings()
+      ..learnPage(<MokuroBlock>[
+        _vertical(600, 100, 640, 540, 'CRYCHICじゃない', fontSize: 40),
+        _vertical(642, 140, 660, 340, 'クライシック', fontSize: 18),
+      ]);
+    final MokuroImage later = _page(<MokuroBlock>[
+      _vertical(600, 100, 640, 540, 'CRYCHICの新曲', fontSize: 40),
+    ]);
+    List<String> spoken(List<TtsPronunciationRule> rules) =>
+        planMangaPageReadAloud(
+          later,
+          pageIndex: 5,
+          rightToLeft: true,
+          pronunciation: rules,
+          maxInputLength: 0,
+          learnedReadings: learned,
+        ).single.spokenChunks;
+    expect(spoken(const <TtsPronunciationRule>[]), <String>['クライシックの新曲']);
+    expect(
+      spoken(const <TtsPronunciationRule>[
+        TtsPronunciationRule(written: 'CRYCHIC', spoken: 'クリチック'),
+      ]),
+      <String>['クリチックの新曲'],
+    );
   });
 
   test('空页没有句子', () {
