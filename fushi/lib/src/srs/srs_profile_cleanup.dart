@@ -42,6 +42,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_generation_kind.dart'
+    show isSrsGenerationBlocked;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -108,7 +110,16 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
     };
     // 主库一个 profile 都读不出来时绝不能把 srs.db 当成全部无主。
     if (liveUids.isEmpty) return 0;
-    final SrsStorage? storage = await _deps.storage();
+    final SrsStorage? storage;
+    try {
+      storage = await _openStorage();
+    } on ProfileDeletionSrsUnavailableException catch (e) {
+      // 库在换代途中（要升级 / 上次升级没完成 / 别的进程在升级……）：这时没有可扫的新代库，复习页自己会把状态
+      // 摆给用户。什么都不扫、不记标记，升级完下次进来再扫（BUG-5275：这里原先每进一次页面就报一次错）。
+      // 库真的打不开（不是换代状态）照常抛给调用方记日志。
+      if (isSrsGenerationBlocked(e.cause)) return 0;
+      rethrow;
+    }
     if (storage == null) return 0;
     final SrsStoredProfiles stored = await srsStoredProfiles(storage.core);
     if (stored.orphanSweptAt != null) return 0;
@@ -166,8 +177,22 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
   Future<Directory> _mediaDir(String uid) async =>
       SrsMediaStore.directoryFor(await _deps.supportRoot(), uid);
 
+  /// 打开本机 srs.db；打不开（换代状态 [SrsStoreOpenBlocked] 等任何原因）一律包成
+  /// [ProfileDeletionSrsUnavailableException]：统计、备份都做不了，删除要明确中止并告诉用户原因，而不是让原始
+  /// 异常逃出按钮回调、确认框不弹（BUG-5275）。
+  Future<SrsStorage?> _openStorage() async {
+    try {
+      return await _deps.storage();
+    } on Object catch (e, stack) {
+      Error.throwWithStackTrace(
+        ProfileDeletionSrsUnavailableException(e),
+        stack,
+      );
+    }
+  }
+
   Future<_Scan> _scan(String uid) async {
-    final SrsStorage? storage = await _deps.storage();
+    final SrsStorage? storage = await _openStorage();
     final SrsProfileFootprint footprint = storage == null
         ? const SrsProfileFootprint.empty()
         : await srsProfileFootprint(storage.core, uid);

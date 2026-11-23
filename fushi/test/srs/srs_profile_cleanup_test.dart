@@ -23,6 +23,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_profile_data.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsGenState, SrsStoreNotMigrated;
 import 'package:path/path.dart' as p;
 
 import '../helpers/fake_anki_repository.dart';
@@ -628,5 +629,92 @@ void main() {
 
     await expectLater(cleanup.run(), throwsA(anything));
     expect(await srsProfileFootprint(storage.core, goneUid), before);
+  });
+
+  // BUG-5275（反馈 s9Gq2L_ao9）：复习库打不开（上次升级没完成）时，统计 / 备份经 `storage()` 抛的原始
+  // SrsStoreNotMigrated 逃出删除按钮回调，确认框不弹、Profile 永远删不掉也没有任何提示。现在统一报成
+  // ProfileDeletionSrsUnavailableException（页面据此写明原因），删除中止、Profile 原样保留；存量扫描在换代状态下
+  // 不扫、不报错（升级完下次再扫），库真坏了照常抛。
+  group('review library cannot be opened', () {
+    SrsProfileCleanup cleanupWith(Future<SrsStorage?> Function() open) =>
+        SrsProfileCleanup(
+          SrsProfileCleanupDeps(
+            storage: open,
+            activeStore: () async => null,
+            deviceId: () async => 'dev',
+            supportRoot: () async => support,
+            backupRoot: () => backupRoot(),
+          ),
+        );
+
+    Future<SrsStorage?> migrationFailed() async =>
+        throw const SrsStoreNotMigrated(
+          'store not migrated {"state":"migrationFailed"}',
+          SrsGenState.migrationFailed,
+        );
+
+    Future<ProfileViewModel> vmWith(SrsProfileCleanup cleanup) async {
+      final ProfileViewModel vm = ProfileViewModel(
+        repo,
+        () async {},
+        ProfileDraftCoordinator(),
+        deletionCascade: cleanup,
+      );
+      addTearDown(vm.dispose);
+      await vm.stream.firstWhere(
+        (ProfileUiState s) => !s.isLoading && s.profiles.isNotEmpty,
+      );
+      return vm;
+    }
+
+    test('impact and delete report it; the profile is kept', () async {
+      final ProfileViewModel vm = await vmWith(cleanupWith(migrationFailed));
+      final int goneId = await repo.createProfile('blocked');
+
+      await expectLater(
+        vm.deletionImpact(goneId),
+        throwsA(
+          isA<ProfileDeletionSrsUnavailableException>().having(
+            (ProfileDeletionSrsUnavailableException e) => e.cause,
+            'cause',
+            isA<SrsStoreNotMigrated>(),
+          ),
+        ),
+      );
+      await expectLater(
+        vm.deleteProfile(goneId),
+        throwsA(isA<ProfileDeletionSrsUnavailableException>()),
+      );
+
+      expect(
+        (await repo.getAllProfiles()).map((ProfileRow r) => r.id),
+        contains(goneId),
+      );
+      expect(backups.existsSync(), isFalse);
+    });
+
+    test('the orphan sweep waits for the upgrade instead of failing', () async {
+      final ProfileViewModel vm = await vmWith(cleanupWith(migrationFailed));
+
+      expect(await vm.sweepOrphanProfileData(), 0);
+    });
+
+    test('a store that is broken (not a generation state) still fails the '
+        'sweep', () async {
+      final ProfileViewModel vm = await vmWith(
+        cleanupWith(() async => throw StateError('srs storage is closed')),
+      );
+
+      await expectLater(
+        vm.sweepOrphanProfileData(),
+        throwsA(
+          isA<ProfileDeletionSrsUnavailableException>().having(
+            (ProfileDeletionSrsUnavailableException e) => e.cause,
+            'cause',
+            isA<StateError>(),
+          ),
+        ),
+      );
+    });
   });
 }
