@@ -225,7 +225,9 @@ class CuratorPendingIdentitySource implements PendingIdentitySource {
     return PendingIdentityEntry(
       kind: kind,
       key: key,
-      title: title,
+      // 书名是身份（bookKey / 统计 / 同步），存储里带着文件名残留的 CRC 标签 /
+      // 扩展名；这里是显示出口，与书架卡同口径清洗（BUG-5284）。
+      title: cleanImportedTitle(title),
       cause: pendingIdentityCauseOfCuratorReason(item?.reason),
       aiOutcome: item == null ? null : pendingIdentityAiOfCuratorItem(item),
       candidateCount: item?.candidates ?? 0,

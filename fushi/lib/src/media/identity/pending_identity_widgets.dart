@@ -576,6 +576,8 @@ class _PendingIdentityDialogState extends State<PendingIdentityDialog> {
   }
 
   Future<void> _reload() async {
+    // 动作（AI 重试 / 手动搜索）跑着时用户可能已关掉弹窗：动作回来后不再重读。
+    if (!mounted) return;
     final int generation = ++_generation;
     setState(() {
       _loading = true;

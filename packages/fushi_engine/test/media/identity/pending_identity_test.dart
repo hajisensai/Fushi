@@ -274,6 +274,28 @@ void main() {
       expect(l.ignored, isEmpty);
     });
 
+    test('显示名清掉文件名残留的 CRC 标签 / 扩展名，键仍是原始书键（BUG-5284）', () async {
+      facts.books = <LibraryCurateBookUnit>[
+        _single(_vol('raw', '十歳の最強魔導師 第16話 [679fb7c9].cbz')),
+      ];
+      await saveRuns(<LibraryCurateRun>[
+        LibraryCurateRun(
+          id: 1,
+          trigger: LibraryCurateTrigger.auto,
+          startedAt: 1000,
+          pendingItems: <LibraryCuratePendingItem>[
+            _bookItem('book:raw', 'no_candidates', candidates: 0),
+          ],
+        ),
+      ]);
+      final PendingIdentityListing l = await source(
+        CuratorPendingIdentityDomain.books,
+      ).load();
+      expect(l.pending.single.title, '十歳の最強魔導師 第16話');
+      expect(l.pending.single.key, 'book:raw');
+      expect(l.pending.single.memberKeys, <String>['raw']);
+    });
+
     test('系列单元按卷键对号；各卷都写回过的不列；全是漫画的归漫画书架', () async {
       facts.books = <LibraryCurateBookUnit>[
         LibraryCurateBookUnit(

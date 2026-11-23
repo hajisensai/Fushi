@@ -259,6 +259,33 @@ void main() {
       expect(manual, <String>['book:b']);
     });
 
+    testWidgets('动作还在跑时弹窗关了：动作回来后不再重读、不在已卸载的弹窗上 setState', (
+      WidgetTester tester,
+    ) async {
+      final _FakeSource source = _FakeSource(<PendingIdentityEntry>[
+        _book('book:a', 'Alpha'),
+      ]);
+      final Completer<String?> retry = Completer<String?>();
+      await open(
+        tester,
+        source,
+        PendingIdentityActions(
+          retryWithAi: (BuildContext _, PendingIdentityEntry e) => retry.future,
+        ),
+      );
+      final int loadsBefore = source.loads;
+      await tester.tap(
+        find.byKey(const ValueKey<String>('identity-book-pending-ai-book:a')),
+      );
+      await tester.pump();
+      // 用户关掉弹窗，AI 重试这时才回来。
+      await tester.pumpWidget(const SizedBox.shrink());
+      retry.complete('done');
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(source.loads, loadsBefore);
+    });
+
     testWidgets('忽略 → 挪进「已忽略」；撤销 → 回到待确认；没给重试就不画', (WidgetTester tester) async {
       final _FakeSource source = _FakeSource(<PendingIdentityEntry>[
         _book('book:a', 'Alpha'),
