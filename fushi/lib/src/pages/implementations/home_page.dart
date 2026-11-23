@@ -106,7 +106,7 @@ import 'package:fushi/src/media/video/metadata/video_scrape_runtime.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_action.dart';
-import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
+import 'package:fushi/src/media/video/metadata/video_local_index_rebuild.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
     show shouldOpenInWebVideoPlayer;
@@ -1058,24 +1058,11 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   Future<void> _backfillVideoMetadataWorks() async {
-    final List<SourceLibraryRow> sources = await appModel.database
-        .getMediaSourcesByKind('video');
-    final VideoSourceMetadataIndexer indexer = VideoSourceMetadataIndexer(
+    // 只在真写了库时才整页刷新视频库：什么都没变的启动不该让库页重载。
+    final bool changed = await reindexLocalVideoSources(
       appModel.database,
+      logSource: 'HomePage.backfillVideoMetadataWorks',
     );
-    bool changed = false;
-    for (final SourceLibraryRow source in sources) {
-      try {
-        // 只在真写了库时才整页刷新视频库：什么都没变的启动不该让库页重载。
-        if (await indexer.index(source)) changed = true;
-      } on Object catch (error, stackTrace) {
-        ErrorLogService.instance.log(
-          'HomePage.backfillVideoMetadataWorks.${source.id}',
-          error,
-          stackTrace,
-        );
-      }
-    }
     if (changed && mounted) _notifyVideoLibraryChanged();
   }
 
