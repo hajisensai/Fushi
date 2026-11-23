@@ -10,6 +10,9 @@
 //
 // 在真实 headless Chrome 里跑生产外壳 + 真实模板里的音频脚本（摘自用户库的
 // eggrolls-JLPT10k-v3 背面，原样），断言契约成立。
+@Tags(<String>['chrome'])
+library;
+
 import 'dart:convert';
 import 'dart:io';
 

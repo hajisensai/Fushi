@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
+    show mangaChapterDigest;
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
     show collectionGroupKeyForFilename, isValidCollectionSectionKey;
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
@@ -1508,6 +1510,31 @@ class RemoteMangaPageInfo {
       );
 }
 
+/// 取页请求里「客户端以为这一页是谁」的查询参数名（HBK-AUDIT-205）：值是
+/// [remoteMangaPageKeyDigest]（页表里 [RemoteMangaPageInfo.key] 的摘要）。
+///
+/// host 在**同一份**页表上核对第 index 页的身份与它相同才回页图，否则回 409
+/// （[MangaPageChanged]）。只按页序取图时，host 重启 / 页表缓存被淘汰后重新解析出
+/// 一份换了页的表，同一个页序会端出另一页，客户端还按旧身份记账。旧 host 不认这个
+/// 参数（照旧按页序回图），旧 client 不带它（host 不核对），wire 双向兼容。
+const String kMangaPageKeyQuery = 'pageKey';
+
+/// 页身份 [key] 在取页请求里的形态：sha256 十六进制前 24 位（与章目录摘要同一算法）。
+/// 源端页身份多是长 URL、还带 `\u0000` 分隔符，不直接进查询串。
+String remoteMangaPageKeyDigest(String key) => mangaChapterDigest(key);
+
+/// 取页请求带的页身份与 host 此刻页表里这一页的身份对不上（HBK-AUDIT-205）：
+/// host 那边源端换了页 / 重排了页，客户端手上的页表已过期。端点回 409；客户端
+/// 应重取页表再判（换了页就按新页表重开，不能拿这一页当旧表的那一页）。
+class MangaPageChanged implements Exception {
+  const MangaPageChanged(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'MangaPageChanged: $message';
+}
+
 /// 对端不提供互联漫画源（老版本 Fushi，或库服务关着）。
 ///
 /// 与「这本书读不出来」严格分开：前者是**对端能力**问题，出路是让对端升级 / 打开
@@ -1561,7 +1588,15 @@ abstract interface class MangaLibraryHost {
   ///
   /// 越界、缺文件、或解析出的路径逃出该书 `images/` 目录时抛 [StateError] → 端点 404
   /// （穿越只在 host 侧这一道守卫上判，client 永远不参与路径解析）。
-  Future<File> mangaPageFile(String bookKey, int index);
+  ///
+  /// [expectedKeyDigest] 非 null 时（[kMangaPageKeyQuery]）：第 [index] 页此刻的
+  /// 身份（[RemoteMangaPageInfo.key]）的 [remoteMangaPageKeyDigest] 必须等于它，
+  /// 认不出身份或不相等都抛 [MangaPageChanged] → 端点 409。
+  Future<File> mangaPageFile(
+    String bookKey,
+    int index, {
+    String? expectedKeyDigest,
+  });
 
   /// 章节式在线漫画 [bookKey] 中目录摘要为 [chapterDigest] 的那一章的页表
   /// （BUG-2474）。该章不存在 / 未完整下载 / 该书不是章节式漫画时抛 [StateError] →
@@ -1572,12 +1607,14 @@ abstract interface class MangaLibraryHost {
     String chapterDigest,
   );
 
-  /// [mangaChapterManifest] 页表里第 [index] 页的页图文件；判据同 [mangaPageFile]。
+  /// [mangaChapterManifest] 页表里第 [index] 页的页图文件；判据（含
+  /// [expectedKeyDigest]）同 [mangaPageFile]。
   Future<File> mangaChapterPageFile(
     String bookKey,
     String chapterDigest,
-    int index,
-  );
+    int index, {
+    String? expectedKeyDigest,
+  });
 }
 
 /// 书籍阅读进度跨设备冲突解决（TODO-767）——「取较新时间戳」last-write-wins，

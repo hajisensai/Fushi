@@ -13,7 +13,8 @@
 //!    身份记录不成形整次重建失败时缓存三类不比；有删除被扣住的笔记不比 `deleted_at` / `pending_decision` 与它的卡的
 //!    `hidden`、笔记类型的删除被扣住时它的笔记的卡不比 `hidden`（同 `edits` 的口径）；同一个旧修改记录 ID 下有两条
 //!    不同修改的笔记（复制出来的两份旧库各自续写）不比它与它的卡。
-//!    协议 3 一侧先做完它自己欠着的收尾（待重放集合、没刷新的合成标签行）再重建（[protocol_3_caches]）。
+//!    协议 3 一侧先做完它自己欠着的收尾（待重放集合、没刷新的合成标签行），把旧代码重放改写过的日志结果改回
+//!    （`stale.rs`）再重建（[protocol_3_caches]）。
 //!
 //! 库还没做完换代前必须做完的事（旧行没包成操作、去重作业没跑完）时，在一份拷贝上把它们做完再对拍（拷贝、收尾
 //! 出错都算失败）；做不完的（新设备收段通道还开着）跳过，跳过的场景逐个列在 [SKIPS]，没列的跳过让测试失败。与协议 3
@@ -279,6 +280,9 @@ fn protocol_3_caches(
             crate::store::sync2::semantics::refresh_tags_row(src, profile, note, &mut touched)
                 .map_err(Protocol3)?;
         }
+        // 旧代码重放改写过、再没改回来的日志结果先改回（`stale.rs`，与干跑同一份判据）。
+        let stale = super::stale::find(src, profile).map_err(Setup)?;
+        super::stale::heal(src, &stale).map_err(Protocol3)?;
         crate::store::caches::rebuild(src, profile, &cfg).map_err(Protocol3)?;
         read().map_err(Setup)
     })();
@@ -777,7 +781,8 @@ fn check_profile(name: &str, w: &Connection, profile: &str) {
                 let columns: Vec<String> = unknown
                     .iter()
                     .filter_map(|(what, old, new)| {
-                        compare::column_diffs(what, old, new).map(|c| format!("{what} {c:?}"))
+                        compare::column_diffs(what, old, new, false)
+                            .map(|c| format!("{what} {c:?}"))
                     })
                     .collect();
                 (

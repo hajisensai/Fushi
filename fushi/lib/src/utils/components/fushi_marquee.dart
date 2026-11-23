@@ -416,14 +416,10 @@ class FushiMarquee extends StatelessWidget {
     final double alphabetic = painter.computeDistanceToActualBaseline(
       TextBaseline.alphabetic,
     );
-    final double ideographic = painter.computeDistanceToActualBaseline(
-      TextBaseline.ideographic,
-    );
     painter.dispose();
     return _MarqueeIntrinsics(
       natural: natural,
       alphabeticBaseline: alphabetic,
-      ideographicBaseline: ideographic,
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           if (natural.width > constraints.maxWidth) {
@@ -492,20 +488,17 @@ class _MarqueeIntrinsics extends SingleChildRenderObjectWidget {
   const _MarqueeIntrinsics({
     required this.natural,
     required this.alphabeticBaseline,
-    required this.ideographicBaseline,
     required super.child,
   });
 
   final Size natural;
   final double alphabeticBaseline;
-  final double ideographicBaseline;
 
   @override
   _RenderMarqueeIntrinsics createRenderObject(BuildContext context) =>
       _RenderMarqueeIntrinsics(
         natural: natural,
         alphabeticBaseline: alphabeticBaseline,
-        ideographicBaseline: ideographicBaseline,
       );
 
   @override
@@ -515,8 +508,7 @@ class _MarqueeIntrinsics extends SingleChildRenderObjectWidget {
   ) {
     renderObject
       ..natural = natural
-      ..alphabeticBaseline = alphabeticBaseline
-      ..ideographicBaseline = ideographicBaseline;
+      ..alphabeticBaseline = alphabeticBaseline;
   }
 }
 
@@ -524,10 +516,8 @@ class _RenderMarqueeIntrinsics extends RenderProxyBox {
   _RenderMarqueeIntrinsics({
     required Size natural,
     required double alphabeticBaseline,
-    required double ideographicBaseline,
   }) : _natural = natural,
-       _alphabeticBaseline = alphabeticBaseline,
-       _ideographicBaseline = ideographicBaseline;
+       _alphabeticBaseline = alphabeticBaseline;
 
   Size _natural;
   set natural(Size value) {
@@ -540,13 +530,6 @@ class _RenderMarqueeIntrinsics extends RenderProxyBox {
   set alphabeticBaseline(double value) {
     if (value == _alphabeticBaseline) return;
     _alphabeticBaseline = value;
-    markNeedsLayout();
-  }
-
-  double _ideographicBaseline;
-  set ideographicBaseline(double value) {
-    if (value == _ideographicBaseline) return;
-    _ideographicBaseline = value;
     markNeedsLayout();
   }
 
@@ -571,12 +554,20 @@ class _RenderMarqueeIntrinsics extends RenderProxyBox {
         ),
       );
 
+  /// 与子树实际布局给出的基线一致（debug 下 `debugCheckIntrinsicSizes` 会逐条比对）：
+  /// - 放不下走滚动版 [Marquee]（滚动视图），没有基线 → null；Flutter 3.50 起
+  ///   proxy box 对「子节点无基线」也是如实回 null（flutter#189723），不再断言。
+  /// - 放得下走 `Align(centerLeft, heightFactor: 1)` 里的 [Text]：父约束给的高比一行
+  ///   高时文字竖直居中，基线要加上这段偏移。[RenderParagraph] 对任何
+  ///   [TextBaseline] 都回字母基线（框架的表意基线度量尚不准），这里照办。
   @override
   double? computeDryBaseline(
     covariant BoxConstraints constraints,
     TextBaseline baseline,
-  ) => switch (baseline) {
-    TextBaseline.alphabetic => _alphabeticBaseline,
-    TextBaseline.ideographic => _ideographicBaseline,
-  };
+  ) {
+    if (_natural.width > constraints.maxWidth) return null;
+    final double top =
+        (computeDryLayout(constraints).height - _natural.height) / 2;
+    return top + _alphabeticBaseline;
+  }
 }

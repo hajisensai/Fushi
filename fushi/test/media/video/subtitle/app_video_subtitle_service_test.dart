@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,6 +44,9 @@ void main() {
   late FakeVideoRecognizer recognizer;
   AiTextCompleter completer = FakeAiCompleter(answerAll);
 
+  /// 每次挑识别器时收到的素材（视频恒为 `mixedAudio`）。
+  final List<AsrAudioProfile> resolvedProfiles = <AsrAudioProfile>[];
+
   AppVideoSubtitleService buildService({
     Future<VideoSubtitleRecognizerChoice> Function()? resolve,
     AppVideoSubtitleAudioTrackProbe? probeAudioTracks,
@@ -63,18 +67,24 @@ void main() {
           required VideoSubtitleSegmenterMode mode,
           MossBackendPreference mossBackend = MossBackendPreference.auto,
           VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
-        }) =>
-            resolve?.call() ??
-            Future<VideoSubtitleRecognizerChoice>.value(
-              VideoSubtitleRecognizerChoice(
-                recognizer: recognizer,
-                mossUnavailableReason: mode == VideoSubtitleSegmenterMode.auto
-                    ? 'no nvidia'
-                    : null,
-              ),
-            ),
+          AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
+        }) {
+          resolvedProfiles.add(audioProfile);
+          return resolve?.call() ??
+              Future<VideoSubtitleRecognizerChoice>.value(
+                VideoSubtitleRecognizerChoice(
+                  recognizer: recognizer,
+                  mossUnavailableReason: mode == VideoSubtitleSegmenterMode.auto
+                      ? 'no nvidia'
+                      : null,
+                ),
+              );
+        },
     completerFactory: (AiProviderConfig _) =>
         (completer: completer, close: () {}),
+    // 视频目标不该问音乐的判定。
+    musicAudioProfile: (VideoSubtitleLanguage _) async =>
+        throw StateError('video target asked for the music audio profile'),
   );
 
   /// 一张蓝光盘的目录结构（盘根 / BDMV / PLAYLIST 下一条真实的 `.mpls`）。返回 `.mpls`。
@@ -133,6 +143,7 @@ void main() {
   }
 
   setUp(() {
+    resolvedProfiles.clear();
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     tmp = Directory.systemTemp.createTempSync('app_vsub_');
     jobs = Directory(p.join(tmp.path, 'jobs'));
@@ -428,6 +439,8 @@ void main() {
         AppVideoSubtitleJobStatus.succeeded,
         reason: '${job.errorMessage}',
       );
+      // 视频按混音识别（音乐库歌词才是 song）。
+      expect(resolvedProfiles, <AsrAudioProfile>[AsrAudioProfile.mixedAudio]);
       final String expected = p.join(exportDir.path, 'Ep 1 [k1].ja.srt');
       final VideoSubtitleEpisodeResult result = job.result!.episodes.single;
       expect(result.exported, isTrue);

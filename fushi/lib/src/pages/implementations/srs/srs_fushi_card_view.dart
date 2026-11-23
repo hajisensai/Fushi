@@ -2004,7 +2004,7 @@ WidgetSpan srsRubyWidgetSpan({
 ///
 /// 为什么不用 [Offstage]：释义子树由 GlobalKey 从背面（语义可见）挪进来时（预览切回正面、
 /// 复习换下一张），[RenderOffstage] 不遍历子树语义，挪过来的语义节点仍指着背面那棵已卸下
-/// 的父节点；Flutter 3.47 的 flushSemantics 照这条过期父链算几何，触发
+/// 的父节点；Flutter 3.47 起（3.50.0 仍是）的 flushSemantics 照这条过期父链算几何，触发
 /// `computeChildGeometry` 的「父不是祖先」断言（无障碍开启时每次背面 → 正面都炸）。
 class SrsWarmOffstage extends SingleChildRenderObjectWidget {
   const SrsWarmOffstage({super.key, required super.child});

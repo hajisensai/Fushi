@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_routes.dart';
@@ -28,6 +27,7 @@ import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 
 /// 库 / 文件夹 / BoxSet 的分页网格；搜索框非空时改走 [MediaServerBrowser.search]
 /// （同样分页），排序只对浏览生效。
@@ -515,8 +515,8 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         tokens.spacing.page,
         0,
       ),
-      sliver: SliverLayoutBuilder(
-        builder: (BuildContext context, SliverConstraints constraints) {
+      sliver: FushiSliverWidthBuilder(
+        builder: (BuildContext context, double crossAxisExtent) {
           // 行高按「实际列宽 × 3/2（2:3 海报）+ 文字块」精确给：发现页那种
           // `childAspectRatio: 0.50` 是把文字区按列宽的一半留，桌面 210 列宽下
           // 文字块只要 ~60，卡片底部空出一截（像素预览实测）。列数与
@@ -526,7 +526,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
           final double maxExtent = readerShelfGridExtentForWidth(
             MediaQuery.sizeOf(context).width,
           );
-          final double width = constraints.crossAxisExtent;
+          final double width = crossAxisExtent;
           final int columns = ((width + gap) / (maxExtent + gap))
               .ceil()
               .clamp(1, 1 << 16)

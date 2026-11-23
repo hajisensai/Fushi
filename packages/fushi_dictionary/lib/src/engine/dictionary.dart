@@ -52,9 +52,17 @@ const String kDictTypeProbeVersion = '1';
 /// 词典不必每次启动再读一遍。
 const String kDictSourceProbeKey = 'sourceProbe';
 
-/// [previous] 里混合词典汉字部分的用户设置（[kDictKanjiHiddenKey] /
-/// [kDictKanjiOrderKey]）。重导 / 在线更新时 metadata 按新包整份重建，这两项属于
-/// 用户设置，要从旧记录带过去（与 hiddenLanguages / order 的继承同理）。
+/// 混合词典汉字部分的折叠态（[kDictKanjiCollapseKey]）。缺省 / 不认识的值 = 继承。
+DictionaryCollapseState kanjiPartCollapseStateIn(
+  Map<String, String> metadata,
+) => switch (metadata[kDictKanjiCollapseKey]) {
+  'expanded' => DictionaryCollapseState.expanded,
+  'collapsed' => DictionaryCollapseState.collapsed,
+  _ => DictionaryCollapseState.inherit,
+};
+
+/// [previous] 里混合词典汉字部分的用户设置（[kDictKanjiPartSettingKeys]）。
+/// 重导 / 在线更新时 metadata 按新包整份重建，这几项属于用户设置，要从旧记录带过去（与 hiddenLanguages / order 的继承同理）。
 Map<String, String> kanjiPartSettingsOf(Dictionary? previous) {
   if (previous == null) return const <String, String>{};
   return kanjiPartSettingsIn(previous.metadata);
@@ -281,6 +289,17 @@ class Dictionary {
     if (collapsedLanguages.contains(languageCode)) {
       return DictionaryCollapseState.collapsed;
     }
+    return DictionaryCollapseState.inherit;
+  }
+
+  /// 这本词典的**汉字卡**在 [language] 下的折叠三态（拍板台 6uasoIUvSR）。
+  ///
+  /// 混合词典的汉字部分单记在 [kDictKanjiCollapseKey]（它的 collapsedLanguages /
+  /// expandedLanguages 属于术语部分，BUG-3573）；纯 kanji 词典没有术语部分，就是
+  /// [collapseStateFor]。不在「汉字」分区的词典恒为继承（它不出汉字卡）。
+  DictionaryCollapseState kanjiCardCollapseStateFor(Language language) {
+    if (hasEmbeddedKanji) return kanjiPartCollapseStateIn(metadata);
+    if (type == DictionaryType.kanji) return collapseStateFor(language);
     return DictionaryCollapseState.inherit;
   }
 

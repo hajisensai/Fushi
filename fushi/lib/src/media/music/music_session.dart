@@ -88,7 +88,7 @@ class MusicSession extends ChangeNotifier {
     MusicResumeMode Function()? resumeMode,
     required bool hasSystemMediaSession,
     Stream<MediaNsfwSnapshot> Function(FushiDatabase db)? watchNsfw,
-    bool Function()? blurNsfwCovers,
+    ValueListenable<bool>? blurNsfwCovers,
   }) : _audio = audio,
        _watchNsfw = watchNsfw,
        _blurNsfwCovers = blurNsfwCovers,
@@ -119,6 +119,9 @@ class MusicSession extends ChangeNotifier {
       ..resolveStartPosition = _resolveStartPosition
       ..addListener(_onEngineChanged);
     _audiobook.addListener(_onAudiobookChanged);
+    // 开关一变就重发当前媒体卡：暂停时没有进度 tick，不主动重发的话锁屏会一直挂着
+    // 开关变化前发布的原图（HBK-AUDIT-217）。
+    _blurNsfwCovers?.addListener(_publishMediaSession);
     favorites?.addListener(notifyListeners);
     appleMusicFavorites?.addListener(notifyListeners);
     _subs.addAll(<StreamSubscription<Object?>>[
@@ -162,9 +165,10 @@ class MusicSession extends ChangeNotifier {
 
   /// NSFW 标记快照的来源（生产 = app 端 `watchMediaNsfwSnapshot`）与「模糊 NSFW
   /// 封面」开关：NSFW 专辑的封面不进系统媒体控件 / 锁屏（拍板台
-  /// NCzkl6oLnf-adult-cover）。两者缺一 = 不管（测试 / 无库）。
+  /// NCzkl6oLnf-adult-cover）。两者缺一 = 不管（测试 / 无库）。开关是可监听的：
+  /// 值一变就重发媒体卡（见构造函数）。
   final Stream<MediaNsfwSnapshot> Function(FushiDatabase db)? _watchNsfw;
-  final bool Function()? _blurNsfwCovers;
+  final ValueListenable<bool>? _blurNsfwCovers;
   StreamSubscription<MediaNsfwSnapshot>? _nsfwSub;
 
   /// 首份快照到之前为 null（这段时间本地专辑的曲目一律不带封面，见
@@ -608,11 +612,12 @@ class MusicSession extends ChangeNotifier {
       return;
     }
     _ensureNsfwWatch();
+    final ValueListenable<bool>? blurNsfwCovers = _blurNsfwCovers;
     final bool hideArt =
-        _blurNsfwCovers != null &&
+        blurNsfwCovers != null &&
         _watchNsfw != null &&
         musicMediaSessionArtHidden(
-          blur: _blurNsfwCovers(),
+          blur: blurNsfwCovers.value,
           snapshot: _nsfw,
           item: item,
         );
@@ -659,6 +664,7 @@ class MusicSession extends ChangeNotifier {
       unawaited(s.cancel());
     }
     unawaited(_nsfwSub?.cancel());
+    _blurNsfwCovers?.removeListener(_publishMediaSession);
     _audiobook.removeListener(_onAudiobookChanged);
     favorites?.removeListener(notifyListeners);
     favorites?.dispose();

@@ -56,6 +56,8 @@ String ttsRenderFailureText(String? code) {
       return t.manga_audio_failure_silent_output;
     case 'clip_source_missing':
       return t.manga_audio_failure_clip_missing;
+    case 'line_not_read':
+      return t.manga_audio_failure_line_not_read;
   }
   if (code != null && code.startsWith('tts_')) {
     final String name = code.substring(4);

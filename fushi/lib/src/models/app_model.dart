@@ -22,6 +22,7 @@ import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/derived_value_listenable.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
@@ -211,7 +212,8 @@ import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
     show
         ExtensionDictionaryFont,
         browserExtensionDictionaryFont,
-        browserExtensionDictionaryFontForView;
+        browserExtensionDictionaryFontForView,
+        popupKanjiCardNamesIn;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_settings_drift_store.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
@@ -2475,8 +2477,13 @@ class AppModel
       database: () => isDatabaseReady ? database : null,
       showMediaNotification: () => showMediaNotification,
       // NSFW 专辑的封面不进系统媒体控件 / 锁屏；偏好未就绪时按开关默认（开）处理。
+      // 从 AppModel 自身派生：它转发当前偏好仓库的每次变化（换档案换仓库也跟得上），
+      // 开关值真的变了才通知会话重发媒体卡（HBK-AUDIT-217）。
       watchNsfw: watchMediaNsfwSnapshot,
-      blurNsfwCovers: () => !isPreferencesReady || prefsRepo.blurNsfwCovers,
+      blurNsfwCovers: DerivedValueListenable<bool>(
+        this,
+        () => !isPreferencesReady || prefsRepo.blurNsfwCovers,
+      ),
       resumeMode: () => isPreferencesReady
           ? prefsRepo.musicResumeMode
           : MusicResumeMode.longTracks,
@@ -6361,9 +6368,18 @@ class AppModel
   ThemeAccentOverrideSource? get activeAccentOverrideSource =>
       themeNotifier.activeAccentOverrideSource;
 
-  /// 阅读器纸色用的主题键：偏好原值（可能是已删的旧预设 id，如 ecru-theme），
-  /// 让存量用户的阅读器纸色照旧生效（2026-10 预设精简时阅读器纸色不动）。
-  String get readerThemeKey => themeNotifier.storedAppThemeKey;
+  /// 阅读器纸色用的主题键：当前明暗下显式选的纸色优先，否则跟随 app 主题偏好
+  /// 原值（见 [ThemeNotifier.readerThemeKey]）。
+  String get readerThemeKey => themeNotifier.readerThemeKey;
+
+  /// 「跟随主题」时阅读器纸色所跟的主题键（偏好原值，可能是旧纸色 id）。
+  String get readerFollowThemeKey => themeNotifier.storedAppThemeKey;
+
+  /// 阅读器纸色（拍板台 vJSj4RsKFt）：浅色 / 深色各一份，null = 跟随 app 主题。
+  String? readerPaperFor({required bool dark}) =>
+      themeNotifier.readerPaperFor(dark: dark);
+  Future<void> setReaderPaper({required bool dark, String? key}) =>
+      themeNotifier.setReaderPaper(dark: dark, key: key);
 
   /// 「纯黑深色背景」开关（原「纯黑」预设的语义）。
   bool get pureBlackDark => themeNotifier.pureBlackDark;
@@ -6588,6 +6604,14 @@ class AppModel
     autoExpandRows: popupAutoExpandDictionaries,
     collapsedDictionaryNames: _popupCollapsedNamesOf(lookupViewDictionaries),
     expandedDictionaryNames: _popupExpandedNamesOf(lookupViewDictionaries),
+    kanjiCollapsedDictionaryNames: popupKanjiCardNamesIn(
+      lookupViewDictionaries,
+      DictionaryCollapseState.collapsed,
+    ),
+    kanjiExpandedDictionaryNames: popupKanjiCardNamesIn(
+      lookupViewDictionaries,
+      DictionaryCollapseState.expanded,
+    ),
   );
 
   /// 词典管理里逐本「折叠」/「展开」的词典名（BUG-2158 三态），与 in-app 弹窗注入的
@@ -6638,6 +6662,14 @@ class AppModel
         autoExpandRows: p.popupAutoExpandDictionaries,
         collapsedDictionaryNames: _popupCollapsedNamesOf(view.dictionaries),
         expandedDictionaryNames: _popupExpandedNamesOf(view.dictionaries),
+        kanjiCollapsedDictionaryNames: popupKanjiCardNamesIn(
+          view.dictionaries,
+          DictionaryCollapseState.collapsed,
+        ),
+        kanjiExpandedDictionaryNames: popupKanjiCardNamesIn(
+          view.dictionaries,
+          DictionaryCollapseState.expanded,
+        ),
       ),
       einkMode: theme.einkMode,
     ));
@@ -10618,6 +10650,15 @@ class AppModel
     Dictionary dictionary,
     bool hidden,
   ) => dictRepo.setDictionaryKanjiPartHidden(dictionary, hidden);
+
+  /// 汉字卡的折叠三态（拍板台 6uasoIUvSR，「汉字」分区里的折叠控件）：混合词典写它
+  /// 汉字部分自己的键，纯 kanji 词典就是它自己的三态（它没有术语部分）。
+  Future<void> setDictionaryKanjiCardCollapseState(
+    Dictionary dictionary,
+    DictionaryCollapseState state,
+  ) => dictionary.hasEmbeddedKanji
+      ? dictRepo.setDictionaryKanjiPartCollapseState(dictionary, state)
+      : setDictionaryCollapseState(dictionary, state);
 
   Future<void> toggleDictionaryHidden(Dictionary dictionary) async {
     await dictRepo.toggleDictionaryHidden(

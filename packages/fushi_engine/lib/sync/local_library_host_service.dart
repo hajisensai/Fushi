@@ -117,7 +117,7 @@ import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
         readDownloadedChapterPayload;
 import 'package:fushi_engine/media/manga/manga_storage.dart' show MangaStorage;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
-    show MokuroPayload, parseMangaJson;
+    show MokuroImage, MokuroPayload, parseMangaJson;
 
 part 'local_library_host_service/dictionaries.part.dart';
 part 'local_library_host_service/books.part.dart';

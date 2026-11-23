@@ -313,4 +313,55 @@ void main() {
     );
     expect(find.byType(FushiLogoTitle), findsOneWidget);
   });
+
+  // BUG-5252：半高卡（库页拼贴首块旁 125 高、首页小块约 96～125 高）也画 logo，
+  // 进 40 高的固定标题槽；副行 / 进度放不下就丢副行，logo 不压到它们上面。
+  for (final Size box in const <Size>[Size(300, 125), Size(230, 100)]) {
+    testWidgets('半高色块 ${box.width.toInt()}×${box.height.toInt()}：画 logo、'
+        '收在标题槽里、不压副行与进度（BUG-5252）', (WidgetTester tester) async {
+      final MemoryImage logo = await makeImage(tester, 300, 100);
+      final MemoryImage backdrop = await makeImage(tester, 160, 90);
+      await pumpBlock(
+        tester,
+        size: box,
+        images: <ImageProvider>[logo, backdrop],
+        block: FushiCoverBlock(
+          size: FushiCoverBlockSize.half,
+          art: FushiCoverBlockArt.portrait,
+          title: 'BOCCHI THE ROCK! 4',
+          covers: const <Widget>[ColoredBox(color: Color(0xFF3366CC))],
+          logo: logo,
+          backdrop: fushiSeriesBackdrop(backdrop),
+          subtitle: '副行文字',
+          progress: 0.4,
+          metaKey: metaKey,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      final Finder title = find.byType(FushiLogoTitle);
+      expect(title, findsOneWidget, reason: '半高卡不再退成标题文字');
+      final Rect slot = tester.getRect(title);
+      expect(
+        slot.height,
+        lessThanOrEqualTo(
+          fushiCoverBlockLogoMaxHeight(
+                FushiCoverBlockSize.half,
+                compact: true,
+              ) +
+              eps,
+        ),
+      );
+      final Rect meta = tester.getRect(find.byKey(metaKey));
+      expect(slot.top, greaterThanOrEqualTo(meta.top - eps));
+      expect(slot.bottom, lessThanOrEqualTo(meta.bottom + eps));
+      final Finder sub = find.text('副行文字');
+      if (sub.evaluate().isNotEmpty) {
+        expect(
+          tester.getRect(sub).top,
+          greaterThanOrEqualTo(slot.bottom - eps),
+          reason: '副行在 logo 下面，不重叠',
+        );
+      }
+    });
+  }
 }

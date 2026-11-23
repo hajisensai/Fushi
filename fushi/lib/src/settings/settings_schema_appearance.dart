@@ -430,6 +430,24 @@ SettingsDestination buildAppearanceDestination() {
             searchTitle: t.dark_mode,
             builder: buildBrightnessSelector,
           ),
+          // 阅读器纸色（拍板台 vJSj4RsKFt）：浅色 / 深色各一行，默认跟随 app 主题，
+          // 显式选羊皮纸 / 护眼 / 深灰等即覆盖；与主题种子色无关。
+          SettingsCustomItem(
+            id: 'appearance.reader_paper_light',
+            icon: FushiIcons.lightMode,
+            searchTitle: t.reader_paper_light,
+            builder: (SettingsContext settingsContext) =>
+                buildReaderPaperSelector(settingsContext, dark: false),
+            cliValue: readerPaperCliValue(dark: false),
+          ),
+          SettingsCustomItem(
+            id: 'appearance.reader_paper_dark',
+            icon: FushiIcons.darkMode,
+            searchTitle: t.reader_paper_dark,
+            builder: (SettingsContext settingsContext) =>
+                buildReaderPaperSelector(settingsContext, dark: true),
+            cliValue: readerPaperCliValue(dark: true),
+          ),
           // 「纯黑深色背景」：原「纯黑」预设的语义（2026-10 预设只决定种子色、不再
           // 自带明暗 / 纯黑），改成明暗旁的独立开关；对系统取色 / 预设 / 自定义主题
           // 一律生效，只在深色下起作用。

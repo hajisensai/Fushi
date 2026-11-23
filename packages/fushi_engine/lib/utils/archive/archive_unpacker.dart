@@ -215,6 +215,29 @@ class ArchiveUnpacker {
     }
   }
 
+  /// 只列条目名、不解包（7-Zip 命令行 `l`），给「按内容定性」的入口用（书籍拖放认
+  /// 「装着一批书的 RAR」）。目录条目不在内。本机没有 7-Zip、条目表加密（要口令才列得出）、
+  /// 列目录失败、或 7-Zip 子进程根本起不来（[ProcessException]：随包 / PATH 上的 7-Zip
+  /// 被删、没执行权限、被杀软拦）时返回 null——调用方按「列不出名字」处理，不在定性阶段
+  /// 向用户要口令。永不抛：定性入口（拖放 / 书籍框选文件）都直接 await 它。
+  Future<List<String>?> listEntryNamesWithCli(String archivePath) async {
+    final String? sevenZip = await _locator.find();
+    if (sevenZip == null) return null;
+    final _CliListing? listing;
+    try {
+      listing = await _cliList(sevenZip, archivePath, null);
+    } on ArchiveUnpackException {
+      return null;
+    } on ProcessException {
+      return null;
+    }
+    if (listing == null) return null;
+    return <String>[
+      for (final Map<String, String> entry in listing.entries)
+        if (entry['Folder'] != '+') entry['Path']!,
+    ];
+  }
+
   /// 把 [archivePath] 解进 [intoDir]（不存在会建；已存在则并入、同名覆盖）。
   ///
   /// [includeExtensions]（小写带点）非空时只解这些扩展名；[maxTotalBytes] / [maxEntries]

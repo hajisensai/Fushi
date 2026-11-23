@@ -48,7 +48,7 @@ if ($code -ne 0 -or -not (Test-Path (Join-Path $wt '.dart_tool\package_config.js
     Write-Log "setup_worktree failed (exit $code) or workspace still unresolved"; exit 1
 }
 
-$dart = if ($env:FUSHI_DART) { $env:FUSHI_DART } else { 'D:/flutter_sdk/flutter_3.47.6/bin/cache/dart-sdk/bin/dart.exe' }
+$dart = if ($env:FUSHI_DART) { $env:FUSHI_DART } else { 'D:/flutter_sdk/flutter_3.50.0/bin/cache/dart-sdk/bin/dart.exe' }
 $flags = "--repo `"$wt`""
 if (-not $Force) { $flags += ' --if-changed' }
 # 经 cmd 重定向：PS 5.1 里对原生命令用 2>&1，会把 stderr 每行（heavy 的排队提示）包成

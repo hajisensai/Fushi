@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.50.0-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | **繁體中文** | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -67,14 +67,14 @@ flutter build ipa --release
 dart build cli
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把 `flutter pub get` 與 `ci/apply-patches.sh` 收斂成一條命令。本專案鎖定 Flutter 3.47.6（Dart SDK `>=3.8.0 <4.0.0`）；Material 與 Cupertino 改走 `material_ui` / `cupertino_ui` 套件，更早的 Flutter 版本編譯不過。部分上游依賴經 vendored 到 `third_party/` 或由 `ci/apply-patches.sh` 修補——機制細節與 Linux 桌面建置依賴見 [docs/agent/build.md](../agent/build.md)。
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把 `flutter pub get` 與 `ci/apply-patches.sh` 收斂成一條命令。本專案鎖定 Flutter 3.50.0（Dart SDK `>=3.8.0 <4.0.0`）；Material 與 Cupertino 改走 `material_ui` / `cupertino_ui` 套件，更早的 Flutter 版本編譯不過。部分上游依賴經 vendored 到 `third_party/` 或由 `ci/apply-patches.sh` 修補——機制細節與 Linux 桌面建置依賴見 [docs/agent/build.md](../agent/build.md)。
 
 <details>
 <summary><b>技術棧一覽</b></summary>
 
 | 層 | 技術 |
 |---|---|
-| 框架 | Flutter 3.47.6（Dart SDK `>=3.8.0 <4.0.0`），Riverpod |
+| 框架 | Flutter 3.50.0（Dart SDK `>=3.8.0 <4.0.0`），Riverpod |
 | 平台 | Android / Windows / macOS / iOS / Linux，外加無頭伺服端 |
 | UI | `material_ui`（Material 3 Expressive）/ `cupertino_ui`（Cupertino） |
 | 閱讀器 | WebView 分頁引擎（衍生自 Hoshi Reader 系列） |

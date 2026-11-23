@@ -368,12 +368,20 @@ Future<RemoteAiAgentSession?> _openRemoteAiAgent(
     client.dispose();
     return null;
   }
-  final HostAssistantTarget target;
+  // 不把推迟赋值的 final 带出 switch：Dart 3.14.0 对「switch 里赋值、之后被闭包
+  // 捕获的推迟 final」AOT 编译崩溃（dart-lang/sdk#64917，只在 release 暴露；修复
+  // dart-lang/sdk@7848cfe821d）。这里眼下没有闭包捕获，但一起改成不推迟赋值的
+  // 形状，免得以后加闭包时复发。升到含该修复的 Flutter 补丁版后可不再受此约束。
   switch (outcome) {
     case InterconnectCapabilityAvailable<HostAssistantTarget>(
-      target: final HostAssistantTarget available,
+      :final HostAssistantTarget target,
     ):
-      target = available;
+      return _openRemoteAiAgentOn(
+        context,
+        client: client,
+        target: target,
+        locale: locale,
+      );
     case InterconnectCapabilityUnavailable<HostAssistantTarget>(
       :final InterconnectHostFailure failure,
       :final int? statusCode,
@@ -391,6 +399,15 @@ Future<RemoteAiAgentSession?> _openRemoteAiAgent(
       );
       return null;
   }
+}
+
+/// host 探测可用后：确认它支持 agent、开会话。[client] 归本函数。
+Future<RemoteAiAgentSession?> _openRemoteAiAgentOn(
+  BuildContext context, {
+  required InterconnectAssistantClient client,
+  required HostAssistantTarget target,
+  required String locale,
+}) async {
   if (!target.supports(kHostAssistantFeatureAgent)) {
     client.dispose();
     _showAiAgentMessage(

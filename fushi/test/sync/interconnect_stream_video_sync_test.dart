@@ -50,6 +50,49 @@ class _NoStreamCapabilityBackend extends InterconnectSyncBackend {
   }
 }
 
+/// 在网络往返的「中途」插入本机操作，复现 sweep 快照与用户删除的竞态
+/// （HBK-AUDIT-213）：[onList] 在清单 GET 返回之前跑，[onCapability] 在能力探测
+/// 返回之前跑（此时本机快照已读、PUT 还没发）。
+class _RaceBackend extends InterconnectSyncBackend {
+  _RaceBackend() : super.withProbe((String u, String t) async => true);
+
+  Future<void> Function()? onList;
+  Future<void> Function()? onCapability;
+  int pushes = 0;
+
+  @override
+  Future<List<RemoteVideoInfo>> listRemoteVideos() async {
+    final List<RemoteVideoInfo> list = await super.listRemoteVideos();
+    final Future<void> Function()? hook = onList;
+    onList = null;
+    if (hook != null) await hook();
+    return list;
+  }
+
+  @override
+  Future<bool> hostAcceptsStreamVideos() async {
+    final bool accepts = await super.hostAcceptsStreamVideos();
+    final Future<void> Function()? hook = onCapability;
+    onCapability = null;
+    if (hook != null) await hook();
+    return accepts;
+  }
+
+  @override
+  Future<StreamVideoPushResult> putRemoteStreamVideo(
+    String id,
+    StreamVideoRegistration entry, {
+    int? presentSinceAt,
+  }) {
+    pushes++;
+    return super.putRemoteStreamVideo(
+      id,
+      entry,
+      presentSinceAt: presentSinceAt,
+    );
+  }
+}
+
 const String _streamUid = 'video/stream/0123456789ab';
 const String _streamUrl = 'https://example.com/live/master.m3u8';
 const String _spec = '{"referer":"https://example.com/"}';
@@ -208,6 +251,64 @@ void main() {
     expect(again.errors, isEmpty, reason: again.errors.join('\n'));
     expect(again.streamVideosPushed, 0);
     expect((await hostDb.allVideoBooks()).length, 1);
+  });
+
+  // HBK-AUDIT-213：本机快照若在 host 清单 GET 之前读，GET 期间删掉的本机独有
+  // 流媒体书仍会被注册给 host，随后在别的设备上复活。
+  test('清单 GET 期间本机删掉的流媒体书不注册给 host', () async {
+    final FushiDatabase local = _memDb();
+    addTearDown(local.close);
+    await local.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: _streamUid,
+        title: 'Stream',
+        videoPath: _streamUrl,
+      ),
+    );
+    final _RaceBackend backend = _RaceBackend();
+    await _clientBackend(base, token, instance: backend);
+    backend.onList = () => local.deleteVideoBooks(<String>[_streamUid]);
+    final SyncRunReport report = SyncRunReport();
+    await _orchestrator(
+      local,
+      backend,
+      work,
+    ).syncVideoProgressLiveForTest(report, backend);
+    expect(report.errors, isEmpty, reason: report.errors.join('\n'));
+    expect(backend.pushes, 0);
+    expect(report.streamVideosPushed, 0);
+    expect(await hostDb.allVideoBooks(), isEmpty);
+  });
+
+  test('本机快照之后、注册 PUT 之前删掉的流媒体书不注册给 host', () async {
+    final FushiDatabase local = _memDb();
+    addTearDown(local.close);
+    for (final String uid in <String>[_streamUid, '${_streamUid}x']) {
+      await local.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: uid,
+          title: uid,
+          videoPath: _streamUrl,
+        ),
+      );
+    }
+    final _RaceBackend backend = _RaceBackend();
+    await _clientBackend(base, token, instance: backend);
+    backend.onCapability = () => local.deleteVideoBooks(<String>[_streamUid]);
+    final SyncRunReport report = SyncRunReport();
+    await _orchestrator(
+      local,
+      backend,
+      work,
+    ).syncVideoProgressLiveForTest(report, backend);
+    expect(report.errors, isEmpty, reason: report.errors.join('\n'));
+    // 删掉的那条不发，还在的那条照常注册。
+    expect(backend.pushes, 1);
+    expect(report.streamVideosPushed, 1);
+    expect(
+      (await hostDb.allVideoBooks()).map((VideoBookRow r) => r.bookUid),
+      <String>['${_streamUid}x'],
+    );
   });
 
   test('host 新有的流媒体书落到本机并带上 host 进度；本机删掉后不再建回', () async {

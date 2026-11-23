@@ -40,10 +40,21 @@ const String kDictKanjiHiddenKey = 'kanjiHidden';
 /// 打开前后看到的顺序本来就一样。
 const String kDictKanjiOrderKey = 'kanjiOrder';
 
-/// 混合词典汉字部分用户设置的键（[kDictKanjiHiddenKey] / [kDictKanjiOrderKey]）。
+/// 词典 metadata：混合词典的汉字部分在查词弹窗里的折叠态（`'expanded'` /
+/// `'collapsed'`，缺省 = 继承全局「折叠词典」开关）。
+///
+/// 汉字卡默认折叠成一行（拍板台 6uasoIUvSR），每本汉字词典像术语词典一样在词典管理里
+/// 有「继承 / 展开 / 折叠」三态。纯 kanji 词典没有术语部分，三态就记在它自己的
+/// collapsedLanguages / expandedLanguages；混合词典的那两个名单属于术语部分
+/// （BUG-3573：在「汉字」分区改它会改到术语释义），所以汉字部分单记在这个键上。
+const String kDictKanjiCollapseKey = 'kanjiCollapse';
+
+/// 混合词典汉字部分用户设置的键（[kDictKanjiHiddenKey] / [kDictKanjiOrderKey] /
+/// [kDictKanjiCollapseKey]）。
 const List<String> kDictKanjiPartSettingKeys = <String>[
   kDictKanjiHiddenKey,
   kDictKanjiOrderKey,
+  kDictKanjiCollapseKey,
 ];
 
 /// [metadata] 里混合词典汉字部分的用户设置（只取 [kDictKanjiPartSettingKeys]）。
