@@ -1544,6 +1544,7 @@ class MediaPosterUpNextCard extends StatelessWidget {
     required this.title,
     required this.onPlay,
     this.image,
+    this.imageFallbacks = const <ImageProvider>[],
     this.meta = const <String>[],
     this.progress,
     this.completed = false,
@@ -1554,6 +1555,9 @@ class MediaPosterUpNextCard extends StatelessWidget {
   final String label;
   final String title;
   final ImageProvider? image;
+
+  /// [image] 加载失败时依次换的图（见 [collectionEpisodeThumb]）。
+  final List<ImageProvider> imageFallbacks;
   final List<String> meta;
 
   /// 0..1；null = 不画进度条。
@@ -1574,6 +1578,7 @@ class MediaPosterUpNextCard extends StatelessWidget {
     final Widget thumb = collectionEpisodeThumb(
       context,
       image,
+      fallbacks: imageFallbacks,
       w: thumbW,
       h: thumbH,
     );
@@ -1850,6 +1855,7 @@ class MediaPosterEpisodeTile extends StatelessWidget {
   const MediaPosterEpisodeTile({
     required this.image,
     required this.title,
+    this.imageFallbacks = const <ImageProvider>[],
     this.number,
     this.identityLabel,
     this.meta = const <String>[],
@@ -1867,6 +1873,10 @@ class MediaPosterEpisodeTile extends StatelessWidget {
 
   /// 剧照 / 集缩略图；null = 占位。
   final ImageProvider? image;
+
+  /// [image] 加载失败时依次换的图（剧照失败退回自动截图，见
+  /// [collectionEpisodeThumb]）。
+  final List<ImageProvider> imageFallbacks;
   final String title;
 
   /// 集简介（集级刮削资料，TODO-2491）；null / 空 = 不占位。竖排剧照格最多
@@ -1943,7 +1953,13 @@ class MediaPosterEpisodeTile extends StatelessWidget {
     final Widget thumb = Stack(
       children: <Widget>[
         dim(
-          collectionEpisodeThumb(context, image, w: thumbW, h: thumbH),
+          collectionEpisodeThumb(
+            context,
+            image,
+            fallbacks: imageFallbacks,
+            w: thumbW,
+            h: thumbH,
+          ),
           'collection-episode-thumb',
         ),
         if (badge is RemoteDownloadProgressBadge) Positioned.fill(child: badge),

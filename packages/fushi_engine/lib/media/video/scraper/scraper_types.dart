@@ -206,6 +206,29 @@ enum CoverOrigin {
   sidecar,
 }
 
+/// 封面来源的展示语义。
+extension CoverOriginDisplay on CoverOrigin {
+  /// 这张封面是不是用户自己定的：手动设置（本地图片 / 粘贴 / 手动抽帧）、自己放进
+  /// 目录的 sidecar、亲手在匹配弹窗选定的刮削图，以及清理窗口里出现的同路径
+  /// 替换物（按用户资产对待）。
+  ///
+  /// 选集页取图顺序「手动封面 > 分集剧照 > 自动截图」（拍板 GLMHiavo0y）据此决定
+  /// 封面排在剧照前还是后。自动抽帧、自动刮削、分不清来源的存量 [CoverOrigin.scraped]
+  /// 与清理中的 [CoverOrigin.cleanupPending] 都不算——它们只是占位，有剧照就让给剧照。
+  /// 这与「后台写入能否覆盖」（`CoverMetaStore.allowsAutoFrameWrite`）是两回事：
+  /// 那边对分不清的来源 fail-closed，这里只认确定是用户挑的。
+  bool get isUserChosen => switch (this) {
+    CoverOrigin.manual ||
+    CoverOrigin.sidecar ||
+    CoverOrigin.userScraped ||
+    CoverOrigin.cleanupReplacement => true,
+    CoverOrigin.autoFrame ||
+    CoverOrigin.scraped ||
+    CoverOrigin.autoScraped ||
+    CoverOrigin.cleanupPending => false,
+  };
+}
+
 /// 单本封面的元数据（`cover_meta.json` 里按 bookUid 存）。
 class CoverMeta {
   const CoverMeta({
