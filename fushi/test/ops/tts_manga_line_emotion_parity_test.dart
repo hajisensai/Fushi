@@ -1,4 +1,4 @@
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_cli/fushi_cli.dart' show kTtsMangaLineEmotions;
 import 'package:fushi_engine/tts/cast/cast_line_kind.dart' show CastEmotion;
 

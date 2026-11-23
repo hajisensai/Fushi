@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/drag_drop/import_dialog_drop.dart';
@@ -343,7 +344,7 @@ class _BookImportDialogState extends State<BookImportDialog>
       // 与本框的 [_handoffIfManga] 同口径：书籍框认出漫画就转交漫画导入，不另查模块开关。
       mangaEnabled: true,
     );
-    if (mounted) Navigator.pop(context, imported);
+    if (mounted) closeOwnRoute(context, imported);
     return true;
   }
 
@@ -443,7 +444,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     );
     if (mounted) {
       // 关掉书籍框并把漫画侧的导入结果透传出去，书架照常刷新。
-      Navigator.pop(context, imported == true);
+      closeOwnRoute(context, imported == true);
     }
     return true;
   }
@@ -1339,7 +1340,7 @@ class _BookImportDialogState extends State<BookImportDialog>
             msg: t.book_import_duplicate_cancelled,
             severity: ToastSeverity.info,
           );
-          Navigator.pop(context, false);
+          closeOwnRoute(context, false);
         }
       },
       action: () async {
@@ -1365,7 +1366,7 @@ class _BookImportDialogState extends State<BookImportDialog>
               ? t.srt_import_success
               : '${t.srt_import_success} · $tail';
           FushiToast.show(msg: msg, severity: ToastSeverity.success);
-          Navigator.pop(context, true);
+          closeOwnRoute(context, true);
         }
       },
     );

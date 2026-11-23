@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_model
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_book.dart'
     show downloadAudiobookshelfSubtitle;
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
     show ImportProgressCard;
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_subtitle_dialog.dart'
@@ -419,7 +420,7 @@ class SrtBookReimportDialogState extends State<SrtBookReimportDialog>
             msg: t.audiobook_import_success,
             severity: ToastSeverity.success,
           );
-          Navigator.pop(context, outcome);
+          closeOwnRoute(context, outcome);
         }
       },
     );

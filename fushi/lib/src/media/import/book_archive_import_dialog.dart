@@ -6,6 +6,7 @@ import 'package:fushi_engine/media/book_archive/book_archive_import.dart';
 import 'package:fushi_engine/utils/archive/archive_unpacker.dart'
     show ArchiveUnpackFailure;
 
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
     show ImportProgressCard;
@@ -140,7 +141,7 @@ class _BookArchiveImportDialogState extends State<BookArchiveImportDialog> {
   /// 关框并把汇总（连同漫画暂存的所有权）交给 [showBookArchiveImportDialog]。
   void _deliver(BookArchiveImportSummary? summary) {
     _delivered = true;
-    Navigator.pop(context, summary);
+    closeOwnRoute(context, summary);
   }
 
   Future<void> _run() async {
