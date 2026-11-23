@@ -227,6 +227,20 @@ class MusicLyricsLive extends ChangeNotifier {
     _onEngine();
   }
 
+  /// 音乐学习统计（[MusicStudyTracker]）要跟句计歌词字数：时钟可能走时为 true。与桌面歌词、
+  /// 媒体会话、Live Activity 并列的第四个使用方。
+  bool _studyWanted = false;
+
+  void setStudyWanted(bool value) {
+    if (_studyWanted == value) return;
+    _studyWanted = value;
+    _onEngine();
+  }
+
+  /// [trackUid] 是当前曲目时它的生效歌词（含整首偏移）；不是 / 还没解析完为 null。
+  LyricTimeline? timelineFor(String trackUid) =>
+      trackUid == _uid ? _timeline : null;
+
   /// 锁屏 / 媒体通知该显示的当前行（设置关着为 null）。
   String? get mediaSessionLine =>
       _mediaSessionEnabled() ? currentLineText : null;
@@ -234,7 +248,10 @@ class MusicLyricsLive extends ChangeNotifier {
   bool get desktopShown => _desktopShown;
 
   bool get _wanted =>
-      _desktopEnabled() || _mediaSessionEnabled() || _liveActivityWanted;
+      _desktopEnabled() ||
+      _mediaSessionEnabled() ||
+      _liveActivityWanted ||
+      _studyWanted;
 
   /// 歌词页换了来源 / 调了偏移：重新解析当前曲目。
   Future<void> reload() async {

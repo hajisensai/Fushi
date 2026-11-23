@@ -7446,7 +7446,7 @@
   "music_liked_title": "我喜欢的音乐",
   "music_liked_unavailable": "${name}没有提供「我喜欢的音乐」歌单。",
   "music_link_unavailable": "这里打不开它的详情",
-  "music_listening_study_hint": "关闭时只计歌词页上查词、制卡或循环之后的收听时间",
+  "music_listening_study_hint": "计入时长和歌词字数（每句只计一次）。关闭时只计歌词页上查词、制卡或循环之后的部分",
   "music_listening_study_title": "听歌计入学习",
   "music_loudness_scan_hint": "后台做 EBU R128 测量，结果只存进曲库，不改动你的文件。",
   "music_loudness_scan_now": "立即测量响度",
