@@ -181,9 +181,8 @@ String mangaBubbleFocusJs({
     if (fcAnim) { cancelAnimationFrame(fcAnim); fcAnim = null; }
     if (fcDim) { fcDim.remove(); fcDim = null; }
     if (!keepZoom) {
-      _animateZoomTo(ZOOM_REST, window.innerWidth / 2, window.innerHeight / 2, function(){
-        if (ZOOM <= 1) { _recenterPan(); _applyCanvas(); }
-      });
+      // 终态平移由 _animateZoomTo 算好（<=1 回中），不再落定后补摆。
+      _animateZoomTo(ZOOM_REST, window.innerWidth / 2, window.innerHeight / 2);
     }
     _fcNotify('exit', null);
     return true;

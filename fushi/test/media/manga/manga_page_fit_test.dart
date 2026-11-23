@@ -761,6 +761,36 @@ void main() {
       }
     });
 
+    test(
+      'BUG-5351: a shown page swaps tiers only after the new image decoded',
+      () async {
+        // 双击放大 / 缩回落定后换 `fit=` 档：直接改在屏 async 图的 src，新图到货那一帧
+        // 还没解码，整页露底色黑闪。必须先离屏 decode() 再换，换上去的那张同步解码。
+        final String document = doc(fit: true);
+        final int from = document.indexOf('  var FIT_IMAGES = ');
+        final int to = document.indexOf('  function _layoutSource(page){');
+        expect(from, greaterThan(0));
+        expect(to, greaterThan(from));
+        final String section = document.substring(from, to);
+        final String script = _swapHarness.replaceFirst('/*SECTION*/', section);
+        final Directory dir = Directory.systemTemp.createTempSync('manga-fit-');
+        try {
+          final File file = File('${dir.path}/verify.js')
+            ..writeAsStringSync(script);
+          final ProcessResult result = await Process.run('node', <String>[
+            file.path,
+          ], runInShell: Platform.isWindows);
+          expect(
+            result.exitCode,
+            0,
+            reason: '${result.stdout}\n${result.stderr}',
+          );
+        } finally {
+          dir.deleteSync(recursive: true);
+        }
+      },
+    );
+
     test('dragging the window edge re-requests only the final tier', () async {
       // manga-22：resize 一秒几十次，每次都直接换 `fit=` 档的话，已加载的页每跨过
       // 一个 128 px 档就排一次整张转码；resize 路径只排版，换图走 200 ms 合并。
@@ -789,6 +819,63 @@ void main() {
     });
   });
 }
+
+const String _swapHarness = r'''
+const assert=require('node:assert/strict');
+var ZOOM=1, CURRENT=0, IS_WEBTOON=false;
+const window={innerWidth:800,innerHeight:1200,devicePixelRatio:2.625};
+const decodes=[];
+class Image {
+  constructor(){ this.src=''; }
+  decode(){ return new Promise((resolve,reject)=>{ decodes.push({src:this.src,resolve,reject}); }); }
+}
+const base='https://manga.local/img/p0.jpg?s=ab&v=1';
+const img={a:{'data-src':base}, sets:0, complete:false, naturalWidth:0, decoding:'async',
+  getAttribute(k){ return k in this.a ? this.a[k] : null; },
+  setAttribute(k,v){ this.a[k]=String(v); this.sets++; }};
+const page={dataset:{pw:'3840'}, __fitScale:0.2,
+  getAttribute(k){ return k==='data-spread' ? '0' : null; },
+  querySelector(){ return img; },
+  getBoundingClientRect(){ return {top:0,bottom:10}; }};
+const document={querySelectorAll(){ return [page]; }};
+/*SECTION*/
+const tick=()=>new Promise(r=>setImmediate(r));
+(async()=>{
+  _refitPage(page);
+  assert.equal(img.a.src, base+'&fit=2048','首次挂 src（还没有画面）直接设');
+  assert.equal(decodes.length,0);
+  assert.equal(img.decoding,'async','首次加载不改成同步解码');
+  img.complete=true; img.naturalWidth=2048;
+  // 双击放大到 2×：在屏图先不动，离屏预取解码 2 档。
+  ZOOM=2;
+  _refitPage(page);
+  assert.equal(img.a.src, base+'&fit=2048','解码完成前在屏图不换 src（否则黑闪一帧）');
+  assert.equal(decodes.length,1);
+  assert.equal(decodes[0].src, base+'&fit=4096');
+  _refitPage(page);
+  assert.equal(decodes.length,1,'同一档不重复预取');
+  decodes[0].resolve(); await tick();
+  assert.equal(img.a.src, base+'&fit=4096','解码好才换上');
+  assert.equal(img.decoding,'sync','换上的在屏图同步解码，光栅等解码不露底');
+  // 缩回途中又放大：过时的预取到货后丢弃，只认最后一次。
+  ZOOM=1; _refitPage(page);
+  ZOOM=3; _refitPage(page);
+  assert.equal(decodes.length,3);
+  decodes[1].resolve(); await tick();
+  assert.equal(img.a.src, base+'&fit=4096','过时的 1 档预取不覆盖');
+  decodes[2].resolve(); await tick();
+  assert.equal(img.a.src, base+'&fit=8064');
+  // 预取失败照换：交给在屏图的 error 监听打失败标记。
+  ZOOM=1; _refitPage(page);
+  decodes[3].reject(new Error('502')); await tick();
+  assert.equal(img.a.src, base+'&fit=2048');
+  // 预取中回到当前档：撤销挂起的换图。
+  ZOOM=2; _refitPage(page);
+  ZOOM=1; _refitPage(page);
+  decodes[4].resolve(); await tick();
+  assert.equal(img.a.src, base+'&fit=2048','回到当前档后挂起的换图作废');
+})().catch(e=>{ console.error(e); process.exit(1); });
+''';
 
 const String _resizeHarness = r'''
 const assert=require('node:assert/strict');
