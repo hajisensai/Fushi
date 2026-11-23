@@ -238,6 +238,8 @@ fn protocol_3_caches(
     src: &Connection,
     profile: &str,
     cfg: &str,
+    t: &Truth<'_>,
+    col: i64,
 ) -> Result<CacheRows, OldCachesError> {
     use OldCachesError::{Protocol3, Setup};
     let read = || -> Result<CacheRows, String> {
@@ -280,8 +282,8 @@ fn protocol_3_caches(
             crate::store::sync2::semantics::refresh_tags_row(src, profile, note, &mut touched)
                 .map_err(Protocol3)?;
         }
-        // 旧代码重放改写过、再没改回来的日志结果先改回（`stale.rs`，与干跑同一份判据）。
-        let stale = super::stale::find(src, profile).map_err(Setup)?;
+        // 旧代码重放改写过、或重复日志停留在败者副本的日志结果先改回（`stale.rs`，与干跑同一份判据）。
+        let stale = super::stale::find(src, profile, t, col).map_err(Setup)?;
         super::stale::heal(src, &stale).map_err(Protocol3)?;
         crate::store::caches::rebuild(src, profile, &cfg).map_err(Protocol3)?;
         read().map_err(Setup)
@@ -307,7 +309,7 @@ pub(crate) fn against_protocol_3(src: &Connection, profile: &str, t: &Truth<'_>,
             t,
             col,
             &mut |src: &Connection, profile: &str, cfg: &str| {
-                protocol_3_caches(src, profile, cfg).inspect_err(|e| {
+                protocol_3_caches(src, profile, cfg, t, col).inspect_err(|e| {
                     if let OldCachesError::Protocol3(text) = e {
                         protocol_3_failed = Some(text.clone());
                     }

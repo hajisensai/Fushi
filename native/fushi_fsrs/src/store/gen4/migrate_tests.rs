@@ -2238,3 +2238,857 @@ fn a_wrong_result_on_a_log_that_carries_its_config_still_fails_the_check() {
         "{p:#}"
     );
 }
+
+fn dup_config(ret: f64) -> Value {
+    crate::sync2::sched::Config {
+        desired_retention: ret,
+        ..Default::default()
+    }
+    .to_json()
+}
+
+fn dup_day(at: i64) -> i64 {
+    crate::projection::Day {
+        utc_offset_min: 0,
+        rollover_hour: 4,
+    }
+    .index(at)
+}
+
+fn dup_author_res(at: i64, ivl: i64, reps: i64, s: f64, d: f64) -> Value {
+    json!({
+        "queue": "review",
+        "dueDay": dup_day(at) + ivl,
+        "ivl": ivl,
+        "step": 0,
+        "reps": reps,
+        "lapses": 0,
+        "scheduler": "fushi",
+        "lastReviewedAt": at,
+        "mem": {"s": s, "d": d, "sf": s},
+    })
+}
+
+/// 测试夹具专用键：[seed_dup_legacy_device] 写旧日志行时从行里摘掉，写成这条日志在本设备 `srs_event_local` 里的 S(e)。
+const DUP_SERVER_TIME: &str = "test:serverTime";
+
+fn seed_dup_legacy_device(d: &Device, l2_log: &Value, l3_log: Option<&Value>) -> (String, String) {
+    use crate::store::gen4::dryrun::tests::N1;
+    use crate::store::sync2::config::default_deck_id;
+    use crate::store::sync2::tests::DAY;
+
+    let card1 = crate::registers::card_id(N1, "t1", 0).unwrap();
+    let card2 = crate::registers::card_id(N2, "t1", 0).unwrap();
+    let l1_at = T0 - 40 * DAY;
+    let l1_log = json!({
+        "id": "L1", "p": P, "card": card1, "kind": "review", "rating": 3,
+        "hlc": format!("{l1_at}:0:old"), "at": l1_at, "ts": "anchored",
+        "origin": "fushi", "rtype": "learn", "utcOff": 0, "rollover": 4, "fv": 1,
+        "res": dup_author_res(l1_at, 3, 1, 3.1730000972747803, 5.282434463500977),
+    });
+
+    {
+        let w = d.core.writer().unwrap();
+        let def_deck = default_deck_id(P);
+        for (id, kind, data) in [
+            (
+                def_deck,
+                "deck",
+                json!({"createdAt": 1, "builtin": "default"}),
+            ),
+            (
+                "NT".to_owned(),
+                "notetype",
+                json!({"createdAt": 1, "ntKind": "standard"}),
+            ),
+            (
+                N1.to_owned(),
+                "note",
+                json!({"createdAt": 1, "guid": N1, "noteTypeId": "NT"}),
+            ),
+            (
+                N2.to_owned(),
+                "note",
+                json!({"createdAt": 1, "guid": N2, "noteTypeId": "NT"}),
+            ),
+        ] {
+            w.execute(
+                "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) \
+                 VALUES (srs_id(?1), srs_id(?2), ?3, ?4, 1)",
+                params![id, P, kind, data.to_string()],
+            )
+            .unwrap();
+        }
+        let edits = [
+            (
+                "notetype",
+                "NT",
+                "fieldDef/fa",
+                json!({"name": "Expression", "ord": 0}),
+            ),
+            (
+                "notetype",
+                "NT",
+                "tmplDef/t1",
+                json!({"name": "A", "ord": 0, "front": "{{Expression}}"}),
+            ),
+            (
+                "notetype",
+                "NT",
+                "tmplDef/t2",
+                json!({"name": "B", "ord": 1, "front": "{{Expression}}"}),
+            ),
+            ("note", N1, "f/fa", json!("猫")),
+            ("note", N2, "f/fa", json!("犬")),
+        ];
+        for (idx, (ekind, eid, key, val)) in edits.iter().enumerate() {
+            let seq = (idx + 1) as i64;
+            let id = crate::registers::edit_id("old", seq);
+            let vv = if seq == 1 {
+                json!({})
+            } else {
+                json!({"old": seq - 1})
+            };
+            let j = json!({
+                "ctx": {"vv": vv},
+                "e": eid,
+                "f": key,
+                "hlc": format!("{}:0:old", T0 - 1000 + seq),
+                "id": id,
+                "k": ekind,
+                "p": P,
+                "s": seq,
+                "ts": "anchored",
+                "v": val,
+                "w": "old",
+            });
+            w.execute(
+                "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
+                 VALUES (srs_id(?1), srs_id(?2), ?3, srs_id(?4), ?5, srs_id(?6), ?7, ?8)",
+                params![id, P, ekind, eid, key, "old", seq, j.to_string()],
+            )
+            .unwrap();
+        }
+        let insert_log = |row: &Value| {
+            let mut row = row.clone();
+            let st = row
+                .as_object_mut()
+                .unwrap()
+                .remove(DUP_SERVER_TIME)
+                .and_then(|v| v.as_i64());
+            w.execute(
+                "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, \
+                 duration_ms, jslim) VALUES (srs_id(?1), srs_id(?2), srs_id(?3), ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                params![
+                    row["id"].as_str().unwrap(),
+                    P,
+                    row["card"].as_str().unwrap(),
+                    row["kind"].as_str().unwrap(),
+                    row["rating"].as_i64(),
+                    row["at"].as_i64().unwrap(),
+                    row["rtype"].as_str().unwrap(),
+                    row["origin"].as_str().unwrap(),
+                    row["dur"].as_i64().unwrap_or(0),
+                    row.to_string(),
+                ],
+            )
+            .unwrap();
+            if let Some(st) = st {
+                w.execute(
+                    "INSERT INTO srs_event_local (event_id, profile_uid, outbox_seq, server_time, received_at) \
+                     VALUES (srs_id(?1), srs_id(?2), NULL, ?3, 0)",
+                    params![row["id"].as_str().unwrap(), P, st],
+                )
+                .unwrap();
+            }
+        };
+        insert_log(&l1_log);
+        insert_log(l2_log);
+        if let Some(l3) = l3_log {
+            insert_log(l3);
+        }
+        let parsed =
+            crate::store::caches::CacheConfig::parse(&serde_json::from_str(&cfg()).unwrap())
+                .unwrap();
+        crate::store::caches::rebuild(&w, P, &parsed).unwrap();
+    }
+    while d.core.sync2_migrate(P, T0, None).unwrap()["done"] != json!(true) {}
+    {
+        let w = d.core.writer().unwrap();
+        let cards = std::collections::BTreeSet::from([card1.clone(), card2.clone()]);
+        crate::store::sync2::replay_cards(&w, &cards).unwrap();
+        let parsed =
+            crate::store::caches::CacheConfig::parse(&serde_json::from_str(&cfg()).unwrap())
+                .unwrap();
+        crate::store::sync2::in_savepoint(&w, |c| crate::store::caches::rebuild(c, P, &parsed))
+            .unwrap();
+    }
+    (card1, card2)
+}
+
+fn drain_dedup(d: &Device) {
+    while d
+        .core
+        .sync2_dedup(P, T0 + 2 * crate::store::sync2::tests::DAY)
+        .unwrap()["done"]
+        != json!(true)
+    {}
+}
+
+fn build_dup_device_pair(
+    tag: &str,
+    l2_small: &Value,
+    l3_small: Option<&Value>,
+    l2_large: &Value,
+    l3_large: Option<&Value>,
+    with_r3: bool,
+) -> (Device, Device, String, String) {
+    use crate::store::sync2::tests::{DAY, review};
+
+    let x = Device::new(&format!("{tag}-x"));
+    let y = Device::new(&format!("{tag}-y"));
+    let id_of = |d: &Device| {
+        d.core.sync2_identity(P, T0).unwrap()["device"]
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let (d_small, d_large) = if id_of(&x) < id_of(&y) {
+        (x, y)
+    } else {
+        (y, x)
+    };
+    let (card1, card2) = seed_dup_legacy_device(&d_small, l2_small, l3_small);
+    seed_dup_legacy_device(&d_large, l2_large, l3_large);
+
+    let mut bucket = Bucket::default();
+    d_small.sync(&mut bucket, "loc", T0 + DAY);
+    d_large.sync(&mut bucket, "loc", T0 + DAY);
+    drain_dedup(&d_large);
+    if with_r3 {
+        d_large.apply(
+            T0 + 2 * DAY,
+            vec![review("r3", &card1, T0 + 2 * DAY, 3, "review")],
+        );
+    }
+    d_large.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    d_small.sync(&mut bucket, "loc", T0 + 2 * DAY);
+    drain_dedup(&d_large);
+    drain_dedup(&d_small);
+
+    let parsed =
+        crate::store::caches::CacheConfig::parse(&serde_json::from_str(&cfg()).unwrap()).unwrap();
+    for d in [&d_small, &d_large] {
+        let w = d.core.writer().unwrap();
+        crate::store::sync2::in_savepoint(&w, |c| crate::store::caches::rebuild(c, P, &parsed))
+            .unwrap();
+    }
+    (d_small, d_large, card1, card2)
+}
+
+fn close_device(d: Device) -> tempdir::Dir {
+    let Device { core, _dir } = d;
+    core.close();
+    drop(core);
+    _dir
+}
+
+/// 存量重复日志在各端所带配置快照 `sc` 不同时，协议 3 先到先得停在操作号更大的败者副本上（如手机本地先包的那份），
+/// 而新代确定性选最小操作号。对拍前把败者代表及其 `sc` / `res` 改回最小操作号胜者再重放，两侧对齐并提交。
+#[test]
+fn duplicate_log_with_different_config_snapshot_heals_to_winning_op_and_migrates() {
+    use crate::store::sync2::tests::DAY;
+
+    let l2_at = T0 - 37 * DAY;
+    let cfg_a = dup_config(0.7);
+    let cfg_b = dup_config(0.85);
+    let card1 = crate::registers::card_id(crate::store::gen4::dryrun::tests::N1, "t1", 0).unwrap();
+    let card2 = crate::registers::card_id(N2, "t1", 0).unwrap();
+    let mk_log = |id: &str, card: &str, rtype: &str, res: Value, sc: Option<&Value>| {
+        let mut v = json!({
+            "id": id, "p": P, "card": card, "kind": "review", "rating": 3,
+            "hlc": format!("{l2_at}:0:old"), "at": l2_at, "ts": "anchored",
+            "origin": "fushi", "rtype": rtype, "utcOff": 0, "rollover": 4, "fv": 1,
+            "res": res,
+        });
+        if let Some(sc) = sc {
+            v[crate::sync2::replay::SNAPSHOT_KEY] = sc.clone();
+        }
+        v
+    };
+    let l2_small = mk_log(
+        "L2",
+        &card1,
+        "review",
+        dup_author_res(l2_at, 15, 2, 15.343999862670898, 1.53643798828125),
+        None,
+    );
+    let l2_large = mk_log(
+        "L2",
+        &card1,
+        "review",
+        dup_author_res(l2_at, 15, 2, 15.343999862670898, 1.53643798828125),
+        Some(&cfg_b),
+    );
+    let l3_small = mk_log(
+        "L3",
+        &card2,
+        "learn",
+        dup_author_res(l2_at, 15, 1, 15.343999862670898, 1.53643798828125),
+        Some(&cfg_a),
+    );
+    let l3_large = mk_log(
+        "L3",
+        &card2,
+        "learn",
+        dup_author_res(l2_at, 15, 1, 15.343999862670898, 1.53643798828125),
+        Some(&cfg_b),
+    );
+
+    let (d_small, d_large, _, _) = build_dup_device_pair(
+        "g7-dup-sc",
+        &l2_small,
+        Some(&l3_small),
+        &l2_large,
+        Some(&l3_large),
+        true,
+    );
+    let dir_small = close_device(d_small);
+    let dir_large = close_device(d_large);
+
+    let out_large = migrate_with(&dir_large.0, &caches(), &Stop::new(), &mut Vec::new());
+    let Outcome::Committed { report } = &out_large else {
+        panic!("expected committed on d_large, got {out_large:?}");
+    };
+    let p = &report["profiles"][0];
+    assert_eq!(p["verdict"], "pass", "{p:#}");
+    assert_eq!(p["parity"], json!([]), "{p:#}");
+    assert_eq!(p["canonical"], json!([]), "{p:#}");
+    let s = &p["oldSideStaleResults"];
+    assert_eq!(s["logs"], 2, "{s:#}");
+    assert_eq!(s["cards"], 2, "{s:#}");
+    let examples: Vec<&str> = s["examples"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(
+        examples
+            .iter()
+            .any(|e| e.starts_with("L2 ") && e.contains(&card1) && e.contains("sc:")),
+        "{examples:?}"
+    );
+    assert!(
+        examples
+            .iter()
+            .any(|e| e.starts_with("L3 ") && e.contains(&card2) && e.contains("sc:")),
+        "{examples:?}"
+    );
+
+    let out_small = migrate_with(&dir_small.0, &caches(), &Stop::new(), &mut Vec::new());
+    let Outcome::Committed {
+        report: report_small,
+    } = &out_small
+    else {
+        panic!("expected committed on d_small, got {out_small:?}");
+    };
+    let p_small = &report_small["profiles"][0];
+    assert_eq!(p_small["verdict"], "pass", "{p_small:#}");
+    assert_eq!(p_small["parity"], json!([]), "{p_small:#}");
+    assert_eq!(p_small["canonical"], json!([]), "{p_small:#}");
+    assert_eq!(p_small["oldSideStaleResults"]["logs"], 0, "{p_small:#}");
+}
+
+/// 同 `sc` 且同组成的重复日志若落库投影行的 `res` 被手工改坏，不认作代表切换，照样判不同并中止。
+#[test]
+fn duplicate_log_with_same_config_and_corrupted_result_still_fails() {
+    use crate::store::sync2::tests::DAY;
+
+    let l2_at = T0 - 37 * DAY;
+    let cfg_b = dup_config(0.85);
+    let card1 = crate::registers::card_id(crate::store::gen4::dryrun::tests::N1, "t1", 0).unwrap();
+    let mk_l2 = |ivl: i64| {
+        let mut v = json!({
+            "id": "L2", "p": P, "card": card1, "kind": "review", "rating": 3,
+            "hlc": format!("{l2_at}:0:old"), "at": l2_at, "ts": "anchored",
+            "origin": "fushi", "rtype": "review", "utcOff": 0, "rollover": 4, "fv": 1,
+            "res": dup_author_res(l2_at, ivl, 2, 15.343999862670898, 1.53643798828125),
+        });
+        v[crate::sync2::replay::SNAPSHOT_KEY] = cfg_b.clone();
+        v
+    };
+    let (_d_small, d_large, _, _) =
+        build_dup_device_pair("g7-dup-same-sc", &mk_l2(15), None, &mk_l2(14), None, false);
+    let dir_large = close_device(d_large);
+    {
+        let c = raw(&dir_large.0);
+        let json: String = c
+            .query_row(
+                "SELECT json FROM srs_review_logs WHERE id = srs_id('L2')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let mut row: Value = serde_json::from_str(&json).unwrap();
+        row["res"]["ivl"] = json!(row["res"]["ivl"].as_i64().unwrap() + 40);
+        row["res"]["dueDay"] = json!(row["res"]["dueDay"].as_i64().unwrap() + 40);
+        c.execute(
+            "UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at, \
+             review_type, origin, duration_ms) WHERE id = srs_id(?1)",
+            params!["L2", row.to_string()],
+        )
+        .unwrap();
+    }
+    let out = migrate_with(&dir_large.0, &caches(), &Stop::new(), &mut Vec::new());
+    let Outcome::Aborted { report, .. } = &out else {
+        panic!("expected Aborted, got {out:?}");
+    };
+    let p = &report["profiles"][0];
+    assert_eq!(p["verdict"], "fail", "{p:#}");
+    assert_eq!(p["oldSideStaleResults"]["logs"], 0, "{p:#}");
+    assert!(
+        p["parity"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["what"] == "cards"),
+        "{p:#}"
+    );
+}
+
+/// 落库行里的 `sc` 与 `sync2_log_meta` 所指败者操作不一致（磁盘篡改），或胜败两份操作的身份键（如 `rating`）不同，
+/// 一律不予改回、照样判不同并中止。
+#[test]
+fn duplicate_log_with_mismatched_identity_or_tampered_sc_still_fails() {
+    use crate::store::sync2::tests::DAY;
+
+    let l2_at = T0 - 37 * DAY;
+    let cfg_a = dup_config(0.7);
+    let cfg_b = dup_config(0.85);
+    let card1 = crate::registers::card_id(crate::store::gen4::dryrun::tests::N1, "t1", 0).unwrap();
+    let mk_l2 = |rating: i64, sc: Option<&Value>| {
+        let mut v = json!({
+            "id": "L2", "p": P, "card": card1, "kind": "review", "rating": rating,
+            "hlc": format!("{l2_at}:0:old"), "at": l2_at, "ts": "anchored",
+            "origin": "fushi", "rtype": "review", "utcOff": 0, "rollover": 4, "fv": 1,
+            "res": dup_author_res(l2_at, 15, 2, 15.343999862670898, 1.53643798828125),
+        });
+        if let Some(sc) = sc {
+            v[crate::sync2::replay::SNAPSHOT_KEY] = sc.clone();
+        }
+        v
+    };
+
+    // 子例 A：落库行 `sc` 被手工改坏，不匹配败者操作原文。
+    {
+        let (_d_small, d_large, _, _) = build_dup_device_pair(
+            "g7-dup-tamper-sc",
+            &mk_l2(3, Some(&cfg_a)),
+            None,
+            &mk_l2(3, Some(&cfg_b)),
+            None,
+            false,
+        );
+        let dir_large = close_device(d_large);
+        {
+            let c = raw(&dir_large.0);
+            let json: String = c
+                .query_row(
+                    "SELECT json FROM srs_review_logs WHERE id = srs_id('L2')",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let mut row: Value = serde_json::from_str(&json).unwrap();
+            row[crate::sync2::replay::SNAPSHOT_KEY]["ret"] = json!(0.65);
+            row["res"]["ivl"] = json!(row["res"]["ivl"].as_i64().unwrap() + 40);
+            row["res"]["dueDay"] = json!(row["res"]["dueDay"].as_i64().unwrap() + 40);
+            c.execute(
+                "UPDATE srs_review_logs SET jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, rating, occurred_at, \
+                 review_type, origin, duration_ms) WHERE id = srs_id(?1)",
+                params!["L2", row.to_string()],
+            )
+            .unwrap();
+        }
+        let out = migrate_with(&dir_large.0, &caches(), &Stop::new(), &mut Vec::new());
+        let Outcome::Aborted { report, .. } = &out else {
+            panic!("expected Aborted for tampered sc, got {out:?}");
+        };
+        let p = &report["profiles"][0];
+        assert_eq!(p["verdict"], "fail", "{p:#}");
+        assert_eq!(p["oldSideStaleResults"]["logs"], 0, "{p:#}");
+    }
+
+    // 子例 B：落库行身份键（`rating` 3 vs 2）与胜者操作不一致，不改回。
+    {
+        let (_d_small, d_large, _, _) = build_dup_device_pair(
+            "g7-dup-id-mismatch",
+            &mk_l2(3, Some(&cfg_a)),
+            None,
+            &mk_l2(3, Some(&cfg_b)),
+            None,
+            false,
+        );
+        let dir_large = close_device(d_large);
+        {
+            let c = raw(&dir_large.0);
+            let json: String = c
+                .query_row(
+                    "SELECT json FROM srs_review_logs WHERE id = srs_id('L2')",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let mut row: Value = serde_json::from_str(&json).unwrap();
+            row["rating"] = json!(2);
+            c.execute(
+                "UPDATE srs_review_logs SET rating = 2, jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, 2, occurred_at, \
+                 review_type, origin, duration_ms) WHERE id = srs_id(?1)",
+                params!["L2", row.to_string()],
+            )
+            .unwrap();
+        }
+        let out = migrate_with(&dir_large.0, &caches(), &Stop::new(), &mut Vec::new());
+        let Outcome::Aborted { report, .. } = &out else {
+            panic!("expected Aborted for mismatched identity, got {out:?}");
+        };
+        let p = &report["profiles"][0];
+        assert_eq!(p["verdict"], "fail", "{p:#}");
+        assert_eq!(p["oldSideStaleResults"]["logs"], 0, "{p:#}");
+    }
+}
+
+/// 重复日志代表切换同时改变意图（如 `Reset` vs `SetDue`）：干跑在只读连接上把 `sync2_log_meta` 也建进 `temp` 影子并改回、
+/// 重放，不写旧库一字节、跑完不留临时表，且随后真实迁移同样提交。
+#[test]
+fn duplicate_log_with_different_intent_heals_shadow_meta_without_mutating_legacy_db() {
+    use crate::store::sync2::tests::DAY;
+
+    let l2_at = T0 - 37 * DAY;
+    let cfg_b = dup_config(0.85);
+    let card1 = crate::registers::card_id(crate::store::gen4::dryrun::tests::N1, "t1", 0).unwrap();
+    let mk_manual = |res: Value| {
+        let mut v = json!({
+            "id": "L2", "p": P, "card": card1, "kind": "manual",
+            "hlc": format!("{l2_at}:0:old"), "at": l2_at, "ts": "anchored",
+            "origin": "fushi", "rtype": "manual", "utcOff": 0, "rollover": 4, "fv": 1,
+            "res": res,
+        });
+        v[crate::sync2::replay::SNAPSHOT_KEY] = cfg_b.clone();
+        v
+    };
+    let l2_reset = mk_manual(json!({
+        "queue": "new", "ivl": 0, "step": 0, "reps": 0, "lapses": 0, "scheduler": "fushi",
+    }));
+    let l2_set_due = mk_manual(json!({
+        "queue": "review", "dueDay": dup_day(l2_at) + 30, "ivl": 30, "step": 0, "reps": 2, "lapses": 0, "scheduler": "fushi",
+    }));
+
+    let (_d_small, d_large, _, _) =
+        build_dup_device_pair("g7-dup-intent", &l2_reset, None, &l2_set_due, None, true);
+    let dir_large = close_device(d_large);
+
+    let db_path = dir_large.0.join(LEGACY_FILE);
+    let bytes_before = std::fs::read(&db_path).unwrap();
+    let meta_before: (i64, Option<i64>) = raw(&dir_large.0)
+        .query_row(
+            "SELECT intent, arg FROM sync2_log_meta WHERE log_id = srs_id('L2')",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(meta_before.0, 2, "SetDue before dryrun/heal");
+
+    let work = dir_large.0.join("work");
+    let caches_map = caches();
+    let stop = Stop::new();
+    let dry_report = crate::store::gen4::dryrun::run(
+        &db_path,
+        &work,
+        crate::store::gen4::dryrun::Options {
+            caches: &caches_map,
+            batch: 2,
+            keep: false,
+            examples: crate::store::gen4::dryrun::DEFAULT_EXAMPLES,
+            full_examples: false,
+            stop: &stop,
+            progress: &mut |_, _| {},
+        },
+    )
+    .unwrap();
+    assert_eq!(dry_report["verdict"], "pass", "{dry_report:#}");
+    let dry_p = &dry_report["profiles"][0];
+    assert_eq!(dry_p["parity"], json!([]), "{dry_p:#}");
+    assert_eq!(dry_p["canonical"], json!([]), "{dry_p:#}");
+    assert_eq!(dry_p["oldSideStaleResults"]["logs"], 1, "{dry_p:#}");
+    assert!(
+        dry_p["oldSideStaleResults"]["examples"][0]
+            .as_str()
+            .unwrap()
+            .contains("intent:"),
+        "{dry_p:#}"
+    );
+    assert_eq!(
+        std::fs::read(&db_path).unwrap(),
+        bytes_before,
+        "dryrun must not touch legacy srs.db"
+    );
+    let meta_after: (i64, Option<i64>) = raw(&dir_large.0)
+        .query_row(
+            "SELECT intent, arg FROM sync2_log_meta WHERE log_id = srs_id('L2')",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(meta_after, meta_before, "legacy sync2_log_meta untouched");
+
+    let out = migrate_with(&dir_large.0, &caches_map, &Stop::new(), &mut Vec::new());
+    let Outcome::Committed { report } = &out else {
+        panic!("expected Committed after intent heal, got {out:?}");
+    };
+    assert_eq!(report["profiles"][0]["verdict"], "pass", "{report:#}");
+}
+
+/// [copies] 的条数台设备各自包同一份旧库（第 i 台按设备 ID 升序拿 `copies[i]` 作 L2 / L3），互相同步、跑完副本收敛：
+/// 每台的协议 3 都先投影了自己包的那份。
+fn build_dup_devices(tag: &str, copies: &[(Value, Option<Value>)]) -> Vec<Device> {
+    use crate::store::sync2::tests::DAY;
+
+    let mut ds: Vec<(String, Device)> = (0..copies.len())
+        .map(|i| {
+            let d = Device::new(&format!("{tag}-{i}"));
+            let id = d.core.sync2_identity(P, T0).unwrap()["device"]
+                .as_str()
+                .unwrap()
+                .to_owned();
+            (id, d)
+        })
+        .collect();
+    ds.sort_by(|a, b| a.0.cmp(&b.0));
+    let ds: Vec<Device> = ds.into_iter().map(|(_, d)| d).collect();
+    for (d, (l2, l3)) in ds.iter().zip(copies) {
+        seed_dup_legacy_device(d, l2, l3.as_ref());
+    }
+    let mut bucket = Bucket::default();
+    for at in [T0 + DAY, T0 + 2 * DAY] {
+        for d in &ds {
+            d.sync(&mut bucket, "loc", at);
+        }
+        for d in &ds {
+            drain_dedup(d);
+        }
+    }
+    let parsed =
+        crate::store::caches::CacheConfig::parse(&serde_json::from_str(&cfg()).unwrap()).unwrap();
+    for d in &ds {
+        let w = d.core.writer().unwrap();
+        crate::store::sync2::in_savepoint(&w, |c| crate::store::caches::rebuild(c, P, &parsed))
+            .unwrap();
+    }
+    ds
+}
+
+/// 重复日志的一份副本（夹具的 L2 / L3 形状）：[f] 改出这份副本与别的副本不同的地方。
+fn dup_copy(id: &str, card: &str, f: impl FnOnce(&mut Value)) -> Value {
+    use crate::store::sync2::tests::DAY;
+    let at = T0 - 37 * DAY;
+    let mut v = json!({
+        "id": id, "p": P, "card": card, "kind": "review", "rating": 3,
+        "hlc": format!("{at}:0:old"), "at": at, "ts": "anchored",
+        "origin": "fushi", "rtype": "review", "utcOff": 0, "rollover": 4, "fv": 1,
+        "res": dup_author_res(at, 15, 2, 15.343999862670898, 1.53643798828125),
+    });
+    f(&mut v);
+    v
+}
+
+fn dup_cards() -> (String, String) {
+    (
+        crate::registers::card_id(crate::store::gen4::dryrun::tests::N1, "t1", 0).unwrap(),
+        crate::registers::card_id(N2, "t1", 0).unwrap(),
+    )
+}
+
+fn stale_examples(p: &Value) -> Vec<String> {
+    p["oldSideStaleResults"]["examples"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().to_owned())
+        .collect()
+}
+
+/// 同一条旧日志的两份副本在 `res` / `sc` / 意图以外的地方不同（PR #4245 第一版只认那三处）：L2 同一份 `sc`、意图
+/// `Answer`，只差时长与 S(e)；L3 都没 `sc`，差评分与时区。协议 3 停在先到的那份（大设备自己包的），新代取操作号最小的，
+/// 统计行的 `duration_ms` / `rating` / `utc_offset_min` 两侧不同，修之前整份撤回。改回 M → W 的差量后两台都提交；
+/// 干跑在只读连接上给日志表、`sync2_log_meta`、`srs_event_local` 建影子，旧库一个字节不写。
+#[test]
+fn duplicate_log_copies_differing_beyond_result_config_and_intent_heal_and_migrate() {
+    use crate::store::sync2::tests::DAY;
+
+    let (card1, card2) = dup_cards();
+    let cfg_b = dup_config(0.85);
+    let at = T0 - 37 * DAY;
+    let l2 = |dur: i64, st: i64| {
+        dup_copy("L2", &card1, |v| {
+            v[crate::sync2::replay::SNAPSHOT_KEY] = cfg_b.clone();
+            v["dur"] = json!(dur);
+            v[DUP_SERVER_TIME] = json!(st);
+        })
+    };
+    let l3 = |rating: i64, utc_off: i64| {
+        dup_copy("L3", &card2, |v| {
+            v["rtype"] = json!("learn");
+            v["rating"] = json!(rating);
+            v["utcOff"] = json!(utc_off);
+        })
+    };
+    let (d_small, d_large, _, _) = build_dup_device_pair(
+        "g7-dup-any-field",
+        &l2(3000, at + 1000),
+        Some(&l3(3, 0)),
+        &l2(5000, at + 9000),
+        Some(&l3(4, 540)),
+        true,
+    );
+    let dir_small = close_device(d_small);
+    let dir_large = close_device(d_large);
+
+    let db_path = dir_large.0.join(LEGACY_FILE);
+    let bytes_before = std::fs::read(&db_path).unwrap();
+    let caches_map = caches();
+    let stop = Stop::new();
+    let dry = crate::store::gen4::dryrun::run(
+        &db_path,
+        &dir_large.0.join("work"),
+        crate::store::gen4::dryrun::Options {
+            caches: &caches_map,
+            batch: 2,
+            keep: false,
+            examples: crate::store::gen4::dryrun::DEFAULT_EXAMPLES,
+            full_examples: false,
+            stop: &stop,
+            progress: &mut |_, _| {},
+        },
+    )
+    .unwrap();
+    assert_eq!(dry["verdict"], "pass", "{dry:#}");
+    let p = &dry["profiles"][0];
+    assert_eq!(p["parity"], json!([]), "{p:#}");
+    assert_eq!(p["canonical"], json!([]), "{p:#}");
+    assert_eq!(p["oldSideStaleResults"]["swaps"], 2, "{p:#}");
+    let ex = stale_examples(p);
+    let st_text = format!("serverTime: Some({})", at + 1000);
+    assert!(
+        ex.iter()
+            .any(|e| e.starts_with("L2 ") && e.contains("keys: [dur]") && e.contains(&st_text)),
+        "{ex:?}"
+    );
+    assert!(
+        ex.iter()
+            .any(|e| e.starts_with("L3 ") && e.contains("keys: [rating,utcOff]")),
+        "{ex:?}"
+    );
+    assert_eq!(
+        std::fs::read(&db_path).unwrap(),
+        bytes_before,
+        "the dry run must not touch the legacy srs.db"
+    );
+
+    for (dir, swaps) in [(&dir_large, 2), (&dir_small, 0)] {
+        let out = migrate_with(&dir.0, &caches_map, &Stop::new(), &mut Vec::new());
+        let Outcome::Committed { report } = &out else {
+            panic!("expected Committed, got {out:?}");
+        };
+        let p = &report["profiles"][0];
+        assert_eq!(p["verdict"], "pass", "{p:#}");
+        assert_eq!(p["parity"], json!([]), "{p:#}");
+        assert_eq!(p["oldSideStaleResults"]["swaps"], swaps, "{p:#}");
+    }
+}
+
+/// 要换掉的键落库原值不是 M 的（这里 M、W 差时长，落库行的时长又被改成第三个值）：不是换代表能解释的，不改回，
+/// 照样判不同并中止。
+#[test]
+fn duplicate_log_whose_swapped_field_was_tampered_still_fails() {
+    let (card1, _) = dup_cards();
+    let cfg_b = dup_config(0.85);
+    let l2 = |dur: i64| {
+        dup_copy("L2", &card1, |v| {
+            v[crate::sync2::replay::SNAPSHOT_KEY] = cfg_b.clone();
+            v["dur"] = json!(dur);
+        })
+    };
+    let (_d_small, d_large, _, _) =
+        build_dup_device_pair("g7-dup-tamper-dur", &l2(3000), None, &l2(5000), None, false);
+    let dir_large = close_device(d_large);
+    {
+        let c = raw(&dir_large.0);
+        let json: String = c
+            .query_row(
+                "SELECT json FROM srs_review_logs WHERE id = srs_id('L2')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let mut row: Value = serde_json::from_str(&json).unwrap();
+        row["dur"] = json!(7000);
+        c.execute(
+            "UPDATE srs_review_logs SET duration_ms = 7000, jslim = srs_log_pack(?2, id, profile_uid, card_id, kind, \
+             rating, occurred_at, review_type, origin, 7000) WHERE id = srs_id(?1)",
+            params!["L2", row.to_string()],
+        )
+        .unwrap();
+    }
+    let out = migrate_with(&dir_large.0, &caches(), &Stop::new(), &mut Vec::new());
+    let Outcome::Aborted { report, .. } = &out else {
+        panic!("expected Aborted, got {out:?}");
+    };
+    let p = &report["profiles"][0];
+    assert_eq!(p["verdict"], "fail", "{p:#}");
+    assert_eq!(p["oldSideStaleResults"]["swaps"], 0, "{p:#}");
+}
+
+/// 三台设备各包了一份（最小设备的不带 `sc`、中间的带配置 A、最大的带配置 B 且时长不同）：中间与最大两台的协议 3
+/// 各停在自己那份上，都要换成最小设备那份；三台都提交。
+#[test]
+fn duplicate_log_across_three_devices_heals_every_non_representative_copy() {
+    let (card1, _) = dup_cards();
+    let copy = |sc: Option<f64>, dur: i64| {
+        dup_copy("L2", &card1, |v| {
+            if let Some(r) = sc {
+                v[crate::sync2::replay::SNAPSHOT_KEY] = dup_config(r);
+            }
+            v["dur"] = json!(dur);
+        })
+    };
+    let ds = build_dup_devices(
+        "g7-dup-three",
+        &[
+            (copy(None, 1000), None),
+            (copy(Some(0.7), 1000), None),
+            (copy(Some(0.85), 4000), None),
+        ],
+    );
+    let dirs: Vec<tempdir::Dir> = ds.into_iter().map(close_device).collect();
+    for (i, dir) in dirs.iter().enumerate() {
+        let out = migrate_with(&dir.0, &caches(), &Stop::new(), &mut Vec::new());
+        let Outcome::Committed { report } = &out else {
+            panic!("device {i}: expected Committed, got {out:?}");
+        };
+        let p = &report["profiles"][0];
+        assert_eq!(p["verdict"], "pass", "device {i}: {p:#}");
+        assert_eq!(p["parity"], json!([]), "device {i}: {p:#}");
+        let want = usize::from(i > 0);
+        assert_eq!(p["oldSideStaleResults"]["swaps"], want, "device {i}: {p:#}");
+        if i == 2 {
+            let ex = stale_examples(p);
+            assert!(
+                ex.iter()
+                    .any(|e| e.starts_with("L2 ") && e.contains("keys: [dur,sc]")),
+                "{ex:?}"
+            );
+        }
+    }
+}

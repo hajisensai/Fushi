@@ -612,6 +612,7 @@ const FROZEN_SIDE: &[(&str, &str, &[&str])] = &[
             "sync2_cache_pending",
             "sync2_held",
             "sync2_legacy",
+            "sync2_log_meta",
             "sync2_replay_pending",
         ],
     ),
@@ -636,8 +637,13 @@ const FROZEN_SIDE: &[(&str, &str, &[&str])] = &[
     ),
     (
         "stale.rs",
-        "对拍前认出协议 3 一侧被旧重放改写过的日志结果并在影子表 / SAVEPOINT 里改回（反馈 RhMpA6bn8v）",
-        &["srs_review_logs", "sync2_log_meta", "sync2_ops"],
+        "对拍前认出协议 3 一侧过期的日志结果、停在非代表副本上的重复日志，在影子表 / SAVEPOINT 里改回（反馈 RhMpA6bn8v）",
+        &[
+            "srs_event_local",
+            "srs_review_logs",
+            "sync2_log_meta",
+            "sync2_ops",
+        ],
     ),
     (
         "media.rs",

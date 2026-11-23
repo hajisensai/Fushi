@@ -1,0 +1,11 @@
+## BUG-5295 · gen4 迁移对拍：笔记 `source` / `deleted` 寄存器两侧胜者不同（协议 3 多出 1049 条活着的修改记录），整份撤回
+- **报告**：2026-11-23（应用内反馈 EapjqHGvCl：Windows 3.4.0-debug.31707，复习库升级 `aborted` / `profileVerdict: fail`；风险标记 duplicate:RhMpA6bn8v 只是正文相同，签名不同）
+- **真实性**：⏳ 待查（报告签名已核，根因未定位）。四个 profile 里只有 `01a16e76…` 失败（2 台设备、`imported.applied` 1197252、闭包两台都 `same`）：
+  - `edits` onlyOld 1049 / onlyNew 0：协议 3 判活着的 1049 条修改记录新代不认为活着；`canonical.registerWinners` onlyOld 1049（笔记的 `source` 902 + `deleted` 147）、onlyNew 147（同一批笔记的 `deleted`，胜者不同）；
+  - `notes` 1049 行同 ID 不同：`source_title` / `source_key` 902、`source_kind` 364 新代为空，`pending_decision` 206、`deleted_at` 147；`cards` 147 行 `hidden` 1 → 0（协议 3 判删了、新代没删）；
+  - 现成缓存与重建的比：同 147 条笔记 `pending_decision` 0 → 1（协议 3 重建判「删除与修改并发、待裁决」）；
+  - `oldSideStaleResults` 0、卡的调度列与统计都没差：与 PR #4245 的重复日志代表不一致无关。
+  - 推测（未验证）：这 1049 条修改记录在协议 3 的 `srs_field_edits` 里、却不在新代可见的操作集合里（或在新代被判被支配），集中在 `source` 与 `deleted` 两个键上；需要查这两个键的写入路径是否有不经操作直接落 `srs_field_edits` 的，或两侧对旧修改记录闭包 / 并发删除的判据不同。
+- **[ ] ① 未修复** — 根因未定位。
+- **[ ] ② 未加自动化测试** —
+- **备注**：报告的 `idTrace` 对修改记录 ID 只给 `found: false`，下一步先让 `trace.rs` 对 `edits` 类的 ID 报出它在 `srs_field_edits` 的写入者 / seq、在新代 `reg_ix` 的状态与支配它的那条，便于分型。
