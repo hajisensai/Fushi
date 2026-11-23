@@ -107,7 +107,7 @@ void main() {
   );
 
   test('mapping UI offers the marker right after {pitch-accent-positions}', () {
-    final List<String> options = AnkiHandlebarOptions.coreOptions;
+    const List<String> options = AnkiHandlebarOptions.coreOptions;
     final int base = options.indexOf('{pitch-accent-positions}');
     expect(base, greaterThanOrEqualTo(0));
     expect(options[base + 1], '{pitch-accent-positions-inline}');
