@@ -168,7 +168,7 @@ void main() {
     expect(engine.listenedBeforeStart, isNull, reason: '只在回调里有效');
   });
 
-  test('来源 id 拆回（BUG-5268）：服务器身份含 `/`（Jellyfin）也拆对，插件条目 id 含 `/` 照旧', () {
+  test('来源 id 拆回（BUG-5291）：服务器身份含 `/`（Jellyfin）也拆对，插件条目 id 含 `/` 照旧', () {
     const String jf = 'jellyfin:http://nas:8096/jf|user-1';
     expect(MusicPlaySource.serverAlbum(jf, 'abc123').hostRef, (
       hostId: jf,

@@ -219,7 +219,7 @@ void main() {
         expect(downloadDone, isTrue, reason: '分离模型应在 20 分钟内下完');
         if (_modelCache.isNotEmpty) {
           // 下载器对已在盘的文件也报一条事件，所以按「没碰 fp32 识别权重」判：
-          // 盘上是 int8，有独显推荐 fp32 也只该补分离模型（BUG-5269）。
+          // 盘上是 int8，有独显推荐 fp32 也只该补分离模型（BUG-5292）。
           final Set<String> fp32 = <String>{
             for (final AsrModelFile f in store.pack.files)
               if (f.role == AsrModelRole.ctcModelFp32 ||
@@ -229,7 +229,7 @@ void main() {
           expect(
             downloaded.intersection(fp32),
             isEmpty,
-            reason: '识别文件已在盘：歌曲素材只补人声分离模型（BUG-5269）',
+            reason: '识别文件已在盘：歌曲素材只补人声分离模型（BUG-5292）',
           );
           for (final String name in fp32) {
             expect(

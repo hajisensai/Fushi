@@ -1,7 +1,7 @@
-## BUG-5268 · music-play-source-host-slash
+## BUG-5291 · music-play-source-host-slash
 - **报告**：2026-11-22（代码审查：服务器播放来源的宿主 id 被切错）
 - **真实性**：✅ 真 bug（目前潜伏、无用户可见症状）。`fushi/lib/src/media/music/music_player_engine.dart:156`（修前）`MusicPlaySource.hostRef` 对插件与服务器来源一律按**第一个** `/` 切 `<宿主 id>/<条目 id>`；服务器来源的宿主是服务器配置身份，Jellyfin 的是 `jellyfin:<服务器地址>|<userId>`（`fushi/lib/src/sync/jellyfin_video_client.dart:2782` `sourceIdFor`），地址里的 `//` 让宿主被切成 `jellyfin:http:`、条目 id 成了 `//nas:8096|uid/<专辑 id>`。同一编码的另两个拆法各写一份：`packages/fushi_core/lib/src/database/music_server_ref.dart:182` `musicServerIdOfPlaySource` 按最后一个 `/`（对），`fushi/lib/src/media/music/music_history.dart` `_resolveCover` 拿当前配置比前缀（对）。根因是编码 `<宿主>/<条目>` 在两侧都可能含 `/` 时有歧义、拆法却没有唯一真相源。
   消费方全查：`hostRef` 只有 `music_plugin_pages.dart` 的最近播放快捷格用（`_reachable` / `_openSource`），而那里的 `_kinds` 只取本地与插件来源（服务器来源「先不进快捷格」），所以服务器来源从未走到错的拆法；播放流清洗（`scrubMusicPlayEventCredentials` → `musicServerIdOfPlaySource`）与最近播放封面（`_resolveCover`）用的是对的拆法；统计不读 `source_id`。影响 = 任何以后读服务器来源 `hostRef` 的入口（服务器来源进快捷格 / 点回服务器专辑页）都会认不出服务器。
 - **[x] ① 已修复** — 拆法收成一处 `musicPlaySourceHostRef(kind, id)`（`packages/fushi_core/lib/src/database/music_server_ref.dart`），按种类各认自己的不变量、不特判某家服务器：插件来源宿主 = 插件 id（不含 `/`、条目 id 可以含）按第一个 `/`；服务器来源宿主 = 服务器配置身份（可以含 `/`）、条目 id 是服务器侧不透明 id（Jellyfin GUID / Subsonic / Apple Music / YouTube id，不含 `/`）按最后一个 `/`。`MusicPlaySource.hostRef` 与 `musicServerIdOfPlaySource` 都改为调它。编码没变，已落库的行照样拆对，不需要迁移。
-- **[x] ② 已加自动化测试** — `fushi/test/media/music/music_player_engine_test.dart`「来源 id 拆回（BUG-5268）」：Jellyfin 身份含 `/` 的服务器专辑 / 歌单、Subsonic、插件条目 id 含 `/`、从库里读回的存量行、与清洗用的服务器身份一致、编码不对回 null。
+- **[x] ② 已加自动化测试** — `fushi/test/media/music/music_player_engine_test.dart`「来源 id 拆回（BUG-5291）」：Jellyfin 身份含 `/` 的服务器专辑 / 歌单、Subsonic、插件条目 id 含 `/`、从库里读回的存量行、与清洗用的服务器身份一致、编码不对回 null。
 - **备注**：纯数据层修复，无 UI 改动，未做真机复测。

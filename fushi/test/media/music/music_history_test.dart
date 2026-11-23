@@ -170,7 +170,7 @@ void main() {
       ).hostRef,
       isNull,
     );
-    // 服务器身份可以含 `/`（Jellyfin 带服务器地址），服务器侧条目 id 不含（BUG-5268）。
+    // 服务器身份可以含 `/`（Jellyfin 带服务器地址），服务器侧条目 id 不含（BUG-5291）。
     expect(
       MusicPlaySource.serverAlbum('jellyfin:http://nas|u', 'x').hostRef,
       (hostId: 'jellyfin:http://nas|u', itemId: 'x'),

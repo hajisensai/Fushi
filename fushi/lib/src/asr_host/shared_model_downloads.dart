@@ -182,7 +182,7 @@ String asrDownloadKeyFor(AsrLanguage language, AsrAudioProfile profile) {
 /// 编码器变体）后才跑 [downloadSongMissing]，并且**按那个变体**下——那时下载器只剩
 /// 分离模型要写。不能让歌曲那条自己按推荐变体去下：歌曲包的两个变体此刻都缺分离模型、
 /// 都不算就绪，推荐变体（有独显时是 fp32）就会被当成要下的那个，于是只缺 28 MB 分离
-/// 模型的机器又去下 2.5 GB 的 fp32 识别权重（BUG-5269）。
+/// 模型的机器又去下 2.5 GB 的 fp32 识别权重（BUG-5292）。
 ///
 /// 混音那条被取消（设置页按包取消）时它的监听流照样正常结束，识别文件却没下完
 /// （[mixedReadyVariant] 给 null）：本条到此为止，不能接着由 [downloadSongMissing] 去写

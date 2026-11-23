@@ -359,7 +359,7 @@ MusicSignalPathVerdict judgeMusicSignalPath(MusicSignalPathSnapshot s) {
 /// 纯函数：ReplayGain 增益（dB）。专辑模式优先专辑增益、缺了退曲目增益，曲目模式反之；
 /// 都没有 = 0（没有响度信息时不施加预放大，与 foobar2000 / mpv 一致）。有峰值时做防削波：
 /// 增益不超过 `-20·log10(peak)`。没有峰值（Jellyfin 的 `NormalizationGain` 只给增益）时
-/// 无从判断会不会削波，正增益封顶 [kMusicReplayGainNoPeakMaxDb]（BUG-5270 放开 mpv 的
+/// 无从判断会不会削波，正增益封顶 [kMusicReplayGainNoPeakMaxDb]（BUG-5293 放开 mpv 的
 /// `volume-gain-max` 之后，这里是唯一的上限）。
 double musicReplayGainDb({
   required bool albumMode,

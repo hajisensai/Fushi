@@ -177,7 +177,7 @@ void main() {
         mixedKey: 'asr:p',
         songKey: 'asr:p+vocals',
         downloadMixedMissing: mixed,
-        // 有独显的机器：推荐 fp32，但在盘的是 int8（BUG-5269）。
+        // 有独显的机器：推荐 fp32，但在盘的是 int8（BUG-5292）。
         mixedReadyVariant: () async => ready ? AsrEncoderVariant.int8 : null,
         downloadSongMissing: (AsrEncoderVariant variant) {
           songStarts++;

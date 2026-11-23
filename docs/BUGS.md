@@ -33,18 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4585 条。点号进各自文件。
+> 共 4603 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-5270](bugs/BUG-5270-music-replaygain-over-12db-rejected.md) | ✅ | ✅ | ReplayGain 超过 +12 dB 的曲目按 0 dB 播 |
-| [BUG-5269](bugs/BUG-5269-song-asr-download-refetches-recognizer.md) | ✅ | ✅ | 歌曲字幕补分离模型时按推荐变体重下整套识别模型 |
-| [BUG-5268](bugs/BUG-5268-music-play-source-host-slash.md) | ✅ | ✅ | music-play-source-host-slash |
-| [BUG-5267](bugs/BUG-5267-music-history-server-credentials.md) | ✅ | ✅ | music-history-server-credentials |
-> 共 4600 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-5293](bugs/BUG-5293-music-replaygain-over-12db-rejected.md) | ✅ | ✅ | ReplayGain 超过 +12 dB 的曲目按 0 dB 播 |
+| [BUG-5292](bugs/BUG-5292-song-asr-download-refetches-recognizer.md) | ✅ | ✅ | 歌曲字幕补分离模型时按推荐变体重下整套识别模型 |
+| [BUG-5291](bugs/BUG-5291-music-play-source-host-slash.md) | ✅ | ✅ | music-play-source-host-slash |
 | [BUG-5290](bugs/BUG-5290-music-history-server-credentials.md) | ✅ | ✅ | music-history-server-credentials |
 | [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
 | [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | 🚧 | 🚧 | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
