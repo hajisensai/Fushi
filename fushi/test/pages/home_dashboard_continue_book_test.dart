@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/collections/book_continue.dart'
+    show bookCollectionContinueIndex;
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
@@ -66,7 +68,7 @@ void main() {
     expect(isDashboardContinueBook(item, <String>{'book2', 'boo'}), isTrue);
   });
 
-  group('dashboardBookCollectionContinueIndex（书合集续读目标）', () {
+  group('bookCollectionContinueIndex（书合集续读目标）', () {
     CollectionMemberProgress vol({
       int position = 0,
       bool completed = false,
@@ -79,7 +81,7 @@ void main() {
 
     test('用户实报：读完第 1 卷 → 推进到第 2 卷', () {
       expect(
-        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
+        bookCollectionContinueIndex(<CollectionMemberProgress>[
           vol(position: 100, completed: true, readAt: 10),
           vol(),
           vol(),
@@ -90,7 +92,7 @@ void main() {
 
     test('锚点按最近阅读时刻，不按卷序最靠后', () {
       expect(
-        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
+        bookCollectionContinueIndex(<CollectionMemberProgress>[
           vol(position: 30, readAt: 50),
           vol(),
           vol(position: 60, readAt: 10),
@@ -101,23 +103,18 @@ void main() {
 
     test('整套读完 / 一卷都没开读 / 空合集 → null', () {
       expect(
-        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
+        bookCollectionContinueIndex(<CollectionMemberProgress>[
           vol(position: 100, completed: true, readAt: 1),
           vol(position: 100, completed: true, readAt: 2),
         ]),
         isNull,
       );
       expect(
-        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
-          vol(),
-          vol(),
-        ]),
+        bookCollectionContinueIndex(<CollectionMemberProgress>[vol(), vol()]),
         isNull,
       );
       expect(
-        dashboardBookCollectionContinueIndex(
-          const <CollectionMemberProgress>[],
-        ),
+        bookCollectionContinueIndex(const <CollectionMemberProgress>[]),
         isNull,
       );
     });

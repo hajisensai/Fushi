@@ -42,6 +42,7 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/shelf_collection_open_request.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/collections/book_continue.dart';
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
@@ -159,7 +160,6 @@ import 'package:fushi/src/srs/srs_home_stats.dart'
     show SrsHomeStats, srsHomeStatsProvider;
 import 'package:fushi/src/stats/study_goal_record.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
-import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/src/stats/study_goal_language_scope.dart';
@@ -214,25 +214,6 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 
 part 'home_dashboard_widget_cells.part.dart';
-
-/// 书合集在首页「继续」区的续读目标下标（[sorted] 已按组内 sortIndex 排好）。
-///
-/// 用户实报：20 卷的合集读完第 1 卷，「继续」区里这套书直接消失、第 2 卷不出现
-/// ——旧实现逐本按 [isDashboardContinueBook] 过滤，卷 1 判 finished 出局、卷 2
-/// 没进度判 unread 也进不来。与视频合集 Next-Up 同一判据 [continueMemberIndex]
-/// （锚点 = 最近读过的那卷，它读完就推进下一卷）。
-///
-/// 整组一卷都没开始读（不劝人从头开始）或目标仍是读完的卷（整套读完）→ null，
-/// 合集不出卡。
-@visibleForTesting
-int? dashboardBookCollectionContinueIndex(
-  List<CollectionMemberProgress> sorted,
-) {
-  if (!sorted.any((CollectionMemberProgress m) => m.hasStarted)) return null;
-  final int idx = continueMemberIndex(sorted);
-  if (sorted[idx].completed) return null;
-  return idx;
-}
 
 /// 首页是否用双栏版式：横屏（宽 > 高，且至少 600 宽）或宽屏（≥ 840，平板竖屏
 /// 以上的桌面窗口）。竖屏手机 / 平板竖屏走单栏。
@@ -3163,111 +3144,42 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     Set<String> completedBookKeys,
   ) {
     final List<_ContinueEntry> entries = <_ContinueEntry>[];
-    // v82：位置表键 = uid，bookKey 经换算表转一跳；换算不上（standalone SRT /
-    // 书行已删）保持原键查询——与旧行为同样查不到、recent=0。
-    String bookKeyOf(MediaItem item) =>
-        ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
-        item.mediaIdentifier;
-    int bookRecentMs(MediaItem item) {
-      final String bookKey = bookKeyOf(item);
-      return lastReadByKey[epubUidByKey[bookKey] ?? bookKey] ?? 0;
-    }
-
-    _ContinueEntry bookEntry(
-      MediaItem item, {
-      required int recentMs,
-      required String? collectionName,
-      int? memberOrdinal,
-      List<MediaItem> collectionMembers = const <MediaItem>[],
-    }) {
+    // 书 / 漫画：与侧栏速览、书架「继续阅读」同一份选书（BUG-5278，
+    // [selectMediaItemContinueCandidates]）——合集按 Next-Up 推进（读完第 1 卷 →
+    // 第 2 卷，整套读完或一卷没开读不出卡），散书只收「在读」。
+    for (final BookContinueCandidate<MediaItem> c
+        in selectMediaItemContinueCandidates(
+          books: books,
+          lastReadAtByUid: lastReadByKey,
+          epubUidByKey: epubUidByKey,
+          completedBookKeys: completedBookKeys,
+          primaryCollectionIdByEntry: _primaryCollectionByEntry,
+          collectionIds: _collectionNamesById.keys.toSet(),
+          memberSortIndex: _memberSortIndex,
+        )) {
+      final MediaItem item = c.item;
       final int percent = item.duration > 0
           ? ((item.position / item.duration) * 100).clamp(0, 100).round()
           : 0;
-      // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后
-      // 首页「继续」区同步显示新名），不直接读 DB 原名。
-      final String title = ReaderFushiSource.instance
-          .getDisplayTitleFromMediaItem(item);
       // 「第 N 卷」的 N 是卷号（与书架合集卡「读到第 N 卷」同一判据），不是合集
       // 存储位置：合集顺序错乱时位置会把第 3 卷说成第 13 卷。
-      final num? volume = memberOrdinal == null
-          ? null
-          : collectionMemberVolumeNumber(
-              title: title,
-              memberTitles: <String>[
-                for (final MediaItem m in collectionMembers)
-                  ReaderFushiSource.instance.getDisplayTitleFromMediaItem(m),
-              ],
-              memberOrdinal: memberOrdinal,
-            );
-      return _ContinueEntry(
-        kind: _bookMediaKind(item),
-        title: title,
-        recentMs: recentMs,
-        progress: percent / 100,
-        // 合集里的第几卷优先（下一卷还没开读时 0% 没有信息量），进度条照画。
-        badgeLabel: volume != null
-            ? t.home_continue_volume(n: volume)
-            : '$percent%',
-        collectionName: collectionName,
-        book: item,
-      );
-    }
-
-    // 书合集感知续读（与下方视频 Next-Up 同口径）：成员按主折叠合集归组，每个
-    // 合集在继续区最多一张卡，续读目标由 [dashboardBookCollectionContinueIndex]
-    // 定；散书保持「在读」逐本过滤的现行为。
-    final Map<int, List<MediaItem>> booksByCollection =
-        <int, List<MediaItem>>{};
-    for (final MediaItem item in books) {
-      final int? cid = _primaryCollectionByEntry[_bookCollectionKey(item)];
-      if (cid != null) {
-        (booksByCollection[cid] ??= <MediaItem>[]).add(item);
-        continue;
-      }
-      if (isDashboardContinueBook(item, completedBookKeys)) {
-        entries.add(
-          bookEntry(item, recentMs: bookRecentMs(item), collectionName: null),
-        );
-      }
-    }
-    for (final MapEntry<int, List<MediaItem>> ce in booksByCollection.entries) {
-      final List<MediaItem> sorted = List<MediaItem>.of(ce.value)
-        ..sort((MediaItem a, MediaItem b) {
-          final int ai = _memberSortIndex[_bookCollectionKey(a)] ?? 1 << 30;
-          final int bi = _memberSortIndex[_bookCollectionKey(b)] ?? 1 << 30;
-          if (ai != bi) return ai.compareTo(bi);
-          return a.mediaIdentifier.compareTo(b.mediaIdentifier);
-        });
-      final List<int> readAt = <int>[
-        for (final MediaItem m in sorted) bookRecentMs(m),
-      ];
-      final int? idx = dashboardBookCollectionContinueIndex(
-        <CollectionMemberProgress>[
-          for (int i = 0; i < sorted.length; i++)
-            CollectionMemberProgress(
-              positionMs: sorted[i].position,
-              completed:
-                  classifyShelfReadStatus(
-                    completed: completedBookKeys.contains(bookKeyOf(sorted[i])),
-                    position: sorted[i].position,
-                    duration: sorted[i].duration,
-                  ) ==
-                  ShelfReadStatus.finished,
-              lastPlayedAt: readAt[i],
-            ),
-        ],
-      );
-      if (idx == null) continue;
-      // 单元活跃时刻 = 组内各卷最近阅读时刻最大值（含读完的卷——下一卷卡按
-      // 「刚读完上一卷」的时间参与混排）。
-      final int recent = readAt.fold<int>(0, (int a, int b) => a > b ? a : b);
+      final num? volume = c.volumeNumber(bookContinueDisplayTitle);
       entries.add(
-        bookEntry(
-          sorted[idx],
-          recentMs: recent,
-          collectionName: _collectionNamesById[ce.key],
-          memberOrdinal: sorted.length >= 2 ? idx + 1 : null,
-          collectionMembers: sorted,
+        _ContinueEntry(
+          kind: _bookMediaKind(item),
+          // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后
+          // 首页「继续」区同步显示新名），不直接读 DB 原名。
+          title: bookContinueDisplayTitle(item),
+          recentMs: c.recentMs,
+          progress: percent / 100,
+          // 合集里的第几卷优先（下一卷还没开读时 0% 没有信息量），进度条照画。
+          badgeLabel: volume != null
+              ? t.home_continue_volume(n: volume)
+              : '$percent%',
+          collectionName: c.isSeries
+              ? _collectionNamesById[c.collectionId]
+              : null,
+          book: item,
         ),
       );
     }
@@ -4177,28 +4089,11 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         _computeBookCollectionKey(item);
   }
 
-  String _computeBookCollectionKey(MediaItem item) {
-    final String? bookKey = ReaderFushiSource.parseBookKey(
-      item.mediaIdentifier,
-    );
-    if (bookKey != null) {
-      final String uidKey = MediaKind.epub.compositeKey(
-        _epubUidByBookKey[bookKey] ?? bookKey,
-      );
-      if (_primaryCollectionByEntry.containsKey(uidKey)) return uidKey;
-      final String legacyKey = MediaKind.epub.compositeKey(bookKey);
-      return _primaryCollectionByEntry.containsKey(legacyKey)
-          ? legacyKey
-          : uidKey;
-    }
-    final String? srtUid = ReaderFushiSource.parseSrtBookUid(
-      item.mediaIdentifier,
-    );
-    if (srtUid != null) return MediaKind.srt.compositeKey(srtUid);
-    // 有意的 miss-key 兜底：entryKey 是完整 hoshi:// 标识而非 bookKey，
-    // 查不中合集，安全降级为散卡。
-    return MediaKind.epub.compositeKey(item.mediaIdentifier);
-  }
+  String _computeBookCollectionKey(MediaItem item) => bookCollectionEntryKey(
+    item,
+    epubUidByKey: _epubUidByBookKey,
+    primaryCollectionIdByEntry: _primaryCollectionByEntry,
+  );
 
   /// 视频行 → 继续卡条目（散卡与合集续播目标共用），进度见
   /// [dashboardVideoContinueProgress]（反馈「小说有进度显示，视频缺了进度显示」）。

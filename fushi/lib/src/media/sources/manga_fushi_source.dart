@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/book_media_identifier.dart'
+    show kMangaMediaSourceKey;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_media_source.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -47,7 +49,7 @@ class MangaFushiSource extends ReaderMediaSource {
 
   /// 媒体源唯一键（持久化标识，与 `reader_fushi`/`reader_pdf` 互异）。
   /// [ReaderFushiSource] 的 `_bookToMediaItem` 用它把 `format=='manga'` 的行路由到本源。
-  static const String kUniqueKey = 'reader_manga';
+  static const String kUniqueKey = kMangaMediaSourceKey;
 
   static MangaFushiSource get instance => _instance;
   static final MangaFushiSource _instance = MangaFushiSource._();
