@@ -21,6 +21,7 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
+import 'package:fushi/src/stats/study_lookup_recorder.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/models/module_id.dart';
@@ -2010,16 +2011,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     try {
       final ({String? bookKey, String? title})? identity = lookupBookIdentity;
       unawaited(
-        appModel.database
-            .addLookupCount(
-              bookKey: identity?.bookKey,
-              title: identity?.title ?? '',
-              sourceType: dictionarySourceType,
-              dateKey: statTodayKey(),
-            )
-            .catchError((Object e, StackTrace st) {
-              debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
-            }),
+        recordStudyLookup(
+          appModel.database,
+          bookKey: identity?.bookKey,
+          title: identity?.title ?? '',
+          sourceType: dictionarySourceType,
+          at: DateTime.now(),
+        ).catchError((Object e, StackTrace st) {
+          debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
+        }),
       );
     } catch (e, st) {
       debugPrint('[fushi-stats] addLookupCount failed (sync): $e\n$st');

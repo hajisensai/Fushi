@@ -22,6 +22,7 @@ import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/stats/study_lookup_recorder.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
@@ -1103,16 +1104,15 @@ mixin DictionaryPageMixin {
     try {
       final ({String? bookKey, String? title})? identity = lookupBookIdentity;
       unawaited(
-        mixinAppModel.database
-            .addLookupCount(
-              bookKey: identity?.bookKey,
-              title: identity?.title ?? '',
-              sourceType: dictionarySourceType,
-              dateKey: _statTodayKey(),
-            )
-            .catchError((Object e, StackTrace st) {
-              debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
-            }),
+        recordStudyLookup(
+          mixinAppModel.database,
+          bookKey: identity?.bookKey,
+          title: identity?.title ?? '',
+          sourceType: dictionarySourceType,
+          at: DateTime.now(),
+        ).catchError((Object e, StackTrace st) {
+          debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
+        }),
       );
     } catch (e, st) {
       debugPrint('[fushi-stats] addLookupCount failed (sync): $e\n$st');
