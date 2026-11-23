@@ -259,6 +259,9 @@ MusicOutputPlatform musicOutputPlatformOfHost() {
   return MusicOutputPlatform.other;
 }
 
+/// mpv `volume-gain-max` 的取值（mpv 选项允许的上限 150 dB）。
+const String kMusicMpvVolumeGainMaxDb = '150';
+
 /// 纯函数：输出设置 → 要下发的 mpv 属性（设计 §7.4 的平台表）。
 ///
 /// * Windows `ao=wasapi`、macOS `ao=coreaudio`：独占时 `audio-exclusive=yes`
@@ -267,6 +270,9 @@ MusicOutputPlatform musicOutputPlatformOfHost() {
 /// * Linux：`ao` 不钉（PipeWire 优先，退 ALSA）；选 `alsa/hw:…` 设备即硬件直出。
 /// * Android / iOS：`ao` 用 media_kit 默认；bit-perfect / 采样率由平台通道处理。
 /// * ReplayGain 恒 `replaygain=no`：增益由后端按曲目用 `volume-gain` 施加（见文件头）。
+///   `volume-gain-max` 放到 mpv 允许的上限：mpv 默认只准 +12 dB，超过的 `volume-gain`
+///   整个被拒（停在上一个值 / 0 dB）。录得轻的曲目（-30 LUFS 量级的人声、老录音）按 -18 LUFS
+///   要 +12 dB 以上；防削波由 [musicReplayGainDb] 按峰值封顶，不靠 mpv 这道上限。
 Map<String, String> musicMpvProperties(
   MusicOutputSettings settings, {
   required MusicOutputPlatform platform,
@@ -278,6 +284,7 @@ Map<String, String> musicMpvProperties(
     'gapless-audio': settings.gapless ? 'weak' : 'no',
     'prefetch-playlist': settings.gapless ? 'yes' : 'no',
     'replaygain': 'no',
+    'volume-gain-max': kMusicMpvVolumeGainMaxDb,
     // 纯音频实例：没有画面，也不要封面当视频轨解码。
     'audio-display': 'no',
     if (platform == MusicOutputPlatform.windows) 'ao': 'wasapi',

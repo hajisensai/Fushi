@@ -334,7 +334,9 @@ TTML**。手动指定的来源存成 `user` 行（`isUserEdited`），原文为 
 
 - ReplayGain 2.0：读标签（`REPLAYGAIN_*`、R128_*、iTunNORM 换算）；缺标签的曲目
   后台用统一 FFmpeg `ebur128` 扫描并写入 DB（**不改用户文件**，写回是显式操作）。
-- 预放大 + 防削波（`replaygain-clip=no` + 峰值保护）。
+- 预放大 + 防削波（`replaygain-clip=no` + 峰值保护）。增益经 mpv `volume-gain` 施加，`volume-gain-max`
+  放到 150 dB（mpv 默认 +12 dB，超了整个被拒、按 0 dB 播；轻录音按 -18 LUFS 常要 +12 dB 以上），
+  封顶只靠峰值保护。
 - 服务器曲目（Jellyfin / Subsonic，2026-11-22）：**服务器给的响度优先**——Jellyfin 10.9+
   条目的 `NormalizationGain`（服务器 EBU R128 测，目标 -18 LUFS，曲目 / 专辑条目各一份，媒体库开了
   「LUFS 扫描」才有）、OpenSubsonic 曲目的 `replayGain`。列表接口带回来的直接进播放项 `rg_*`；

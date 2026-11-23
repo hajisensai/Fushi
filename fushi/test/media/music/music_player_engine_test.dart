@@ -455,6 +455,8 @@ void main() {
     expect(off['prefetch-playlist'], 'no');
     // ReplayGain 恒由后端按曲目用 volume-gain 施加，mpv 自己的 replaygain 关掉。
     expect(off['replaygain'], 'no');
+    // mpv 默认只准 +12 dB 的 volume-gain，轻录音要的 +14 dB 会被整个拒掉：上限放开。
+    expect(off['volume-gain-max'], '150');
   });
 
   test('输出偏好（预放大 / 独占 / 设备 / DSD / 速度 / 音量）经引擎下发给后端', () async {
