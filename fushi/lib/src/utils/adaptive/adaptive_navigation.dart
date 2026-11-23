@@ -1477,22 +1477,24 @@ class _AppleLibraryTabBarState extends State<_AppleLibraryTabBar> {
         for (final int i in overflow)
           PopupMenuItem<int>(
             value: i,
+            // iOS 27 菜单行：文字在前、图标（带徽标）在行尾；当前项的行首
+            // 对勾由 Apple 菜单按 initialValue 画。
             child: Row(
               children: <Widget>[
+                Expanded(
+                  child: Text(
+                    widget.items[i].label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 12),
                 _maybeBadge(
                   item: widget.items[i],
                   child: FushiIcon(
                     i == widget.currentIndex
                         ? (widget.items[i].selectedIcon ?? widget.items[i].icon)
                         : widget.items[i].icon,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    widget.items[i].label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],

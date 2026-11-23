@@ -29,7 +29,8 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiAppleMenuItemRow, FushiAppleMenuSurface;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
@@ -2093,14 +2094,10 @@ class _Md3SegmentRow extends StatelessWidget {
   }
 }
 
-/// Apple 菜单行（iOS 26 上下文菜单 / macOS 26 菜单口径）：
-/// - 移动：行高 44、17 号 label 字、文字在左单色图标在右（iOS 上下文菜单），
-///   按下铺 systemFill、键盘焦点 / 悬停铺 tertiarySystemFill，高亮块圆角 12；
-/// - 桌面：行高 30、13 号字、图标在左（macOS 菜单），悬停 / 键盘焦点 = 强调色
-///   圆角块（圆角 5）+ onAccent 文字与图标；
-/// - [destructive] 时文字与图标都是 destructive 红（高亮态下照样换 onAccent）。
-/// 自带焦点节点：Tab 可达，Enter / 手柄 A（[ActivateIntent]）触发。
-class _AppleMenuRow extends StatefulWidget {
+/// Apple 菜单行：委托公共的 [FushiAppleMenuItemRow]（与 showFushiMenu 同一
+/// 行——iOS 27 / macOS 27 菜单口径：文字在前图标在尾、选中行首对勾、悬停 /
+/// 焦点中性底）。自带焦点节点：Tab 可达，Enter / 手柄 A 触发。
+class _AppleMenuRow extends StatelessWidget {
   const _AppleMenuRow({
     required this.icon,
     required this.label,
@@ -2122,7 +2119,7 @@ class _AppleMenuRow extends StatefulWidget {
   final VoidCallback onPressed;
   final bool destructive;
 
-  /// 开关类动作当前开着：行尾一个勾（macOS 菜单的 checkmark 位）。
+  /// 开关类动作当前开着：行首对勾。
   final bool selected;
 
   /// 行尾附加（子菜单的 chevron）。
@@ -2130,142 +2127,17 @@ class _AppleMenuRow extends StatefulWidget {
   final FocusNode? focusNode;
 
   @override
-  State<_AppleMenuRow> createState() => _AppleMenuRowState();
-}
-
-class _AppleMenuRowState extends State<_AppleMenuRow> {
-  bool _hovered = false;
-  bool _focused = false;
-  bool _pressed = false;
-
-  void _setPressed(bool value) {
-    if (_pressed == value || !mounted) return;
-    setState(() => _pressed = value);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiAppleColors palette = appleColorsOf(context);
-    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
-    final bool compact = fushiAppleCompact(context);
-    final bool accentHighlight = compact && (_hovered || _focused || _pressed);
-    final Color background;
-    if (accentHighlight) {
-      background = palette.accent;
-    } else if (_pressed) {
-      background = palette.fill;
-    } else if (_hovered || _focused) {
-      background = palette.tertiaryFill;
-    } else {
-      background = Colors.transparent;
-    }
-    final Color foreground = accentHighlight
-        ? palette.onAccent
-        : (widget.destructive ? palette.destructive : palette.label);
-    final TextStyle labelStyle =
-        (compact ? metrics.footnoteStyle(context) : metrics.titleStyle(context))
-            .copyWith(color: foreground);
-    final Widget glyph = FushiIcon(
-      widget.icon,
-      size: compact ? 15 : 20,
-      color: foreground,
-    );
-    final String? subtitle = widget.subtitle;
-    final Widget text = subtitle == null
-        ? Text(
-            widget.label,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: labelStyle,
-          )
-        : Row(
-            children: <Widget>[
-              Text(widget.label, maxLines: 1, style: labelStyle),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.end,
-                  style: labelStyle.copyWith(
-                    color: accentHighlight
-                        ? palette.onAccent.withValues(alpha: 0.8)
-                        : palette.secondaryLabel,
-                  ),
-                ),
-              ),
-            ],
-          );
-    final Widget? check = widget.selected
-        ? FushiIcon(
-            FushiIcons.check,
-            size: compact ? 13 : 17,
-            color: foreground,
-          )
-        : null;
-    final Widget row = Row(
-      children: compact
-          ? <Widget>[
-              glyph,
-              const SizedBox(width: 8),
-              Expanded(child: text),
-              if (check != null) check,
-              if (widget.trailing != null) widget.trailing!,
-            ]
-          : <Widget>[
-              Expanded(child: text),
-              if (check != null) ...<Widget>[check, const SizedBox(width: 8)],
-              if (widget.trailing != null) ...<Widget>[
-                widget.trailing!,
-                const SizedBox(width: 8),
-              ],
-              const SizedBox(width: 4),
-              glyph,
-            ],
-    );
-    return FocusableActionDetector(
-      focusNode: widget.focusNode,
-      autofocus: widget.autofocus,
-      mouseCursor: SystemMouseCursors.click,
-      actions: <Type, Action<Intent>>{
-        ActivateIntent: CallbackAction<ActivateIntent>(
-          onInvoke: (ActivateIntent intent) {
-            widget.onPressed();
-            return null;
-          },
-        ),
-      },
-      onShowHoverHighlight: (bool value) => setState(() => _hovered = value),
-      onShowFocusHighlight: (bool value) => setState(() => _focused = value),
-      child: Semantics(
-        button: true,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: (_) => _setPressed(true),
-          onTapUp: (_) => _setPressed(false),
-          onTapCancel: () => _setPressed(false),
-          onTap: widget.onPressed,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: background,
-              borderRadius: BorderRadius.all(Radius.circular(compact ? 5 : 12)),
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: compact ? 30 : 44),
-              child: Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: compact ? 9 : metrics.rowHorizontal,
-                  vertical: compact ? 4 : 8,
-                ),
-                child: row,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => FushiAppleMenuItemRow(
+    icon: icon,
+    label: label,
+    subtitle: subtitle,
+    onPressed: onPressed,
+    destructive: destructive,
+    selected: selected,
+    trailing: trailing,
+    focusNode: focusNode,
+    autofocus: autofocus,
+  );
 }
 
 /// 解析 [image] 的宽高比交给 [builder]；未解析完 / 解析失败 / 无图源时给 null。

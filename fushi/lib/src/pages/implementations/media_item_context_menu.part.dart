@@ -353,10 +353,8 @@ class _ItemMenuSurface extends StatelessWidget {
       borderRadius: BorderRadius.all(Radius.circular(apple ? 12 : 20)),
     );
     if (apple) {
-      return FushiAppleFloatingSurface(
-        shape: shape,
-        child: Material(type: MaterialType.transparency, child: child),
-      );
+      // 与 showFushiMenu 同一块 Apple 菜单面板（随玻璃画质、菜单圆角）。
+      return FushiAppleMenuSurface(child: child);
     }
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainer,
