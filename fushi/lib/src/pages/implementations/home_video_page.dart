@@ -113,6 +113,12 @@ import 'package:fushi/src/media/video/video_library_overview.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/identity/pending_identity.dart'
+    show PendingIdentityMediaKind;
+import 'package:fushi/src/media/identity/pending_identity_text.dart'
+    show pendingIdentityBannerText;
+import 'package:fushi/src/media/identity/pending_identity_widgets.dart'
+    show PendingIdentityBanner;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
     show VideoMetadataWork;
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
@@ -164,7 +170,6 @@ import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
 import 'package:fushi/src/pages/implementations/library_view_options.dart';
 import 'package:fushi/src/models/library_grid_columns.dart'
     show LibraryGridDomain;
-import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -214,7 +219,6 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -582,11 +586,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 正片也会被一起永久挪出自动补刮。
   Set<String> _dismissedPendingScrapeKeys = const <String>{};
 
-  int get _pendingScrapeCount => _pendingScrapeKeys.length;
-
-  bool get _pendingScrapeBannerVisible =>
-      _pendingScrapeKeys.isNotEmpty &&
-      !_dismissedPendingScrapeKeys.containsAll(_pendingScrapeKeys);
   bool _pendingScrapeInFlight = false;
 
   /// 批量删除在飞（35YfcYO-zR）：进度对话框挡住了页面，这里再挡一层，快捷键 /
@@ -5785,68 +5784,19 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 卡片照样进库，用户只会觉得「封面怎么是视频截图」而不知道有个确认队列在等他
   /// （BUG-2201）。数量为 0 时零高度。
   ///
-  /// 右侧「×」收起（见 [_dismissedPendingScrapeKeys]），出现 / 收起都带尺寸 +
-  /// 淡入淡出过渡。
-  Widget _buildPendingScrapeBanner() {
-    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
-    return FushiAnimatedSize(
-      duration: duration,
-      curve: FushiMotion.standard,
-      alignment: Alignment.topCenter,
-      child: AnimatedSwitcher(
-        duration: duration,
-        switchInCurve: FushiMotion.enter,
-        switchOutCurve: FushiMotion.exit,
-        child: _pendingScrapeBannerVisible
-            ? _buildPendingScrapeBannerCard()
-            : const SizedBox.shrink(key: ValueKey<String>('hidden')),
-      ),
-    );
-  }
-
-  Widget _buildPendingScrapeBannerCard() {
-    final VoidCallback? open = widget.onOpenScrapeTasks;
-    return Padding(
-      key: const ValueKey<String>('video-library-scrape-pending-banner'),
-      padding: const EdgeInsets.only(bottom: 8),
-      child: FushiCard(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(
-            children: <Widget>[
-              const FushiIcon(Icons.rule_folder_outlined, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  t.video_library_scrape_pending_banner(
-                    count: _pendingScrapeCount,
-                  ),
-                ),
-              ),
-              if (open != null) ...<Widget>[
-                const SizedBox(width: 8),
-                FushiFilledButton.tonal(
-                  onPressed: open,
-                  child: Text(t.video_library_scrape_pending_banner_action),
-                ),
-              ],
-              const SizedBox(width: 4),
-              FushiIconButtonControl(
-                key: const ValueKey<String>(
-                  'video-library-scrape-pending-banner-dismiss',
-                ),
-                tooltip: t.video_library_scrape_pending_banner_dismiss,
-                onPressed: () => setState(
-                  () => _dismissedPendingScrapeKeys = _pendingScrapeKeys,
-                ),
-                icon: const FushiIcon(FushiIcons.close),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  /// 右侧「×」收起（见 [_dismissedPendingScrapeKeys]）。与书架 / 游戏库页同一个
+  /// 提醒条组件（[PendingIdentityBanner]，BUG-5283）。
+  Widget _buildPendingScrapeBanner() => PendingIdentityBanner(
+    keyPrefix: 'video-library-scrape-pending-banner',
+    pendingKeys: _pendingScrapeKeys,
+    dismissedKeys: _dismissedPendingScrapeKeys,
+    message: (int count) =>
+        pendingIdentityBannerText(PendingIdentityMediaKind.video, count),
+    onDismiss: () =>
+        setState(() => _dismissedPendingScrapeKeys = _pendingScrapeKeys),
+    onOpen: widget.onOpenScrapeTasks,
+    dismissTooltip: t.video_library_scrape_pending_banner_dismiss,
+  );
 
   /// 重命名视频/播放列表（C 需求③）：弹输入框预填当前标题 → 落库 → 刷新列表。
   /// 空白标题不提交（保持原名）。

@@ -117,6 +117,11 @@ import 'package:fushi/src/media/collections/add_to_collection_dialog.dart';
 import 'package:fushi/src/media/collections/batch_combine.dart';
 import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart';
+import 'package:fushi/src/media/identity/app_pending_identity.dart';
+import 'package:fushi/src/media/identity/pending_identity_widgets.dart';
+import 'package:fushi_engine/media/identity/curator_pending_identity.dart'
+    show CuratorPendingIdentityDomain;
+import 'package:fushi_engine/media/identity/pending_identity.dart';
 import 'package:fushi_engine/media/collections/collection_merge.dart';
 import 'package:fushi/src/media/collections/collection_context_dialog.dart';
 import 'package:fushi/src/media/metadata/book_cover_scrape_dialog.dart';
@@ -442,6 +447,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   Map<int, List<_ShelfBookSlot>> _remoteMembersByCollection =
       const <int, List<_ShelfBookSlot>>{};
   List<MediaItem> _visibleEpubBooks = const [];
+
+  /// 待确认身份提醒条的刷新信号（库管家每趟结束、手动搜索写回后；BUG-5283）。
+  final PendingIdentityRefresh _pendingIdentityRefresh =
+      PendingIdentityRefresh();
   List<SrtBook> _visibleSrtBooks = const [];
   Map<String, String> _epubCoverUrisByBookKey = const {};
   // TODO-1191：书架 SRT 卡长按菜单「查看插画」的 EPUB-backing 门控真值。
@@ -1058,6 +1067,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
 
   @override
   void dispose() {
+    _pendingIdentityRefresh.dispose();
     _companion.dispose();
     _collectionDisplayCounts.dispose();
     _memberInfoRevision.dispose();
@@ -1209,6 +1219,17 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                           _buildTagBar(allTags.valueOrNull ?? const []),
                         ] else
                           _buildSearchBar(allTags.valueOrNull ?? const []),
+                        // 书 / 漫画没认出来时的常驻提醒（BUG-5283）：与视频库同一个
+                        // 提醒条组件，只数本书架的媒体。
+                        PendingIdentityBannerHost(
+                          key: ValueKey<String>(
+                            'pending-identity-host-${_pendingIdentityKind.wire}',
+                          ),
+                          kind: _pendingIdentityKind,
+                          source: _pendingIdentitySource,
+                          changes: _pendingIdentityRefresh.stream,
+                          onOpen: _openPendingIdentity,
+                        ),
                       ],
                     ),
                     // 多选态才接管长按：长按落在卡上 = 起手扫选，不抬手滑动即刷出
@@ -5059,6 +5080,63 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   Future<void> _scrapeEpubCover(MediaItem item) async {
     Navigator.pop(context);
     await _scrapeBookItem(item);
+  }
+
+  PendingIdentityMediaKind get _pendingIdentityKind => _mangaOnly
+      ? PendingIdentityMediaKind.manga
+      : PendingIdentityMediaKind.book;
+
+  PendingIdentitySource _pendingIdentitySource() =>
+      curatorPendingIdentitySourceOf(
+        db: appModel.database,
+        prefs: appModel.prefsRepo,
+        domain: CuratorPendingIdentityDomain.books,
+      );
+
+  /// 提醒条「去确认」：本书架媒体的待确认清单（BUG-5283）。手动搜索 = 书卡同一个
+  /// 「在线刮削」弹窗；让 AI 重试 = 库管家对这一条重跑书刮削阶段。
+  Future<void> _openPendingIdentity() => showPendingIdentityDialog(
+    context: context,
+    kind: _pendingIdentityKind,
+    source: _pendingIdentitySource(),
+    actions: PendingIdentityActions(
+      identifyManually: (BuildContext _, PendingIdentityEntry e) =>
+          _identifyPendingBook(e),
+      retryWithAi: isAiModuleEnabled(appModel.moduleVisibility)
+          ? (BuildContext dialogContext, PendingIdentityEntry e) =>
+                retryPendingIdentityWithAi(
+                  entry: e,
+                  prefs: appModel.prefsRepo,
+                  aiModuleEnabled: true,
+                  ensureConsent: () => ensureLibraryOrganizeConsent(
+                    dialogContext,
+                    appModel.prefsRepo,
+                  ),
+                )
+          : null,
+    ),
+  );
+
+  /// 待确认条目的「手动搜索」：开书卡同一个刮削弹窗。系列单元一次处理一卷（第一本
+  /// 还缺资料的）；写回后清单重读，还缺资料的卷仍留在这一条里。
+  Future<String?> _identifyPendingBook(PendingIdentityEntry entry) async {
+    if (entry.memberKeys.isEmpty) return t.identity_pending_item_missing;
+    final String bookKey = entry.memberKeys.first;
+    final List<MediaItem> books = await ref.read(
+      fushiBooksProvider(JapaneseLanguage.instance).future,
+    );
+    MediaItem? item;
+    for (final MediaItem candidate in books) {
+      if (_parseBookKey(candidate.mediaIdentifier) == bookKey) {
+        item = candidate;
+        break;
+      }
+    }
+    if (item == null) return t.identity_pending_item_missing;
+    if (!mounted) return null;
+    await _scrapeBookItem(item);
+    _pendingIdentityRefresh.ping();
+    return null;
   }
 
   /// 「在线刮削封面」流程本体（书卡菜单与详情页的「刮削资料 / 重新刮削」共用）：

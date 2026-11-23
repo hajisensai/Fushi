@@ -765,9 +765,9 @@ void main() {
       );
       await addVideo(
         'sp-01',
-        'D:/A/Bonus Feature (2019).mkv',
+        'D:/A/Side Story Special (2019).mkv',
         sourceId,
-        title: 'Bonus Feature',
+        title: 'Side Story Special',
       );
 
       final VideoLibraryScrapeSweep first = sweep();
@@ -803,9 +803,9 @@ void main() {
       final int sourceId = await addSource('D:/A');
       await addVideo(
         'sp-01',
-        'D:/A/Bonus Feature (2019).mkv',
+        'D:/A/Side Story Special (2019).mkv',
         sourceId,
-        title: 'Bonus Feature',
+        title: 'Side Story Special',
       );
       final VideoLibraryScrapeSweep service = sweep(isEnabled: () => false);
       await service.setWorksIgnored(<String>['book:sp-01'], ignored: true);

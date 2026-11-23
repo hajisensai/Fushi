@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5284](bugs/BUG-5284-media-title-crc-suffix-not-cleaned.md) | ✅ | ✅ | media-title-crc-suffix-not-cleaned |
+| [BUG-5283](bugs/BUG-5283-book-game-pending-identity-invisible.md) | ✅ | ✅ | book-game-pending-identity-invisible |
 | [BUG-5282](bugs/BUG-5282-ai-identity-candidate-type-mislabeled.md) | ✅ | ✅ | AI 识别作品时候选类型被标成本地搜索类型，正确候选被压低置信度不采用 |
 | [BUG-5281](bugs/BUG-5281-anidb-same-name-character-credit-fk-failure.md) | ✅ | ✅ | 同一声优配两个同名角色时写角色外部 id 撞外键，整部作品刮削失败 |
 | [BUG-5280](bugs/BUG-5280-disc-stream-files-counted-as-pending-works.md) | ✅ | ✅ | 逐个入库的原盘流文件（BDMV/STREAM/*.m2ts）被当成作品，挂满「待确认身份」 |

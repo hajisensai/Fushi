@@ -237,6 +237,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：NSFW 作品的封面在库页 / 继续卡等处打模糊。见
   // media/nsfw/nsfw_cover_blur.dart。
   'blur_nsfw_covers',
+  // JSON 字符串数组：待确认身份队列里被用户「忽略」的书 / 漫画刮削单元键
+  // （`collection:<id>` / `book:<bookKey>`，BUG-5283，引擎
+  // media/identity/pending_identity.dart）。键里是本机合集自增 id，设备本地。
+  'book_scrape_ignored_works',
   // string（默认空）：楽天ブックス书籍检索的 accessKey / applicationId（楽天ウェブ
   // サービス注册应用后拿到）。两者都填了书籍刮削才出现「楽天ブックス」源。凭据 →
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
@@ -408,6 +412,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'galgame_library_view',
   // bool：第三方游戏资源站下载前的风险说明勾了「不再提示」（download_notice.dart）。
   'game_resource_notice_dismissed',
+  // JSON 字符串数组：待确认身份队列里被用户「忽略」的游戏（`game:<id>`，
+  // BUG-5283，引擎 media/identity/pending_identity.dart）。本机自增 id，设备本地。
+  'game_scrape_ignored_works',
   'games_collapsed_collection_ids',
   // String（默认 'grid'）：游戏库主体布局，'grid' 海报网格 / 'list' 分段卡列表。
   // 页头切换钮写入，跨会话记住。
