@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/widgets.dart';
-
 /// 媒体服务器上**用户数据**（已播放标记 / 断点）变了的进程内信号，按服务器身份
 /// （`MediaServerBrowser.serverId` = `RemoteLibrarySource.remoteLibrarySourceId`）
 /// 派发。
@@ -18,7 +16,8 @@ import 'package:flutter/widgets.dart';
 /// - 浏览会话的播放页退回之后（`MediaServerSession.playItem`：播放期间上报了
 ///   断点 / 播完标记）。
 ///
-/// 读者：[MediaServerUserDataRefresh] 混入的视图原地重拉已加载条目；远端清单缓存
+/// 读者：`MediaServerUserDataRefresh`（`pages/implementations/media_server/
+/// media_server_user_data_refresh.dart`）混入的视图原地重拉已加载条目；远端清单缓存
 /// 失效该服务器的槽（`remoteLibraryCacheProvider`）。同步派发：通知返回时缓存已经
 /// 失效，紧接着的读不会拿到旧清单。
 abstract final class MediaServerUserDataChanges {
@@ -30,55 +29,4 @@ abstract final class MediaServerUserDataChanges {
 
   /// [serverId] 那台服务器上的用户数据刚被改过。
   static void notify(String serverId) => _changes.add(serverId);
-}
-
-/// 订阅 [MediaServerUserDataChanges]：本视图那台服务器的用户数据一变就调
-/// [refreshUserDataInPlace]（原地重拉已加载条目，不出加载态、不动滚动位置）。
-///
-/// 合并突发：批量标记一整季会按集各通知一次，刷新在途时到达的通知只记一笔，
-/// 在途那次结束后**再刷一次**——既不并发打一串相同请求，也不会漏掉最后一次写入
-/// 之后的状态。
-mixin MediaServerUserDataRefresh<T extends StatefulWidget> on State<T> {
-  StreamSubscription<String>? _userDataSub;
-  bool _userDataRefreshing = false;
-  bool _userDataRefreshQueued = false;
-
-  /// 本视图展示的服务器身份。
-  String get userDataServerId;
-
-  /// 原地重拉已加载条目；失败自行吞掉并保留旧数据。
-  Future<void> refreshUserDataInPlace();
-
-  @override
-  void initState() {
-    super.initState();
-    _userDataSub = MediaServerUserDataChanges.stream.listen(_onUserDataChanged);
-  }
-
-  @override
-  void dispose() {
-    unawaited(_userDataSub?.cancel());
-    super.dispose();
-  }
-
-  void _onUserDataChanged(String serverId) {
-    if (serverId != userDataServerId || !mounted) return;
-    if (_userDataRefreshing) {
-      _userDataRefreshQueued = true;
-      return;
-    }
-    unawaited(_runUserDataRefresh());
-  }
-
-  Future<void> _runUserDataRefresh() async {
-    _userDataRefreshing = true;
-    try {
-      do {
-        _userDataRefreshQueued = false;
-        await refreshUserDataInPlace();
-      } while (_userDataRefreshQueued && mounted);
-    } finally {
-      _userDataRefreshing = false;
-    }
-  }
 }

@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
-import 'package:fushi/src/media/video/media_server/media_server_user_data_changes.dart';
+import 'package:fushi/src/pages/implementations/media_server/media_server_user_data_refresh.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_aggregate_search_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_routes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
