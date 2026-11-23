@@ -20,6 +20,7 @@ export 'src/database/media_ref.dart';
 export 'src/database/media_source_util.dart';
 export 'src/database/music_scrape_tables.dart';
 export 'src/database/music_tables.dart';
+export 'src/database/music_video_match_cache_tables.dart';
 export 'src/database/media_link_ai_verdict_tables.dart';
 export 'src/database/people_tables.dart';
 export 'src/database/theme_song_span_tables.dart';

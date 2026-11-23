@@ -31,6 +31,7 @@ import 'media_source_util.dart'
     show musicAlbumNameKey, musicTrackDirPrefix, musicTrackPathKey;
 import 'music_scrape_tables.dart';
 import 'music_tables.dart';
+import 'music_video_match_cache_tables.dart';
 import 'pref_codec.dart';
 import 'sql_functions.dart';
 import 'sqlite_busy_timeout.dart';
@@ -62,6 +63,7 @@ part 'database_music_identity.part.dart';
 part 'database_music_scrape.part.dart';
 part 'database_theme_song_spans.part.dart';
 part 'database_video_content_fingerprints.part.dart';
+part 'database_music_video_match_cache.part.dart';
 part 'database_media_link_ai_verdicts.part.dart';
 part 'database_people.part.dart';
 part 'database_ai_agent.part.dart';
@@ -1219,6 +1221,8 @@ void _requireOneVideoMetadataOwner({
     MusicResumePoints,
     VideoThemeSongSpans,
     VideoContentFingerprints,
+    MusicVideoPrints,
+    MusicVideoMatchChecks,
     MediaLinkAiVerdicts,
     MusicScrapeMeta,
     MusicMetadataRawSnapshots,
@@ -1251,6 +1255,7 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMusicScrape,
         _FushiDbThemeSongSpans,
         _FushiDbVideoContentFingerprints,
+        _FushiDbMusicVideoMatchCache,
         _FushiDbMediaLinkAiVerdicts,
         _FushiDbPeople,
         _FushiDbAiAgent,
@@ -3678,6 +3683,17 @@ class FushiDatabase extends _$FushiDatabase
         // 同版本的解锁口令摘要表（随上锁标记同步 / 备份）。
         if (!await _tableExists('media_lock_credentials')) {
           await m.createTable(mediaLockCredentials);
+        }
+      }
+      if (from < 172) {
+        // v172：本地 MV 自动匹配的两张缓存 music_video_prints（视频音轨声纹）/
+        // music_video_match_checks（某首歌已和某个视频版本对齐过）。设备本地、纯缓存、
+        // 无外键（见 music_video_match_cache_tables.dart）；纯建表，幂等守卫同 v165。
+        if (!await _tableExists('music_video_prints')) {
+          await m.createTable(musicVideoPrints);
+        }
+        if (!await _tableExists('music_video_match_checks')) {
+          await m.createTable(musicVideoMatchChecks);
         }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建

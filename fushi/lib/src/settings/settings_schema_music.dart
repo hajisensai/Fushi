@@ -478,8 +478,11 @@ SettingsDestination buildMusicDestination() {
             defaultValue: true,
             value: (SettingsContext c) =>
                 c.appModel.prefsRepo.musicLyricsMvBackdrop,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.prefsRepo.setMusicLyricsMvBackdrop(value),
+            onChanged: (SettingsContext c, bool value) async {
+              await c.appModel.prefsRepo.setMusicLyricsMvBackdrop(value);
+              // 打开时补一轮后台匹配（只对没对过的）。
+              if (value) unawaited(c.appModel.musicVideoAutoMatch.schedule());
+            },
           ),
           SettingsSegmentedItem<bool>(
             id: 'music.lyrics_backdrop_animate',

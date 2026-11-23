@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
+import 'package:flutter/foundation.dart' show immutable;
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -54,13 +55,70 @@ class MusicLocalVideoMatch {
   final AudioFingerprintMatch? alignment;
 }
 
-/// 列出曲目附近可能是 MV 的视频文件（同目录、同目录下的 MV 目录、上一级的 MV 目录），
-/// 按文件名分数降序；后面再接附近蓝光盘里的流（[listDiscMusicVideoStreams]）。纯 IO，不解码。
-List<({String path, double score})> listLocalMusicVideoFiles(
-  MusicTrackRow track, {
-  int limit = 5,
+/// 一个候选视频文件与它此刻的版本（大小 + 修改时刻）：对齐记录按版本认，文件换了要重对。
+@immutable
+class MusicVideoFileStamp {
+  const MusicVideoFileStamp({
+    required this.path,
+    required this.size,
+    required this.mtimeMs,
+  });
+
+  final String path;
+  final int size;
+  final int mtimeMs;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MusicVideoFileStamp &&
+      other.path == path &&
+      other.size == size &&
+      other.mtimeMs == mtimeMs;
+
+  @override
+  int get hashCode => Object.hash(path, size, mtimeMs);
+}
+
+/// 一个曲目目录附近的 MV 候选文件（[collectMusicVideoFilesNear] 的产物）。
+@immutable
+class MusicVideoNearbyFiles {
+  const MusicVideoNearbyFiles({
+    this.videos = const <MusicVideoFileStamp>[],
+    this.discStreams = const <MusicVideoFileStamp>[],
+  });
+
+  /// 同目录、同目录下的 MV 目录、上一级的 MV 目录里的视频（按文件名给每首歌打分再筛）。
+  final List<MusicVideoFileStamp> videos;
+
+  /// 附近蓝光盘里的流（文件名不带歌名，不按名字筛，见 [listDiscMusicVideoStreams]）。
+  final List<MusicVideoFileStamp> discStreams;
+
+  bool get isEmpty => videos.isEmpty && discStreams.isEmpty;
+}
+
+MusicVideoFileStamp? _stampOf(File f) {
+  try {
+    final FileStat s = f.statSync();
+    if (s.type != FileSystemEntityType.file) return null;
+    return MusicVideoFileStamp(
+      path: f.path,
+      size: s.size,
+      mtimeMs: s.modified.millisecondsSinceEpoch,
+    );
+  } on FileSystemException {
+    return null;
+  }
+}
+
+/// 收集曲目目录 [homeDir] 附近的 MV 候选文件（带版本）。纯同步 IO、不解码，可在后台
+/// isolate 里跑（后台匹配按目录一次收齐，同目录的歌共用一份）。
+MusicVideoNearbyFiles collectMusicVideoFilesNear(
+  String homeDir, {
+  int minDiscBytes = kMusicDiscVideoStreamMinBytes,
+  int maxDiscBytes = kMusicDiscVideoStreamMaxBytes,
 }) {
-  final Directory home = File(track.path).parent;
+  final Directory home = Directory(homeDir);
+  if (!home.existsSync()) return const MusicVideoNearbyFiles();
   final List<Directory> dirs = <Directory>[home];
   void addMvChildren(Directory d) {
     if (!d.existsSync()) return;
@@ -78,8 +136,7 @@ List<({String path, double score})> listLocalMusicVideoFiles(
 
   addMvChildren(home);
   if (home.parent.path != home.path) addMvChildren(home.parent);
-  final List<({String path, double score})> out =
-      <({String path, double score})>[];
+  final List<MusicVideoFileStamp> videos = <MusicVideoFileStamp>[];
   final Set<String> seen = <String>{};
   for (final Directory d in dirs) {
     List<FileSystemEntity> entries;
@@ -96,26 +153,70 @@ List<({String path, double score})> listLocalMusicVideoFiles(
           .toLowerCase();
       if (!kMusicVideoExtensions.contains(ext)) continue;
       if (!seen.add(p.normalize(e.path))) continue;
-      final double s = scoreLocalMusicVideoName(
-        p.basename(e.path),
-        title: track.title,
-        artist: track.artistCredit,
-      );
-      if (s > 0) out.add((path: e.path, score: s));
+      final MusicVideoFileStamp? s = _stampOf(e);
+      if (s != null) videos.add(s);
     }
   }
-  out.sort(
-    (({String path, double score}) a, ({String path, double score}) b) =>
-        b.score.compareTo(a.score),
+  return MusicVideoNearbyFiles(
+    videos: videos,
+    discStreams: _discStreamStamps(
+      home,
+      seen: seen,
+      minBytes: minDiscBytes,
+      maxBytes: maxDiscBytes,
+    ),
   );
-  return <({String path, double score})>[
-    ...out.take(limit),
-    // 蓝光里的 MV（`BDMV/STREAM/00001.m2ts`）文件名不带歌名，文件名打分恒为 0：
-    // 不按名字筛，交给声纹对齐判（分数记 0，排在按名字命中的候选之后）。
-    for (final String s in listDiscMusicVideoStreams(home, seen: seen))
-      (path: s, score: 0),
+}
+
+/// 一首歌在 [near] 里的候选：文件名打分 > 0 的视频按分数降序取前 [limit] 个，后面接
+/// 全部蓝光流（分数记 0，交给声纹判）。纯函数。
+List<({MusicVideoFileStamp file, double score})> musicVideoCandidatesFor(
+  MusicVideoNearbyFiles near, {
+  required String title,
+  String? artist,
+  int limit = 5,
+}) {
+  final List<({MusicVideoFileStamp file, double score})> named =
+      <({MusicVideoFileStamp file, double score})>[
+        for (final MusicVideoFileStamp f in near.videos)
+          (
+            file: f,
+            score: scoreLocalMusicVideoName(
+              p.basename(f.path),
+              title: title,
+              artist: artist,
+            ),
+          ),
+      ]..removeWhere(
+        (({MusicVideoFileStamp file, double score}) c) => c.score <= 0,
+      );
+  named.sort(
+    (
+      ({MusicVideoFileStamp file, double score}) a,
+      ({MusicVideoFileStamp file, double score}) b,
+    ) => b.score.compareTo(a.score),
+  );
+  return <({MusicVideoFileStamp file, double score})>[
+    ...named.take(limit),
+    for (final MusicVideoFileStamp s in near.discStreams) (file: s, score: 0),
   ];
 }
+
+/// 列出曲目附近可能是 MV 的视频文件（同目录、同目录下的 MV 目录、上一级的 MV 目录），
+/// 按文件名分数降序；后面再接附近蓝光盘里的流（[listDiscMusicVideoStreams]）。纯 IO，不解码。
+List<({String path, double score})> listLocalMusicVideoFiles(
+  MusicTrackRow track, {
+  int limit = 5,
+}) => <({String path, double score})>[
+  for (final ({MusicVideoFileStamp file, double score}) c
+      in musicVideoCandidatesFor(
+        collectMusicVideoFilesNear(File(track.path).parent.path),
+        title: track.title,
+        artist: track.artistCredit,
+        limit: limit,
+      ))
+    (path: c.file.path, score: c.score),
+];
 
 /// 蓝光流文件小于这个大小的不当 MV 候选（菜单背景、片头 logo、静帧）。
 const int kMusicDiscVideoStreamMinBytes = 20 * 1024 * 1024;
@@ -130,14 +231,28 @@ const int kMusicDiscVideoStreamLimit = 12;
 /// 曲目附近蓝光盘里可能是 MV 的流（`BDMV/STREAM/*.m2ts`）：盘根可以是曲目目录本身、
 /// 它的子目录（`专辑/BD/BDMV`）、上一级目录或上一级的子目录（`专辑/CD/` 与 `专辑/BD/` 并列）。
 /// 按大小过滤（[minBytes]–[maxBytes]，默认 [kMusicDiscVideoStreamMinBytes]–
-/// [kMusicDiscVideoStreamMaxBytes]）、
-/// 每张盘按大小降序取前 [kMusicDiscVideoStreamLimit] 条。[seen] 里已有的路径跳过并登记。
-/// 纯 IO，不解码。
+/// [kMusicDiscVideoStreamMaxBytes]）、每张盘按大小降序取前 [kMusicDiscVideoStreamLimit] 条。
+/// [seen] 里已有的路径跳过并登记。纯 IO，不解码。
 List<String> listDiscMusicVideoStreams(
   Directory home, {
   Set<String>? seen,
   int minBytes = kMusicDiscVideoStreamMinBytes,
   int maxBytes = kMusicDiscVideoStreamMaxBytes,
+}) => <String>[
+  for (final MusicVideoFileStamp s in _discStreamStamps(
+    home,
+    seen: seen,
+    minBytes: minBytes,
+    maxBytes: maxBytes,
+  ))
+    s.path,
+];
+
+List<MusicVideoFileStamp> _discStreamStamps(
+  Directory home, {
+  Set<String>? seen,
+  required int minBytes,
+  required int maxBytes,
 }) {
   final Set<String> visited = seen ?? <String>{};
   final List<Directory> roots = <Directory>[home];
@@ -157,39 +272,32 @@ List<String> listDiscMusicVideoStreams(
     roots.add(parent);
     addChildren(parent);
   }
-  final List<String> out = <String>[];
+  final List<MusicVideoFileStamp> out = <MusicVideoFileStamp>[];
   final Set<String> seenRoots = <String>{};
   for (final Directory root in roots) {
     if (!seenRoots.add(p.normalize(root.path))) continue;
     final Directory stream = Directory(p.join(root.path, 'BDMV', 'STREAM'));
     if (!stream.existsSync()) continue;
-    final List<({String path, int size})> files = <({String path, int size})>[];
+    final List<MusicVideoFileStamp> files = <MusicVideoFileStamp>[];
     try {
       for (final FileSystemEntity e in stream.listSync(followLinks: false)) {
         if (e is! File) continue;
         if (p.extension(e.path).toLowerCase() != '.m2ts') continue;
-        final int size;
-        try {
-          size = e.lengthSync();
-        } on FileSystemException {
-          continue;
-        }
-        if (size < minBytes || size > maxBytes) {
-          continue;
-        }
-        files.add((path: e.path, size: size));
+        final MusicVideoFileStamp? s = _stampOf(e);
+        if (s == null || s.size < minBytes || s.size > maxBytes) continue;
+        files.add(s);
       }
     } on FileSystemException {
       continue;
     }
     files.sort(
-      (({String path, int size}) a, ({String path, int size}) b) =>
+      (MusicVideoFileStamp a, MusicVideoFileStamp b) =>
           b.size.compareTo(a.size),
     );
-    for (final ({String path, int size}) f in files.take(
+    for (final MusicVideoFileStamp f in files.take(
       kMusicDiscVideoStreamLimit,
     )) {
-      if (visited.add(p.normalize(f.path))) out.add(f.path);
+      if (visited.add(p.normalize(f.path))) out.add(f);
     }
   }
   return out;
@@ -229,7 +337,9 @@ class MusicVideoService {
     Future<List<YoutubeSearchHit>> Function(String query)? youtubeSearch,
     Future<String?> Function(String url)? youtubeAudioUrl,
     int Function()? clock,
+    MusicVideoNearbyFiles Function(String dir)? nearby,
   }) : _detector = detector,
+       _nearby = nearby ?? collectMusicVideoFilesNear,
        _youtubeSearch = youtubeSearch ?? searchYoutubeVideos,
        _youtubeAudioUrl = youtubeAudioUrl ?? _defaultYoutubeAudioUrl,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
@@ -239,6 +349,9 @@ class MusicVideoService {
   final Future<List<YoutubeSearchHit>> Function(String query) _youtubeSearch;
   final Future<String?> Function(String url) _youtubeAudioUrl;
   final int Function() _clock;
+
+  /// 收集一个曲目目录附近的候选（真 app = [collectMusicVideoFilesNear]；测试注入替身）。
+  final MusicVideoNearbyFiles Function(String dir) _nearby;
 
   ThemeSongDetector get _det => _detector ?? themeSongDetectorFor(database);
 
@@ -250,41 +363,71 @@ class MusicVideoService {
     return s.audioStreamUrl ?? s.streamUrl;
   }
 
-  /// 本地匹配：文件名预筛 → 逐个声纹对齐 → 过门的**自动绑定**（偏移 = 对齐偏移）。
+  /// 本地匹配（曲目详情「找本地 MV」）：文件名预筛 + 附近蓝光流 → 逐个声纹对齐 → 过门的
+  /// **自动绑定**（偏移 = 对齐偏移）。手动触发不看「已对齐过」记录，全部重对（视频声纹
+  /// 有落库缓存，没换过的文件不重解码）；对过的照样记下，后台匹配不再重复。
   Future<List<MusicLocalVideoMatch>> matchLocal(String trackUid) async {
     final MusicTrackRow? track = await database.getMusicTrack(trackUid);
     if (track == null) return const <MusicLocalVideoMatch>[];
-    final ThemeSongSong song = ThemeSongSong.fromRow(track);
     final List<MusicLocalVideoMatch> out = <MusicLocalVideoMatch>[];
-    for (final ({String path, double score}) c in listLocalMusicVideoFiles(
-      track,
-    )) {
-      final AudioFingerprintMatch? m = await _det.mvAlignment(
-        audio: song,
-        mvPath: c.path,
+    for (final ({MusicVideoFileStamp file, double score}) c
+        in musicVideoCandidatesFor(
+          _nearby(File(track.path).parent.path),
+          title: track.title,
+          artist: track.artistCredit,
+        )) {
+      final ({AudioFingerprintMatch? match, bool bound}) r = await alignLocal(
+        track,
+        c.file,
       );
       out.add(
-        MusicLocalVideoMatch(path: c.path, nameScore: c.score, alignment: m),
+        MusicLocalVideoMatch(
+          path: c.file.path,
+          nameScore: c.score,
+          alignment: r.match,
+        ),
       );
-      if (m != null &&
-          acceptMusicVideoAlignment(
-            confidence: m.confidence,
-            matched: m.haystackEnd - m.haystackStart,
-            songDurationMs: track.durationMs,
-          )) {
-        await database.upsertMusicVideo(
-          MusicVideosCompanion.insert(
-            trackUid: trackUid,
-            kind: MusicVideoKind.local,
-            ref: c.path,
-            offsetMs: Value<int>(m.offset.inMilliseconds),
-            confidence: Value<double?>(m.confidence),
-            updatedAt: _clock(),
-          ),
-        );
-      }
     }
     return out;
+  }
+
+  /// 曲目 [track] 与本机视频 [video] 做一次声纹对齐：过门就绑定（`is_user_bound` 不动），
+  /// 无论对没对上都记一条「已对齐过」（按视频版本）。返回对齐结果与是否绑定了。
+  Future<({AudioFingerprintMatch? match, bool bound})> alignLocal(
+    MusicTrackRow track,
+    MusicVideoFileStamp video,
+  ) async {
+    final AudioFingerprintMatch? m = await _det.mvAlignment(
+      audio: ThemeSongSong.fromRow(track),
+      mvPath: video.path,
+    );
+    final bool accept =
+        m != null &&
+        acceptMusicVideoAlignment(
+          confidence: m.confidence,
+          matched: m.haystackEnd - m.haystackStart,
+          songDurationMs: track.durationMs,
+        );
+    if (accept) {
+      await database.upsertMusicVideo(
+        MusicVideosCompanion.insert(
+          trackUid: track.trackUid,
+          kind: MusicVideoKind.local,
+          ref: video.path,
+          offsetMs: Value<int>(m.offset.inMilliseconds),
+          confidence: Value<double?>(m.confidence),
+          updatedAt: _clock(),
+        ),
+      );
+    }
+    await database.putMusicVideoMatchCheck(
+      trackUid: track.trackUid,
+      videoPath: video.path,
+      fileSizeBytes: video.size,
+      fileModifiedAt: video.mtimeMs,
+      checkedAt: _clock(),
+    );
+    return (match: m, bound: accept);
   }
 
   /// 在线候选：MusicBrainz `music video` 关系（刮削结论里存的）+ YouTube 高置信搜索结果。

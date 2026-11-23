@@ -6,9 +6,9 @@
 /// 偏差超过 [kMusicMvBackdropSeekTolerance] 才 seek，引擎暂停 / 拖动 / 换歌画面跟着停 /
 /// 跳 / 换；MV 时间轴之外（前奏比 MV 早、MV 比歌短）画面淡出，露出下面的流体背景。
 ///
-/// 曲目没有可放的绑定时，在后台按本地 MV 匹配（同目录 / MV 目录 / 附近蓝光盘，声纹对齐
-/// 过门才自动绑定）找一次，每首歌每次启动只找一次。网络 MV（YouTube）不当背景串流，
-/// 仍从曲目详情进 MV 页看。
+/// 这里只读绑定、不做任何解码：找 MV 是音乐来源扫完后的后台匹配
+/// （`music_video_auto_match.dart`，每个视频只解码一次、每对只对一次）或曲目详情里的
+/// 「找本地 MV」。网络 MV（YouTube）不当背景串流，仍从曲目详情进 MV 页看。
 library;
 
 import 'dart:async';
@@ -136,12 +136,10 @@ class MusicMvBackdropController extends ChangeNotifier
     required FushiPlaybackClock clock,
     required FushiDatabase database,
     required bool enabled,
-    MusicVideoService? service,
   }) : _engine = engine,
        _clock = clock,
        _database = database,
-       _enabled = enabled,
-       _service = service ?? MusicVideoService(database: database) {
+       _enabled = enabled {
     _engine.addListener(_onEngine);
     WidgetsBinding.instance.addObserver(this);
     _onEngine();
@@ -150,10 +148,6 @@ class MusicMvBackdropController extends ChangeNotifier
   final MusicPlayerEngine _engine;
   final FushiPlaybackClock _clock;
   final FushiDatabase _database;
-  final MusicVideoService _service;
-
-  /// 本次启动里已经自动匹配过的曲目（没找到也不再找，手动「找本地 MV」不受影响）。
-  static final Set<String> _autoMatched = <String>{};
 
   bool _enabled;
   bool _disposed = false;
@@ -203,13 +197,6 @@ class MusicMvBackdropController extends ChangeNotifier
     if (item != null) {
       try {
         src = musicMvBackdropSelfSource(item) ?? await _bound(item.trackUid);
-        if (src == null &&
-            token == _loadToken &&
-            isMusicLocalFilePath(item.path) &&
-            _autoMatched.add(item.trackUid)) {
-          await _service.matchLocal(item.trackUid);
-          src = await _bound(item.trackUid);
-        }
       } on Object catch (e, st) {
         ErrorLogService.instance.log('MusicMvBackdrop.load', e, st);
         src = null;

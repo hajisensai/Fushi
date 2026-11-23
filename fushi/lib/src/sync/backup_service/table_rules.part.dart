@@ -417,6 +417,9 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'media_link_ai_verdicts': BackupTableRule.deviceLocal(),
   // v165：视频内容指纹缓存，设备本地（见 _deviceLocalTables）。
   'video_content_fingerprints': BackupTableRule.deviceLocal(),
+  // v172：本地 MV 自动匹配缓存，设备本地（见 _deviceLocalTables）。
+  'music_video_prints': BackupTableRule.deviceLocal(),
+  'music_video_match_checks': BackupTableRule.deviceLocal(),
   // v135：游戏 VNDB 配音表缓存，设备本地（见 _deviceLocalTables）。
   'game_voice_casts': BackupTableRule.deviceLocal(),
   // v133：音乐刮削三表（识别结论 / 原始快照 / 字段锁），键含本机路径派生的 track_uid、

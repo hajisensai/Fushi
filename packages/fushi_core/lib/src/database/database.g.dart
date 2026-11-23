@@ -79549,6 +79549,796 @@ class VideoContentFingerprintsCompanion
   }
 }
 
+class $MusicVideoPrintsTable extends MusicVideoPrints
+    with TableInfo<$MusicVideoPrintsTable, MusicVideoPrintRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicVideoPrintsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileSizeBytesMeta = const VerificationMeta(
+    'fileSizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> fileSizeBytes = GeneratedColumn<int>(
+    'file_size_bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileModifiedAtMeta = const VerificationMeta(
+    'fileModifiedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fileModifiedAt = GeneratedColumn<int>(
+    'file_modified_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _printMeta = const VerificationMeta('print');
+  @override
+  late final GeneratedColumn<Uint8List> print = GeneratedColumn<Uint8List>(
+    'print',
+    aliasedName,
+    false,
+    type: DriftSqlType.blob,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _computedAtMeta = const VerificationMeta(
+    'computedAt',
+  );
+  @override
+  late final GeneratedColumn<int> computedAt = GeneratedColumn<int>(
+    'computed_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    path,
+    fileSizeBytes,
+    fileModifiedAt,
+    print,
+    computedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_video_prints';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicVideoPrintRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('path')) {
+      context.handle(
+        _pathMeta,
+        path.isAcceptableOrUnknown(data['path']!, _pathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('file_size_bytes')) {
+      context.handle(
+        _fileSizeBytesMeta,
+        fileSizeBytes.isAcceptableOrUnknown(
+          data['file_size_bytes']!,
+          _fileSizeBytesMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileSizeBytesMeta);
+    }
+    if (data.containsKey('file_modified_at')) {
+      context.handle(
+        _fileModifiedAtMeta,
+        fileModifiedAt.isAcceptableOrUnknown(
+          data['file_modified_at']!,
+          _fileModifiedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileModifiedAtMeta);
+    }
+    if (data.containsKey('print')) {
+      context.handle(
+        _printMeta,
+        print.isAcceptableOrUnknown(data['print']!, _printMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_printMeta);
+    }
+    if (data.containsKey('computed_at')) {
+      context.handle(
+        _computedAtMeta,
+        computedAt.isAcceptableOrUnknown(data['computed_at']!, _computedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_computedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {path};
+  @override
+  MusicVideoPrintRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicVideoPrintRow(
+      path: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}path'],
+      )!,
+      fileSizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_size_bytes'],
+      )!,
+      fileModifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_modified_at'],
+      )!,
+      print: attachedDatabase.typeMapping.read(
+        DriftSqlType.blob,
+        data['${effectivePrefix}print'],
+      )!,
+      computedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}computed_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicVideoPrintsTable createAlias(String alias) {
+    return $MusicVideoPrintsTable(attachedDatabase, alias);
+  }
+}
+
+class MusicVideoPrintRow extends DataClass
+    implements Insertable<MusicVideoPrintRow> {
+  /// 视频文件的本机绝对路径。
+  final String path;
+
+  /// 算声纹当时的文件大小（字节），失效判据。
+  final int fileSizeBytes;
+
+  /// 算声纹当时的文件修改时刻（毫秒），失效判据。
+  final int fileModifiedAt;
+
+  /// 声纹：u32 序列按小端存成字节。
+  final Uint8List print;
+
+  /// 本行写入时刻（毫秒）。
+  final int computedAt;
+  const MusicVideoPrintRow({
+    required this.path,
+    required this.fileSizeBytes,
+    required this.fileModifiedAt,
+    required this.print,
+    required this.computedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['path'] = Variable<String>(path);
+    map['file_size_bytes'] = Variable<int>(fileSizeBytes);
+    map['file_modified_at'] = Variable<int>(fileModifiedAt);
+    map['print'] = Variable<Uint8List>(print);
+    map['computed_at'] = Variable<int>(computedAt);
+    return map;
+  }
+
+  MusicVideoPrintsCompanion toCompanion(bool nullToAbsent) {
+    return MusicVideoPrintsCompanion(
+      path: Value(path),
+      fileSizeBytes: Value(fileSizeBytes),
+      fileModifiedAt: Value(fileModifiedAt),
+      print: Value(print),
+      computedAt: Value(computedAt),
+    );
+  }
+
+  factory MusicVideoPrintRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicVideoPrintRow(
+      path: serializer.fromJson<String>(json['path']),
+      fileSizeBytes: serializer.fromJson<int>(json['fileSizeBytes']),
+      fileModifiedAt: serializer.fromJson<int>(json['fileModifiedAt']),
+      print: serializer.fromJson<Uint8List>(json['print']),
+      computedAt: serializer.fromJson<int>(json['computedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'path': serializer.toJson<String>(path),
+      'fileSizeBytes': serializer.toJson<int>(fileSizeBytes),
+      'fileModifiedAt': serializer.toJson<int>(fileModifiedAt),
+      'print': serializer.toJson<Uint8List>(print),
+      'computedAt': serializer.toJson<int>(computedAt),
+    };
+  }
+
+  MusicVideoPrintRow copyWith({
+    String? path,
+    int? fileSizeBytes,
+    int? fileModifiedAt,
+    Uint8List? print,
+    int? computedAt,
+  }) => MusicVideoPrintRow(
+    path: path ?? this.path,
+    fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+    fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+    print: print ?? this.print,
+    computedAt: computedAt ?? this.computedAt,
+  );
+  MusicVideoPrintRow copyWithCompanion(MusicVideoPrintsCompanion data) {
+    return MusicVideoPrintRow(
+      path: data.path.present ? data.path.value : this.path,
+      fileSizeBytes: data.fileSizeBytes.present
+          ? data.fileSizeBytes.value
+          : this.fileSizeBytes,
+      fileModifiedAt: data.fileModifiedAt.present
+          ? data.fileModifiedAt.value
+          : this.fileModifiedAt,
+      print: data.print.present ? data.print.value : this.print,
+      computedAt: data.computedAt.present
+          ? data.computedAt.value
+          : this.computedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicVideoPrintRow(')
+          ..write('path: $path, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('print: $print, ')
+          ..write('computedAt: $computedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    path,
+    fileSizeBytes,
+    fileModifiedAt,
+    $driftBlobEquality.hash(print),
+    computedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicVideoPrintRow &&
+          other.path == this.path &&
+          other.fileSizeBytes == this.fileSizeBytes &&
+          other.fileModifiedAt == this.fileModifiedAt &&
+          $driftBlobEquality.equals(other.print, this.print) &&
+          other.computedAt == this.computedAt);
+}
+
+class MusicVideoPrintsCompanion extends UpdateCompanion<MusicVideoPrintRow> {
+  final Value<String> path;
+  final Value<int> fileSizeBytes;
+  final Value<int> fileModifiedAt;
+  final Value<Uint8List> print;
+  final Value<int> computedAt;
+  final Value<int> rowid;
+  const MusicVideoPrintsCompanion({
+    this.path = const Value.absent(),
+    this.fileSizeBytes = const Value.absent(),
+    this.fileModifiedAt = const Value.absent(),
+    this.print = const Value.absent(),
+    this.computedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicVideoPrintsCompanion.insert({
+    required String path,
+    required int fileSizeBytes,
+    required int fileModifiedAt,
+    required Uint8List print,
+    required int computedAt,
+    this.rowid = const Value.absent(),
+  }) : path = Value(path),
+       fileSizeBytes = Value(fileSizeBytes),
+       fileModifiedAt = Value(fileModifiedAt),
+       print = Value(print),
+       computedAt = Value(computedAt);
+  static Insertable<MusicVideoPrintRow> custom({
+    Expression<String>? path,
+    Expression<int>? fileSizeBytes,
+    Expression<int>? fileModifiedAt,
+    Expression<Uint8List>? print,
+    Expression<int>? computedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (path != null) 'path': path,
+      if (fileSizeBytes != null) 'file_size_bytes': fileSizeBytes,
+      if (fileModifiedAt != null) 'file_modified_at': fileModifiedAt,
+      if (print != null) 'print': print,
+      if (computedAt != null) 'computed_at': computedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicVideoPrintsCompanion copyWith({
+    Value<String>? path,
+    Value<int>? fileSizeBytes,
+    Value<int>? fileModifiedAt,
+    Value<Uint8List>? print,
+    Value<int>? computedAt,
+    Value<int>? rowid,
+  }) {
+    return MusicVideoPrintsCompanion(
+      path: path ?? this.path,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+      print: print ?? this.print,
+      computedAt: computedAt ?? this.computedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (fileSizeBytes.present) {
+      map['file_size_bytes'] = Variable<int>(fileSizeBytes.value);
+    }
+    if (fileModifiedAt.present) {
+      map['file_modified_at'] = Variable<int>(fileModifiedAt.value);
+    }
+    if (print.present) {
+      map['print'] = Variable<Uint8List>(print.value);
+    }
+    if (computedAt.present) {
+      map['computed_at'] = Variable<int>(computedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicVideoPrintsCompanion(')
+          ..write('path: $path, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('print: $print, ')
+          ..write('computedAt: $computedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MusicVideoMatchChecksTable extends MusicVideoMatchChecks
+    with TableInfo<$MusicVideoMatchChecksTable, MusicVideoMatchCheckRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MusicVideoMatchChecksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _trackUidMeta = const VerificationMeta(
+    'trackUid',
+  );
+  @override
+  late final GeneratedColumn<String> trackUid = GeneratedColumn<String>(
+    'track_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _videoPathMeta = const VerificationMeta(
+    'videoPath',
+  );
+  @override
+  late final GeneratedColumn<String> videoPath = GeneratedColumn<String>(
+    'video_path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileSizeBytesMeta = const VerificationMeta(
+    'fileSizeBytes',
+  );
+  @override
+  late final GeneratedColumn<int> fileSizeBytes = GeneratedColumn<int>(
+    'file_size_bytes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileModifiedAtMeta = const VerificationMeta(
+    'fileModifiedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fileModifiedAt = GeneratedColumn<int>(
+    'file_modified_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _checkedAtMeta = const VerificationMeta(
+    'checkedAt',
+  );
+  @override
+  late final GeneratedColumn<int> checkedAt = GeneratedColumn<int>(
+    'checked_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    trackUid,
+    videoPath,
+    fileSizeBytes,
+    fileModifiedAt,
+    checkedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'music_video_match_checks';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MusicVideoMatchCheckRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('track_uid')) {
+      context.handle(
+        _trackUidMeta,
+        trackUid.isAcceptableOrUnknown(data['track_uid']!, _trackUidMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_trackUidMeta);
+    }
+    if (data.containsKey('video_path')) {
+      context.handle(
+        _videoPathMeta,
+        videoPath.isAcceptableOrUnknown(data['video_path']!, _videoPathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_videoPathMeta);
+    }
+    if (data.containsKey('file_size_bytes')) {
+      context.handle(
+        _fileSizeBytesMeta,
+        fileSizeBytes.isAcceptableOrUnknown(
+          data['file_size_bytes']!,
+          _fileSizeBytesMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileSizeBytesMeta);
+    }
+    if (data.containsKey('file_modified_at')) {
+      context.handle(
+        _fileModifiedAtMeta,
+        fileModifiedAt.isAcceptableOrUnknown(
+          data['file_modified_at']!,
+          _fileModifiedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_fileModifiedAtMeta);
+    }
+    if (data.containsKey('checked_at')) {
+      context.handle(
+        _checkedAtMeta,
+        checkedAt.isAcceptableOrUnknown(data['checked_at']!, _checkedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_checkedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {trackUid, videoPath};
+  @override
+  MusicVideoMatchCheckRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MusicVideoMatchCheckRow(
+      trackUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}track_uid'],
+      )!,
+      videoPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}video_path'],
+      )!,
+      fileSizeBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_size_bytes'],
+      )!,
+      fileModifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}file_modified_at'],
+      )!,
+      checkedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}checked_at'],
+      )!,
+    );
+  }
+
+  @override
+  $MusicVideoMatchChecksTable createAlias(String alias) {
+    return $MusicVideoMatchChecksTable(attachedDatabase, alias);
+  }
+}
+
+class MusicVideoMatchCheckRow extends DataClass
+    implements Insertable<MusicVideoMatchCheckRow> {
+  /// `music_tracks.track_uid`（无外键，见文件头）。
+  final String trackUid;
+
+  /// 对过的视频文件本机路径。
+  final String videoPath;
+
+  /// 对齐当时视频文件的大小（字节）：文件换了就要重对。
+  final int fileSizeBytes;
+
+  /// 对齐当时视频文件的修改时刻（毫秒）。
+  final int fileModifiedAt;
+
+  /// 对齐时刻（毫秒）。
+  final int checkedAt;
+  const MusicVideoMatchCheckRow({
+    required this.trackUid,
+    required this.videoPath,
+    required this.fileSizeBytes,
+    required this.fileModifiedAt,
+    required this.checkedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['track_uid'] = Variable<String>(trackUid);
+    map['video_path'] = Variable<String>(videoPath);
+    map['file_size_bytes'] = Variable<int>(fileSizeBytes);
+    map['file_modified_at'] = Variable<int>(fileModifiedAt);
+    map['checked_at'] = Variable<int>(checkedAt);
+    return map;
+  }
+
+  MusicVideoMatchChecksCompanion toCompanion(bool nullToAbsent) {
+    return MusicVideoMatchChecksCompanion(
+      trackUid: Value(trackUid),
+      videoPath: Value(videoPath),
+      fileSizeBytes: Value(fileSizeBytes),
+      fileModifiedAt: Value(fileModifiedAt),
+      checkedAt: Value(checkedAt),
+    );
+  }
+
+  factory MusicVideoMatchCheckRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MusicVideoMatchCheckRow(
+      trackUid: serializer.fromJson<String>(json['trackUid']),
+      videoPath: serializer.fromJson<String>(json['videoPath']),
+      fileSizeBytes: serializer.fromJson<int>(json['fileSizeBytes']),
+      fileModifiedAt: serializer.fromJson<int>(json['fileModifiedAt']),
+      checkedAt: serializer.fromJson<int>(json['checkedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'trackUid': serializer.toJson<String>(trackUid),
+      'videoPath': serializer.toJson<String>(videoPath),
+      'fileSizeBytes': serializer.toJson<int>(fileSizeBytes),
+      'fileModifiedAt': serializer.toJson<int>(fileModifiedAt),
+      'checkedAt': serializer.toJson<int>(checkedAt),
+    };
+  }
+
+  MusicVideoMatchCheckRow copyWith({
+    String? trackUid,
+    String? videoPath,
+    int? fileSizeBytes,
+    int? fileModifiedAt,
+    int? checkedAt,
+  }) => MusicVideoMatchCheckRow(
+    trackUid: trackUid ?? this.trackUid,
+    videoPath: videoPath ?? this.videoPath,
+    fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+    fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+    checkedAt: checkedAt ?? this.checkedAt,
+  );
+  MusicVideoMatchCheckRow copyWithCompanion(
+    MusicVideoMatchChecksCompanion data,
+  ) {
+    return MusicVideoMatchCheckRow(
+      trackUid: data.trackUid.present ? data.trackUid.value : this.trackUid,
+      videoPath: data.videoPath.present ? data.videoPath.value : this.videoPath,
+      fileSizeBytes: data.fileSizeBytes.present
+          ? data.fileSizeBytes.value
+          : this.fileSizeBytes,
+      fileModifiedAt: data.fileModifiedAt.present
+          ? data.fileModifiedAt.value
+          : this.fileModifiedAt,
+      checkedAt: data.checkedAt.present ? data.checkedAt.value : this.checkedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicVideoMatchCheckRow(')
+          ..write('trackUid: $trackUid, ')
+          ..write('videoPath: $videoPath, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('checkedAt: $checkedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    trackUid,
+    videoPath,
+    fileSizeBytes,
+    fileModifiedAt,
+    checkedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MusicVideoMatchCheckRow &&
+          other.trackUid == this.trackUid &&
+          other.videoPath == this.videoPath &&
+          other.fileSizeBytes == this.fileSizeBytes &&
+          other.fileModifiedAt == this.fileModifiedAt &&
+          other.checkedAt == this.checkedAt);
+}
+
+class MusicVideoMatchChecksCompanion
+    extends UpdateCompanion<MusicVideoMatchCheckRow> {
+  final Value<String> trackUid;
+  final Value<String> videoPath;
+  final Value<int> fileSizeBytes;
+  final Value<int> fileModifiedAt;
+  final Value<int> checkedAt;
+  final Value<int> rowid;
+  const MusicVideoMatchChecksCompanion({
+    this.trackUid = const Value.absent(),
+    this.videoPath = const Value.absent(),
+    this.fileSizeBytes = const Value.absent(),
+    this.fileModifiedAt = const Value.absent(),
+    this.checkedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  MusicVideoMatchChecksCompanion.insert({
+    required String trackUid,
+    required String videoPath,
+    required int fileSizeBytes,
+    required int fileModifiedAt,
+    required int checkedAt,
+    this.rowid = const Value.absent(),
+  }) : trackUid = Value(trackUid),
+       videoPath = Value(videoPath),
+       fileSizeBytes = Value(fileSizeBytes),
+       fileModifiedAt = Value(fileModifiedAt),
+       checkedAt = Value(checkedAt);
+  static Insertable<MusicVideoMatchCheckRow> custom({
+    Expression<String>? trackUid,
+    Expression<String>? videoPath,
+    Expression<int>? fileSizeBytes,
+    Expression<int>? fileModifiedAt,
+    Expression<int>? checkedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (trackUid != null) 'track_uid': trackUid,
+      if (videoPath != null) 'video_path': videoPath,
+      if (fileSizeBytes != null) 'file_size_bytes': fileSizeBytes,
+      if (fileModifiedAt != null) 'file_modified_at': fileModifiedAt,
+      if (checkedAt != null) 'checked_at': checkedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  MusicVideoMatchChecksCompanion copyWith({
+    Value<String>? trackUid,
+    Value<String>? videoPath,
+    Value<int>? fileSizeBytes,
+    Value<int>? fileModifiedAt,
+    Value<int>? checkedAt,
+    Value<int>? rowid,
+  }) {
+    return MusicVideoMatchChecksCompanion(
+      trackUid: trackUid ?? this.trackUid,
+      videoPath: videoPath ?? this.videoPath,
+      fileSizeBytes: fileSizeBytes ?? this.fileSizeBytes,
+      fileModifiedAt: fileModifiedAt ?? this.fileModifiedAt,
+      checkedAt: checkedAt ?? this.checkedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (trackUid.present) {
+      map['track_uid'] = Variable<String>(trackUid.value);
+    }
+    if (videoPath.present) {
+      map['video_path'] = Variable<String>(videoPath.value);
+    }
+    if (fileSizeBytes.present) {
+      map['file_size_bytes'] = Variable<int>(fileSizeBytes.value);
+    }
+    if (fileModifiedAt.present) {
+      map['file_modified_at'] = Variable<int>(fileModifiedAt.value);
+    }
+    if (checkedAt.present) {
+      map['checked_at'] = Variable<int>(checkedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MusicVideoMatchChecksCompanion(')
+          ..write('trackUid: $trackUid, ')
+          ..write('videoPath: $videoPath, ')
+          ..write('fileSizeBytes: $fileSizeBytes, ')
+          ..write('fileModifiedAt: $fileModifiedAt, ')
+          ..write('checkedAt: $checkedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MediaLinkAiVerdictsTable extends MediaLinkAiVerdicts
     with TableInfo<$MediaLinkAiVerdictsTable, MediaLinkAiVerdictRow> {
   @override
@@ -86414,6 +87204,11 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
       $VideoThemeSongSpansTable(this);
   late final $VideoContentFingerprintsTable videoContentFingerprints =
       $VideoContentFingerprintsTable(this);
+  late final $MusicVideoPrintsTable musicVideoPrints = $MusicVideoPrintsTable(
+    this,
+  );
+  late final $MusicVideoMatchChecksTable musicVideoMatchChecks =
+      $MusicVideoMatchChecksTable(this);
   late final $MediaLinkAiVerdictsTable mediaLinkAiVerdicts =
       $MediaLinkAiVerdictsTable(this);
   late final $MusicScrapeMetaTable musicScrapeMeta = $MusicScrapeMetaTable(
@@ -86568,6 +87363,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     musicResumePoints,
     videoThemeSongSpans,
     videoContentFingerprints,
+    musicVideoPrints,
+    musicVideoMatchChecks,
     mediaLinkAiVerdicts,
     musicScrapeMeta,
     musicMetadataRawSnapshots,
@@ -140078,6 +140875,445 @@ typedef $$VideoContentFingerprintsTableProcessedTableManager =
       VideoContentFingerprintRow,
       PrefetchHooks Function()
     >;
+typedef $$MusicVideoPrintsTableCreateCompanionBuilder =
+    MusicVideoPrintsCompanion Function({
+      required String path,
+      required int fileSizeBytes,
+      required int fileModifiedAt,
+      required Uint8List print,
+      required int computedAt,
+      Value<int> rowid,
+    });
+typedef $$MusicVideoPrintsTableUpdateCompanionBuilder =
+    MusicVideoPrintsCompanion Function({
+      Value<String> path,
+      Value<int> fileSizeBytes,
+      Value<int> fileModifiedAt,
+      Value<Uint8List> print,
+      Value<int> computedAt,
+      Value<int> rowid,
+    });
+
+class $$MusicVideoPrintsTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicVideoPrintsTable> {
+  $$MusicVideoPrintsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<Uint8List> get print => $composableBuilder(
+    column: $table.print,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get computedAt => $composableBuilder(
+    column: $table.computedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicVideoPrintsTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicVideoPrintsTable> {
+  $$MusicVideoPrintsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<Uint8List> get print => $composableBuilder(
+    column: $table.print,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get computedAt => $composableBuilder(
+    column: $table.computedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicVideoPrintsTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicVideoPrintsTable> {
+  $$MusicVideoPrintsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<Uint8List> get print =>
+      $composableBuilder(column: $table.print, builder: (column) => column);
+
+  GeneratedColumn<int> get computedAt => $composableBuilder(
+    column: $table.computedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$MusicVideoPrintsTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicVideoPrintsTable,
+          MusicVideoPrintRow,
+          $$MusicVideoPrintsTableFilterComposer,
+          $$MusicVideoPrintsTableOrderingComposer,
+          $$MusicVideoPrintsTableAnnotationComposer,
+          $$MusicVideoPrintsTableCreateCompanionBuilder,
+          $$MusicVideoPrintsTableUpdateCompanionBuilder,
+          (
+            MusicVideoPrintRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicVideoPrintsTable,
+              MusicVideoPrintRow
+            >,
+          ),
+          MusicVideoPrintRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicVideoPrintsTableTableManager(
+    _$FushiDatabase db,
+    $MusicVideoPrintsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicVideoPrintsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MusicVideoPrintsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MusicVideoPrintsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> path = const Value.absent(),
+                Value<int> fileSizeBytes = const Value.absent(),
+                Value<int> fileModifiedAt = const Value.absent(),
+                Value<Uint8List> print = const Value.absent(),
+                Value<int> computedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicVideoPrintsCompanion(
+                path: path,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                print: print,
+                computedAt: computedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String path,
+                required int fileSizeBytes,
+                required int fileModifiedAt,
+                required Uint8List print,
+                required int computedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MusicVideoPrintsCompanion.insert(
+                path: path,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                print: print,
+                computedAt: computedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicVideoPrintsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicVideoPrintsTable,
+      MusicVideoPrintRow,
+      $$MusicVideoPrintsTableFilterComposer,
+      $$MusicVideoPrintsTableOrderingComposer,
+      $$MusicVideoPrintsTableAnnotationComposer,
+      $$MusicVideoPrintsTableCreateCompanionBuilder,
+      $$MusicVideoPrintsTableUpdateCompanionBuilder,
+      (
+        MusicVideoPrintRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicVideoPrintsTable,
+          MusicVideoPrintRow
+        >,
+      ),
+      MusicVideoPrintRow,
+      PrefetchHooks Function()
+    >;
+typedef $$MusicVideoMatchChecksTableCreateCompanionBuilder =
+    MusicVideoMatchChecksCompanion Function({
+      required String trackUid,
+      required String videoPath,
+      required int fileSizeBytes,
+      required int fileModifiedAt,
+      required int checkedAt,
+      Value<int> rowid,
+    });
+typedef $$MusicVideoMatchChecksTableUpdateCompanionBuilder =
+    MusicVideoMatchChecksCompanion Function({
+      Value<String> trackUid,
+      Value<String> videoPath,
+      Value<int> fileSizeBytes,
+      Value<int> fileModifiedAt,
+      Value<int> checkedAt,
+      Value<int> rowid,
+    });
+
+class $$MusicVideoMatchChecksTableFilterComposer
+    extends Composer<_$FushiDatabase, $MusicVideoMatchChecksTable> {
+  $$MusicVideoMatchChecksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get videoPath => $composableBuilder(
+    column: $table.videoPath,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get checkedAt => $composableBuilder(
+    column: $table.checkedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$MusicVideoMatchChecksTableOrderingComposer
+    extends Composer<_$FushiDatabase, $MusicVideoMatchChecksTable> {
+  $$MusicVideoMatchChecksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get trackUid => $composableBuilder(
+    column: $table.trackUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get videoPath => $composableBuilder(
+    column: $table.videoPath,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get checkedAt => $composableBuilder(
+    column: $table.checkedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$MusicVideoMatchChecksTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $MusicVideoMatchChecksTable> {
+  $$MusicVideoMatchChecksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get trackUid =>
+      $composableBuilder(column: $table.trackUid, builder: (column) => column);
+
+  GeneratedColumn<String> get videoPath =>
+      $composableBuilder(column: $table.videoPath, builder: (column) => column);
+
+  GeneratedColumn<int> get fileSizeBytes => $composableBuilder(
+    column: $table.fileSizeBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get fileModifiedAt => $composableBuilder(
+    column: $table.fileModifiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get checkedAt =>
+      $composableBuilder(column: $table.checkedAt, builder: (column) => column);
+}
+
+class $$MusicVideoMatchChecksTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $MusicVideoMatchChecksTable,
+          MusicVideoMatchCheckRow,
+          $$MusicVideoMatchChecksTableFilterComposer,
+          $$MusicVideoMatchChecksTableOrderingComposer,
+          $$MusicVideoMatchChecksTableAnnotationComposer,
+          $$MusicVideoMatchChecksTableCreateCompanionBuilder,
+          $$MusicVideoMatchChecksTableUpdateCompanionBuilder,
+          (
+            MusicVideoMatchCheckRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $MusicVideoMatchChecksTable,
+              MusicVideoMatchCheckRow
+            >,
+          ),
+          MusicVideoMatchCheckRow,
+          PrefetchHooks Function()
+        > {
+  $$MusicVideoMatchChecksTableTableManager(
+    _$FushiDatabase db,
+    $MusicVideoMatchChecksTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MusicVideoMatchChecksTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$MusicVideoMatchChecksTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$MusicVideoMatchChecksTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> trackUid = const Value.absent(),
+                Value<String> videoPath = const Value.absent(),
+                Value<int> fileSizeBytes = const Value.absent(),
+                Value<int> fileModifiedAt = const Value.absent(),
+                Value<int> checkedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => MusicVideoMatchChecksCompanion(
+                trackUid: trackUid,
+                videoPath: videoPath,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                checkedAt: checkedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String trackUid,
+                required String videoPath,
+                required int fileSizeBytes,
+                required int fileModifiedAt,
+                required int checkedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => MusicVideoMatchChecksCompanion.insert(
+                trackUid: trackUid,
+                videoPath: videoPath,
+                fileSizeBytes: fileSizeBytes,
+                fileModifiedAt: fileModifiedAt,
+                checkedAt: checkedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$MusicVideoMatchChecksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $MusicVideoMatchChecksTable,
+      MusicVideoMatchCheckRow,
+      $$MusicVideoMatchChecksTableFilterComposer,
+      $$MusicVideoMatchChecksTableOrderingComposer,
+      $$MusicVideoMatchChecksTableAnnotationComposer,
+      $$MusicVideoMatchChecksTableCreateCompanionBuilder,
+      $$MusicVideoMatchChecksTableUpdateCompanionBuilder,
+      (
+        MusicVideoMatchCheckRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $MusicVideoMatchChecksTable,
+          MusicVideoMatchCheckRow
+        >,
+      ),
+      MusicVideoMatchCheckRow,
+      PrefetchHooks Function()
+    >;
 typedef $$MediaLinkAiVerdictsTableCreateCompanionBuilder =
     MediaLinkAiVerdictsCompanion Function({
       required String aKind,
@@ -143639,6 +144875,10 @@ class $FushiDatabaseManager {
         _db,
         _db.videoContentFingerprints,
       );
+  $$MusicVideoPrintsTableTableManager get musicVideoPrints =>
+      $$MusicVideoPrintsTableTableManager(_db, _db.musicVideoPrints);
+  $$MusicVideoMatchChecksTableTableManager get musicVideoMatchChecks =>
+      $$MusicVideoMatchChecksTableTableManager(_db, _db.musicVideoMatchChecks);
   $$MediaLinkAiVerdictsTableTableManager get mediaLinkAiVerdicts =>
       $$MediaLinkAiVerdictsTableTableManager(_db, _db.mediaLinkAiVerdicts);
   $$MusicScrapeMetaTableTableManager get musicScrapeMeta =>

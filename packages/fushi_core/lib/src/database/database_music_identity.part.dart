@@ -98,6 +98,14 @@ const List<MusicTrackUidReference> kMusicTrackUidReferences =
         conflictKey: <String>['book_uid', 'episode_index'],
         unique: true,
       ),
+      // 本地 MV 自动匹配的「已对齐过」记录（v172）：一对一行，两边都有时留较新的。
+      MusicTrackUidReference(
+        'music_video_match_checks',
+        'track_uid',
+        conflictKey: <String>['video_path'],
+        unique: true,
+        lwwColumn: 'checked_at',
+      ),
       MusicTrackUidReference('music_albums', 'cover_track_uid'),
       MusicTrackUidReference(
         'mined_sentences',

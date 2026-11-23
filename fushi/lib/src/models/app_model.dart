@@ -523,6 +523,7 @@ import 'package:fushi/src/media/music/video_audio_to_music_migration.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
     show defaultVideoSubtitleJobsRoot;
 import 'package:fushi/src/media/music/music_loudness_scanner.dart';
+import 'package:fushi/src/media/music/metadata/music_video_auto_match.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
@@ -2811,6 +2812,12 @@ class AppModel
       prefsRepo.setMusicLyricsBlurInactive(value);
 
   /// 后台响度扫描（缺 ReplayGain 标签的曲目，设计 §7.3）。
+  /// 本地 MV 后台自动匹配（音乐来源扫完后跑；「有 MV 时背景放 MV」关着不跑）。
+  late final MusicVideoAutoMatcher musicVideoAutoMatch = MusicVideoAutoMatcher(
+    database: () => isDatabaseReady ? database : null,
+    enabled: () => isDatabaseReady && prefsRepo.musicLyricsMvBackdrop,
+  );
+
   late final MusicLoudnessScanner musicLoudness = MusicLoudnessScanner(
     database: () => isDatabaseReady ? database : null,
     enabled: () => isDatabaseReady && prefsRepo.musicLoudnessScan,
@@ -5353,7 +5360,11 @@ class AppModel
       );
       await _resetSrsStorageHost(isMainProcess: true);
       // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
-      onMusicSourceScanned = () => unawaited(musicLoudness.schedule());
+      // 同时把还没有 MV 的本机曲目和附近的视频 / 蓝光流做一轮声纹匹配（只对没对过的）。
+      onMusicSourceScanned = () {
+        unawaited(musicLoudness.schedule());
+        unawaited(musicVideoAutoMatch.schedule());
+      };
       // 游戏来源扫完 → 游戏库缓存重载 + 新游戏后台补封面（反馈 9Rm_8JEkGM）。
       onGameSourceScanned = (List<String> created) =>
           unawaited(adoptSourceScannedGames(galgameRepo, created));

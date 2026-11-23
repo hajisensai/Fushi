@@ -566,6 +566,10 @@ const List<String> _deviceLocalTables = <String>[
   // v165：视频内容指纹（搬家识别）。纯缓存、可由本机文件重算；另一台设备同一个
   // book_uid 可能是另一份片源，设备本地。无外键，删除 / 回灌顺序无约束。
   'video_content_fingerprints',
+  // v172：本地 MV 自动匹配的视频声纹 / 已对齐记录。纯缓存、由本机文件算出，键是本机
+  // 路径与 track_uid，设备本地。无外键，删除 / 回灌顺序无约束。
+  'music_video_prints',
+  'music_video_match_checks',
   // v135：游戏 VNDB 配音表缓存。纯缓存、可由 VNDB 重新取得，设备本地。无外键。
   'game_voice_casts',
   // v133：音乐刮削三表。键是 track_uid（含本机路径）、内容可由重刮重建，与曲库目录
@@ -618,6 +622,8 @@ const List<String> _deviceLocalTablesParentFirst = <String>[
   'video_theme_song_spans',
   'media_link_ai_verdicts',
   'video_content_fingerprints',
+  'music_video_prints',
+  'music_video_match_checks',
   'game_voice_casts',
   'music_scrape_meta',
   'music_metadata_raw_snapshots',
