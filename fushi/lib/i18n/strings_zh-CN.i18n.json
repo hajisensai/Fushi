@@ -1918,6 +1918,8 @@
   "book_detail_unscraped_hint": "还没有刮削资料。刮削后会显示简介、评分和类型。",
   "book_directory_not_found": "未找到书籍目录。",
   "book_edit_author": "作者",
+  "book_edit_summary": "简介",
+  "book_edit_summary_helper": "手填的简介重新刮削不会覆盖；清空后交还刮削填写。",
   "book_file_not_found": "找不到书籍文件",
   "book_import_audio_row_hint": "配合字幕即成有声书",
   "book_import_cover_from_audio": "取自音频",

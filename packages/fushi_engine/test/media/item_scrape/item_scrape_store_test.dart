@@ -160,4 +160,116 @@ void main() {
     expect(() => ItemScrapeKey(MediaKind.video, 'v'), throwsArgumentError);
     expect(() => ItemScrapeKey(MediaKind.epub, ''), throwsArgumentError);
   });
+
+  group('v172 字段锁（BUG-5111 书的简介手填）', () {
+    const Map<ItemScrapeLockableField, String?> typed =
+        <ItemScrapeLockableField, String?>{
+          ItemScrapeLockableField.summary: '  我写的简介  ',
+        };
+    const Map<ItemScrapeLockableField, String?> cleared =
+        <ItemScrapeLockableField, String?>{
+          ItemScrapeLockableField.summary: '   ',
+        };
+
+    Future<ItemScrapeMetaRow?> read() =>
+        db.getItemScrapeMeta(book.mediaType, book.entryKey);
+
+    test('锁列编解码：未知值忽略、空集合 = NULL', () {
+      expect(parseItemScrapeLockedFields(null), isEmpty);
+      expect(
+        parseItemScrapeLockedFields(' , future ,summary'),
+        <ItemScrapeLockableField>{ItemScrapeLockableField.summary},
+      );
+      expect(
+        encodeItemScrapeLockedFields(const <ItemScrapeLockableField>{}),
+        isNull,
+      );
+      expect(
+        encodeItemScrapeLockedFields(<ItemScrapeLockableField>{
+          ItemScrapeLockableField.summary,
+        }),
+        'summary',
+      );
+    });
+
+    test('刮不到资料的书：手填新建 manual 行并上锁', () async {
+      expect(await store.setManualFields(book, typed), isTrue);
+      final ItemScrapeMetaRow row = (await read())!;
+      expect(row.source, ItemScrapeStore.manualSource);
+      expect(row.summary, '我写的简介');
+      expect(row.lockedFields, 'summary');
+    });
+
+    test('手填后重刮：简介不被覆盖、锁保留，其余字段照常更新', () async {
+      await store.writeMeta(
+        book,
+        const ItemScrapeDetails(source: 'bangumi', summary: '刮来的', rating: 6),
+      );
+      await store.setManualFields(book, typed);
+      await store.writeMeta(
+        book,
+        const ItemScrapeDetails(source: 'dlsite', summary: '新刮的', rating: 8),
+      );
+      final ItemScrapeMetaRow row = (await read())!;
+      expect(row.summary, '我写的简介');
+      expect(row.lockedFields, 'summary');
+      expect(row.source, 'dlsite');
+      expect(row.rating, 8);
+    });
+
+    test('清空 = 解锁：下一次刮削回填简介', () async {
+      await store.writeMeta(
+        book,
+        const ItemScrapeDetails(source: 'bangumi', summary: '刮来的'),
+      );
+      await store.setManualFields(book, typed);
+      expect(await store.setManualFields(book, cleared), isTrue);
+      ItemScrapeMetaRow row = (await read())!;
+      expect(row.summary, isNull);
+      expect(row.lockedFields, isNull);
+      await store.writeMeta(
+        book,
+        const ItemScrapeDetails(source: 'bangumi', summary: '刮来的'),
+      );
+      row = (await read())!;
+      expect(row.summary, '刮来的');
+    });
+
+    test('只有手填的行清空后删行（回到未刮削）；没改动返回 false', () async {
+      await store.setManualFields(book, typed);
+      expect(await store.setManualFields(book, typed), isFalse);
+      expect(await store.setManualFields(book, cleared), isTrue);
+      expect(await read(), isNull);
+      expect(await store.setManualFields(book, cleared), isFalse);
+      expect(await read(), isNull);
+    });
+
+    test('脚本整行替换 / 合并写：值照写，锁保留；撤销快照原样写回', () async {
+      await store.setManualFields(book, typed);
+      await store.writeMeta(
+        book,
+        const ItemScrapeDetails(source: 'manual', summary: 'AI 改的'),
+        overrideLocked: true,
+      );
+      ItemScrapeMetaRow row = (await read())!;
+      expect(row.summary, 'AI 改的');
+      expect(row.lockedFields, 'summary');
+
+      await store.mergeMeta(
+        book,
+        const ItemScrapeDetails(source: 'manual', summary: '再改'),
+      );
+      row = (await read())!;
+      expect(row.summary, '再改');
+      expect(row.lockedFields, 'summary');
+
+      await store.restoreMeta(
+        book,
+        const ItemScrapeDetails(source: 'bangumi', summary: '快照'),
+      );
+      row = (await read())!;
+      expect(row.summary, '快照');
+      expect(row.lockedFields, isNull, reason: '快照里没锁就原样无锁');
+    });
+  });
 }

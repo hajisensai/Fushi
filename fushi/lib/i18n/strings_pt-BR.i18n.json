@@ -1918,6 +1918,8 @@
   "book_detail_unscraped_hint": "No metadata yet. Scrape to fetch the summary, rating and genres.",
   "book_directory_not_found": "Diretório do livro não encontrado.",
   "book_edit_author": "Autor",
+  "book_edit_summary": "Summary",
+  "book_edit_summary_helper": "Re-scraping keeps what you type here. Clear it to let scraping fill it again.",
   "book_file_not_found": "Arquivo do livro não encontrado",
   "book_import_audio_row_hint": "Pair with subtitles to make an audiobook",
   "book_import_cover_from_audio": "From audio",
