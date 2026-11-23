@@ -3233,7 +3233,7 @@
   "drag_drop_need_card_target": "자막이나 오디오를 책 또는 비디오 위에 놓으세요",
   "drag_drop_unsupported_on_books": "책 파일을 여기에 놓으세요. 비디오나 사전 파일은 해당 페이지로 전환하세요.",
   "drag_drop_unsupported_on_collection": "비디오 파일을 여기에 놓으면 이 컬렉션으로 바로 가져옵니다.",
-  "drag_drop_unsupported_on_dictionary": ".zip, .dsl, .mdx 사전 파일을 여기에 놓으세요. CSS 파일은 사전 패키지와 함께만 가져올 수 있습니다.",
+  "drag_drop_unsupported_on_dictionary": ".zip, .7z, .rar, .dsl, .mdx 사전 파일을 여기에 놓으세요. CSS 파일은 사전 패키지와 함께만 가져올 수 있습니다.",
   "drag_drop_unsupported_on_downloads": ".torrent 파일을 여기에 놓으면 다운로드 작업이 추가됩니다. 다른 파일은 책, 만화 또는 비디오 페이지에 놓으세요.",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",

@@ -3233,7 +3233,7 @@
   "drag_drop_need_card_target": "Jatuhkan subtitle atau audio ke sebuah buku atau video",
   "drag_drop_unsupported_on_books": "Jatuhkan file buku di sini. Beralih ke Video atau Kamus untuk file tersebut.",
   "drag_drop_unsupported_on_collection": "Letakkan file video di sini untuk mengimpornya langsung ke koleksi ini.",
-  "drag_drop_unsupported_on_dictionary": "Jatuhkan file kamus .zip, .dsl, atau .mdx di sini. File CSS hanya berfungsi bersama paket kamus.",
+  "drag_drop_unsupported_on_dictionary": "Jatuhkan file kamus .zip, .7z, .rar, .dsl, atau .mdx di sini. File CSS hanya berfungsi bersama paket kamus.",
   "drag_drop_unsupported_on_downloads": "Letakkan file .torrent di sini untuk menambah tugas unduhan. File lain ada di halaman Buku, Manga, atau Video.",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",

@@ -3233,7 +3233,7 @@
   "drag_drop_need_card_target": "Перетащите субтитры или аудио на книгу или видео",
   "drag_drop_unsupported_on_books": "Перетащите сюда файлы книг. Для видео или словарей перейдите на соответствующую вкладку.",
   "drag_drop_unsupported_on_collection": "Перетащите сюда видеофайлы, чтобы импортировать их прямо в эту коллекцию.",
-  "drag_drop_unsupported_on_dictionary": "Перетащите сюда файлы словарей .zip, .dsl или .mdx. Файлы CSS работают только вместе с пакетом словаря.",
+  "drag_drop_unsupported_on_dictionary": "Перетащите сюда файлы словарей .zip, .7z, .rar, .dsl или .mdx. Файлы CSS работают только вместе с пакетом словаря.",
   "drag_drop_unsupported_on_downloads": "Перетащите сюда файлы .torrent, чтобы добавить задачу загрузки. Остальные файлы относятся к страницам «Книги», «Манга» или «Видео».",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",

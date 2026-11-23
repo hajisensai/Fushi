@@ -3233,7 +3233,7 @@
   "drag_drop_need_card_target": "请把字幕或音频拖到某本书或某个视频上",
   "drag_drop_unsupported_on_books": "请把书籍文件拖到这里。视频或词典文件请切到对应页面。",
   "drag_drop_unsupported_on_collection": "只能拖入视频文件：拖进来的视频会导入并直接加入本合集。",
-  "drag_drop_unsupported_on_dictionary": "请把 .zip、.dsl 或 .mdx 词典文件拖到这里。CSS 只能和词典包一起导入。",
+  "drag_drop_unsupported_on_dictionary": "请把 .zip、.7z、.rar、.dsl 或 .mdx 词典文件拖到这里。CSS 只能和词典包一起导入。",
   "drag_drop_unsupported_on_downloads": "请把 .torrent 种子文件拖到这里以添加下载任务。其它文件请拖到书架、漫画库或视频页。",
   "drag_drop_unsupported_on_music": "把音乐文件、MV 或文件夹拖到这里。",
   "drag_drop_unsupported_on_plugins": "请把 .fushiplug 插件包拖到这里安装。",

@@ -3233,7 +3233,7 @@
   "drag_drop_need_card_target": "Altyazıları veya sesi bir kitabın ya da videonun üzerine bırakın",
   "drag_drop_unsupported_on_books": "Kitap dosyalarını buraya bırakın. Bu dosyalar için Video veya Sözlükler'e geçin.",
   "drag_drop_unsupported_on_collection": "Video dosyalarını doğrudan bu koleksiyona aktarmak için buraya bırakın.",
-  "drag_drop_unsupported_on_dictionary": ".zip, .dsl veya .mdx sözlük dosyalarını buraya bırakın. CSS dosyaları yalnızca bir sözlük paketiyle birlikte çalışır.",
+  "drag_drop_unsupported_on_dictionary": ".zip, .7z, .rar, .dsl veya .mdx sözlük dosyalarını buraya bırakın. CSS dosyaları yalnızca bir sözlük paketiyle birlikte çalışır.",
   "drag_drop_unsupported_on_downloads": "Bir indirme görevi eklemek için .torrent dosyalarını buraya bırakın. Diğer dosyalar Kitaplar, Manga veya Video sayfalarına aittir.",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",

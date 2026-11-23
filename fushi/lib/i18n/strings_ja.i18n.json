@@ -3233,7 +3233,7 @@
   "drag_drop_need_card_target": "字幕または音声を書籍か動画の上にドロップしてください",
   "drag_drop_unsupported_on_books": "書籍ファイルをここにドロップしてください。動画や辞書のファイルは、それぞれのページに切り替えてください。",
   "drag_drop_unsupported_on_collection": "動画ファイルのみドロップできます。ドロップした動画は読み込まれ、このコレクションに直接追加されます。",
-  "drag_drop_unsupported_on_dictionary": ".zip、.dsl、.mdx の辞書ファイルをここにドロップしてください。CSS ファイルは辞書パッケージと一緒のときのみ有効です。",
+  "drag_drop_unsupported_on_dictionary": ".zip、.7z、.rar、.dsl、.mdx の辞書ファイルをここにドロップしてください。CSS ファイルは辞書パッケージと一緒のときのみ有効です。",
   "drag_drop_unsupported_on_downloads": ".torrent ファイルをここにドロップするとダウンロードタスクを追加できます。その他のファイルは、書籍、マンガ、動画のページにドロップしてください。",
   "drag_drop_unsupported_on_music": "Drop music files, music videos or folders here.",
   "drag_drop_unsupported_on_plugins": "Drop a .fushiplug plugin package here to install it.",
