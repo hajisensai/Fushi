@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/media/manga/manga_bubble_focus_js.dart';
 import 'package:fushi/src/media/manga/manga_bubble_zoom_js.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
@@ -66,6 +67,10 @@ String mangaOcrBoxesHtml(MokuroImage page) {
     final String orientation = block.isVertical ? 'vertical' : 'horizontal';
     final List<MangaOcrTextRegion> regions = mangaEffectiveTextRegions(block);
     final bool hasRegions = regions.isNotEmpty;
+    final String frame = _mangaOrientedFrameStyle(
+      block.rectangle,
+      mangaBlockOrientedFrame(regions),
+    );
     final String inner = hasRegions
         ? _mangaCharacterRegionsHtml(block: block, regions: regions)
         : mangaBlockTextLayout(block).lines
@@ -73,6 +78,7 @@ String mangaOcrBoxesHtml(MokuroImage page) {
               .join('<br>');
     buffer.write(
       '<p class="ocr-box" '
+      '${frame.isEmpty ? '' : 'data-ocr-frame="1" '}'
       'data-ocr-orientation="$orientation" '
       'data-manga-block="$blockIndex" '
       'data-manga-sentence="'
@@ -91,10 +97,89 @@ String mangaOcrBoxesHtml(MokuroImage page) {
       'margin:0;'
       'padding:0;'
       'pointer-events:${hasRegions ? 'none' : 'auto'};'
+      '$frame'
       '">$inner</p>',
     );
   }
   return buffer.toString();
+}
+
+/// 斜排块（字格带旋转）的有向外框：页图像素，绕 [MokuroOrientedRect.center] 转
+/// [MokuroOrientedRect.rotation]。全部字格都正立（或没有字格）时返回 null——块框
+/// `block.rectangle` 本身就是正确的轴对齐框。
+///
+/// `.ocr-box` 按 `block.rectangle`（轴对齐外接框）定位，斜着的字被它框成又宽又高的
+/// 正框；字格 `.ocr-char` 早已逐个 `rotate`（BUG-5308）。块级的朗读高亮 / 识别范围 /
+/// 当前块描边要跟字一起斜，就得从字格拟合出整块的有向矩形：转角取各字格转角的
+/// 面积加权圆周均值（按 4θ 取均值，避开 ±45° 处 (-π/4, π/4] 折叠的跳变），边长与
+/// 中心取全部字格四角在该转角坐标系里的投影范围。
+@visibleForTesting
+MokuroOrientedRect? mangaBlockOrientedFrame(List<MangaOcrTextRegion> regions) {
+  if (!regions.any((MangaOcrTextRegion r) => r.rotation != 0)) return null;
+  double sumSin = 0;
+  double sumCos = 0;
+  for (final MangaOcrTextRegion region in regions) {
+    final double weight = math.max(
+      region.rectangle.width * region.rectangle.height,
+      1e-6,
+    );
+    sumSin += weight * math.sin(4 * region.rotation);
+    sumCos += weight * math.cos(4 * region.rotation);
+  }
+  final double rotation = math.atan2(sumSin, sumCos) / 4;
+  if (rotation == 0) return null;
+  final double c = math.cos(rotation);
+  final double s = math.sin(rotation);
+  double minU = double.infinity;
+  double maxU = double.negativeInfinity;
+  double minV = double.infinity;
+  double maxV = double.negativeInfinity;
+  for (final MangaOcrTextRegion region in regions) {
+    final MokuroOrientedRect cell = MokuroOrientedRect(
+      center: region.rectangle.center,
+      width: region.rectangle.width,
+      height: region.rectangle.height,
+      rotation: region.rotation,
+    );
+    final double hw = cell.width / 2;
+    final double hh = cell.height / 2;
+    for (final MokuroPoint p in <MokuroPoint>[
+      cell.toPage(-hw, -hh),
+      cell.toPage(hw, -hh),
+      cell.toPage(hw, hh),
+      cell.toPage(-hw, hh),
+    ]) {
+      final double u = p.dx * c + p.dy * s;
+      final double v = -p.dx * s + p.dy * c;
+      minU = math.min(minU, u);
+      maxU = math.max(maxU, u);
+      minV = math.min(minV, v);
+      maxV = math.max(maxV, v);
+    }
+  }
+  final double cu = (minU + maxU) / 2;
+  final double cv = (minV + maxV) / 2;
+  return MokuroOrientedRect(
+    center: MokuroPoint(cu * c - cv * s, cu * s + cv * c),
+    width: maxU - minU,
+    height: maxV - minV,
+    rotation: rotation,
+  );
+}
+
+/// 把有向外框写成 `.ocr-box` 上的 CSS 自定义属性：摆正框相对块框的百分比位置 / 尺寸
+/// 与转角。`::before` 伪元素按它画出斜框（见 overlay CSS 的 `[data-ocr-frame]`
+/// 规则），块本身的几何与命中区不变。[frame] 为 null 时返回空串。
+String _mangaOrientedFrameStyle(MokuroRect block, MokuroOrientedRect? frame) {
+  if (frame == null) return '';
+  final double bw = block.width <= 0 ? 1 : block.width;
+  final double bh = block.height <= 0 ? 1 : block.height;
+  final MokuroRect upright = frame.unrotated;
+  return '--ocr-frame-l:${_pct((upright.left - block.left) / bw * 100)};'
+      '--ocr-frame-t:${_pct((upright.top - block.top) / bh * 100)};'
+      '--ocr-frame-w:${_pct(upright.width / bw * 100)};'
+      '--ocr-frame-h:${_pct(upright.height / bh * 100)};'
+      '--ocr-frame-r:${_num(frame.rotation * 180 / math.pi)}deg;';
 }
 
 /// Resolve the complete sentence represented by every OCR block on a page.
@@ -718,6 +803,7 @@ String mangaWindowDocument(
   MangaPageAnimation pageAnimation = MangaPageAnimation.slide,
   PageTurnAnimationSpeed pageAnimationSpeed = PageTurnAnimationSpeed.normal,
   bool followDrag = kMangaPageTurnFollowDragDefault,
+  double swipeSensitivity = kMangaSwipePageTurnSensitivityDefault,
   bool tapZonePaging = true,
   MangaTapZoneLayout tapZoneLayout = MangaTapZoneLayout.leftRight,
   String backgroundCss = '#000',
@@ -1032,6 +1118,11 @@ String mangaWindowDocument(
       '.manga-ts-empty{opacity:.6;font-size:.7em;}'
       '.manga-page .ocr-box.manga-ts-current,.manga-page .ocr-box.manga-ts-hover'
       '{outline:3px solid rgba(255,196,0,.95);border-radius:4px;}'
+      '.manga-page .ocr-box[data-ocr-frame].manga-ts-current,'
+      '.manga-page .ocr-box[data-ocr-frame].manga-ts-hover{outline:none;}'
+      '.manga-page .ocr-box[data-ocr-frame].manga-ts-current::before,'
+      '.manga-page .ocr-box[data-ocr-frame].manga-ts-hover::before'
+      '{outline:3px solid rgba(255,196,0,.95);}'
       '.manga-bubble-zoom{position:fixed;overflow:hidden;z-index:6;'
       'border-radius:16px;background:$backgroundCss;touch-action:none;'
       'transform-origin:50% 50%;'
@@ -1067,6 +1158,21 @@ String mangaWindowDocument(
       // 也要看得见读到哪了；写在其后，识别框显示时以朗读高亮为准。
       '.ocr-box.manga-speaking{outline:3px solid rgba(255,170,0,.95);'
       'background:rgba(255,200,0,.28);border-radius:4px;}'
+      // BUG-5308：斜排块（data-ocr-frame）的块框是轴对齐外接框，描边 / 底色改由
+      // ::before 按 mangaBlockOrientedFrame 的有向矩形画，跟字格一起转。伪元素不吃
+      // 指针事件，命中仍只由 .ocr-char 决定；文字条的克隆去掉了 data-ocr-frame
+      // （static 排版，不画斜框）。
+      '.ocr-box[data-ocr-frame]::before{content:"";position:absolute;'
+      'left:var(--ocr-frame-l);top:var(--ocr-frame-t);'
+      'width:var(--ocr-frame-w);height:var(--ocr-frame-h);'
+      'transform:rotate(var(--ocr-frame-r));box-sizing:border-box;'
+      'border-radius:4px;pointer-events:none;}'
+      '.ocr-boxes-visible .ocr-box[data-ocr-frame],'
+      '.ocr-box[data-ocr-frame].manga-speaking{outline:none;background:none;}'
+      '.ocr-boxes-visible .ocr-box[data-ocr-frame]::before'
+      '{outline:2px solid rgba(255,64,64,.9);background:rgba(255,64,64,.12);}'
+      '.ocr-box[data-ocr-frame].manga-speaking::before'
+      '{outline:3px solid rgba(255,170,0,.95);background:rgba(255,200,0,.28);}'
       // Character geometry is entirely explicit. Keep the common hit-layer
       // declarations in one rule instead of repeating them for every OCR
       // character: dense magazine pages can contain several thousand regions.
@@ -1091,7 +1197,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx, bookRtl: spreadDirection == 'rtl', bubbleZoomOpenMs: bubbleZoomOpenMs, bubbleZoomCloseMs: bubbleZoomCloseMs, textStripLayout: textStripLayout, bubbleFocusLabel: bubbleFocusLabel, bubbleFocusResume: bubbleFocusResume, textStripEmptyLabel: textStripEmptyLabel, bubbleZoomCloseLabel: bubbleZoomCloseLabel)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, swipeSensitivity: swipeSensitivity, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx, bookRtl: spreadDirection == 'rtl', bubbleZoomOpenMs: bubbleZoomOpenMs, bubbleZoomCloseMs: bubbleZoomCloseMs, textStripLayout: textStripLayout, bubbleFocusLabel: bubbleFocusLabel, bubbleFocusResume: bubbleFocusResume, textStripEmptyLabel: textStripEmptyLabel, bubbleZoomCloseLabel: bubbleZoomCloseLabel)}'
       '</script>'
       '</body></html>';
 }
@@ -1171,6 +1277,7 @@ String _mangaGestureJs({
   required MangaPageAnimation pageAnimation,
   PageTurnAnimationSpeed pageAnimationSpeed = PageTurnAnimationSpeed.normal,
   bool followDrag = kMangaPageTurnFollowDragDefault,
+  double swipeSensitivity = kMangaSwipePageTurnSensitivityDefault,
   required bool tapZonePaging,
   required MangaTapZoneLayout tapZoneLayout,
   bool disableZoomOut = false,
@@ -1822,8 +1929,6 @@ String _mangaGestureJs({
   var PAGE_ANIM_MS = ${pageAnimationSpeed.durationMs};
   var FOLLOW_DRAG = $followDrag;
   var MAX_ANIM_DIST = $kPageTurnAnimationMaxAnimatedDistance;
-  var FOLLOW_COMMIT = $kPageTurnFollowCommitFraction;
-  var FOLLOW_FLING = $kPageTurnFollowFlingVelocity;
   var FOLLOW_EDGE_DAMPING = 0.3;
   var PAGE_EASE = '$kMangaPageTurnEasing';
   // 纯投影（无动画语义）：把 target 跨页的 offsetLeft 现场重测并换算成 root 的
@@ -3093,14 +3198,15 @@ String _mangaGestureJs({
     var flingBack = rvx * ux < 0 && Math.abs(rvx) >= 900;
     // 跟手态：拖过 FOLLOW_COMMIT 个视口宽，或往翻页方向甩得够快（px/ms）才提交，
     // 否则回弹。没跟手（动画关 / 淡入淡出 / 设置关）沿用固定像素阈值。
+    // 两组阈值都随「滑动翻页灵敏度」缩放（R721ZgWVSB），见下方 __mangaSetSwipeThresholds。
     var followed = !!(swipe && swipe.follow && swipe.base !== null);
     var commit;
     if (followed) {
       var flingVel = Math.max(vel, (ux > 0 ? rvx : -rvx)) / 1000;
       commit = aux > FOLLOW_COMMIT * (window.innerWidth || 1) ||
-          (aux >= 24 && flingVel > FOLLOW_FLING);
+          (aux >= FOLLOW_FLING_MIN_PX && flingVel > FOLLOW_FLING);
     } else {
-      commit = aux >= 72 || (aux >= 36 && vel >= 900);
+      commit = aux >= SWIPE_DIST || (aux >= SWIPE_FAST_DIST && vel >= SWIPE_FAST_VEL);
     }
     if (!IS_WEBTOON && ax > ay && (ux > 0) === (dx > 0) && !flingBack &&
         commit && !_zoomedEdgeTurnBlocked()) {
@@ -3123,9 +3229,31 @@ String _mangaGestureJs({
       }
     } else {
       _swipeRelease(false);
-      if (ax < 20 && ay < 20 && el < 500) _onTap(x, y);
+      if (ax < TAP_BOX && ay < TAP_BOX && el < 500) _onTap(x, y);
     }
   }
+  // ── 滑动翻页提交阈值 ──
+  // 漫画单独的「滑动翻页灵敏度」（偏好 manga_swipe_page_turn_sensitivity，值越大越灵敏）
+  // 缩放后的阈值，由 Dart 的 mangaSwipeThresholds 算好注入——JS 不自己算，避免两边各写
+  // 一份公式。跟手：拖过 FOLLOW_COMMIT 个视口宽，或位移 ≥ FOLLOW_FLING_MIN_PX 且往翻页方向
+  // 甩速 > FOLLOW_FLING（px/ms）；不跟手：≥ SWIPE_DIST，或 ≥ SWIPE_FAST_DIST 且平均速度
+  // ≥ SWIPE_FAST_VEL（px/s）。像素阈值下界恒为 TAP_BOX（Dart 侧夹好），不吃掉单击。
+  // 运行中改设置经 __mangaSetSwipeThresholds 换值，不重建文档。
+  var TAP_BOX = $kMangaSwipeTapBoxPx;
+  var FOLLOW_COMMIT, FOLLOW_FLING, FOLLOW_FLING_MIN_PX;
+  var SWIPE_DIST, SWIPE_FAST_DIST, SWIPE_FAST_VEL;
+  window.__mangaSetSwipeThresholds = function(t){
+    if (!t) return;
+    function num(v, lo){ v = Number(v); return isFinite(v) && v >= lo ? v : null; }
+    var c = num(t.followCommit, 0.01), f = num(t.followFling, 0.01),
+        m = num(t.followFlingMinPx, TAP_BOX), d = num(t.dist, TAP_BOX),
+        fd = num(t.fastDist, TAP_BOX), fv = num(t.fastVel, 1);
+    if (c === null || f === null || m === null || d === null || fd === null ||
+        fv === null) return;
+    FOLLOW_COMMIT = c; FOLLOW_FLING = f; FOLLOW_FLING_MIN_PX = m;
+    SWIPE_DIST = d; SWIPE_FAST_DIST = fd; SWIPE_FAST_VEL = fv;
+  };
+  window.__mangaSetSwipeThresholds(${mangaSwipeThresholdsJs(mangaSwipeThresholds(swipeSensitivity))});
   // 触屏长按页图 → Dart 弹全局图片动作面板（保存 / 分享，image_actions_sheet.dart），
   // 作用于**被按住的那一页**（条漫 / 双页模式下命中的那页，不是当前跨页）。
   // 漫画页的触屏手势里长按原本是空的：单击 = OCR 查词 / 热区翻页 / 空白切栏，

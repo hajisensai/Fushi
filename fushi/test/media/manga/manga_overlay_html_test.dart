@@ -1607,8 +1607,14 @@ void main() {
         docFor(followDrag: false).contains('var FOLLOW_DRAG = false;'),
         isTrue,
       );
-      expect(on.contains('var FOLLOW_COMMIT = 0.25;'), isTrue);
-      expect(on.contains('var FOLLOW_FLING = 0.6;'), isTrue);
+      // 灵敏度默认 1.0 = 原先写死的 0.25 屏宽 / 24px+0.6px/ms / 72px / 36px+900px/s。
+      expect(
+        on.contains(
+          'window.__mangaSetSwipeThresholds({followCommit:0.25,followFling:0.6,'
+          'followFlingMinPx:24,dist:72,fastDist:36,fastVel:900});',
+        ),
+        isTrue,
+      );
       expect(on.contains('var MAX_ANIM_DIST = 1;'), isTrue);
       // 跟手只看开关、与翻页效果无关（BUG-3624，对齐 Mihon）；阈值分支按是否
       // 真跟了手选择。行为由 manga_swipe_follow_js_test 逐效果跑真实 JS 钉住。

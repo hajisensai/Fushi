@@ -241,6 +241,8 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'reading_controls.invert_audiobook_skip_direction',
           'reading_vn.merge_spoken_sentence',
           'listening.page_end_audio',
+          'listening.page_split_follow',
+          'listening.scroll_follow',
         ],
       ),
       // ── 查词 ──

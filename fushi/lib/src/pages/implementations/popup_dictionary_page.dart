@@ -526,14 +526,16 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   Future<void> _navigateInPlace(
     int index,
     DictionaryPopupEntry entry,
-    String query,
-  ) async {
+    String query, {
+    String? refineSource,
+  }) async {
     await navigatePopupInPlace(
       controller: _popup,
       index: index,
       entry: entry,
       query: query,
       autoRead: true,
+      refineSource: refineSource,
     );
     _syncSearchBarToEntry(entry);
   }
@@ -1225,6 +1227,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       // 满卡子层——对齐 Hoshi Reader iOS（同一个 WebView 换内容，← → 在历史页间
       // 来回）。释义正文点词（onTextSelected）仍叠子层。
       onLinkClick: (query, localRect) => _navigateInPlace(index, entry, query),
+      // 拍板台 Um72dWD9Cz：「查不到」时点词块 / 改查询词，同一层原地换词。
+      onRefineQuery: (String query, String source) =>
+          _navigateInPlace(index, entry, query, refineSource: source),
+      refineSource: entry.refineSource,
       // 跨应用语音缓存（拍板 design-cross-app-audio-trim-ui）：每层的「+」都带这次查词
       // 截的句子音频，所以每层都给「调整句子音频」面板，读的是同一份快照。
       crossAppAudio: miningAudioSnapshot,

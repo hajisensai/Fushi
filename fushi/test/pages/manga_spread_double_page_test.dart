@@ -9,6 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
@@ -83,6 +84,10 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   bool get mangaPageTurnFollowDrag => kMangaPageTurnFollowDragDefault;
+
+  @override
+  double get mangaSwipePageTurnSensitivity =>
+      kMangaSwipePageTurnSensitivityDefault;
 
   @override
   bool get mangaTapZonePaging => true;

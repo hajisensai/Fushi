@@ -2,7 +2,7 @@
 /// `op_descriptions_tts.dart`）：
 ///
 /// - **按句换上本地音频**（`tts.manga.lines.replace`）：行 ID → 本地音频路径。先逐句
-///   预检（这句在演出稿与本机成品清单里、路径是绝对路径、文件在、格式认得），可只预检
+///   预检（这句在演出稿与成品清单里、路径是绝对路径、文件在、格式认得），可只预检
 ///   （`dryRun`）拿结构化结果；正式执行时把音频按内容寻址复制进成品目录的保留区，交给
 ///   引擎 [MangaAudioRenderer.bindLocalAudio] 整形（与有声书片段同一套整形，整形版本
 ///   照记）并全有或全无地改清单 / 演出稿（音源记成 [MangaLocalAudio]，之后整卷重跑会
@@ -16,6 +16,9 @@
 /// 两者共用一份撤销：执行前把要动的句子在清单 / 演出稿 / 账本里的样子和旧音频（以及
 /// 旧的本地音频保留副本）备份进 `<备份目录>/<时间戳>-batch/`（`snapshot.json` + 音频），
 /// 撤销时逐句核对「还是这次改出来的样子」才放回，之后又被改过的句子不覆盖。
+///
+/// 改的是这一卷登记的那份清单（[mangaAudioEditTarget]）：`tts import` 导入的外部清单
+/// 原地改写，本地音频的保留区与新出的句文件都写在它旁边（拍板 isATnQZ_eN-external）。
 library;
 
 import 'dart:async';
@@ -161,13 +164,12 @@ Future<Map<String, String>> mangaReplaceFilesOf(
   return out;
 }
 
-/// 本机成品清单；还没生成过 422。
+/// 要改的那份成品清单（本机生成或外部导入的）；还没生成过 422。
 Future<MangaRenderManifest> _renderedManifest(
-  AppModel appModel,
-  String bookKey,
+  MangaAudioEditTarget target,
 ) async {
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
-    mangaRenderManifestFile(appModel, bookKey),
+    target.manifestFile,
   );
   if (manifest == null) {
     throw const CtlFailure(
@@ -234,16 +236,14 @@ String _failureSummary(Iterable<MapEntry<String, String>> failures) {
 Future<Map<String, Object?>> replaceMangaLinesWithLocalAudio(
   TtsCtlDeps deps,
   MangaAudioVolume volume, {
+  required MangaAudioEditTarget target,
   required Map<String, String> files,
   required bool dryRun,
 }) async {
   final AppModel appModel = deps.appModel;
   final String bookKey = volume.bookKey;
-  final File manifestFile = mangaRenderManifestFile(appModel, bookKey);
-  final MangaRenderManifest manifest = await _renderedManifest(
-    appModel,
-    bookKey,
-  );
+  final File manifestFile = target.manifestFile;
+  final MangaRenderManifest manifest = await _renderedManifest(target);
   final List<_ReplaceCheck> checks = await _checkReplace(
     volume,
     manifest,
@@ -299,7 +299,11 @@ Future<Map<String, Object?>> replaceMangaLinesWithLocalAudio(
     }
   }
 
-  final _BatchBackup backup = await _BatchBackup.create(appModel, bookKey);
+  final _BatchBackup backup = await _BatchBackup.create(
+    appModel,
+    bookKey,
+    manifestFile,
+  );
   for (final _ReplaceCheck c in checks) {
     await backup.add(
       dir,
@@ -314,11 +318,9 @@ Future<Map<String, Object?>> replaceMangaLinesWithLocalAudio(
   final CastVoicingStore voicing = ttsVoicingStoreFor(appModel);
   final CastVoicingLedger ledger = await voicing.load(bookKey);
   backup.captureLedger(ledger);
-  final MangaLocalBindOutcome outcome =
-      await MangaAudioRenderer(
-        backend: backend,
-        manifestFile: manifestFile,
-      ).bindLocalAudio(
+  final MangaLocalBindOutcome outcome = await target
+      .renderer(backend)
+      .bindLocalAudio(
         script: volume.script,
         manifest: manifest,
         ledger: ledger,
@@ -381,6 +383,7 @@ Future<Map<String, Object?>> replaceMangaLinesWithLocalAudio(
 Future<Map<String, Object?>> regenerateMangaCharacterLines(
   TtsCtlDeps deps,
   MangaAudioVolume volume, {
+  required MangaAudioEditTarget target,
   required String name,
   required CastLineKind? kind,
   required bool dryRun,
@@ -398,10 +401,7 @@ Future<Map<String, Object?>> regenerateMangaCharacterLines(
       '这一卷没有「$name」${kind == null ? '' : '的 ${kind.wire} '}台词',
     );
   }
-  final MangaRenderManifest manifest = await _renderedManifest(
-    appModel,
-    bookKey,
-  );
+  final MangaRenderManifest manifest = await _renderedManifest(target);
   final List<(MangaScriptLine, MangaRenderedLine)> targets =
       <(MangaScriptLine, MangaRenderedLine)>[];
   final List<Map<String, Object?>> skipped = <Map<String, Object?>>[];
@@ -465,11 +465,16 @@ Future<Map<String, Object?>> regenerateMangaCharacterLines(
     seeds[l.lineId] = seed;
   }
 
-  final File manifestFile = mangaRenderManifestFile(appModel, bookKey);
+  // 补回任务（`runMangaRenderJob`）改的也是登记的这份清单（外部导入的原地改写）。
+  final File manifestFile = target.manifestFile;
   final CastVoicingLedger ledger = await ttsVoicingStoreFor(
     appModel,
   ).load(bookKey);
-  final _BatchBackup backup = await _BatchBackup.create(appModel, bookKey);
+  final _BatchBackup backup = await _BatchBackup.create(
+    appModel,
+    bookKey,
+    manifestFile,
+  );
   for (final (MangaScriptLine l, MangaRenderedLine r) in targets) {
     await backup.add(
       manifestFile.parent,
@@ -483,13 +488,20 @@ Future<Map<String, Object?>> regenerateMangaCharacterLines(
     for (final MapEntry<String, int> e in seeds.entries)
       TtsRenderLineRequest(lineId: e.key, seed: e.value),
   ];
-  final TtsRenderJob job = await deps.renderQueue().enqueue(
-    bookKey: bookKey,
-    title: volume.row.title.isEmpty ? bookKey : volume.row.title,
-    presetId: voice,
-    kind: TtsRenderJobKind.manga,
-    lineRequests: requests,
-  );
+  final TtsRenderJob job;
+  try {
+    job = await deps.renderQueue().enqueue(
+      bookKey: bookKey,
+      title: volume.row.title.isEmpty ? bookKey : volume.row.title,
+      presetId: voice,
+      kind: TtsRenderJobKind.manga,
+      lineRequests: requests,
+    );
+  } on TtsRenderRejected {
+    // 入口查过之后（逐句备份旧音频要花时间）导出包的导入占住了这一卷。
+    await backup.discard();
+    throw const CtlFailure.conflict('这一卷正在导入有声漫画包，等它结束（tts package-task）');
+  }
   // 入口的 requireNotRendering 与这里之间（逐句备份旧音频要花时间）别处可能已排上这一
   // 卷的任务：enqueue 遇到同卷未结束的任务会原样返回它、不排我们的。那不是这次的批量
   // 重生成——既不能报成功，也不能把它的 ID 记进撤销快照（撤销会把别人的整卷生成取消掉）。
@@ -530,18 +542,24 @@ bool _isRerollJob(TtsRenderJob job, List<TtsRenderLineRequest> requests) {
 
 /// 一次批量操作的撤销备份：`<备份目录>/<时间戳>-batch/`。
 class _BatchBackup {
-  _BatchBackup._(this.dir);
+  _BatchBackup._(this.dir, this.manifestFile);
 
-  static Future<_BatchBackup> create(AppModel appModel, String bookKey) async {
+  /// [manifestFile] 是这次操作改的那份清单（撤销按它找回同一份，外部导入的也一样）。
+  static Future<_BatchBackup> create(
+    AppModel appModel,
+    String bookKey,
+    File manifestFile,
+  ) async {
     final Directory root = mangaCtlBackupDir(appModel, bookKey);
     final Directory dir = Directory(
       p.join(root.path, '${DateTime.now().microsecondsSinceEpoch}-batch'),
     );
     await dir.create(recursive: true);
-    return _BatchBackup._(dir);
+    return _BatchBackup._(dir, manifestFile);
   }
 
   final Directory dir;
+  final File manifestFile;
   final List<Map<String, Object?>> _lines = <Map<String, Object?>>[];
 
   /// 备份一句：旧音频文件（在的话）、旧的本地音频保留副本（这句原本就是本地音频时），
@@ -602,7 +620,11 @@ class _BatchBackup {
       return null;
     }
     await File(p.join(dir.path, _kSnapshotFile)).writeAsString(
-      jsonEncode(<String, Object?>{'job': ?jobId, 'lines': kept}),
+      jsonEncode(<String, Object?>{
+        'job': ?jobId,
+        'manifest': manifestFile.path,
+        'lines': kept,
+      }),
       flush: true,
     );
     await pruneMangaCtlBackups(dir.parent);
@@ -659,7 +681,12 @@ Future<OpUndoOutcome> revertMangaLineBatch(
     }
   }
 
-  final File manifestFile = mangaRenderManifestFile(appModel, bookKey);
+  final MangaAudioEditTarget target = await mangaUndoTarget(
+    appModel,
+    bookKey,
+    snapshot['manifest'],
+  );
+  final File manifestFile = target.manifestFile;
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
     manifestFile,
   );
@@ -759,10 +786,9 @@ Future<OpUndoOutcome> revertMangaLineBatch(
       manifest: manifest,
       lineIds: restored,
     );
-    await MangaAudioRenderer(
-      backend: const TtsCtlNoSynthesis(),
-      manifestFile: manifestFile,
-    ).sweepUnreferenced(manifest);
+    await target
+        .renderer(const TtsCtlNoSynthesis())
+        .sweepUnreferenced(manifest);
   }
   // 音频备份用完就删；快照留下并记上「已撤销」（再撤一次报 superseded，不误报备份
   // 被清理），整个目录由修剪按份数清掉。

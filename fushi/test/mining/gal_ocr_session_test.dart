@@ -38,8 +38,14 @@ void main() {
   late void Function(String text) emitLine;
   late void Function(GalOcrSourceIssue issue, Object? detail) emitIssue;
   late LoopbackGalAudioSource Function() loopbackFactory;
+  late bool createdBinarize;
+
+  /// 窗口 PID → exe 路径（默认查不到：与第一期一样没有游戏身份）。
+  String? imagePath;
 
   setUp(() {
+    imagePath = null;
+    createdBinarize = false;
     service = TexthookerService.test();
     endpoints = ChangeNotifier();
     injections = <String>[];
@@ -48,6 +54,7 @@ void main() {
     controller = GalHookSessionController(
       textService: service,
       isWindows: true,
+      targetImagePathProbe: (int pid) => pid == window.pid ? imagePath : null,
       targetWow64Probe: (_) async {
         injections.add('wow64');
         return false;
@@ -81,18 +88,21 @@ void main() {
           ({
             required int hwnd,
             required GalOcrRegion region,
+            required bool binarize,
             required GalOcrRecognize recognize,
             required void Function(String text) onLine,
             required void Function(GalOcrSourceIssue issue, Object? detail)
             onIssue,
           }) {
             createdSources.add((hwnd: hwnd, region: region));
+            createdBinarize = binarize;
             emitLine = onLine;
             emitIssue = onIssue;
             // 真泵，但截窗永远失败、间隔很长：本测试直接经 onLine 喂行，只验会话侧。
             return source = GalOcrLineSource(
               hwnd: hwnd,
               region: region,
+              binarize: binarize,
               recognize: recognize,
               onLine: onLine,
               interval: const Duration(hours: 1),
@@ -182,6 +192,82 @@ void main() {
     expect(controller.state.isOcrMode, isFalse);
     expect(controller.state.ocrIssue, GalOcrSourceIssue.none);
     expect(controller.state.phase, GalHookSessionPhase.idle);
+  });
+
+  test('OCR 设置按游戏记（BUG-5141 ②）：框与二值化进该游戏捕获记忆，下次按窗口交回', () async {
+    final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{};
+    controller.attachCaptureMemory(
+      load: (String key) => store[key] ?? const GalCaptureMemory(),
+      save: (String key, GalCaptureMemory memory) => store[key] = memory,
+    );
+    imagePath = r'C:\Games\Online\Game.exe';
+    const String key = r'c:\games\online\game.exe';
+    // 没开过 OCR 模式：没有记忆。
+    expect(controller.rememberedOcrSettingsFor(window), (
+      region: null,
+      binarize: false,
+    ));
+
+    await controller.startOcrCapture(
+      window,
+      region: region,
+      recognize: recognize,
+      binarize: true,
+    );
+    expect(createdBinarize, isTrue);
+    expect(source.binarize, isTrue);
+    expect(controller.state.ocrBinarize, isTrue);
+    expect(store[key]?.ocrRegion, region);
+    expect(store[key]?.ocrBinarize, isTrue);
+
+    const GalOcrRegion moved = GalOcrRegion(
+      left: 0.2,
+      top: 0.6,
+      width: 0.6,
+      height: 0.3,
+    );
+    controller.setOcrRegion(moved);
+    controller.setOcrBinarize(false);
+    expect(source.binarize, isFalse);
+    expect(controller.state.ocrBinarize, isFalse);
+    expect(store[key]?.ocrRegion, moved);
+    expect(store[key]?.ocrBinarize, isFalse);
+    // 会话中：交回本局设置。
+    expect(controller.rememberedOcrSettingsFor(window), (
+      region: moved,
+      binarize: false,
+    ));
+
+    await controller.stopCapture();
+    expect(controller.state.ocrBinarize, isFalse);
+    // 会话结束后：按窗口 PID → exe 读记忆。
+    expect(controller.rememberedOcrSettingsFor(window), (
+      region: moved,
+      binarize: false,
+    ));
+    // JSON 往返（偏好里存的是 toJson）。
+    final GalCaptureMemory roundTrip = GalCaptureMemory.fromJson(
+      store[key]!.toJson().cast<Object?, Object?>(),
+    );
+    expect(roundTrip.ocrRegion, moved);
+    expect(roundTrip.ocrBinarize, isFalse);
+    expect(roundTrip.isEmpty, isFalse);
+  });
+
+  test('查不到游戏 exe：OCR 设置只活在会话内，不写记忆', () async {
+    final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{};
+    controller.attachCaptureMemory(
+      load: (String key) => store[key] ?? const GalCaptureMemory(),
+      save: (String key, GalCaptureMemory memory) => store[key] = memory,
+    );
+    await controller.startOcrCapture(
+      window,
+      region: region,
+      recognize: recognize,
+    );
+    expect(store, isEmpty);
+    await controller.stopCapture();
+    expect(controller.rememberedOcrSettingsFor(window).region, isNull);
   });
 
   test('OCR 会话启动途中停止监听：不留下 OCR 模式（泵还没建起来也要退出）', () async {
