@@ -1076,11 +1076,13 @@ void main() {
         contains('whenmusicRemoteKindAvailable(k,online:online)'),
         reason: '条目只在这一种在本平台可用时列出',
       );
-      // 种类判据：只有 YouTube / 插件受合规门约束（媒体服务器在 iOS 上照常可用）。
+      // 种类判据：只有 YouTube / 插件受合规门约束（媒体服务器在 iOS 上照常可用；互联 host 曲目
+      // 只问它自己的判据 interconnectMusicLibraryAvailable，design-imusic-q10）。
       expect(
         gate,
         contains(
           'MusicRemoteTrackKind.server=>true,'
+          'MusicRemoteTrackKind.fushiHost=>interconnectMusicLibraryAvailable,'
           'MusicRemoteTrackKind.youtube||MusicRemoteTrackKind.plugin=>online,',
         ),
       );
@@ -1099,7 +1101,10 @@ void main() {
       final String servers = compactCode(
         read('lib/src/media/music/server/music_servers.dart'),
       );
-      expect(servers, contains('if(interconnectMusicLibraryAvailable)'));
+      expect(
+        servers,
+        contains('if(interconnectMusicLibraryAvailable&&hosts!=null)'),
+      );
       expect(servers, isNot(contains('Platform.isIOS')));
       final String remote = compactCode(
         read('lib/src/media/music/music_remote_tracks.dart'),
