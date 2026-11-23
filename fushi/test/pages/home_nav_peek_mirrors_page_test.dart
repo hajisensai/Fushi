@@ -125,10 +125,11 @@ void main() {
       // 页面缺省排序：新建的在前；「继续」= 最前的下载中任务（漫画那条）。
       expect(data.resume?.title, 'manga:1');
       expect(data.resume?.status, '25%');
-      expect(
-        data.recent.map((AdaptiveNavPeekEntry e) => e.title),
-        <String>['audiobook-transcribe:1', 'remote:host:1', 'job-1'],
-      );
+      expect(data.recent.map((AdaptiveNavPeekEntry e) => e.title), <String>[
+        'audiobook-transcribe:1',
+        'remote:host:1',
+        'job-1',
+      ]);
       expect(data.recent[1].subtitle, '客厅 PC');
       // 与下载页概况卡同一组计数，来源不止视频任务。
       expect(
@@ -167,9 +168,7 @@ void main() {
       expect(share.entriesOf(DownloadTaskSharedPart.remoteHosts), isEmpty);
     });
 
-    testWidgets('下载页按同一份清单逐个套来源段，最内层收到全部来源的条目', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('下载页按同一份清单逐个套来源段，最内层收到全部来源的条目', (WidgetTester tester) async {
       final List<DownloadTaskSource> wrapped = <DownloadTaskSource>[];
       List<DownloadTaskEntry>? leafTasks;
       await tester.pumpWidget(
@@ -209,7 +208,21 @@ void main() {
         'lib/src/pages/implementations/home_nav_peek.dart',
       );
       expect(peek, contains('loadDownloadTaskSnapshot('));
-      expect(peek, isNot(contains('getVideoDownloadJobs')));
+      // 取数只经按清单问遍各来源的快照（视频任务表也在里面读），速览入口自己不再
+      // 单读视频任务表。
+      expect(peek, contains('collectDownloadTaskSnapshot('));
+      final int start = peek.indexOf(
+        'Future<AdaptiveNavPeekData> _loadDownloads(',
+      );
+      final String loadDownloads = peek.substring(
+        start,
+        peek.indexOf(
+          'Future<List<DownloadTaskEntry>> loadDownloadTaskSnapshot(',
+          start,
+        ),
+      );
+      expect(loadDownloads, contains('loadDownloadTaskSnapshot('));
+      expect(loadDownloads, isNot(contains('getVideoDownloadJobs')));
     });
   });
 
@@ -276,10 +289,9 @@ void main() {
       );
       expect(feed.resume?.entry.title, 'running');
       expect(feed.resume?.at, 9999);
-      expect(
-        feed.recent.map((NavPeekTimed e) => e.entry.title),
-        <String>['recent'],
-      );
+      expect(feed.recent.map((NavPeekTimed e) => e.entry.title), <String>[
+        'recent',
+      ]);
       // 首页用的是同一个选取。
       expect(
         galgameHomeContinue(<GalgameEntry>[

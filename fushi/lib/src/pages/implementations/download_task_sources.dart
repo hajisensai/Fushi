@@ -1,27 +1,18 @@
 import 'dart:async';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/media/audiobook/audiobook_transcribe_tasks_section.dart';
-import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
-import 'package:fushi/src/media/downloads/download_task_share.dart';
-import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
-import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/anime_download_dialog.dart'
-    show animeDownloadTaskSnapshot;
-import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart';
-import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
-    show videoDownloadJobTaskEntry;
-import 'package:fushi/src/sync/interconnect_download_manager.dart'
-    show interconnectDownloadManagerProvider;
-import 'package:fushi_core/fushi_core.dart' show VideoDownloadJobRow;
 import 'package:material_ui/material_ui.dart';
+
+/// 本文件是叶子：只放来源清单与两个与来源无关的组合器，不 import 各来源段 /
+/// AppModel。按清单取各来源条目的 `loadDownloadTaskSnapshot` 住在侧栏速览
+/// （`home_nav_peek.dart`），套各来源段的 switch 住在下载页（`browse_page.dart`）——
+/// 两处都对 [DownloadTaskSource] 穷尽 switch，新加来源不接就编不过。
 
 /// 下载页「任务」列表里，持久视频任务（`VideoDownloadJobsPanel` 自己读的那张表）
 /// 之外的全部任务来源，按页面嵌套顺序（外 → 内）。
 ///
 /// 唯一清单：下载页（`BrowsePage._buildTasks` 经 [nestDownloadTaskSources] 逐个
-/// 套上各来源段）与侧栏下载速览（[loadDownloadTaskSnapshot]）都按它枚举，两边都
+/// 套上各来源段）与侧栏下载速览（`loadDownloadTaskSnapshot`）都按它枚举，两边都
 /// 是穷尽 switch——新加一个来源，两处不接上就编不过，速览不会再漏掉页面上有的任务。
 enum DownloadTaskSource {
   transcribe,
@@ -77,54 +68,3 @@ Future<List<DownloadTaskEntry>> collectDownloadTaskSnapshot({
   }
   return entries.values.toList();
 }
-
-/// 侧栏下载速览的数据：与下载页同一份来源清单、同一份逐来源映射，只读此刻的
-/// 本地状态，悬停一次不打网络、不扫盘：
-///
-/// * 视频任务读任务表；后端实时观测（暂停 / 排队、速率）不在悬停时去问，进行中
-///   的任务按持久生命周期算作「下载中」。
-/// * 远端 host 的代下载任务与「可重新入库」的漫画只由下载页去取，这里读下载页
-///   最近一次的结果（[DownloadTaskShare]；下载页还没打开过时这两部分为空）。
-///
-/// 条目只用于展示字段：速览不调 builder、不挂动作。
-Future<List<DownloadTaskEntry>> loadDownloadTaskSnapshot({
-  required AppModel appModel,
-  required WidgetRef ref,
-}) => collectDownloadTaskSnapshot(
-  videoJobs: () async => <DownloadTaskEntry>[
-    for (final VideoDownloadJobRow job
-        in await appModel.database.getVideoDownloadJobs())
-      videoDownloadJobTaskEntry(job, builder: _summaryOnlyTaskCard),
-  ],
-  source: (DownloadTaskSource source) => switch (source) {
-    DownloadTaskSource.transcribe =>
-      switch (AudiobookTranscribeTasksSection.appQueue(appModel)) {
-        null => const <DownloadTaskEntry>[],
-        final queue => AudiobookTranscribeTasksSection.entriesOf(queue),
-      },
-    DownloadTaskSource.legacy => animeDownloadTaskSnapshot(appModel),
-    DownloadTaskSource.direct => switch (DiscoveryDownloadTasksSection.appQueue(
-      appModel,
-    )) {
-      null => const <DownloadTaskEntry>[],
-      final queue => const DiscoveryDownloadTasksSection().entriesOf(
-        queue,
-        external: DiscoveryDownloadTasksSection.externalSourceResolver(
-          appModel,
-        ),
-      ),
-    },
-    DownloadTaskSource.manga => mangaDownloadTaskSnapshot(
-      MangaDownloadTaskSources.ofApp(appModel),
-    ),
-    DownloadTaskSource.remote => DownloadTaskShare.instance.entriesOf(
-      DownloadTaskSharedPart.remoteHosts,
-    ),
-    DownloadTaskSource.interconnect => interconnectDownloadTaskEntries(
-      ref,
-      ref.read(interconnectDownloadManagerProvider),
-    ),
-  },
-);
-
-Widget _summaryOnlyTaskCard(BuildContext _) => const SizedBox.shrink();

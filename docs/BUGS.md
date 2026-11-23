@@ -33,10 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4601 条。点号进各自文件。
+> 共 4605 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5282](bugs/BUG-5282-music-peek-remote-now-playing.md) | ✅ | ✅ | 音乐速览：播放服务器 / 插件 / Apple Music 曲目时「继续」为空 |
+| [BUG-5281](bugs/BUG-5281-games-peek-running-game.md) | ✅ | ✅ | 游戏速览「继续」不认正在运行的游戏 |
+| [BUG-5280](bugs/BUG-5280-games-peek-hide-nsfw.md) | ✅ | ✅ | 游戏速览无视「隐藏成人向」偏好 |
+| [BUG-5279](bugs/BUG-5279-downloads-peek-sources.md) | ✅ | ✅ | 下载速览只看视频任务：漫画 / 转录 / 直链 / 旧番剧 / 远端 / 互联任务都不在 |
 | [BUG-5278](bugs/BUG-5278-book-peek-continue-mismatch.md) | ✅ | ✅ | 书 / 漫画的侧栏速览、库页「继续阅读」、首页「继续」三处给出三个不同的续读项 |
 | [BUG-5276](bugs/BUG-5276-video-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」 |
 | [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
@@ -55,14 +59,6 @@
 | [BUG-5260](bugs/BUG-5260-video-menu-cm-extra-filename.md) | ✅ | ✅ | video-menu-cm-extra-filename |
 | [BUG-5259](bugs/BUG-5259-music-continue-card-no-player-page.md) | ✅ | ✅ | music-continue-card-no-player-page |
 | [BUG-5258](bugs/BUG-5258-status-monitor-overlay-section-last.md) | ✅ | ✅ | status-monitor-overlay-section-last |
-> 共 4585 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5264](bugs/BUG-5264-music-peek-remote-now-playing.md) | ✅ | ✅ | 音乐速览：播放服务器 / 插件 / Apple Music 曲目时「继续」为空 |
-| [BUG-5263](bugs/BUG-5263-games-peek-running-game.md) | ✅ | ✅ | 游戏速览「继续」不认正在运行的游戏 |
-| [BUG-5262](bugs/BUG-5262-games-peek-hide-nsfw.md) | ✅ | ✅ | 游戏速览无视「隐藏成人向」偏好 |
-| [BUG-5261](bugs/BUG-5261-downloads-peek-sources.md) | ✅ | ✅ | 下载速览只看视频任务：漫画 / 转录 / 直链 / 旧番剧 / 远端 / 互联任务都不在 |
 | [BUG-5257](bugs/BUG-5257-retheme-drops-shell-theme.md) | ✅ | ✅ | retheme-drops-shell-theme |
 | [BUG-5256](bugs/BUG-5256-glass-settings-sidebar-scroll-black-band.md) | ✅ | ✅ | glass-settings-sidebar-scroll-black-band |
 | [BUG-5255](bugs/BUG-5255-kanji-card-labels-never-localized.md) | 🚧 | 🚧 | kanji-card-labels-never-localized |

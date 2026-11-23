@@ -35,8 +35,23 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart' show moduleOfHomeTab;
+import 'package:fushi/src/media/audiobook/audiobook_transcribe_tasks_section.dart'
+    show AudiobookTranscribeTasksSection;
+import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart'
+    show DiscoveryDownloadTasksSection;
+import 'package:fushi/src/media/downloads/download_task_share.dart';
+import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart'
+    show MangaDownloadTaskSources, mangaDownloadTaskSnapshot;
+import 'package:fushi/src/pages/implementations/anime_download_dialog.dart'
+    show animeDownloadTaskSnapshot;
 import 'package:fushi/src/pages/implementations/download_task_sources.dart'
-    show loadDownloadTaskSnapshot;
+    show DownloadTaskSource, collectDownloadTaskSnapshot;
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart'
+    show interconnectDownloadTaskEntries;
+import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
+    show videoDownloadJobTaskEntry;
+import 'package:fushi/src/sync/interconnect_download_manager.dart'
+    show interconnectDownloadManagerProvider;
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart'
     show fushiWebBrowserRoute, openFushiWebBrowser;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
@@ -87,7 +102,8 @@ import 'package:fushi_core/fushi_core.dart'
         EpubBookRow,
         VideoBookRow,
         VideoMetadataImageRow,
-        VideoMetadataWorkRow;
+        VideoMetadataWorkRow,
+        VideoDownloadJobRow;
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show Dictionary, DictionarySearchResult, JapaneseLanguage;
@@ -913,6 +929,57 @@ Future<AdaptiveNavPeekData> _loadDownloads({
   await loadDownloadTaskSnapshot(appModel: appModel, ref: ref),
   openDownloads: openDownloads,
 );
+
+/// 侧栏下载速览的数据：与下载页同一份来源清单、同一份逐来源映射，只读此刻的
+/// 本地状态，悬停一次不打网络、不扫盘：
+///
+/// * 视频任务读任务表；后端实时观测（暂停 / 排队、速率）不在悬停时去问，进行中
+///   的任务按持久生命周期算作「下载中」。
+/// * 远端 host 的代下载任务与「可重新入库」的漫画只由下载页去取，这里读下载页
+///   最近一次的结果（[DownloadTaskShare]；下载页还没打开过时这两部分为空）。
+///
+/// 条目只用于展示字段：速览不调 builder、不挂动作。
+Future<List<DownloadTaskEntry>> loadDownloadTaskSnapshot({
+  required AppModel appModel,
+  required WidgetRef ref,
+}) => collectDownloadTaskSnapshot(
+  videoJobs: () async => <DownloadTaskEntry>[
+    for (final VideoDownloadJobRow job
+        in await appModel.database.getVideoDownloadJobs())
+      videoDownloadJobTaskEntry(job, builder: _summaryOnlyTaskCard),
+  ],
+  source: (DownloadTaskSource source) => switch (source) {
+    DownloadTaskSource.transcribe =>
+      switch (AudiobookTranscribeTasksSection.appQueue(appModel)) {
+        null => const <DownloadTaskEntry>[],
+        final queue => AudiobookTranscribeTasksSection.entriesOf(queue),
+      },
+    DownloadTaskSource.legacy => animeDownloadTaskSnapshot(appModel),
+    DownloadTaskSource.direct => switch (DiscoveryDownloadTasksSection.appQueue(
+      appModel,
+    )) {
+      null => const <DownloadTaskEntry>[],
+      final queue => const DiscoveryDownloadTasksSection().entriesOf(
+        queue,
+        external: DiscoveryDownloadTasksSection.externalSourceResolver(
+          appModel,
+        ),
+      ),
+    },
+    DownloadTaskSource.manga => mangaDownloadTaskSnapshot(
+      MangaDownloadTaskSources.ofApp(appModel),
+    ),
+    DownloadTaskSource.remote => DownloadTaskShare.instance.entriesOf(
+      DownloadTaskSharedPart.remoteHosts,
+    ),
+    DownloadTaskSource.interconnect => interconnectDownloadTaskEntries(
+      ref,
+      ref.read(interconnectDownloadManagerProvider),
+    ),
+  },
+);
+
+Widget _summaryOnlyTaskCard(BuildContext _) => const SizedBox.shrink();
 
 /// 下载速览：与下载页「任务」列表同一份条目（[loadDownloadTaskSnapshot]：持久视频
 /// 任务 + 旧番剧计划 / 直链 / 漫画 / 远端 host / 互联 / 转录入库），按页面缺省
