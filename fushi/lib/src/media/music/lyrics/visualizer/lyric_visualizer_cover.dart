@@ -7,6 +7,8 @@ import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart'
+    show fushiHostMusicCoverProvider;
 import 'package:fushi/src/utils/net/app_http_image.dart';
 
 /// 在线封面请求头：部分音乐 CDN 对 `Dart/x (dart:io)` 这个默认 UA 一律回 403，
@@ -22,6 +24,9 @@ ImageProvider? lyricVisualizerCoverProvider(String? coverPath) {
   if (coverPath.startsWith('http://') || coverPath.startsWith('https://')) {
     return AppHttpImage(coverPath, headers: kMusicCoverRequestHeaders);
   }
+  // 互联 host 的封面占位：经钉扎通道取字节。
+  final ImageProvider? host = fushiHostMusicCoverProvider(coverPath);
+  if (host != null) return host;
   final File file = File(coverPath);
   return file.existsSync() ? FileImage(file) : null;
 }

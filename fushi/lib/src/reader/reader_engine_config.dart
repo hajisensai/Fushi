@@ -67,6 +67,7 @@ class ReaderEngineConfig {
     required this.vnPreserveDialogue,
     required this.vnMergeCrossScreenSentenceAudioCues,
     this.sentenceAudioCuesJson,
+    this.audiobookLineAlignFollow = false,
     this.seamlessChapters = false,
     this.seamlessChapterIndex = -1,
     this.seamlessChapterOrder = const <ReaderSeamlessChapterEntry>[],
@@ -171,6 +172,11 @@ class ReaderEngineConfig {
   /// 产物）。原样嵌进 config 字面量，避免「解码再编码」多走一遍。`null` = 本章无 cue。
   final String? sentenceAudioCuesJson;
 
+  /// 连续模式有声书跟读是否用「整行对齐」（反馈 tUJsiLpL9d 方案 B，偏好
+  /// `audiobook_scroll_follow` == `line_align`）：整句在屏内不滚，否则把句首所在行的
+  /// 行框起始边滚到正文起始边。false = 旧的「离屏边 15% 就滚」。只连续 shell 读，可热更新。
+  final bool audiobookLineAlignFollow;
+
   // ── 连续模式章节无缝衔接（反馈 R7k887yaJI ③，只连续 shell 读）────────────
   /// 是否在本文档里挂邻章（`reader_seamless_chapters_script.dart`）。只在「连续模式 +
   /// 开关开 + 非双页文档」时为 true（[readerSeamlessChaptersActive]）；false 时 JS 侧
@@ -230,6 +236,7 @@ class ReaderEngineConfig {
     'vnSentencesPerScreen': vnSentencesPerScreen,
     'vnPreserveDialogue': vnPreserveDialogue,
     'vnMergeCrossScreenSentenceAudioCues': vnMergeCrossScreenSentenceAudioCues,
+    'audiobookLineAlignFollow': audiobookLineAlignFollow,
     'seamlessChapters': seamlessChapters,
     'seamlessChapterIndex': seamlessChapterIndex,
     'seamlessChapterOrder': <Map<String, Object?>>[
@@ -268,6 +275,7 @@ class ReaderEngineConfig {
     bool? swipeLeftIsForward,
     int? continuousTurnPullPx,
     bool? continuousTurnPinMidGesture,
+    bool? audiobookLineAlignFollow,
   }) {
     final String patch = jsonEncode(<String, Object?>{
       'marginTop': marginTop,
@@ -287,6 +295,8 @@ class ReaderEngineConfig {
         'continuousTurnPullPx': continuousTurnPullPx,
       if (continuousTurnPinMidGesture != null)
         'continuousTurnPinMidGesture': continuousTurnPinMidGesture,
+      if (audiobookLineAlignFollow != null)
+        'audiobookLineAlignFollow': audiobookLineAlignFollow,
     });
     return '(window.__fushiEngine && window.__fushiEngine.updateLive) '
         '? window.__fushiEngine.updateLive($patch) : false;';

@@ -7,7 +7,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/lyric_cues.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicHostLyricsLayer, MusicHostLyrics;
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
@@ -425,4 +427,96 @@ void main() {
       expect(r.timeline.lines, isNotEmpty);
     });
   });
+
+  group('互联 host 曲目（design-imusic-q3 选 c）', () {
+    test('host 上生效的那份为准并落本机缓存；偏移与手动指定写回 host', () async {
+      final _FakeHostLyrics host = _FakeHostLyrics()
+        ..lyrics = MusicHostLyrics(
+          source: 'sidecar',
+          format: 'lrc',
+          raw: utf8.encode('[00:01.00]ホスト'),
+          offsetMs: 150,
+        );
+      final MusicLyricsService s = MusicLyricsService(
+        database: () => db,
+        lrclib: LrclibClient(transport: lrclib.call),
+        onlineEnabled: () => true,
+        readEmbedded: (String _, int? _) async => embedded,
+        parse: _parse,
+        now: () => now,
+        hostLyrics: host,
+      );
+      const MusicLyricsTrackRef ref = MusicLyricsTrackRef(
+        trackUid: 'host-uid',
+        path: 'fushi-host-music:///pc/host-uid',
+        title: '夜に駆ける',
+        durationMs: 240000,
+      );
+      final MusicLyricsResolution r = (await s.resolve(ref))!;
+      expect(r.source, 'sidecar');
+      expect(r.timeline.offsetMs, 150);
+      expect(r.timeline.lines.first.text, 'ホスト');
+      // host 有歌词时不去问在线来源。
+      expect(lrclib.calls, isEmpty);
+      final List<MusicLyricRow> rows = await (db.select(
+        db.musicLyrics,
+      )..where(($MusicLyricsTable t) => t.trackUid.equals('host-uid'))).get();
+      expect(rows.single.source, 'sidecar');
+      expect(rows.single.offsetMs, 150);
+
+      await s.setOffset('host-uid', 'sidecar', -80);
+      expect(host.offsets, <String>[
+        'fushi-host-music:///pc/host-uid sidecar -80',
+      ]);
+
+      await s.choose(
+        'host-uid',
+        MusicLyricsCandidate(
+          source: MusicLyricsSource.lrclib,
+          label: 'LRCLIB',
+          format: 'lrc',
+          raw: utf8.encode('[00:02.00]別の'),
+          timeline: FushiLyrics.parse(utf8.encode('[00:02.00]別の'), hint: 'lrc'),
+        ),
+      );
+      expect(host.choices.single.format, 'ttml');
+
+      // host 离线：退回本机缓存的那份（不抛）。
+      host.fail = true;
+      final MusicLyricsResolution offline = (await s.resolve(ref))!;
+      expect(offline.source, MusicLyricsSource.user);
+    });
+  });
+}
+
+class _FakeHostLyrics implements MusicHostLyricsLayer {
+  MusicHostLyrics? lyrics;
+  bool fail = false;
+  final List<String> offsets = <String>[];
+  final List<({String format, int offsetMs})> choices =
+      <({String format, int offsetMs})>[];
+
+  @override
+  bool handles(String path) => path.startsWith('fushi-host-music:///');
+
+  @override
+  Future<MusicHostLyrics?> lyricsFor(String path) async {
+    if (fail) throw StateError('offline');
+    return lyrics;
+  }
+
+  @override
+  Future<void> setLyricsOffset(
+    String path, {
+    required String source,
+    required int offsetMs,
+  }) async => offsets.add('$path $source $offsetMs');
+
+  @override
+  Future<void> chooseLyrics(
+    String path, {
+    required String format,
+    required List<int> raw,
+    required int offsetMs,
+  }) async => choices.add((format: format, offsetMs: offsetMs));
 }

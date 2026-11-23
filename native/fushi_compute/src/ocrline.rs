@@ -10,6 +10,14 @@
 //!   打字机逐字出现期间帧一直在变，不会 OCR 半句；框里没字（几乎没有文字边缘）回 `cleared`。
 //! - 文本（`feed_text`）：拼行规范化（CJK 之间去空白）→ 与上一句去重（编辑距离 ≤ 10%）/
 //!   打字机续写（输出上一句 + 新尾巴，保证是严格前缀扩展，台词流的渐进折叠能并成一行）。
+//!
+//! 第二期（BUG-5141）补的两件判定细节也在这里：
+//! - **易变格掩码**：台词框里循环播放的小动画（「点击继续」图标、光标）若与取帧间隔错相，
+//!   每帧都有几格在变，整框永远「不稳定」、整句不出。每格记一个易变分（变一次 +2、稳一帧 -1），
+//!   分数够高的格子在「变没变」的判定里排除；打字机逐字出墨每格只变一次，不会被当成易变。
+//!   易变格超过网格四分之一（整框在动：视频底 / 转场）时掩码作废，回到整框判定。
+//! - **送 OCR 前的预处理**：估计字高，小字（低分辨率游戏）按整数倍放大到识别器舒服的字高；
+//!   可选按 Otsu 阈值二值化（字与底分成黑白两色，少数派当字），给低对比 / 描边字用。
 
 use std::sync::Mutex;
 
@@ -32,6 +40,35 @@ const EDGE_DELTA: i32 = 40;
 /// 按面积算密度极低，按密度判会被当成空白、永远不 OCR；而真正的空框（纯色 / 渐变底）
 /// 一条超过 [EDGE_DELTA] 的边都没有。
 const BLANK_MAX_EDGES: usize = 24;
+
+/// 一格「变了」时易变分加多少 / 封顶多少 / 达到多少算易变格（稳一帧减 1）。
+/// 连续三帧都变（2+2+2）才算易变：打字机每格只在出墨那一帧变一次。
+const VOLATILE_HIT: u8 = 2;
+const VOLATILE_CAP: u8 = 8;
+const VOLATILE_SCORE: u8 = 6;
+
+/// 易变格超过这么多就不当掩码用（整框都在动，不是局部小动画）。
+const VOLATILE_MAX_CELLS: usize = GRID_W * GRID_H / 4;
+
+/// 估出的字高低于它才放大（像素）；放大目标字高；最大倍数。
+const UPSCALE_BELOW_TEXT_HEIGHT: usize = 16;
+const UPSCALE_TARGET_TEXT_HEIGHT: usize = 24;
+const UPSCALE_MAX_FACTOR: usize = 4;
+
+/// 放大后的最长边上限：Windows.Media.Ocr 的 `OcrEngine.MaxImageDimension`（2600），
+/// 超过会被识别端再缩回去，放大就白做了。
+const OCR_MAX_DIMENSION: usize = 2600;
+
+/// 一行里水平边缘至少这么多，才算「有墨的行」（估字高用）。
+const INK_ROW_MIN_EDGES: usize = 2;
+
+/// [ffc_ocrline_configure] 的标志位。
+pub mod flags {
+    /// 送 OCR 前按 Otsu 阈值二值化。
+    pub const BINARIZE: u32 = 1;
+    /// 全部已知位。
+    pub const ALL: u32 = BINARIZE;
+}
 
 /// 去重 / 续写的编辑距离上限（相对长度）。
 const SIMILAR_RATIO: f64 = 0.10;
@@ -88,6 +125,12 @@ pub enum TextEvent {
     Extend(String),
 }
 
+/// 送 OCR 前的预处理选项（[ffc_ocrline_configure]）。小字放大总是开着，不是选项。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Preprocess {
+    pub binarize: bool,
+}
+
 /// 连续 OCR 台词流的状态机。
 #[derive(Default)]
 pub struct OcrLineTracker {
@@ -95,8 +138,11 @@ pub struct OcrLineTracker {
     stable: u32,
     ocr_sig: Option<Signature>,
     blank: bool,
+    /// 每格易变分（见模块文档）；空 = 还没比过两帧。
+    volatility: Vec<u8>,
     /// 上一句（显示文本）。
     last_text: Option<String>,
+    preprocess: Preprocess,
 }
 
 impl OcrLineTracker {
@@ -104,9 +150,19 @@ impl OcrLineTracker {
         Self::default()
     }
 
-    /// 换区域 / 重新开始：忘掉全部帧状态与上一句。
+    /// 换区域 / 重新开始：忘掉全部帧状态与上一句（预处理选项保留，它是用户设置不是帧状态）。
     pub fn reset(&mut self) {
+        let preprocess = self.preprocess;
         *self = Self::default();
+        self.preprocess = preprocess;
+    }
+
+    /// 换预处理选项。已送 OCR 的那一帧作废：同一画面稳定时按新选项再识别一次。
+    pub fn configure(&mut self, preprocess: Preprocess) {
+        if self.preprocess != preprocess {
+            self.preprocess = preprocess;
+            self.ocr_sig = None;
+        }
     }
 
     /// 上一次交出的 OCR 帧没能识别（识别器单次报错）：只忘掉「这一帧已 OCR 过」，
@@ -131,11 +187,16 @@ impl OcrLineTracker {
         }
         self.blank = false;
         let sig = signature(&luma, width, height);
+        if let Some(prev) = &self.prev_sig {
+            update_volatility(&mut self.volatility, prev, &sig);
+        }
+        let mask = volatile_mask(&self.volatility);
+        let mask = mask.as_deref();
         match &self.prev_sig {
-            Some(prev) if !changed(prev, &sig) => self.stable = self.stable.saturating_add(1),
+            Some(prev) if !changed(prev, &sig, mask) => self.stable = self.stable.saturating_add(1),
             _ => self.stable = 0,
         }
-        let needs_ocr = self.ocr_sig.as_ref().map_or(true, |o| changed(o, &sig));
+        let needs_ocr = self.ocr_sig.as_ref().is_none_or(|o| changed(o, &sig, mask));
         self.prev_sig = Some(sig.clone());
         if !needs_ocr {
             return FrameAction::Idle;
@@ -144,8 +205,9 @@ impl OcrLineTracker {
             return FrameAction::Settling;
         }
         self.ocr_sig = Some(sig);
+        let (rgba, width, height) = prepare_for_ocr(rgba, &luma, width, height, self.preprocess);
         FrameAction::Ocr {
-            rgba: rgba.to_vec(),
+            rgba,
             width: width as u32,
             height: height as u32,
         }
@@ -271,12 +333,168 @@ fn signature(luma: &[u8], width: usize, height: usize) -> Signature {
     sig
 }
 
-fn changed(a: &Signature, b: &Signature) -> bool {
+/// 两帧有没有变：亮度差超过 [CELL_DELTA] 的格子（排除 `mask` 里的易变格）不少于 [MIN_CHANGED_CELLS]。
+fn changed(a: &Signature, b: &Signature, mask: Option<&[bool]>) -> bool {
     a.iter()
         .zip(b)
-        .filter(|(x, y)| x.abs_diff(**y) > CELL_DELTA)
+        .enumerate()
+        .filter(|(i, (x, y))| x.abs_diff(**y) > CELL_DELTA && !mask.is_some_and(|m| m[*i]))
         .count()
         >= MIN_CHANGED_CELLS
+}
+
+/// 用相邻两帧的逐格差更新易变分：变了 +[VOLATILE_HIT]（封顶 [VOLATILE_CAP]），没变 -1。
+fn update_volatility(scores: &mut Vec<u8>, prev: &Signature, cur: &Signature) {
+    if scores.len() != cur.len() {
+        *scores = vec![0; cur.len()];
+    }
+    for ((score, a), b) in scores.iter_mut().zip(prev).zip(cur) {
+        *score = if a.abs_diff(*b) > CELL_DELTA {
+            score.saturating_add(VOLATILE_HIT).min(VOLATILE_CAP)
+        } else {
+            score.saturating_sub(1)
+        };
+    }
+}
+
+/// 易变格掩码：没有易变格、或易变格多到说明整框在动时返回 None（按整框判定）。
+fn volatile_mask(scores: &[u8]) -> Option<Vec<bool>> {
+    let mask: Vec<bool> = scores.iter().map(|&s| s >= VOLATILE_SCORE).collect();
+    let n = mask.iter().filter(|&&v| v).count();
+    (n > 0 && n <= VOLATILE_MAX_CELLS).then_some(mask)
+}
+
+/// 估计字高：有墨的行（水平边缘 ≥ [INK_ROW_MIN_EDGES]）连成段，取段高的中位数；
+/// 只有 1 行高的段当噪声。没有墨返回 0。
+fn estimate_text_height(luma: &[u8], width: usize, height: usize) -> usize {
+    if width < 2 || height == 0 {
+        return 0;
+    }
+    let mut runs: Vec<usize> = Vec::new();
+    let mut run = 0usize;
+    for row in luma.chunks_exact(width).take(height) {
+        let edges = row
+            .windows(2)
+            .filter(|p| (p[0] as i32 - p[1] as i32).abs() > EDGE_DELTA)
+            .count();
+        if edges >= INK_ROW_MIN_EDGES {
+            run += 1;
+        } else {
+            if run >= 2 {
+                runs.push(run);
+            }
+            run = 0;
+        }
+    }
+    if run >= 2 {
+        runs.push(run);
+    }
+    if runs.is_empty() {
+        return 0;
+    }
+    runs.sort_unstable();
+    runs[runs.len() / 2]
+}
+
+/// 放大倍数：字高 < [UPSCALE_BELOW_TEXT_HEIGHT] 时放到约 [UPSCALE_TARGET_TEXT_HEIGHT]，
+/// 不超过 [UPSCALE_MAX_FACTOR] 倍，放大后最长边不超过 [OCR_MAX_DIMENSION]。
+fn upscale_factor(text_height: usize, width: usize, height: usize) -> usize {
+    if text_height == 0 || text_height >= UPSCALE_BELOW_TEXT_HEIGHT {
+        return 1;
+    }
+    let mut factor = UPSCALE_TARGET_TEXT_HEIGHT
+        .div_ceil(text_height)
+        .clamp(1, UPSCALE_MAX_FACTOR);
+    let longest = width.max(height).max(1);
+    while factor > 1 && longest * factor > OCR_MAX_DIMENSION {
+        factor -= 1;
+    }
+    factor
+}
+
+/// Otsu 阈值（类间方差最大）：返回 t，亮度 `> t` 的是亮类。
+fn otsu_threshold(luma: &[u8]) -> u8 {
+    let mut hist = [0u64; 256];
+    for &v in luma {
+        hist[v as usize] += 1;
+    }
+    let total = luma.len() as f64;
+    let sum_all: f64 = hist
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| i as f64 * c as f64)
+        .sum();
+    let (mut w_bg, mut sum_bg) = (0f64, 0f64);
+    let (mut best, mut best_var) = (0u8, -1f64);
+    for (t, &count) in hist.iter().enumerate() {
+        w_bg += count as f64;
+        sum_bg += t as f64 * count as f64;
+        if w_bg == 0.0 {
+            continue;
+        }
+        let w_fg = total - w_bg;
+        if w_fg == 0.0 {
+            break;
+        }
+        let m_bg = sum_bg / w_bg;
+        let m_fg = (sum_all - sum_bg) / w_fg;
+        let var = w_bg * w_fg * (m_bg - m_fg).powi(2);
+        if var > best_var {
+            best_var = var;
+            best = t as u8;
+        }
+    }
+    best
+}
+
+/// 二值化成白底黑字：按 Otsu 分成亮暗两类，像素少的一类当字（深字浅底、浅字深底都成黑字）。
+fn binarize_rgba(rgba: &[u8], width: usize, height: usize) -> Vec<u8> {
+    let luma = to_luma(rgba, width, height);
+    let t = otsu_threshold(&luma);
+    let bright = luma.iter().filter(|&&v| v > t).count();
+    let text_is_bright = bright * 2 < luma.len();
+    let mut out = Vec::with_capacity(luma.len() * 4);
+    for &v in &luma {
+        let c = if (v > t) == text_is_bright {
+            0u8
+        } else {
+            255u8
+        };
+        out.extend_from_slice(&[c, c, c, 255]);
+    }
+    out
+}
+
+/// 送 OCR 前的预处理：小字放大（总是开）→ 可选二值化。返回 `(rgba, width, height)`。
+fn prepare_for_ocr(
+    rgba: &[u8],
+    luma: &[u8],
+    width: usize,
+    height: usize,
+    preprocess: Preprocess,
+) -> (Vec<u8>, usize, usize) {
+    let factor = upscale_factor(estimate_text_height(luma, width, height), width, height);
+    let (mut px, w, h) = if factor > 1 {
+        let (nw, nh) = (width * factor, height * factor);
+        match image::RgbaImage::from_raw(width as u32, height as u32, rgba.to_vec()) {
+            Some(img) => {
+                let up = image::imageops::resize(
+                    &img,
+                    nw as u32,
+                    nh as u32,
+                    image::imageops::FilterType::CatmullRom,
+                );
+                (up.into_raw(), nw, nh)
+            }
+            None => (rgba.to_vec(), width, height),
+        }
+    } else {
+        (rgba.to_vec(), width, height)
+    };
+    if preprocess.binarize {
+        px = binarize_rgba(&px, w, h);
+    }
+    (px, w, h)
 }
 
 /// 假名 / 汉字 / CJK 标点 / 全角字符：这些字之间的空白是 OCR 插进来的，不是原文的。
@@ -413,6 +631,31 @@ pub unsafe extern "C" fn ffc_ocrline_reset(handle: *mut std::ffi::c_void) -> i32
             return status::NULL_ARGUMENT;
         }
         with_tracker(handle, OcrLineTracker::reset);
+        status::OK
+    })
+}
+
+/// 设预处理选项：`option_flags` 是 [flags] 的按位或（未知位返回 [status::INVALID_ARGUMENT]）。
+/// 选项变了时已送 OCR 的那一帧作废，同一画面稳定时按新选项再识别一次。
+///
+/// # Safety
+/// `handle` 是 [ffc_ocrline_new] 交出且尚未释放的指针。
+#[no_mangle]
+pub unsafe extern "C" fn ffc_ocrline_configure(
+    handle: *mut std::ffi::c_void,
+    option_flags: u32,
+) -> i32 {
+    guard(|| {
+        if handle.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        if option_flags & !flags::ALL != 0 {
+            return status::INVALID_ARGUMENT;
+        }
+        let preprocess = Preprocess {
+            binarize: option_flags & flags::BINARIZE != 0,
+        };
+        with_tracker(handle, |t| t.configure(preprocess));
         status::OK
     })
 }
@@ -720,6 +963,200 @@ mod tests {
         assert!(is_ocr(&t.feed_rgba(&px, w, h)));
     }
 
+    /// 框右下角的「点击继续」动画：`phase` 决定画在哪一相（三相循环，每相位置 / 形状都不同）。
+    fn with_wait_icon(mut px: Vec<u8>, phase: usize) -> Vec<u8> {
+        let x0 = 170 + (phase % 3) * 8;
+        for y in 38..48 {
+            for x in x0..(x0 + 6).min(W) {
+                let i = (y * W + x) * 4;
+                px[i..i + 3].copy_from_slice(&[0, 0, 0]);
+            }
+        }
+        px
+    }
+
+    #[test]
+    fn looping_wait_icon_does_not_block_ocr_forever() {
+        // BUG-5141 ⑥：等待动画与取帧错相循环，每帧都有几格在变；修之前永远 Settling、整句不出。
+        let mut t = OcrLineTracker::new();
+        let mut ocr_frames = 0;
+        for i in 0..12 {
+            if is_ocr(&t.feed_rgba(&with_wait_icon(frame(8), i), W, H)) {
+                ocr_frames += 1;
+            }
+        }
+        assert!(
+            ocr_frames >= 1,
+            "static line with a looping icon must be OCR'd"
+        );
+        // 动画继续转，台词没变：不再反复 OCR。
+        for i in 12..24 {
+            assert!(
+                !is_ocr(&t.feed_rgba(&with_wait_icon(frame(8), i), W, H)),
+                "frame {i} re-OCR'd although only the icon moved"
+            );
+        }
+        // 下一句（字变了，图标照转）：仍然先等稳定再 OCR 一次。
+        let mut next_ocr = 0;
+        for i in 24..30 {
+            if is_ocr(&t.feed_rgba(&with_wait_icon(frame(14), i), W, H)) {
+                next_ocr += 1;
+            }
+        }
+        assert_eq!(next_ocr, 1, "the next line must be OCR'd exactly once");
+    }
+
+    #[test]
+    fn typewriter_cells_never_become_volatile() {
+        // 打字机每格只出墨一次：逐字出现时仍然一直 Settling（不会被易变掩码当成「已稳定」OCR 半句）。
+        let mut t = OcrLineTracker::new();
+        for bars in 1..=20 {
+            assert_eq!(
+                t.feed_rgba(&frame(bars), W, H),
+                FrameAction::Settling,
+                "bars={bars}"
+            );
+        }
+        assert!(is_ocr(&t.feed_rgba(&frame(20), W, H)));
+    }
+
+    #[test]
+    fn whole_box_animation_disables_the_mask() {
+        // 整框都在动（视频底 / 转场）：不把整框当易变掩掉，照旧不稳定、不 OCR。
+        let mut t = OcrLineTracker::new();
+        for i in 0..10 {
+            let mut px = frame(8);
+            let shade = if i % 2 == 0 { 120u8 } else { 230u8 };
+            for p in px.chunks_exact_mut(4) {
+                if p[0] == 255 {
+                    p[..3].copy_from_slice(&[shade, shade, shade]);
+                }
+            }
+            assert!(!is_ocr(&t.feed_rgba(&px, W, H)), "frame {i}");
+        }
+    }
+
+    /// `rows` 行高的小字（黑竖条）。
+    fn small_text(w: usize, h: usize, rows: usize) -> Vec<u8> {
+        let mut px = vec![255u8; w * h * 4];
+        let y0 = (h - rows) / 2;
+        for y in y0..y0 + rows {
+            for x in (4..w - 4).step_by(5) {
+                for dx in 0..2 {
+                    let i = (y * w + x + dx) * 4;
+                    px[i..i + 3].copy_from_slice(&[0, 0, 0]);
+                }
+            }
+        }
+        px
+    }
+
+    #[test]
+    fn small_text_is_upscaled_before_ocr() {
+        let (w, h) = (300usize, 40usize);
+        let px = small_text(w, h, 8);
+        let mut t = OcrLineTracker::new();
+        t.feed_rgba(&px, w, h);
+        match t.feed_rgba(&px, w, h) {
+            FrameAction::Ocr {
+                rgba,
+                width,
+                height,
+            } => {
+                // 字高 8 → 放 3 倍到 24。
+                assert_eq!((width, height), (900, 120));
+                assert_eq!(rgba.len(), 900 * 120 * 4);
+            }
+            other => panic!("expected OCR, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn upscale_respects_ocr_max_dimension() {
+        assert_eq!(upscale_factor(8, 300, 40), 3);
+        assert_eq!(upscale_factor(4, 300, 40), 4);
+        assert_eq!(upscale_factor(20, 300, 40), 1);
+        assert_eq!(upscale_factor(0, 300, 40), 1);
+        // 1800 宽放 3 倍超过 2600：退到 1 倍（2 倍 3600 也超）。
+        assert_eq!(upscale_factor(8, 1800, 100), 1);
+        assert_eq!(upscale_factor(8, 1000, 100), 2);
+    }
+
+    #[test]
+    fn estimate_text_height_takes_median_ink_run() {
+        let (w, h) = (100usize, 60usize);
+        let mut px = vec![255u8; w * h * 4];
+        for (y0, rows) in [(5usize, 10usize), (25, 12), (45, 11)] {
+            for y in y0..y0 + rows {
+                for x in (2..98).step_by(4) {
+                    let i = (y * w + x) * 4;
+                    px[i..i + 3].copy_from_slice(&[0, 0, 0]);
+                }
+            }
+        }
+        let luma = to_luma(&px, w, h);
+        assert_eq!(estimate_text_height(&luma, w, h), 11);
+        assert_eq!(estimate_text_height(&to_luma(&frame(0), W, H), W, H), 0);
+    }
+
+    #[test]
+    fn binarize_makes_dark_text_on_white_for_both_polarities() {
+        // 浅灰底上的深灰字，与深底上的浅字：都应变成白底黑字。
+        let (w, h) = (40usize, 10usize);
+        for (bg, fg) in [(180u8, 90u8), (30u8, 220u8)] {
+            let mut px = Vec::with_capacity(w * h * 4);
+            for y in 0..h {
+                for x in 0..w {
+                    let c = if (3..7).contains(&y) && x % 5 == 0 {
+                        fg
+                    } else {
+                        bg
+                    };
+                    px.extend_from_slice(&[c, c, c, 255]);
+                }
+            }
+            let out = binarize_rgba(&px, w, h);
+            let text = (4 * w + 5) * 4;
+            let ground = 4; // (x=1, y=0)
+            assert_eq!(&out[text..text + 4], &[0, 0, 0, 255], "bg={bg} fg={fg}");
+            assert_eq!(
+                &out[ground..ground + 4],
+                &[255, 255, 255, 255],
+                "bg={bg} fg={fg}"
+            );
+        }
+    }
+
+    #[test]
+    fn configure_binarize_reoffers_the_same_frame() {
+        let mut t = OcrLineTracker::new();
+        let mut px = frame(5);
+        // 灰底：二值化后底变纯白，可以和原图区分。
+        for p in px.chunks_exact_mut(4) {
+            if p[0] == 255 {
+                p[..3].copy_from_slice(&[200, 200, 200]);
+            }
+        }
+        t.feed_rgba(&px, W, H);
+        assert!(is_ocr(&t.feed_rgba(&px, W, H)));
+        assert_eq!(t.feed_rgba(&px, W, H), FrameAction::Idle);
+        t.configure(Preprocess { binarize: true });
+        match t.feed_rgba(&px, W, H) {
+            FrameAction::Ocr { rgba, .. } => assert_eq!(&rgba[..4], &[255, 255, 255, 255]),
+            other => panic!("expected re-OCR after configure, got {other:?}"),
+        }
+        // 同样的选项再设一次：不作废。
+        t.configure(Preprocess { binarize: true });
+        assert_eq!(t.feed_rgba(&px, W, H), FrameAction::Idle);
+        // reset 保留选项。
+        t.reset();
+        t.feed_rgba(&px, W, H);
+        match t.feed_rgba(&px, W, H) {
+            FrameAction::Ocr { rgba, .. } => assert_eq!(&rgba[..4], &[255, 255, 255, 255]),
+            other => panic!("expected OCR, got {other:?}"),
+        }
+    }
+
     #[test]
     fn normalize_removes_spaces_between_cjk_only() {
         assert_eq!(normalize_lines("こ ん に ち は"), "こんにちは");
@@ -813,6 +1250,13 @@ mod tests {
                 status::BAD_INPUT
             );
             assert_eq!(ffc_ocrline_reset(h), status::OK);
+            assert_eq!(ffc_ocrline_configure(h, flags::BINARIZE), status::OK);
+            assert_eq!(ffc_ocrline_configure(h, 0), status::OK);
+            assert_eq!(ffc_ocrline_configure(h, 0x80), status::INVALID_ARGUMENT);
+            assert_eq!(
+                ffc_ocrline_configure(std::ptr::null_mut(), 0),
+                status::NULL_ARGUMENT
+            );
             let mut meta = [9u32; 3];
             let region = [0.0f32, 0.0, 1.0, 1.0];
             assert_eq!(

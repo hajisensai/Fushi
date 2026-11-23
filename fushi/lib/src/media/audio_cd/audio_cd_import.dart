@@ -45,15 +45,14 @@ Future<bool> importAudioCdIfPresent(
 }) async {
   final AudioCdLayout? layout = audioCdLayoutOfDirectory(dir);
   if (layout == null) return false;
-  if (!_canRip(layout, dir)) {
+  if (!canRipAudioCd(layout, dir)) {
     FushiToast.show(
       msg: t.media_audio_cd_cda_unsupported,
       severity: ToastSeverity.warning,
     );
     return false;
   }
-  // 'audio_cd' 登记在 AppPaths.fushiOwnedDocumentsEntries：数据根迁移时随根搬走。
-  final Directory outputRoot = await AppPaths.documentsSubdirectory('audio_cd');
+  final Directory outputRoot = await audioCdRipOutputRoot();
   if (!context.mounted) return true;
   final String? ripped = await showAppDialog<String>(
     context: context,
@@ -65,14 +64,9 @@ Future<bool> importAudioCdIfPresent(
     ),
   );
   if (ripped == null) return true;
-  // 一张盘就是一张专辑：抓轨目录只有这一层，不递归。
-  final SourceScanSummary? summary = await importLocalFolderOnceAt(
+  final SourceScanSummary? summary = await importRippedAudioCd(
     db: db,
-    // 音乐来源不扫书，没有有声书要转录。
-    transcribeAudiobook: null,
-    mediaKind: SourceLibraryKind.music.dbValue,
-    path: ripped,
-    recursive: false,
+    directory: ripped,
     onScanning: onScanning,
   );
   final String? error = summary?.error;
@@ -85,14 +79,35 @@ Future<bool> importAudioCdIfPresent(
   return true;
 }
 
+/// 抓好的目录按「仅此一次」导入音乐库（[importAudioCdIfPresent] 与控制通道
+/// `music audio-cd` 共用）。一张盘就是一张专辑：抓轨目录只有这一层，不递归。
+Future<SourceScanSummary?> importRippedAudioCd({
+  required FushiDatabase db,
+  required String directory,
+  void Function(int sourceId)? onScanning,
+}) => importLocalFolderOnceAt(
+  db: db,
+  // 音乐来源不扫书，没有有声书要转录。
+  transcribeAudiobook: null,
+  mediaKind: SourceLibraryKind.music.dbValue,
+  path: directory,
+  recursive: false,
+  onScanning: onScanning,
+);
+
+/// 抓轨输出根 `<documents>/audio_cd/`（对话框与控制通道共用）。
+/// 'audio_cd' 登记在 AppPaths.fushiOwnedDocumentsEntries：数据根迁移时随根搬走。
+Future<Directory> audioCdRipOutputRoot() =>
+    AppPaths.documentsSubdirectory('audio_cd');
+
 /// Windows 光驱要按扇区读，只有本机光驱能抓；macOS 挂载点每轨已是普通 AIFF 文件，
 /// 任何带随包统一 FFmpeg（含 aiff / flac）的桌面都能转。移动端没有光驱，不接管。
-bool _canRip(AudioCdLayout layout, String dir) => switch (layout) {
+bool canRipAudioCd(AudioCdLayout layout, String dir) => switch (layout) {
   AudioCdLayout.windowsCda => Platform.isWindows && isWindowsCdromPath(dir),
   AudioCdLayout.macCddafs => audioCdRipAvailableOnHost,
 };
 
-/// 本机能否抓轨（[_canRip] 任一布局可能成立的平台集合）。视频「导入文件夹」块的
+/// 本机能否抓轨（[canRipAudioCd] 任一布局可能成立的平台集合）。视频「导入文件夹」块的
 /// 音频 CD 附注按它显示，两处不再各写一份平台判据。
 bool get audioCdRipAvailableOnHost =>
     Platform.isMacOS || Platform.isWindows || Platform.isLinux;

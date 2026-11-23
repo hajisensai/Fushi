@@ -50,7 +50,8 @@ List<CtlRoute> buildLibraryScrapeCtlRoutes(OpContext context) {
       );
       final ItemScrapeDetails patch = _detailsOf(call);
       if (call.optBool('replace') == true) {
-        await store.writeMeta(key, patch);
+        // 明确的整行替换：用户锁住的字段也写新值，锁保留（之后刮削仍不覆盖）。
+        await store.writeMeta(key, patch, overrideLocked: true);
       } else {
         await store.mergeMeta(key, patch);
       }
@@ -188,7 +189,7 @@ Future<void> restoreItemScrapeState(
   final ItemScrapeStore store = libraryItemScrapeStoreFactory(app.database);
   final Object? meta = before['meta'];
   if (meta is Map) {
-    await store.writeMeta(
+    await store.restoreMeta(
       key,
       itemScrapeDetailsFromJson(Map<String, Object?>.from(meta)),
     );

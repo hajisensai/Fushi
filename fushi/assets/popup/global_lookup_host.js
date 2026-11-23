@@ -4230,6 +4230,92 @@
     reportSelectionState();
   }
 
+  // BUG-5310 — app 外查词热键（键盘 / 手柄 / 鼠标侧键）按下时卡片里有非空选区：
+  // native 已据 overlaySelection 判定由卡片接手（LookupOverlaySelection），这里把
+  // 选区当作「点了释义正文」交给它所在的卡片 realm，经 realm 自己的桥发
+  // textSelected —— wrapFrameBridge 照常盖 __frameId / 路由、把锚框换成窗口坐标，
+  // Dart 走与单击正文完全相同的嵌套查词链，不另开一条。只认卡片 iframe 的 realm
+  // （宿主文档自己没有词条，也没有可挂子卡的 frame id）。
+  function selectionRealm() {
+    if (lastSelectionWindow && lastSelectionWindow !== window &&
+        selectionTextOf(lastSelectionWindow)) {
+      return lastSelectionWindow;
+    }
+    var found = null;
+    frames.forEach(function (record) {
+      if (found || !record || !record.active || !record.iframe) {
+        return;
+      }
+      var win = null;
+      try {
+        win = record.iframe.contentWindow;
+      } catch (e) {
+        win = null;
+      }
+      if (selectionTextOf(win)) {
+        found = win;
+      }
+    });
+    return found;
+  }
+
+  function lookupSelection() {
+    var win = selectionRealm();
+    if (!win) {
+      // native 以为有选区而现场没有：与 Ctrl+C 的空选区分支同样复位，下一次
+      // 按键就回到抓前台程序的选区。
+      resetSelectionReport();
+      return false;
+    }
+    try {
+      var selection = win.getSelection();
+      // 注音不进查询词（popup.js __fushiSelectionPlainText，与复制同口径）。
+      var text = typeof win.__fushiSelectionPlainText === 'function'
+          ? win.__fushiSelectionPlainText(selection)
+          : String(selection.toString() || '');
+      text = String(text || '').trim();
+      var bridge = win.flutter_inappwebview;
+      if (!text || !bridge || typeof bridge.callHandler !== 'function') {
+        return false;
+      }
+      var helper = win.fushiSelection;
+      var rect = null;
+      if (selection.rangeCount > 0) {
+        var range = selection.getRangeAt(0);
+        var rects = range.getClientRects ? range.getClientRects() : null;
+        var raw = rects && rects.length ? rects[0]
+            : range.getBoundingClientRect();
+        var node = range.startContainer;
+        var element = node && node.nodeType === 1 ? node
+            : (node ? node.parentElement : null);
+        // 与 selection.js getSelectionRect 同一换算：字框换回客户区坐标（CSS zoom）。
+        var client = helper && element &&
+            typeof helper.rectToClientSpace === 'function'
+            ? helper.rectToClientSpace(element, raw)
+            : raw;
+        if (client) {
+          rect = {
+            x: client.left,
+            y: client.top,
+            width: client.width,
+            height: client.height,
+          };
+        }
+      }
+      // selection.js 记着的是上一次「单击扫词」的选区；嵌套查词随后会让它
+      // highlightSelection，残留就会把高亮打到旧位置。拖选的原生选区本身已可见，
+      // 清掉记录让高亮回报 null，子卡锚在选区首段字框上。
+      if (helper && typeof helper === 'object') {
+        helper.selection = null;
+      }
+      bridge.callHandler('textSelected', text, rect);
+      return true;
+    } catch (e) {
+      window.console?.debug?.('[global-lookup] lookupSelection failed', e);
+      return false;
+    }
+  }
+
   // Must run BEFORE the shell leaves the DOM: a detached iframe's contentWindow
   // is null, so the identity check against lastSelectionWindow is impossible
   // afterwards.
@@ -4290,6 +4376,7 @@
     __installed: true,
     selectedText: selectedText,
     resetSelectionReport: resetSelectionReport,
+    lookupSelection: lookupSelection,
     _watchFrameSelection: watchFrameSelection,
     renderStack: renderStack,
     prewarmStatic: prewarmStatic,

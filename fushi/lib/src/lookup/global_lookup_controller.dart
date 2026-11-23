@@ -1035,6 +1035,9 @@ class GlobalLookupController {
   /// 选中文本照样取，只有出口不同——结果落到主窗查词页，而不是对着一个不存在的
   /// 覆盖窗调 showAt。见 [_onHotKeyRouted] 里的 `overlay` 分支。
   Future<void> triggerSelectionLookup({String source = 'hotkey'}) async {
+    if (await _handOffToCardSelection(source)) {
+      return;
+    }
     final GlobalLookupRoute route = GlobalLookupRoute.desktop(
       lookupEpoch: ++_desktopLookupEpoch,
     );
@@ -1042,6 +1045,53 @@ class GlobalLookupController {
       route,
       () => _onHotKeyRouted(route, source),
     );
+  }
+
+  /// BUG-5310 — 卡片在屏、用户在卡片里选了一段字再按查词触发：这次触发归卡片，
+  /// 在卡片里按这段选区嵌套查词，而不是走下面的「收卡 → 抓前台选区」。
+  ///
+  /// 卡片窗口 WS_EX_NOACTIVATE 且激活被 native 否决，永远不是前台；旧路径先
+  /// [GlobalLookupChannel.hide] 把卡收掉，再对前台程序抓选区，抓到的是底下程序里
+  /// 原来那个词——表现为卡片闪一下、在鼠标处重新弹出同一个词，嵌套查词从不发生。
+  ///
+  /// 判据在 native（host 经 overlaySelection 上报的选区 && 卡片在屏，与卡片内
+  /// Ctrl+C 接管同源），Dart 不存镜像。必须在铸新路由**之前**问：host 发回的
+  /// `textSelected` 盖的是卡片自己的路由，铸新路由会先把它作废，嵌套结果被丢弃。
+  /// 卡片不在场（没有在途的 desktop 路由）时同步返回 false，不多一次往返，
+  /// 原有「入口在首个 await 前激活路由」的时序不变。
+  Future<bool> _handOffToCardSelection(String source) async {
+    final GlobalLookupRoute? active = _activeRoute;
+    if (!isSupported ||
+        active == null ||
+        active.source != 'desktop' ||
+        !GlobalLookupChannel.isRouteValid(active)) {
+      return false;
+    }
+    final bool taken;
+    try {
+      taken = await GlobalLookupChannel.runWithRoute(
+        active,
+        GlobalLookupChannel.lookupOverlaySelection,
+      );
+    } catch (e, st) {
+      // 问不到就当卡片不接手：这次按键照旧查前台选区，并留下诊断。
+      glog('hotkey: card-selection hand-off EXCEPTION $e\n$st');
+      return false;
+    }
+    if (taken) {
+      glog('hotkey: card selection -> nested lookup (source=$source)');
+    }
+    return taken;
+  }
+
+  /// 测试缝：铸一条 desktop 路由并设为当前路由，等价于「一张桌面查词卡在场」。
+  @visibleForTesting
+  GlobalLookupRoute debugActivateDesktopRoute() {
+    final GlobalLookupRoute route = GlobalLookupRoute.desktop(
+      lookupEpoch: ++_desktopLookupEpoch,
+    );
+    _activateRoute(route);
+    return route;
   }
 
   Future<void> _onHotKeyRouted(GlobalLookupRoute route, String source) async {

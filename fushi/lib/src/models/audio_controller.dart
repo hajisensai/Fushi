@@ -6,24 +6,52 @@ import 'package:fushi/i18n/strings.g.dart' show t;
 import 'package:fushi/src/platform/android/android_notification_channels.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
 
-/// 系统媒体会话（锁屏 / 通知 / 耳机键）此刻归谁：有声书与音乐**同一时刻只有一个**
-/// 持有（设计 §7.5），另一个暂停。
-enum MediaSessionOwner { none, audiobook, music }
+/// 系统媒体会话（锁屏 / 通知 / 耳机键 / Android 媒体前台服务）此刻归谁。系统那边一个
+/// app 只有一套媒体控件，所以有声书、音乐、视频（后台继续播放声音时）**同一时刻只有
+/// 一个**持有（音乐设计 §7.5；视频见拍板台 42UUu_kcwD-media）。规则：后开始出声的一方
+/// 认领会话，被抢走的一方暂停（[MediaSessionSeat.onPreempted]）。
+enum MediaSessionOwner { none, audiobook, music, video }
 
 class AudioController {
-  /// 当前持有媒体会话的一方。控制流按它分发：有声书收除音乐持有外的全部事件（保持
-  /// 既有行为），音乐只在自己持有时收。
+  /// 当前持有媒体会话的一方。控制流按它分发（[ownsSession]）：有声书在无人持有时
+  /// 也收（保持既有行为），音乐 / 视频只在自己持有时收。
   final ValueNotifier<MediaSessionOwner> sessionOwner =
       ValueNotifier<MediaSessionOwner>(MediaSessionOwner.none);
 
-  /// 认领媒体会话。
-  void claimSession(MediaSessionOwner owner) => sessionOwner.value = owner;
+  /// 各方「会话被别人抢走」时的回调（被抢方据此暂停）。经 [seat] 登记。
+  final Map<MediaSessionOwner, VoidCallback> _preemptHandlers =
+      <MediaSessionOwner, VoidCallback>{};
 
-  /// 只在 [owner] 持有会话时放行的控制流视图。
+  /// 认领媒体会话。从另一方（非 [MediaSessionOwner.none]）手里抢过来时，通知被抢方
+  /// （它登记的 [MediaSessionSeat.onPreempted]）暂停；让回 none 不算抢。
+  void claimSession(MediaSessionOwner owner) {
+    final MediaSessionOwner previous = sessionOwner.value;
+    if (previous == owner) return;
+    sessionOwner.value = owner;
+    if (previous == MediaSessionOwner.none || owner == MediaSessionOwner.none) {
+      return;
+    }
+    _preemptHandlers[previous]?.call();
+  }
+
+  /// [owner] 此刻是否该收系统媒体控制、能不能往通知 / 锁屏推内容：有声书在无人持有
+  /// 时也算（它是这套会话最早的使用者，开书即推通知），其余只认自己持有。
+  bool ownsSession(MediaSessionOwner owner) {
+    final MediaSessionOwner current = sessionOwner.value;
+    if (owner == MediaSessionOwner.audiobook) {
+      return current == MediaSessionOwner.none ||
+          current == MediaSessionOwner.audiobook;
+    }
+    return current == owner;
+  }
+
+  /// [owner] 一方的座位：认领 / 让出 / 被抢回调都经它。
+  MediaSessionSeat seat(MediaSessionOwner owner) =>
+      MediaSessionSeat._(this, owner);
+
+  /// 只在 [owner] 持有会话时放行的控制流视图（判据 [ownsSession]）。
   Stream<T> streamFor<T>(Stream<T> source, MediaSessionOwner owner) =>
-      owner == MediaSessionOwner.music
-      ? source.where((_) => sessionOwner.value == MediaSessionOwner.music)
-      : source.where((_) => sessionOwner.value != MediaSessionOwner.music);
+      source.where((_) => ownsSession(owner));
 
   Stream<MediaPlayIntent> get playIntentStream => _playController.stream;
   final StreamController<MediaPlayIntent> _playController =
@@ -118,6 +146,7 @@ class AudioController {
   }
 
   void dispose() {
+    _preemptHandlers.clear();
     sessionOwner.dispose();
     _mediaPauseController.close();
     _playPauseHeadsetController.close();
@@ -128,5 +157,41 @@ class AudioController {
     _skipNextController.close();
     _skipPreviousController.close();
     _toggleFloatingLyricController.close();
+  }
+}
+
+/// 一方在系统媒体会话上的座位（[AudioController.seat]）。参与方只经它认领、让出、
+/// 登记「被抢」回调，不直接改 [AudioController.sessionOwner]。
+class MediaSessionSeat {
+  MediaSessionSeat._(this._controller, this.owner);
+
+  final AudioController _controller;
+  final MediaSessionOwner owner;
+
+  /// 本方此刻该收控制、能往通知 / 锁屏推内容（[AudioController.ownsSession]）。
+  bool get held => _controller.ownsSession(owner);
+
+  /// 本方正式持有（不含有声书「无人持有也算」的兜底）。
+  bool get claimed => _controller.sessionOwner.value == owner;
+
+  /// 认领会话；返回持有方是否因此换了（换了的话调用方要重推自己的媒体卡）。
+  bool claim() {
+    final bool changed = _controller.sessionOwner.value != owner;
+    _controller.claimSession(owner);
+    return changed;
+  }
+
+  /// 本方正式持有时让回无人持有；已被别人抢走时什么都不做。
+  void release() {
+    if (claimed) _controller.claimSession(MediaSessionOwner.none);
+  }
+
+  /// 会话被另一方抢走时的回调（被抢方在这里暂停）。设 null 注销。
+  set onPreempted(VoidCallback? callback) {
+    if (callback == null) {
+      _controller._preemptHandlers.remove(owner);
+    } else {
+      _controller._preemptHandlers[owner] = callback;
+    }
   }
 }

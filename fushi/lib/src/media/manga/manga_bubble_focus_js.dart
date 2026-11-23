@@ -358,6 +358,9 @@ String mangaBubbleFocusJs({
     _tsBoxesOf(b).forEach(function(box){
       var c = box.cloneNode(true);
       c.removeAttribute('style');
+      // 克隆是 static 横排，没有有向外框（BUG-5308 的 --ocr-frame-* 随 style 一起去掉）；
+      // 留着 data-ocr-frame 会让「显示识别范围」把斜块的描边当成画在 ::before 上而丢掉。
+      c.removeAttribute('data-ocr-frame');
       c.classList.remove('manga-speaking', 'manga-ts-current', 'manga-ts-hover');
       c.querySelectorAll('.ocr-char').forEach(function(ch){ ch.removeAttribute('style'); });
       wrap.appendChild(c);

@@ -299,6 +299,20 @@ class OverlayWindowChannel {
 
   Future<bool> isShowing() async => (await _invoke<bool>('isShowing')) ?? false;
 
+  /// BUG-5310 — app 外查词触发（热键 / 手柄 / 鼠标侧键）时问卡片要不要接手：卡片
+  /// 在屏且里面有非空选区，native 让 host 把选区当作单击正文发 `textSelected`
+  /// （走既有嵌套查词链），回 true；否则回 false，调用方照旧收卡、抓前台选区。
+  ///
+  /// 只有 Windows 覆盖窗上报卡片选区（BUG-2651 的 overlaySelection）；macOS / Linux
+  /// 的 native 没有这条方法，[MissingPluginException] 就是「卡片不接手」。
+  Future<bool> lookupOverlaySelection() async {
+    try {
+      return (await _invoke<bool>('lookupOverlaySelection')) ?? false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
   /// Temporarily removes the routed card (and its native shadow) from DWM while
   /// a galgame frame is captured.  This is deliberately distinct from [hide]:
   /// the WebView, route and dictionary state remain live and can be restored by

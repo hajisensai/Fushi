@@ -405,6 +405,7 @@ extension _VideoLayout on _VideoFushiPageState {
         _controlLayoutNotifier,
         _subtitleListVisible,
         _episodeListVisible,
+        _liveChatVisible,
         // BUG-1798：查词浮层也进 theme 的 `hideMouseOnControlsRemoval` 判据
         // （controls_theme.part.dart），同 r5 的教训——不并进来就是「值改了、theme 不重建」，
         // 弹窗一开控制条 theme 仍是上一轮的 true，光标照样被 fork 那层 cursor:none 吃掉。
@@ -1296,6 +1297,10 @@ extension _VideoLayout on _VideoFushiPageState {
       listenable: Listenable.merge(<Listenable>[
         _subtitleListVisible,
         _episodeListVisible,
+        // 聊天回放栏（拍板台 zTedU_pOQF）与字幕列表同为推挤式侧栏、互斥；查词浮层开 / 关
+        // 时聊天栏上的被查词高亮跟着亮灭。
+        _liveChatVisible,
+        _lookupOverlayActive,
       ]),
       builder: (BuildContext _, __) {
         final bool visible = _subtitleListVisible.value;
@@ -1306,9 +1311,14 @@ extension _VideoLayout on _VideoFushiPageState {
             _subtitleJumpSidePanel(
               controller,
               visible,
-              // 网页档：站点 WebView 垫在画面槽最底层（随字幕列表挤窄），
-              // 见 web_source.part.dart。
-              _webMode ? _wrapWebVideoSurface(video) : video,
+              // 聊天回放栏是画面格里再挤出的一列：两列互斥，同一时刻至多一列展开。
+              _liveChatSidePanel(
+                controller,
+                _liveChatVisible.value,
+                // 网页档：站点 WebView 垫在画面槽最底层（随字幕列表挤窄），
+                // 见 web_source.part.dart。
+                _webMode ? _wrapWebVideoSurface(video) : video,
+              ),
             ),
             // BUG-1501：选集横轨打开时，底部面板之外的视频区域就是点外关闭面。
             // barrier 放在视频之上、横轨之下：点视频只关选集且不穿透播放器手势；

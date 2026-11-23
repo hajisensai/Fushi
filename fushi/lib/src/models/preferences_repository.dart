@@ -1317,6 +1317,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 捕获工作台「新句自动查词」（反馈 q9Jcu_Zr2_）：新台词到达且列表在跟随实时时，
+  /// 自动从该句第一个可查字起弹查词。默认关——自动弹窗会挡画面、频繁打扰。
+  bool get texthookerAutoLookupNewLines =>
+      getPref('texthooker_auto_lookup_new_lines', defaultValue: false) as bool;
+
+  Future<void> setTexthookerAutoLookupNewLines(bool value) async {
+    await setPref('texthooker_auto_lookup_new_lines', value);
+    notifyListeners();
+  }
+
   // ── galgame 游戏库（首页「游戏」tab）─────────────────────────────────────
 
   /// legacy：v55 之前用户添加的 galgame 列表（单一 JSON 数组落 KV 表）。
@@ -1414,6 +1424,17 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setScreenOcrCardImage(bool value) async {
     await setPref('screen_ocr.card_image', value);
+    notifyListeners();
+  }
+
+  /// 截屏识字 / 拍照查词每次点「+」制卡前先推出截图框选页（拍板 EuOLprw_dV 选 b：
+  /// 用户想让卡图带上文字旁边的发帖人、时间等上下文）。「制卡」按框出图，「×」不制这张
+  /// 卡。只在 [screenOcrCardImage] 开着时生效。默认关：一键「+」照旧自动裁到文本块。
+  bool get screenOcrCardFrameOnMine =>
+      getPref('screen_ocr.card_frame_on_mine', defaultValue: false);
+
+  Future<void> setScreenOcrCardFrameOnMine(bool value) async {
+    await setPref('screen_ocr.card_frame_on_mine', value);
     notifyListeners();
   }
 
@@ -3203,6 +3224,24 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoPortraitSubtitleList(bool value) async {
     await setPref('video_portrait_subtitle_list', value);
+    notifyListeners();
+  }
+
+  /// 拍板台 zTedU_pOQF：YouTube 直播回放带聊天回放时，开始播放就打开聊天栏（默认关）。
+  bool get videoLiveChatAutoOpen =>
+      getPref('video_live_chat_auto_open', defaultValue: false) as bool;
+
+  Future<void> setVideoLiveChatAutoOpen(bool value) async {
+    await setPref('video_live_chat_auto_open', value);
+    notifyListeners();
+  }
+
+  /// 拍板台 zTedU_pOQF：聊天栏每条消息上方显示发送者（默认开）。
+  bool get videoLiveChatShowAuthor =>
+      getPref('video_live_chat_show_author', defaultValue: true) as bool;
+
+  Future<void> setVideoLiveChatShowAuthor(bool value) async {
+    await setPref('video_live_chat_show_author', value);
     notifyListeners();
   }
 
