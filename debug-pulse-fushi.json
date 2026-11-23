@@ -1,12 +1,70 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T14:00:27Z",
+ "generatedAt": "2026-11-23T14:23:22Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "4d07116942973886b753551ff22d9390930bc736",
-  "seq": 32021
+  "sha": "a601959fe5c8b9d6b2b661d292f98b8a53be9fda",
+  "seq": 32047
  },
  "builds": [
+  {
+   "seq": 32021,
+   "version": "3.4.0",
+   "sha": "4d07116942973886b753551ff22d9390930bc736",
+   "unknown": false,
+   "publishedAt": "2026-11-23T14:23:11Z",
+   "testflight": false,
+   "baseSeq": 32001,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "4d07116942973886b753551ff22d9390930bc736",
+     "subject": "docs(bugs): BUG-5347 正文标题与文件名对齐"
+    },
+    {
+     "sha": "78245c86828bcbc21bf986b954d5c38d5ac59951",
+     "subject": "docs(bugs): 第 4 批合流后重建索引"
+    },
+    {
+     "sha": "7126c4e72346d572f5148311a51a54b026a47c46",
+     "subject": "Merge #4284 (claude/dec-rf-external-lookup-sentence-picker) into develop"
+    },
+    {
+     "sha": "26b0be11f86ad0ae2af042a5e29066308733762a",
+     "subject": "Merge #4283 (claude/dec-r721-manga-swipe-sensitivity) into develop"
+    },
+    {
+     "sha": "94726a91949a55784d0059ce194a5c1c979fefbb",
+     "subject": "Merge #4281 (claude/dec-pr4255a-manifest-unknown-keys) into develop"
+    },
+    {
+     "sha": "c5129efb1167f7d40e6aff5e56d527d2cc64da4d",
+     "subject": "fix(video): 直播聊天栏关按钮去掉局部 VisualDensity；聊天内容字号按视频内容面板登记 m3e 豁免（develop 守卫红）"
+    },
+    {
+     "sha": "2791c70dac4ea7025c53ef5045652ae2c7dd8ce3",
+     "subject": "Merge #4282 (claude/dec-ew0-import-audiobook-first) into develop"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983413"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983413"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983413"
+    }
+   }
+  },
   {
    "seq": 32001,
    "version": "3.4.0",
@@ -371,90 +429,59 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 31534,
-   "version": "3.4.0",
-   "sha": "e5215fc34e23ff547fee181549eea9d423dec35d",
-   "unknown": false,
-   "publishedAt": "2026-11-23T04:38:56Z",
-   "testflight": false,
-   "baseSeq": 31532,
-   "prs": [
-    4224
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "4d07116942973886b753551ff22d9390930bc736",
-  "headSeq": 32021,
+  "headSha": "a601959fe5c8b9d6b2b661d292f98b8a53be9fda",
+  "headSeq": 32047,
   "prs": [],
   "direct": [
    {
-    "sha": "4d07116942973886b753551ff22d9390930bc736",
-    "subject": "docs(bugs): BUG-5347 正文标题与文件名对齐"
+    "sha": "a601959fe5c8b9d6b2b661d292f98b8a53be9fda",
+    "subject": "fix: 查词换词面板与词块行改用 FushiAnimatedSize（关动效时零时长 AnimatedSize 布局中自我置脏断言）"
    },
    {
-    "sha": "78245c86828bcbc21bf986b954d5c38d5ac59951",
-    "subject": "docs(bugs): 第 4 批合流后重建索引"
+    "sha": "5fa57da73974bc96dec3664cd0482ed7e19790b0",
+    "subject": "fix: #4249 歌词页测试卡死（卸载补零延时帧冲掉 drift 关流 timer）；MV 背景开关关不掉（BUG-5348）；补本批新设置的效果证据"
    },
    {
-    "sha": "7126c4e72346d572f5148311a51a54b026a47c46",
-    "subject": "Merge #4284 (claude/dec-rf-external-lookup-sentence-picker) into develop"
+    "sha": "777646d7b20705f418b30c038aa593d731892dcb",
+    "subject": "Merge #4258 (claude/dec-card-audio-follow-volume) into develop"
    },
    {
-    "sha": "26b0be11f86ad0ae2af042a5e29066308733762a",
-    "subject": "Merge #4283 (claude/dec-r721-manga-swipe-sensitivity) into develop"
+    "sha": "c8e43b062bcfa026059b49fdaac551318e73b361",
+    "subject": "Merge #4252 (claude/dec-ios-inbox-games-dir) into develop"
    },
    {
-    "sha": "94726a91949a55784d0059ce194a5c1c979fefbb",
-    "subject": "Merge #4281 (claude/dec-pr4255a-manifest-unknown-keys) into develop"
+    "sha": "a577570988a637eeeb8c6ba99626efdc477e761c",
+    "subject": "Merge #4253 (claude/dec-sidepanel-stats) into develop"
    },
    {
-    "sha": "c5129efb1167f7d40e6aff5e56d527d2cc64da4d",
-    "subject": "fix(video): 直播聊天栏关按钮去掉局部 VisualDensity；聊天内容字号按视频内容面板登记 m3e 豁免（develop 守卫红）"
+    "sha": "9315ba53d48d962489ca5d01ae0fa0ff3625c920",
+    "subject": "Merge #4254 (claude/dec-skip-sentence-audio) into develop"
    },
    {
-    "sha": "2791c70dac4ea7025c53ef5045652ae2c7dd8ce3",
-    "subject": "Merge #4282 (claude/dec-ew0-import-audiobook-first) into develop"
+    "sha": "bb8e7966ccad19c9c4e401c8a3d91b26e0ca7d9d",
+    "subject": "Merge #4256 (claude/dec-music-lyric-chars) into develop"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983447"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45193587688"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983413"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45193587734"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983413"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45193587734"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45179983413"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45193587734"
    }
   }
  },
@@ -583,15 +610,6 @@
    "mergedAt": "2026-11-23T04:32:11Z",
    "additions": 2981,
    "deletions": 37,
-   "labels": []
-  },
-  "4224": {
-   "number": 4224,
-   "title": "feat(srs4): 迁移报告补 ID 溯源，对拍差异能推出原因（BUG-5269）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-23T03:12:22Z",
-   "additions": 734,
-   "deletions": 7,
    "labels": []
   },
   "4227": {
