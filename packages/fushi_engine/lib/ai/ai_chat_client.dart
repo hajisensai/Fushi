@@ -492,8 +492,10 @@ class AiChatClient {
     DateTime Function()? clock,
     AiRateLimiter? rateLimiter,
     AiRelayTransport? relayTransport,
+    Duration requestTimeout = kAiChatRequestTimeout,
   }) : _client = client ?? createAppHttpIoClient(),
        _relayTransport = relayTransport,
+       _requestTimeout = requestTimeout,
        _ownsClient = client == null,
        _healthStore = healthStore,
        _clock = clock ?? DateTime.now,
@@ -501,6 +503,12 @@ class AiChatClient {
 
   final http.Client _client;
   final bool _ownsClient;
+
+  /// 这个客户端每次 chat 请求的整体时限（默认 [kAiChatRequestTimeout]）。回复本来
+  /// 就长的调用方（有声书选角一块要几千 token）在本地模型上生成要几分钟，用默认
+  /// 的 90 秒会在模型还在正常吐字时超时、再被当成网络抖动整块重试（BUG-5367），
+  /// 所以它们建客户端时给更宽的时限。
+  final Duration _requestTimeout;
 
   /// 「互联主机」提供商（[AiProviderConfig.relay]）的出口；null = 现取全局装配点
   /// [aiRelayTransport]（app 在配对表可读之后才装上，客户端可能比那更早建）。
@@ -1703,11 +1711,11 @@ class AiChatClient {
 
   Future<http.Response> _send(
     Future<http.Response> Function() send, {
-    Duration timeout = kAiChatRequestTimeout,
+    Duration? timeout,
   }) async {
     final http.Response response;
     try {
-      response = await send().timeout(timeout);
+      response = await send().timeout(timeout ?? _requestTimeout);
     } catch (_) {
       // 原始异常可能带完整 URL（含 Gemini 的 ?key=），绝不透出。
       throw const AiChatFailure('network_error');
