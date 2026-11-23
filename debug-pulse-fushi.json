@@ -1,12 +1,43 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T03:59:17Z",
+ "generatedAt": "2026-11-23T04:39:10Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "e5215fc34e23ff547fee181549eea9d423dec35d",
-  "seq": 31534
+  "sha": "e272fb9a51dd4b5af1ad66564becef33e60ecc01",
+  "seq": 31580
  },
  "builds": [
+  {
+   "seq": 31534,
+   "version": "3.4.0",
+   "sha": "e5215fc34e23ff547fee181549eea9d423dec35d",
+   "unknown": false,
+   "publishedAt": "2026-11-23T04:38:56Z",
+   "testflight": false,
+   "baseSeq": 31532,
+   "prs": [
+    4224
+   ],
+   "direct": [],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
+    },
+    "macos": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
+    }
+   }
+  },
   {
    "seq": 31532,
    "version": "3.4.0",
@@ -109,86 +140,51 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 31437,
-   "version": "3.4.0",
-   "sha": "6941e35eb80ed5e380256375757243001fa7d067",
-   "unknown": false,
-   "publishedAt": "2026-11-22T16:41:46Z",
-   "testflight": false,
-   "baseSeq": 31429,
-   "prs": [
-    4178,
-    4180
-   ],
-   "direct": [],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45034809826"
-    },
-    "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45034809826"
-    },
-    "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45034809826"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "e5215fc34e23ff547fee181549eea9d423dec35d",
-  "headSeq": 31534,
+  "headSha": "e272fb9a51dd4b5af1ad66564becef33e60ecc01",
+  "headSeq": 31580,
   "prs": [
-   4224
+   4204,
+   4206,
+   4207,
+   4205,
+   4202,
+   4220,
+   4203,
+   4209,
+   4219,
+   4229,
+   4227
   ],
-  "direct": [],
+  "direct": [
+   {
+    "sha": "160eb9ae14eeed84b45408c7d0c07a74293bdd8d",
+    "subject": "chore(bugs): settle BUG number collisions on 87cb892ac"
+   }
+  ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586906"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45112985799"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45112985837"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45112985837"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45104586847"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45112985837"
    }
   }
  },
  "prs": {
-  "4178": {
-   "number": 4178,
-   "title": "fix(srs): 默认牌组复活挪进 Rust 内核开库路径，开库读命令回到 1（BUG-5209）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T14:48:23Z",
-   "additions": 198,
-   "deletions": 27,
-   "labels": []
-  },
-  "4180": {
-   "number": 4180,
-   "title": "fix(srs-gen4): 迁移对拍认出协议 3 一侧被旧重放改写过的日志结果（BUG-5250，反馈 RhMpA6bn8v）",
-   "author": "hajisensai",
-   "mergedAt": "2026-11-22T14:48:01Z",
-   "additions": 470,
-   "deletions": 13,
-   "labels": []
-  },
   "4185": {
    "number": 4185,
    "title": "fix(media): 波奇蓝光多卷并成一个合集、首页色块 logo、媒体页滚动卡顿",
@@ -288,6 +284,87 @@
    "deletions": 29,
    "labels": []
   },
+  "4202": {
+   "number": 4202,
+   "title": "fix(interconnect): 配置传输被拒时显示本地化原因（BUG-5261，反馈 G-ebgSnoK8）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:35:10Z",
+   "additions": 460,
+   "deletions": 29,
+   "labels": []
+  },
+  "4203": {
+   "number": 4203,
+   "title": "fix(sync): 互联对端离线不再刷错误日志与诊断（BUG-5262，反馈 w8sFMyflft）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:30:25Z",
+   "additions": 353,
+   "deletions": 14,
+   "labels": []
+  },
+  "4204": {
+   "number": 4204,
+   "title": "fix(srs): gen4 迁移对拍认出被同库另一个 profile 占走行的实体（BUG-5267，反馈 n4WhWEKPtQ）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:37:37Z",
+   "additions": 188,
+   "deletions": 12,
+   "labels": []
+  },
+  "4205": {
+   "number": 4205,
+   "title": "fix(manga-audio): 上一句始终到前一句；成品播放条加音量（BUG-5265 BUG-5266）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:35:31Z",
+   "additions": 503,
+   "deletions": 63,
+   "labels": []
+  },
+  "4206": {
+   "number": 4206,
+   "title": "fix(video): 文件名带 Menu/CM 的同目录特典挂到父作品，文件级与发布级共用特典词表（BUG-5260）",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:37:02Z",
+   "additions": 263,
+   "deletions": 34,
+   "labels": []
+  },
+  "4207": {
+   "number": 4207,
+   "title": "fix(ui): 状态监测页悬浮小窗排第一；音乐「继续收听」卡进播放页",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:35:52Z",
+   "additions": 346,
+   "deletions": 28,
+   "labels": []
+  },
+  "4209": {
+   "number": 4209,
+   "title": "feat(linux): Linux 自动出包真正发布（Flatpak + tar.gz），放开两处过时的 Linux 平台门",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:30:03Z",
+   "additions": 27,
+   "deletions": 15,
+   "labels": []
+  },
+  "4219": {
+   "number": 4219,
+   "title": "feat(lookup): Linux 应用外查词经 AT-SPI 抓整句上下文",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:29:58Z",
+   "additions": 1083,
+   "deletions": 67,
+   "labels": []
+  },
+  "4220": {
+   "number": 4220,
+   "title": "feat(linux): 悬浮字幕 / 桌面歌词窗 Linux 原生后端",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:32:11Z",
+   "additions": 2981,
+   "deletions": 37,
+   "labels": []
+  },
   "4224": {
    "number": 4224,
    "title": "feat(srs4): 迁移报告补 ID 溯源，对拍差异能推出原因（BUG-5269）",
@@ -295,6 +372,24 @@
    "mergedAt": "2026-11-23T03:12:22Z",
    "additions": 734,
    "deletions": 7,
+   "labels": []
+  },
+  "4227": {
+   "number": 4227,
+   "title": "fix(develop): 修 develop 自身的六个守卫红",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:07:26Z",
+   "additions": 195,
+   "deletions": 124,
+   "labels": []
+  },
+  "4229": {
+   "number": 4229,
+   "title": "docs(bugs): 反馈分诊登记 BUG-5274 / BUG-5275",
+   "author": "hajisensai",
+   "mergedAt": "2026-11-23T04:19:56Z",
+   "additions": 23,
+   "deletions": 1,
    "labels": []
   }
  }
