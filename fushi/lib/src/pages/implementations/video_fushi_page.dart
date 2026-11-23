@@ -3164,6 +3164,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   String? _discBookUid;
   String? _discBindingPath;
+
+  /// 原盘菜单当前标题是被扫描切成集的播放列表时，各集的库行与区间（见
+  /// [_discMenuEpisodeProgress]）；其余标题为 null。
+  BlurayMenuTitleBinding? _discMenuEpisodes;
   int _discBindingGeneration = 0;
   int? _discNativeGeneration;
   bool _discMenuWasActive = false;
@@ -7646,8 +7650,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 0」）。镜像后与远端 resume 路径（[_persistRemotePosition]）统一键空间。TODO-885：
   /// 播放列表也按集镜像到 `video_remote_position_<uid>#ep<N>`，让 client 按集恢复 host
   /// 自看进度（与远端剧集列表的按集 key 同源）。
-  Future<void> _persistPosition(String uid, int posMs) async {
+  Future<void> _persistPosition(String rawUid, int rawPosMs) async {
     if (_sourceReviewActive) return;
+    // 原盘「全部播放」：位置在整条播放列表上，记到播放头所在的那一集（BUG-5312）。
+    final ({String uid, int positionMs, int durationMs})? episode =
+        _discMenuEpisodeProgress(rawUid, rawPosMs);
+    final String uid = episode?.uid ?? rawUid;
+    final int posMs = episode?.positionMs ?? rawPosMs;
     final int clamped = posMs < 0 ? 0 : posMs;
     final int nowMs = DateTime.now().millisecondsSinceEpoch;
     // 统一合集 Phase 3：每集是独立 VideoBooks 行 → 恒单视频持久化（写该集自己的
@@ -7661,7 +7670,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       videoRemotePositionEpisodeAtPrefKey(uid, 0),
       nowMs,
     );
-    await _persistKnownDuration(uid);
+    await _persistKnownDuration(uid, durationMs: episode?.durationMs);
   }
 
   /// 上次为哪一集记下了多长的片长（只在变化时重写，见 [_persistKnownDuration]）。
@@ -7670,8 +7679,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// BUG-3491：把本集**真实片长**记进 `video_duration_ms_<uid>`。库里没有片长列，
   /// 合集续播要靠它分清「已打勾的集重看到一半」与「看完了」，集卡要靠它算观看
   /// 百分比（见 video_duration_pref.dart）。片长是文件事实，同一集只写一次。
-  Future<void> _persistKnownDuration(String uid) async {
-    final int? durationMs = _controller?.durationMs;
+  ///
+  /// [durationMs] 给了就用它（原盘「全部播放」里的一集：播放器的时长是整条播放列表）。
+  Future<void> _persistKnownDuration(String uid, {int? durationMs}) async {
+    durationMs ??= _controller?.durationMs;
     if (durationMs == null || durationMs <= 0) return;
     final (String uid, int durationMs)? last = _persistedDuration;
     if (last != null && last.$1 == uid && last.$2 == durationMs) return;
