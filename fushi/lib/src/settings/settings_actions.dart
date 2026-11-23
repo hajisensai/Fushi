@@ -620,7 +620,7 @@ Widget buildReaderPaperSelector(
         subtitle: eink
             ? t.reader_paper_eink_hint
             : (dark ? t.reader_paper_dark_hint : t.reader_paper_light_hint),
-        icon: dark ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
+        icon: dark ? FushiIcons.darkMode : FushiIcons.lightMode,
         controlBelow: true,
         trailing: Wrap(
           spacing: tokens.spacing.gap,

@@ -58,24 +58,30 @@ class FloatingLyricWindowRect {
 }
 
 /// 这个操作系统（`Platform.operatingSystem` 的取值）有没有原生悬浮字幕后端：
-/// Android 系统 overlay、Windows 置顶分层窗、macOS 置顶 NSPanel。Linux 没有。
+/// Android 系统 overlay、Windows 置顶分层窗、macOS 置顶 NSPanel、Linux runner 的
+/// GTK 窗（X11 override-redirect / Wayland layer-shell，没有 layer-shell 的 Wayland
+/// 降级为普通窗，见 `linux/runner/floating_lyric_window.h`）。
 ///
 /// 平台判据只写这一处：[FloatingLyricChannel.isSupported] 与所有入口（设置、迷你条、
 /// 书架长按、阅读器快捷设置）都经它，不各自写 `Platform.isXxx`。
 bool floatingLyricBackendAvailableOn(String operatingSystem) =>
     operatingSystem == 'android' ||
     operatingSystem == 'windows' ||
-    operatingSystem == 'macos';
+    operatingSystem == 'macos' ||
+    operatingSystem == 'linux';
 
-/// 后端是不是**桌面富文本窗**（Windows DirectWrite / macOS TextKit）：读
+/// 后端是不是**桌面富文本窗**（Windows DirectWrite / macOS TextKit / Linux Pango）：读
 /// `FloatingLyricStyle.nativeStyleArgs` 里的扩展样式（字体、粗体、行高、字距、对齐、
 /// 边距、描边、当前句色、上下文透明度），并且窗口有固定视口（当前句滚到视口中央、
 /// 超出窗高的裁掉），所以「同时显示句数 = 0（自动按窗高）」成立。Android TextView
 /// 两样都没有。
 bool floatingLyricDesktopWindowOn(String operatingSystem) =>
-    operatingSystem == 'windows' || operatingSystem == 'macos';
+    operatingSystem == 'windows' ||
+    operatingSystem == 'macos' ||
+    operatingSystem == 'linux';
 
-/// 竖排（字从上往下、行从右往左）只有 Windows 原生窗实现；macOS 后端没有竖排排版。
+/// 竖排（字从上往下、行从右往左）只有 Windows 原生窗实现；macOS / Linux 后端没有
+/// 竖排排版。
 bool floatingLyricVerticalTextOn(String operatingSystem) =>
     operatingSystem == 'windows';
 
@@ -94,9 +100,14 @@ bool floatingLyricVerticalTextOn(String operatingSystem) =>
 ///   (`macos/Runner/FushiFloatingLyric.swift`)，同一套行为（双行 / 多行上下文、区间
 ///   高亮、点字带屏幕矩形、拖动 / 拖角缩放、锁定 / 置顶、穿透 + 独立工具条）；
 ///   不做竖排与注音。
+/// - Linux: a GTK window in the runner (`linux/runner/floating_lyric_window.cc`,
+///   Pango 排版)，与 macOS 同一套行为（不做竖排与注音）。X11（含 Flatpak 钉的
+///   XWayland）是 override-redirect 置顶窗、穿透 = 只留工具条的输入形状；Wayland
+///   有 layer-shell 走 overlay 层，没有（GNOME）降级为合成器摆放的普通窗：不置顶、
+///   不记位置、拒绝穿透、点词不带 wordRect。
 ///
-/// Linux has no native back-end, so [isSupported] excludes it and every
-/// outgoing call is short-circuited by [FloatingOverlayChannel].
+/// iOS has no back-end, so [isSupported] excludes it and every outgoing call is
+/// short-circuited by [FloatingOverlayChannel].
 class FloatingLyricChannel extends FloatingOverlayChannel {
   FloatingLyricChannel._() : super(FushiChannels.floatingLyric);
 
@@ -261,7 +272,7 @@ class FloatingLyricChannel extends FloatingOverlayChannel {
 
   static Future<bool> canDrawOverlays() => _instance.canDrawOverlaysImpl();
 
-  /// 本平台有没有原生悬浮字幕窗口（Android / Windows / macOS）。
+  /// 本平台有没有原生悬浮字幕窗口（Android / Windows / macOS / Linux）。
   static bool get supported => _instance.isSupported;
 
   static Future<bool> show({

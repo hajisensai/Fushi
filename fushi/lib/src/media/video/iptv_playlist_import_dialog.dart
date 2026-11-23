@@ -6,6 +6,7 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/media/import/import_dialog_blocks.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
@@ -100,7 +101,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
         switch (classifyM3uPlaylist(source.content, baseDir: source.baseDir)) {
           case M3uPlaylistKind.hlsStream:
             if (!mounted) return;
-            Navigator.pop(
+            closeOwnRoute(
               context,
               IptvPlaylistIsHlsStream(url: source.url, localPath: localPath),
             );
@@ -151,7 +152,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
           msg: t.video_iptv_imported(count: result.channelCount),
           severity: ToastSeverity.success,
         );
-        Navigator.pop(context, IptvPlaylistImported(result));
+        closeOwnRoute(context, IptvPlaylistImported(result));
       },
     );
   }

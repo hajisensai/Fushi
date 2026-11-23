@@ -223,24 +223,47 @@ class MangaAudioPlaybackPlan {
     return null;
   }
 
-  /// 「上一句」：在一句开头 1.5 秒之后按，回到这句开头；否则到前一句开头。
-  int previousLineStartMs(int ms, {int restartWindowMs = 1500}) {
+  /// 第 [index] 个条目上的「当前句」（阅读器高亮的那句）在 [items] 里的下标。
+  ///
+  /// 句子条目就是它自己。静音条目不清高亮：句间停顿 / 页尾补齐算本页刚读完的那句，
+  /// 页首 `lead` 算本页马上要读的第一句——用户翻页落到页段起点、进书续播落在句间、
+  /// 暂停停在这些静音里时，高亮都还在（反馈 WrLFAXNkSw：此前一律清空，暂停时位置
+  /// 不再变，高亮就一直不回来）。整页没有台词（页停留）才为 null。
+  ///
+  /// 显示（驱动框哪几块）与「上一句」的参照句同出这一处，按钮跳到的永远是屏幕上
+  /// 正框着的那句的前一句。
+  int? currentLineItemIndex(int index) {
+    if (index < 0 || index >= items.length) return null;
+    final MangaAudioItem item = items[index];
+    if (item.isLine) return index;
+    for (int i = index - 1; i >= 0 && items[i].page == item.page; i--) {
+      if (items[i].isLine) return i;
+    }
+    for (
+      int i = index + 1;
+      i < items.length && items[i].page == item.page;
+      i++
+    ) {
+      if (items[i].isLine) return i;
+    }
+    return null;
+  }
+
+  /// 「上一句」：始终跳到当前句（[currentLineItemIndex]，即正高亮的那句）的前一句
+  /// 句首，不做「播进本句一段时间先回句首」的音乐播放器语义——那样句中稍晚、或停在
+  /// 句后停顿里按，都只会重播本句（反馈 02uXqiI-xd；有声书同一操作见 BUG-3791）。
+  /// 重播当前句另走驱动的 `playFromLine(null)`。
+  ///
+  /// 页停留（整页无台词、没有高亮）里按：回到此前最近读过的那句。已是首句（或首句
+  /// 之前）回到开头 0。
+  int previousLineStartMs(int ms) {
     final int from = itemIndexAt(ms);
     if (from < 0) return 0;
-    int current = -1;
-    for (int i = from; i >= 0; i--) {
-      if (items[i].isLine) {
-        current = i;
-        break;
-      }
-    }
-    if (current >= 0 && ms - items[current].startMs > restartWindowMs) {
-      return items[current].startMs;
-    }
-    for (int i = current - 1; i >= 0; i--) {
+    final int anchor = currentLineItemIndex(from) ?? from + 1;
+    for (int i = anchor - 1; i >= 0; i--) {
       if (items[i].isLine) return items[i].startMs;
     }
-    return current >= 0 ? items[current].startMs : 0;
+    return 0;
   }
 
   // ── 持久化口径换算 ────────────────────────────────────────────────────

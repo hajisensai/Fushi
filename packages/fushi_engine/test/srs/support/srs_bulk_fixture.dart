@@ -29,7 +29,6 @@ const int kBulkNowMs = 1780272000000;
 SrsTrustedClock fixedTrustedClock() => SrsTrustedClock(
   wallClockMs: () => kBulkNowMs,
   bootClockMs: () => kBulkNowMs,
-  bootId: 'bulk',
 );
 
 class BulkFixture {
