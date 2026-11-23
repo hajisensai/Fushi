@@ -1,4 +1,4 @@
-## BUG-5278 · 书 / 漫画的侧栏速览、库页「继续阅读」、首页「继续」三处给出三个不同的续读项
+## BUG-5332 · 书 / 漫画的侧栏速览、库页「继续阅读」、首页「继续」三处给出三个不同的续读项
 - **报告**：2026-11-22（BUG-5258 视频速览修复后的只读审计：书 / 漫画是同一类问题）
 - **真实性**：✅ 真 bug。三处各写了一套选书口径：
   - 首页 `_computeContinueEntries`（改前 `fushi/lib/src/pages/implementations/home_dashboard_page.dart:3286-3345`，判据 `dashboardBookCollectionContinueIndex` `:232`）按主折叠合集归组，用 `continueMemberIndex` 跑 Next-Up（读完第 1 卷 → 第 2 卷）；
@@ -10,4 +10,4 @@
 - **[x] ② 已加自动化测试** — `fushi/test/media/collections/book_continue_test.dart`：G1（读完第 1 卷 → 第 2 卷，速览「继续」与库页 hero 是同一项，「最近」不再重复第 1 卷，副行「Vol. 2」）；G2（锚在最近读的那卷；最后一卷读完则整套不出候选）；G5（章 readAt 并进时刻；标记已读的在线漫画进速览「继续」）；读完判据；排序与并列；孤儿合集；组内 sortIndex；旧归属键回退；书 / 漫画分架；速览「最近」去重与上限。既有 `home_dashboard_continue_book_test`（改调 `bookCollectionContinueIndex`）、`home_nav_peek_test`、`shelf_recent_read_order_test`、`shelf_sort_test` 等无回归。
 - **行为变化**：库页顶部「继续阅读」现在也按 Next-Up 走（读完第 1 卷 → 显示这套书的第 2 卷），与首页和视频一致。在线漫画「最近阅读」排序也认标记已读的时刻（Kavita 对齐写入的 readAt 是对齐时刻）。
 - **备注**：未在桌面 / 真机上肉眼复测悬停速览。首页的互联远端 / Audiobookshelf 合并保持原样；速览按用户 2026-11-22 拍板只看本机。
-- **合并审查**：`book_continue.dart` 原先为了 `parseBookKey` / `parseSrtBookUid` / 显示书名 import `reader_fushi_source.dart`，把这份纯逻辑拖进 lib/ 最大 import 环（`import_cycle_guard_test` 624 > 623）。身份串编码 / 解码挪到叶子 `fushi/lib/src/media/sources/book_media_identifier.dart`（`ReaderFushiSource.parseBookKey` / `parseSrtBookUid` / `mediaIdentifierFor*` 与 `MangaFushiSource.kUniqueKey` 委托过去），`bookContinueDisplayTitle` 挪进 `reader_fushi_source.dart`；最大环回到 623，不调上限。BUG-5259 撞号改为 BUG-5278。
+- **合并审查**：`book_continue.dart` 原先为了 `parseBookKey` / `parseSrtBookUid` / 显示书名 import `reader_fushi_source.dart`，把这份纯逻辑拖进 lib/ 最大 import 环（`import_cycle_guard_test` 624 > 623）。身份串编码 / 解码挪到叶子 `fushi/lib/src/media/sources/book_media_identifier.dart`（`ReaderFushiSource.parseBookKey` / `parseSrtBookUid` / `mediaIdentifierFor*` 与 `MangaFushiSource.kUniqueKey` 委托过去），`bookContinueDisplayTitle` 挪进 `reader_fushi_source.dart`；最大环回到 623，不调上限。BUG-5259 撞号改为 BUG-5332。

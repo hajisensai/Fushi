@@ -168,7 +168,7 @@ RoundedPolygon homeNavRailShapeFor(HomeTab tab) => switch (tab) {
 /// 进度），「最近」= 其余最近更新的任务（2026-10-25 用户「侧边栏预览给复习和
 /// 浏览加一下」）。2026-10-26 用户「所有的都支持一下」补齐其余目的地：首页 =
 /// 与 dashboard「继续」区同一份 [composeHomeContinue] 编排（含互联远端、服务器条目，
-/// BUG-5277）；音乐 = 正在播放 + 最近播放（按专辑折叠）；查词 = 查词历史（没有
+/// BUG-5331）；音乐 = 正在播放 + 最近播放（按专辑折叠）；查词 = 查词历史（没有
 /// 历史时列已装词典）；网页 = 上次的标签页 + 浏览历史；设置 = 最近打开的分类
 /// （还没打开过时列前几个分类）。
 ///
@@ -322,7 +322,7 @@ String? bookNavPeekSeriesCue(
   return candidate.isSeries ? collectionName : null;
 }
 
-/// 书 / 漫画速览的编排（纯函数，BUG-5278）：「继续」= 继续阅读第一项（与书架 /
+/// 书 / 漫画速览的编排（纯函数，BUG-5332）：「继续」= 继续阅读第一项（与书架 /
 /// 漫画库顶部「继续阅读」主卡同一份 [selectBookContinueCandidates] 结果）；
 /// 「最近」= 其余继续阅读候选，再接最近读过的其它条目（按合集折叠，已在继续阅读
 /// 里的合集 / 散书不再重复）。只看本机书架（与它打开的库页一致，不混互联远端）。
@@ -1215,7 +1215,7 @@ class NavPeekFeed {
 
 /// 首页速览的编排（纯函数）：与首页 dashboard「继续」区同一份 [composeHomeContinue]
 /// 结果、同一顺序——「继续」= 第一张卡，「最近」= 接下来的 [recentCount] 张
-/// （2026-11-22 用户拍板「每张卡跟它打开的页面一致」，BUG-5277）。
+/// （2026-11-22 用户拍板「每张卡跟它打开的页面一致」，BUG-5331）。
 ({HomeContinueUnit? resume, List<HomeContinueUnit> recent}) planHomeNavPeek(
   List<HomeContinueUnit> units, {
   int recentCount = _kPeekRecentCount,

@@ -1,5 +1,5 @@
-## BUG-5277 · 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠
-- **报告**：2026-11-22（只读审计，接 BUG-5276：用户拍板「每张卡跟它打开的页面一致」，首页速览必须显示首页 dashboard「继续」区显示的东西）
+## BUG-5331 · 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠
+- **报告**：2026-11-22（只读审计，接 BUG-5330：用户拍板「每张卡跟它打开的页面一致」，首页速览必须显示首页 dashboard「继续」区显示的东西）
 - **真实性**：✅ 真 bug。首页速览与首页 dashboard 各写了一套「继续」编排：
   - 速览 `_loadHome`（改前 `fushi/lib/src/pages/implementations/home_nav_peek.dart:1046`）只把本地书、本地漫画、`_loadVideos`、本地游戏四路用 `mergeNavPeekFeeds`（改前同文件 `:1028`）按时刻混排；
   - dashboard `_computeContinueEntries`（改前 `fushi/lib/src/pages/implementations/home_dashboard_page.dart:3230`）另外还混排互联 host 远端补位（`_remoteContinue`，经 `withoutLocallyCoveredCollections` 与本地同名合集去重，改前 `:3426`）和用户自配服务器条目（Jellyfin / Emby / Plex、Audiobookshelf，`_serverContinue` 按 `serverContinueGates` 两道门过滤并让位给已入库的本地行，改前 `:3457`），游戏按主合集折叠成一张卡、标题取合集名（改前 `:3398`）。
@@ -10,5 +10,5 @@
   - 速览打开服务器条目后不强制重拉服务器「继续」（那是首页页面状态的节流取数；首页下次进入按 TTL 自己重取）；
   - 首页从未在本进程加载过时，`RemoteContinueFeed` / `ServerContinueFeed` 为空，速览暂时只有本地条目（与桌面小组件同一取舍）；
   - 漫画在首页速览里不再带「有声 / 加声音」入口（首页「继续」卡也没有；漫画 tab 速览照旧带）。
-- **合并审查**：与 BUG-5278 合流后 `_bookUnits` 改调共享选书 `selectMediaItemContinueCandidates`（`fushi/lib/src/media/collections/book_continue.dart`），compose 里那份书合集续读 / 归属键副本删掉。`home_continue_compose.dart` 原先 import 阅读器源、漫画源、媒体服务器库、`dashboard_continue_logic`，把这份纯编排拖进 lib/ 最大 import 环（624 > 623）：书名改由 `HomeContinueInputs.bookTitleOf`（`bookContinueDisplayTitle`）注入、本机媒体服务器条目键改由 `localMediaServerItemKeyOf`（`localMediaServerItemKeyOfVideo`，`media_server_library.dart`）注入、身份串解析用叶子 `book_media_identifier.dart`，compose 出环，最大环回到 623。BUG-5260 撞号改为 BUG-5277。
+- **合并审查**：与 BUG-5332 合流后 `_bookUnits` 改调共享选书 `selectMediaItemContinueCandidates`（`fushi/lib/src/media/collections/book_continue.dart`），compose 里那份书合集续读 / 归属键副本删掉。`home_continue_compose.dart` 原先 import 阅读器源、漫画源、媒体服务器库、`dashboard_continue_logic`，把这份纯编排拖进 lib/ 最大 import 环（624 > 623）：书名改由 `HomeContinueInputs.bookTitleOf`（`bookContinueDisplayTitle`）注入、本机媒体服务器条目键改由 `localMediaServerItemKeyOf`（`localMediaServerItemKeyOfVideo`，`media_server_library.dart`）注入、身份串解析用叶子 `book_media_identifier.dart`，compose 出环，最大环回到 623。BUG-5260 撞号改为 BUG-5331。
 - **备注**：未在桌面肉眼复测悬停速览。

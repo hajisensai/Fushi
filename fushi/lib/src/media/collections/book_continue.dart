@@ -1,4 +1,4 @@
-/// 书 / 漫画「继续阅读」选书的**唯一判据**（BUG-5278）。
+/// 书 / 漫画「继续阅读」选书的**唯一判据**（BUG-5332）。
 ///
 /// 侧栏书 / 漫画速览（`home_nav_peek.dart` 的 `_loadBooks`）、书架 / 漫画库顶部
 /// 「继续阅读」（`reader_fushi_history_page.dart` 的 `_pickShelfContinue`）与首页
@@ -292,7 +292,7 @@ Future<Map<String, int>> loadPrimaryMemberSortIndex(
 /// 在线漫画在作品页「标记此章及更早为已读」（或 Kavita 对齐已读）只写章状态表、
 /// 不写 `reader_positions`——书架进度（`onlineMangaShelfProgress`）已经认它是「在
 /// 读」，最近阅读时刻却是 0：速览旧实现按「时刻 > 0」过滤把它整个丢掉，而首页
-/// 照样列出（BUG-5278 G5）。章状态的键也是书 uid，与位置表同一键空间。
+/// 照样列出（BUG-5332 G5）。章状态的键也是书 uid，与位置表同一键空间。
 Map<String, int> mergeMangaChapterReadRecency({
   required Map<String, int> readerPositionUpdatedAt,
   required Iterable<({String bookUid, int? readAt})> chapterStates,

@@ -74,7 +74,7 @@ bool _isSyncDomain(String path) =>
 ///  - `home_video_page.dart`：只取 `video_watch_statistics.lastModified` 做「最近观看」
 ///    排序（不是统计展示），v92 起与 `getLatestStudyEndAtByMedia` 并集；
 ///  - `video_continue_watching.dart`：同一份「最近观看」映射（`buildVideoWatchRecency`）
-///    的页外现读入口，侧栏视频速览没开过视频页时按它现算继续观看（BUG-5276），
+///    的页外现读入口，侧栏视频速览没开过视频页时按它现算继续观看（BUG-5330），
 ///    同样只取排序时刻、不做统计展示。
 const List<String> kLegacyReaderExemptFiles = <String>[
   '../packages/fushi_engine/lib/stats/stat_facts.dart',

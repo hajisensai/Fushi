@@ -271,7 +271,7 @@ void main() {
       reason: 'BUG-995：概览门控必须并入远端条目（homeRemote）',
     );
     // BUG-5197 起远端两份列表按输入记忆（[_remoteListsMemo]）：首页那份 `home`
-    // 在记忆体里取自未筛选的远端可见条目，homeRemote 就是它。BUG-5276 起这份判据
+    // 在记忆体里取自未筛选的远端可见条目，homeRemote 就是它。BUG-5330 起这份判据
     // 与侧栏视频速览共用 [visibleHomeRemoteVideos]（只过「显示远端条目」开关、
     // 清单失败态、上锁、本机同集去重，不吃任何筛选）。
     expect(

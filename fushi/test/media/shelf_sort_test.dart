@@ -403,7 +403,7 @@ void main() {
       final String source = File(
         'lib/src/pages/implementations/reader_fushi_history_page.dart',
       ).readAsStringSync();
-      // BUG-5278：hero 改走共享选书 selectMediaItemContinueCandidates（与速览、
+      // BUG-5332：hero 改走共享选书 selectMediaItemContinueCandidates（与速览、
       // 首页同一份），读完判据随参数传入。
       final int call = source.indexOf('selectMediaItemContinueCandidates(');
       expect(call, isNonNegative);

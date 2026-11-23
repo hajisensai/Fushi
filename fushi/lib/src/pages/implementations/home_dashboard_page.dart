@@ -3129,7 +3129,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     Set<String> completedBookKeys,
   ) {
     // 编排（来源 / 门控 / 去重 / 折叠 / 排序）只在 [composeHomeContinue] 写一次，
-    // 侧栏首页速览用同一个函数（BUG-5277）；这里只把单元映射成卡片条目。
+    // 侧栏首页速览用同一个函数（BUG-5331）；这里只把单元映射成卡片条目。
     final ({bool mediaServers, bool audiobookshelf, String signature}) gates =
         _serverContinueGates(appModel);
     final PreferencesRepository prefs = appModel.prefsRepo;

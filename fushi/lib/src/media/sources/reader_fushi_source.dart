@@ -106,7 +106,7 @@ final fushiBooksProvider = FutureProvider.family<List<MediaItem>, Language>((
   ref.watch(_epubBookKeysProvider);
   // BUG-4356：章已读集合一变（任一标记已读入口），在线漫画进度即时重算。
   ref.watch(_mangaChapterReadKeysProvider);
-  // BUG-5278：最近阅读时刻表（[bookLastReadAtProvider]）也认章 readAt，章已读集合
+  // BUG-5332：最近阅读时刻表（[bookLastReadAtProvider]）也认章 readAt，章已读集合
   // 变了要一起重算。在这里转一手：时刻表自己再订一条 drift 流的话，没人监听时
   // 首次出值会把还在加载的它标脏，`ref.read(...future)` 就永远等不到结果。
   ref.listen<AsyncValue<List<String>>>(_mangaChapterReadKeysProvider, (
@@ -143,7 +143,7 @@ final srtBookMissingAudioUidsProvider = FutureProvider<Set<String>>((
 /// 排序的唯一 recency 真相源；关书时与 [fushiBooksProvider] 同点失效
 /// （[ReaderFushiSource.onSourceExit]），不会陈旧。
 ///
-/// BUG-5278：在线漫画只在作品页「标记已读」（或 Kavita 对齐）过的章不写
+/// BUG-5332：在线漫画只在作品页「标记已读」（或 Kavita 对齐）过的章不写
 /// `reader_positions`，这里与各章 `manga_chapter_states.readAt` 取大
 /// （[mergeMangaChapterReadRecency]）。章已读集合一变由 [fushiBooksProvider] 转手
 /// 失效本表（它本来就订着那条流），本表不再自己订 drift 流。
@@ -3136,7 +3136,7 @@ class ReaderFushiSource extends ReaderMediaSource {
 
 /// 「继续阅读」卡上显示的书名：与书架卡同一 override 通道（编辑对话框改名后
 /// 同步显示新名，BUG-1018 / BUG-1108）。首页「继续」、书架「继续阅读」与侧栏
-/// 速览都用它，也是 `BookContinueCandidate.volumeNumber` 的书名来源（BUG-5278）。
+/// 速览都用它，也是 `BookContinueCandidate.volumeNumber` 的书名来源（BUG-5332）。
 /// 住在本源而不在纯逻辑的 `book_continue.dart`：override 读的是本源的偏好。
 String bookContinueDisplayTitle(MediaItem item) =>
     ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item);

@@ -19,7 +19,7 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 
-/// BUG-5276：侧栏视频速览说「还没有可继续的」，同屏视频首页首屏却有
+/// BUG-5330：侧栏视频速览说「还没有可继续的」，同屏视频首页首屏却有
 /// 「☁ 下一集 · 第 1 集」（目标集只在互联 host 上）。两处现在都走
 /// [selectVideoContinueCandidates]，速览编排走 [planVideoNavPeek]。
 MediaCollectionRow _collection(int id, String name) => MediaCollectionRow(

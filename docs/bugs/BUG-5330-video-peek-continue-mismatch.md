@@ -1,4 +1,4 @@
-## BUG-5276 · 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」
+## BUG-5330 · 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」
 - **报告**：2026-11-22（用户：桌面 MD3 悬停导航栏「视频」，速览卡显示「Nothing to continue yet」；同一屏的视频首页首屏有继续观看项「☁ Next · Episode 1 — <作品>」，目标集只在互联 host 上）
 - **真实性**：✅ 真 bug。视频首页与速览各写了一套「继续」口径：
   - 首页 `_collectContinueItems`（改前 `fushi/lib/src/pages/implementations/home_video_page.dart:6836`）合并本机 `VideoBookRow` 与互联 host 的 `RemoteVideoInfo`，按主合集归组、按组内序排，用 `continueWatchingSeriesIndex`（Next-Up）选集，散片按 `CollectionMemberProgress.isFinished` 过滤；
