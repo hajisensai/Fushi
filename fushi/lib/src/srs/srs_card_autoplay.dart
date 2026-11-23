@@ -559,7 +559,9 @@ String srsCardSetFaceTokenScript(String token) =>
 /// 入场效果不算隐藏（BUG-5353，反馈 FJXqvneRRp）：模板常让答案块从 opacity:0 淡入（CSS 关键帧、
 /// 脚本加类名触发的过渡、`element.animate`），判定那一刻正停在 0 附近。祖先上有一条还在跑、
 /// 且动的是 opacity 的动画 / 过渡时，这一层的 opacity 是过渡态，不当隐藏——否则整面发音键被
-/// 判成看不见、自动播放什么都不播（Anki 播这一面所有 `[sound:]`）。
+/// 判成看不见、自动播放什么都不播（Anki 播这一面所有 `[sound:]`）。只认**会把 opacity 带到大于 0**
+/// 的动画（按剩余迭代、direction、playbackRate 方向扫过的关键帧判）：关键帧 opacity 始终为 0、
+/// 反向 / 交替后不再回到可见值的动画不算淡入，里面的发音键不报（HBK-AUDIT-006）。
 /// 外壳在卡片脚本与钩子都跑完、且这一面已经渲染出来之后（以及换主题后）调用，经
 /// [kSrsVisibleSoundsHandler] 上报（见 srs_card_face.dart 的 `reportSounds`）。
 const String kSrsCardVisibleSoundsScript = r'''
@@ -578,7 +580,64 @@ const String kSrsCardVisibleSoundsScript = r'''
     }
     return false;
   }
-  // n 上有没有一条还在跑（含 delay 阶段）、且动的是 opacity 的动画 / 过渡（入场淡入）。
+  // 一条动画关键帧里的 opacity 点：[{o: computedOffset, v: 数值}]；没有 opacity 返回 null。
+  function opacityPoints(frames){
+    var pts = [];
+    for (var k = 0; k < frames.length; k++) {
+      var f = frames[k];
+      if (f.opacity === undefined || f.opacity === null || f.opacity === '') continue;
+      var off = typeof f.computedOffset === 'number' ? f.computedOffset : f.offset;
+      pts.push({ o: typeof off === 'number' ? off : NaN, v: parseFloat(f.opacity) });
+    }
+    return pts.length ? pts : null;
+  }
+  // 方向化进度区间 [lo, hi] 内（含端点 e）opacity 会不会大于 0。分段线性插值的最大值落在
+  // 区间内的关键帧或端点上；起点就是当前值（已知为 0）。端点 e 上没有显式关键帧时，
+  // 那一端是隐式的底层值，页面读不到，按「可能可见」算（不把淡入误判成隐藏）。
+  function rangeVisible(pts, lo, hi, e){
+    var hasEnd = false;
+    for (var i = 0; i < pts.length; i++) {
+      var pt = pts[i];
+      if (isNaN(pt.o) || isNaN(pt.v)) return true;
+      if (pt.o === e) hasEnd = true;
+      if (pt.o >= lo && pt.o <= hi && pt.v > 0) return true;
+    }
+    return !hasEnd;
+  }
+  // a 这条正在跑的动画从现在起（按 playbackRate 的方向、剩余的迭代、direction 的交替 / 反向）
+  // 会不会把 opacity 带到大于 0。只看动画自身还会扫过的关键帧值；fill 不含 forwards 时结束后
+  // 回到的底层值读不到，不算淡入（真正的入场淡入关键帧本身就会到达可见值）。
+  function headsVisible(a, pts){
+    var rate = typeof a.playbackRate === 'number' ? a.playbackRate : 1;
+    if (!(rate > 0 || rate < 0)) return false;
+    var any = rangeVisible(pts, 0, 1, 0) || rangeVisible(pts, 0, 1, 1);
+    var t = null;
+    try { t = a.effect.getComputedTiming(); } catch (e) {}
+    if (!t || typeof t.localTime !== 'number') return any;
+    var begin = t.delay || 0;
+    var stop = begin + (t.activeDuration || 0);
+    var lt = t.localTime;
+    if (lt < begin) return rate > 0 ? any : false;
+    if (lt >= stop) return rate < 0 ? any : false;
+    var p = t.progress;
+    var ci = t.currentIteration;
+    if (typeof p !== 'number' || typeof ci !== 'number') return any;
+    var s = t.iterationStart || 0;
+    var n = t.iterations;
+    var more;
+    if (rate > 0) more = n === Infinity || ci < Math.ceil(s + n) - 1;
+    else more = ci > Math.floor(s);
+    if (more) return any;
+    var dir = t.direction || 'normal';
+    var fwd = dir === 'normal' ||
+      (dir === 'alternate' && ci % 2 === 0) ||
+      (dir === 'alternate-reverse' && ci % 2 === 1);
+    var e = fwd === (rate > 0) ? 1 : 0;
+    return rangeVisible(pts, Math.min(p, e), Math.max(p, e), e);
+  }
+  // n 上有没有一条还在跑（含 delay 阶段）、且会把 opacity 带向可见值（>0）的动画 / 过渡（入场
+  // 淡入）。关键帧 opacity 始终为 0（只拿动画移动隐藏的容器）、反向 / 交替后不再回到可见值
+  // 的都不算（HBK-AUDIT-006）。
   function fadingOpacity(n){
     if (typeof n.getAnimations !== 'function') return false;
     var list;
@@ -586,15 +645,17 @@ const String kSrsCardVisibleSoundsScript = r'''
     for (var i = 0; i < list.length; i++) {
       var a = list[i];
       if (a.playState !== 'running') continue;
-      if (a.transitionProperty === 'opacity') return true;
       var frames = null;
       try {
         frames = a.effect && a.effect.getKeyframes ? a.effect.getKeyframes() : null;
       } catch (e) {}
-      if (!frames) continue;
-      for (var k = 0; k < frames.length; k++) {
-        if (frames[k].opacity !== undefined) return true;
+      if (!frames) {
+        // 拿不到关键帧的旧引擎：opacity 过渡只能按入场淡入算。
+        if (a.transitionProperty === 'opacity') return true;
+        continue;
       }
+      var pts = opacityPoints(frames);
+      if (pts && headsVisible(a, pts)) return true;
     }
     return false;
   }

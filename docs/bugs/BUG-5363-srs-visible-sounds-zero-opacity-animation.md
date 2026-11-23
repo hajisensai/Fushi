@@ -1,0 +1,6 @@
+## BUG-5363 · 整面卡面：关键帧 opacity 始终为 0 的动画被当淡入，隐藏发音进自动播放
+- **报告**：2026-11-24（外部审查 HBK-AUDIT-006 P2，来自 #4300 / BUG-5353 的跟进）
+- **真实性**：✅ 真 bug。`fushi/lib/src/srs/srs_card_autoplay.dart` 的 `kSrsCardVisibleSoundsScript` 里 `fadingOpacity`（原约 582-600 行）只要祖先上有一条在跑、关键帧里**出现** opacity 属性的动画 / opacity 过渡就把这一层的 `opacity:0` 当过渡态放行，不看动画会不会把 opacity 带到可见值。模板用同一条动画移动隐藏的发音容器、所有关键帧 opacity 固定 0（无限循环或 `fill: forwards`），或反向 / 交替后只朝 opacity 0 那端走，容器一直看不见，里面的 `[sound:]` 却被报成可见、进了自动播放与重播列表。真实 headless Chrome 复现：三类用例在原代码下全部把隐藏副本报出。
+- **[x] ① 已修复** — `fadingOpacity` 改为只认「从现在起会把 opacity 带到 >0」的动画：取 `effect.getKeyframes()` 的 opacity 点，按 `getComputedTiming()` 的 localTime / delay / activeDuration 分阶段，结合剩余迭代（iterations / iterationStart）、`direction`（reverse / alternate / alternate-reverse）与 `playbackRate` 正负，算出还会扫过的方向化进度区间，区间内有 >0 的关键帧（或该端是读不到的隐式底层值）才算淡入；delay 阶段整段都在前面按全部关键帧判；`fill` 不含 forwards 时结束后回到的底层值读不到，不算淡入。opacity 过渡（CSSTransition）走同一条关键帧判定，只有拿不到关键帧的旧引擎才保留「opacity 过渡即淡入」的兜底。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_card_visible_sounds_entrance_test.dart` + `srs_card_visible_sounds_entrance_harness.mjs`（真实 headless Chrome 跑生产外壳）新增 3 个用例：opacity 始终为 0 的移动动画（无限 / fill forwards）不报；反向播放朝可见端走的报、朝 0 端走的不报；无限交替报、两轮交替的最后回程不报。原有 CSS 关键帧淡入 / 脚本触发过渡 / 静态隐藏 3 例保持绿。修复前新增 3 例全红、修复后 6 例全绿。
+- **备注**：步进缓动（`step-start` / `step-end`）把判定时刻的当前值钉在 0，避免测试依赖时序。
