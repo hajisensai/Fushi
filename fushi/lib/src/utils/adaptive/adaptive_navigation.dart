@@ -55,8 +55,13 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show
         AnimatedGlassIndicator,
+        GlassButton,
         GlassContainer,
+        GlassExtraButtonPosition,
         GlassQuality,
+        GlassTab,
+        GlassTabBar,
+        GlassTabBarExtraButton,
         GlassSpring,
         LiquidGlassSettings,
         LiquidOval,
@@ -569,6 +574,16 @@ class _MaterialNavCluster extends StatelessWidget {
       for (int i = 0; i < items.length; i++)
         if (i != search) i,
     ];
+    // 平铺样式直接用库的 iOS 27 标签栏；拇指转盘 / 相机模式条库里没有对应
+    // 组件，仍走下面的自绘胶囊 + `nav_overflow/` 原型（2026-10-30 拍板）。
+    if (!barStyle.isOverflowVariant || capsuleIndices.isEmpty) {
+      return _buildLibraryGlassTabBar(
+        context,
+        search: search,
+        tabIndices: capsuleIndices,
+        minimized: minimized,
+      );
+    }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double searchSpace = search == null
@@ -715,6 +730,124 @@ class _MaterialNavCluster extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  /// Apple 设计系统平铺底栏（2026-11-24 用户「底部栏也不太像 iOS 27」）：库的
+  /// [GlassTabBar.minimizable]（iOS 27 `UITabBar` + `.tabBarMinimizeBehavior`，
+  /// 选中透镜用库默认的 1.20 indicatorJelly），查词 / 搜索目的地是库的
+  /// [GlassTabBarExtraButton]（`selected` 时库隐藏胶囊里的选中 pill，只这一颗
+  /// 宣告选中），钉在末端、最小化时不收起（`Tab(role: .search)` 圆钮）。
+  ///
+  /// - 玻璃画质：栏按 [fushiGlassQuality] 的 prominent 口径取档，材质（含实色档的
+  ///   不透明零模糊）来自 [FushiGlassScope] 映射的库主题，不另传 settings；
+  /// - 最小化：仍由宿主的 [FushiAppleScrollChrome] 决定（[glassMinimized]），
+  ///   点最小化圆走 [onGlassExpand]；搜索项选中时不收起（调用方已判）；
+  /// - 焦点：整条栏是一个 [GamepadNavCluster] 焦点站（与 iOS 原生 tab bar 同一
+  ///   写法），方向键 / 手柄左右在全部目的地（含搜索圆钮）间逐个切换；鼠标 /
+  ///   触摸照常点库的格。名称进 tooltip 与库的 Semantics；
+  /// - 反转底栏方向（[searchLeading]）：库的额外按钮在可最小化形态里只能排在
+  ///   末端，起始侧的搜索圆钮改用库的 [GlassButton]，胶囊 pill 选中 lens 在搜索
+  ///   选中时用 `showIndicator: false` 隐去。
+  Widget _buildLibraryGlassTabBar(
+    BuildContext context, {
+    required int? search,
+    required List<int> tabIndices,
+    required bool minimized,
+  }) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool searchSelected = search != null && currentIndex == search;
+    final int selectedPos = math.max(0, tabIndices.indexOf(currentIndex));
+    final GlassQuality quality = fushiGlassQuality(context, prominent: true);
+    final bool overPlatformView = fushiGlassOverPlatformView(context);
+    void select(int i) {
+      if (i != currentIndex) fushiSelectionHaptic(context);
+      onTap(i);
+    }
+
+    Widget glyph(AdaptiveNavItem item, {required bool selected}) =>
+        FushiTooltip(
+          message: item.label,
+          excludeFromSemantics: true,
+          child: _maybeBadge(
+            item: item,
+            child: FushiIcon(
+              selected ? (item.selectedIcon ?? item.icon) : item.icon,
+            ),
+          ),
+        );
+
+    Widget tabBar({GlassTabBarExtraButton? extraButton}) =>
+        GlassTabBar.minimizable(
+          tabs: <GlassTab>[
+            for (final int i in tabIndices)
+              GlassTab(
+                icon: glyph(items[i], selected: false),
+                activeIcon: glyph(items[i], selected: true),
+                // 主导航底栏纯图标（CLAUDE.md UI 硬规则）：名称只进 tooltip
+                // 与 Semantics。
+                semanticLabel: items[i].label,
+              ),
+          ],
+          selectedIndex: selectedPos,
+          onTabSelected: (int pos) => select(tabIndices[pos]),
+          minimized: minimized,
+          onMinimizedTabTap: onGlassExpand,
+          extraButton: extraButton,
+          horizontalPadding: 0,
+          verticalPadding: 0,
+          barHeight: kGlassNavBarCapsuleHeight,
+          showIndicator: !searchSelected,
+          selectedIconColor: apple.accent,
+          quality: quality,
+          platformViewBackdrop: overPlatformView,
+        );
+
+    final Widget bar;
+    if (search == null) {
+      bar = tabBar();
+    } else if (!searchLeading) {
+      bar = tabBar(
+        extraButton: GlassTabBarExtraButton(
+          icon: glyph(items[search], selected: searchSelected),
+          onTap: () => select(search),
+          label: items[search].label,
+          size: kGlassNavBarCapsuleHeight,
+          position: GlassExtraButtonPosition.afterSearch,
+          collapseOnSearchFocus: false,
+          selected: searchSelected,
+        ),
+      );
+    } else {
+      bar = Row(
+        children: <Widget>[
+          GlassButton(
+            icon: glyph(items[search], selected: searchSelected),
+            onTap: () => select(search),
+            label: items[search].label,
+            width: kGlassNavBarCapsuleHeight,
+            height: kGlassNavBarCapsuleHeight,
+            iconColor: searchSelected ? apple.accent : null,
+            isSelected: searchSelected,
+            // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
+            useOwnLayer: true,
+            quality: quality,
+            platformViewBackdrop: overPlatformView,
+          ),
+          const SizedBox(width: _kGlassNavBarTrailingGap),
+          Expanded(child: tabBar()),
+        ],
+      );
+    }
+    return SizedBox(
+      height: kGlassNavBarCapsuleHeight,
+      child: GamepadNavCluster(
+        axis: Axis.horizontal,
+        count: items.length,
+        currentIndex: currentIndex,
+        onSelect: select,
+        child: bar,
+      ),
     );
   }
 
@@ -3759,12 +3892,13 @@ class _FushiNavTile extends StatelessWidget {
     final FushiAppleColors apple = appleColorsOf(context);
     final TextTheme textTheme = Theme.of(context).textTheme;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    // 选中态走强调色（用户 2026-10-04）：强调色实底 + 其前景色，与设置页
-    // 侧栏同一套；默认单色主题即黑底白字 / 白底黑字。
-    final Color fg = selected ? apple.onAccent : apple.label;
+    // 侧栏 / 窄条选中态改成 macOS 26 源列表的中性色圆角底（用户 2026-11-24
+    // 「侧栏还不是 macOS 27」，取代 2026-10-04 的强调色实底）：标签 label 色，
+    // 图标强调色，与宽窗口的 [AppleSidebarTabsShell] 同一套。
+    final Color fg = apple.label;
     final Color fill = selected
-        ? apple.accent
-        : apple.accent.withValues(alpha: 0);
+        ? apple.secondaryFill
+        : apple.secondaryFill.withValues(alpha: 0);
     // 底栏的选中气泡是玻璃里一枚更亮的无色透明 lens（iOS 26 标签栏 / Music
     // 演示 indicatorColor = label@20%，参照 Niratan 的选中 pill 不着强调色）+
     // 一圈细高光边 + 柔和投影；强调色只落在选中项的图标与文字上。系统降低透明度
@@ -3867,7 +4001,7 @@ class _FushiNavTile extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              glyph(20),
+              glyph(20, color: apple.accent),
               const SizedBox(height: 2),
               Text(
                 item.label,
@@ -3896,7 +4030,7 @@ class _FushiNavTile extends StatelessWidget {
       decoration: rowDecoration,
       child: Row(
         children: <Widget>[
-          glyph(19),
+          glyph(19, color: apple.accent),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
