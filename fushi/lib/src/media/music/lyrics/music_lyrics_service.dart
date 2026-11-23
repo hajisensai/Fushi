@@ -22,6 +22,7 @@ import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart';
+import 'package:fushi_engine/media/music/lyrics/music_local_lyrics.dart';
 import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart'
     show MusicHostLyricsLayer, MusicServerLyrics;
@@ -247,18 +248,7 @@ typedef _PluginFetched = ({
 typedef _Sidecar = ({LyricTimeline timeline, Uint8List raw, String label});
 
 /// 列目录（测试注入）。
-typedef MusicLyricsDirLister = List<String> Function(String dir);
-
-List<String> _listDirFiles(String dir) {
-  try {
-    return <String>[
-      for (final FileSystemEntity e in Directory(dir).listSync())
-        if (e is File) e.path,
-    ];
-  } on FileSystemException {
-    return const <String>[];
-  }
-}
+typedef MusicLyricsDirLister = MusicLocalLyricsDirLister;
 
 /// [audioPath] 旁的 [path] 是不是本机字幕管线（视频库「生成日语字幕」的旧产物，
 /// `<主名>.ja.srt`）写的。生产接 `isDefaultVideoSubtitlePipelineOutput`。
@@ -279,9 +269,8 @@ class MusicLyricsService {
     required FushiDatabase? Function() database,
     required LrclibClient lrclib,
     required bool Function() onlineEnabled,
-    MusicLyricsDirLister listDir = _listDirFiles,
-    Future<List<EmbeddedLyrics>> Function(String path, int? durationMs)?
-    readEmbedded,
+    MusicLyricsDirLister listDir = listMusicDirFiles,
+    MusicEmbeddedLyricsReader? readEmbedded,
     Future<LyricTimeline> Function(Uint8List bytes, String hint, int? durMs)?
     parse,
     int Function()? now,
@@ -300,10 +289,7 @@ class MusicLyricsService {
        _providers = providers,
        _lrclib = lrclib,
        _onlineEnabled = onlineEnabled,
-       _listDir = listDir,
-       _readEmbedded =
-           readEmbedded ??
-           ((String p, int? d) => FushiLyricsAsync.embedded(p, durationMs: d)),
+       _local = MusicLocalLyrics(listDir: listDir, readEmbedded: readEmbedded),
        _parse =
            parse ??
            ((Uint8List b, String h, int? d) =>
@@ -313,9 +299,9 @@ class MusicLyricsService {
   final FushiDatabase? Function() _database;
   final LrclibClient _lrclib;
   final bool Function() _onlineEnabled;
-  final MusicLyricsDirLister _listDir;
-  final Future<List<EmbeddedLyrics>> Function(String path, int? durationMs)
-  _readEmbedded;
+
+  /// 本地歌词层（sidecar 选取 + 内嵌），与互联 host 共用（BUG-5300）。
+  final MusicLocalLyrics _local;
   final Future<LyricTimeline> Function(Uint8List bytes, String hint, int? d)
   _parse;
   final int Function() _now;
@@ -1153,27 +1139,14 @@ class MusicLyricsService {
     MusicLyricsTrackRef track, {
     bool skipGenerated = false,
   }) async {
-    final String dir = File(track.path).parent.path;
-    final List<String> siblings = _listDir(dir);
-    LyricSidecarSet set = pickLyricSidecars(track.path, siblings);
     final MusicGeneratedSidecarCheck? generated = _isGeneratedSidecar;
-    if (skipGenerated && generated != null) {
-      final Set<String> own = <String>{};
-      for (final LyricSidecarFile f in <LyricSidecarFile>[
-        if (set.primary != null) set.primary!,
-        ...set.translations,
-      ]) {
-        if (await generated(track.path, f.path)) own.add(f.path);
-      }
-      if (own.isNotEmpty) {
-        set = pickLyricSidecars(track.path, <String>[
-          for (final String s in siblings)
-            if (!own.contains(s)) s,
-        ]);
-      }
-    }
-    final LyricSidecarFile? primary =
-        set.primary ?? await _ultraStarByHeader(track.path, siblings);
+    final LyricSidecarSet set = await _local.sidecars(
+      track.path,
+      exclude: skipGenerated && generated != null
+          ? (String path) => generated(track.path, path)
+          : null,
+    );
+    final LyricSidecarFile? primary = set.primary;
     if (primary == null) return null;
     final Uint8List raw;
     try {
@@ -1208,43 +1181,8 @@ class MusicLyricsService {
     );
   }
 
-  /// UltraStar 歌曲包：主名不同、头部 `#MP3:` / `#AUDIO:` 指向这首音频的 `.txt`。
-  Future<LyricSidecarFile?> _ultraStarByHeader(
-    String audioPath,
-    List<String> siblings,
-  ) async {
-    final String audioName = File(audioPath).uri.pathSegments.last;
-    for (final String p in ultraStarCandidates(audioPath, siblings)) {
-      final List<int> head;
-      try {
-        final RandomAccessFile f = await File(p).open();
-        try {
-          head = await f.read(kUltraStarHeadBytes);
-        } finally {
-          await f.close();
-        }
-      } on FileSystemException {
-        continue;
-      }
-      final String? ref = ultraStarAudioReference(
-        utf8.decode(head, allowMalformed: true),
-      );
-      if (ref != null && ref.toLowerCase() == audioName.toLowerCase()) {
-        return LyricSidecarFile(path: p, ext: 'ultrastar');
-      }
-    }
-    return null;
-  }
-
-  Future<EmbeddedLyrics?> _bestEmbedded(MusicLyricsTrackRef track) async {
-    try {
-      return pickBestEmbedded(
-        await _readEmbedded(track.path, track.durationMs),
-      );
-    } on LyricsParseException {
-      return null;
-    }
-  }
+  Future<EmbeddedLyrics?> _bestEmbedded(MusicLyricsTrackRef track) =>
+      _local.bestEmbedded(track.path, durationMs: track.durationMs);
 
   /// 选来源面板：列出所有本地候选（sidecar 正文、各条内嵌、缓存的 LRCLIB 结果）。
   Future<List<MusicLyricsCandidate>> localCandidates(
@@ -1265,9 +1203,9 @@ class MusicLyricsService {
         );
       }
       try {
-        for (final EmbeddedLyrics e in await _readEmbedded(
+        for (final EmbeddedLyrics e in await _local.allEmbedded(
           track.path,
-          track.durationMs,
+          durationMs: track.durationMs,
         )) {
           out.add(
             MusicLyricsCandidate(

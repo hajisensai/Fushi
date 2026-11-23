@@ -24,7 +24,9 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart'
     show isMusicDiscTitlePath, musicDvdDemuxerSource;
 import 'package:fushi_engine/media/music/host/music_stream_materializer.dart';
+import 'package:fushi_engine/media/music/lyrics/music_local_lyrics.dart';
 import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi_engine/media/music/music_cover_source.dart';
 import 'package:fushi_engine/media/music/metadata/music_video_match.dart'
     show MusicVideoKind, kMusicVideoExtensions, parseAnimeEpisodeMusicVideoRef;
 import 'package:fushi_engine/media/video/dvd/dvd_ffmpeg_input.dart'
@@ -36,7 +38,8 @@ import 'package:fushi_engine/media/video/video_local_files.dart'
     show themeSongFilesOf;
 import 'package:fushi_engine/sync/library_media_streams.dart';
 import 'package:fushi_engine/sync/remote_music_dto.dart';
-import 'package:fushi_music/fushi_music.dart' show readMusicEmbeddedCover;
+import 'package:fushi_music/fushi_music.dart'
+    show EmbeddedLyrics, readMusicEmbeddedCover;
 import 'package:path/path.dart' as p;
 
 /// `anime_episode` 类 MV 引用 → host 本机文件；解析不到为 null。
@@ -75,8 +78,10 @@ class EngineMusicLibraryHost {
     MusicHostNetworkSource? networkSource,
     MusicStreamMaterializer? materializer,
     bool? cddaSupported,
+    MusicLocalLyrics? localLyrics,
     DateTime Function()? now,
   }) : _database = database,
+       _localLyrics = localLyrics ?? MusicLocalLyrics(),
        _animeEpisodeFile = animeEpisodeFile,
        _embeddedCover = embeddedCover ?? _readEmbeddedCover,
        _networkSource = networkSource,
@@ -86,6 +91,9 @@ class EngineMusicLibraryHost {
 
   final MusicHostNetworkSource? _networkSource;
   final MusicStreamMaterializer _materializer;
+
+  /// 本地歌词层（与 app 的本机播放同一份 sidecar / 内嵌规则，BUG-5300）。
+  final MusicLocalLyrics _localLyrics;
 
   /// CDDA 能不能截：只有 Windows 有按扇区读光驱的实现（macOS 的 CD 挂成 AIFF 文件，入库就是本机文件）。
   final bool _cddaSupported;
@@ -491,31 +499,35 @@ class EngineMusicLibraryHost {
     final MusicAlbumRow? album = albumUid == null
         ? null
         : await db.getMusicAlbum(albumUid);
-    final String? coverPath = album?.coverPath;
-    if (coverPath != null && coverPath.isNotEmpty) {
+    // 与 app 同一条规则（[loadMusicCoverSource]）：目录封面 → 专辑选定的内嵌封面曲目 → 这首自己。
+    final MusicTrackRow? track = trackUid == null
+        ? null
+        : await db.getMusicTrack(trackUid);
+    final MusicCoverSource pick = await loadMusicCoverSource(
+      db,
+      track: track,
+      album: album,
+    );
+    final String? coverPath = pick.coverPath;
+    if (coverPath != null && !_isRemoteCover(coverPath)) {
       final File f = File(coverPath);
       if (await f.exists()) return (file: f, bytes: null);
     }
-    final String? fromUid = trackUid ?? album?.coverTrackUid;
-    MusicTrackRow? source = fromUid == null
-        ? null
-        : await db.getMusicTrack(fromUid);
-    if (source == null && albumUid != null) {
-      final List<MusicTrackRow> tracks = await db.listMusicTracks(
-        albumUid: albumUid,
-      );
-      for (final MusicTrackRow t in tracks) {
-        if (t.hasEmbeddedCover) {
-          source = t;
+    String? embeddedPath = pick.embeddedFromPath;
+    if (embeddedPath == null && album != null) {
+      // 老库专辑可能还没选定封面曲目：取第一首带内嵌封面的本机曲目。
+      for (final MusicTrackRow t in await db.listMusicTracks(
+        albumUid: album.albumUid,
+      )) {
+        if (t.hasEmbeddedCover &&
+            musicHostTrackOrigin(t) == MusicHostTrackOrigin.localFile) {
+          embeddedPath = t.path;
           break;
         }
       }
     }
-    if (source == null || !source.hasEmbeddedCover) return null;
-    if (musicHostTrackOrigin(source) != MusicHostTrackOrigin.localFile) {
-      return null;
-    }
-    final Uint8List? bytes = await _embeddedCover(source.path);
+    if (embeddedPath == null || !_isLocalAudioPath(embeddedPath)) return null;
+    final Uint8List? bytes = await _embeddedCover(embeddedPath);
     return bytes == null || bytes.isEmpty ? null : (file: null, bytes: bytes);
   }
 
@@ -560,33 +572,39 @@ class EngineMusicLibraryHost {
         musicHostTrackOrigin(track) != MusicHostTrackOrigin.localFile) {
       return null;
     }
-    final LyricSidecarFile? side = await _sidecarOf(track.path);
-    if (side == null) return null;
-    final Uint8List raw;
+    // 与 app 本机播放同一个本地歌词层：sidecar（含 UltraStar 头部识别）→ 文件内嵌。
+    final LyricSidecarFile? side = (await _localLyrics.sidecars(
+      track.path,
+    )).primary;
+    if (side != null) {
+      try {
+        return RemoteMusicLyrics(
+          source: MusicLyricsSource.sidecar,
+          format: side.ext,
+          raw: await File(side.path).readAsBytes(),
+          updatedAt: _nowMs,
+        );
+      } on FileSystemException {
+        // 读不了：往内嵌回落。
+      }
+    }
+    final EmbeddedLyrics? emb;
     try {
-      raw = await File(side.path).readAsBytes();
-    } on FileSystemException {
+      emb = await _localLyrics.bestEmbedded(
+        track.path,
+        durationMs: track.durationMs,
+      );
+    } on Object {
+      // 歌词原生库不可用 / 文件读不了：当作没有内嵌歌词。
       return null;
     }
+    if (emb == null || emb.raw.isEmpty) return null;
     return RemoteMusicLyrics(
-      source: MusicLyricsSource.sidecar,
-      format: side.ext,
-      raw: raw,
+      source: MusicLyricsSource.embedded,
+      format: emb.format,
+      raw: emb.raw,
       updatedAt: _nowMs,
     );
-  }
-
-  Future<LyricSidecarFile?> _sidecarOf(String audioPath) async {
-    final Directory dir = File(audioPath).parent;
-    final List<String> siblings = <String>[];
-    try {
-      await for (final FileSystemEntity e in dir.list(followLinks: false)) {
-        if (e is File) siblings.add(e.path);
-      }
-    } on FileSystemException {
-      return null;
-    }
-    return pickLyricSidecars(audioPath, siblings).primary;
   }
 
   /// 写回整首歌词偏移（design-imusic-q3）：改 [source] 那一行，按 [updatedAt] LWW——比库里旧的写入
@@ -1019,6 +1037,13 @@ class _AlbumAgg {
   final int? year;
   final String? albumArtistUid;
 }
+
+bool _isRemoteCover(String path) =>
+    path.startsWith('http://') || path.startsWith('https://');
+
+/// 本机音频文件路径（不是 `scheme://` 形式的网络来源 / 插件路径）。
+bool _isLocalAudioPath(String path) =>
+    !RegExp(r'^[a-zA-Z][a-zA-Z0-9+.-]+://').hasMatch(path);
 
 const String _kAlbumCoverPrefix = 'a:';
 const String _kTrackCoverPrefix = 't:';

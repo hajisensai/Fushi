@@ -44,7 +44,7 @@
 | [BUG-5303](bugs/BUG-5303-imusic-relay-network-source.md) | ✅ | ✅ | 互联音乐库：host 网络来源曲目经 host 中继（design-imusic-q4） |
 | [BUG-5302](bugs/BUG-5302-imusic-mv-remote-client.md) | 🚧 | 🚧 | 互联音乐库：客户端歌词页 / 卡拉 OK 页放 host 的 MV（依赖 #4249） |
 | [BUG-5301](bugs/BUG-5301-imusic-server-scan-packaging.md) | 🚧 | 🚧 | 互联音乐库第 3 期：服务端扫描音乐与随包 fushi_music |
-| [BUG-5300](bugs/BUG-5300-imusic-engine-read-layer.md) | 🚧 | 🚧 | 互联音乐库第 1 期余项：歌词本地层与封面选取搬进引擎 |
+| [BUG-5300](bugs/BUG-5300-imusic-engine-read-layer.md) | ✅ | ✅ | 互联音乐库第 1 期余项：歌词本地层与封面选取搬进引擎 |
 | [BUG-5298](bugs/BUG-5298-imusic-legacy-library-modules.md) | 🚧 | 🚧 | 互联老库类迁入统一模块层（design-imusic-q0） |
 | [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
 | [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | 🚧 | 🚧 | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |

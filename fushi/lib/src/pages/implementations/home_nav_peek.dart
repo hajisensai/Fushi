@@ -13,6 +13,7 @@ import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi_engine/privacy/media_nsfw.dart';
+import 'package:fushi_engine/media/music/music_cover_source.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -981,19 +982,19 @@ Future<ImageProvider?> _musicCover(
   required MusicTrackRow track,
   required MusicAlbumRow? album,
 }) async {
-  final String? file = album?.coverPath;
-  if (file != null && file.isNotEmpty) {
+  final MusicCoverSource pick = await loadMusicCoverSource(
+    db,
+    track: track,
+    album: album,
+  );
+  final String? file = pick.coverPath;
+  if (file != null) {
     if (file.startsWith('http://') || file.startsWith('https://')) {
       return AppHttpImage(file);
     }
     if (File(file).existsSync()) return resizedFileImage(File(file));
   }
-  String? embeddedPath = track.hasEmbeddedCover ? track.path : null;
-  final String? coverTrackUid = album?.coverTrackUid;
-  if (coverTrackUid != null && coverTrackUid != track.trackUid) {
-    embeddedPath =
-        (await db.getMusicTrack(coverTrackUid))?.path ?? embeddedPath;
-  }
+  final String? embeddedPath = pick.embeddedFromPath;
   if (embeddedPath == null) return null;
   final Uint8List? bytes = await MusicEmbeddedCoverCache.instance.load(
     embeddedPath,

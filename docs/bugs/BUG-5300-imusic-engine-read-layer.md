@@ -1,6 +1,6 @@
 ## BUG-5300 · 互联音乐库第 1 期余项：歌词本地层与封面选取搬进引擎
 - **报告**：2026-11-23（拍板台 design-imusic-q0..q12 实现分期，PR 分支 `claude/imusic-impl`）
 - **真实性**：✅ 真缺口（分期待办，`docs/specs/2026-11-23-interconnect-music-library-design.md` §8 第 1 期）。已做：`fushi_music` 进引擎依赖；`music_lyrics_sources.dart`（含 `preferredMusicLyricRow`、`kMusicLyricsNoneFormat`）与 `themeSongFilesOf` 搬进引擎，app 改调引擎；host 侧歌词 / 封面 / MV 解析在 `packages/fushi_engine/lib/media/music/host/engine_music_library_host.dart`。未做：app 的 `fushi/lib/src/media/music/lyrics/music_lyrics_service.dart` 仍自带 sidecar / 内嵌读取（`_readSidecars` / `_bestEmbedded`），与引擎 host 的 sidecar 读取是两份；封面选取（`cover_path` / `cover_track_uid`）app 侧还有一份。
-- **[ ] ① 未修复** — 把「本地歌词层」（sidecar 选取 + 内嵌 + 生成字幕判定）抽成引擎里一个无 Flutter 依赖的类，app 的 `MusicLyricsService` 与引擎 host 共用；封面选取同理，删 app 版。
-- **[ ] ② 未加自动化测试** — 歌词解析单测从 app 挪到引擎照样绿；引擎纯度守卫绿。
+- **[x] ① 已修复** — 本地歌词层抽成引擎 `packages/fushi_engine/lib/media/music/lyrics/music_local_lyrics.dart` 的 `MusicLocalLyrics`（sidecar 选取 + 排除生成字幕旧产物 + UltraStar 头部识别 + 内嵌最佳条），app `fushi/lib/src/media/music/lyrics/music_lyrics_service.dart` 的 `_readSidecars` / `_bestEmbedded` / 选来源面板改调它（删掉 app 自带的 `_ultraStarByHeader` / 列目录 / 内嵌读取），引擎 host `EngineMusicLibraryHost.lyrics` 也用它（顺带补上 host 原先缺的 UltraStar 与内嵌回落）。封面选取规则抽成 `packages/fushi_engine/lib/media/music/music_cover_source.dart`（`musicCoverSourceOf` / `loadMusicCoverSource` / `musicAlbumEmbeddedCoverPath`），app 的曲目行（`musicLocalTrackCoverOf`）、首页速览、曲目详情、链接打开专辑页与 host 的 `cover()` 共用。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/media/music/music_local_lyrics_test.dart`（sidecar + 排除、UltraStar、内嵌取最细、封面规则三档、host 无行无 sidecar 时回内嵌）；app 侧原有歌词服务 / 曲目行封面测试照样绿。
 - **备注**：设计与拍板见 `docs/specs/2026-11-23-interconnect-music-library-design.md` §8 / §9。

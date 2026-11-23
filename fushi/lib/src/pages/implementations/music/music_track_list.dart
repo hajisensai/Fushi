@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/music_cover_source.dart';
 
 import 'package:fushi/src/media/music/music_local_video.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
@@ -1165,8 +1166,8 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       widget.playlist == null ? '$prefix-$uid' : '$prefix-$i-$uid';
 }
 
-/// 本地曲目行缩略图的来源（[MusicCover] 的两个参数）。
-typedef MusicTrackCoverSource = ({String? coverPath, String? embeddedFromPath});
+/// 本地曲目行缩略图的来源（[MusicCover] 的两个参数；规则在引擎 [musicCoverSourceOf]）。
+typedef MusicTrackCoverSource = MusicCoverSource;
 
 /// [entries] 里本地曲目的 uid → 音频路径。
 Map<String, String> musicLocalTrackPathsOf(List<MusicLibraryEntry> entries) =>
@@ -1185,14 +1186,13 @@ MusicTrackCoverSource musicLocalTrackCoverOf(
   required MusicAlbumRow? album,
   required Map<String, String> pathByUid,
 }) {
-  final String? albumEmbedded = switch (album?.coverTrackUid) {
-    final String uid => pathByUid[uid],
-    null => null,
-  };
-  return (
-    coverPath: album?.coverPath,
-    embeddedFromPath:
-        albumEmbedded ?? (track.hasEmbeddedCover ? track.path : null),
+  return musicCoverSourceOf(
+    track: track,
+    album: album,
+    albumEmbeddedPath: switch (album?.coverTrackUid) {
+      final String uid => pathByUid[uid],
+      null => null,
+    },
   );
 }
 
