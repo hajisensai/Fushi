@@ -43,6 +43,11 @@
 | [BUG-5282](bugs/BUG-5282-ai-identity-candidate-type-mislabeled.md) | ✅ | ✅ | AI 识别作品时候选类型被标成本地搜索类型，正确候选被压低置信度不采用 |
 | [BUG-5281](bugs/BUG-5281-anidb-same-name-character-credit-fk-failure.md) | ✅ | ✅ | 同一声优配两个同名角色时写角色外部 id 撞外键，整部作品刮削失败 |
 | [BUG-5280](bugs/BUG-5280-disc-stream-files-counted-as-pending-works.md) | ✅ | ✅ | 逐个入库的原盘流文件（BDMV/STREAM/*.m2ts）被当成作品，挂满「待确认身份」 |
+> 共 4600 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5279](bugs/BUG-5279-continuous-subtitle-bounce.md) | ✅ | ✅ | 连续对白字幕交接时一句贴基线、下一句被抬高，上下跳动 |
 | [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
 | [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | 🚧 | 🚧 | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
 | [BUG-5271](bugs/BUG-5271-manga-audio-name-reading-phase3.md) | 🚧 | 🚧 | 漫画有声人名读法第三期：AI 抄原页振假名 / 查官方资料记出处；同一写法按角色区分读音 |
