@@ -2886,8 +2886,9 @@ class FushiPopupMenuButton<T> extends PopupMenuButton<T> {
 /// 「文字 + 下拉箭头」菜单触发器的外观（不含点击行为；放进
 /// [FushiPopupMenuButton] / `FushiOverflowMenu` 的 `child`）。
 /// - MD3：主色 w600 字 + 20 号 `expand_more`，左右 12 / 上下 8；
-/// - Apple：强调色 15 号 w500 字 + 13 号 `chevron.up.chevron.down`（iOS 26
-///   pull-down 按钮），左右 10 / 上下 6。
+/// - Apple：中性灰胶囊 pop-up 按钮（[FushiApplePopUpButtonFace]，`label` 色字 +
+///   `chevron.up.chevron.down`，不着强调色）；调用方显式给 [color] 时仍画无底
+///   「字 + 双箭头」形态。
 class FushiMenuLabelTrigger extends StatelessWidget
     implements FushiShapedMenuTrigger {
   const FushiMenuLabelTrigger({required this.label, this.color, super.key});
@@ -2904,10 +2905,14 @@ class FushiMenuLabelTrigger extends StatelessWidget
   @override
   Widget build(BuildContext context) {
     final bool glass = isGlassDesign(context);
+    if (glass && color == null) {
+      // Apple：与其余下拉同一枚中性灰胶囊 pop-up 按钮（不着强调色）。
+      return FushiApplePopUpButtonFace(label: label);
+    }
     final Color foreground =
         color ??
         (glass
-            ? appleColorsOf(context).accent
+            ? appleColorsOf(context).label
             : Theme.of(context).colorScheme.primary);
     return Padding(
       padding: glass
