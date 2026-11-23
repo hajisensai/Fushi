@@ -372,7 +372,6 @@ class _VideoLiveChatPanelState extends State<VideoLiveChatPanel> {
                 icon: FushiIcon(FushiIcons.close, size: widget.fontSize + 4),
                 color: cs.onSurfaceVariant,
                 onPressed: onClose,
-                visualDensity: VisualDensity.compact,
               ),
         ],
       ),
