@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 921,
+ "count": 922,
  "settings": [
   {
    "key": "appearance.language",
@@ -283,8 +283,8 @@
     "zh-CN": "通用 › 学习计时"
    },
    "description": {
-    "en": "When off, only listening after a lookup, card or loop on the lyrics page counts",
-    "zh-CN": "关闭时只计歌词页上查词、制卡或循环之后的收听时间"
+    "en": "Counts listening time and lyric characters (each line once). When off, only what follows a lookup, card or loop on the lyrics page counts",
+    "zh-CN": "计入时长和歌词字数（每句只计一次）。关闭时只计歌词页上查词、制卡或循环之后的部分"
    },
    "default": false
   },
@@ -16766,6 +16766,24 @@
    "description": {
     "en": "When the audiobook is playing faster or slower than 1×, the sentence audio on the card is time-stretched to the same speed with pitch preserved. Applies to audiobook mining; TTS word audio on cards follows the fallback voice speed.",
     "zh-CN": "有声书以非 1 倍速播放时，卡片的句子音频按同一倍率变速不变调；对有声书制卡生效；卡片的 TTS 单词发音按「兜底发音倍速」变速。"
+   },
+   "default": true
+  },
+  {
+   "key": "card_creation.anki.cli.mining_audio_follow_playback_volume",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Match sentence audio to playback volume",
+    "zh-CN": "句子音频跟随播放音量"
+   },
+   "path": {
+    "en": "Card creation › Anki › Card media",
+    "zh-CN": "制卡 › Anki › 制卡媒体"
+   },
+   "description": {
+    "en": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
+    "zh-CN": "歌曲和有声书卡片里的句子音频套用播放时听到的增益：歌曲的 ReplayGain 加上当前音量滑块。关掉则一律按源文件原始音量截取。静音时不跟随。"
    },
    "default": true
   },

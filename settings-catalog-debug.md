@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 921 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 922 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -20,7 +20,7 @@ How to read this:
 | `appearance.controller_lookup_style` | Controller lookup mode | 手柄查词模式 | Keyboard and gamepad | choice | `holdL1`, `selectToggle`, `off` | `holdL1` | Move a lookup cursor over text with the controller. Default: hold L1. |
 | `reading.stats_idle_timeout_minutes` | Idle timeout | 空闲判定时长 | Study timer | number | 1.0 – 120.0 | `10.0` | Stop counting study time after this many minutes without turning a page, scrolling, looking up a word or playing video. Applies to novels, PDFs, manga and video; video always counts while it plays. |
 | `reading.stats_clock_start_mode` | Reading timer start | 阅读计时开始方式 | Study timer | choice | `manual`, `onOpen`, `onPageTurn` | `onOpen` | When the reading timer starts after you open a book (applies the next time a book is opened). You can pause or resume it anytime with the timer button or P. |
-| `music.listening_counts_as_study` | Count listening as study time | 听歌计入学习 | Study timer | bool |  | `false` | When off, only listening after a lookup, card or loop on the lyrics page counts |
+| `music.listening_counts_as_study` | Count listening as study time | 听歌计入学习 | Study timer | bool |  | `false` | Counts listening time and lyric characters (each line once). When off, only what follows a lookup, card or loop on the lyrics page counts |
 | `study_goals.list` | Your goals | 我的目标 | Study timer › Goals › Your goals | custom |  |  |  |
 | `study_goals.text_unit` | Text unit | 文字单位 | Study timer › Goals › What to count | choice | `auto`, `chars`, `words` | `auto` | Auto counts words for languages written with spaces (English, French…) and characters for the rest. |
 | `study_goals.week_start` | Week starts on | 每周开始于 | Study timer › Goals › What to count | choice | `1`, `7`, `6` | `1` | Used by weekly goals, the Today tile and weekly statistics |
@@ -717,6 +717,7 @@ How to read this:
 | `card_creation.anki.cli.mining_audio_head_pad` | Audio padding before sentence | 句子音频开头余量 | Anki › Card media | number | 0.0 – 1000.0 | `120.0` | Extra audio kept before the subtitle starts, so the first syllable is not clipped. Never runs into the previous line. |
 | `card_creation.anki.cli.mining_audio_tail_pad` | Audio padding after sentence | 句子音频结尾余量 | Anki › Card media | number | 0.0 – 1000.0 | `200.0` | Extra audio kept after the subtitle ends, so trailing sounds are not cut short. Never runs into the next line. |
 | `card_creation.anki.cli.mining_audio_follow_playback_speed` | Match sentence audio to playback speed | 句子音频跟随播放倍速 | Anki › Card media | bool |  | `true` | When the audiobook is playing faster or slower than 1×, the sentence audio on the card is time-stretched to the same speed with pitch preserved. Applies to audiobook mining; TTS word audio on cards follows the fallback voice speed. |
+| `card_creation.anki.cli.mining_audio_follow_playback_volume` | Match sentence audio to playback volume | 句子音频跟随播放音量 | Anki › Card media | bool |  | `true` | Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored. |
 | `card_creation.anki.cli.video_mining_audio_source` | Sentence audio source | 句子音频来源 | Anki › Card media | choice | `current`, `front_center`, `track:0`, `track:1`, `track:2`, `track:3`, `track:4`, `track:5` | `current` | Where video cards take sentence audio from. If the choice isn't available for a video, the playing track is used and you're told. |
 | `card_creation.anki.cli.video_mining_image_mode` | Video card image | 视频卡片图片 | Anki › Card media | choice | `gif`, `videoClip`, `currentFrame`, `subtitleStart` | `videoClip` |  |
 | `card_creation.anki.cli.video_mining_clip_format` | Video clip format | 视频片段格式 | Anki › Card media | choice | `webmVp9`, `webmAv1`, `mp4H264` | `webmVp9` (android, windows, macos) · `mp4H264` (ios) | WebM plays inside the card, but AnkiMobile on iPhone cannot play it — choose MP4 if you review on iPhone. If WebM cannot be encoded on this device, Fushi falls back to MP4. |
