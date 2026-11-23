@@ -115,10 +115,12 @@ class MindscapeAnimatedState {
 
 /// 一个落点的缓存文字：正文（白字，按需上色）与发光（透明字 + 阴影；拉丁词逐字一份）。
 class _WordPaint {
-  _WordPaint(this.body, this.baseline);
+  _WordPaint(this.body, this.baselineY);
 
   final TextPainter body;
-  final double baseline;
+
+  /// 正文基线相对锚点的纵坐标（已含 folia 的 CSS 行盒与墨迹顶对齐，见 [MindscapeScene._buildPaint]）。
+  final double baselineY;
   TextPainter? glow;
   List<TextPainter>? glyphGlows;
   List<double>? glyphOffsets;
@@ -132,7 +134,7 @@ class _WordPaint {
   }
 }
 
-/// CSS text-shadow 40px 模糊半径 → Flutter Shadow.blurRadius（σ = 20）。
+/// CSS text-shadow 40px 模糊半径（σ = 20）→ Flutter Shadow.blurRadius（σ = r·0.57735 + 0.5 ≈ 20.1）。
 const double _glowBlurRadius = 34;
 const List<MindscapeWordStatus> _drawOrder = <MindscapeWordStatus>[
   MindscapeWordStatus.waiting,
@@ -160,6 +162,10 @@ class MindscapeScene {
   List<MindscapePlacement> get currentPlacements => _drawnLine == null
       ? const <MindscapePlacement>[]
       : _prepared[_drawnLine]?.placements ?? const <MindscapePlacement>[];
+
+  /// 落点的动画状态（测试用）。
+  @visibleForTesting
+  MindscapeAnimatedState? debugStateOf(String id) => _states[id];
 
   void dispose() {
     _clearPaints();
@@ -264,7 +270,16 @@ class MindscapeScene {
         : _prepare(c, size, lineIndex);
     if (lineIndex != (_drawnLine ?? -1)) {
       _drawnLine = lineIndex < 0 ? null : lineIndex;
-      _states.clear();
+      // folia 换行时只删新行里没有的落点状态（id 不含行号）：相邻两句同位置的同一个词
+      // 接着上一句的状态动；间奏里没有当前行，状态全清。
+      final Set<String> keep = <String>{
+        for (final MindscapePlacement p
+            in prepared?.placements ?? const <MindscapePlacement>[])
+          p.id,
+      };
+      _states.removeWhere(
+        (String k, MindscapeAnimatedState _) => !keep.contains(k),
+      );
       _clearPaints();
       // 只留当前与下一句的准备态，免得长歌越攒越多。
       _prepared.removeWhere(
@@ -306,6 +321,13 @@ class MindscapeScene {
     final Color baseColor = c.palette.text;
 
     canvas.save();
+    // 整行绕 (50%, 42%) 缩放（folia lineLayer 的 transform-origin）。CSS 的 filter / opacity
+    // 在元素自身坐标里做、再整体 transform，所以先缩放再开图层：模糊半径跟着缩放。
+    final double ox = width / 2;
+    final double oy = size.height * 0.42;
+    canvas.translate(ox, oy);
+    canvas.scale(envelope.scale);
+    canvas.translate(-ox, -oy);
     final bool lineLayer = envelope.opacity < 0.999 || envelope.blur > 0.05;
     if (lineLayer) {
       canvas.saveLayer(
@@ -321,13 +343,6 @@ class MindscapeScene {
               : null,
       );
     }
-    // 整行绕 (50%, 42%) 缩放（folia lineLayer 的 transform-origin）。
-    final double ox = width / 2;
-    final double oy = size.height * 0.42;
-    canvas.translate(ox, oy);
-    canvas.scale(envelope.scale);
-    canvas.translate(-ox, -oy);
-
     final Map<MindscapeWordStatus, List<int>> buckets =
         <MindscapeWordStatus, List<int>>{
           for (final MindscapeWordStatus s in _drawOrder) s: <int>[],
@@ -342,6 +357,8 @@ class MindscapeScene {
     final double tAmount = 1 - math.exp(-11 * dt);
     final double vAmount = 1 - math.exp(-14 * dt);
     final double gAmount = 1 - math.exp(-16 * dt);
+    // 副歌涟漪画在 folia 的文字 canvas 上，那块 canvas 叠在所有词的 DOM 之上：攒到最后画。
+    final List<(Offset, double, Color)> ripples = <(Offset, double, Color)>[];
     int drawIndex = -1;
     for (final MindscapeWordStatus status in _drawOrder) {
       for (final int pi in buckets[status]!) {
@@ -423,7 +440,7 @@ class MindscapeScene {
             ? mindscapeGlowEnvelope(time, timing, wt)
             : 0;
 
-        final String id = '${source.lineIndex}:$pi';
+        final String id = p.id;
         MindscapeAnimatedState? s = _states[id];
         if (!motion) {
           s = MindscapeAnimatedState(
@@ -478,14 +495,11 @@ class MindscapeScene {
               math.max(visualWidth, highlightHeight) * (0.55 + progress * 0.45);
           final double a = 0.45 * (1 - progress) * s.bodyAlpha;
           if (a > 0.005) {
-            canvas.drawCircle(
+            ripples.add((
               Offset(anchorX, s.y - visualHeight * 0.42),
               radius,
-              Paint()
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = 1.2
-                ..color = accent.withValues(alpha: a.clamp(0.0, 1.0)),
-            );
+              accent.withValues(alpha: a.clamp(0.0, 1.0)),
+            ));
           }
         }
 
@@ -494,10 +508,7 @@ class MindscapeScene {
         canvas.translate(anchorX, anchorY);
         canvas.rotate(s.rotation * math.pi / 180);
         canvas.scale(s.scale);
-        final Offset textOrigin = Offset(
-          -p.width / 2,
-          p.height * 0.42 - wp.baseline,
-        );
+        final Offset textOrigin = Offset(-p.width / 2, wp.baselineY);
 
         // 发光在正文后面（folia glow span z-index 0）。
         if (s.glowAlpha > 0.001 && c.glowIntensity > 0) {
@@ -570,6 +581,17 @@ class MindscapeScene {
       }
     }
 
+    for (final (Offset center, double radius, Color color) in ripples) {
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2
+          ..color = color,
+      );
+    }
+
     if (lineLayer) canvas.restore();
     canvas.restore();
   }
@@ -579,14 +601,28 @@ class MindscapeScene {
     MindscapePrepared prepared,
     MindscapePlacement p,
   ) {
+    final double fontPx = prepared.fontPx;
+    final TextStyle style = _style(c, fontPx);
     final TextPainter body = TextPainter(
-      text: TextSpan(text: p.text, style: _style(c, prepared.fontPx)),
+      text: TextSpan(text: p.text, style: style),
       textDirection: TextDirection.ltr,
     )..layout();
-    return _WordPaint(
-      body,
-      body.computeDistanceToActualBaseline(TextBaseline.alphabetic),
+    // folia 把词放进 line-height:1 的 DOM 盒里，再把盒顶上移「墨迹顶」(actualBoundingBoxAscent)，
+    // 让墨迹顶落在锚点下 height·0.42 处：基线 = 0.42·height − 墨迹顶 + CSS 行盒里的基线
+    // （半行距 (1em − 字体 ascent − descent)/2 + ascent）。字体 ascent / descent 取不带 height 的
+    // 自然行度量；Flutter 的 height:1 按比例分配行距，基线位置与 CSS 不同，所以不能直接用 body 的。
+    _measurer
+      ..text = TextSpan(text: p.text, style: style.copyWith(height: null))
+      ..layout();
+    final List<ui.LineMetrics> metrics = _measurer.computeLineMetrics();
+    final double cssBaseline = metrics.isEmpty
+        ? fontPx * 0.8
+        : (fontPx + metrics.first.ascent - metrics.first.descent) / 2;
+    final double ink = mindscapeInkAscentEm(p.text) * fontPx;
+    final double bodyBaseline = body.computeDistanceToActualBaseline(
+      TextBaseline.alphabetic,
     );
+    return _WordPaint(body, p.height * 0.42 - ink + cssBaseline - bodyBaseline);
   }
 
   TextPainter _glowPainter(
@@ -631,7 +667,9 @@ class MindscapeScene {
       ..glyphOffsets = offsets;
   }
 
-  /// 三层同半径 40px 阴影（folia `buildDomTextShadow`）合成一层：透明度按 over 叠加。
+  /// folia `buildDomTextShadow` 的三层同半径 40px 阴影逐层画（各自透明度，逐像素 over 叠加）。
+  /// 不能先合成一个总透明度再画一层：模糊边缘覆盖率 m 处三层叠出的是 1 − Π(1 − aᵢ·m)，
+  /// 比 (1 − Π(1 − aᵢ))·m 亮得多、晕得更开，合成一层的辉光明显偏弱偏窄。
   void _paintGlow(
     Canvas canvas,
     TextPainter glow,
@@ -639,19 +677,19 @@ class MindscapeScene {
     double intensity,
   ) {
     final (double a1, double a2, double a3) = mindscapeGlowAlphas(intensity);
-    final double alpha = 1 - (1 - a1) * (1 - a2) * (1 - a3);
-    if (alpha <= 0.01) return;
+    if (a1 <= 0.01) return;
     const double pad = _glowBlurRadius * 2;
-    canvas.saveLayer(
-      Rect.fromLTWH(
-        at.dx - pad,
-        at.dy - pad,
-        glow.width + pad * 2,
-        glow.height + pad * 2,
-      ),
-      Paint()..color = Color.fromRGBO(0, 0, 0, alpha.clamp(0.0, 1.0)),
+    final Rect bounds = Rect.fromLTWH(
+      at.dx - pad,
+      at.dy - pad,
+      glow.width + pad * 2,
+      glow.height + pad * 2,
     );
-    glow.paint(canvas, at);
-    canvas.restore();
+    for (final double a in <double>[a1, a2, a3]) {
+      if (a <= 0.004) continue;
+      canvas.saveLayer(bounds, Paint()..color = Color.fromRGBO(0, 0, 0, a));
+      glow.paint(canvas, at);
+      canvas.restore();
+    }
   }
 }

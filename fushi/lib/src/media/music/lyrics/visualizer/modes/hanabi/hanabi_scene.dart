@@ -10,6 +10,9 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_ambient.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_collage.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_collage_decor.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_collage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_catalog.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_color.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_fireworks.dart';
@@ -179,6 +182,25 @@ final BurstSpec _dissolveSpark = burstPreset(BurstKind.botan).copyWith(
   twinkle: 0.6,
 );
 
+/// 最后一句唱完前多少秒开始预建片尾卡（folia `PREBUILD_SECONDS`）。
+const double _creditsPrebuild = 4;
+
+/// 全屏辉光的三层模糊（σ 逻辑像素，权重）：folia 5 级金字塔（每级纹素翻倍，同级权重 0.85，最小一级 1）按宽度折成三层。
+const List<(double, double)> _bloomLevels = <(double, double)>[
+  (1.3, 1.7),
+  (5, 1.7),
+  (13.6, 1),
+];
+
+/// 全屏辉光的亮部提取：folia 下采样第一级的阈值 0.5 + 软膝 0.3（按最大通道）用线性 `0.9·c − 0.405` 逼近，
+/// 放大 2 倍免得 8 位截断（叠回时乘 0.5），再乘色调 [1, 0.95, 0.98]。
+const ui.ColorFilter _bloomExtract = ui.ColorFilter.matrix(<double>[
+  1.8, 0, 0, 0, -0.81 * 255, //
+  0, 1.8 * 0.95, 0, 0, -0.81 * 255 * 0.95, //
+  0, 0, 1.8 * 0.98, 0, -0.81 * 255 * 0.98, //
+  0, 0, 0, 1, 0,
+]);
+
 int _particleBudget(HanabiQuality q) => switch (q) {
   HanabiQuality.full => 6000,
   HanabiQuality.balanced => 3600,
@@ -209,6 +231,9 @@ class _ShotRig {
   final double originY;
   List<BurstPlan> bursts = <BurstPlan>[];
   List<LaunchEvent> launches = <LaunchEvent>[];
+
+  /// 主烟花（拼贴的图标贴纸用；间奏为全部连发，folia planShotEvents 的 mains）。
+  List<BurstEvent> mains = <BurstEvent>[];
   List<HanabiOrnament> back = <HanabiOrnament>[];
   List<HanabiOrnament> front = <HanabiOrnament>[];
   double lifeStart = 0;
@@ -226,8 +251,17 @@ class _BeatPlaced {
 }
 
 class _ParagraphRig {
-  _ParagraphRig(this.paragraph, this.timeline, this.shots, this.lastUsed);
+  _ParagraphRig(
+    this.paragraph,
+    this.seed,
+    this.timeline,
+    this.shots,
+    this.lastUsed,
+  );
   final HanabiParagraph paragraph;
+
+  /// 场景单元的种子（folia `${program.seed}:${paragraph.id}`）：镜头的字、烟花事件、装饰件、旋转与随拍开花都从它派生。
+  final String seed;
   final HanabiTimeline timeline;
   final List<_ShotRig> shots;
   double lastUsed;
@@ -237,26 +271,25 @@ class _ParagraphRig {
   List<HanabiBeatEvent>? beatsFrom;
   double beatsStrength = -1;
 
+  /// 环境层 + 拼贴层（hanabi_collage_decor.dart），按 [decorKey] 懒建。
+  HanabiUnitDecor? decor;
+  Object? decorKey;
+
   void dispose() {
     for (final _ShotRig s in shots) {
       s.dispose();
     }
+    decor?.dispose();
+    decor = null;
   }
 }
 
 /// 整首歌一份。
 class HanabiScene {
-  HanabiScene({
-    required this.program,
-    required String seed,
-    this.title,
-    this.artist,
-    this.album,
-  }) : _seed = seed,
-       sprites = HanabiSprites.create();
+  HanabiScene({required this.program, this.title, this.artist, this.album})
+    : sprites = HanabiSprites.create();
 
   final HanabiProgram program;
-  final String _seed;
   final String? title;
   final String? artist;
   final String? album;
@@ -264,8 +297,6 @@ class HanabiScene {
   final SparkBatch _batch = SparkBatch();
   final Map<int, _ParagraphRig> _rigs = <int, _ParagraphRig>{};
   Object? _rigKey;
-  HanabiAmbient? _ambient;
-  Object? _ambientKey;
   final HanabiOverlay _overlay = HanabiOverlay();
   _CreditsRig? _credits;
   Object? _creditsKey;
@@ -349,6 +380,7 @@ class HanabiScene {
     final bool graphics = f.motion && !s.textOnly;
     final double textMotion = f.motion ? math.max(0, s.textMotion) : 0;
     final HanabiTheme paperTheme = _paperTheme(f);
+    final String unitSeed = '${program.seed}:${paragraph.id}';
     final List<HanabiShot> shots = paragraph.shots;
     final List<HanabiLine?> lines = <HanabiLine?>[
       for (final HanabiShot shot in shots) program.shotLine(shot),
@@ -386,13 +418,14 @@ class HanabiScene {
       ],
       amount: spinAmount,
       direction: hanabiSpinDirection(program.seed),
-      random: hanabiRng('${program.seed}:p$index:spin'),
+      random: hanabiRng('$unitSeed:spin'),
     );
     final HanabiTimeline timeline = buildTimeline(
       timelineShots,
       unitEnd: paragraph.endTime,
       height: h,
-      riseSpeed: f.motion ? math.max(0, s.riseSpeed) : 0,
+      // 只画字（仅显示歌词文字）时字停在文字区里，不随世界上漂（folia graphicsOn）。
+      riseSpeed: graphics ? math.max(0, s.riseSpeed) : 0,
       motion: textMotion * f.intensityMotion,
       exitStart: paragraph.transitionOut?.startTime,
       spinAngles: spin.angles,
@@ -420,12 +453,12 @@ class HanabiScene {
               regionWidth: profile.region.w * w,
               regionHeight: profile.region.h * h,
               unit: unit,
-              seed: '${program.seed}:${shot.id}',
+              seed: '$unitSeed:${shot.id}:text',
               enterAt: timing.enterAt,
               exitAt: timing.exitAt,
               exitDuration: timing.exitDuration,
               motion: textMotion,
-              blockOpacity: s.blockOpacity,
+              blockOpacity: clamp01(s.blockOpacity),
               baseStyle: f.baseStyle,
               keywordColor: f.keywordColor,
             );
@@ -438,47 +471,55 @@ class HanabiScene {
         originX: profile.region.cx * w,
         originY: profile.region.cy * h,
       );
-      if (graphics) _planEvents(rig, i, w, h, unit, s);
-      if (graphics && text != null && s.ornamentAmount > 0) {
-        for (final OrnamentSpec spec in profile.ornaments) {
+      if (graphics) _planEvents(rig, i, w, h, unit, s, timeline, unitSeed);
+      // 装饰件：间奏镜头（没有字）也照常挂，布点按文字区、没有字位置（folia buildRig）。
+      if (graphics && s.ornamentAmount > 0) {
+        final LayoutRect bounds =
+            text?.bounds ??
+            LayoutRect(
+              -profile.region.w * w / 2,
+              -profile.region.h * h / 2,
+              profile.region.w * w,
+              profile.region.h * h,
+            );
+        final List<GlyphAnchor> Function(double time) anchorsAt =
+            text?.anchors ?? _noAnchors;
+        for (int k = 0; k < profile.ornaments.length; k++) {
+          final OrnamentSpec spec = profile.ornaments[k];
           final HanabiOrnament orn = HanabiOrnament(
             OrnamentKit(
               spec: spec,
               palette: palette,
               width: w,
               height: h,
-              seed: '${program.seed}:${shot.id}',
-              bounds: text.bounds,
-              anchorsAt: text.anchors,
+              seed: '$unitSeed:${shot.id}:ornament$k',
+              bounds: bounds,
+              anchorsAt: anchorsAt,
               enterAt: timing.enterAt,
               exitAt: timing.exitAt,
               exitDuration: timing.exitDuration,
-              amount: s.ornamentAmount,
+              amount: math.min(2, s.ornamentAmount),
             ),
           );
           (spec.layer == OrnamentLayer.back ? rig.back : rig.front).add(orn);
         }
       }
-      double lifeEnd = math.max(
-        timing.exitAt + timing.exitDuration + 0.3,
-        timing.end,
-      );
+      // 可见区间（folia lifeStart / lifeEnd）：入场前 0.25 秒起，到退场、最后一朵烟花、最后一道尾迹都画完。
+      double lifeEnd = timing.exitAt + timing.exitDuration + 0.3;
       for (final BurstPlan b in rig.bursts) {
         lifeEnd = math.max(lifeEnd, b.end + 0.05);
       }
       for (final LaunchEvent l in rig.launches) {
         lifeEnd = math.max(lifeEnd, launchEnd(l));
       }
-      double lifeStart = math.min(timing.launchAt, timing.enterAt) - 0.25;
-      for (final LaunchEvent l in rig.launches) {
-        lifeStart = math.min(lifeStart, l.at - 0.05);
-      }
-      rig.lifeStart = lifeStart;
+      rig.lifeStart = math.min(timing.launchAt, timing.enterAt) - 0.25;
       rig.lifeEnd = lifeEnd;
       rigs.add(rig);
     }
-    return _ParagraphRig(paragraph, timeline, rigs, 0);
+    return _ParagraphRig(paragraph, unitSeed, timeline, rigs, 0);
   }
+
+  static List<GlyphAnchor> _noAnchors(double time) => const <GlyphAnchor>[];
 
   void _planEvents(
     _ShotRig rig,
@@ -487,23 +528,24 @@ class HanabiScene {
     double h,
     double unit,
     HanabiSettings s,
+    HanabiTimeline timeline,
+    String unitSeed,
   ) {
     final HanabiShot shot = rig.shot;
     final HanabiProfile profile = rig.profile;
     final ShotTiming timing = rig.timing;
     final HanabiRegion region = profile.region;
-    final HanabiRng random = hanabiRng(
-      '${program.seed}:${shot.id}:$index:events',
-    );
+    final HanabiRng random = hanabiRng('$unitSeed:${shot.id}:$index:events');
     final List<BurstEvent> bursts = <BurstEvent>[];
     final List<LaunchEvent> launches = <LaunchEvent>[];
-    final String key = '${program.seed}:${shot.id}';
-    (double, double) locate(double sx, double sy) =>
-        (sx - rig.originX, sy - rig.originY);
+    final String key = '$unitSeed:${shot.id}';
+    // 画面坐标在 time 时刻对应的镜头容器坐标（folia screenToShot）：含镜头在世界里的高度与那一刻世界的上升。
+    (double, double) locate(double sx, double sy, double time) =>
+        _screenToShot(rig, timeline, sx, sy, time);
 
     void launchTo(double x, double y, double arrive, String k) {
       final double at = arrive - kLaunchDuration;
-      final double bottom = h * 1.03 - rig.originY;
+      final double bottom = locate(0, h * 1.03, at).$2;
       launches.add(
         LaunchEvent(
           fromX: x + (random() - 0.5) * w * 0.08,
@@ -558,6 +600,7 @@ class HanabiScene {
           final (double x, double y) = locate(
             w * (0.2 + random() * 0.6),
             h * 0.94,
+            at,
           );
           bursts.add(
             BurstEvent(
@@ -574,6 +617,7 @@ class HanabiScene {
         final (double x, double y) = locate(
           w * (0.15 + random() * 0.7),
           h * (0.14 + random() * 0.34),
+          at,
         );
         final double scale = 0.55 + random() * 0.4;
         final (double squash, double rotation) = shape(spec);
@@ -642,9 +686,11 @@ class HanabiScene {
             ..add((centerX - dx, y, at))
             ..add((centerX + dx, y, at + 0.15));
         } else {
+          // sky：画面上方随机的高处，按镜头定格时（入场后 0.6 秒）的画面换算。
           final (double x, double y) = locate(
             w * (0.2 + random() * 0.6),
             h * (0.12 + random() * 0.22),
+            timing.enterAt + 0.6,
           );
           points.add((x, y, at));
         }
@@ -740,7 +786,25 @@ class HanabiScene {
         planBurst(e, rig.palette, unit: unit, amount: amount),
     ];
     rig.launches = launches;
+    rig.mains = shot.isBridge
+        ? List<BurstEvent>.of(bursts)
+        : <BurstEvent>[
+            for (final BurstEvent e in bursts)
+              if (e.seed.startsWith('$key:main')) e,
+          ];
   }
+
+  /// 画面坐标 (sx, sy) 在 time 时刻对应的镜头容器坐标（folia `screenToShot`；与 folia 一样不计镜头内运镜与世界旋转）。
+  static (double, double) _screenToShot(
+    _ShotRig shot,
+    HanabiTimeline timeline,
+    double sx,
+    double sy,
+    double time,
+  ) => (
+    sx - shot.originX,
+    sy - (shot.originY + shot.timing.worldY + timeline.rise(time)),
+  );
 
   // ── 随拍开花 ──
 
@@ -757,7 +821,7 @@ class HanabiScene {
     _BeatPlaced? placed;
     final HanabiBeatShell? shell = resolveHanabiBeatShell(
       event,
-      program.seed,
+      rig.seed,
       strength,
     );
     if (shell != null &&
@@ -768,17 +832,29 @@ class HanabiScene {
       final _ShotRig shot = rig.shots[index];
       final double w = size.width;
       final double h = size.height;
-      final double x = shell.sx * w - shot.originX;
-      final double y = shell.sy * h - shot.originY;
+      final (double x, double y) = _screenToShot(
+        shot,
+        rig.timeline,
+        shell.sx * w,
+        shell.sy * h,
+        event.t,
+      );
       LaunchEvent? launch;
       if (shell.launch && f.settings.launches) {
-        final double bottom = h * 1.03 - shot.originY;
+        final double at = event.t - kLaunchDuration;
+        final double bottom = _screenToShot(
+          shot,
+          rig.timeline,
+          shell.sx * w,
+          h * 1.03,
+          at,
+        ).$2;
         launch = LaunchEvent(
           fromX: x,
           fromY: math.max(bottom, y + h * 0.2),
           toX: x,
           toY: y,
-          at: event.t - kLaunchDuration,
+          at: at,
           duration: kLaunchDuration,
           color: shot.palette.glow,
           seed: '${shell.seed}:launch',
@@ -833,6 +909,7 @@ class HanabiScene {
 
   // ── 画 ──
 
+  /// 一帧。层级照 folia 运行时：夜空底 → 场景层（各段落场景，含环境层；套随拍推镜与全屏辉光）→ 片尾卡 → 画框。
   void paint(ui.Canvas canvas, Size size, HanabiFrame f) {
     if (_disposed || size.isEmpty) return;
     final HanabiSettings s = f.settings;
@@ -841,16 +918,11 @@ class HanabiScene {
     final double unit = math.min(w, h);
     final double time = f.time;
     final bool graphics = f.motion && !s.textOnly;
-    final HanabiPalette scenePalette = resolveHanabiPalette(
-      PaletteRole.night,
-      _paperTheme(f),
-      s.colorMode,
-    );
-
     if (!s.textOnly) paintHanabiSky(canvas, size, f.theme, s.sky);
 
-    final double? lyricEnd = program.lyricEndTime;
-    final HanabiCreditsFrame credits = lyricEnd != null && _hasMeta
+    // 片尾卡：纯音乐（没有 lyricEndTime）与没有任何歌曲信息时没有，歌词也不淡出（folia HanabiCreditsLayer）。
+    final double? lyricEnd = _hasMeta ? program.lyricEndTime : null;
+    final HanabiCreditsFrame credits = lyricEnd != null
         ? resolveHanabiCreditsFrame(time, lyricEnd)
         : const HanabiCreditsFrame(
             active: false,
@@ -865,32 +937,26 @@ class HanabiScene {
       time,
       f.motion,
     );
-    // 提前备好下一段。
+    // 场景缓存：在画的段落 + 当前段 ±1（folia PixiSceneCache）。
+    final int active = frames.activeIndex;
     final Set<int> keep = <int>{
       for (final HanabiLayerFrame l in frames.layers) l.index,
+      if (active > 0) active - 1,
+      if (active >= 0 && active + 1 < program.paragraphs.length) active + 1,
     };
-    final int next = frames.activeIndex + 1;
-    if (next > 0 &&
-        next < program.paragraphs.length &&
-        program.paragraphs[next].startTime - time < _prepareAhead) {
-      keep.add(next);
-    }
     _evict(time, keep);
-    double rise = 0;
-    if (frames.activeIndex >= 0) {
-      rise = _rigFor(frames.activeIndex, size, f).timeline.rise(time);
+    for (final HanabiLayerFrame l in frames.layers) {
+      _rigFor(l.index, size, f);
     }
-    if (next > 0 && keep.contains(next)) {
-      final _ParagraphRig upcoming = _rigFor(next, size, f);
-      for (final _ShotRig shot in upcoming.shots) {
-        if (shot.lifeStart - time < _prepareAhead) shot.text?.prepare();
-      }
-    }
+    _prepareOne(size, f, active, lyricEnd);
 
-    // 随拍推镜：整个场景层（环境、歌词、辉光）以画面中心推近、左右轻摆。
+    // 场景层录成一张 picture：先原样画，全屏辉光再拿它做亮部提取与模糊叠回去（片尾卡、画框、夜空不进）。
+    final ui.PictureRecorder recorder = ui.PictureRecorder();
+    final ui.Canvas layer = ui.Canvas(recorder);
+    // 随拍推镜：整个场景层以画面中心推近、左右轻摆。
     final bool pulsed = graphics && (f.pulseScale != 1 || f.pulseRotation != 0);
     if (pulsed) {
-      canvas
+      layer
         ..save()
         ..translate(w / 2, h / 2)
         ..rotate(f.pulseRotation)
@@ -898,28 +964,15 @@ class HanabiScene {
         ..translate(-w / 2, -h / 2);
     }
 
-    // 环境层（后）。
-    final HanabiAmbient? ambient = graphics ? _ambientFor(f) : null;
-    _batch.halo = graphics && s.quality != HanabiQuality.low
-        ? math.max(0, s.glow)
-        : 0;
-    if (ambient != null) {
-      _batch.reset(1 << 20);
-      ambient.paintBack(_batch, size, time, rise, scenePalette);
-      _batch.flush(canvas, sprites);
-      if (s.collage > 0) {
-        paintHanabiCollage(canvas, size, rise, scenePalette, s.collage);
-      }
-    }
-
-    // 歌词层（录下来，副歌辉光再叠一遍）。
-    final ui.PictureRecorder recorder = ui.PictureRecorder();
-    final ui.Canvas layer = ui.Canvas(recorder);
+    // 各段落场景（交叉渐变时两个，上一段在下）。
+    final double spinTurn = s.textOnly || s.spin <= 0
+        ? 0
+        : s.spin * hanabiSpinDirection(program.seed);
     _batch.reset(_particleBudget(s.quality));
     for (final HanabiLayerFrame l in frames.layers) {
       final HanabiTransitionFrame frame = l.frame;
       final double alpha = clamp01(frame.alpha * credits.lyricAlpha);
-      if (alpha <= 0.003) continue;
+      if (alpha <= 0.002) continue;
       final double blur = f.motion
           ? math.max(frame.blur, credits.lyricBlur)
           : 0;
@@ -929,106 +982,155 @@ class HanabiScene {
       if (needsLayer) {
         final Paint lp = Paint()..color = Color.fromRGBO(255, 255, 255, alpha);
         if (blur > 0.3) {
+          // Pixi BlurFilter（strength = blur，quality 3：三遍 5 抽头核）的高斯等效 σ ≈ 0.58 × strength。
           lp.imageFilter = ui.ImageFilter.blur(
-            sigmaX: blur * 0.5,
-            sigmaY: blur * 0.5,
+            sigmaX: blur * 0.58,
+            sigmaY: blur * 0.58,
           );
         }
         layer.saveLayer(bounds, lp);
       }
+      // 段落转场的旋转跟着「旋转」设置与整首歌的旋转方向走；仅显示歌词文字时不转（folia spinTurn）。
       layer.save();
       layer.translate(w / 2, h / 2 + frame.y * h);
-      layer.rotate(frame.rotation);
+      layer.rotate(frame.rotation * spinTurn);
       layer.scale(frame.scale);
       layer.translate(-w / 2, -h / 2);
       _paintParagraph(layer, size, rig, f, unit);
       layer.restore();
       if (needsLayer) layer.restore();
     }
-    if (credits.posterAlpha > 0) {
-      _creditsFor(size, f, lyricEnd!).paint(
-        layer,
+
+    if (pulsed) layer.restore();
+    final ui.Picture picture = recorder.endRecording();
+    canvas.drawPicture(picture);
+
+    // 全屏辉光：整体辉光 + 副歌辉光 × 副歌权重（folia applyScreenBloom，强度不到 0.01 时不画）。
+    final double bloom = resolveHanabiScreenBloomStrength(
+      s.bloom,
+      s.chorusBloom,
+      resolveHanabiChorusWeight(program.chorus, time),
+    );
+    if (bloom > 0.01) _paintScreenBloom(canvas, size, picture, bloom);
+    picture.dispose();
+
+    // 片尾卡（在场景层之上，不吃随拍推镜与全屏辉光）。
+    if (lyricEnd != null && credits.posterAlpha > 0.002) {
+      _batch.halo = math.min(2, math.max(0, s.glow));
+      _creditsFor(size, f, lyricEnd).paint(
+        canvas,
         size,
         time,
         credits.posterAlpha,
         _batch,
         sprites,
-        graphics,
+        f.motion,
       );
     }
-    final ui.Picture picture = recorder.endRecording();
-    canvas.drawPicture(picture);
-    final double bloom = graphics && s.quality != HanabiQuality.low
-        ? resolveHanabiScreenBloomStrength(
-            s.bloom,
-            s.chorusBloom,
-            resolveHanabiChorusWeight(program.chorus, time),
-          )
-        : 0;
-    if (bloom > 0.02) {
-      final double sigma =
-          unit * (s.quality == HanabiQuality.full ? 0.014 : 0.009);
+    if (s.overlayFrame && !s.textOnly) {
+      // 画框用 kawaii 调色（folia buildHanabiOverlay）。
+      _overlay.paint(
+        canvas,
+        size,
+        resolveHanabiPalette(PaletteRole.kawaii, _paperTheme(f), s.colorMode),
+        f.baseStyle,
+        1,
+      );
+    }
+  }
+
+  /// 一帧最多做一件贵的事（folia 运行时 renderFrame 的优先级）：画一个马上要出场的镜头的字形 →
+  /// 预建下一段 → 预建片尾卡 → 预建上一段。没备好的到出场那一帧照样会补上，只是那一帧更重。
+  void _prepareOne(Size size, HanabiFrame f, int active, double? lyricEnd) {
+    final double time = f.time;
+    for (final _ParagraphRig rig in _rigs.values) {
+      for (final _ShotRig shot in rig.shots) {
+        if (time > shot.lifeEnd || time < shot.lifeStart - _prepareAhead) {
+          continue;
+        }
+        final HanabiText? text = shot.text;
+        if (text != null && !text.prepared) {
+          text.prepare();
+          return;
+        }
+      }
+    }
+    final int next = active + 1;
+    if (active >= 0 &&
+        next < program.paragraphs.length &&
+        !_rigs.containsKey(next)) {
+      _rigFor(next, size, f);
+      return;
+    }
+    if (lyricEnd != null &&
+        time >= lyricEnd - _creditsPrebuild &&
+        !(_credits != null &&
+            _creditsKey == _creditsKeyOf(size, f, lyricEnd))) {
+      _creditsFor(size, f, lyricEnd);
+      return;
+    }
+    final int previous = active - 1;
+    if (previous >= 0 && !_rigs.containsKey(previous)) {
+      _rigFor(previous, size, f);
+    }
+  }
+
+  /// 场景舞台的镜头内运镜（folia stage：推近、摆动、入场震动，绕画面中心）。
+  void _applyCamera(
+    ui.Canvas canvas,
+    Size size,
+    HanabiTimeline timeline,
+    HanabiFrame f,
+  ) {
+    final double w = size.width;
+    final double h = size.height;
+    final CameraOffset cam = f.motion
+        ? timeline.camera(f.time, h)
+        : const CameraOffset(1, 0, 0, 0);
+    canvas
+      ..translate(w / 2 + cam.dx, h / 2 + cam.dy)
+      ..rotate(cam.rotation)
+      ..scale(cam.scale)
+      ..translate(-w / 2, -h / 2);
+  }
+
+  /// 全屏辉光（folia `createBloomFilter`：阈值 0.5、软膝 0.3、5 级双线性金字塔、同级权重 0.85、色调 [1, 0.95, 0.98]）。
+  /// 软膝亮部提取用一条线性色彩矩阵逼近（`0.9·c − 0.405`，在 c ≥ 0.5 与原曲线相差 < 0.03），
+  /// 5 级逐级降 / 升采样折成三层宽度递增的高斯模糊，各层权重之和与金字塔一致（1 + 0.85 × 4）。
+  void _paintScreenBloom(
+    ui.Canvas canvas,
+    Size size,
+    ui.Picture picture,
+    double strength,
+  ) {
+    final Rect bounds = Offset.zero & size;
+    for (final (double sigma, double weight) in _bloomLevels) {
+      // 提取矩阵把亮部放大了 2 倍（免得在 8 位里截断），这里乘回 0.5。
+      final double alpha = clamp01(strength * weight * 0.5);
+      if (alpha <= 0.002) continue;
       canvas.saveLayer(
-        Offset.zero & size,
+        bounds,
         Paint()
           ..blendMode = BlendMode.plus
-          ..color = Color.fromRGBO(255, 255, 255, clamp01(bloom * 0.45))
-          ..imageFilter = ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          ..color = Color.fromRGBO(255, 255, 255, alpha)
+          ..imageFilter = ui.ImageFilter.compose(
+            outer: ui.ImageFilter.blur(
+              sigmaX: sigma,
+              sigmaY: sigma,
+              tileMode: TileMode.decal,
+            ),
+            inner: _bloomExtract,
+          ),
       );
       canvas.drawPicture(picture);
       canvas.restore();
-    }
-    picture.dispose();
-
-    // 环境层（前）。
-    if (ambient != null) {
-      _batch.reset(1 << 20);
-      ambient.paintFront(_batch, size, time, rise, scenePalette);
-      _batch.flush(canvas, sprites);
-    }
-    if (pulsed) canvas.restore();
-    if (s.overlayFrame) {
-      _overlay.paint(canvas, size, scenePalette, f.baseStyle, 1);
     }
   }
 
   bool get _hasMeta =>
       (title?.trim().isNotEmpty ?? false) ||
-      (artist?.trim().isNotEmpty ?? false);
-
-  HanabiAmbient _ambientFor(HanabiFrame f) {
-    final double density =
-        math.min(2, math.max(0, f.settings.ambient)) *
-        (f.settings.quality == HanabiQuality.low ? 0.6 : 1);
-    final Object key = density;
-    final HanabiAmbient? existing = _ambient;
-    if (existing != null && _ambientKey == key) return existing;
-    _ambientKey = key;
-    return _ambient = HanabiAmbient(
-      seed: _seed,
-      density: density,
-      mood: _songMood(),
-    );
-  }
-
-  HanabiMood _songMood() {
-    double sum = 0;
-    int n = 0;
-    for (final HanabiParagraph p in program.paragraphs) {
-      for (final HanabiShot s in p.shots) {
-        sum += switch (hanabiProfileOf(s.kind).mood) {
-          HanabiMood.quiet => 0.08,
-          HanabiMood.neutral => 0.2,
-          HanabiMood.loud => 0.35,
-        };
-        n++;
-      }
-    }
-    final double avg = n == 0 ? 0.2 : sum / n;
-    return avg < 0.14
-        ? HanabiMood.quiet
-        : (avg < 0.27 ? HanabiMood.neutral : HanabiMood.loud);
-  }
+      (artist?.trim().isNotEmpty ?? false) ||
+      (album?.trim().isNotEmpty ?? false);
 
   void _paintParagraph(
     ui.Canvas canvas,
@@ -1041,19 +1143,25 @@ class HanabiScene {
     final double h = size.height;
     final double time = f.time;
     final HanabiTimeline timeline = rig.timeline;
-    final CameraOffset cam = f.motion
-        ? timeline.camera(time, h)
-        : const CameraOffset(1, 0, 0, 0);
     canvas.save();
-    canvas.translate(w / 2 + cam.dx, h / 2 + cam.dy);
-    canvas.rotate(cam.rotation);
-    canvas.scale(cam.scale);
-    canvas.rotate(timeline.spin(time));
-    canvas.translate(-w / 2, -h / 2 + timeline.rise(time));
+    // stage（镜头内运镜）→ spin（绕画面中心转 spin(t)）→ world（y = rise(t)）。
+    _applyCamera(canvas, size, timeline, f);
+    // 环境层（后）+ 网点底纹：在舞台里、世界外（folia scene.ts 层序）。
+    final HanabiUnitDecor? decor = _decorFor(rig, size, f);
+    final double rise = timeline.rise(time);
+    decor?.paintBack(canvas, sprites, time, rise);
+    canvas
+      ..save()
+      ..translate(w / 2, h / 2)
+      ..rotate(timeline.spin(time))
+      ..translate(-w / 2, -h / 2 + rise);
     final List<_BeatPlaced> beats = _collectBeats(rig, size, f);
     for (int si = 0; si < rig.shots.length; si++) {
       final _ShotRig shot = rig.shots[si];
-      if (time < shot.lifeStart || time > shot.lifeEnd) continue;
+      if (time < shot.lifeStart ||
+          time > math.max(shot.lifeEnd, decor?.shotLifeEnd(si) ?? 0)) {
+        continue;
+      }
       final ShotTiming timing = shot.timing;
       final HanabiText? text = shot.text;
       if (text != null && !text.prepared) text.prepare();
@@ -1089,6 +1197,7 @@ class HanabiScene {
       for (final HanabiOrnament o in shot.back) {
         o.paint(canvas, time);
       }
+      decor?.paintShotBack(canvas, si, time);
       if (text != null) {
         text.paintBlocks(canvas, time);
         text.paintGlyphs(canvas, time);
@@ -1096,27 +1205,89 @@ class HanabiScene {
       for (final HanabiOrnament o in shot.front) {
         o.paint(canvas, time);
       }
+      decor?.paintShotFront(canvas, si, time);
       canvas.restore();
     }
     canvas.restore();
+    // 环境层（前）+ 左缘竖胶片。
+    decor?.paintFront(canvas, sprites, time, rise);
+    canvas.restore();
   }
 
-  _CreditsRig _creditsFor(Size size, HanabiFrame f, double lyricEnd) {
-    final Object key = Object.hash(
-      size,
-      f.fontScale,
-      f.baseStyle.fontFamily,
-      f.settings.rigKey,
-      f.motion,
-      lyricEnd,
+  /// 段落的环境层与拼贴层（folia scene.ts 的 ambient / unitCollage / 每镜头 collage）；
+  /// 密度、拼贴量、画质变了重建。只在出图形时有（folia graphicsOn）。
+  HanabiUnitDecor? _decorFor(_ParagraphRig rig, Size size, HanabiFrame f) {
+    final HanabiSettings s = f.settings;
+    if (!f.motion || s.textOnly) return null;
+    final double density =
+        math.min(2, math.max(0, s.ambient)) *
+        (s.quality == HanabiQuality.low ? 0.6 : 1);
+    final double collage = math.min(2, math.max(0, s.collage));
+    final Object key = Object.hash(density, collage, title);
+    if (rig.decorKey == key) return rig.decor;
+    rig.decor?.dispose();
+    rig.decorKey = key;
+    final HanabiParagraph paragraph = rig.paragraph;
+    final String? songTitle = title?.trim();
+    final String? songArtist = artist?.trim();
+    final HanabiUnitDecor decor = HanabiUnitDecor(
+      unitSeed: rig.seed,
+      size: size,
+      shots: <HanabiDecorShot>[
+        for (final _ShotRig shot in rig.shots)
+          HanabiDecorShot(
+            id: shot.shot.id,
+            profile: shot.profile,
+            isBridge: shot.shot.isBridge,
+            timing: shot.timing,
+            palette: shot.palette,
+            line: program.shotLine(shot.shot),
+            textBounds: shot.text?.bounds,
+            mains: shot.mains,
+            launches: shot.launches,
+          ),
+      ],
+      rise: rig.timeline.rise,
+      startTime: paragraph.startTime,
+      endTime: paragraph.endTime,
+      ambientDensity: density,
+      collageAmount: collage,
+      motifs: hanabiCollageMotifs(songTitle),
+      opening: paragraph.index == 0 && songTitle != null && songTitle.isNotEmpty
+          ? CollageOpening(
+              songTitle,
+              songArtist == null || songArtist.isEmpty ? null : songArtist,
+            )
+          : null,
+      fallbackFont: f.baseStyle.fontFamily,
     );
+    return rig.decor = decor;
+  }
+
+  /// 片尾卡的烘焙输入：尺寸、主题（调色板）、字体、tuning、歌词结束时刻；变了就作废重建（folia invalidate）。
+  Object _creditsKeyOf(Size size, HanabiFrame f, double lyricEnd) =>
+      Object.hash(
+        size,
+        f.baseStyle.fontFamily,
+        f.baseStyle.fontWeight,
+        f.settings.rigKey,
+        f.settings.collage,
+        f.motion,
+        f.theme.primary,
+        f.theme.accent,
+        f.theme.secondary,
+        f.theme.background,
+        lyricEnd,
+      );
+
+  _CreditsRig _creditsFor(Size size, HanabiFrame f, double lyricEnd) {
+    final Object key = _creditsKeyOf(size, f, lyricEnd);
     final _CreditsRig? existing = _credits;
     if (existing != null && key == _creditsKey) return existing;
     existing?.dispose();
     _creditsKey = key;
     return _credits = _CreditsRig(
       size: size,
-      seed: '$_seed:credits',
       start: lyricEnd,
       title: title?.trim() ?? '',
       artist: artist?.trim() ?? '',
@@ -1126,12 +1297,11 @@ class HanabiScene {
         _paperTheme(f),
         f.settings.colorMode,
       ),
-      fontScale: f.fontScale,
       baseStyle: f.baseStyle,
       motion: f.motion ? math.max(0, f.settings.textMotion) : 0,
-      graphics: f.motion && !f.settings.textOnly,
+      blockOpacity: clamp01(f.settings.blockOpacity),
       sparkAmount: f.settings.sparkAmount,
-      launches: f.settings.launches,
+      collage: f.settings.textOnly ? 0 : f.settings.collage,
     );
   }
 }
@@ -1140,6 +1310,8 @@ class HanabiScene {
 
 const double _bloomAt = 1.1;
 const double _titleStart = 1.45;
+const double _titleStep = 0.12;
+const double _titleSpan = 2;
 const TextSpec _titleSpec = TextSpec(
   layout: TextLayoutKind.center,
   heroSize: 0.11,
@@ -1157,25 +1329,23 @@ const TextSpec _titleSpec = TextSpec(
 class _CreditsRig {
   _CreditsRig({
     required Size size,
-    required String seed,
     required this.start,
     required String title,
     required this.artist,
     required this.album,
     required this.palette,
-    required double fontScale,
     required this.baseStyle,
     required double motion,
-    required bool graphics,
+    required double blockOpacity,
     required double sparkAmount,
-    required bool launches,
+    required double collage,
   }) {
     final double w = size.width;
     final double h = size.height;
     final double unit = math.min(w, h);
     final List<String> chars = title.characters.toList();
     if (chars.isNotEmpty) {
-      final double step = math.min(0.12, 2 / chars.length);
+      final double step = math.min(_titleStep, _titleSpan / chars.length);
       final double t0 = start + _titleStart;
       _title = HanabiText(
         line: HanabiLine(
@@ -1189,93 +1359,209 @@ class _CreditsRig {
           startTime: t0,
           endTime: t0 + chars.length * step + 0.4,
         ),
-        spec: _titleSpec.copyWith(heroSize: 0.11 * fontScale),
+        // folia 的片尾卡不吃歌词字号倍率（HanabiCreditsLayer 没有传 fontScale）。
+        spec: _titleSpec,
         palette: palette,
         regionWidth: 0.72 * w,
         regionHeight: 0.26 * h,
         unit: unit,
-        seed: '$seed:title',
+        seed: 'hanabi:credits:title',
         enterAt: start + _bloomAt - 0.1,
+        // 片尾卡一直停在最后一帧，字不退场。
         exitAt: start + 1e6,
-        exitDuration: 0.5,
+        exitDuration: 1,
         motion: motion,
-        blockOpacity: 1,
+        blockOpacity: blockOpacity,
         baseStyle: baseStyle,
       );
-      _titleDone = _titleStart + math.min(2, 0.12 * chars.length);
+      _titleDone =
+          _titleStart + math.min(_titleSpan, _titleStep * chars.length);
     }
-    if (graphics) {
-      final List<(BurstSpec, double, double, double, double)> plan =
-          <(BurstSpec, double, double, double, double)>[
-            (
-              burstPreset(BurstKind.kamuro, const <int>[
-                0,
-                1,
-                3,
-              ]).copyWith(count: 150, radius: 0.46, duration: 4.2),
-              0.5,
-              0.34,
-              _bloomAt,
+    // 尾迹 0.45 秒从底边升起，1.1 秒在曲名上方开金冠，随后两侧千輪、最后一朵双层（folia credits.ts）。
+    final List<(BurstSpec, double, double, double, double, String)> plan =
+        <(BurstSpec, double, double, double, double, String)>[
+          (
+            burstPreset(BurstKind.kamuro, const <int>[
+              0,
               1,
-            ),
-            (
-              burstPreset(BurstKind.senrin, const <int>[1, 2, 3]),
-              0.2,
-              0.3,
-              1.65,
-              0.8,
-            ),
-            (
-              burstPreset(BurstKind.senrin, const <int>[2, 3, 0]),
-              0.8,
-              0.27,
-              1.9,
-              0.8,
-            ),
-            (
-              burstPreset(BurstKind.willowRing, const <int>[3, 0, 1]),
-              0.5,
-              0.22,
-              3.3,
-              0.9,
-            ),
-          ];
-      for (final (
-            int k,
-            (BurstSpec spec, double x, double y, double at, double scale),
-          )
-          in plan.indexed) {
-        _bursts.add(
-          planBurst(
-            BurstEvent(
-              x: x * w,
-              y: y * h,
-              at: start + at,
-              spec: spec,
-              seed: '$seed:b$k',
-              scale: scale,
-            ),
-            palette,
-            unit: unit,
-            amount: math.max(0, sparkAmount),
+              3,
+            ]).copyWith(count: 150, radius: 0.46, duration: 4.2),
+            0.5,
+            0.34,
+            _bloomAt,
+            1,
+            'crown',
           ),
-        );
-        if (launches) {
-          _launches.add(
-            LaunchEvent(
-              fromX: x * w,
-              fromY: h * 1.03,
-              toX: x * w,
-              toY: y * h,
-              at: start + at - kLaunchDuration,
-              duration: kLaunchDuration,
-              color: palette.glow,
-              seed: '$seed:l$k',
-            ),
-          );
-        }
-      }
+          (
+            burstPreset(BurstKind.senrin, const <int>[1, 2, 3]),
+            0.2,
+            0.3,
+            _bloomAt + 0.55,
+            0.8,
+            'left',
+          ),
+          (
+            burstPreset(BurstKind.senrin, const <int>[2, 3, 0]),
+            0.8,
+            0.27,
+            _bloomAt + 0.8,
+            0.8,
+            'right',
+          ),
+          (
+            burstPreset(BurstKind.willowRing, const <int>[3, 0, 1]),
+            0.5,
+            0.22,
+            _bloomAt + 2.2,
+            0.9,
+            'finale',
+          ),
+        ];
+    for (final (
+          int k,
+          (
+            BurstSpec spec,
+            double x,
+            double y,
+            double at,
+            double scale,
+            String name,
+          ),
+        )
+        in plan.indexed) {
+      _bursts.add(
+        planBurst(
+          BurstEvent(
+            x: x * w,
+            y: y * h,
+            at: start + at,
+            spec: spec,
+            seed: 'hanabi:credits:$name',
+            scale: scale,
+          ),
+          palette,
+          unit: unit,
+          amount: math.max(0, sparkAmount),
+        ),
+      );
+      _launches.add(
+        LaunchEvent(
+          fromX: x * w + (k.isEven ? -1 : 1) * w * 0.02,
+          fromY: h * 1.03,
+          toX: x * w,
+          toY: y * h,
+          at: start + at - kLaunchDuration,
+          duration: kLaunchDuration,
+          color: palette.glow,
+          seed: 'hanabi:credits:launch$k',
+        ),
+      );
     }
+    if (collage > 0) _planCollage(w, h, unit);
+  }
+
+  /// 片尾卡的拼贴（folia credits.ts，tuning.collage > 0 时）：下方一条电影胶片、上方一条蕾丝花边、
+  /// 金冠开花时蹦出的图标、曲名四角的贴纸、往上飘的贴纸气球。坐标是画面坐标，时间是片尾卡内的时间，一直停在最后一帧。
+  void _planCollage(double w, double h, double unit) {
+    _collageCache = HanabiCollageCache(fallbackFont: baseStyle.fontFamily);
+    const double stay = 1e6;
+    StripItem band(
+      StripStyle style,
+      double y,
+      double rotation,
+      int color,
+      double at,
+      int from,
+    ) {
+      final bool film = style == StripStyle.film;
+      return StripItem(
+        style: style,
+        x: w / 2,
+        y: y,
+        length: math.sqrt(w * w + h * h) * 1.25,
+        thickness: math.max(18, unit * (film ? 0.075 : 0.06)),
+        rotation: rotation,
+        color: color,
+        speed: from * unit * (film ? 0.12 : 0.05),
+        from: from,
+        at: at,
+        exitAt: stay,
+        exitDuration: 1,
+      );
+    }
+
+    const List<StickerShape> shapes = <StickerShape>[
+      StickerShape.heart,
+      StickerShape.star,
+      StickerShape.ribbon,
+      StickerShape.sparkle,
+    ];
+    final int candy = kCollageCandy.length;
+    _collagePlan = CollagePlan(null, <CollageItem>[
+      band(
+        StripStyle.film,
+        h * 0.85,
+        0.06,
+        kCollageCandy[0],
+        _titleStart + 0.4,
+        -1,
+      ),
+      band(
+        StripStyle.lace,
+        h * 0.13,
+        -0.05,
+        kCollageCandy[3],
+        _titleStart + 0.7,
+        1,
+      ),
+      PopItem(
+        x: w * 0.72,
+        y: h * 0.22,
+        icon: kHanabiFallbackIcon,
+        color: kCollageIconInks[0],
+        size: unit * 0.12,
+        rotation: 0.16,
+        at: _bloomAt + 0.04,
+        duration: 1.4,
+      ),
+      for (int k = 0; k < shapes.length; k++)
+        StickerItem(
+          shape: shapes[k],
+          x:
+              w / 2 +
+              (k == 0 || k == 3 ? -1 : 1) * math.min(w * 0.38, unit * 0.62),
+          y: h * 0.5 + (k < 2 ? -1 : 1) * unit * 0.1,
+          size: unit * 0.08,
+          rotation: (k.isEven ? -1 : 1) * 0.25,
+          color: kCollageCandy[(k + 3) % candy],
+          label: null,
+          layer: CollageLayer.front,
+          at: _titleStart + 0.5 + k * 0.12,
+          exitAt: stay,
+          exitDuration: 1,
+        ),
+      for (int k = 0; k < 6; k++)
+        FloaterItem(
+          shape: shapes[k % shapes.length],
+          x: w * (0.12 + ((k * 0.37) % 1) * 0.76),
+          y: h * 1.08,
+          rise: h * 1.3,
+          size: unit * (0.05 + (k % 3) * 0.012),
+          color: kCollageCandy[k % candy],
+          at: 2.4 + k * 0.9,
+          duration: 4.2,
+          sway: unit * 0.03,
+        ),
+    ]);
+  }
+
+  HanabiCollageCache? _collageCache;
+  CollagePlan? _collagePlan;
+
+  /// 拼贴的时间：贴纸气球一轮飘完再从头来（片尾卡可能停很久）。
+  double _collageTime(double elapsed) {
+    final double t = math.max(0, elapsed);
+    return t < 8 ? t : 2.4 + ((t - 2.4) % 5.6);
   }
 
   final double start;
@@ -1289,23 +1575,27 @@ class _CreditsRig {
   final List<LaunchEvent> _launches = <LaunchEvent>[];
   final Map<String, TextPainter> _painters = <String, TextPainter>{};
 
-  TextPainter _detail(String text, double size, double spacing) =>
-      _painters.putIfAbsent(
-        '$text|$size',
-        () => TextPainter(
-          text: TextSpan(
-            text: text,
-            style: baseStyle.copyWith(
-              fontSize: size,
-              letterSpacing: size * spacing,
-              color: rgbColor(palette.paper),
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-          textAlign: TextAlign.center,
-        )..layout(),
-      );
+  TextPainter _detail(
+    String text,
+    double size,
+    double spacing,
+    double maxWidth,
+  ) => _painters.putIfAbsent(
+    '$text|$size|$maxWidth',
+    () => TextPainter(
+      text: TextSpan(
+        text: text,
+        style: baseStyle.copyWith(
+          fontSize: size,
+          letterSpacing: size * spacing,
+          color: rgbColor(palette.paper),
+          fontWeight: baseStyle.fontWeight ?? FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+    )..layout(maxWidth: maxWidth),
+  );
 
   void paint(
     ui.Canvas canvas,
@@ -1338,6 +1628,19 @@ class _CreditsRig {
       if (active.isNotEmpty) drawBursts(active, time, batch);
       batch.flush(canvas, sprites);
     }
+    final HanabiCollageCache? collageCache = _collageCache;
+    final CollagePlan? collagePlan = _collagePlan;
+    final bool collageOn =
+        graphics && collageCache != null && collagePlan != null;
+    if (collageOn) {
+      paintCollageItems(
+        canvas,
+        collageCache,
+        collagePlan,
+        CollageLayer.back,
+        _collageTime(elapsed),
+      );
+    }
     final HanabiText? title = _title;
     if (title != null) {
       if (!title.prepared) title.prepare();
@@ -1358,7 +1661,7 @@ class _CreditsRig {
       if (text.isEmpty) return;
       final double k = smoothstep01((elapsed - delay) / 0.9);
       if (k <= 0.003) return;
-      final TextPainter p = _detail(text, fontSize, spacing);
+      final TextPainter p = _detail(text, fontSize, spacing, w * 0.7);
       canvas.saveLayer(
         Offset.zero & size,
         Paint()..color = Color.fromRGBO(255, 255, 255, k * 0.92),
@@ -1373,12 +1676,23 @@ class _CreditsRig {
     final double delay = _title != null ? _titleDone : 1.2;
     detail(artist.toUpperCase(), h * 0.66, size0, 0.3, delay);
     detail(album, h * 0.35, size0 * 0.8, 0.16, delay + 0.3);
+    if (collageOn) {
+      paintCollageItems(
+        canvas,
+        collageCache,
+        collagePlan,
+        CollageLayer.front,
+        _collageTime(elapsed),
+      );
+    }
     canvas.restore();
   }
 
   void dispose() {
     _title?.dispose();
     _title = null;
+    _collageCache?.dispose();
+    _collageCache = null;
     for (final TextPainter p in _painters.values) {
       p.dispose();
     }

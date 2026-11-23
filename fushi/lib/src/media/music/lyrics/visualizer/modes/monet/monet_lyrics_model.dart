@@ -209,6 +209,84 @@ List<MonetVisibleEntry> buildMonetVisibleEntries(
   ];
 }
 
+// ---------------------------------------------------------------------------
+// 手动滚动（folia `monetRailLayout.ts`：滚轮 / 触摸翻行，停手 1.8 秒回到当前句）
+// ---------------------------------------------------------------------------
+
+/// 停手多久回到自动跟随（folia `MONET_SCROLL_IDLE_RESET_MS`），秒。
+const double kMonetScrollIdleResetSeconds = 1.8;
+
+/// 滚轮累计多少 px 翻一行（folia `MONET_SCROLL_STEP_PX`）。
+const double kMonetScrollStepPx = 72;
+
+/// 触摸拖多少 px 翻一行（folia `MONET_TOUCH_STEP_PX`）。
+const double kMonetTouchStepPx = 52;
+
+/// 手动滚动时锚点前后各显示几行（folia `MONET_SCROLL_BEFORE` / `AFTER`）。
+const int kMonetScrollBefore = 4;
+const int kMonetScrollAfter = 4;
+
+/// folia `clampScrollSteps`：一次最多翻一行。
+int monetClampScrollSteps(int steps) => steps.clamp(-1, 1);
+
+/// folia `getScrollDirection`。
+int monetScrollDirection(double delta) => delta == 0
+    ? 0
+    : delta > 0
+    ? 1
+    : -1;
+
+/// 手动滚动时的窗口（folia `buildScrollableRailEntries`）：以 [anchor] 为中心前后各四行，
+/// 状态只按当前行下标 [activeIndex] 定。
+List<MonetVisibleEntry> buildMonetScrollableEntries(
+  int lineCount,
+  int anchor,
+  int activeIndex,
+) {
+  if (lineCount <= 0) return const <MonetVisibleEntry>[];
+  final int a = anchor.clamp(0, lineCount - 1);
+  final int start = math.max(0, a - kMonetScrollBefore);
+  final int end = math.min(lineCount - 1, a + kMonetScrollAfter);
+  return <MonetVisibleEntry>[
+    for (int i = start; i <= end; i++)
+      MonetVisibleEntry(
+        index: i,
+        offset: i - a,
+        status: i == activeIndex
+            ? MonetLineStatus.active
+            : activeIndex >= 0 && i < activeIndex
+            ? MonetLineStatus.passed
+            : MonetLineStatus.waiting,
+      ),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// 书写方向与换行
+// ---------------------------------------------------------------------------
+
+/// 词内字形之间插的零宽禁断符（U+2060 WORD JOINER）：让计时词像 folia 的 inline-block 一样
+/// 整词换行。
+const String kMonetWordJoiner = '\u2060';
+
+final RegExp _letter = RegExp(r'\p{L}', unicode: true);
+final RegExp _rtlLetter = RegExp(
+  r'[\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Syriac}\p{Script=Thaana}'
+  r'\p{Script=Nko}\p{Script=Samaritan}\p{Script=Mandaic}\p{Script=Adlam}'
+  r'\p{Script=Hanifi_Rohingya}\p{Script=Yezidi}]',
+  unicode: true,
+);
+
+/// folia `resolveLyricTextDirection`：按第一个字母定整行方向（数字 / 标点 / 空格跳过）。
+bool monetIsRtlText(String text) {
+  for (final int rune in text.runes) {
+    final String ch = String.fromCharCode(rune);
+    if (!_letter.hasMatch(ch)) continue;
+    return _rtlLetter.hasMatch(ch);
+  }
+  return false;
+}
+
 /// 一行的色调（folia `resolveLineTone`）。[baseAlpha] 是未唱字的主色透明度。
 class MonetLineTone {
   const MonetLineTone({
@@ -507,3 +585,24 @@ const List<double> _shakeRot = <double>[0, 1.2, 0, -1.2, 0];
   double at(List<double> v) => v[seg] + (v[seg + 1] - v[seg]) * k;
   return (at(_shakeX), at(_shakeY), at(_shakeRot));
 }
+
+/// 离开 chaotic 后的回正：从 [from]（离开时的姿态）用 0.8 秒 easeOut 缓回 0（framer
+/// `animate={{ x: 0, y: 0, rotate: 0 }}` + `{ duration: 0.8, ease: 'easeOut' }`）。[seconds] 是离开后的秒数。
+(double, double, double) monetCalmShake(
+  (double, double, double) from,
+  double seconds,
+) {
+  final double p = (seconds / kMonetCalmSeconds).clamp(0.0, 1.0);
+  if (p >= 1) return (0, 0, 0);
+  final double k = 1 - Curves.easeOut.transform(p);
+  return (from.$1 * k, from.$2 * k, from.$3 * k);
+}
+
+/// folia 回正时长。
+const double kMonetCalmSeconds = 0.8;
+
+/// 封面交叉淡入时长（folia `MONET_PORTRAIT_FADE_MS`）。
+const double kMonetPortraitFadeSeconds = 0.9;
+
+/// 肖像叠层上限（folia `MONET_PORTRAIT_MAX_LAYERS`）。
+const int kMonetPortraitMaxLayers = 4;

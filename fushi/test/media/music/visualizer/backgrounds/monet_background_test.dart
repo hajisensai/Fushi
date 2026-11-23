@@ -93,7 +93,22 @@ void main() {
   });
 
   group('烘焙', () {
-    testWidgets('封面烘焙成 1280×720，水洗色变了图就变', (WidgetTester tester) async {
+    test('烘焙尺寸：盖住视口的 16:9 框，按物理像素取整并夹在上下限内', () {
+      // 1280×720 逻辑 × 2 = 2560 宽。
+      expect(monetBakeSize(const Size(1280, 720), 2), const Size(2560, 1440));
+      // 竖屏手机：按高度盖住，宽度封顶。
+      expect(monetBakeSize(const Size(400, 900), 3), const Size(2560, 1440));
+      // 小预览：不低于下限。
+      expect(monetBakeSize(const Size(200, 120), 1), const Size(640, 360));
+      // 1000 宽 → 向上取整到 128 的倍数（1024），保持 16:9。
+      expect(monetBakeSize(const Size(1000, 500), 1), const Size(1024, 576));
+      // 4K 视口不再按 1280 放大三倍：取上限 2560。
+      expect(monetBakeSize(const Size(3840, 2160), 1).width, 2560);
+    });
+
+    testWidgets('封面默认烘焙成 folia 画布 1920×1080，水洗色变了图就变', (
+      WidgetTester tester,
+    ) async {
       final ui.Image src = await gradientImage(tester);
       final LyricVisualizerPalette p = backgroundContext().palette;
       const MonetBackgroundTreatment a = MonetBackgroundTreatment(
@@ -119,8 +134,9 @@ void main() {
       final ui.Image? ib = await tester.runAsync(
         () => bakeMonetBackground(src, p, b),
       );
-      expect(ia!.width, 1280);
-      expect(ia.height, 720);
+      // 默认是 folia 画布原尺寸 1920×1080。
+      expect(ia!.width, 1920);
+      expect(ia.height, 1080);
       expect(
         pixelDifference(
           await pixelsOf(tester, ia),

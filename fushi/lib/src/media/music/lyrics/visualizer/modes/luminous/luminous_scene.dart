@@ -140,7 +140,6 @@ double luminousCssShadowToBlurRadius(double cssRadius) =>
 /// CSS `blur(px)` 的 σ 就是 px。
 const int _colorSteps = 24;
 const int _alphaSteps = 40;
-const int _glowSteps = 20;
 
 class _GlyphGlow {
   _GlyphGlow({
@@ -466,11 +465,12 @@ class LuminousScene {
     final int key = colorStep * (_alphaSteps + 1) + alphaStep;
     return w.bodies.putIfAbsent(key, () {
       final LuminousSceneConfig cfg = _config!;
-      final Color c = Color.lerp(
+      // framer 的颜色补间是通道平方插值（luminousMixColor），不是 sRGB 直线。
+      final Color c = luminousMixColor(
         cfg.baseColor,
         w.activeColor,
         colorStep / _colorSteps,
-      )!;
+      );
       return _layout(
         w.word.text,
         _style(
@@ -481,13 +481,15 @@ class LuminousScene {
     });
   }
 
-  TextPainter _glow(_GlyphGlow g, int step, _LineRender line, Color c) {
-    return g.painters.putIfAbsent(step, () {
-      final double a = step / _glowSteps;
+  /// 一个字形的光晕（两层满色 text-shadow）。folia 的光晕半径固定在峰值、只用 opacity 走包络，
+  /// 所以这里每个字形只排一份满强度的，包络在外面用图层透明度乘（两层阴影先叠再整体乘
+  /// opacity，与 CSS 一致；把 alpha 分别烘进两层阴影叠出来会偏亮）。
+  TextPainter _glow(_GlyphGlow g, _LineRender line, Color c) {
+    return g.painters.putIfAbsent(0, () {
       final (double inner, double outer) = luminousGlowRadii(
         line.profile.wordReveal,
       );
-      final Color sc = c.withValues(alpha: c.a * a);
+      final Color sc = c;
       return _layout(
         g.text,
         _style(line.fontSize).copyWith(
@@ -654,21 +656,19 @@ class LuminousScene {
       reveal: reveal,
     );
     final int count = w.glows.length;
-    final List<int> glowSteps = <int>[
+    final List<double> glowAlphas = <double>[
       for (final _GlyphGlow g in w.glows)
-        (luminousGlowAt(
-                  t: t,
-                  schedule: w.schedule,
-                  reveal: reveal,
-                  glyphCount: count,
-                  charStart: g.start,
-                  charEnd: g.end,
-                  glyphIndex: g.index,
-                ).clamp(0.0, 1.0) *
-                _glowSteps)
-            .round(),
+        luminousGlowAt(
+          t: t,
+          schedule: w.schedule,
+          reveal: reveal,
+          glyphCount: count,
+          charStart: g.start,
+          charEnd: g.end,
+          glyphIndex: g.index,
+        ).clamp(0.0, 1.0),
     ];
-    final bool glowing = glowSteps.any((int s) => s > 0);
+    final bool glowing = glowAlphas.any((double a) => a > 1 / 255);
     final bool blurred = body.blur > 0.3;
     final int colorStep = (body.highlight.clamp(0.0, 1.0) * _colorSteps)
         .round();
@@ -678,9 +678,9 @@ class LuminousScene {
     canvas.translate(w.center.dx + pose.x, w.center.dy + pose.y);
     canvas.scale(pose.scale);
     canvas.rotate(pose.rotate * math.pi / 180);
-    if (line.isChorus) _paintRipple(canvas, w, t, pose.opacity);
     if (!glowing && !blurred) {
-      // 常见情况：不开图层，透明度烘进字色。
+      // 常见情况：不开图层，透明度烘进字色。涟漪在正文下面（folia z-0 < 正文 z-10）。
+      if (line.isChorus) _paintRipple(canvas, w, t, pose.opacity);
       _body(
         w,
         line,
@@ -700,16 +700,20 @@ class LuminousScene {
     }
     if (glowing) {
       for (int i = 0; i < w.glows.length; i++) {
-        if (glowSteps[i] <= 0) continue;
+        final double a = glowAlphas[i];
+        if (a <= 1 / 255) continue;
         final _GlyphGlow g = w.glows[i];
-        _glow(
-          g,
-          glowSteps[i],
-          line,
-          w.activeColor,
-        ).paint(canvas, topLeft + g.offset);
+        final TextPainter gp = _glow(g, line, w.activeColor);
+        final bool fade = a < 0.995;
+        if (fade) {
+          canvas.saveLayer(null, Paint()..color = Color.fromRGBO(0, 0, 0, a));
+        }
+        gp.paint(canvas, topLeft + g.offset);
+        if (fade) canvas.restore();
       }
     }
+    // 层序同 folia：光晕层（z-auto）→ 涟漪（z-0）→ 正文（z-10）。
+    if (line.isChorus) _paintRipple(canvas, w, t, 1);
     final TextPainter bodyPainter = _body(w, line, colorStep, _alphaSteps);
     if (blurred) {
       canvas.saveLayer(

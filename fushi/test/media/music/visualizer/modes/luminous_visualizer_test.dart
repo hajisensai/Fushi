@@ -297,6 +297,44 @@ void main() {
     });
   });
 
+  group('framer 默认过渡（与 folia 对齐）', () {
+    test('颜色按通道平方插值，不是 sRGB 直线', () {
+      const Color black = Color(0xFF000000);
+      const Color white = Color(0xFFFFFFFF);
+      final Color mid = luminousMixColor(black, white, 0.5);
+      // sqrt(0.5) ≈ 0.7071，直线插值是 0.5。
+      expect(mid.r, closeTo(math.sqrt(0.5), 1e-6));
+      expect(mid.a, closeTo(1, 1e-9));
+      expect(luminousMixColor(black, white, 0), black);
+      expect(luminousMixColor(black, white, 1).g, closeTo(1, 1e-9));
+    });
+
+    test('normal 入场：opacity 走默认缓动 0.3 秒，scale 走 550/30 弹簧（会轻微过冲）', () {
+      final LuminousLineFx q = luminousLineEnterFx(
+        LyricVisualizerLineTransition.normal,
+        0.15,
+      );
+      expect(q.opacity, closeTo(luminousEaseDefault.transform(0.5), 1e-9));
+      double peak = 0;
+      for (double t = 0; t < 1; t += 0.005) {
+        peak = math.max(
+          peak,
+          luminousLineEnterFx(LyricVisualizerLineTransition.normal, t).scale,
+        );
+      }
+      expect(peak, greaterThan(1.0));
+      expect(peak, lessThan(1.01));
+    });
+
+    test('normal 离场与 passed 都是 easeInOut（只写了 duration）', () {
+      final LuminousLineFx out = luminousLineExitFx(
+        LyricVisualizerLineTransition.normal,
+        0.075,
+      );
+      expect(out.opacity, closeTo(1 - luminousEaseInOut.transform(0.25), 1e-9));
+    });
+  });
+
   group('排版', () {
     test('哈希随机与 folia 同式', () {
       final double x = math.sin(12.5 + 3 + 4) * 10000;

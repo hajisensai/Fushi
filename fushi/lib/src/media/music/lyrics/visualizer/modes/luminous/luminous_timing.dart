@@ -20,9 +20,34 @@ export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_render_
 export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart'
     show LyricVisualizerIntensity;
 
-/// framer-motion 的 easeOut / easeInOut。
+/// framer-motion 的 easeOut / easeInOut。只写了 duration、没写 ease 的补间，framer 的 keyframes
+/// 生成器默认就是 easeInOut。
 const Cubic luminousEaseOut = Cubic(0.0, 0.0, 0.58, 1.0);
 const Cubic luminousEaseInOut = Cubic(0.42, 0.0, 0.58, 1.0);
+
+/// framer 对非变换属性（opacity / filter / color）在完全没写 transition 时的默认补间：
+/// `cubic-bezier(0.25, 0.1, 0.35, 1)`，0.3 秒（motion-dom `getDefaultTransition`）。
+const Cubic luminousEaseDefault = Cubic(0.25, 0.1, 0.35, 1.0);
+
+/// framer 对 scale 在没写 transition 时的默认弹簧（`criticallyDampedSpring`，目标非 0）。
+const double luminousDefaultScaleStiffness = 550;
+const double luminousDefaultScaleDamping = 30;
+
+/// framer 的颜色插值（`mixLinearColor`）：RGB 通道按平方插值再开方（不是 sRGB 直线插值），
+/// alpha 线性。
+Color luminousMixColor(Color from, Color to, double p) {
+  double ch(double a, double b) {
+    final double e = a * a + p * (b * b - a * a);
+    return e <= 0 ? 0 : math.sqrt(e);
+  }
+
+  return Color.from(
+    alpha: from.a + (to.a - from.a) * p,
+    red: ch(from.r, to.r),
+    green: ch(from.g, to.g),
+    blue: ch(from.b, to.b),
+  );
+}
 
 double _clampD(double v, double lo, double hi) => math.min(math.max(v, lo), hi);
 
@@ -229,7 +254,8 @@ LuminousWordPose luminousWordPoseAt({
       waiting,
       active,
       s,
-      luminousTween(dt, 0.1, luminousEaseOut),
+      // active 的 opacity 只写了 duration 0.1，framer 默认 easeInOut。
+      luminousTween(dt, 0.1, luminousEaseInOut),
       s,
     );
   }
@@ -246,7 +272,8 @@ LuminousWordPose luminousWordPoseAt({
           ? activeAtTime(schedule.passedAt)
           : waiting;
       final double dt = t - schedule.passedAt;
-      final double p = luminousTween(dt, 0.5, luminousEaseOut);
+      // passed 只写了 duration 0.5（没写 ease）：framer 默认 easeInOut。
+      final double p = luminousTween(dt, 0.5, luminousEaseInOut);
       return LuminousWordPose.lerp(
         from,
         luminousPassedPose(config, intensity),
@@ -291,7 +318,8 @@ LuminousBodyState luminousBodyAt({
       final double dt = t - schedule.activeAt;
       return LuminousBodyState(
         highlight: highlightAtActive(t),
-        blur: 10 * (1 - luminousTween(dt, blurIn, luminousEaseOut)),
+        // filter 是 `type: 'tween'` 只给时长：默认 easeInOut。
+        blur: 10 * (1 - luminousTween(dt, blurIn, luminousEaseInOut)),
       );
     case LuminousWordState.passed:
       final double from = schedule.passedAt >= schedule.activeAt
@@ -506,9 +534,14 @@ LuminousLineFx luminousLineEnterFx(
         blur: _lerp(4, 0, p),
       );
     case LyricVisualizerLineTransition.normal:
-      // framer 默认：不透明度 / 模糊 0.3 秒补间，缩放走默认弹簧（这里用同一弹簧）。
-      final double p = luminousTween(sinceEnter, 0.3, luminousEaseOut);
-      final double s = luminousSpring(sinceEnter, stiffness: 100, damping: 20);
+      // folia 的 animate 没写 transition，逐属性取 framer 默认：opacity / filter 是
+      // cubic-bezier(0.25, 0.1, 0.35, 1) 0.3 秒，scale 是 stiffness 550 / damping 30 的弹簧。
+      final double p = luminousTween(sinceEnter, 0.3, luminousEaseDefault);
+      final double s = luminousSpring(
+        sinceEnter,
+        stiffness: luminousDefaultScaleStiffness,
+        damping: luminousDefaultScaleDamping,
+      );
       return LuminousLineFx(
         opacity: p,
         scale: _lerp(0.9, 1, s),
@@ -539,7 +572,8 @@ LuminousLineFx luminousLineExitFx(
         blur: 10 * p,
       );
     case LyricVisualizerLineTransition.normal:
-      final double p = luminousTween(sinceExit, d, luminousEaseOut);
+      // exit 只写了 duration 0.3：framer 默认 easeInOut。
+      final double p = luminousTween(sinceExit, d, luminousEaseInOut);
       return LuminousLineFx(
         opacity: 1 - p,
         scale: _lerp(1, 1.1, p),

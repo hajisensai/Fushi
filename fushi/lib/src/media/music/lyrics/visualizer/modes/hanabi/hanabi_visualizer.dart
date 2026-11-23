@@ -291,7 +291,6 @@ class _HanabiVisualizerState extends State<HanabiVisualizer> {
     final String seed = 'hanabi:${c.seed}';
     return _scene = HanabiScene(
       program: compileHanabiProgramFor(c.runtime, seed, durationMs / 1000),
-      seed: seed,
       title: c.title,
       artist: c.artist,
       album: c.album,

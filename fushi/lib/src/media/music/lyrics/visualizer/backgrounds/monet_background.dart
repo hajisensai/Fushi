@@ -469,13 +469,34 @@ const MonetDrift kMonetNoDrift = (txPercent: 0, tyPercent: 0, scale: 1);
 // 烘焙
 // ---------------------------------------------------------------------------
 
-/// 烘焙尺寸（folia 1920×1080 画布的 2/3，模糊半径同比例缩）。
-const double kMonetBakeWidth = 1280;
-const double kMonetBakeHeight = 720;
-const double _kBakeScale = kMonetBakeWidth / 1920;
+/// folia 的画布（`MONET_BACKGROUND_WIDTH` × `MONET_BACKGROUND_HEIGHT`）。烘焙图保持这个比例，
+/// 叠色 / 纹理的几何照搬；分辨率按视口定（[monetBakeSize]），模糊半径与纹理宽同比例缩放。
+const double kMonetCanvasWidth = 1920;
+const double kMonetCanvasHeight = 1080;
 
-/// 封面解码的最长边（反正要模糊，没必要原尺寸）。
-const int _kDecodeMaxSide = 960;
+/// 烘焙图宽度的上下限（物理像素）。图本身是模糊过的，再大只多占显存。
+const int kMonetBakeMaxWidth = 2560;
+const int kMonetBakeMinWidth = 640;
+
+/// 烘焙宽度按这个步长取整，拖窗口时不每个像素都重烘。
+const int _kBakeWidthStep = 128;
+
+/// 视口（逻辑尺寸 × 像素比）需要的烘焙尺寸：盖住视口的 16:9 框（folia 的图是 1920×1080，
+/// 再 `background-size: cover` 铺满），宽度按 [_kBakeWidthStep] 向上取整，夹在
+/// [kMonetBakeMinWidth]–[kMonetBakeMaxWidth]。
+Size monetBakeSize(Size viewport, double devicePixelRatio) {
+  final double dpr = devicePixelRatio > 0 ? devicePixelRatio : 1;
+  final double need = math.max(
+    viewport.width * dpr,
+    viewport.height * dpr * kMonetCanvasWidth / kMonetCanvasHeight,
+  );
+  final int stepped = (need / _kBakeWidthStep).ceil() * _kBakeWidthStep;
+  final int w = stepped.clamp(kMonetBakeMinWidth, kMonetBakeMaxWidth);
+  return Size(
+    w.toDouble(),
+    (w * kMonetCanvasHeight / kMonetCanvasWidth).roundToDouble(),
+  );
+}
 
 Rect _coverRect(Size src, Rect dst, {double alignX = 0.5}) {
   final double scale = math.max(dst.width / src.width, dst.height / src.height);
@@ -560,35 +581,56 @@ Future<ui.Image> _imageFromPixels(Uint8List pixels, int w, int h) {
   return done.future;
 }
 
-/// 读封面 → 后台逐像素处理 → 模糊 + 叠色烘焙成 [kMonetBakeWidth]×[kMonetBakeHeight] 的图。
-/// 源图缩到最长边 [_kDecodeMaxSide]（反正要模糊，没必要原尺寸）。
-Future<ui.Image> _downscale(ui.Image source) {
-  final double k = math.min(
-    1,
-    _kDecodeMaxSide / math.max(source.width, source.height),
-  );
-  final int w = math.max(1, (source.width * k).round());
-  final int h = math.max(1, (source.height * k).round());
+Future<ui.Image> _record(Size size, void Function(Canvas canvas) draw) async {
   final ui.PictureRecorder rec = ui.PictureRecorder();
-  Canvas(rec).drawImageRect(
-    source,
-    Rect.fromLTWH(0, 0, source.width.toDouble(), source.height.toDouble()),
-    Rect.fromLTWH(0, 0, w.toDouble(), h.toDouble()),
-    Paint()..filterQuality = FilterQuality.medium,
-  );
+  draw(Canvas(rec, Offset.zero & size));
   final ui.Picture picture = rec.endRecording();
-  return picture.toImage(w, h).whenComplete(picture.dispose);
+  try {
+    return await picture.toImage(size.width.round(), size.height.round());
+  } finally {
+    picture.dispose();
+  }
 }
 
-/// 源图 → 后台逐像素处理 → 模糊 + 叠色烘焙成 [kMonetBakeWidth]×[kMonetBakeHeight] 的图。
+/// 源图 → 烘焙图，顺序照 folia `paintMonetBackground`：底色 → 裁满并模糊的封面 → 逐像素
+/// 去色 / 饱和度 / 水洗（后台 isolate，作用在模糊后的画面上）→ 主题叠色与纹理。[size] 是
+/// 烘焙尺寸（16:9，见 [monetBakeSize]）；模糊半径按 `size.width / 1920` 缩放。
 /// [source] 归调用方（不在这里释放）。
 Future<ui.Image> bakeMonetBackground(
   ui.Image source,
   LyricVisualizerPalette palette,
-  MonetBackgroundTreatment tr,
-) async {
-  final ui.Image cover = await _downscale(source);
-  ui.Image processed = cover;
+  MonetBackgroundTreatment tr, {
+  Size size = const Size(kMonetCanvasWidth, kMonetCanvasHeight),
+}) async {
+  final Size sz = Size(
+    math.max(1, size.width.roundToDouble()),
+    math.max(1, size.height.roundToDouble()),
+  );
+  final double k = sz.width / kMonetCanvasWidth;
+  ui.Image base = await _record(sz, (Canvas canvas) {
+    canvas.drawRect(Offset.zero & sz, Paint()..color = palette.background);
+    final double sigma = tr.blurPx.clamp(0.0, 60.0) * k;
+    final Rect src = Rect.fromLTWH(
+      0,
+      0,
+      source.width.toDouble(),
+      source.height.toDouble(),
+    );
+    final Paint img = Paint()..filterQuality = FilterQuality.medium;
+    if (sigma > 0.01) {
+      img.imageFilter = ui.ImageFilter.blur(
+        sigmaX: sigma,
+        sigmaY: sigma,
+        tileMode: TileMode.decal,
+      );
+    }
+    canvas.drawImageRect(
+      source,
+      src,
+      _coverRect(src.size, Offset.zero & sz),
+      img,
+    );
+  });
   try {
     final MonetPixelJob probe = MonetPixelJob(
       pixels: Uint8List(0),
@@ -600,59 +642,35 @@ Future<ui.Image> bakeMonetBackground(
       primary: monetRgbOf(palette.text),
     );
     if (!probe.isIdentity) {
-      final ByteData? raw = await cover.toByteData();
+      final ByteData? raw = await base.toByteData();
       if (raw != null) {
-        final MonetPixelJob job = MonetPixelJob(
-          pixels: raw.buffer.asUint8List(),
-          grayscale: probe.grayscale,
-          saturation: probe.saturation,
-          wash: probe.wash,
-          background: probe.background,
-          accent: probe.accent,
-          primary: probe.primary,
+        final Uint8List out = await _processInIsolate(
+          MonetPixelJob(
+            pixels: raw.buffer.asUint8List(),
+            grayscale: probe.grayscale,
+            saturation: probe.saturation,
+            wash: probe.wash,
+            background: probe.background,
+            accent: probe.accent,
+            primary: probe.primary,
+          ),
         );
-        final Uint8List out = await _processInIsolate(job);
-        processed = await _imageFromPixels(out, cover.width, cover.height);
+        final ui.Image processed = await _imageFromPixels(
+          out,
+          base.width,
+          base.height,
+        );
+        base.dispose();
+        base = processed;
       }
     }
-    final ui.PictureRecorder rec = ui.PictureRecorder();
-    const Size size = Size(kMonetBakeWidth, kMonetBakeHeight);
-    final Canvas canvas = Canvas(rec, Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, Paint()..color = palette.background);
-    final double sigma = tr.blurPx.clamp(0.0, 60.0) * _kBakeScale;
-    final Rect src = Rect.fromLTWH(
-      0,
-      0,
-      processed.width.toDouble(),
-      processed.height.toDouble(),
-    );
-    final Paint img = Paint()..filterQuality = FilterQuality.medium;
-    if (sigma > 0.01) {
-      img.imageFilter = ui.ImageFilter.blur(
-        sigmaX: sigma,
-        sigmaY: sigma,
-        tileMode: TileMode.decal,
-      );
-    }
-    canvas.drawImageRect(
-      processed,
-      src,
-      _coverRect(src.size, Offset.zero & size),
-      img,
-    );
-    paintMonetOverlay(canvas, size, palette, tr);
-    final ui.Picture picture = rec.endRecording();
-    try {
-      return await picture.toImage(
-        kMonetBakeWidth.toInt(),
-        kMonetBakeHeight.toInt(),
-      );
-    } finally {
-      picture.dispose();
-    }
+    final ui.Image painted = base;
+    return await _record(sz, (Canvas canvas) {
+      canvas.drawImage(painted, Offset.zero, Paint());
+      paintMonetOverlay(canvas, sz, palette, tr);
+    });
   } finally {
-    if (!identical(processed, cover)) processed.dispose();
-    cover.dispose();
+    base.dispose();
   }
 }
 
@@ -685,6 +703,10 @@ class MonetBackgroundScene extends LyricVisualizerBackgroundScene {
   double _pendingSince = 0;
   bool _disposed = false;
   bool _configured = false;
+  double _dpr = 1;
+
+  /// 视口要的烘焙尺寸（首帧 [paint] 量到之前为 null，不烘）。
+  Size? _bakeSize;
 
   void _onSource() => _request(immediate: true);
 
@@ -696,6 +718,7 @@ class MonetBackgroundScene extends LyricVisualizerBackgroundScene {
   ) {
     _c = context;
     _config = MonetBackgroundConfig.from(tuning);
+    _dpr = devicePixelRatio;
     _configured = true;
     _source.select(
       coverPath: context.coverPath,
@@ -707,14 +730,20 @@ class MonetBackgroundScene extends LyricVisualizerBackgroundScene {
 
   Object? get _key {
     final ui.Image? img = _source.image;
-    if (img == null) return null;
-    return Object.hash(identityHashCode(img), _c.palette, _config.treatment);
+    final Size? size = _bakeSize;
+    if (img == null || size == null) return null;
+    return Object.hash(
+      identityHashCode(img),
+      _c.palette,
+      _config.treatment,
+      size,
+    );
   }
 
   /// 新图（换歌 / 换来源）、第一张、或不在动（不会有下一帧来做防抖）时立刻烘；
   /// 同一张图换主题 / 参数时等 [_kDebounceSeconds]。
   void _request({required bool immediate}) {
-    if (!_configured) return;
+    if (!_configured || _bakeSize == null) return;
     if (_key == _bakedKey) {
       _pending = false;
       return;
@@ -737,17 +766,24 @@ class MonetBackgroundScene extends LyricVisualizerBackgroundScene {
       _swap(null);
       return;
     }
+    // 只换了烘焙分辨率（窗口缩放）时画面内容不变：直接换上，不播交叉淡入。
+    final Object content = Object.hash(
+      identityHashCode(img),
+      _c.palette,
+      _config.treatment,
+    );
     // 源图归加载器，烘焙期间可能被换掉释放：克隆一份。
     final ui.Image src = img.clone();
     unawaited(
-      bakeMonetBackground(src, _c.palette, _config.treatment)
+      bakeMonetBackground(src, _c.palette, _config.treatment, size: _bakeSize!)
           .then<void>(
             (ui.Image baked) {
               if (_disposed || gen != _generation) {
                 baked.dispose();
                 return;
               }
-              _swap(baked);
+              _swap(baked, instant: content == _shownContent);
+              _shownContent = content;
             },
             onError: (Object _) {
               // 坏图：留着正在显示的那张（folia 同样吞掉解码失败）。
@@ -757,10 +793,19 @@ class MonetBackgroundScene extends LyricVisualizerBackgroundScene {
     );
   }
 
-  void _swap(ui.Image? next) {
+  /// 正在显示的那张图的内容（源图 + 配色 + 后处理，不含分辨率）。
+  Object? _shownContent;
+
+  void _swap(ui.Image? next, {bool instant = false}) {
     _previous?.dispose();
-    // 第一张直接显示（folia firstPicture），之后的交叉淡入。
-    _previous = _current;
+    if (next == null) _shownContent = null;
+    // 第一张直接显示（folia firstPicture），之后的交叉淡入；只换分辨率的直接替换。
+    if (instant) {
+      _current?.dispose();
+      _previous = null;
+    } else {
+      _previous = _current;
+    }
     _current = next;
     _fadeStart = _wall;
     notifyListeners();
@@ -775,6 +820,19 @@ class MonetBackgroundScene extends LyricVisualizerBackgroundScene {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // 烘焙分辨率跟视口走：尺寸变了（含首帧）就在这一帧画完后重烘（不在绘制阶段改状态）。
+    if (_configured && size.width > 0 && size.height > 0) {
+      final Size want = monetBakeSize(size, _dpr);
+      if (want != _bakeSize) {
+        final bool first = _bakeSize == null;
+        _bakeSize = want;
+        scheduleMicrotask(() {
+          if (!_disposed) {
+            _request(immediate: first || _current == null || !_c.motion);
+          }
+        });
+      }
+    }
     double fade = 1;
     if (_c.motion && _previous != null) {
       fade = ((_wall - _fadeStart) / _kFadeSeconds).clamp(0.0, 1.0);
@@ -896,7 +954,8 @@ class MonetBackgroundPainter extends CustomPainter {
     if (current == null && previous == null) {
       canvas.drawRect(all, Paint()..shader = _fallback(all));
     } else {
-      if (previous != null) _drawImage(canvas, previous!, all, 1);
+      // 换图：旧图淡出、新图淡入同时进行（folia AnimatePresence 的 exit / initial 各 0.8s）。
+      if (previous != null) _drawImage(canvas, previous!, all, 1 - fade);
       if (current != null) {
         _drawImage(canvas, current!, all, previous != null ? fade : 1);
       } else {
@@ -933,7 +992,13 @@ class MonetBackgroundPainter extends CustomPainter {
       canvas.save();
       _applyDrift(canvas, pane);
       if (previous != null) {
-        _drawImage(canvas, previous!, pane, imageOpacity, alignX: alignX);
+        _drawImage(
+          canvas,
+          previous!,
+          pane,
+          imageOpacity * (1 - fade),
+          alignX: alignX,
+        );
       }
       if (current != null) {
         _drawImage(

@@ -246,6 +246,35 @@ void main() {
       }
     });
 
+    test('落点 id 照 folia：词文-词序-行-片段-词内片段，不含歌词行号', () {
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        sampleWordTimeline(),
+      );
+      final MindscapePrepared p = mindscapePrepare(
+        mindscapeSourceOf(rt.lines[1]),
+        viewportWidth: 1280,
+        viewportHeight: 720,
+        fontScale: 1.12,
+        widthRatio: 0.72,
+        intensity: LyricVisualizerIntensity.normal,
+        measure: _fakeMeasure,
+      )!;
+      expect(p.placements.map((MindscapePlacement e) => e.id).toSet(), <String>{
+        'Hello-0-0-0-0',
+        'bright-1-0-1-0',
+        'world-2-1-0-0',
+      });
+    });
+
+    test('墨迹顶估值：CJK 高于大写 / 升部，高于 x 高小写；空串回退 0.78', () {
+      expect(mindscapeInkAscentEm('夜空'), 0.84);
+      expect(mindscapeInkAscentEm('The'), 0.73);
+      expect(mindscapeInkAscentEm('in'), 0.72);
+      expect(mindscapeInkAscentEm('you'), 0.53);
+      expect(mindscapeInkAscentEm(''), 0.78);
+      expect(mindscapeInkAscentEm('  '), 0.78);
+    });
+
     test('CJK 行每字一词；窄屏长句换行', () {
       final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
         sampleLineTimeline(),
@@ -382,6 +411,67 @@ void main() {
       expect(scene.drawnLine, 1);
       frame(8000, 2);
       expect(scene.drawnLine, isNull);
+      scene.dispose();
+    });
+  });
+
+  group('场景（换行沿用状态）', () {
+    testWidgets('相邻两句同位置的同一个词沿用动画状态，间奏清空', (WidgetTester tester) async {
+      final LyricVisualizerRuntime rt = LyricVisualizerRuntime(
+        const LyricTimeline(
+          format: 'lrc',
+          lines: <LyricLine>[
+            LyricLine(
+              startMs: 0,
+              endMs: 1000,
+              syllables: <LyricSyllable>[
+                LyricSyllable(text: 'la', startMs: 0, endMs: 1000),
+              ],
+            ),
+            LyricLine(
+              startMs: 1000,
+              endMs: 2000,
+              syllables: <LyricSyllable>[
+                LyricSyllable(text: 'la', startMs: 1000, endMs: 2000),
+              ],
+            ),
+          ],
+        ),
+      );
+      final MindscapeConfig cfg = MindscapeConfig(
+        runtime: rt,
+        palette: LyricVisualizerPalette.fromScheme(
+          ColorScheme.fromSeed(seedColor: const Color(0xFF6750A4)),
+        ),
+        baseStyle: const TextStyle(),
+        motion: true,
+        fontScale: 1.12,
+        widthRatio: 0.72,
+        motionAmount: 1,
+        glowIntensity: 1,
+        intensity: LyricVisualizerIntensity.normal,
+      );
+      final MindscapeScene scene = MindscapeScene();
+      void frame(int ms, double elapsed) {
+        final ui.PictureRecorder rec = ui.PictureRecorder();
+        scene.paint(Canvas(rec), const Size(1280, 720), cfg, ms, elapsed);
+        rec.endRecording().dispose();
+      }
+
+      for (int i = 0; i < 20; i++) {
+        frame(400 + i * 16, i * 0.016);
+      }
+      expect(scene.drawnLine, 0);
+      final String id = scene.currentPlacements.single.id;
+      final MindscapeAnimatedState? before = scene.debugStateOf(id);
+      expect(before, isNotNull);
+      frame(1300, 1);
+      expect(scene.drawnLine, 1);
+      expect(scene.currentPlacements.single.id, id);
+      expect(identical(scene.debugStateOf(id), before), isTrue);
+      frame(9000, 2);
+      expect(scene.drawnLine, isNull);
+      expect(scene.debugStateOf(id), isNull);
       scene.dispose();
     });
   });

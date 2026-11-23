@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4629 条。点号进各自文件。
+> 共 4630 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5337](bugs/BUG-5337-music-visualizer-top-band-and-picker-clip.md) | ✅ | ✅ | music-visualizer-top-band-and-picker-clip |
 | [BUG-5336](bugs/BUG-5336-music-peek-remote-now-playing.md) | ✅ | ✅ | 音乐速览：播放服务器 / 插件 / Apple Music 曲目时「继续」为空 |
 | [BUG-5335](bugs/BUG-5335-games-peek-running-game.md) | ✅ | ✅ | 游戏速览「继续」不认正在运行的游戏 |
 | [BUG-5334](bugs/BUG-5334-games-peek-hide-nsfw.md) | ✅ | ✅ | 游戏速览无视「隐藏成人向」偏好 |
