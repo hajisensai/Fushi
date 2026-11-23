@@ -37,6 +37,8 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5259](bugs/BUG-5259-music-continue-card-no-player-page.md) | ✅ | ✅ | music-continue-card-no-player-page |
+| [BUG-5258](bugs/BUG-5258-status-monitor-overlay-section-last.md) | ✅ | ✅ | status-monitor-overlay-section-last |
 | [BUG-5266](bugs/BUG-5266-manga-audio-no-volume-control.md) | ✅ | ✅ | manga-audio-no-volume-control |
 | [BUG-5265](bugs/BUG-5265-manga-audio-previous-replays-current.md) | ✅ | ✅ | manga-audio-previous-replays-current |
 > 共 4582 条。点号进各自文件。
