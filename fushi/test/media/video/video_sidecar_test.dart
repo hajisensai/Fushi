@@ -178,4 +178,57 @@ void main() {
       );
     });
   });
+
+  group('ownedSidecarSuffix（写入端的最长主干认领）', () {
+    test('名字会被 stem 更长的同目录视频认领时退回无语言标记', () {
+      expect(
+        ownedSidecarSuffix('EP01', '.ja.srt', const <String>[
+          'EP01.mkv',
+          'EP01.ja.mkv',
+        ]),
+        '.srt',
+      );
+      expect(
+        ownedSidecarSuffix('ep01', '.5.ASS', const <String>[
+          'ep01.mkv',
+          'EP01.5.mp4',
+        ]),
+        '.ASS',
+      );
+    });
+
+    test('没人抢 / 邻居不是视频 / 非法后缀：原样', () {
+      expect(
+        ownedSidecarSuffix('EP01', '.ja.srt', const <String>['EP01.mkv']),
+        '.ja.srt',
+      );
+      expect(
+        ownedSidecarSuffix('EP01', '.ja.srt', const <String>[
+          'EP01.mkv',
+          'EP01.ja.txt',
+        ]),
+        '.ja.srt',
+      );
+      expect(
+        ownedSidecarSuffix('EP01', '.ja.srt', const <String>[
+          'EP01.mkv',
+          'EP01.jav.mkv',
+        ]),
+        '.ja.srt',
+      );
+      expect(
+        ownedSidecarSuffix('EP01', '/../x.srt', const <String>['EP01.ja.mkv']),
+        '/../x.srt',
+      );
+    });
+
+    test('退回的无标记名恒归本视频', () {
+      const List<String> dir = <String>['EP01.mkv', 'EP01.ja.mkv'];
+      final String suffix = ownedSidecarSuffix('EP01', '.ja.vtt', dir);
+      expect(
+        listSidecarSubtitles('EP01', <String>[...dir, 'EP01$suffix']),
+        <String>['EP01$suffix'],
+      );
+    });
+  });
 }

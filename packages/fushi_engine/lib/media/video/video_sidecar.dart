@@ -130,6 +130,32 @@ List<String> listSidecarSubtitles(
   ];
 }
 
+/// 纯函数：写入端的同一条「最长主干认领」——给 `<videoBaseNameNoExt>` 落一份后缀
+/// [suffix] 的外挂字幕时，实际该用的后缀。
+///
+/// `<stem><suffix>` 会被同目录 stem 更长的视频认领时（`EP01.mkv` 旁有 `EP01.ja.mkv`，
+/// 给 `EP01` 落 `.ja.srt` 得到的 `EP01.ja.srt` 归 `EP01.ja.mkv`），照原名写既让本视频
+/// 看不到这份字幕（[pickSidecar] / [listSidecarSubtitles] 不认），又会盖掉 / 冒充别的
+/// 视频的字幕；这时退回无语言标记的 `.<ext>`——`<stem>.<ext>` 恒归本视频（更长的
+/// stem 后面剩不下一个合法的 `.<ext>` 后缀）。[dirFiles] 是同目录文件名清单。
+/// [suffix] 不是合法 sidecar 后缀（[isSidecarSubtitleSuffix]）时原样返回，由调用方
+/// 自己的校验处理。
+String ownedSidecarSuffix(
+  String videoBaseNameNoExt,
+  String suffix,
+  List<String> dirFiles,
+) {
+  if (!isSidecarSubtitleSuffix(suffix)) return suffix;
+  final String name = '$videoBaseNameNoExt$suffix';
+  final String nameLower = name.toLowerCase();
+  final bool owned = listSidecarSubtitles(videoBaseNameNoExt, <String>[
+    ...dirFiles,
+    name,
+  ]).any((String n) => n.toLowerCase() == nameLower);
+  if (owned) return suffix;
+  return suffix.substring(suffix.lastIndexOf('.'));
+}
+
 /// 纯函数：[suffix] 是否是合法的 sidecar 字幕后缀（`.<ext>` 或 `.<langTag>.<ext>`，
 /// ext ∈ srt/ass/ssa/vtt，langTag 只允许 `[A-Za-z0-9_-]`）。互联字幕上传端点用它做
 /// 服务端白名单校验（后缀由 client 报，绝不放行路径分隔符/穿越）。

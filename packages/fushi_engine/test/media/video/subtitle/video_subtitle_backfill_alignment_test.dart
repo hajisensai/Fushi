@@ -82,6 +82,27 @@ void main() {
     expect(File(sidecar).readAsStringSync(), 'user');
     expect(File('$sidecar.fushi.tmp').existsSync(), isFalse);
   });
+
+  test('同目录 stem 更长的视频认领了 <stem>.ja.srt：不碰它，落成本视频认得的无标记名', () async {
+    // `Show - S01E01.ja.srt` 归 `Show - S01E01.ja.mkv`（最长主干认领）：它既不算本集
+    // 已有字幕，也不能被拿来当本集的落盘名（照原名写会被同名检查挡成「已有字幕」，
+    // 或者落成别的视频的字幕）。
+    await File(
+      p.join(root.path, 'Show - S01E01.ja.mkv'),
+    ).writeAsBytes(<int>[9], flush: true);
+    final File neighbour = File(p.join(root.path, 'Show - S01E01.ja.srt'))
+      ..writeAsStringSync('neighbour');
+    final VideoSubtitleBackfillService service = VideoSubtitleBackfillService(
+      registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[
+        _OneSubtitleProvider(),
+      ]),
+    );
+    final SubtitleBackfillResult result = await service.backfill(target());
+    expect(result.outcome, SubtitleBackfillOutcome.installed);
+    expect(result.installedPath, p.join(root.path, 'Show - S01E01.srt'));
+    expect(File(result.installedPath!).existsSync(), isTrue);
+    expect(neighbour.readAsStringSync(), 'neighbour');
+  });
 }
 
 String _srt({double offsetSeconds = 0}) {

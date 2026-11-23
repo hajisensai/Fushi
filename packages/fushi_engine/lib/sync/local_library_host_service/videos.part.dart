@@ -1240,7 +1240,11 @@ mixin _LocalLibraryHostVideos
     }
     await _runExclusive(() async {
       final VideoBookRow row = await _videoRowWithLocalFile(id);
-      await _placeVideoSubtitleSidecar(subtitleFile, row: row, suffix: suffix);
+      await _placeVideoSubtitleSidecar(
+        subtitleFile,
+        row: row,
+        suffix: await _ownedSidecarSuffixFor(row.videoPath, suffix),
+      );
     });
   }
 
@@ -1263,14 +1267,18 @@ mixin _LocalLibraryHostVideos
     if (suffix == null) {
       throw ArgumentError.value(format, 'format', 'not a subtitle format');
     }
+    // 实际落盘后缀：名字会被同目录 stem 更长的视频认领时省掉语言标记
+    // （[_ownedSidecarSuffixFor]），回给 client 的是这个。
+    String placed = suffix;
     await _runExclusive(() async {
       final VideoBookRow row = await _videoRowWithLocalFile(id);
       if (episodeIndex == 0) {
-        await _displaceSidecarsFor(row.videoPath, suffix);
+        placed = await _ownedSidecarSuffixFor(row.videoPath, suffix);
+        await _displaceSidecarsFor(row.videoPath, placed);
         await _placeVideoSubtitleSidecar(
           subtitleFile,
           row: row,
-          suffix: suffix,
+          suffix: placed,
         );
         return;
       }
@@ -1287,18 +1295,34 @@ mixin _LocalLibraryHostVideos
           await _existingFilePathAsync(episodePath) == null) {
         throw StateError('video $id has no local episode $episodeIndex');
       }
-      await _displaceSidecarsFor(episodePath, suffix);
+      placed = await _ownedSidecarSuffixFor(episodePath, suffix);
+      await _displaceSidecarsFor(episodePath, placed);
       await _moveFileInto(
         subtitleFile,
         File(
           p.join(
             p.dirname(episodePath),
-            '${p.basenameWithoutExtension(episodePath)}$suffix',
+            '${p.basenameWithoutExtension(episodePath)}$placed',
           ),
         ),
       );
     });
-    return suffix;
+    return placed;
+  }
+
+  /// [videoPath] 旁落一份后缀 [suffix] 的 sidecar 实际该用的后缀：与播放器选字幕
+  /// 同一条「最长主干认领」（[ownedSidecarSuffix]）——`<stem><suffix>` 会被同目录
+  /// stem 更长的视频认领时省掉语言标记，不把字幕落成别的视频的。目录读不了按原样。
+  Future<String> _ownedSidecarSuffixFor(String videoPath, String suffix) async {
+    final List<String>? names = await _listDirFileNamesAsync(
+      p.dirname(videoPath),
+    );
+    if (names == null) return suffix;
+    return ownedSidecarSuffix(
+      p.basenameWithoutExtension(videoPath),
+      suffix,
+      names,
+    );
   }
 
   /// 清掉视频字幕（[VideoSubtitleClearHost]）。
@@ -1434,7 +1458,9 @@ mixin _LocalLibraryHostVideos
     return row;
   }
 
-  /// 把会压过（或同名覆盖）[suffix] 的旧 sidecar 改名成 `<原名>.fushi-bak`。
+  /// 把会压过（或同名覆盖）[suffix] 的旧 sidecar 改名成 `<原名>.fushi-bak`。只动
+  /// 归这个视频的（[listSidecarSubtitles]，「最长主干认领」）：同目录 stem 更长的
+  /// 视频认领的同名字幕是人家的，不碰。
   /// 备份名已被占用说明原始文件早就备份过，眼前这份是之前某次上传的产物，直接删。
   /// 全程 async IO：视频目录常在网络盘上（BUG-3756）。
   Future<void> _displaceSidecarsFor(String videoPath, String suffix) async {
@@ -1456,8 +1482,15 @@ mixin _LocalLibraryHostVideos
     } on FileSystemException {
       return;
     }
+    final Set<String> owned = listSidecarSubtitles(
+      p.basenameWithoutExtension(videoPath),
+      <String>[for (final File f in siblings) p.basename(f.path)],
+    ).map((String n) => n.toLowerCase()).toSet();
     for (final File f in siblings) {
-      if (!displaced.contains(p.basename(f.path).toLowerCase())) continue;
+      final String nameLower = p.basename(f.path).toLowerCase();
+      if (!displaced.contains(nameLower) || !owned.contains(nameLower)) {
+        continue;
+      }
       final File backup = File('${f.path}$kDisplacedSidecarBackupSuffix');
       if (await backup.exists()) {
         await f.delete();

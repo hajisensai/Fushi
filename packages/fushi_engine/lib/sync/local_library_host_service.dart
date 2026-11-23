@@ -15,6 +15,7 @@ import 'package:fushi_engine/media/video/video_sidecar.dart'
         findSidecarSubtitle,
         isSidecarSubtitleSuffix,
         listSidecarSubtitles,
+        ownedSidecarSuffix,
         pickSidecar,
         sidecarSuffixesDisplacedBy;
 import 'package:fushi_audio/fushi_audio_core.dart'
