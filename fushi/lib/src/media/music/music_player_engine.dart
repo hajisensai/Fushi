@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart' show musicPlaySourceHostRef;
 
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -66,7 +67,8 @@ enum MusicPlaySourceKind {
 
 /// 一个播放队列是从哪儿点开的（专辑 / 歌单 …）：随播放事件落库，驱动「最近播放的
 /// 歌单 / 专辑」。[id] 是该种类下的不透明身份；插件 / 服务器来源用 `<宿主 id>/<条目 id>`
-/// 编码（宿主 id 不含 `/`，条目 id 可以含），用 [hostRef] 拆回。字段全 final（插件 /
+/// 编码，用 [hostRef] 拆回（插件 id 不含 `/`、条目 id 可以含；服务器身份可以含 `/`——
+/// Jellyfin 的身份带服务器地址——服务器侧条目 id 不含，见 [musicPlaySourceHostRef]）。字段全 final（插件 /
 /// 服务器的命名构造要拼 id，做不成 const，所以不挂 `@immutable`）。
 class MusicPlaySource {
   const MusicPlaySource({
@@ -152,26 +154,11 @@ class MusicPlaySource {
   /// 封面（http(s) 地址或本地文件路径）。
   final String? cover;
 
-  /// 插件 / 服务器来源的 (宿主 id, 条目 id)；其它种类或编码不对返回 null。
-  ({String hostId, String itemId})? get hostRef {
-    switch (kind) {
-      case MusicPlaySourceKind.pluginAlbum:
-      case MusicPlaySourceKind.pluginPlaylist:
-      case MusicPlaySourceKind.serverAlbum:
-      case MusicPlaySourceKind.serverPlaylist:
-        final int slash = id.indexOf('/');
-        if (slash <= 0 || slash == id.length - 1) return null;
-        return (
-          hostId: id.substring(0, slash),
-          itemId: id.substring(slash + 1),
-        );
-      case MusicPlaySourceKind.album:
-      case MusicPlaySourceKind.playlist:
-      case MusicPlaySourceKind.artist:
-      case MusicPlaySourceKind.other:
-        return null;
-    }
-  }
+  /// 插件 / 服务器来源的 (宿主 id, 条目 id)；其它种类或编码不对返回 null。拆法按种类
+  /// （插件按第一个 `/`、服务器按最后一个 `/`：服务器身份可以含 `/`），见
+  /// [musicPlaySourceHostRef]。
+  ({String hostId, String itemId})? get hostRef =>
+      musicPlaySourceHostRef(kind.wire, id);
 
   @override
   bool operator ==(Object other) =>

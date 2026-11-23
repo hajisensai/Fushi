@@ -1484,15 +1484,491 @@ mixin _FushiDbMusic on _$FushiDatabase {
   Future<void> removeMusicRemoteTrackFromLibrary(
     String trackUid, {
     required int at,
-  }) =>
-      (update(musicRemoteTracks)
-            ..where(($MusicRemoteTracksTable t) => t.trackUid.equals(trackUid)))
-          .write(
-            MusicRemoteTracksCompanion(
-              libraryAddedAt: const Value<int?>(null),
-              updatedAt: Value<int>(at),
-            ),
+  }) => removeMusicRemoteTracksFromLibrary(<String>[trackUid], at: at);
+
+  /// 一批远程曲目整体加入音乐库（专辑 / 艺人「加入音乐库」）：同一个事务，已在库的不改入库
+  /// 时刻、只刷新元数据。
+  Future<void> addMusicRemoteTracksToLibrary(
+    List<MusicRemoteTracksCompanion> tracks, {
+    required int at,
+  }) => transaction(() async {
+    final Map<String, MusicRemoteTrackRow> existing =
+        await listMusicRemoteTracks(<String>[
+          for (final MusicRemoteTracksCompanion t in tracks) t.trackUid.value,
+        ]);
+    for (final MusicRemoteTracksCompanion t in tracks) {
+      await upsertMusicRemoteTrack(
+        t.copyWith(
+          libraryAddedAt: Value<int?>(
+            existing[t.trackUid.value]?.libraryAddedAt ?? at,
+          ),
+        ),
+        at: at,
+      );
+    }
+  });
+
+  /// 一批远程曲目整体移出音乐库（只清入库时刻，行留着）。同一个事务。离线副本不在这里删：
+  /// 调用方过了撤销窗口再删（[listMusicServerDownloadsOutsideLibrary]）。
+  Future<void> removeMusicRemoteTracksFromLibrary(
+    Iterable<String> trackUids, {
+    required int at,
+  }) => transaction(() async {
+    final List<String> uids = trackUids.toSet().toList();
+    const int chunk = 500;
+    for (int i = 0; i < uids.length; i += chunk) {
+      final List<String> part = uids.sublist(
+        i,
+        i + chunk > uids.length ? uids.length : i + chunk,
+      );
+      await (update(
+        musicRemoteTracks,
+      )..where(($MusicRemoteTracksTable t) => t.trackUid.isIn(part))).write(
+        MusicRemoteTracksCompanion(
+          libraryAddedAt: const Value<int?>(null),
+          updatedAt: Value<int>(at),
+        ),
+      );
+    }
+  });
+
+  /// 不在音乐库里的离线副本行（下载 ⊂ 音乐库：用户在本机「移出音乐库」、撤销窗口过去后由
+  /// 调用方连文件一起删）。[trackUids] 给了只看这几首。只用于本机显式移除的收尾——启动 /
+  /// 恢复 / 合并后的对账走 [reconcileMusicServerDownloadsIntoLibrary]（放回曲库，不删文件）。
+  Future<List<MusicServerDownloadRow>> listMusicServerDownloadsOutsideLibrary([
+    Iterable<String>? trackUids,
+  ]) async {
+    final List<MusicServerDownloadRow> rows = trackUids == null
+        ? await select(musicServerDownloads).get()
+        : (await listMusicServerDownloadsOf(trackUids)).values.toList();
+    if (rows.isEmpty) return rows;
+    final Set<String> inLibrary = await musicRemoteLibraryUidsOf(<String>[
+      for (final MusicServerDownloadRow r in rows) r.trackUid,
+    ]);
+    return <MusicServerDownloadRow>[
+      for (final MusicServerDownloadRow r in rows)
+        if (!inLibrary.contains(r.trackUid)) r,
+    ];
+  }
+
+  /// 一批曲目里已在音乐库的 uid（专辑 / 艺人页的「全部 / 部分 / 不在库」）。按块查询。
+  Future<Set<String>> musicRemoteLibraryUidsOf(
+    Iterable<String> trackUids,
+  ) async {
+    final Set<String> out = <String>{};
+    for (final MusicRemoteTrackRow r in (await listMusicRemoteTracks(
+      trackUids,
+    )).values) {
+      if (r.libraryAddedAt != null) out.add(r.trackUid);
+    }
+    return out;
+  }
+
+  /// 盯一批曲目里已在音乐库的 uid（专辑 / 艺人页的入库状态随任何写路径实时更新）。一条
+  /// 查询（一张专辑 / 一位艺人的曲目数远低于 SQLite 变量上限）。
+  Stream<Set<String>> watchMusicRemoteLibraryUidsOf(List<String> trackUids) {
+    if (trackUids.isEmpty) return Stream<Set<String>>.value(const <String>{});
+    return (selectOnly(musicRemoteTracks)
+          ..addColumns(<Expression<Object>>[musicRemoteTracks.trackUid])
+          ..where(
+            musicRemoteTracks.trackUid.isIn(trackUids) &
+                musicRemoteTracks.libraryAddedAt.isNotNull(),
+          ))
+        .watch()
+        .map(
+          (List<TypedResult> rows) => <String>{
+            for (final TypedResult r in rows)
+              r.read(musicRemoteTracks.trackUid)!,
+          },
+        );
+  }
+
+  /// 记一份下完的离线副本：同一个事务里把这首写进音乐库（已在库不改入库时刻）并落副本行
+  /// （同一首重下覆盖旧行）。
+  ///
+  /// [stillWanted] 在事务**里面**、写入之前判一次：下载开始之后这首被「移出音乐库」了就回假，
+  /// 这里什么都不写、返回 false（调用方删掉落地的文件）——不让下完的任务把刚移出的曲目又
+  /// 加回曲库。判据放在事务里：移出的写入与这里的写入在同一个连接上串行，先判后移出的那次
+  /// 移出一定落在这次写入之后（曲目照样被移出，副本由移出的收尾删）。
+  Future<bool> recordMusicServerDownload(
+    MusicServerDownloadsCompanion download, {
+    required MusicRemoteTracksCompanion track,
+    required int at,
+    bool Function()? stillWanted,
+  }) => transaction(() async {
+    if (stillWanted != null && !stillWanted()) return false;
+    await addMusicRemoteTrackToLibrary(track, at: at);
+    await into(
+      musicServerDownloads,
+    ).insertOnConflictUpdate(download.copyWith(downloadedAt: Value<int>(at)));
+    return true;
+  });
+
+  /// 离线副本是设备本地的事实（下载 ⊂ 音乐库）：把每个副本行对应的曲目放回音乐库，返回放回
+  /// 的首数。启动接上库时、覆盖恢复与合并导入之后各跑一次——备份里没有这首（覆盖恢复把
+  /// `music_remote_tracks` 换成了备份的）、或合并进来的较新一行清了入库时刻（别的设备移出过）
+  /// 都不许让本机下好的文件变成没人认的孤儿、更不许被删。
+  ///
+  /// - 行在、不在库：入库时刻填成下完的时刻，`updated_at` **不动**——这是本机的设备本地修正，
+  ///   不该在下次合并时把「放回曲库」当成更新的一次编辑传给别的设备（那边仍按它自己的 LWW）。
+  /// - 行都没了：按副本行的服务器身份重建一行（种类 `server` + 服务器配置身份 + 条目 id）；标题 /
+  ///   专辑按落点文件名推（`<曲序> <标题> [哈希].<扩展名>`、专辑目录 `<专辑名> [哈希]`），
+  ///   之后在服务器页上再入库 / 播放时刷新成服务器的元数据。覆盖恢复会先从恢复前的本机库把
+  ///   这些行原样搬回来（[copyMusicRemoteTracksOfDownloadsFrom]），这里只是兜底。
+  Future<int> reconcileMusicServerDownloadsIntoLibrary({
+    required int at,
+  }) => transaction(() async {
+    final List<MusicServerDownloadRow> downloads = await select(
+      musicServerDownloads,
+    ).get();
+    if (downloads.isEmpty) return 0;
+    final Map<String, MusicRemoteTrackRow> remote = await listMusicRemoteTracks(
+      <String>[for (final MusicServerDownloadRow d in downloads) d.trackUid],
+    );
+    int n = 0;
+    for (final MusicServerDownloadRow d in downloads) {
+      final MusicRemoteTrackRow? r = remote[d.trackUid];
+      if (r != null && r.libraryAddedAt != null) continue;
+      if (r == null) {
+        await into(musicRemoteTracks).insert(
+          MusicRemoteTracksCompanion.insert(
+            trackUid: d.trackUid,
+            kind: 'server',
+            sourceKey: d.sourceKey,
+            itemId: d.itemId,
+            title: musicServerDownloadTitleFromPath(d.filePath),
+            album: Value<String?>(musicServerDownloadAlbumFromPath(d.filePath)),
+            libraryAddedAt: Value<int?>(d.downloadedAt),
+            createdAt: at,
+            updatedAt: at,
+          ),
+        );
+      } else {
+        await (update(musicRemoteTracks)..where(
+              ($MusicRemoteTracksTable t) => t.trackUid.equals(d.trackUid),
+            ))
+            .write(
+              MusicRemoteTracksCompanion(
+                libraryAddedAt: Value<int?>(d.downloadedAt),
+              ),
+            );
+      }
+      n++;
+    }
+    return n;
+  });
+
+  /// 覆盖恢复：恢复进来的库里缺了离线副本对应的 `music_remote_tracks` 行时，从 ATTACH 成
+  /// [schema] 的恢复前本机库原样搬回来（元数据 / 封面引用 / 艺人引用都在），已有的行不动。
+  /// 两个库此刻都在当前 schema（恢复前的库就是本机活库的副本）。返回搬回的行数。
+  Future<int> copyMusicRemoteTracksOfDownloadsFrom(String schema) async {
+    final String cols = <String>[
+      for (final GeneratedColumn<Object> c in musicRemoteTracks.$columns)
+        '"${c.name}"',
+    ].join(', ');
+    return customUpdate(
+      'INSERT OR IGNORE INTO main.music_remote_tracks ($cols) '
+      'SELECT $cols FROM $schema.music_remote_tracks '
+      'WHERE track_uid IN (SELECT track_uid FROM main.music_server_downloads)',
+      updates: <TableInfo<Table, Object?>>{musicRemoteTracks},
+      updateKind: UpdateKind.insert,
+    );
+  }
+
+  /// 删一批离线副本行（文件由调用方删）。返回被删的行。
+  Future<List<MusicServerDownloadRow>> deleteMusicServerDownloads(
+    Iterable<String> trackUids,
+  ) => transaction(() async {
+    final List<String> uids = trackUids.toSet().toList();
+    final List<MusicServerDownloadRow> rows = (await listMusicServerDownloadsOf(
+      uids,
+    )).values.toList();
+    const int chunk = 500;
+    for (int i = 0; i < uids.length; i += chunk) {
+      final List<String> part = uids.sublist(
+        i,
+        i + chunk > uids.length ? uids.length : i + chunk,
+      );
+      await (delete(
+        musicServerDownloads,
+      )..where(($MusicServerDownloadsTable t) => t.trackUid.isIn(part))).go();
+    }
+    return rows;
+  });
+
+  /// 一批曲目的离线副本行（按块查询）。
+  Future<Map<String, MusicServerDownloadRow>> listMusicServerDownloadsOf(
+    Iterable<String> trackUids,
+  ) async {
+    final List<String> uids = trackUids.toSet().toList();
+    final Map<String, MusicServerDownloadRow> out =
+        <String, MusicServerDownloadRow>{};
+    const int chunk = 500;
+    for (int i = 0; i < uids.length; i += chunk) {
+      final List<String> part = uids.sublist(
+        i,
+        i + chunk > uids.length ? uids.length : i + chunk,
+      );
+      for (final MusicServerDownloadRow r
+          in await (select(
+                musicServerDownloads,
+              )..where(($MusicServerDownloadsTable t) => t.trackUid.isIn(part)))
+              .get()) {
+        out[r.trackUid] = r;
+      }
+    }
+    return out;
+  }
+
+  /// 全部离线副本（进程内索引的初值与变化：任何写路径改了表都会推新快照）。
+  Stream<List<MusicServerDownloadRow>> watchMusicServerDownloads() =>
+      select(musicServerDownloads).watch();
+
+  // ── v176：服务器曲目没送达的播放 / 收藏（补发队列）与客户端状态 ──
+
+  /// 播放的去重键：同一台服务器、同一首、同一个开播时刻只记一次。
+  String musicServerPendingPlayKey(
+    String serverId,
+    String itemId,
+    int playedAt,
+  ) => 'play\u0000$serverId\u0000$itemId\u0000$playedAt';
+
+  /// 收藏的去重键：同一台服务器、同一首只留最后一次切换。
+  String musicServerPendingFavoriteKey(String serverId, String itemId) =>
+      'favorite\u0000$serverId\u0000$itemId';
+
+  /// 记一次没送达的播放（同一次播放重复记是空操作）。
+  Future<void> enqueueMusicServerPendingPlay({
+    required String serverKind,
+    required String serverId,
+    required String itemId,
+    required String trackUid,
+    required int playedAt,
+    required int at,
+  }) => into(musicServerPendingActions).insert(
+    MusicServerPendingActionsCompanion.insert(
+      dedupeKey: musicServerPendingPlayKey(serverId, itemId, playedAt),
+      action: 'play',
+      serverKind: serverKind,
+      serverId: serverId,
+      itemId: itemId,
+      trackUid: trackUid,
+      playedAt: Value<int?>(playedAt),
+      createdAt: at,
+    ),
+    mode: InsertMode.insertOrIgnore,
+  );
+
+  /// 记一次没送达的收藏切换：同一首之前没送达的那次被这次覆盖（最后一次切换为准，尝试
+  /// 次数清零）。
+  Future<void> enqueueMusicServerPendingFavorite({
+    required String serverKind,
+    required String serverId,
+    required String itemId,
+    required String trackUid,
+    required bool favorite,
+    required int at,
+  }) => into(musicServerPendingActions).insertOnConflictUpdate(
+    MusicServerPendingActionsCompanion.insert(
+      dedupeKey: musicServerPendingFavoriteKey(serverId, itemId),
+      action: 'favorite',
+      serverKind: serverKind,
+      serverId: serverId,
+      itemId: itemId,
+      trackUid: trackUid,
+      favorite: Value<bool?>(favorite),
+      createdAt: at,
+      attempts: const Value<int>(0),
+      lastAttemptAt: const Value<int?>(null),
+    ),
+  );
+
+  /// 待补发的条目（[serverId] 给了只看那台服务器），按播放时刻 / 入队时刻从旧到新——
+  /// Jellyfin 的「最近播放时刻」取最后一次标记的值，旧的先发才不会把它改回旧时刻。
+  Future<List<MusicServerPendingActionRow>> listMusicServerPendingActions({
+    String? serverId,
+  }) async {
+    final List<MusicServerPendingActionRow> rows =
+        await (select(musicServerPendingActions)..where(
+              ($MusicServerPendingActionsTable t) => serverId == null
+                  ? const Constant<bool>(true)
+                  : t.serverId.equals(serverId),
+            ))
+            .get();
+    rows.sort((MusicServerPendingActionRow a, MusicServerPendingActionRow b) {
+      final int byTime = (a.playedAt ?? a.createdAt).compareTo(
+        b.playedAt ?? b.createdAt,
+      );
+      return byTime != 0 ? byTime : a.dedupeKey.compareTo(b.dedupeKey);
+    });
+    return rows;
+  }
+
+  /// 盯待送达的收藏切换（「正在播放」的心形显示它）。
+  Stream<List<MusicServerPendingActionRow>>
+  watchMusicServerPendingFavorites() =>
+      (select(musicServerPendingActions)..where(
+            ($MusicServerPendingActionsTable t) => t.action.equals('favorite'),
+          ))
+          .watch();
+
+  /// 补发成功 / 放弃的条目删掉。
+  Future<void> deleteMusicServerPendingActions(Iterable<String> dedupeKeys) =>
+      transaction(() async {
+        final List<String> keys = dedupeKeys.toSet().toList();
+        const int chunk = 500;
+        for (int i = 0; i < keys.length; i += chunk) {
+          final List<String> part = keys.sublist(
+            i,
+            i + chunk > keys.length ? keys.length : i + chunk,
           );
+          await (delete(musicServerPendingActions)..where(
+                ($MusicServerPendingActionsTable t) => t.dedupeKey.isIn(part),
+              ))
+              .go();
+        }
+      });
+
+  /// 补发成功后删这一条——只删这一版：补发期间同一首又切换了收藏（入队时刻变了），新的那次
+  /// 留着下次发。
+  Future<void> deleteMusicServerPendingActionIfUnchanged(
+    MusicServerPendingActionRow row,
+  ) =>
+      (delete(musicServerPendingActions)..where(
+            ($MusicServerPendingActionsTable t) =>
+                t.dedupeKey.equals(row.dedupeKey) &
+                t.createdAt.equals(row.createdAt),
+          ))
+          .go();
+
+  /// 服务器回了错误（不是连不上）：尝试次数 +1。返回加完之后的次数（行已不在为 null）。
+  Future<int?> bumpMusicServerPendingAttempt(
+    String dedupeKey, {
+    required int at,
+  }) => transaction(() async {
+    await customUpdate(
+      'UPDATE music_server_pending_actions '
+      'SET attempts = attempts + 1, last_attempt_at = ? '
+      'WHERE dedupe_key = ?',
+      variables: <Variable<Object>>[
+        Variable<int>(at),
+        Variable<String>(dedupeKey),
+      ],
+      updates: <TableInfo<Table, Object?>>{musicServerPendingActions},
+      updateKind: UpdateKind.update,
+    );
+    final MusicServerPendingActionRow? row =
+        await (select(musicServerPendingActions)..where(
+              ($MusicServerPendingActionsTable t) =>
+                  t.dedupeKey.equals(dedupeKey),
+            ))
+            .getSingleOrNull();
+    return row?.attempts;
+  });
+
+  /// 队列修剪：① 服务器不在 [configuredServerIds] 里、且入队早于 [orphanBefore] 的条目丢掉
+  /// （那台服务器一直没配回来）；② 超过 [cap] 条时丢最旧的播放（收藏每首只有一条，留着）。
+  /// 返回丢掉的条数。
+  Future<int> pruneMusicServerPendingActions({
+    required Set<String> configuredServerIds,
+    required int orphanBefore,
+    required int cap,
+  }) => transaction(() async {
+    int dropped = 0;
+    final List<MusicServerPendingActionRow> all = await select(
+      musicServerPendingActions,
+    ).get();
+    final List<String> orphans = <String>[
+      for (final MusicServerPendingActionRow r in all)
+        if (!configuredServerIds.contains(r.serverId) &&
+            r.createdAt < orphanBefore)
+          r.dedupeKey,
+    ];
+    if (orphans.isNotEmpty) {
+      await deleteMusicServerPendingActions(orphans);
+      dropped += orphans.length;
+    }
+    final int left = all.length - orphans.length;
+    if (left > cap) {
+      final Set<String> gone = orphans.toSet();
+      final List<MusicServerPendingActionRow> plays =
+          <MusicServerPendingActionRow>[
+            for (final MusicServerPendingActionRow r in all)
+              if (r.action == 'play' && !gone.contains(r.dedupeKey)) r,
+          ]..sort(
+            (MusicServerPendingActionRow a, MusicServerPendingActionRow b) =>
+                (a.playedAt ?? a.createdAt).compareTo(
+                  b.playedAt ?? b.createdAt,
+                ),
+          );
+      final List<String> oldest = <String>[
+        for (final MusicServerPendingActionRow r in plays.take(left - cap))
+          r.dedupeKey,
+      ];
+      await deleteMusicServerPendingActions(oldest);
+      dropped += oldest.length;
+    }
+    return dropped;
+  });
+
+  /// 一首服务器曲目在本机记下的客户端状态；没有为 null。
+  Future<MusicServerTrackStateRow?> getMusicServerTrackState(String trackUid) =>
+      (select(musicServerTrackStates)..where(
+            ($MusicServerTrackStatesTable t) => t.trackUid.equals(trackUid),
+          ))
+          .getSingleOrNull();
+
+  Future<void> _upsertMusicServerTrackState(
+    MusicServerTrackStatesCompanion row,
+  ) => into(musicServerTrackStates).insert(
+    row,
+    onConflict: DoUpdate(
+      (_) => row,
+      target: <Column<Object>>[musicServerTrackStates.trackUid],
+    ),
+  );
+
+  /// 记下一首服务器曲目最后已知的收藏状态。
+  Future<void> writeMusicServerTrackFavorite({
+    required String trackUid,
+    required String serverKind,
+    required String serverId,
+    required String itemId,
+    required bool favorite,
+    required int at,
+  }) => _upsertMusicServerTrackState(
+    MusicServerTrackStatesCompanion(
+      trackUid: Value<String>(trackUid),
+      serverKind: Value<String>(serverKind),
+      serverId: Value<String>(serverId),
+      itemId: Value<String>(itemId),
+      favorite: Value<bool?>(favorite),
+      favoriteAt: Value<int?>(at),
+      updatedAt: Value<int>(at),
+    ),
+  );
+
+  /// 记下客户端测的响度（[gain] 为 null = 测过、测不出：不再测）。
+  Future<void> writeMusicServerTrackMeasuredLoudness({
+    required String trackUid,
+    required String serverKind,
+    required String serverId,
+    required String itemId,
+    required double? gain,
+    required double? peak,
+    required int at,
+  }) => _upsertMusicServerTrackState(
+    MusicServerTrackStatesCompanion(
+      trackUid: Value<String>(trackUid),
+      serverKind: Value<String>(serverKind),
+      serverId: Value<String>(serverId),
+      itemId: Value<String>(itemId),
+      measuredTrackGain: Value<double?>(gain),
+      measuredTrackPeak: Value<double?>(peak),
+      loudnessMeasuredAt: Value<int?>(at),
+      updatedAt: Value<int>(at),
+    ),
+  );
 
   Future<MusicRemoteTrackRow?> getMusicRemoteTrack(String trackUid) =>
       (select(musicRemoteTracks)
@@ -1619,4 +2095,26 @@ class MusicRecentSource {
   final String? title;
   final String? cover;
   final int lastPlayedAt;
+}
+
+/// 落点名末尾的 ` [<十六进制哈希>]`（`musicServerDownloadTarget` 写的去重后缀）。
+final RegExp _musicServerDownloadHashSuffix = RegExp(r' \[[0-9a-f]+\]$');
+
+/// 离线副本文件名推出的曲目标题（`<曲序> <标题> [哈希].<扩展名>` → `<曲序> <标题>`）：只在
+/// `music_remote_tracks` 行没了、要按副本重建时用（[FushiDatabase.reconcileMusicServerDownloadsIntoLibrary]）。
+String musicServerDownloadTitleFromPath(String filePath) {
+  final String stem = p
+      .basenameWithoutExtension(filePath)
+      .replaceFirst(_musicServerDownloadHashSuffix, '')
+      .trim();
+  return stem.isEmpty ? p.basename(filePath) : stem;
+}
+
+/// 离线副本所在专辑目录推出的专辑名（`<专辑名> [哈希]` → `<专辑名>`）；推不出回 null。
+String? musicServerDownloadAlbumFromPath(String filePath) {
+  final String dir = p.basename(p.dirname(filePath));
+  final String name = dir
+      .replaceFirst(_musicServerDownloadHashSuffix, '')
+      .trim();
+  return name.isEmpty || name == dir ? null : name;
 }

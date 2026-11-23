@@ -498,6 +498,22 @@ import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart'
     show appleMusicTokenSource, loadMusicServerBindings;
+import 'package:fushi/src/media/music/server/music_server_playback_reporter.dart';
+import 'package:fushi/src/media/music/server/music_server_track_ref.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show
+        MusicServerBrowser,
+        MusicServerItemKind,
+        MusicServerLyrics,
+        MusicServerLyricsProvider;
+import 'package:fushi/src/media/music/server/music_server_favorites.dart'
+    show MusicServerFavoriteStore, MusicServerTrackFavorites;
+import 'package:fushi/src/media/music/server/music_server_loudness_measurer.dart'
+    show MusicServerLoudnessMeasurer, musicServerMeasuredLoudness;
+import 'package:fushi/src/media/music/server/music_server_offline_queue.dart'
+    show MusicServerOfflineQueue, musicServerUnreachable;
+import 'package:fushi/src/sync/jellyfin_video_client.dart'
+    show JellyfinTransportException;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
     show AppleMusicCatalogClient;
 import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart'
@@ -539,7 +555,10 @@ import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart'
-    show musicServerBindingLoader;
+    show MusicServerBinding, musicServerBindingLoader;
+import 'package:fushi/src/media/music/server/music_server_download_index.dart';
+import 'package:fushi/src/media/music/server/music_server_loudness_resolver.dart'
+    show BindingMusicServerLoudnessResolver, musicServerLoudnessResolver;
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -2448,6 +2467,10 @@ class AppModel
     musicRemoteMediaResolver ??= SourceMusicRemoteMediaResolver(() => database);
     // 曲库 / 本地歌单里的服务器曲目（v149）：起播 / 取封面的地址按当前服务器配置现算。
     musicServerBindingLoader ??= () => loadMusicServerBindings(this);
+    // 服务器曲目没随播放项带来的响度（音乐库 / 歌单还原的、Jellyfin 的专辑增益）起播时补查。
+    // 服务器也没有时用客户端测的（离线副本的 sidecar / v176 测量列，见
+    // music_server_loudness_measurer.dart）。
+    musicServerLoudnessResolver ??= _musicServerLoudness;
     // 由专用后端播放的曲目（托管播放）；其余走默认链路（docs/specs/2026-10-31-apple-music-musickit.md
     // §3.3）。Apple Music 整曲：本平台有 MusicKit 播放器才装（Linux / macOS 13 没有，这类曲目
     // 落到 mpv 打不开、按单曲失败）。
@@ -2601,6 +2624,50 @@ class AppModel
     // Android 的早返回）。会话是进程级的，两处登记不注销。
     ExitFlushRegistry.instance.register(session.flushResumePoint);
     AppLifecycleListener(onPause: () => unawaited(session.flushResumePoint()));
+    // 服务器曲目的播放上报（播放次数 / 最近播放回写到 Jellyfin / Subsonic）；退出时把正在
+    // 播的这一首报停止。
+    final MusicServerPlaybackReporter serverReporting =
+        MusicServerPlaybackReporter(
+          engine: engine,
+          lookup: musicServerTracks.resolveItem,
+          onTargetFailure: musicServerTracks.invalidate,
+          onError: (Object e, StackTrace st) => ErrorLogService.instance.log(
+            'MusicServerPlaybackReporter',
+            e,
+            st,
+          ),
+          isUnreachable: (Object e) => musicServerUnreachable(e),
+          // 听够门槛却没送达（连不上 / 配置删了）的播放：记进离线补发队列。
+          onUndelivered: (ref, int playedAtMs) => MusicServerOfflineQueue
+              .instance
+              .enqueuePlay(ref, playedAtMs: playedAtMs),
+          // 那台服务器此刻连得通：顺带补发它积压的离线条目。
+          onDelivered: (MusicServerBrowser b) =>
+              unawaited(MusicServerOfflineQueue.instance.flushServer(b)),
+        );
+    session.serverReporting = serverReporting;
+    // 服务器没给响度的服务器曲目：播过之后在后台测一次（与本地曲库同一个「自动测量」开关）。
+    session.serverLoudnessMeasurer = MusicServerLoudnessMeasurer(
+      database: () => isDatabaseReady ? database : null,
+      serverLoudness: _musicServerLoudness.serverLoudness,
+      enabled: () => isDatabaseReady && prefsRepo.musicLoudnessScan,
+    );
+    // 「正在播放」里服务器曲目的收藏。
+    session.serverFavorites = MusicServerTrackFavorites(
+      resolve: musicServerTracks.resolveItem,
+    );
+    // 下载离线副本时顺带把服务器歌词存进歌词缓存（离线照样有歌词）。
+    musicServerDownloadLyricsSaver ??=
+        ({
+          required String trackUid,
+          required int? durationMs,
+          required MusicServerLyrics? lyrics,
+        }) => musicLyrics.storeServerLyrics(
+          trackUid: trackUid,
+          durationMs: durationMs,
+          lyrics: lyrics,
+        );
+    ExitFlushRegistry.instance.register(serverReporting.flush);
     _musicStudy = MusicStudyTracker(
       engine: engine,
       database: () => isDatabaseReady ? database : null,
@@ -2666,7 +2733,30 @@ class AppModel
     await musicSession.engine.reapplySettings();
   }
 
-  /// 音乐歌词来源解析与落库（设计 §5.4）：sidecar → 内嵌 → 插件自带 → LRCLIB。
+  /// 服务器曲目的响度补查：服务器的优先，服务器没有曲目增益时用客户端测的。
+  late final BindingMusicServerLoudnessResolver _musicServerLoudness =
+      BindingMusicServerLoudnessResolver(
+        () => loadMusicServerBindings(this),
+        measured: (ref) => musicServerMeasuredLoudness(
+          ref,
+          db: isDatabaseReady ? database : null,
+        ),
+      );
+
+  /// 播放项 → 服务器曲目（播放上报、服务器歌词）：按当前配置的 Jellyfin / Subsonic 现建
+  /// 客户端，缓存到认不出或上报失败为止。
+  late final MusicServerTrackResolver musicServerTracks =
+      MusicServerTrackResolver(
+        () async => <MusicServerBrowser>[
+          for (final MusicServerBinding b
+              in (await (musicServerBindingLoader ??
+                      () => loadMusicServerBindings(this))())
+                  .values)
+            b.browser,
+        ],
+      );
+
+  /// 音乐歌词来源解析与落库（设计 §5.4）：sidecar → 内嵌 → 服务器歌词 / 插件自带 → LRCLIB。
   late final MusicLyricsService musicLyrics = MusicLyricsService(
     database: () => isDatabaseReady ? database : null,
     lrclib: LrclibClient(),
@@ -2678,6 +2768,17 @@ class AppModel
           path: path,
         ),
     onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
+    serverLyrics: (String trackUid, String path) async {
+      final MusicServerResolvedTrack? ref = await musicServerTracks.resolve(
+        trackUid: trackUid,
+        path: path,
+      );
+      final MusicServerBrowser? b = ref?.browser;
+      if (ref == null || b is! MusicServerLyricsProvider) return null;
+      return (
+        lyrics: await (b as MusicServerLyricsProvider).lyricsFor(ref.trackId),
+      );
+    },
     pluginLyrics: isMusicPluginSourcesUsable
         ? (String pluginId, String trackId) =>
               musicPluginManager.source(pluginId).lyrics(trackId)
@@ -5381,6 +5482,29 @@ class AppModel
         mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
       );
       await _resetSrsStorageHost(isMainProcess: true);
+      // 服务器曲目的离线副本（v175）：进程内索引跟着表走，播放项据此换成本地文件。
+      MusicServerDownloadIndex.instance.attach(_database);
+      // 服务器曲目离线 / 配置删了时没送达的播放与收藏（v176 补发队列）：「连不上」的判据补上
+      // Jellyfin 传输层自己的异常；补发时找当前配置的 Jellyfin / Subsonic。
+      musicServerUnreachable = (Object e) =>
+          e is JellyfinTransportException || musicServerReportUnreachable(e);
+      MusicServerOfflineQueue.instance
+        ..attach(
+          _database,
+          browsers: () async => <MusicServerBrowser>[
+            for (final MusicServerBinding b in (await loadMusicServerBindings(
+              this,
+            )).values)
+              b.browser,
+          ],
+        )
+        ..onFavoriteApplied = (String serverId, String itemId, bool fav) =>
+            MusicServerFavoriteStore.instance.confirm(
+              serverId,
+              MusicServerItemKind.track,
+              itemId,
+              fav,
+            );
       // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
       // 同时把还没有 MV 的本机曲目和附近的视频 / 蓝光流做一轮声纹匹配（只对没对过的）。
       onMusicSourceScanned = () {
@@ -5854,6 +5978,9 @@ class AppModel
       // 启动关键路径上的查询都发完了：这时才读查词历史整表（见
       // DictionaryRepository.loadFromDb 的 deferHistory）。
       dictRepo.startDeferredHistoryLoad();
+      // 上次离线时没送达服务器的播放 / 收藏：偏好（Subsonic 配置）已就绪，补发一轮（连不上
+      // 的条目留着，打开服务器页 / 下一次请求成功时再发）。
+      unawaited(MusicServerOfflineQueue.instance.flushAll());
 
       StartupTimeline.mark('post-init-kicks');
       debugPrint('[Fushi] init: DONE');

@@ -110,6 +110,8 @@ import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
 import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_quality_sheet.dart';
+import 'package:fushi/src/media/music/asr/music_server_asr_audio.dart'
+    show musicItemIsTranscribableServerTrack;
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicEngineClock, MusicVolumeButton, musicPlayModeButton;
@@ -1635,7 +1637,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     if (mounted) await _load(item);
   }
 
-  /// 当前曲目能不能出「生成日语字幕」（本机有转录能力，且是本机文件或在线音源插件曲目）。
+  /// 当前曲目能不能出「生成日语字幕」（本机有转录能力，且是本机文件、在线音源插件曲目或
+  /// 媒体服务器曲目）。
   bool get _canGenerateSubtitles {
     final MusicPlayItem? item = _engine.current;
     return item != null && musicSubtitleGenerationAvailableForItem(item);
@@ -1650,6 +1653,17 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         context: _themedContext,
         appModel: appModelNoUpdate,
         item: item,
+      );
+      return;
+    }
+    // 媒体服务器曲目（Jellyfin / Subsonic）同样先从服务器取音频，登记到服务器曲目 uid。
+    if (musicItemIsTranscribableServerTrack(item)) {
+      await openMusicServerSubtitleGenerateSheet(
+        context: _themedContext,
+        appModel: appModelNoUpdate,
+        items: <MusicPlayItem>[item],
+        title: item.title,
+        key: 'music:track:${item.trackUid}',
       );
       return;
     }

@@ -5,4 +5,4 @@
 ///   写进更新清单每个 asset 的 `dbSchemaVersion`（改写法要同步那条正则与守卫测试）；
 /// - 应用内更新器拿它和远端 asset 的 `dbSchemaVersion` 比：远端更低 = 装上就会因
 ///   「数据库比程序新」拒绝打开用户库，一律不推（见 `selectUpdateReleaseForCurrentPlatform`）。
-const int kFushiDbSchemaVersion = 174;
+const int kFushiDbSchemaVersion = 176;

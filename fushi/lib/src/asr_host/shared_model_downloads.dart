@@ -2,7 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_asr_core/asr_core.dart'
-    show AsrAudioProfile, AsrLanguage, asrModelPackFor, ModelDownloadEvent;
+    show
+        AsrAudioProfile,
+        AsrEncoderVariant,
+        AsrLanguage,
+        asrModelPackFor,
+        ModelDownloadEvent;
 
 /// 本机模型下载的**全应用单飞登记表**（[sharedModelDownloads]）：同一份模型目录
 /// 同一时刻只允许一条下载在写。
@@ -173,22 +178,28 @@ String asrDownloadKeyFor(AsrLanguage language, AsrAudioProfile profile) {
 /// 发起或挂上歌曲素材那条下载（单飞键 [songKey]）：混音包的识别文件 + 人声分离模型。
 ///
 /// 识别文件**只由混音那条（[mixedKey]）写**：本条先挂上去等它下完（视频页 / 设置页
-/// 同时在下也只有一个写者），[mixedReady] 确认识别文件已就绪后才跑
-/// [downloadSongMissing]，那时下载器只剩分离模型要写。混音那条被取消（设置页按包
-/// 取消）时它的监听流照样正常结束，识别文件却没下完：本条到此为止，不能接着由
-/// [downloadSongMissing] 去写识别文件——那既违背了取消，之后再有人重开混音下载也会
-/// 成为同一批文件的第二个写者。
+/// 同时在下也只有一个写者），[mixedReadyVariant] 确认识别文件已就绪（给出在盘的那个
+/// 编码器变体）后才跑 [downloadSongMissing]，并且**按那个变体**下——那时下载器只剩
+/// 分离模型要写。不能让歌曲那条自己按推荐变体去下：歌曲包的两个变体此刻都缺分离模型、
+/// 都不算就绪，推荐变体（有独显时是 fp32）就会被当成要下的那个，于是只缺 28 MB 分离
+/// 模型的机器又去下 2.5 GB 的 fp32 识别权重（BUG-5292）。
+///
+/// 混音那条被取消（设置页按包取消）时它的监听流照样正常结束，识别文件却没下完
+/// （[mixedReadyVariant] 给 null）：本条到此为止，不能接着由 [downloadSongMissing] 去写
+/// 识别文件——那既违背了取消，之后再有人重开混音下载也会成为同一批文件的第二个写者。
 Stream<ModelDownloadEvent> joinSongModelDownload(
   SharedModelDownloads downloads, {
   required String mixedKey,
   required String songKey,
   required Stream<ModelDownloadEvent> Function() downloadMixedMissing,
-  required Future<bool> Function() mixedReady,
-  required Stream<ModelDownloadEvent> Function() downloadSongMissing,
+  required Future<AsrEncoderVariant?> Function() mixedReadyVariant,
+  required Stream<ModelDownloadEvent> Function(AsrEncoderVariant variant)
+  downloadSongMissing,
 }) => downloads.join(songKey, () async* {
   yield* downloads.join(mixedKey, downloadMixedMissing);
-  if (!await mixedReady()) return;
-  yield* downloadSongMissing();
+  final AsrEncoderVariant? variant = await mixedReadyVariant();
+  if (variant == null) return;
+  yield* downloadSongMissing(variant);
 });
 
 /// MOSS（audio.cpp 运行库 + 权重）的单飞键。各后端共用同一份权重，所以不分后端。
