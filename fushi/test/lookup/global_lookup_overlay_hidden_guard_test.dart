@@ -205,14 +205,30 @@ void main() {
           reason: '只有非用户关闭的前导 / 失败收尾才能用 notify:false',
         );
         // 反向判据。光数 notify:false 的条数可以被绕：把一条真用户关闭改成静默、
-        // 再删掉一条前导，总数不变而语义已经反了。_onJsMessage 的五条真实关闭
-        // 路径（tapOutside 两分支、dismissPopupAt、topPullReleased、BUG-2770 的
-        // sideSwipeReleased 触摸横滑）必须走默认 notify:true。
+        // 再删掉一条前导，总数不变而语义已经反了。用户关闭路径共 6 条，必须走默认
+        // notify:true：_onJsMessage 的五条（tapOutside 两分支、dismissPopupAt、
+        // topPullReleased、BUG-2770 的 sideSwipeReleased 触摸横滑），加上卡片上点
+        // 「高级制卡」转交主窗（_handOffAdvancedMining，拍板台 rf--UcsGta-overlay）
+        // ——用户点了按钮收卡，状态要按正常关窗在 overlayHidden 里复位。
         expect(
           'GlobalLookupChannel.hide();'.allMatches(c).length,
-          5,
+          6,
           reason: '用户关闭路径必须保持裸 hide()（notify 默认 true）',
         );
+        final int handOff = c.indexOf(
+          'void _handOffAdvancedMining(Map<String, Object?> message) {',
+        );
+        expect(handOff, greaterThanOrEqualTo(0));
+        final String handOffBody = c.substring(
+          handOff,
+          c.indexOf('\n  }\n', handOff),
+        );
+        expect(
+          handOffBody,
+          contains('GlobalLookupChannel.hide();'),
+          reason: '「高级制卡」转交是用户关闭，必须走裸 hide() 发 overlayHidden',
+        );
+        expect(handOffBody, isNot(contains('notify: false')));
       },
     );
   });

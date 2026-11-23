@@ -401,6 +401,13 @@ Reply CardOverlay::Handle(const std::string& method, JsonObject* args) {
   if (method == "isShowing") {
     return ValueReply(BoolNode(IsShowing()));
   }
+  if (method == "lookupOverlaySelection") {
+    // BUG-5310: only the Windows card reports its in-card selection
+    // (overlaySelection), so a lookup hotkey never hands off to this card; the
+    // explicit false tells Dart to dismiss it and capture the foreground
+    // selection as usual.
+    return ValueReply(BoolNode(false));
+  }
   if (method == "suspendForCapture") {
     return ValueReply(
         BoolNode(SuspendForCapture(Int64Arg(args, "captureGeneration", 0))));
