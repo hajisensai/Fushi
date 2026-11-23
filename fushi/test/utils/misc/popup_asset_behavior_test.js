@@ -5390,9 +5390,67 @@ async function testCrossAppAudioPreviewSupersedesPendingDecode() {
   assert.equal(starts.length, 0, 'closing the panel cancels a preview that is still decoding');
 }
 
+// 拍板 Z0DtSVYC7A（方案 b）：查的词本来没有句子语音时，面板里「不带句子音频制卡」按次跳过——
+// 这一笔带 omitAudio，宿主不截录环；不必等试听数据（读取中就能点），也不沾到之后的普通「+」。
+async function testCrossAppAudioSkipSentenceAudioForThisCard() {
+  const context = loadPopup();
+  const preview = deferred();
+  const mined = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'crossAppAudioPreview') return preview.promise;
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve({ankiConnect: true, noteId: mined.length});
+    }
+    return Promise.resolve(null);
+  };
+  assert.equal(JSON.stringify(context.crossAppAudioSkipOverrides()), JSON.stringify({omitAudio: true}));
+  const mineButtons = mountEntriesWith(context, ['猫', '犬']);
+  await flush();
+
+  // ① 试听数据还在读：跳过按钮已经在，点了直接制卡、关面板。
+  context.openCrossAppAudioPanel(1);
+  await flush();
+  const host = context.window.__fushiRoot || context.document.body;
+  let panel = findByClass(host, 'crossapp-audio-panel');
+  const skip = findByClass(panel, 'crossapp-audio-skip');
+  assert.ok(skip, 'the skip button is available before the preview loads');
+  assert.equal(findByClass(panel, 'crossapp-audio-mine'), null,
+    'the trim editor is not built yet');
+  await skip.onclick();
+  await flush();
+  assert.equal(findByClass(host, 'crossapp-audio-panel'), null, 'skipping closes the panel');
+  assert.equal(mined.length, 1);
+  assert.equal(mined[0].expression, '犬');
+  assert.deepStrictEqual(JSON.parse(mined[0].miningOverrides), {omitAudio: true},
+    'the skipped card asks the host to omit the sentence audio');
+  preview.resolve(CROSS_APP_PREVIEW);
+  await flush();
+
+  // ② 编辑器建好后照样能跳过（拖过的起止不带上）。
+  const controls = await openCrossAppAudioPanelForTest(context, 0);
+  pressKey(controls.startHandle, 'ArrowLeft', {shiftKey: true});
+  panel = controls.panel;
+  await findByClass(panel, 'crossapp-audio-skip').onclick();
+  await flush();
+  assert.equal(mined.length, 2);
+  assert.deepStrictEqual(JSON.parse(mined[1].miningOverrides), {omitAudio: true},
+    'skip ignores the dragged range: no audio at all');
+
+  // ③ 之后的普通「+」照常带句子音频（跳过只管那一笔）。
+  mineButtons[0].dataset.mined = '';
+  await mineButtons[0].onclick();
+  await flush();
+  assert.equal(mined[mined.length - 1].miningOverrides, undefined,
+    'a later plain + is not affected by an earlier skip');
+}
+
 testCrossAppAudioPanelGeometryAndProbe()
   .then(testCrossAppAudioTrimOffsetStaysWithItsOwnRequest)
   .then(testCrossAppAudioPreviewSupersedesPendingDecode)
+  .then(testCrossAppAudioSkipSentenceAudioForThisCard)
   .then(
   () => console.log('cross-app audio panel tests passed'),
   (error) => {
