@@ -731,18 +731,23 @@ class MusicDiscArtIndex {
   /// 重新列过的根目录里、已不再是候选的图（删了 / 改名 / 改由文件名命中）：落盘结论
   /// 一并去掉，缓存不随曲库变动无限长。
   void _forgetStaleVerdicts(Map<String, _RootScan> listed) {
-    final Map<String, Set<String>> current = <String, Set<String>>{
-      for (final MapEntry<String, _RootScan> e in listed.entries)
-        e.key: <String>{
-          for (final _StampedFile f in e.value.faceCandidates) f.path,
-        },
+    // 本轮所有重列根的候选取并集：同一张图可能同时落在两个嵌套根（`Album` 与
+    // `Album/CD2`）的扫描范围里，只要任一根还把它当候选就留着，不能拿离它最近的
+    // 那个根单独判（否则那个根改由文件名命中时，外层根的候选结论每次启动都被删、
+    // 每次都重解码）。
+    final Set<String> live = <String>{
+      for (final _RootScan scan in listed.values)
+        for (final _StampedFile f in scan.faceCandidates) f.path,
     };
     MusicDiscArtStore.instance.removeFaceVerdictsWhere((String path) {
+      if (live.contains(path)) return false;
       // 候选最深在根下三层（`Scans/Disc/01.jpg`）。
       String dir = p.dirname(path);
       for (int depth = 0; depth < 3; depth++) {
-        final Set<String>? live = current[dir];
-        if (live != null) return !live.contains(path);
+        if (listed.containsKey(dir)) return true;
+        // 离它最近的根是本轮没重列的已知根（另一张专辑的嵌套目录）：结论归那个根
+        // 管，这轮不动。
+        if (_byRoot.containsKey(dir)) return false;
         final String parent = p.dirname(dir);
         if (parent == dir) break;
         dir = parent;

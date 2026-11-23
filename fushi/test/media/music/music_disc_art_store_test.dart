@@ -149,6 +149,41 @@ void main() {
     expect(calls, 2);
   });
 
+  test('新列外层专辑目录时，不删嵌套在里面的另一张专辑（已知根）的落盘结论', () async {
+    final Directory outer = Directory(p.join(tmp.path, 'Outer'))..createSync();
+    final Directory inner = Directory(p.join(outer.path, 'Live'))..createSync();
+    Directory(p.join(inner.path, 'Scans')).createSync();
+    File(p.join(inner.path, 'Scans', '01.webp')).writeAsBytesSync(<int>[0]);
+    final String innerDisc = p.join(inner.path, 'Scans', '01.webp');
+    final List<String> sampled = <String>[];
+    index.sampler = (String path) async {
+      sampled.add(path);
+      return _sample(disc: true);
+    };
+    final Map<String, List<String>> innerOnly = <String, List<String>>{
+      'live': <String>[p.join(inner.path, '01.flac')],
+    };
+
+    expect(await index.resolve(innerOnly), <String, String>{'live': innerDisc});
+    expect(sampled, <String>[innerDisc]);
+
+    // 同一进程里又出现外层专辑（只重列 Outer，Live 是已知根）：Live 的结论不归
+    // Outer 的候选集判，不能被当成「已不再是候选」删掉。
+    expect(
+      await index.resolve(<String, List<String>>{
+        ...innerOnly,
+        'outer': <String>[p.join(outer.path, '01.flac')],
+      }),
+      <String, String>{'live': innerDisc},
+    );
+    await store.flush();
+
+    await restart();
+    sampled.clear();
+    expect(await index.resolve(innerOnly), <String, String>{'live': innerDisc});
+    expect(sampled, isEmpty);
+  });
+
   test('resolve 发布前认领落盘几何：卡片拿到映射时几何已就绪', () async {
     final Directory album = Directory(p.join(tmp.path, 'B'))..createSync();
     final File disc = File(p.join(album.path, 'disc.jpg'))
