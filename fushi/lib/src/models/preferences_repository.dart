@@ -3205,6 +3205,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 拍板台 zTedU_pOQF：YouTube 直播回放带聊天回放时，开始播放就打开聊天栏（默认关）。
+  bool get videoLiveChatAutoOpen =>
+      getPref('video_live_chat_auto_open', defaultValue: false) as bool;
+
+  Future<void> setVideoLiveChatAutoOpen(bool value) async {
+    await setPref('video_live_chat_auto_open', value);
+    notifyListeners();
+  }
+
+  /// 拍板台 zTedU_pOQF：聊天栏每条消息上方显示发送者（默认开）。
+  bool get videoLiveChatShowAuthor =>
+      getPref('video_live_chat_show_author', defaultValue: true) as bool;
+
+  Future<void> setVideoLiveChatShowAuthor(bool value) async {
+    await setPref('video_live_chat_show_author', value);
+    notifyListeners();
+  }
+
   /// 拍板台 42UUu_kcwD：手机 / 平板切出 app 或锁屏后视频声音继续播（默认关）。
   /// 关着时进后台暂停、回前台续播（BUG-2544）。
   bool get videoBackgroundPlay =>
