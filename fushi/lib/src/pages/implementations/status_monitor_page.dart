@@ -14,8 +14,8 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// 设置 › 诊断 › 状态监测：实时 CPU / 内存 / 帧耗时 / UI 线程延迟 + 最近 2 分钟曲线，
-/// 以及全局悬浮小窗的开关。页面打开期间持有 [StatusMonitor]（关页即停采样，除非悬浮小窗
+/// 设置 › 诊断 › 状态监测：全局悬浮小窗的开关（排最上），以及实时 CPU / 内存 / 帧耗时 /
+/// UI 线程延迟 + 最近 2 分钟曲线。页面打开期间持有 [StatusMonitor]（关页即停采样，除非悬浮小窗
 /// 开着）。
 class StatusMonitorPage extends StatefulWidget {
   const StatusMonitorPage({super.key, this.monitor});
@@ -74,12 +74,13 @@ class _StatusMonitorPageState extends State<StatusMonitorPage> {
             return ListenableBuilder(
               listenable: _monitor,
               builder: (BuildContext context, Widget? _) {
+                // 悬浮小窗开关排第一：它是这页最常用的设置，不必滚过整页读数才找到。
                 final List<Widget> sections = <Widget>[
+                  _OverlaySection(monitor: _monitor),
                   _LiveSection(monitor: _monitor),
                   _ThreadsSection(sample: _monitor.latest),
                   _StuttersSection(monitor: _monitor),
                   _DetailsSection(sample: _monitor.latest),
-                  _OverlaySection(monitor: _monitor),
                 ];
                 return FushiEntranceScope(
                   child: ListView.builder(

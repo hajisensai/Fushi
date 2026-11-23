@@ -36,18 +36,12 @@ import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 export 'package:fushi_engine/srs/srs_edit_undo.dart';
 export 'package:fushi_engine/srs/srs_entity_views.dart' show SrsEntityView;
 
-/// 本进程（isolate）的身份：持久化的校时读数（服务器时间 + 开机时钟读数）只在写下它的进程里接着用。
-/// 同一进程里重开 profile / 副本时它不变，校时不丢；进程重启（含重新开机，开机时钟归零）后换新。
-final String _srsProcessBootId =
-    '${DateTime.now().millisecondsSinceEpoch}_'
-    '${Random.secure().nextInt(1 << 30)}';
-
 /// 本机时间（[SrsTrustedClock]）：校时那一刻的服务器时间 + 原生开机时钟（含睡眠、不受改系统时间影响，
-/// [SrsCore.bootTimeMs]）之后走过的量。进程重启后到下一次校时前按墙钟 + 上一个进程留下的偏移估算。
+/// [SrsCore.bootTimeMs]）之后走过的量。同一次开机里的新进程从本机状态行接上校时；重新开机（或校时后改过系统时间）
+/// 后到下一次校时前按墙钟走，不带上一个进程的偏移（BUG-5264）。
 SrsTrustedClock srsProcessTrustedClock(SrsCore core) => SrsTrustedClock(
   wallClockMs: () => DateTime.now().millisecondsSinceEpoch,
   bootClockMs: core.bootTimeMs,
-  bootId: _srsProcessBootId,
 );
 
 /// 条件写笔记字段的一项（见 [SrsDbStore.editNoteFieldsIf]）：字段现值仍是 [expect] 才写成 [value]。
@@ -1082,16 +1076,17 @@ class SrsDbStore implements SrsSync2Host {
     _absorbLocalState(j);
     _absorbLimitUnitSince(j);
     final Object? anchor = j['anchor'];
-    // `{o, b, s?, t?}`：o = 可信时间 − 墙钟，s / t = 校时时的服务器时间与开机时钟读数（只在写下它的进程 b 里接着
-    // 用，见 [SrsTrustedClock.restoreAnchor]）。更旧的 `{s, m, b}`（服务器时间 + Stopwatch 读数）没有 o，不认。
-    if (anchor is Map && anchor['o'] is int && anchor['b'] is String) {
-      final Object? server = anchor['s'];
-      final Object? boot = anchor['t'];
+    // `{s, t, e}`：校时时的服务器时间、同一刻的开机时钟读数、按墙钟估的开机时刻；只在同一次开机里接上（见
+    // [SrsTrustedClock.restoreAnchor]）。旧版的 `{o, b, s?, t?}`（带「可信时间 − 墙钟」偏移跨进程估算，BUG-5264）
+    // 与更旧的 `{s, m, b}` 没有 e，不认：下一次校时前按墙钟走。
+    if (anchor is Map &&
+        anchor['s'] is int &&
+        anchor['t'] is int &&
+        anchor['e'] is int) {
       _trusted.restoreAnchor(
-        offsetMs: anchor['o']! as int,
-        bootId: anchor['b']! as String,
-        serverTimeMs: server is int ? server : null,
-        bootTimeMs: boot is int ? boot : null,
+        serverTimeMs: anchor['s']! as int,
+        bootTimeMs: anchor['t']! as int,
+        bootEpochMs: anchor['e']! as int,
       );
     }
     return (
@@ -1139,14 +1134,13 @@ class SrsDbStore implements SrsSync2Host {
     }
   }
 
-  /// 此刻的校时状态（`{o, b, s?, t?}`，见 [_loadLocal]）；没校过时为 null。改投影的命令随请求带上（`anchor`），内核
-  /// 在命令的同一笔事务里写进本机状态行——o 是「可信时间 − 墙钟」，每次现算，内核算不出来。没带的命令不动行里的值。
+  /// 此刻的校时状态（`{s, t, e}`，见 [_loadLocal]）；没校过时为 null。改投影的命令随请求带上（`anchor`），内核在
+  /// 命令的同一笔事务里写进本机状态行。没带的命令不动行里的值。
   Map<String, Object?>? _anchorArg() => switch (_trusted.anchorState) {
     final SrsClockAnchorState a => <String, Object?>{
-      'o': a.offsetMs,
-      'b': a.bootId,
-      if (a.serverTimeMs case final int server) 's': server,
-      if (a.bootTimeMs case final int boot) 't': boot,
+      's': a.serverTimeMs,
+      't': a.bootTimeMs,
+      'e': a.bootEpochMs,
     },
     null => null,
   };

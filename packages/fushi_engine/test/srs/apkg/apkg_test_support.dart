@@ -68,7 +68,6 @@ Future<SrsDbStore> openTestStore({
     trustedClock: SrsTrustedClock(
       wallClockMs: () => now(),
       bootClockMs: () => now(),
-      bootId: 'boot-$deviceId',
     ),
     fallbackRolloverHour: () => 4,
     localOffsetMin: localOffsetMin,

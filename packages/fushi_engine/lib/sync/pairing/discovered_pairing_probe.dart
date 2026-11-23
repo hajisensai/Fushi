@@ -129,6 +129,7 @@ Future<DiscoveredPairingProbeOutcome> probeDiscoveredPairingEndpointDetailed({
       );
       final FushiPingResult? result = outcome.result;
       if (result == null) {
+        logFushiPingFailure(baseUrl, outcome);
         worst = _worst(worst, outcome.failure ?? FushiPingFailure.unreachable);
         continue;
       }
@@ -149,6 +150,7 @@ Future<DiscoveredPairingProbeOutcome> probeDiscoveredPairingEndpointDetailed({
       final FushiPingOutcome outcome = await doPing(baseUrl);
       final FushiPingResult? result = outcome.result;
       if (result == null) {
+        logFushiPingFailure(baseUrl, outcome);
         worst = _worst(worst, outcome.failure ?? FushiPingFailure.unreachable);
         continue;
       }

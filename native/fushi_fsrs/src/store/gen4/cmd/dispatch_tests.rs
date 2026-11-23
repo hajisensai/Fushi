@@ -589,11 +589,11 @@ fn writes_through_the_dispatcher_match_protocol_3_and_invalidate_sessions() {
         m.h,
         "local_anchor",
         T1,
-        json!({"anchor": {"o": 7, "b": "boot"}}),
+        json!({"anchor": {"s": 7, "t": 1, "e": 6}}),
     );
     assert_eq!(
         g4(m.h, "local_state", T1, json!({}))["anchor"],
-        json!({"o": 7, "b": "boot"})
+        json!({"s": 7, "t": 1, "e": 6})
     );
 }
 
@@ -718,7 +718,7 @@ fn every_generation_state_opens_explicitly() {
         g4(h, "read", T1, json!({"q": "entity_count", "kind": "note"}))
     );
     for (op, extra) in [
-        ("local_anchor", json!({"anchor": {"o": 1, "b": "x"}})),
+        ("local_anchor", json!({"anchor": {"s": 1, "t": 1, "e": 0}})),
         ("rebuild_caches", json!({})),
     ] {
         let (rc, e) = call(s, &g4req(op, T1, extra), None).unwrap_err();
@@ -979,7 +979,7 @@ fn a_write_outside_the_cache_layer_still_invalidates_the_stats_cache() {
         m.h,
         "local_anchor",
         T1,
-        json!({"anchor": {"o": 3, "b": "boot"}}),
+        json!({"anchor": {"s": 3, "t": 1, "e": 2}}),
     );
     assert_eq!(
         cache_gen_rows(&m.dir.0),
