@@ -13,6 +13,8 @@ import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_compact_landscape.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_divider.dart';
+import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
 import 'package:fushi/src/utils/components/fushi_menu_presence.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiDialogAction, FushiDialogHeroIcon, fushiM3eMenuAnimationStyle;
@@ -179,38 +181,37 @@ LiquidGlassSettings _overlayGlassSettings(
   );
 }
 
-// Apple 菜单（用户 2026-11-24「菜单不像 iOS」，对齐 iOS 27 / macOS 27）：
-// 所有 Apple 弹出菜单（showFushiMenu / FushiPopupMenuButton / 顶栏「⋯」/
-// FushiMenuAnchor）共用这一套面板（[_appleMenuSurface]）与行
-// （[_AppleMenuRow] / [_FushiGlassMenuPanel] 的 MenuButtonTheme）：
-// - 桌面宽窗 = macOS 27 菜单：面板圆角 10、行高 24、行圆角 6、13 号字、行与
-//   面板内缩 5；鼠标悬停 / 按下 = 强调色圆角块 + onAccent 字（macOS 惯例，
-//   只跟指针走，不常驻），键盘焦点 = 中性 secondaryFill；
-// - 触屏 / 窄窗 = iOS 27 上下文菜单：面板圆角 24、宽 250 起、行高 44、17 号
-//   字；悬停 / 焦点 = 中性 secondaryFill，按下 = fill；
-// - 行内：文字在前、图标在行尾；当前项行首对勾（label 色），整组有可勾选项时
-//   每行都让出对勾列；破坏性红字；分隔线细线内缩。面板是随「玻璃画质」的厚
-//   玻璃（实色档 = 系统实色面）+ 外圈柔和阴影，从锚点形变展开。
+// Apple 菜单（用户 2026-11-24 给的真 iOS 27 菜单截图为准）：所有 Apple 弹出
+// 菜单（showFushiMenu / FushiPopupMenuButton / 顶栏「⋯」/ FushiMenuAnchor /
+// 自建菜单面板）共用这一套面板（[_appleMenuSurface]）与行（[_AppleMenuRow] /
+// [FushiAppleMenuItemRow] / [_FushiGlassMenuPanel] 的 MenuButtonTheme）：
+// - 行 = [✓ 列][图标][文字（+ 副标题）][行尾：子菜单 › / 快捷键]；勾选项在
+//   ✓ 列画 label 色对勾，当前项不铺底；无图标的行文字直接从图标位起；
+// - iOS（触屏 / 窄窗）：面板圆角 34、上下内边距 12、宽 250–280；行高 50
+//   （带副标题更高）、17 号字、副标题 15 号 secondaryLabel、✓ 列 24、图标 22；
+//   按下 / 悬停 / 键盘焦点 = 中性灰全圆角胶囊（左右内缩 12）；分组发丝线左右
+//   缩进 24；
+// - macOS（桌面宽窗）：面板圆角 10、内边距 5；行高 24、行圆角 6、13 号字、
+//   ✓ 列 16、行左右内边距 10；鼠标悬停 / 按下 = 强调色圆角底 + 白字（只跟
+//   指针），键盘焦点 = 中性底；快捷键在行尾 secondaryLabel；分组线缩进 10。
+// 面板是随「玻璃画质」的厚玻璃（实色档 = 系统实色面）+ 外圈柔和阴影，从锚点
+// 形变展开。
 
 /// 菜单面板圆角。
 double _menuRadius(BuildContext context) =>
-    fushiAppleCompact(context) ? 10 : 24;
+    fushiAppleCompact(context) ? 10 : 34;
 
 /// 菜单行高。
 double _menuRowHeight(BuildContext context) =>
-    fushiAppleCompact(context) ? 24 : 44;
+    fushiAppleCompact(context) ? 24 : 50;
 
 /// 菜单行圆角（悬停 / 按下的高亮块）。
 double _menuRowRadius(BuildContext context) =>
-    fushiAppleCompact(context) ? 6 : 12;
-
-/// 行首对勾列宽（整组有可勾选项时每行都让出，文字左缘对齐）。
-double _menuCheckColumn(BuildContext context) =>
-    fushiAppleCompact(context) ? 18 : 28;
+    fushiAppleCompact(context) ? 6 : 999;
 
 /// 菜单行与面板边缘的内缩。
 double _menuRowInset(BuildContext context) =>
-    fushiAppleCompact(context) ? 5 : 8;
+    fushiAppleCompact(context) ? 5 : 12;
 
 /// 菜单面板默认宽度：macOS 菜单 200–280，iOS 上下文菜单 250 起（系统定宽
 /// 约 250）。
@@ -255,7 +256,13 @@ Widget _appleMenuSurface(
     child: GlassContainer(
       useOwnLayer: true,
       quality: fushiGlassQuality(context, prominent: true),
-      settings: _overlayGlassSettings(context, thick: true),
+      settings: glassMaterialOf(context) == FushiGlassMaterial.off
+          // 实色档：系统菜单实色面（深 #2C2C2E 抬升底 / 浅纯白），零模糊不透明。
+          ? _overlayGlassSettings(context, thick: true).copyWith(
+              glassColor: dark ? const Color(0xFF2C2C2E) : Colors.white,
+              blur: 0,
+            )
+          : _overlayGlassSettings(context, thick: true),
       shape: LiquidRoundedSuperellipse(borderRadius: r),
       clipBehavior: Clip.antiAlias,
       child: Material(type: MaterialType.transparency, child: child),
@@ -1483,6 +1490,56 @@ class _AppleMenuRowState extends State<_AppleMenuRow> {
   }
 }
 
+/// 调用方菜单项里的「两行文字」（`Column[Text, Text]`，或 `Row[…, Column[Text,
+/// Text], …]`）在 Apple 菜单里把第二行画成副标题（iOS 15 / macOS 11 号
+/// secondaryLabel）。其他形状原样返回。
+Widget _appleMenuSubtitle(BuildContext context, Widget child) {
+  if (child is Row) {
+    final List<Widget> cells = child.children;
+    final int at = cells.indexWhere((Widget w) => w is Column);
+    if (at < 0) return child;
+    return Row(
+      key: child.key,
+      mainAxisSize: child.mainAxisSize,
+      mainAxisAlignment: child.mainAxisAlignment,
+      crossAxisAlignment: child.crossAxisAlignment,
+      children: <Widget>[
+        for (int i = 0; i < cells.length; i++)
+          i == at ? _appleMenuSubtitle(context, cells[i]) : cells[i],
+      ],
+    );
+  }
+  if (child is! Column ||
+      child.children.length != 2 ||
+      child.children.any((Widget w) => w is! Text)) {
+    return child;
+  }
+  return Column(
+    key: child.key,
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: <Widget>[
+      child.children[0],
+      DefaultTextStyle.merge(
+        style: _menuSubtitleStyle(context),
+        child: child.children[1],
+      ),
+    ],
+  );
+}
+
+/// 菜单副标题字样。
+TextStyle _menuSubtitleStyle(BuildContext context) => TextStyle(
+  fontSize: fushiAppleCompact(context) ? 11 : 15,
+  height: 1.25,
+  letterSpacing: 0,
+  color: appleColorsOf(context).secondaryLabel,
+);
+
+/// 菜单行 ✓ 列 / 图标与文字的间距。
+double _menuIconGap(BuildContext context) =>
+    fushiAppleCompact(context) ? 6 : 12;
+
 /// Apple 弹出菜单的公共面板（与 showFushiMenu / FushiMenuAnchor 同一块）：
 /// 随「玻璃画质」的厚玻璃（实色档 = 系统实色面）+ 外圈柔和阴影，圆角取菜单
 /// 规格（macOS 10 / iOS 24）。自建菜单面板（媒体项右键菜单等）一律用它，
@@ -1509,11 +1566,14 @@ class FushiAppleMenuItemRow extends StatelessWidget {
     this.subtitle,
     this.destructive = false,
     this.selected = false,
+    this.checkColumn = false,
     this.trailing,
     this.focusNode,
     this.autofocus = false,
   });
 
+  /// 同组有勾选项时 true：未勾的行也让出 ✓ 列（文字左缘对齐）。
+  final bool checkColumn;
   final IconData? icon;
   final String label;
   final String? subtitle;
@@ -1535,20 +1595,16 @@ class FushiAppleMenuItemRow extends StatelessWidget {
     final String? sub = subtitle;
     final Widget text = sub == null
         ? Text(label, maxLines: 2, overflow: TextOverflow.ellipsis)
-        : Row(
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(label, maxLines: 1),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Opacity(
-                  opacity: 0.6,
-                  child: Text(
-                    sub,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.end,
-                  ),
-                ),
+              Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+              Text(
+                sub,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _menuSubtitleStyle(context),
               ),
             ],
           );
@@ -1563,23 +1619,18 @@ class FushiAppleMenuItemRow extends StatelessWidget {
       radius: _menuRowRadius(context),
       accentHighlight: compact,
       foreground: fg,
-      padding: EdgeInsetsDirectional.only(
-        start: selected ? (compact ? 4 : 8) : (compact ? 9 : 16),
-        end: compact ? 9 : 16,
-        top: 2,
-        bottom: 2,
+      padding: EdgeInsetsDirectional.symmetric(
+        horizontal: _menuItemPadding(context),
+        vertical: compact ? 2 : 6,
       ),
-      leading: selected
-          ? SizedBox(
-              width: _menuCheckColumn(context),
-              child: FushiIcon(
-                CupertinoIcons.checkmark,
-                size: compact ? 12 : 17,
-              ),
+      leading: checkColumn || selected
+          ? Padding(
+              padding: EdgeInsetsDirectional.only(end: _menuIconGap(context)),
+              child: FushiAppleMenuCheck(checked: selected),
             )
           : null,
       child: IconTheme.merge(
-        data: IconThemeData(size: compact ? 15 : 19),
+        data: IconThemeData(size: compact ? 15 : 22),
         child: DefaultTextStyle.merge(
           style: TextStyle(
             fontSize: compact ? 13 : 17,
@@ -1588,12 +1639,12 @@ class FushiAppleMenuItemRow extends StatelessWidget {
           ),
           child: Row(
             children: <Widget>[
+              if (glyph != null) ...<Widget>[
+                FushiIcon(glyph),
+                SizedBox(width: _menuIconGap(context)),
+              ],
               Expanded(child: text),
               if (tail != null) ...<Widget>[const SizedBox(width: 8), tail],
-              if (glyph != null) ...<Widget>[
-                SizedBox(width: compact ? 10 : 12),
-                FushiIcon(glyph),
-              ],
             ],
           ),
         ),
@@ -1622,7 +1673,7 @@ Widget _appleMenuDivider(BuildContext context) {
     child: Center(
       child: Container(
         height: 0.5,
-        margin: EdgeInsets.symmetric(horizontal: compact ? 10 : 16),
+        margin: EdgeInsets.symmetric(horizontal: compact ? 10 : 24),
         color: appleColorsOf(context).separator,
       ),
     ),
@@ -2539,7 +2590,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
         highlighted;
     Color fg = item.enabled ? apple.label : apple.tertiaryLabel;
     if (item.enabled && data?.color != null) fg = apple.destructive;
-    final double iconSize = compact ? 15 : 19;
+    final double iconSize = compact ? 15 : 22;
     // MD3 的默认行高（48 / kMinInteractiveDimension）换成 Apple 行高；调用方
     // 显式要的更高行照用。
     final double rowHeight = item.height <= kMinInteractiveDimension
@@ -2547,9 +2598,13 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
         : item.height;
     final Widget content;
     if (data != null) {
-      // iOS / macOS 27 菜单：文字在前、图标在行尾。
+      // iOS / macOS 27 菜单：[图标][文字]。
       content = Row(
         children: <Widget>[
+          if (data.icon != null) ...<Widget>[
+            FushiIcon(data.icon, size: iconSize),
+            SizedBox(width: _menuIconGap(context)),
+          ],
           Expanded(
             child: Text(
               data.label,
@@ -2557,14 +2612,13 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          if (data.icon != null) ...<Widget>[
-            SizedBox(width: compact ? 10 : 12),
-            FushiIcon(data.icon, size: iconSize),
-          ],
         ],
       );
     } else {
-      content = item.child ?? const SizedBox.shrink();
+      content = _appleMenuSubtitle(
+        context,
+        item.child ?? const SizedBox.shrink(),
+      );
     }
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: _menuRowInset(context)),
@@ -2580,22 +2634,15 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
         accentHighlight: compact,
         foreground: fg,
         mouseCursor: item.mouseCursor,
-        padding: EdgeInsetsDirectional.only(
-          start: checkColumn ? (compact ? 4 : 8) : (compact ? 9 : 16),
-          end: compact ? 9 : 16,
-          top: 2,
-          bottom: 2,
+        padding: EdgeInsetsDirectional.symmetric(
+          horizontal: _menuItemPadding(context),
+          vertical: compact ? 2 : 6,
         ),
         // 当前项：行首对勾（label 色，高亮时随行反色），不铺强调色底。
         leading: checkColumn
-            ? SizedBox(
-                width: _menuCheckColumn(context),
-                child: checked
-                    ? FushiIcon(
-                        CupertinoIcons.checkmark,
-                        size: compact ? 12 : 17,
-                      )
-                    : null,
+            ? Padding(
+                padding: EdgeInsetsDirectional.only(end: _menuIconGap(context)),
+                child: FushiAppleMenuCheck(checked: checked),
               )
             : null,
         child: IconTheme.merge(
@@ -2695,7 +2742,7 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
     final EdgeInsetsGeometry padding =
         route.menuPadding ??
         (apple
-            ? EdgeInsets.symmetric(vertical: compact ? 5 : 8)
+            ? EdgeInsets.symmetric(vertical: compact ? 5 : 12)
             : popupTheme.menuPadding ??
                   const EdgeInsets.symmetric(vertical: 8));
     Widget menu = ConstrainedBox(
@@ -3085,13 +3132,27 @@ class _FushiPopupMenuButtonState<T> extends PopupMenuButtonState<T> {
 /// （[MenuItemButton] 等）经 [MenuButtonTheme] 改成与 showFushiMenu 同一套
 /// 行：桌面 macOS 菜单（行高 28、13 号、悬停 / 焦点强调色块 + onAccent 字），
 /// 移动 iOS 菜单（行高 44、17 号、按下 fill 灰、焦点 tertiaryFill）。
-class _FushiGlassMenuPanel extends StatelessWidget {
+class _FushiGlassMenuPanel extends StatefulWidget {
   const _FushiGlassMenuPanel({required this.children});
 
   final List<Widget> children;
 
   @override
+  State<_FushiGlassMenuPanel> createState() => _FushiGlassMenuPanelState();
+}
+
+class _FushiGlassMenuPanelState extends State<_FushiGlassMenuPanel> {
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final List<Widget> children = widget.children;
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
     bool pointerLit(Set<WidgetState> states) =>
@@ -3116,8 +3177,13 @@ class _FushiGlassMenuPanel extends StatelessWidget {
         ),
       ),
       padding: WidgetStatePropertyAll<EdgeInsetsGeometry>(
-        EdgeInsets.symmetric(horizontal: compact ? 9 : 16),
+        EdgeInsets.symmetric(horizontal: _menuItemPadding(context)),
       ),
+      // 桌面 Theme 是 compact 密度：MenuItemButton 会按它把行高 −8、左右内边距
+      // −8（行高只剩 16、文字贴面板边），菜单行一律按标准密度量。
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      alignment: AlignmentDirectional.centerStart,
       shape: WidgetStatePropertyAll<OutlinedBorder>(
         RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(_menuRowRadius(context)),
@@ -3136,37 +3202,52 @@ class _FushiGlassMenuPanel extends StatelessWidget {
       }),
       foregroundColor: WidgetStateProperty.resolveWith(fg),
       iconColor: WidgetStateProperty.resolveWith(fg),
-      iconSize: WidgetStatePropertyAll<double>(compact ? 15 : 19),
+      iconSize: WidgetStatePropertyAll<double>(compact ? 15 : 22),
       overlayColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
       textStyle: WidgetStatePropertyAll<TextStyle>(
-        TextStyle(fontSize: compact ? 13 : 17, letterSpacing: 0),
+        TextStyle(fontSize: compact ? 13 : 17, height: 1.25, letterSpacing: 0),
       ),
       splashFactory: NoSplash.splashFactory,
       animationDuration: Duration.zero,
+    );
+    final bool checkColumn = children.any(_isCheckableMenuItem);
+    final MediaQueryData mq = MediaQuery.of(context);
+    // 面板自己限高、内部滚动（不交给 MenuAnchor 外层的滚动视图）：内容再多也
+    // 不会长出屏幕、溢出圆角或露出玻璃之外的透明底。
+    final double maxHeight = math.max(
+      120,
+      mq.size.height - mq.padding.vertical - 2 * (_kMenuAnchorGap + 12),
     );
     return _appleMenuSurface(
       context,
       MenuButtonTheme(
         data: MenuButtonThemeData(style: rowStyle),
-        child: Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: _menuRowInset(context),
-            vertical: compact ? 5 : 8,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: maxHeight,
+            maxWidth: _menuConstraints(context).maxWidth,
           ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth:
-                  _menuConstraints(context).maxWidth -
-                  2 * _menuRowInset(context),
-            ),
-            child: IntrinsicWidth(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  for (final Widget child in children)
-                    _appleMenuItemButton(child),
-                ],
+          child: FushiScrollbar(
+            controller: _scroll,
+            child: SingleChildScrollView(
+              controller: _scroll,
+              padding: EdgeInsets.symmetric(
+                horizontal: _menuRowInset(context),
+                vertical: compact ? 5 : 12,
+              ),
+              child: IntrinsicWidth(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (final Widget child in children)
+                      _appleMenuItemButton(
+                        context,
+                        child,
+                        checkColumn: checkColumn,
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -3176,32 +3257,280 @@ class _FushiGlassMenuPanel extends StatelessWidget {
   }
 }
 
-/// iOS / macOS 27 菜单行是「文字在前、图标在行尾」：只带前置图标的
-/// [MenuItemButton] 原样复制一份、把图标挪到行尾（其余字段一字不差，焦点 /
-/// 快捷键 / 语义 / 关闭行为不变）。带快捷键或已有尾部图标的项（尾部被占）、
-/// 子菜单、勾选 / 单选项原样保留。
-Widget _appleMenuItemButton(Widget child) {
-  if (child is! MenuItemButton) return child;
-  final Widget? icon = child.leadingIcon;
-  if (icon == null || child.trailingIcon != null || child.shortcut != null) {
-    return child;
+/// macOS / iOS 菜单行的左右内边距（MenuItemButton 与 showFushiMenu 行同值）。
+double _menuItemPadding(BuildContext context) =>
+    fushiAppleCompact(context) ? 10 : 12;
+
+/// 行首对勾列宽（[FushiAppleMenuCheck] 的宽度）。
+double _menuCheckSlot(BuildContext context) =>
+    fushiAppleCompact(context) ? 16 : 24;
+
+/// MenuItemButton 前置图标与文字的间距（material 按 Theme 密度算，这里同算）。
+double _menuLabelGap(BuildContext context) =>
+    math.max(4, 12 + Theme.of(context).visualDensity.horizontal * 2);
+
+/// Apple 菜单的行首对勾列（MenuAnchor 菜单项的 `leadingIcon`）：[checked] 时
+/// 画 ✓（label 色、高亮时随行反色），否则留同宽空位让文字左缘对齐。
+class FushiAppleMenuCheck extends StatelessWidget {
+  const FushiAppleMenuCheck({super.key, required this.checked});
+
+  final bool checked;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: _menuCheckSlot(context),
+    child: checked
+        ? FushiIcon(
+            CupertinoIcons.checkmark,
+            size: fushiAppleCompact(context) ? 12 : 17,
+          )
+        : null,
+  );
+}
+
+/// Apple 菜单的分组小标题（不可聚焦）：macOS 11 / iOS 13 号 secondaryLabel，
+/// 左缘与带 [FushiAppleMenuCheck] 的行文字对齐（[alignWithCheck] = false 时
+/// 与无对勾列的行对齐）。
+class FushiAppleMenuSectionHeader extends StatelessWidget {
+  const FushiAppleMenuSectionHeader(
+    this.text, {
+    super.key,
+    this.alignWithCheck = true,
+  });
+
+  final String text;
+  final bool alignWithCheck;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool compact = fushiAppleCompact(context);
+    final double start =
+        _menuItemPadding(context) +
+        (alignWithCheck ? _menuCheckSlot(context) + _menuLabelGap(context) : 0);
+    return ExcludeFocus(
+      child: Padding(
+        padding: EdgeInsetsDirectional.fromSTEB(
+          start,
+          compact ? 4 : 8,
+          _menuItemPadding(context),
+          compact ? 2 : 4,
+        ),
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: compact ? 11 : 13,
+            fontWeight: compact ? FontWeight.w600 : FontWeight.w400,
+            color: appleColorsOf(context).secondaryLabel,
+            letterSpacing: 0,
+          ),
+        ),
+      ),
+    );
   }
-  return MenuItemButton(
-    key: child.key,
-    onPressed: child.onPressed,
-    onHover: child.onHover,
-    requestFocusOnHover: child.requestFocusOnHover,
-    onFocusChange: child.onFocusChange,
-    focusNode: child.focusNode,
-    autofocus: child.autofocus,
-    semanticsLabel: child.semanticsLabel,
-    style: child.style,
-    statesController: child.statesController,
-    clipBehavior: child.clipBehavior,
-    trailingIcon: icon,
-    closeOnActivate: child.closeOnActivate,
-    overflowAxis: child.overflowAxis,
-    child: child.child,
+}
+
+/// MenuAnchor 菜单项改排成 iOS / macOS 27 菜单行（[_FushiGlassMenuPanel] 对
+/// 每个直接子项调用；原项的焦点 / 回调 / 关闭行为一字不差搬过去）：
+/// - [MenuItemButton]：行 = [✓ 列][图标][文字][快捷键 / 尾部]（iOS 27 与 macOS
+///   菜单都是图标在文字前）；MD3 写法「行尾一个勾 = 选中」改成行首 ✓；同组有
+///   勾选项时其余行也让出 ✓ 列。
+/// - [CheckboxMenuButton] / [RadioMenuButton]：MD3 的复选框 / 单选圈换成行首
+///   对勾列（勾上 = ✓，未勾 = 空位对齐），点击语义照旧（复选按 tristate 轮转、
+///   单选选中本值 / toggleable 再点取消），读屏补 checked / 互斥组。
+/// - [SubmenuButton]：行尾 `›`（tertiaryLabel），子菜单面板透明化并收进同一块
+///   [_FushiGlassMenuPanel]（递归套用本规则）。
+Widget _appleMenuItemButton(
+  BuildContext context,
+  Widget child, {
+  required bool checkColumn,
+}) {
+  final bool compact = fushiAppleCompact(context);
+  final FushiAppleColors apple = appleColorsOf(context);
+  Widget checkSlot(bool checked) => FushiAppleMenuCheck(checked: checked);
+  if (child is FushiDivider || child is Divider) {
+    return _appleMenuDivider(context);
+  }
+  // 调用方给菜单项包的 Actions（手柄 B 关菜单等）：保留外壳、改里面的项。
+  if (child is Actions) {
+    return Actions(
+      key: child.key,
+      dispatcher: child.dispatcher,
+      actions: child.actions,
+      child: _appleMenuItemButton(
+        context,
+        child.child,
+        checkColumn: checkColumn,
+      ),
+    );
+  }
+  if (child is MenuItemButton) {
+    final Widget? icon = child.leadingIcon;
+    // MD3 写法「行尾一个勾 = 选中」改成行首对勾列。
+    final bool trailingCheck =
+        icon == null && _isMenuCheckGlyph(child.trailingIcon);
+    final Widget? leading;
+    final Widget? trailing;
+    if (trailingCheck) {
+      leading = checkSlot(true);
+      trailing = null;
+    } else if (icon == null) {
+      if (!checkColumn) return child;
+      // 同组有勾选项：未勾的行也让出对勾列，文字左缘对齐。
+      leading = checkSlot(false);
+      trailing = child.trailingIcon;
+    } else if (icon is FushiAppleMenuCheck || !checkColumn) {
+      return child;
+    } else {
+      // 同组有勾选项：[✓ 空位][图标][文字]。
+      leading = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          checkSlot(false),
+          SizedBox(width: _menuIconGap(context)),
+          icon,
+        ],
+      );
+      trailing = child.trailingIcon;
+    }
+    return MenuItemButton(
+      key: child.key,
+      onPressed: child.onPressed,
+      onHover: child.onHover,
+      requestFocusOnHover: child.requestFocusOnHover,
+      onFocusChange: child.onFocusChange,
+      focusNode: child.focusNode,
+      autofocus: child.autofocus,
+      shortcut: child.shortcut,
+      semanticsLabel: child.semanticsLabel,
+      style: child.style,
+      statesController: child.statesController,
+      clipBehavior: child.clipBehavior,
+      leadingIcon: leading,
+      trailingIcon: trailing,
+      closeOnActivate: child.closeOnActivate,
+      overflowAxis: child.overflowAxis,
+      child: child.child,
+    );
+  }
+  if (child is CheckboxMenuButton) {
+    final ValueChanged<bool?>? onChanged = child.onChanged;
+    final bool? value = child.value;
+    return Semantics(
+      checked: value ?? false,
+      mixed: child.tristate && value == null,
+      child: MenuItemButton(
+        key: child.key,
+        onPressed: onChanged == null
+            ? null
+            : () => onChanged(switch (value) {
+                false => true,
+                true => child.tristate ? null : false,
+                null => false,
+              }),
+        onHover: child.onHover,
+        onFocusChange: child.onFocusChange,
+        focusNode: child.focusNode,
+        shortcut: child.shortcut,
+        style: child.style,
+        statesController: child.statesController,
+        clipBehavior: child.clipBehavior,
+        leadingIcon: checkSlot(value ?? false),
+        trailingIcon: child.trailingIcon,
+        closeOnActivate: child.closeOnActivate,
+        child: child.child,
+      ),
+    );
+  }
+  if (child is RadioMenuButton) {
+    return _appleRadioMenuItem(child, checkSlot);
+  }
+  if (child is SubmenuButton) {
+    return SubmenuButton(
+      key: child.key,
+      onHover: child.onHover,
+      onFocusChange: child.onFocusChange,
+      onOpen: child.onOpen,
+      onClose: child.onClose,
+      controller: child.controller,
+      style: child.style,
+      menuStyle: _kGlassMenuAnchorStyle,
+      alignmentOffset: child.alignmentOffset,
+      clipBehavior: child.clipBehavior,
+      focusNode: child.focusNode,
+      statesController: child.statesController,
+      leadingIcon: compact ? child.leadingIcon : null,
+      trailingIcon:
+          child.trailingIcon ??
+          (compact || child.leadingIcon == null ? null : child.leadingIcon),
+      submenuIcon: WidgetStatePropertyAll<Widget?>(
+        FushiIcon(
+          CupertinoIcons.chevron_forward,
+          size: compact ? 11 : 17,
+          color: compact ? apple.secondaryLabel : apple.label,
+        ),
+      ),
+      useRootOverlay: child.useRootOverlay,
+      hoverOpenDelay: child.hoverOpenDelay,
+      animated: child.animated,
+      onAnimationStatusChanged: child.onAnimationStatusChanged,
+      menuChildren: <Widget>[
+        _FushiGlassMenuPanel(children: child.menuChildren),
+      ],
+      child: child.child,
+    );
+  }
+  return child;
+}
+
+/// 是否为「勾」图标（MD3 菜单项用行尾勾表示选中）。
+bool _isMenuCheckGlyph(Widget? w) {
+  final IconData? data = w is FushiIcon ? w.icon : (w is Icon ? w.icon : null);
+  return data != null &&
+      (data == FushiIcons.check ||
+          data == CupertinoIcons.checkmark ||
+          data == Icons.check);
+}
+
+/// 该菜单项是否可勾选（同组有一项可勾选，整组都让出行首对勾列）。
+bool _isCheckableMenuItem(Widget child) {
+  if (child is Actions) return _isCheckableMenuItem(child.child);
+  if (child is CheckboxMenuButton || child is RadioMenuButton) return true;
+  if (child is MenuItemButton) {
+    return child.leadingIcon is FushiAppleMenuCheck ||
+        (child.leadingIcon == null && _isMenuCheckGlyph(child.trailingIcon));
+  }
+  return false;
+}
+
+/// [RadioMenuButton] 的 Apple 行（泛型要从实例上取，单独成函数）。
+Widget _appleRadioMenuItem<T>(
+  RadioMenuButton<T> child,
+  Widget Function(bool checked) checkSlot,
+) {
+  final ValueChanged<T?>? onChanged = child.onChanged;
+  final bool checked = child.value == child.groupValue;
+  return Semantics(
+    checked: checked,
+    inMutuallyExclusiveGroup: true,
+    child: MenuItemButton(
+      key: child.key,
+      onPressed: onChanged == null
+          ? null
+          : () => onChanged(checked && child.toggleable ? null : child.value),
+      onHover: child.onHover,
+      onFocusChange: child.onFocusChange,
+      focusNode: child.focusNode,
+      shortcut: child.shortcut,
+      style: child.style,
+      statesController: child.statesController,
+      clipBehavior: child.clipBehavior,
+      leadingIcon: checkSlot(checked),
+      trailingIcon: child.trailingIcon,
+      closeOnActivate: child.closeOnActivate,
+      child: child.child,
+    ),
   );
 }
 

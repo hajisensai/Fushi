@@ -30,7 +30,10 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
-    show FushiAppleMenuItemRow, FushiAppleMenuSurface;
+    show
+        FushiAppleMenuItemRow,
+        FushiAppleMenuSectionHeader,
+        FushiAppleMenuSurface;
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';

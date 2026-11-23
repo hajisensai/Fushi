@@ -570,6 +570,8 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
 
   /// 菜单里一组单选项的小标题（不可聚焦，方向键直接跳过）。
   Widget _menuSectionLabel(FushiDesignTokens tokens, String text) {
+    // Apple：iOS / macOS 菜单的分组小标题（与行文字左对齐）。
+    if (isGlassDesign(context)) return FushiAppleMenuSectionHeader(text);
     return ExcludeFocus(
       child: Padding(
         padding: EdgeInsetsDirectional.fromSTEB(
@@ -594,9 +596,19 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     bool? autofocus,
     bool keepOpen = false,
   }) {
-    // Apple：行样式交给玻璃菜单的 MenuButtonTheme（悬停 / 焦点强调色块 +
-    // onAccent 字），选中只靠行尾对勾；MD3 保留选中底 + 主色字。
+    // Apple：行样式交给玻璃菜单的 MenuButtonTheme；iOS 27 / macOS 菜单行 =
+    // [✓ 列][图标 / 色点][文字]。MD3 保留选中底 + 主色字 + 行尾对勾。
     final bool glass = isGlassDesign(context);
+    final Widget? appleGlyph = !glass
+        ? null
+        : icon != null
+        ? FushiIcon(icon)
+        : dotColor != null
+        ? DecoratedBox(
+            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+            child: const SizedBox.square(dimension: 8),
+          )
+        : null;
     final Color? foreground = glass
         ? null
         : selected
@@ -634,46 +646,68 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
                 backgroundColor: selected ? tokens.surfaces.selected : null,
                 foregroundColor: foreground,
               ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (icon != null)
-              Padding(
-                padding: EdgeInsetsDirectional.only(end: tokens.spacing.gap),
-                child: FushiIcon(icon, size: 20, color: foreground),
+        leadingIcon: glass ? FushiAppleMenuCheck(checked: selected) : null,
+        child: glass
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (appleGlyph != null) ...<Widget>[
+                    appleGlyph,
+                    SizedBox(width: fushiAppleCompact(context) ? 6 : 12),
+                  ],
+                  Text(label),
+                ],
               )
-            else if (dotColor != null)
-              Padding(
-                padding: EdgeInsetsDirectional.only(end: tokens.spacing.gap),
-                child: SizedBox.square(
-                  dimension: 20,
-                  child: Center(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: dotColor,
-                        shape: BoxShape.circle,
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  if (icon != null)
+                    Padding(
+                      padding: EdgeInsetsDirectional.only(
+                        end: tokens.spacing.gap,
                       ),
-                      child: const SizedBox.square(dimension: 10),
+                      child: FushiIcon(icon, size: 20, color: foreground),
+                    )
+                  else if (dotColor != null)
+                    Padding(
+                      padding: EdgeInsetsDirectional.only(
+                        end: tokens.spacing.gap,
+                      ),
+                      child: SizedBox.square(
+                        dimension: 20,
+                        child: Center(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: dotColor,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const SizedBox.square(dimension: 10),
+                          ),
+                        ),
+                      ),
                     ),
+                  Text(
+                    label,
+                    style: glass
+                        ? null
+                        : tokens.type.listTitle.copyWith(
+                            color: foreground,
+                            fontWeight: selected
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                          ),
                   ),
-                ),
-              ),
-            Text(
-              label,
-              style: glass
-                  ? null
-                  : tokens.type.listTitle.copyWith(
-                      color: foreground,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  if (selected)
+                    Padding(
+                      padding: EdgeInsets.only(left: tokens.spacing.gap),
+                      child: FushiIcon(
+                        FushiIcons.check,
+                        size: 20,
+                        color: foreground,
+                      ),
                     ),
-            ),
-            if (selected)
-              Padding(
-                padding: EdgeInsets.only(left: tokens.spacing.gap),
-                child: FushiIcon(FushiIcons.check, size: 20, color: foreground),
+                ],
               ),
-          ],
-        ),
       ),
     );
   }
