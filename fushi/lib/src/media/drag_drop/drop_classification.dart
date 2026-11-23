@@ -68,6 +68,22 @@ const Set<String> kDragPlaylistExtensions = <String>{'m3u8', 'm3u'};
 /// 表面（books/video）互不影响，故 .zip 在此被识别为词典包而非 unknown。
 const Set<String> kDragDictionaryExtensions = <String>{'zip', 'dsl', 'mdx'};
 
+/// 只在**词典管理页落点**才认作词典包的压缩包扩展名（不带点，小写）：`.7z` / `.rar`。
+///
+/// = `DictionaryImportManager.kUnpackFirstDictionaryExtensions`（导入器先经
+/// `ArchiveUnpacker` 解开——加密包走口令对话框——再按**内容**判定是哪种词典、是不是
+/// 词典），也是词典页「选文件」按钮一直收的格式。不并进 [kDragDictionaryExtensions]：
+/// 全局分类里 `.rar` 是漫画包、`.7z` 是书 / 漫画的解包导入（拍板 83Fe7zQbhv），只有
+/// 落点本身就是词典页时，「这是词典包」的意图才确定。
+const Set<String> kDictionarySurfaceArchiveExtensions = <String>{'7z', 'rar'};
+
+/// 词典管理页能导入的词典包扩展名全集（不带点，小写）：拖放与「选文件」按钮同一份
+/// （按钮另外只多收 StarDict 的 `.ifo` 与随词典的 `.css` 附件）。
+const Set<String> kDictionarySurfaceDropExtensions = <String>{
+  ...kDragDictionaryExtensions,
+  ...kDictionarySurfaceArchiveExtensions,
+};
+
 /// 漫画扩展名（不带点，小写）：**明确**的漫画载体，落点表面一见即知。
 ///
 /// - `mokuro`：mokuro v0.2+ 的 OCR 结果文件（+ 同级图片），走 `MangaImporter`；
@@ -510,17 +526,29 @@ DroppedFiles classifyDroppedFiles(
   );
 }
 
-/// 词典管理页拖放专用分类：从拖入路径里挑出词典包（`.zip`/`.dsl`/`.mdx`）以及同批
-/// 拖入的 `.css` 样式附件，按「先词典包后 css」拼成可直接喂给词典导入器的路径列表。
-/// 纯函数，无副作用，便于单测。无词典包时返回空列表（即便夹带了 css 也不导入——
-/// 单独拖个 css 不构成一次导入，与文件选择器 [_importDictionaryFiles] 同语义）。
+/// 词典管理页拖放专用分类：从拖入路径里挑出词典包（[kDictionarySurfaceDropExtensions]：
+/// `.zip`/`.dsl`/`.mdx` 与 `.7z`/`.rar` 压缩包）以及同批拖入的 `.css` 样式附件，按
+/// 「先词典包后 css」拼成可直接喂给词典导入器的路径列表。
+///
+/// 不走全局 [classifyDroppedFiles]：那里 `.rar` 归漫画、`.7z` 归书 / 漫画解包导入，而落在
+/// 词典页的压缩包意图就是词典——是不是词典、是哪种词典由导入器解包后按内容判定，与
+/// 「选文件」按钮同一条路（改动前拖 `.7z` / `.rar` 进来只回「本页面不支持」）。URL 不是
+/// 本地文件，不收。纯函数，无副作用，便于单测。无词典包时返回空列表（即便夹带了 css
+/// 也不导入——单独拖个 css 不构成一次导入，与文件选择器 [_importDictionaryFiles] 同语义）。
 List<String> classifyDroppedFilesForDictionary(List<String> paths) {
-  final DroppedFiles files = classifyDroppedFiles(paths);
-  if (files.dictionaries.isEmpty) return const <String>[];
-  final List<String> cssAttachments = paths
-      .where((String pth) => p.extension(pth).toLowerCase() == '.css')
-      .toList();
-  return <String>[...files.dictionaries, ...cssAttachments];
+  final List<String> packages = <String>[];
+  final List<String> cssAttachments = <String>[];
+  for (final String path in paths) {
+    if (isImportableDropUrl(path)) continue;
+    final String ext = _ext(path);
+    if (kDictionarySurfaceDropExtensions.contains(ext)) {
+      packages.add(path);
+    } else if (ext == 'css') {
+      cssAttachments.add(path);
+    }
+  }
+  if (packages.isEmpty) return const <String>[];
+  return <String>[...packages, ...cssAttachments];
 }
 
 /// 给一个视频挑配对字幕：按**文件名主干**（不含扩展名）大小写不敏感匹配，

@@ -9,14 +9,25 @@
 /// - 单次输入上限 140 字（CLI 自己的限制，超了直接报错）。
 /// - 付费软件，不代下载：路径由用户装好后填（[detectVoicepeakExecutable] 帮着找）。
 /// - 桌面三端；移动端不可用。
+///
+/// 逐句语气（[TtsDirectedSynthesis]，见 [VoicepeakTtsProvider.synthesisArguments]）：
+/// - 情绪原生：标注的情绪按 [kVoicepeakEmotionNames] 译成该旁白 `--list-emotion`
+///   里真有的情感名，`-e 名=强度` 逐句下发；旁白没有对应情感（或情绪不在表里）就把
+///   情绪按 [ttsEmotionProsody] 折成语速偏移。
+/// - 语速：`--speed` 是百分比（100 = 原速，CLI 帮助写 50..200），逐句乘在预设上。
+/// - 音高**不声明**：`--pitch -300..300` 的单位（音分？）CLI 与公开资料都没写，换算
+///   无从核实，宁可不调也不乱调；音量 CLI 没有参数。
 library;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/local/local_service_support.dart'
     show LocalCommandRunner, runLocalCommand;
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -33,6 +44,34 @@ Future<Process> _registryStart(String executable, List<String> arguments) =>
 
 /// CLI 的单次输入上限（字符数）。
 const int kVoicepeakMaxInputLength = 140;
+
+/// `--speed` 的范围（CLI 帮助 `Speed (50 - 200)`，100 = 原速）。
+const int kVoicepeakMinSpeed = 50;
+const int kVoicepeakMaxSpeed = 200;
+const int kVoicepeakDefaultSpeed = 100;
+
+/// 情绪 → VOICEPEAK 情感名候选（按顺序取旁白 `--list-emotion` 里第一个有的）。只收
+/// 官方标准旁白共有的四个情感名（happy 喜び / fun 楽しい / angry 怒り / sad 悲しみ）；
+/// 旁白各自的特殊情感名不猜。不在表里的情绪一律折成语速。
+const Map<CastEmotion, List<String>> kVoicepeakEmotionNames =
+    <CastEmotion, List<String>>{
+      CastEmotion.joy: <String>['happy', 'fun'],
+      CastEmotion.sadness: <String>['sad'],
+      CastEmotion.anger: <String>['angry'],
+    };
+
+/// [emotion] 在 [narratorEmotions]（该旁白的 `--list-emotion`）里能用的情感名；
+/// 没有返回 null。
+String? voicepeakEmotionNameFor(
+  CastEmotion? emotion,
+  List<String> narratorEmotions,
+) {
+  if (emotion == null) return null;
+  for (final String name in kVoicepeakEmotionNames[emotion] ?? <String>[]) {
+    if (narratorEmotions.contains(name)) return name;
+  }
+  return null;
+}
 
 /// 本平台的默认安装位置（Linux 没有固定位置：空串，让用户填）。
 String voicepeakDefaultExecutable({
@@ -273,7 +312,7 @@ class VoicepeakTtsDescriptor extends TtsProviderDescriptor {
       );
 }
 
-class VoicepeakTtsProvider extends TtsProvider {
+class VoicepeakTtsProvider extends TtsProvider implements TtsDirectedSynthesis {
   VoicepeakTtsProvider({
     required String executable,
     required String narrator,
@@ -305,15 +344,80 @@ class VoicepeakTtsProvider extends TtsProvider {
   /// 本进程内所有 VOICEPEAK 调用排成一队（CLI 不能并发）。
   static Future<void> _queue = Future<void>.value();
 
+  /// 本旁白的情感名（第一次有逐句情绪时查一次；失败不缓存）。
+  Future<List<String>>? _narratorEmotions;
+
   @override
   TtsCapabilities get capabilities =>
       const VoicepeakTtsDescriptor().capabilities;
 
+  /// 情绪原生 + 语速（见库注释；音高单位无法核实不声明，音量 CLI 没有）。
+  static const TtsDirectionSupport support = TtsDirectionSupport(
+    emotion: true,
+    rate: true,
+  );
+
+  @override
+  TtsDirectionSupport get directionSupport => support;
+
   /// 合成用的命令行（纯函数，测试直接调）。换行 / 控制字符换成空格；以 `-` 开头的
   /// 文本前补一个空格，免得被 CLI 当成选项。
-  List<String> synthesisArguments(String text, String outputPath) {
+  ///
+  /// [direction] 是这句的语气（为空时命令行与不带语气完全一样），[narratorEmotions]
+  /// 是旁白的 `--list-emotion`：
+  /// - 情绪能译成旁白有的情感名（[voicepeakEmotionNameFor]）→ `-e` 里该名 = 强度，
+  ///   并去掉预设里 [kVoicepeakEmotionNames] 那几个情感（这句的情绪取代预设的
+  ///   基调；预设里别的情感如 whisper 类照留）；
+  /// - 否则情绪按 [ttsEmotionProsody] 折成语速偏移，`-e` 用预设的；
+  /// - 语速：`--speed = 预设（空 = 100）×（1 + 偏移）`，取整夹到 50..200。
+  List<String> synthesisArguments(
+    String text,
+    String outputPath, {
+    TtsDirection direction = TtsDirection.none,
+    List<String> narratorEmotions = const <String>[],
+  }) {
     String say = text.replaceAll(RegExp(r'[\u0000-\u001f\u007f]+'), ' ').trim();
     if (say.startsWith('-')) say = ' $say';
+    final CastEmotion? lineEmotion = direction.emotion;
+    final String? emotionName = voicepeakEmotionNameFor(
+      lineEmotion,
+      narratorEmotions,
+    );
+    final String presetEmotion = emotion.replaceAll(' ', '');
+    final String emotionArg;
+    if (emotionName != null) {
+      final Set<String> replaced = <String>{
+        for (final List<String> names in kVoicepeakEmotionNames.values)
+          ...names,
+      };
+      final int value = direction.effectiveIntensity.clamp(
+        0,
+        CastLineLimits.maxIntensity,
+      );
+      emotionArg = <String>[
+        for (final String part in presetEmotion.split(','))
+          if (part.contains('=') && !replaced.contains(part.split('=').first))
+            part,
+        '$emotionName=$value',
+      ].join(',');
+    } else {
+      emotionArg = presetEmotion;
+    }
+    double rate = direction.rateOffset ?? 0;
+    if (lineEmotion != null && emotionName == null) {
+      rate += ttsEmotionProsody(lineEmotion, direction.effectiveIntensity).rate;
+    }
+    rate = rate
+        .clamp(CastLineLimits.minRateOffset, CastLineLimits.maxRateOffset)
+        .toDouble();
+    final String speedArg;
+    if (rate.abs() < 1e-9) {
+      speedArg = speed;
+    } else {
+      final int base = int.tryParse(speed) ?? kVoicepeakDefaultSpeed;
+      speedArg =
+          '${(base * (1 + rate)).round().clamp(kVoicepeakMinSpeed, kVoicepeakMaxSpeed)}';
+    }
     return <String>[
       '-s',
       say,
@@ -321,10 +425,31 @@ class VoicepeakTtsProvider extends TtsProvider {
       narrator,
       '-o',
       outputPath,
-      if (emotion.isNotEmpty) ...<String>['-e', emotion.replaceAll(' ', '')],
-      if (speed.isNotEmpty) ...<String>['--speed', speed],
+      if (emotionArg.isNotEmpty) ...<String>['-e', emotionArg],
+      if (speedArg.isNotEmpty) ...<String>['--speed', speedArg],
       if (pitch.isNotEmpty) ...<String>['--pitch', pitch],
     ];
+  }
+
+  /// 旁白的情感名（逐句情绪要按它校验）。查一次缓存；查失败清掉缓存再抛，交给重试层
+  /// （不能退回折算：同一句会因为一次偶发失败合出与缓存键不符的声音）。共享的那次
+  /// 查询不挂某一句的取消令牌（一句取消不该连累同时等它的别句），有 [listTimeout] 兜底；
+  /// 取消在查完后各自检查。
+  Future<List<String>> _emotionsOfNarrator(TtsCancelToken cancel) async {
+    final Future<List<String>> pending = _narratorEmotions ??= listEmotions(
+      narrator,
+    );
+    try {
+      final List<String> names = await pending;
+      cancel.throwIfCancelled();
+      return names;
+    } on TtsFailure catch (e) {
+      if (e.code != TtsFailureCode.cancelled &&
+          identical(_narratorEmotions, pending)) {
+        _narratorEmotions = null;
+      }
+      rethrow;
+    }
   }
 
   @override
@@ -332,6 +457,19 @@ class VoicepeakTtsProvider extends TtsProvider {
     String text, {
     required String outputPath,
     required TtsCancelToken cancel,
+  }) => synthesizeDirected(
+    text,
+    outputPath: outputPath,
+    cancel: cancel,
+    direction: TtsDirection.none,
+  );
+
+  @override
+  Future<TtsResult> synthesizeDirected(
+    String text, {
+    required String outputPath,
+    required TtsCancelToken cancel,
+    required TtsDirection direction,
   }) async {
     if (executable.isEmpty || narrator.isEmpty) {
       throw const TtsFailure(TtsFailureCode.notConfigured);
@@ -344,6 +482,9 @@ class VoicepeakTtsProvider extends TtsProvider {
       throw const TtsFailure(TtsFailureCode.rejected, 'too long');
     }
     cancel.throwIfCancelled();
+    final List<String> narratorEmotions = direction.emotion == null
+        ? const <String>[]
+        : await _emotionsOfNarrator(cancel);
     await _serialized(cancel, () async {
       final File out = File(outputPath);
       try {
@@ -352,7 +493,12 @@ class VoicepeakTtsProvider extends TtsProvider {
         // 删不掉就让 CLI 覆盖；下面按产物长度判成败。
       }
       final _VoicepeakRun run = await _run(
-        synthesisArguments(trimmed, outputPath),
+        synthesisArguments(
+          trimmed,
+          outputPath,
+          direction: direction,
+          narratorEmotions: narratorEmotions,
+        ),
         cancel: cancel,
         timeout: synthesisTimeout,
       );

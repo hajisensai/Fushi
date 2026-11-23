@@ -11,78 +11,24 @@
 /// 是哪个分支挂起的，也看不出 AI 有没有被问过、问了是什么结果（BUG-2828）。
 library;
 
+import 'package:fushi_engine/media/identity/pending_identity.dart';
+
+export 'package:fushi_engine/media/identity/pending_identity.dart'
+    show PendingIdentityAiOutcome, PendingIdentityCause;
+
 /// 标记前缀。整条 message 形如
 /// `pending:awaiting_confirmation ai=declined candidates=2 key=book%3A1 reason=…`；
 /// 来源级结账（整批没有可用资料源 / AniDB 封禁后跳过）一条标记带多个作品键，
 /// `key=a,b,c`。
 const String kVideoScrapePendingNotePrefix = 'pending:';
 
-/// 作品停在「没有身份」的原因。[wire] 是落库值，改枚举名不能改它。
-enum VideoScrapePendingCause {
-  /// 成员的 AniDB 文件哈希分属不同作品，又没法自动拆开。
-  hashConflict('hash_conflict'),
+/// 作品停在「没有身份」的原因。推广成与媒体无关的 [PendingIdentityCause]
+/// （书 / 游戏的待确认同一套原因，见 `media/identity/pending_identity.dart`）；
+/// 落库值（`wire`）不变，这里留别名，既有调用点一字不改。
+typedef VideoScrapePendingCause = PendingIdentityCause;
 
-  /// 资料源给出了候选，但没有一个能换成可直拉的身份。
-  noUsableCandidate('no_usable_candidate'),
-
-  /// 多个 / 需复核的候选，AI 没收敛，且这一趟没有人工确认回调（后台补刮）。
-  awaitingConfirmation('awaiting_confirmation'),
-
-  /// 弹给用户确认，用户取消了。
-  dismissed('dismissed'),
-
-  /// 标题、类型、年份或季号都没通过严格校验。
-  notFound('not_found'),
-
-  /// 资料源不可用（网络 / 凭据 / 限流 / 封禁）。
-  providerUnavailable('provider_unavailable'),
-
-  /// 刮这部作品时出错（异常 / 没有结论的失败），原文在 `reason=`。
-  error('error');
-
-  const VideoScrapePendingCause(this.wire);
-
-  final String wire;
-
-  static VideoScrapePendingCause? fromWire(String value) {
-    for (final VideoScrapePendingCause cause in values) {
-      if (cause.wire == value) return cause;
-    }
-    return null;
-  }
-}
-
-/// 这部作品挂起时 AI 身份消解的结果。
-enum VideoScrapeAiOutcome {
-  /// 这条分支走不到 AI（哈希冲突、查无、源不可用、候选不可用）。
-  notAsked('not_asked'),
-
-  /// 没有装配 AI 决策器（无头服务端等）。
-  unavailable('unavailable'),
-
-  /// 「视频作品识别」没有指派可用的 AI 提供商。
-  unassigned('unassigned'),
-
-  /// AI 调用失败（本趟余下作品也不再问）。
-  failed('failed'),
-
-  /// AI 认为没有候选成立，或置信度不到自动采用门槛。
-  declined('declined'),
-
-  /// AI 采用了一个候选（作品随即被认出，不会出现在挂起标记里）。
-  accepted('accepted');
-
-  const VideoScrapeAiOutcome(this.wire);
-
-  final String wire;
-
-  static VideoScrapeAiOutcome? fromWire(String value) {
-    for (final VideoScrapeAiOutcome outcome in values) {
-      if (outcome.wire == value) return outcome;
-    }
-    return null;
-  }
-}
+/// 这部作品挂起时 AI 身份消解的结果（同上，别名到 [PendingIdentityAiOutcome]）。
+typedef VideoScrapeAiOutcome = PendingIdentityAiOutcome;
 
 /// 已解析的挂起原因标记。
 class VideoScrapePendingNote {

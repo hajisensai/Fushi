@@ -247,11 +247,102 @@ void main() {
       c.debugSetPositionForTesting(50);
       c.debugSyncRenderActivityToClock();
       expect(c.activeCues, contains(s2));
-      // 已结束的 S1 不再留屏——除非它恰是代表 cue（代表 cue 恒并入渲染集，等下一拍 tick 换）。
-      if (!identical(representative, s1)) {
-        expect(c.activeCues, isNot(contains(s1)));
-      }
+      // 已结束的 S1 不再留屏——即便它恰是 tick 选的代表 cue（BUG-5279：时钟路径按当前
+      // 时钟重算代表，不并入 tick 留下的旧代表）。
+      expect(c.activeCues, isNot(contains(s1)));
       expect(c.currentCue, same(representative));
+    });
+
+    // BUG-5279「连续字幕上下跳」：tick 还没换代表 cue 时，旧代表（前句）被并进渲染集，
+    // 与已上屏的后句幻影重叠 → overlay 把后句排到前句上方的槽、前句离场留隐形占位，
+    // 后句整句被顶高一行，下一句又落回基线。
+    test('相邻对白交接：时钟越过前句句尾后渲染集只剩后句（不与 tick 旧代表重叠）', () {
+      final VideoPlayerController c = _controller();
+      addTearDown(c.dispose);
+      final AudioCue a = _cue('A', startMs: 0, endMs: 1000, index: 0);
+      final AudioCue b = _cue('B', startMs: 1000, endMs: 2000, index: 1);
+      final AudioCue d = _cue('D', startMs: 2060, endMs: 3000, index: 2);
+      c.setCues(<AudioCue>[a, b, d]);
+      c.debugUpdateCueForPosition(950);
+      expect(c.currentCue, same(a));
+
+      // 首尾相接：越过 A 句尾、tick 未到。
+      c.debugSetPositionForTesting(1020);
+      c.debugSyncRenderActivityToClock();
+      expect(c.activeCues, <AudioCue>[b], reason: '旧代表 A 不得并入');
+      expect(c.currentCue, same(a), reason: '代表 cue 仍归 tick 管');
+
+      // 间隔 < 一个 tick：gap 里清空，下一句进场时只有它。
+      c.debugUpdateCueForPosition(1990);
+      expect(c.currentCue, same(b));
+      c.debugSetPositionForTesting(2030);
+      c.debugSyncRenderActivityToClock();
+      expect(c.activeCues, isEmpty);
+      c.debugSetPositionForTesting(2070);
+      c.debugSyncRenderActivityToClock();
+      expect(c.activeCues, <AudioCue>[d]);
+    });
+
+    test('句尾暂停待触发时渲染集冻结在本句，不让下一句先闪上屏', () {
+      final VideoPlayerController c = _controller();
+      addTearDown(c.dispose);
+      final AudioCue a = _cue('A', startMs: 0, endMs: 1000, index: 0);
+      final AudioCue b = _cue('B', startMs: 1000, endMs: 2000, index: 1);
+      c.setCues(<AudioCue>[a, b]);
+      c.setAutoPauseAtCueEnd(true);
+      c.debugUpdateCueForPosition(950);
+      expect(c.activeCues, <AudioCue>[a]);
+
+      c.debugSetPositionForTesting(1040);
+      c.debugSyncRenderActivityToClock();
+      expect(c.activeCues, <AudioCue>[a]);
+    });
+
+    test('循环当前句回绕待触发时渲染集同样冻结在本句', () {
+      final VideoPlayerController c = _controller();
+      addTearDown(c.dispose);
+      final AudioCue a = _cue('A', startMs: 0, endMs: 1000, index: 0);
+      final AudioCue b = _cue('B', startMs: 1000, endMs: 2000, index: 1);
+      c.setCues(<AudioCue>[a, b]);
+      c.setLoopCurrentCue(true);
+      c.debugUpdateCueForPosition(950);
+      expect(c.activeCues, <AudioCue>[a]);
+
+      // 越过 A 句尾、tick 未到：下一拍 tick 会回到 A 句首，B 不得先闪上屏。
+      c.debugSetPositionForTesting(1040);
+      c.debugSyncRenderActivityToClock();
+      expect(c.activeCues, <AudioCue>[a]);
+    });
+  });
+
+  group('overlay 真布局：相邻对白交接不抬高后句（BUG-5279）', () {
+    testWidgets('前句离场后后句留在基线，与单独显示时同一位置', (WidgetTester tester) async {
+      final VideoPlayerController c = _controller();
+      addTearDown(c.dispose);
+      final AudioCue a = _cue('あいう', startMs: 0, endMs: 1000, index: 0);
+      final AudioCue b = _cue('かきく', startMs: 1000, endMs: 2000, index: 1);
+      c.setCues(<AudioCue>[a, b]);
+      c.debugUpdateCueForPosition(950);
+      await _pump(tester, c);
+
+      c.debugSetPositionForTesting(1020);
+      c.debugSyncRenderActivityToClock();
+      await tester.pump();
+      c.debugUpdateCueForPosition(1100);
+      await tester.pump();
+      final double handoffBottom = _textRect(tester, 'かきく').bottom;
+
+      // 对照：从间隙直接进入 B（无交接），B 贴基线。
+      final VideoPlayerController ref = _controller();
+      addTearDown(ref.dispose);
+      ref.setCues(<AudioCue>[
+        _cue('かきく', startMs: 1000, endMs: 2000, index: 0),
+      ]);
+      ref.debugUpdateCueForPosition(1100);
+      await _pump(tester, ref);
+      final double baselineBottom = _textRect(tester, 'かきく').bottom;
+
+      expect(handoffBottom, closeTo(baselineBottom, 0.01));
     });
   });
 }

@@ -20,6 +20,7 @@ import 'dart:math' as math;
 import 'package:fushi_engine/ai/ai_reply_json.dart';
 import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/cast/cast_prompt_roster.dart';
@@ -241,7 +242,7 @@ You direct the audio drama of a manga, one page at a time. You get the page imag
 Each block line is: index [x0,y0,x1,y1 box on a 0..1000 page grid] V(vertical)/H(horizontal) "text". A block marked ruby-of:N is the furigana / reading printed beside block N: never make it a line of its own — put it in the same line as block N (or leave it out); the audio speaks block N with that reading automatically. The OCR order of blocks is NOT the reading order — decide the order from the image (Japanese manga: panels right-to-left, top-to-bottom; balloons inside a panel likewise).
 
 Return ONLY one JSON object — no prose, no code fence:
-{"lines":[{"b":[3,1],"s":"宮城","k":"spoken","beat":200,"e":"joy","ei":60,"c":0.9}],"new":[{"name":"店員","gender":"female","age":"adult","desc":"polite clerk"}],"lead":700}
+{"lines":[{"b":[3,1],"s":"宮城","k":"spoken","beat":200,"e":"joy","ei":60,"tone":"からかうように","c":0.9}],"new":[{"name":"店員","gender":"female","age":"adult","desc":"polite clerk"}],"lead":700}
 
 "lines" — in reading order, one entry per line to be voiced or deliberately left unread:
 - "b": block indexes of this line, in reading order. One balloon split into several blocks is one line. Every block belongs to at most one line.
@@ -249,9 +250,11 @@ Return ONLY one JSON object — no prose, no code fence:
 - "k": ${CastLineKind.values.map((CastLineKind k) => '"${k.wire}"').join(' | ')}. "narration" = formal third-person text; "monologue" = first-person narration in a box; "thought" = thought balloon; "spoken" = normal speech; "shout"; "mutter" = quiet talking to oneself; "skip" = not read aloud (sound effects, handwritten side notes, OCR noise).
 - "beat": optional extra pause after the line in milliseconds (0..${MangaScriptLimits.maxBeatMs}), for dramatic timing.
 - "e": optional emotion, one of ${CastEmotion.values.map((CastEmotion e) => '"${e.wire}"').join(' | ')}; "ei": its intensity 0..100.
+- "tone": optional short Japanese acting note (at most 20 characters, e.g. "おずおずと", "必死に食い下がる", "声を落として") saying HOW this line is delivered — the nuance the emotion word cannot carry.
 - "c": your confidence in the speaker, 0..1.
 - "fix": optional {"<block index>":"corrected text"} only for obvious OCR misreads. Never add readings or furigana.
 Decide line by line, not page by page: never leave a whole page out because of one line.
+Direct each line's delivery on its own. When the same speaker says several lines in a row, do NOT copy one direction across all of them: read each line's sentence-final particles and what the line does (apology, excuse, empathy, promise, plea, emotional appeal, …) and give each line its own "e" / "ei" / "tone", so the delivery changes from line to line the way a real actor's would.
 
 "new" — characters who speak on this page but are missing from the cast list (same fields as the cast list). Omit when empty.
 "hold" — only for a page with no voiced line: how long the reader should look at it, milliseconds (0..${MangaScriptLimits.maxHoldMs}). "lead" — optional time to look at the page before the first line (0..${MangaScriptLimits.maxLeadMs}). Omit both to use the defaults.
@@ -412,10 +415,12 @@ List<MangaPreviousLine> mangaPreviousLines(
 const String kMangaSceneReviewSystemPrompt = '''
 You review the audio-drama direction of a stretch of consecutive manga pages. Each line was directed page by page; now read the whole scene at once and fix what only the wider context reveals: a speaker that contradicts the surrounding conversation, an UNKNOWN speaker that the context makes clear, a line kind that is inconsistent, an emotion curve or pacing that jumps.
 
-Each line is: id | speaker | kind | emotion/intensity | beat | "text".
+Smooth the emotion curve, but keep the line-to-line variation: consecutive lines by the same speaker should NOT all share one emotion / intensity / tone. Read each line's sentence-final particles and speech act (apology, excuse, empathy, promise, plea, emotional appeal, …); where a run of lines was given one flat direction, give each line its own "e" / "ei" / "tone".
+
+Each line is: id | speaker | kind | emotion/intensity | tone | beat | "text".
 Return ONLY one JSON object listing the lines to change — no prose, no code fence:
-{"edits":[{"id":"p12b3.1","s":"宮城","k":"thought","e":"tension","ei":40,"beat":300}]}
-- Include only the fields you change. "s" must be a canonical name from the cast list, "NARRATOR" or "UNKNOWN". "k" / "e" use the same vocabulary as the lines. "beat" is milliseconds.
+{"edits":[{"id":"p12b3.1","s":"宮城","k":"thought","e":"tension","ei":40,"tone":"声を落として","beat":300}]}
+- Include only the fields you change. "s" must be a canonical name from the cast list, "NARRATOR" or "UNKNOWN". "k" / "e" use the same vocabulary as the lines. "tone" is a short Japanese acting note (at most 20 characters) saying how the line is delivered. "beat" is milliseconds.
 - Do not change the order of lines or which blocks they cover.
 - If nothing needs changing, return {"edits":[]}.
 ''';
@@ -480,7 +485,7 @@ String buildMangaSceneReviewUserPrompt({
           : '${l.emotion!.wire}/${l.intensity ?? '-'}';
       b.writeln(
         '${l.lineId} | ${_toPromptSpeaker(view.speakerFor(l.speaker))} | ${l.kind.wire} | '
-        '$emotion | ${l.beatMs} | ${jsonEncode(textOf(l))}',
+        '$emotion | ${l.tone ?? '-'} | ${l.beatMs} | ${jsonEncode(textOf(l))}',
       );
     }
   }
@@ -495,6 +500,7 @@ class MangaReviewEdit {
     this.kind,
     this.emotion,
     this.intensity,
+    this.tone,
     this.beatMs,
   });
 
@@ -503,6 +509,9 @@ class MangaReviewEdit {
   final CastLineKind? kind;
   final CastEmotion? emotion;
   final int? intensity;
+
+  /// 语气说明（经 [castToneOf] 截断；空串当没改）。
+  final String? tone;
   final int? beatMs;
 
   bool get isEmpty =>
@@ -510,6 +519,7 @@ class MangaReviewEdit {
       kind == null &&
       emotion == null &&
       intensity == null &&
+      tone == null &&
       beatMs == null;
 }
 
@@ -548,6 +558,7 @@ List<MangaReviewEdit>? parseMangaSceneReviewReply(
       intensity: ei is num && ei.isFinite
           ? ei.round().clamp(0, MangaScriptLimits.maxIntensity)
           : null,
+      tone: castToneOf(raw['tone']),
       beatMs: beat is num && beat.isFinite
           ? beat.round().clamp(0, MangaScriptLimits.maxBeatMs)
           : null,
@@ -588,6 +599,7 @@ int applyMangaSceneReview(
       pitchOffset: old.pitchOffset,
       volumeOffset: old.volumeOffset,
       seed: old.seed,
+      tone: e.tone ?? old.tone,
       textFixes: old.textFixes,
       source: old.source,
       confidence: old.confidence,
