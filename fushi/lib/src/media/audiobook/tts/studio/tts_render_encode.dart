@@ -100,16 +100,24 @@ String buildTtsConcatList(List<({String path, int durationMs})> entries) {
 }
 
 /// 一句实际下发的演出参数：种子按选角表（单句重生成写下的 → 作品默认
-/// [TtsCast.defaultSeed]），再去掉引擎 [support] 不支持的字段（缓存键只含生效的
-/// 字段，见 [TtsDirection.cacheIdentity]）。
+/// [TtsCast.defaultSeed]），语气（情绪 + 强度、语气说明、语速 / 音高 / 音量偏移）取
+/// 这句的标注行，再去掉引擎 [support] 不支持的字段（情绪按需折成偏移；缓存键只含生效
+/// 的字段，见 [TtsDirection.cacheIdentity]）。
 TtsDirection ttsSentenceDirection({
   required TtsDirectionSupport support,
   required TtsCast cast,
   required TtsPlanSentence sentence,
-}) => effectiveTtsDirection(
-  support,
-  TtsDirection(seed: cast.seedFor(sentence.section, sentence.matchStart)),
-);
+}) {
+  final int seed = cast.seedFor(sentence.section, sentence.matchStart);
+  final TtsCastLine? line =
+      cast.lines[ttsLineKey(sentence.section, sentence.matchStart)];
+  return effectiveTtsDirection(
+    support,
+    line == null
+        ? TtsDirection(seed: seed)
+        : TtsDirection.fromLine(line.direction, seed: seed),
+  );
+}
 
 /// 一章各处的停顿（毫秒），长度 = 句数 + 1：`[0]` 章首、`[k]`（1 ≤ k < n）第 k-1
 /// 句之后、`[n]` 章尾。
