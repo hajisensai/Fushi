@@ -9137,6 +9137,7 @@
   "popup_advanced_mining_mosaic_none": "No mosaic",
   "popup_advanced_mining_mosaic_page_title": "Mosaic areas",
   "popup_advanced_mining_mosaic_undo": "Undo",
+  "popup_advanced_mining_open_in_app": "Advanced mining (opens in the Fushi window)",
   "popup_advanced_mining_reset": "Reset to one-click defaults",
   "popup_advanced_mining_sentence_count": "${count} selected",
   "popup_advanced_mining_sentence_section": "Sentences",

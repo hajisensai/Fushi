@@ -238,6 +238,7 @@ import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/lookup/advanced_mining_handoff.dart';
 import 'package:fushi/src/lookup/captured_context_sentences.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
@@ -3707,13 +3708,18 @@ class AppModel
   ///
   /// [capturedContext]：应用外热键查词开了「抓取上下文」时切好的前后句（拍板台
   /// rf--UcsGta），查词页据此给高级制卡的句子分区；其它来源为 null。
+  ///
+  /// [advancedMining]：应用外查词覆盖窗点「高级制卡」转交过来的词条（拍板台
+  /// rf--UcsGta-overlay），查词页渲染完结果后为它打开高级制卡对话框。
   void queueExternalLookup(
     String text, {
     CapturedSentenceContext? capturedContext,
+    AdvancedMiningHandoff? advancedMining,
   }) {
     if (DesktopLookupService.instance.triggerLookup(
       text,
       capturedContext: capturedContext,
+      advancedMining: advancedMining,
     )) {
       requestHomeDictionaryTab();
     }

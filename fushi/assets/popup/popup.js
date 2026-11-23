@@ -7134,6 +7134,40 @@ window.fushiPopupBuildMinePayloadByIndex = async function(idx) {
     return await b.__fushiBuildMinePayload();
 };
 
+// 拍板台 rf--UcsGta-overlay：应用外查词卡的「高级制卡」转交主窗查词页后，主窗按词条身份
+// （表记 / 读音 / 命中文本）在**自己**的结果里找回同一个词条，回它的 DOM 序（与
+// fushiPopupMineEntryByIndex / fushiPopupBuildMinePayloadByIndex 同一套 :scope > .entry
+// 下标）。不沿用覆盖窗那边的下标：两边各查一遍，渲染时机 / 被隐藏词典过滤掉的空词条
+// 不保证一致，下标错一位就制错卡。
+// 尾批词条还在分片渲染（_renderInProgress）时 _entryDomIndex 还不全，回 -2，宿主等
+// 下一次 popupRendered（尾批画完必发）再问；找不到回 -1。
+window.fushiPopupEntryDomIndexFor = function(expression, reading, matched) {
+    if (window._renderInProgress) return -2;
+    const entries = window.lookupEntries;
+    const domIndex = window._entryDomIndex;
+    if (!Array.isArray(entries) || !Array.isArray(domIndex)) return -1;
+    const wantExpression = String(expression || '');
+    const wantReading = String(reading || '');
+    const wantMatched = String(matched || '');
+    const tiers = [
+        (e) => e.expression === wantExpression
+            && (e.reading || '') === wantReading
+            && (e.matched || '') === wantMatched,
+        (e) => e.expression === wantExpression
+            && (e.reading || '') === wantReading,
+        (e) => e.expression === wantExpression,
+    ];
+    for (const tier of tiers) {
+        for (let i = 0; i < entries.length; i++) {
+            const dom = domIndex[i];
+            if (typeof dom === 'number' && dom >= 0 && entries[i] && tier(entries[i])) {
+                return dom;
+            }
+        }
+    }
+    return -1;
+};
+
 // 收藏夹一键制卡：为 (expression, reading) 在当前 window.lookupEntries 里挑一个词条，
 // 产出与手动点「+」**逐字段相同**的制卡 payload（释义 HTML / 单词典释义 / 频率 / 音调 /
 // 单词音频 / 外字媒体），但**不点任何按钮、不画任何 UI、不走桥**——落卡由 Dart 批量

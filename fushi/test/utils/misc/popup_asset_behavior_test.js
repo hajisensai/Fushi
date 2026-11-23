@@ -4567,6 +4567,30 @@ async function testMineButtonShowsShortcutHint() {
   }
 }
 
+// 拍板台 rf--UcsGta-overlay：覆盖窗的「高级制卡」转交主窗后，主窗按词条身份在自己的结果里
+// 找回 DOM 序（不沿用覆盖窗下标）。钉住：三档匹配（表记+读音+命中 → 表记+读音 → 表记）、
+// 被过滤掉没有 DOM 的词条跳过、尾批还在画时回 -2、找不到回 -1。
+async function testEntryDomIndexForHandoff() {
+  const context = loadPopup();
+  context.window._renderInProgress = false;
+  context.window.lookupEntries = [
+    { expression: '辞書', reading: 'じしょ', matched: '辞書' },
+    { expression: '事典', reading: 'じてん', matched: '事典' },
+    { expression: '事典', reading: 'ことてん', matched: '事典' },
+    { expression: '自体', reading: 'じたい', matched: '自体' },
+  ];
+  // 第 0 条被隐藏词典过滤掉（没有 DOM），后面的 DOM 序因此前移一位。
+  context.window._entryDomIndex = [-1, 0, 1, 2];
+  const find = context.window.fushiPopupEntryDomIndexFor;
+  assert.equal(find('事典', 'ことてん', '事典'), 1, 'exact identity wins over the first same-expression entry');
+  assert.equal(find('事典', 'じてん', '事'), 0, 'expression + reading when the matched span differs');
+  assert.equal(find('自体', 'ちがう', ''), 2, 'expression alone as the last tier');
+  assert.equal(find('辞書', 'じしょ', '辞書'), -1, 'an entry without DOM is never targeted');
+  assert.equal(find('無い', '', ''), -1, 'unknown entry → -1, never a guessed index');
+  context.window._renderInProgress = true;
+  assert.equal(find('自体', 'じたい', '自体'), -2, 'tail still rendering → ask again later');
+}
+
 Promise.all([
   testShortcutMineFollowsFocusedEntry(),
   testShortcutMineNeverFallsBackFromFocusedEntry(),
@@ -4576,6 +4600,7 @@ Promise.all([
   testAdjustContextButtonSnapshotsSelectionForConfirm(),
   testAdvancedMiningButtonOpensHostDialog(),
   testAdvancedMiningButtonGating(),
+  testEntryDomIndexForHandoff(),
   testShortcutMineUsesLiveSelection(),
   testShortcutMineCapturesLiveSelection(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });

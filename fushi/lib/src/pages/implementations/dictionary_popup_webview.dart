@@ -2021,6 +2021,60 @@ JSON.stringify((function(){
     timeout: timeout,
   );
 
+  /// 当前推给 WebView 的结果是否就是 [result] 且已经渲染完一遍（收到了它那一轮的
+  /// `popupRendered`）。宿主据此确认 [onRendered] 报的是哪份结果，不把旧结果的迟到
+  /// 复报当成新结果画好了。
+  bool hasRenderedResult(DictionarySearchResult result) =>
+      identical(_lastRenderedResult, result);
+
+  /// 拍板台 rf--UcsGta-overlay：按词条身份（表记 / 读音 / 命中文本）在当前已渲染的结果
+  /// 里找回词条的 DOM 序（popup.js `fushiPopupEntryDomIndexFor`），即
+  /// [mineEntryByIndex] / [buildMinePayloadByIndex] 用的那套下标。尾批词条还在分片
+  /// 渲染时回 -2（`kPopupEntryIndexStillRendering`，等下一次 `popupRendered` 再问），找不到 /
+  /// WebView 不在 / 出错回 -1。
+  Future<int> entryDomIndexFor({
+    required String expression,
+    required String reading,
+    required String matched,
+    Duration timeout = _kMineRoundTripTimeout,
+  }) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return -1;
+    try {
+      final CallAsyncJavaScriptResult? result = await controller
+          .callAsyncJavaScript(
+            functionBody:
+                'return window.fushiPopupEntryDomIndexFor'
+                ' ? window.fushiPopupEntryDomIndexFor(expression, reading, matched)'
+                ' : -1;',
+            arguments: <String, Object?>{
+              'expression': expression,
+              'reading': reading,
+              'matched': matched,
+            },
+          )
+          .timeout(timeout);
+      if (result?.error != null) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.entryDomIndexFor',
+          'popup.js threw while locating the entry: ${result!.error}',
+          StackTrace.current,
+        );
+        return -1;
+      }
+      final Object? raw = result?.value;
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw?.toString() ?? '') ?? -1;
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'DictPopupWebview.entryDomIndexFor',
+        e,
+        stack,
+      );
+      return -1;
+    }
+  }
+
   /// 跑一段返回 payload 对象的 JS，值一律折成字符串（与 `mineEntry` 桥同形）。
   Future<Map<String, String>?> _buildPayloadViaJs({
     required String functionBody,

@@ -77,6 +77,7 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   required AppModel appModel,
   required DictionarySearchResult result,
   GlobalLookupEntriesStore? entriesStore,
+  bool advancedMiningHandoff = false,
 }) {
   final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
     appModel: appModel,
@@ -112,10 +113,18 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   // BUG-2770 — the overlay has no Flutter pointer tree, so the mobile-style
   // horizontal "swipe to close" has to be recognised in the page. Overlay only:
   // the in-app popup already has the Flutter body detector for the same swipe.
-  const String renderJs =
+  //
+  // 拍板台 rf--UcsGta-overlay — `window.advancedMiningEnabled` 是 popup.js 渲染词条头
+  // 「高级制卡」按钮的门控（与 app 内 DictionaryPopupWebView 同一个 flag），必须在
+  // renderPopup 之前写。放在这里而不是静态段：同一个宿主（desktop）既服务热键查词，
+  // 也服务带制卡委托的表面（台词浮窗 / 截屏识字），两者的入口不同；写进静态段会让
+  // 静态版本号在两类查词间来回翻、每次重发几十 MB 的字体静态段。它在一次查词内恒定，
+  // 不破坏上面「同一帧同一结果跨渲染字节稳定」的约束。
+  final String renderJs =
       '''
     $kPopupTopPullReleaseJs
     $kPopupTouchSideSwipeReleaseJs
+    window.advancedMiningEnabled = $advancedMiningHandoff;
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.renderPopup && window.renderPopup();
@@ -493,6 +502,9 @@ StackRenderScript buildStackRenderScript({
   // (glyph-anchored in the client area) and pins it there; the layout root is
   // only the children's coordinate origin, so it must stay at window-local 0.
   bool clampRootShellToWorkArea = true,
+  // 拍板台 rf--UcsGta-overlay — 卡上给不给「高级制卡」（转交主窗）入口，见
+  // [buildFrameSettingsJsParts]。调用方按表面决定（带制卡委托的表面不给）。
+  bool advancedMiningHandoff = false,
   // BUG-1833 — static settings revisions already acknowledged by this physical
   // host. The stable root iframe survives lookup-to-lookup, so a custom font
   // (two CJK faces already run to tens of MB once base64-inlined) must not ride
@@ -547,6 +559,7 @@ StackRenderScript buildStackRenderScript({
       appModel: appModel,
       result: p.result,
       entriesStore: entriesStore,
+      advancedMiningHandoff: advancedMiningHandoff,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;
