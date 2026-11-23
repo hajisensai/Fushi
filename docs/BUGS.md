@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4649 条。点号进各自文件。
+> 共 4650 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5353](bugs/BUG-5353-srs-web-face-autoplay-visibility-race.md) | ✅ | ✅ | srs-web-face-autoplay-visibility-race |
 | [BUG-5349](bugs/BUG-5349-manga-speed-popover-full-height.md) | ✅ | ✅ | 漫画播放条倍速 / 音量弹层撑满屏高 |
 | [BUG-5348](bugs/BUG-5348-music-mv-backdrop-toggle-off.md) | ✅ | ✅ | 歌词页开着时关掉「有 MV 时背景放 MV」，MV 照放不停 |
 | [BUG-5347](bugs/BUG-5347-overlay-card-advanced-mining-sentence.md) | 🚧 | 🚧 | 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上 |
