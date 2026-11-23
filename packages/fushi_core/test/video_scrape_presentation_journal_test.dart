@@ -317,4 +317,54 @@ void main() {
     ]);
     expect(rows.seasons.single.workId, workA);
   });
+
+  test('按文件批量取分集 / 季 / 分集图，只取点名文件的行（拍板 GLMHiavo0y）', () async {
+    await _insertVideo(db, 'a');
+    await _insertVideo(db, 'b');
+    final int cid = await db.createMediaCollection(
+      'S',
+      collectionType: 'playlist',
+    );
+    final int seasonId = await _insertSeason(
+      db,
+      await _insertCollectionWork(db, cid),
+    );
+    final int episodeA2 = await _insertEpisode(db, seasonId, 'a', 2);
+    final int episodeA1 = await _insertEpisode(db, seasonId, 'a', 1);
+    final int episodeB = await _insertEpisode(db, seasonId, 'b', 3);
+    Future<int> still(int episodeId) => db
+        .into(db.videoMetadataImages)
+        .insert(
+          VideoMetadataImagesCompanion.insert(
+            episodeId: Value<int?>(episodeId),
+            provider: 'tmdb',
+            kind: 'thumb',
+            remoteUrl: 'https://images.example/$episodeId.jpg',
+            updatedAt: 1,
+          ),
+        );
+    final int stillA2 = await still(episodeA2);
+    final int stillA1 = await still(episodeA1);
+    await still(episodeB);
+
+    final VideoFileEpisodeRows rows = await db.getVideoFileEpisodeRows(<String>[
+      'a',
+      'a',
+    ]);
+    expect(rows.episodes.map((VideoMetadataEpisodeRow e) => e.id), <int>[
+      episodeA1,
+      episodeA2,
+    ], reason: '分集按 (季, 集号) 排，与全表读取同一口径；重复 uid 不重复取');
+    expect(rows.seasons.map((VideoMetadataSeasonRow s) => s.id), <int>[
+      seasonId,
+    ]);
+    expect(rows.episodeImages.map((VideoMetadataImageRow i) => i.id), <int>[
+      stillA2,
+      stillA1,
+    ], reason: '分集图按 id 升序，不含别的文件的图');
+    expect(
+      (await db.getVideoFileEpisodeRows(const <String>[])).episodes,
+      isEmpty,
+    );
+  });
 }

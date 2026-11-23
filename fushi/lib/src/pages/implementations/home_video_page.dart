@@ -2053,24 +2053,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         : const <String>['landscape', 'thumb', 'backdrop'],
   );
 
-  /// 主卡横图的第一选择：续播点所在那一集自己的刮削剧照（thumb，本地文件优先，
-  /// 其次远程 URL）；一文件多集时按 [resumedFileEpisodeStills] 定位那一集。
-  /// 没有剧照（未刮削 / 刮削源不给）返回 null，由调用方回落到原有选图链。
-  ImageProvider? _episodeStillProvider(VideoBookRow book) {
-    final List<VideoFileEpisodeStills>? episodes =
-        _fileEpisodesByBook[book.bookUid];
-    if (episodes == null) return null;
-    for (final VideoMetadataImageRow row in resumedFileEpisodeStills(
-      episodes,
-      positionMs: book.lastPositionMs,
-    )) {
-      final ImageProvider? local = _localFileCover(row.localPath);
-      if (local != null) return local;
-      // 远程回落与本地分支同一解码上限（#3722 video-18：刮削剧照是原图）。
-      if (row.remoteUrl.isNotEmpty) return metadataRemoteImage(row.remoteUrl);
-    }
-    return null;
-  }
+  /// 主卡横图的第一选择：续播点所在那一集自己的刮削剧照（与合集选集页同一份
+  /// [videoFileEpisodeStillImage]）。没有剧照返回 null，由调用方回落到原有选图链。
+  ImageProvider? _episodeStillProvider(VideoBookRow book) =>
+      videoFileEpisodeStillImage(
+        _fileEpisodesByBook[book.bookUid],
+        positionMs: book.lastPositionMs,
+        localExists: _coverExists.lookupOptional,
+      );
 
   ImageProvider? _canonicalWorkImageProvider(
     VideoMetadataWorkRow? work,

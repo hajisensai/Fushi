@@ -16,6 +16,10 @@ import 'package:fushi_dictionary/src/language/implementations/japanese_language.
 /// 需要构建好的 fushidicts_ffi 动态库：设 `FUSHI_DICTS_LIB=<绝对路径>`（与
 /// packages/fushi_server/test/dictionary_host_test.dart 同一个变量），没有时整组 skip
 /// 并说明原因。变形表从仓库 `fushi/assets/transforms` 读。
+
+/// 20 个码点的词头：比出厂扫描窗口（16）长、比上限（32）短。
+const String kLongHeadword = 'あいうえおかきくけこさしすせそたちつてと';
+
 void main() {
   final String? lib = Platform.environment['FUSHI_DICTS_LIB'];
   final bool haveLib = lib != null && lib.isNotEmpty && File(lib).existsSync();
@@ -393,6 +397,7 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
       final List<FushiLookupResult> ffi = FushiDicts.instance.lookup(
         r.text,
         maxResults: r.maxResults,
+        scanLength: r.scanLength,
       );
       DictionarySearchResult? result;
       if (ffi.isNotEmpty) {
@@ -456,6 +461,8 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
           term('頭髮', 'tóufà', '', 'hair (A)'),
           term('我', 'wǒ', '', 'I (A)'),
           term('我們', 'wǒmen', '', 'we (A)'),
+          // 扫描窗口（反馈 ezCjUoU2QM）：20 个码点的词头，出厂窗口 16 够不着。
+          term(kLongHeadword, 'ながい', '', 'long (A)'),
         ],
       });
       dictB = await importDict('BgLookupB', <String, Object>{
@@ -536,6 +543,7 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
             final FushiLookupRequest request = FushiLookupRequest(
               text: query.text,
               maxResults: max,
+              scanLength: FushiDicts.defaultScanLength,
               includeKanji: query.kanji,
               hiddenDictionaries: setting.hidden,
               dictionaryOrder: setting.order,
@@ -600,6 +608,7 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
         final FushiLookupRequest request = FushiLookupRequest(
           text: '头发很长',
           maxResults: 10,
+          scanLength: FushiDicts.defaultScanLength,
           chineseSimpToTrad: zh,
         );
         final FushiLookupOutcome outcome = (await FushiDicts.instance
@@ -648,6 +657,7 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
                 FushiLookupRequest(
                   text: text,
                   maxResults: 10,
+                  scanLength: FushiDicts.defaultScanLength,
                   popupOnly: true,
                   hiddenDictionaries: hidden,
                 ),
@@ -690,6 +700,7 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
       const FushiLookupRequest request = FushiLookupRequest(
         text: '食べた',
         maxResults: 10,
+        scanLength: FushiDicts.defaultScanLength,
       );
       final FushiLookupOutcome outcome = (await FushiDicts.instance
           .lookupInBackground(request))!;
@@ -706,17 +717,90 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
       );
     });
 
+    test('扫描窗口（反馈 ezCjUoU2QM）：长词头只在窗口够长时命中，查词 / 匹配长度 / 分词同口径', () async {
+      expect(kLongHeadword.runes.length, 20);
+      const String text = '${kLongHeadword}です';
+      final int Function() saved = FushiDicts.scanLengthReader;
+      addTearDown(() => FushiDicts.scanLengthReader = saved);
+      bool hasLong(FushiLookupOutcome? o) =>
+          (o?.result?.entries ?? const <DictionaryEntry>[]).any(
+            (DictionaryEntry e) => e.word == kLongHeadword,
+          );
+
+      FushiDicts.scanLengthReader = () => FushiDicts.defaultScanLength;
+      expect(
+        FushiDicts.instance.matchedLength(text),
+        isNot(kLongHeadword.length),
+      );
+      expect(
+        FushiDicts.instance.tokenizeLengths(text)!.first,
+        isNot(kLongHeadword.length),
+      );
+      expect(
+        hasLong(
+          await FushiDicts.instance.lookupInBackground(
+            const FushiLookupRequest(
+              text: text,
+              maxResults: 10,
+              scanLength: FushiDicts.defaultScanLength,
+            ),
+          ),
+        ),
+        isFalse,
+      );
+
+      // 设置调大：同步匹配长度、同步 / 后台分词都读装配点，后台查词读请求里的值。
+      FushiDicts.scanLengthReader = () => 24;
+      expect(FushiDicts.scanLength, 24);
+      expect(FushiDicts.instance.matchedLength(text), kLongHeadword.length);
+      expect(
+        FushiDicts.instance.tokenizeLengths(text)!.first,
+        kLongHeadword.length,
+      );
+      final List<({List<int> lengths, List<String> readings})?>? bg =
+          await FushiDicts.instance.tokenizeWithReadingsInBackground(<String>[
+            text,
+          ]);
+      expect(bg![0]!.lengths.first, kLongHeadword.length);
+      expect(bg[0]!.readings.first, 'ながい');
+      final FushiLookupOutcome wide = (await FushiDicts.instance
+          .lookupInBackground(
+            const FushiLookupRequest(
+              text: text,
+              maxResults: 10,
+              scanLength: 24,
+            ),
+          ))!;
+      expect(wide.ffiCacheHit, isFalse, reason: '窗口不同不得命中出厂窗口下的缓存');
+      expect(hasLong(wide), isTrue);
+      expect(wide.result!.bestLength, kLongHeadword.length);
+
+      // 越界的偏好值不外泄到引擎。
+      FushiDicts.scanLengthReader = () => 1000;
+      expect(FushiDicts.scanLength, FushiDicts.maxScanLength);
+      FushiDicts.scanLengthReader = () => 0;
+      expect(FushiDicts.scanLength, FushiDicts.minScanLength);
+    });
+
     test('后台缓存：同窗口命中；引擎换实例（词典变更）后失效', () async {
       const String head = '漢字を読むのは楽しいですがとても';
       expect(head.runes.length, 16);
       final FushiLookupOutcome first = (await FushiDicts.instance
           .lookupInBackground(
-            const FushiLookupRequest(text: '$head難しい', maxResults: 10),
+            const FushiLookupRequest(
+              text: '$head難しい',
+              maxResults: 10,
+              scanLength: FushiDicts.defaultScanLength,
+            ),
           ))!;
       expect(first.ffiCacheHit, isFalse);
       final FushiLookupOutcome sameWindow = (await FushiDicts.instance
           .lookupInBackground(
-            const FushiLookupRequest(text: '$head難しくない', maxResults: 10),
+            const FushiLookupRequest(
+              text: '$head難しくない',
+              maxResults: 10,
+              scanLength: FushiDicts.defaultScanLength,
+            ),
           ))!;
       expect(sameWindow.ffiCacheHit, isTrue, reason: '前 17 码点相同：引擎结果相同，命中后台缓存');
       expect(
@@ -727,13 +811,21 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
       expectSameResult(
         sameWindow.result,
         syncReference(
-          const FushiLookupRequest(text: '$head難しくない', maxResults: 10),
+          const FushiLookupRequest(
+            text: '$head難しくない',
+            maxResults: 10,
+            scanLength: FushiDicts.defaultScanLength,
+          ),
         ),
         'window hit',
       );
       final FushiLookupOutcome biggerMax = (await FushiDicts.instance
           .lookupInBackground(
-            const FushiLookupRequest(text: '$head難しい', maxResults: 11),
+            const FushiLookupRequest(
+              text: '$head難しい',
+              maxResults: 11,
+              scanLength: FushiDicts.defaultScanLength,
+            ),
           ))!;
       expect(biggerMax.ffiCacheHit, isFalse, reason: '上限不同不得命中（load-more）');
 
@@ -741,6 +833,7 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
       const FushiLookupRequest han = FushiLookupRequest(
         text: '漢字',
         maxResults: 10,
+        scanLength: FushiDicts.defaultScanLength,
       );
       final FushiLookupOutcome before = (await FushiDicts.instance
           .lookupInBackground(han))!;
@@ -763,6 +856,7 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
       const FushiLookupRequest request = FushiLookupRequest(
         text: '食べた',
         maxResults: 10,
+        scanLength: FushiDicts.defaultScanLength,
       );
       final DictionarySearchResult? expected = syncReference(request);
       for (int round = 0; round < 5; round++) {
@@ -779,6 +873,7 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
         const FushiLookupRequest(
           text: '食べた',
           maxResults: 10,
+          scanLength: FushiDicts.defaultScanLength,
           supersedeLane: 'hover',
         ),
       );
@@ -786,16 +881,22 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
         const FushiLookupRequest(
           text: '漢字',
           maxResults: 10,
+          scanLength: FushiDicts.defaultScanLength,
           supersedeLane: 'hover',
         ),
       );
       final Future<FushiLookupOutcome?> other = dicts.lookupInBackground(
-        const FushiLookupRequest(text: '語1', maxResults: 10),
+        const FushiLookupRequest(
+          text: '語1',
+          maxResults: 10,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
       );
       final Future<FushiLookupOutcome?> latest = dicts.lookupInBackground(
         const FushiLookupRequest(
           text: '食べる',
           maxResults: 10,
+          scanLength: FushiDicts.defaultScanLength,
           supersedeLane: 'hover',
         ),
       );
@@ -816,14 +917,22 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
       loadAll();
       expect(
         await old.lookupInBackground(
-          const FushiLookupRequest(text: '漢字', maxResults: 10),
+          const FushiLookupRequest(
+            text: '漢字',
+            maxResults: 10,
+            scanLength: FushiDicts.defaultScanLength,
+          ),
         ),
         isNull,
       );
       await FushiDicts.shutdownBackgroundLookup();
       final FushiLookupOutcome again = (await FushiDicts.instance
           .lookupInBackground(
-            const FushiLookupRequest(text: '漢字', maxResults: 10),
+            const FushiLookupRequest(
+              text: '漢字',
+              maxResults: 10,
+              scanLength: FushiDicts.defaultScanLength,
+            ),
           ))!;
       expect(again.result, isNotNull);
     });
@@ -832,7 +941,11 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
       final File mapped = File('$dictA/key.index');
       final List<int> bytes = mapped.readAsBytesSync();
       final Future<Object?> inFlight = FushiDicts.instance.lookupInBackground(
-        const FushiLookupRequest(text: '食べた', maxResults: 10),
+        const FushiLookupRequest(
+          text: '食べた',
+          maxResults: 10,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
       );
       // 借用在上面那次调用里已同步 retain：旧句柄此刻必然还映射着文件。
       FushiDicts.releaseAllMappings();
@@ -847,7 +960,11 @@ void _backgroundLookupGroup(String? lib, bool haveLib) {
 
       loadAll();
       final Future<Object?> again = FushiDicts.instance.lookupInBackground(
-        const FushiLookupRequest(text: '食べた', maxResults: 10),
+        const FushiLookupRequest(
+          text: '食べた',
+          maxResults: 10,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
       );
       await FushiDicts.withMappingsReleased(() async {
         mapped.writeAsBytesSync(bytes); // 映射已解除：覆盖写成功

@@ -11,6 +11,7 @@ import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
+import 'package:fushi/src/sync/interconnect_manga_chapter_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -1711,7 +1712,15 @@ Future<SyncConflict?> syncExitedBookOnChannel({
   required EpubBookRow book,
 }) async {
   if (backend is InterconnectSyncBackend) {
-    // 章节式互联漫画没有可与 host 对齐的书级进度（BUG-5352）。
+    // 章节式互联漫画没有可与 host 对齐的书级进度（BUG-5352），进度按章同步（拍板
+    // design-ic-manga-chapter-progress）：按章 LWW，不产生冲突；老 host（404）静默跳过。
+    if (InterconnectMangaChapterSync.syncsChapterProgress(book)) {
+      await InterconnectMangaChapterSync(
+        db: db,
+        backend: backend,
+      ).syncOne(book);
+      return null;
+    }
     if (!InterconnectBookProgressSync.syncsBookProgress(book)) return null;
     final InterconnectBookProgressSync sync = InterconnectBookProgressSync(
       db: db,

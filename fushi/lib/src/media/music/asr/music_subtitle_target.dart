@@ -78,12 +78,19 @@ class MusicSubtitleTargets {
       throw AppVideoSubtitleTargetNotFound('track $trackUid');
     }
     final MusicAlbumRow? album = await _album(row.albumUid);
+    final String key = 'music:track:$trackUid';
     return _build(
       rows: <MusicTrackRow>[row],
       title: row.title,
-      key: 'music:track:$trackUid',
+      key: key,
       batch: false,
       work: _work(album, fallbackTitle: row.title, fallbackKey: trackUid),
+      // 专辑 / 来源上记过的选择（如整个来源都是广播、关了人声分离）单曲也沿用。
+      settingScopes: <String>[
+        key,
+        if (row.albumUid case final String albumUid) 'music:album:$albumUid',
+        if (row.sourceId case final int sourceId) 'music:source:$sourceId',
+      ],
     );
   }
 
@@ -116,6 +123,7 @@ class MusicSubtitleTargets {
     final MusicPlayItem? first = tracks.isEmpty ? null : tracks.first.item;
     final String? albumUid = first?.albumUid;
     final bool batch = tracks.length > 1 || skipped > 0;
+    final String albumScope = 'music:album:$albumUid';
     return AppVideoSubtitleTarget(
       title: title,
       work: albumUid == null || first == null
@@ -149,6 +157,10 @@ class MusicSubtitleTargets {
       ),
       wholeSeason: batch,
       key: key,
+      settingScopes: <String>[
+        key,
+        if (albumUid != null && albumScope != key) albumScope,
+      ],
     );
   }
 
@@ -227,6 +239,7 @@ class MusicSubtitleTargets {
     required String key,
     required bool batch,
     required SubtitleWorkContext work,
+    List<String>? settingScopes,
   }) async {
     final Set<String> done = batch
         ? await lyrics.tracksWithGenerated(<String>[
@@ -326,6 +339,7 @@ class MusicSubtitleTargets {
       ),
       wholeSeason: batch,
       key: key,
+      settingScopes: settingScopes,
     );
   }
 }

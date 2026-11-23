@@ -37,6 +37,7 @@ import 'package:fushi_engine/utils/net/bounded_read.dart'
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/repr_digest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
+import 'package:fushi_engine/sync/manga_chapter_progress_sync.dart';
 import 'package:fushi_engine/sync/online_library_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
@@ -592,6 +593,12 @@ class FushiSyncServer {
          HostSubscriptionsInterconnectModule(subscriptions),
          HostAssistantInterconnectModule(assistant),
          ...modules,
+         // 章级漫画进度（拍板 design-ic-manga-chapter-progress）是库服务的一项可选能力（同
+         // [BookProgressBatchHost]），按库服务是否实现自动装配，不另设装配点。排在最后，既有键序不变。
+         MangaChapterProgressInterconnectModule(switch (libraryService) {
+           final MangaChapterProgressHost h => h,
+           _ => null,
+         }),
        ]),
        _dictionaryMediaProvider = dictionaryMediaProvider,
        _dictionaryStylesProvider = dictionaryStylesProvider,

@@ -65,6 +65,14 @@ import 'package:fushi/src/media/video/online/anime_source_stream_label.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/scraper/episode_rename.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_image_provider.dart'
+    show videoEpisodeThumbCandidates, videoFileEpisodeStillImage;
+import 'package:fushi/src/media/video/video_home_layout.dart'
+    show VideoFileEpisodeStills;
+import 'package:fushi/src/media/video/video_library_scrape_maps.dart'
+    show videoFileEpisodeStillsByBook;
+import 'package:fushi_engine/media/video/video_storage.dart';
+import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
@@ -395,6 +403,15 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   String? _canonicalCoverPath;
   String? _canonicalCoverRemoteUrl;
 
+  /// 成员文件 → 绑到它的分集与各集刮削剧照（不限规范作品；只收至少一集带图的
+  /// 文件）。集缩略图「手动封面 > 分集剧照 > 自动截图」的剧照一环（拍板
+  /// GLMHiavo0y），与首页主卡同一份聚合（[videoFileEpisodeStillsByBook]）。
+  Map<String, List<VideoFileEpisodeStills>> _fileEpisodesByUid =
+      const <String, List<VideoFileEpisodeStills>>{};
+
+  /// 成员文件 → 封面来源（`cover_meta.json`）：判定集封面是不是用户手动设置的。
+  Map<String, CoverMeta> _coverMetaByUid = const <String, CoverMeta>{};
+
   /// 本合集的附加图组（v68 `media_images`）快照：hero 封面自有层的原盘竖版盘面图
   /// 从这里取（[collectionOwnCoverCandidates]）。
   List<MediaImageRow> _mediaImages = const <MediaImageRow>[];
@@ -581,6 +598,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         }
       }
     }
+    final Map<String, List<VideoFileEpisodeStills>> fileEpisodes =
+        videoFileEpisodeStillsByBook(
+          await widget.database.getVideoFileEpisodeRows(
+            members.map((VideoBookRow member) => member.bookUid),
+          ),
+        );
+    final Map<String, CoverMeta> coverMeta = await _loadCoverMeta();
     final List<VideoMetadataExtraRow> workExtras = canonicalWork == null
         ? const <VideoMetadataExtraRow>[]
         : await widget.database.getVideoMetadataExtras(canonicalWork.id);
@@ -657,6 +681,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       _rebuildSections();
       _episodeMetaByUid = episodeMeta;
       _canonicalEpisodesByUid = canonicalEpisodes;
+      _fileEpisodesByUid = fileEpisodes;
+      _coverMetaByUid = coverMeta;
       _workCredits = workCredits;
       _canonicalWork = canonicalWork;
       _workTerms = workTerms;
@@ -2126,9 +2152,51 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     Navigator.of(context).maybePop();
   }
 
-  /// 集缩略图 provider：本地行走既有封面链；远端集先认 host 已同步下来的本地封面
-  /// 文件，再回落带鉴权的远端 URL（与库页远端占位卡同一条链），都没有 → null。
-  ImageProvider? _episodeCover(CollectionEpisodeSlot slot) {
+  /// 封面来源表（`cover_meta.json`）。读不到只影响「手动封面排在剧照前」这一条
+  /// 排序（全部按非手动处理，剧照在前），不挡详情页加载。
+  Future<Map<String, CoverMeta>> _loadCoverMeta() async {
+    try {
+      return await CoverMetaStore(await VideoStorage.coversDir()).all();
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'MediaCollectionDetailPage._loadCoverMeta',
+        error,
+      );
+      return const <String, CoverMeta>{};
+    }
+  }
+
+  /// 集缩略图的候选序（拍板 GLMHiavo0y）：用户手动设置的封面 > 这一集的刮削剧照
+  /// （本地文件优先，其次远程 URL）> 自动截图；远端集只有 host 给的封面。渲染端
+  /// 第一张加载失败时依次回落（[collectionEpisodeThumb] 的 `fallbacks`）。
+  List<ImageProvider> _episodeThumbCandidates(CollectionEpisodeSlot slot) {
+    final ImageProvider? cover = _episodeOwnCover(slot);
+    final VideoBookRow? local = slot.local;
+    if (local == null) return <ImageProvider>[?cover];
+    return videoEpisodeThumbCandidates(
+      cover: cover,
+      coverIsUserChosen:
+          _coverMetaByUid[local.bookUid]?.origin.isUserChosen ?? false,
+      still: videoFileEpisodeStillImage(
+        _fileEpisodesByUid[local.bookUid],
+        positionMs: local.lastPositionMs,
+        localExists: _coverExists.lookupOptional,
+      ),
+    );
+  }
+
+  /// 集缩略图首选图（[_episodeThumbCandidates] 第一张）；无图 → null。
+  ImageProvider? _episodeCover(CollectionEpisodeSlot slot) =>
+      _episodeThumbCandidates(slot).firstOrNull;
+
+  /// 首选图加载失败后的回落序（[_episodeThumbCandidates] 第二张起）。
+  List<ImageProvider> _episodeCoverFallbacks(CollectionEpisodeSlot slot) =>
+      _episodeThumbCandidates(slot).skip(1).toList(growable: false);
+
+  /// 这一集自己的封面（`video_books.cover_path`，自动截帧与手动封面同一个槽）：
+  /// 本地行走既有封面链；远端集先认 host 已同步下来的本地封面文件，再回落带鉴权
+  /// 的远端 URL（与库页远端占位卡同一条链），都没有 → null。
+  ImageProvider? _episodeOwnCover(CollectionEpisodeSlot slot) {
     final String? localPath = slot.coverPath;
     if (localPath != null && localPath.isNotEmpty) {
       return resolveMediaCoverImage(
@@ -2923,6 +2991,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     Widget buildCard(Widget? downloadBadge) => posterHorizontal != null
         ? MediaPosterEpisodeTile(
             image: _episodeCover(episode),
+            imageFallbacks: _episodeCoverFallbacks(episode),
             horizontal: posterHorizontal,
             number: '${_episodeDisplayNumber(episode, index)}',
             title: _episodeDisplayTitle(episode),
@@ -2939,7 +3008,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             trailingStatus: _episodeTrailingStatus(context, episode),
           )
         : CollectionEpisodeCard(
-            thumb: collectionEpisodeThumb(context, _episodeCover(episode)),
+            thumb: collectionEpisodeThumb(
+              context,
+              _episodeCover(episode),
+              fallbacks: _episodeCoverFallbacks(episode),
+            ),
             // BUG-1544：序号跟随文件名解析出的真实集数（缺集时不再用顺位号冒充）；
             // 解析不出时回退顺位号。
             number: '${_episodeDisplayNumber(episode, index)}',
@@ -4075,6 +4148,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
               label: t.collection_continue_progress(n: _continueEpisodeNumber),
               title: _episodeDisplayTitle(episode),
               image: _episodeCover(episode) ?? _heroBackdrop ?? _heroCover,
+              imageFallbacks: _episodeCoverFallbacks(episode),
               meta: _episodeMeta(episode),
               progress: _episodeProgress(episode),
               completed: episode.completed,
