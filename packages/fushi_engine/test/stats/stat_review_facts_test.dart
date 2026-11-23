@@ -42,7 +42,6 @@ void main() {
       trustedClock: SrsTrustedClock(
         wallClockMs: () => now,
         bootClockMs: () => now,
-        bootId: 'b',
       ),
       fallbackRolloverHour: () => 4,
       // 日志的 UTC 偏移恒取本机偏移（随跑测试的机器变）：钉成 JST，期望日期可以写死。

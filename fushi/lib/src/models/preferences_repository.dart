@@ -6263,6 +6263,144 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 全屏歌词动画样式（`LyricVisualizerMode.prefValue`），默认 `classic`（流光）。
+  String get musicVisualizerMode =>
+      (getPref('music_visualizer_mode', defaultValue: 'classic') as String?) ??
+      'classic';
+
+  Future<void> setMusicVisualizerMode(String value) async {
+    await setPref('music_visualizer_mode', value);
+    notifyListeners();
+  }
+
+  /// 每首歌随机换一个全屏歌词动画样式，默认关。
+  bool get musicVisualizerRandom =>
+      getPref('music_visualizer_random', defaultValue: false) == true;
+
+  Future<void> setMusicVisualizerRandom(bool value) async {
+    await setPref('music_visualizer_random', value);
+    notifyListeners();
+  }
+
+  /// 打开全屏歌词动画时给还没有 AI 主题的歌自动生成（`AiFeature.musicVisualizerTheme`），默认关。
+  bool get musicVisualizerAiThemeAuto =>
+      getPref('music_visualizer_ai_theme_auto', defaultValue: false) == true;
+
+  Future<void> setMusicVisualizerAiThemeAuto(bool value) async {
+    await setPref('music_visualizer_ai_theme_auto', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画字号倍数（0.6–2.0），默认 1.0。
+  double get musicVisualizerFontScale =>
+      (getPref('music_visualizer_font_scale', defaultValue: 1.0) as num)
+          .toDouble();
+
+  Future<void> setMusicVisualizerFontScale(double value) async {
+    await setPref('music_visualizer_font_scale', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画强度（`LyricVisualizerIntensity.prefValue`），默认 `normal`。
+  String get musicVisualizerIntensity =>
+      (getPref('music_visualizer_intensity', defaultValue: 'normal')
+          as String?) ??
+      'normal';
+
+  Future<void> setMusicVisualizerIntensity(String value) async {
+    await setPref('music_visualizer_intensity', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画的副字幕内容（`LyricVisualizerSubtitleContent.prefValue`），默认 `translation`。
+  String get musicVisualizerSubtitleContent =>
+      (getPref('music_visualizer_subtitle_content', defaultValue: 'translation')
+          as String?) ??
+      'translation';
+
+  Future<void> setMusicVisualizerSubtitleContent(String value) async {
+    await setPref('music_visualizer_subtitle_content', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画隐藏副字幕（folia `hideTranslationSubtitle`），默认关。
+  bool get musicVisualizerSubtitleHide =>
+      getPref('music_visualizer_subtitle_hide', defaultValue: false) == true;
+
+  Future<void> setMusicVisualizerSubtitleHide(bool value) async {
+    await setPref('music_visualizer_subtitle_hide', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画副字幕字号倍数（0.6–2.0），默认 1.0。
+  double get musicVisualizerSubtitleFontScale =>
+      (getPref('music_visualizer_subtitle_font_scale', defaultValue: 1.0)
+              as num)
+          .toDouble();
+
+  Future<void> setMusicVisualizerSubtitleFontScale(double value) async {
+    await setPref('music_visualizer_subtitle_font_scale', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画副字幕字体（`LyricVisualizerSubtitleFont.prefValue`），默认 `inherit`。
+  String get musicVisualizerSubtitleFont =>
+      (getPref('music_visualizer_subtitle_font', defaultValue: 'inherit')
+          as String?) ??
+      'inherit';
+
+  Future<void> setMusicVisualizerSubtitleFont(String value) async {
+    await setPref('music_visualizer_subtitle_font', value);
+    notifyListeners();
+  }
+
+  /// 全屏歌词动画的共享背景（`LyricVisualizerBackgroundEntry.id`），默认 `fluid`（歌词页背景）。
+  String get musicVisualizerBackground =>
+      (getPref('music_visualizer_background', defaultValue: 'fluid')
+          as String?) ??
+      'fluid';
+
+  Future<void> setMusicVisualizerBackground(String value) async {
+    await setPref('music_visualizer_background', value);
+    notifyListeners();
+  }
+
+  /// 各样式的可调参数：`{样式 prefValue: {参数 key: 值}}`（JSON 串）。只存用户改过的项，
+  /// 读时按样式声明规整、缺的取默认。坏 JSON 当空表。
+  Map<String, Map<String, Object?>> get musicVisualizerTunings {
+    final Object? raw = getPref('music_visualizer_tunings', defaultValue: '');
+    if (raw is! String || raw.isEmpty) {
+      return const <String, Map<String, Object?>>{};
+    }
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map) return const <String, Map<String, Object?>>{};
+      return <String, Map<String, Object?>>{
+        for (final MapEntry<Object?, Object?> e in decoded.entries)
+          if (e.key is String && e.value is Map)
+            e.key! as String: Map<String, Object?>.from(e.value! as Map),
+      };
+    } on FormatException {
+      return const <String, Map<String, Object?>>{};
+    }
+  }
+
+  /// 改某个样式的参数；[values] 为空 = 恢复该样式默认。
+  Future<void> setMusicVisualizerTuning(
+    String mode,
+    Map<String, Object?> values,
+  ) async {
+    final Map<String, Map<String, Object?>> all =
+        <String, Map<String, Object?>>{...musicVisualizerTunings};
+    if (values.isEmpty) {
+      all.remove(mode);
+    } else {
+      all[mode] = values;
+    }
+    await setPref('music_visualizer_tunings', jsonEncode(all));
+    notifyListeners();
+  }
+
   /// ReplayGain 预放大（dB，-15…+15，设计 §7.3）。默认 0。
   double get musicReplayGainPreampDb =>
       (getPref('music_replaygain_preamp_db', defaultValue: 0.0) as num)

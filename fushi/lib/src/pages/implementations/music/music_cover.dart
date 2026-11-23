@@ -5,7 +5,13 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
+    show kMusicCoverRequestHeaders;
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+
+// 在线封面请求头定义在歌词动画框架的封面工具里（样式不 import 页面文件），这里转出给页面用。
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
+    show kMusicCoverRequestHeaders;
 import 'package:fushi/src/pages/implementations/music/music_disc_face.dart';
 import 'package:fushi/src/utils/components/fushi_generated_cover.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
@@ -79,11 +85,6 @@ Widget musicMaterialCover(
 }
 
 /// 专辑 / 曲目封面：目录封面文件优先，其次曲目内嵌封面，都没有画音符占位。
-/// 在线封面请求头：部分音乐 CDN 对 `Dart/x (dart:io)` 这个默认 UA 一律回 403，
-/// 浏览器形态的 UA 才放行（2026-10-29 实测）。
-const Map<String, String> kMusicCoverRequestHeaders = <String, String>{
-  'User-Agent': 'Mozilla/5.0',
-};
 
 class MusicCover extends StatelessWidget {
   const MusicCover({

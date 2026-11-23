@@ -3,24 +3,25 @@
 ///
 /// ```
 /// ╭──────────────────────────────────────────────────────────────╮
-/// │ ⏮ (⏯) ⏭  ● 長崎 そよ        [底栏原有按钮…]  │ ⟳  ⏱1.0×  ⏹ │
+/// │ ⏮ (⏯) ⏭  ● 長崎 そよ     [底栏原有按钮…]  │ ⟳  ⏱1.0×  🔊  ⏹ │
 /// ╰━━━━━━━━●──────────────────────────────────────────────────────╯
-///   传输三联键 · 说话人 / 状态      中间横向滚动      跟随(声音) 倍速 停止
+///   传输三联键 · 说话人 / 状态   中间横向滚动   跟随(声音) 倍速 (音量) 停止
 /// ```
 ///
 /// 用户 2026-11-21：「和小说一样，播放条替换底栏，不要把画面挤上去」——播放条坐在
 /// 底部 chrome 原工具栏的位置、同高（[kMangaChromeToolbarHeight]），所以固定态正文
 /// 让位高度不变、悬浮态照旧浮在页图上并跟着底栏一起收起；不显示台词（页面上的
 /// 高亮框就是当前句），进度是条底边一条细线（成品音频才有，可点 / 可拖）。倍速
-/// 胶囊点开时在条上方弹出倍速条。
+/// 胶囊点开时在条上方弹出倍速条；成品音频另有音量按钮，点开弹出与有声书快捷设置
+/// 同一口径的音量条（[AudiobookVolumeSlider]，按书持久化）。
 ///
 /// 两种音源共用 [_MangaPlayBar]：现场合成用 [MangaReadAloudBar]（右侧是「声音」，
 /// 没有进度）；成品音频用 [MangaAudioPlaybackBar]（右侧是「跟随翻页」，多进度线与
 /// 说话人）。阅读器把底栏原有按钮作为 [middle] 传进来，放不下时横向滚动。
 ///
 /// 条画在 [MangaChromeSurface] 上（MD3 / Apple 两套材质），按钮走 [FushiIconButton]
-/// （tooltip / Semantics / 命中区齐全），主按钮与倍速胶囊带 [FushiPressScale]，整条
-/// [FushiHoverLift]，状态文字切换走 [AnimatedSwitcher] + [FushiMotion]。按钮提示括注
+/// （tooltip / Semantics / 命中区齐全），主按钮与倍速 / 音量按钮带 [FushiPressScale]，
+/// 整条 [FushiHoverLift]，状态文字切换与弹层出现走 [FushiMotion]。按钮提示括注
 /// 键盘快捷键（[MangaPlaybackKeyHints]，桌面才有）。
 library;
 
@@ -34,6 +35,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
+import 'package:fushi/src/media/audiobook/audiobook_volume_slider.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_playback_driver.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
@@ -209,7 +211,7 @@ String? mangaAudioSpeakerLabel(MangaRenderedLine? line) {
 }
 
 /// 成品音频播放条：上一句 / 播放·暂停 / 下一句 + 说话人，右侧跟随翻页 / 倍速 /
-/// 停止，底边进度线。
+/// 音量 / 停止，底边进度线。
 class MangaAudioPlaybackBar extends StatefulWidget {
   const MangaAudioPlaybackBar({
     super.key,
@@ -348,6 +350,9 @@ class _MangaAudioPlaybackBarState extends State<MangaAudioPlaybackBar> {
       speed: d.speed,
       speedKey: const ValueKey<String>('manga_audio_speed'),
       onSpeedChanged: (double v) => d.setSpeed(v),
+      volume: d.volume,
+      volumeKey: const ValueKey<String>('manga_audio_volume'),
+      onVolumeChanged: (double v) => unawaited(d.setVolume(v)),
       stopKey: const ValueKey<String>('manga_audio_stop'),
       onStop: widget.onStop,
       progress: _ScrubLine(
@@ -452,7 +457,8 @@ const double _kSpeedLabelMinWidth = 520;
 
 /// 播放条本体（两种音源共用）：一行 [kMangaChromeToolbarHeight] 高的胶囊。
 ///
-/// `[⏮ ⏯ ⏭][读数] [middle…横滚] │ [trailing][倍速][停止]`，[progress] 叠在底边。
+/// `[⏮ ⏯ ⏭][读数] [middle…横滚] │ [trailing][倍速][音量][停止]`，[progress] 叠在
+/// 底边；[onVolumeChanged] 为 null（现场合成）时没有音量按钮。
 class _MangaPlayBar extends StatelessWidget {
   const _MangaPlayBar({
     required this.previous,
@@ -467,6 +473,9 @@ class _MangaPlayBar extends StatelessWidget {
     this.label,
     this.middle,
     this.progress,
+    this.volume = 1.0,
+    this.volumeKey,
+    this.onVolumeChanged,
   });
 
   final Widget previous;
@@ -481,6 +490,9 @@ class _MangaPlayBar extends StatelessWidget {
   final Key stopKey;
   final VoidCallback onStop;
   final Widget? progress;
+  final double volume;
+  final Key? volumeKey;
+  final ValueChanged<double>? onVolumeChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -489,6 +501,7 @@ class _MangaPlayBar extends StatelessWidget {
     final Widget? labelWidget = label;
     final Widget? middleWidget = middle;
     final Widget? progressWidget = progress;
+    final ValueChanged<double>? onVolume = onVolumeChanged;
 
     return ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: kMangaChromeBottomMaxWidth),
@@ -561,6 +574,12 @@ class _MangaPlayBar extends StatelessWidget {
                   showLabel: showSpeedLabel,
                   onChanged: onSpeedChanged,
                 ),
+                if (onVolume != null)
+                  _VolumeButton(
+                    key: volumeKey,
+                    volume: volume,
+                    onChanged: onVolume,
+                  ),
                 FushiIconButton(
                   key: stopKey,
                   icon: FushiIcons.stop,
@@ -722,7 +741,7 @@ class _ScrubLine extends StatelessWidget {
 }
 
 /// 倍速胶囊：图标 + 当前倍速（窄条只画图标），点开 / 收起条上方的倍速条。
-class _SpeedButton extends StatefulWidget {
+class _SpeedButton extends StatelessWidget {
   const _SpeedButton({
     super.key,
     required this.speed,
@@ -735,14 +754,63 @@ class _SpeedButton extends StatefulWidget {
   final ValueChanged<double> onChanged;
 
   @override
-  State<_SpeedButton> createState() => _SpeedButtonState();
+  Widget build(BuildContext context) {
+    final String label = AudiobookSpeedSlider.format(speed);
+    return _PopoverButton(
+      icon: FushiIcons.speed,
+      label: showLabel ? label : null,
+      tooltip: '${t.playback_speed} $label',
+      panel: _SpeedRow(speed: speed, onChanged: onChanged),
+    );
+  }
 }
 
-class _SpeedButtonState extends State<_SpeedButton> {
+/// 音量按钮（成品音频）：静音时画静音图标，读数进 tooltip；点开 / 收起条上方的
+/// 音量条。
+class _VolumeButton extends StatelessWidget {
+  const _VolumeButton({
+    super.key,
+    required this.volume,
+    required this.onChanged,
+  });
+
+  final double volume;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PopoverButton(
+      icon: volume <= 0 ? FushiIcons.volumeOff : FushiIcons.volumeUp,
+      tooltip: '${t.audio_volume} ${AudiobookVolumeSlider.format(volume)}',
+      panel: _VolumeRow(volume: volume, onChanged: onChanged),
+    );
+  }
+}
+
+/// 条上的弹层按钮（倍速 / 音量共用）：点按钮开关条上方的 [panel]，点组外收起；
+/// 弹层贴按钮右上角、带淡入 + 轻微放大（[FushiMotion]，减弱动态效果直接出现）。
+class _PopoverButton extends StatefulWidget {
+  const _PopoverButton({
+    required this.icon,
+    required this.tooltip,
+    required this.panel,
+    this.label,
+  });
+
+  final IconData icon;
+  final String? label;
+  final String tooltip;
+  final Widget panel;
+
+  @override
+  State<_PopoverButton> createState() => _PopoverButtonState();
+}
+
+class _PopoverButtonState extends State<_PopoverButton> {
   final OverlayPortalController _portal = OverlayPortalController();
   final LayerLink _link = LayerLink();
 
-  /// 胶囊与弹出的倍速条同属一组：点胶囊是开关，点组外才收起。
+  /// 按钮与弹层同属一组：点按钮是开关，点组外才收起。
   final Object _tapGroup = Object();
 
   void _toggle() => setState(_portal.toggle);
@@ -753,7 +821,6 @@ class _SpeedButtonState extends State<_SpeedButton> {
 
   @override
   Widget build(BuildContext context) {
-    final String label = AudiobookSpeedSlider.format(widget.speed);
     return CompositedTransformTarget(
       link: _link,
       child: OverlayPortal(
@@ -769,15 +836,26 @@ class _SpeedButtonState extends State<_SpeedButton> {
               groupId: _tapGroup,
               onTapOutside: (PointerDownEvent _) => _hide(),
               child: ExcludeFocus(
-                child: SizedBox(
-                  width: 320,
-                  child: MangaChromeSurface(
-                    radius: 20,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
-                      child: _SpeedRow(
-                        speed: widget.speed,
-                        onChanged: widget.onChanged,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(begin: 0, end: 1),
+                  duration: fushiMotionDuration(context, FushiMotion.short),
+                  curve: FushiMotion.enter,
+                  builder: (BuildContext context, double v, Widget? child) =>
+                      Opacity(
+                        opacity: v,
+                        child: Transform.scale(
+                          scale: 0.96 + 0.04 * v,
+                          alignment: Alignment.bottomRight,
+                          child: child,
+                        ),
+                      ),
+                  child: SizedBox(
+                    width: 320,
+                    child: MangaChromeSurface(
+                      radius: 20,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
+                        child: widget.panel,
                       ),
                     ),
                   ),
@@ -790,9 +868,9 @@ class _SpeedButtonState extends State<_SpeedButton> {
           groupId: _tapGroup,
           child: FushiPressScale(
             child: FushiIconButton(
-              icon: FushiIcons.speed,
-              label: widget.showLabel ? label : null,
-              tooltip: '${t.playback_speed} $label',
+              icon: widget.icon,
+              label: widget.label,
+              tooltip: widget.tooltip,
               padTouchTarget: true,
               selected: _portal.isShowing,
               onTap: _toggle,
@@ -827,6 +905,50 @@ class _SpeedRow extends StatelessWidget {
             key: const ValueKey<String>('manga_read_aloud_speed_slider'),
             speed: speed,
             onChanged: onChanged,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 音量一行（成品音频）：图标 + 与有声书快捷设置同一口径的音量条 + 百分比读数
+/// （1% / 5% 的细步进没有常驻读数等于白调）。
+class _VolumeRow extends StatelessWidget {
+  const _VolumeRow({required this.volume, required this.onChanged});
+
+  final double volume;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final MangaChromePalette colors = MangaChromePalette.of(context);
+    return Row(
+      children: <Widget>[
+        FushiIcon(
+          FushiIcons.volumeUp,
+          size: 20,
+          color: colors.secondaryForeground,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: AudiobookVolumeSlider(
+            key: const ValueKey<String>('manga_audio_volume_slider'),
+            volume: volume,
+            onChanged: onChanged,
+          ),
+        ),
+        SizedBox(
+          width: 48,
+          child: Text(
+            AudiobookVolumeSlider.format(volume),
+            key: const ValueKey<String>('manga_audio_volume_readout'),
+            textAlign: TextAlign.end,
+            maxLines: 1,
+            style: TextStyle(
+              color: colors.secondaryForeground,
+              fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+            ),
           ),
         ),
       ],
