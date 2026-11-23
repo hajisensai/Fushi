@@ -644,6 +644,25 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       _seriesQuery = widget.initialQuery.trim();
     }
     _seriesLookupFailed = widget.debugInitialSeriesLookupFailed;
+    // 面板一打开就预热来源连接：用户填集数 / 改番名的这几秒里把 TLS 握手做掉，
+    // 点搜索时首个请求直接落在热连接上（jimaku.cc 冷连接首请求 ~0.9 s，热的 ~0.25 s）。
+    unawaited(_warmUpSourceConnections());
+  }
+
+  /// 预热字幕来源连接（见 [VideoSubtitleRegistry.warmUpConnections]）。只建连、
+  /// 不发计配额的请求；拿 registry 失败也只留诊断——预热落空不影响搜索本身。
+  Future<void> _warmUpSourceConnections() async {
+    try {
+      final VideoSubtitleRegistry? registry = await widget.subtitleRegistry
+          ?.call();
+      if (!mounted || registry == null) return;
+      await registry.warmUpConnections();
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'SubtitleSearchPanel._warmUpSourceConnections',
+        error,
+      );
+    }
   }
 
   /// 把记忆/选中的筛选（语言 + 类型）与当前候选对齐：本次结果里没出现的值 → 退回
@@ -667,6 +686,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
 
   @override
   void dispose() {
+    _anilistHttp?.close();
+    _anilistHttp = null;
     _apiKeyCtrl.dispose();
     _queryCtrl.dispose();
     _episodeCtrl.dispose();
@@ -753,7 +774,6 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
     // 从这里起的每个 await 都在 try 里（BUG-4799）：[_searching] 已经置位，
     // `onApiKeyChanged`（偏好写 + 下载管线重建）抛错时若不经 finally 复位，搜索钮
     // 会一直灰到关页。
-    AniListClient? anilist;
     try {
       await WidgetsBinding.instance.endOfFrame;
       if (!_isCurrentSearch(generation)) return;
@@ -784,12 +804,12 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             pickedSeriesId != null || _candidates.isNotEmpty || _error != null;
         if (settled) return;
       }
-      final http.Client httpClient = await _createHttpClient();
-      if (!_isCurrentSearch(generation)) {
-        httpClient.close();
-        return;
-      }
-      anilist = AniListClient(client: httpClient);
+      // 问 AniList 的这一个往返里，并行把字幕来源的连接预热好：开面板时的预热
+      // 可能已经空闲超时被回收，而 AniList 回来后紧接着就是 Jimaku 的条目搜索。
+      unawaited(_warmUpSourceConnections());
+      final http.Client httpClient = await _anilistHttpClient();
+      if (!_isCurrentSearch(generation)) return;
+      final AniListClient anilist = AniListClient(client: httpClient);
       // ① 先经 AniList 把番名解析成候选系列（romaji/english/native 都能匹上）；存全部
       //   候选供用户消歧，默认取首条（相关度最高）。② AniList 无命中时回退文本直接搜。
       final AniListSearchOutcome outcome = await anilist.searchAnime(query);
@@ -844,7 +864,6 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
         );
       }
     } finally {
-      anilist?.close();
       // 只有仍是最新一轮才收转圈：被顶掉的旧一轮先返回时，新一轮还在路上。
       if (_isCurrentSearch(generation)) setState(() => _searching = false);
     }
@@ -1100,6 +1119,24 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       );
     }
     return registry.download(candidate);
+  }
+
+  /// 面板生命周期内复用的 AniList HTTP client（[dispose] 时关闭）。此前每次搜索
+  /// 新建、用完即关，换个番名重搜都要重新和 graphql.anilist.co 握一次手。
+  http.Client? _anilistHttp;
+
+  Future<http.Client> _anilistHttpClient() async {
+    final http.Client? existing = _anilistHttp;
+    if (existing != null) return existing;
+    final http.Client created = await _createHttpClient();
+    // 建 client 的 await 期间：面板已关 → 没人会再关它，这里关；另一轮搜索已先
+    // 建好一个 → 用那个，关掉这个，不漏连接。
+    final http.Client? raced = _anilistHttp;
+    if (!mounted || raced != null) {
+      created.close();
+      if (raced != null) return raced;
+    }
+    return _anilistHttp = created;
   }
 
   Future<http.Client> _createHttpClient() {

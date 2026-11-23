@@ -6,7 +6,8 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_source_season.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
-class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
+class JimakuVideoSubtitleProvider
+    implements VideoSubtitleProvider, VideoSubtitleConnectionWarmup {
   JimakuVideoSubtitleProvider({
     required JimakuClient client,
     this.priority = 100,
@@ -81,19 +82,24 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
         final List<JimakuFile> files;
         final List<JimakuFile> packs;
         try {
-          files = await _client.listFiles(
+          // 每个条目只列**一次**全表，集号在本地按文件名筛。此前带集号时要打两次：
+          // 一次 `?episode=` 让服务端按文件名猜集号，一次全表只为补整季压缩包
+          // （`Show (01-26).zip` 猜不出单集，会被服务端滤掉）——全表本来就包含前者
+          // 的全部结果，第二次往返纯属白等，还多吃一次 25 次/窗口的配额。本地判据
+          // [JimakuFile.episode]（[parseSubtitleEpisode]）与服务端对真实条目的筛选
+          // 结果逐一对过（2026-11-23，61 / 53 / 2 个文件的条目各集一致）。
+          final List<JimakuFile> all = await _client.listFiles(
             entry.id,
-            episode: episode,
             throwOnError: true,
           );
-          // 整季压缩包（BUG-3000 跟进）：Jimaku 的 `episode` 过滤按文件名猜集号，
-          // `Show (01-26).zip` 这类整季包猜不出单集，会被服务端滤掉。带集号查时再
-          // 列一次不带集号的全表，只从里面补压缩包。
+          files = episode == null
+              ? all
+              : <JimakuFile>[
+                  for (final JimakuFile file in all)
+                    if (file.episode == episode) file,
+                ];
           packs = <JimakuFile>[
-            for (final JimakuFile file
-                in episode == null
-                    ? files
-                    : await _client.listFiles(entry.id, throwOnError: true))
+            for (final JimakuFile file in all)
               if (file.archiveFormat != null) file,
           ];
         } on Object catch (error) {
@@ -227,6 +233,9 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
       throw _jimakuFailure('download', error);
     }
   }
+
+  @override
+  Future<void> warmUpConnection() => _client.warmUpConnection();
 
   @override
   void close() {

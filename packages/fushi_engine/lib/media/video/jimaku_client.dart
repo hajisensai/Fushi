@@ -594,6 +594,7 @@ class JimakuClient {
   final String apiKey;
   final http.Client _client;
 
+  static const String _site = 'https://jimaku.cc/';
   static const String _base = 'https://jimaku.cc/api';
 
   Map<String, String> get _headers => <String, String>{
@@ -730,7 +731,7 @@ class JimakuClient {
       final Uri uri = Uri.parse(
         '$_base/entries/search',
       ).replace(queryParameters: params);
-      final http.Response res = await _client.get(uri, headers: _headers);
+      final http.Response res = await _get(uri);
       if (res.statusCode != 200) {
         if (throwOnError) {
           throw JimakuRequestException(
@@ -764,7 +765,7 @@ class JimakuClient {
   }) async {
     try {
       final Uri uri = buildListFilesUri(_base, entryId, episode: episode);
-      final http.Response res = await _client.get(uri, headers: _headers);
+      final http.Response res = await _get(uri);
       if (res.statusCode != 200) {
         if (throwOnError) {
           throw JimakuRequestException(
@@ -792,10 +793,7 @@ class JimakuClient {
     bool throwOnError = false,
   }) async {
     try {
-      final http.Response res = await _client.get(
-        Uri.parse(fileUrl),
-        headers: _headers,
-      );
+      final http.Response res = await _get(Uri.parse(fileUrl));
       if (res.statusCode != 200) {
         if (throwOnError) {
           throw JimakuRequestException(
@@ -812,6 +810,35 @@ class JimakuClient {
       if (throwOnError) Error.throwWithStackTrace(e, stack);
       return null;
     }
+  }
+
+  /// 在途的连接预热（[warmUpConnection]）；完成后清空。
+  Future<void>? _warming;
+
+  /// 提前建好到 jimaku.cc 的连接：`HEAD` 站点根，不带 key、不经 `/api`，不吃
+  /// 25 次/窗口的 API 配额（2026-11-23 实测 `x-ratelimit-remaining` 不变）。
+  ///
+  /// 冷连接首请求 ~0.9 s 里大半是 TLS 握手，复用连接的请求 ~0.25 s。预热与正式
+  /// 请求同属一个 [http.Client] 的连接池（按 host 复用）。失败只留诊断：落空时正式
+  /// 请求照常自己建连，与不预热完全一样。
+  Future<void> warmUpConnection() {
+    return _warming ??= () async {
+      try {
+        await _client.head(Uri.parse(_site));
+      } on Object catch (error) {
+        engineLog.logDiagnostic('JimakuClient.warmUpConnection', error);
+      } finally {
+        _warming = null;
+      }
+    }();
+  }
+
+  /// 所有 API / 下载请求的唯一出口。预热还在握手时先等它：否则这次请求看到
+  /// 连接池里没有空闲连接，会再开一条、再握一次手，预热就白做了。
+  Future<http.Response> _get(Uri uri) async {
+    final Future<void>? warming = _warming;
+    if (warming != null) await warming;
+    return _client.get(uri, headers: _headers);
   }
 
   void close() => _client.close();
