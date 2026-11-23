@@ -204,8 +204,10 @@ class BackgroundTasksGlyph extends StatelessWidget {
           if (showIcon)
             FushiIcon(backgroundTasksIcon(tasks), size: iconSize, color: fg),
           // 有一轮记下了失败（在跑或已结束、用户还没打开明细看过）：右上角红点，
-          // 一直提醒到用户打开明细（确认见 acknowledgeFinishedSyncTasks）。
-          if (showIcon && tasks.any((BackgroundTask t) => t.errors.isNotEmpty))
+          // 一直提醒到用户打开明细（确认见 acknowledgeFinishedSyncTasks）。只画环
+          // （[showIcon] = false，Apple 导航栏 bar button 外圈）时也画：入口在那里
+          // 同样因「未看过的失败」常驻，没有红点就看不出它为什么还在。
+          if (tasks.any((BackgroundTask t) => t.errors.isNotEmpty))
             PositionedDirectional(
               top: 0,
               end: 0,

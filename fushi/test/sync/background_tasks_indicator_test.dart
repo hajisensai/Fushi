@@ -195,6 +195,22 @@ void main() {
     expect(find.byType(FushiSegmentedProgressRing), findsNothing);
     expect(find.byIcon(FushiIcons.sync), findsOneWidget);
 
+    // Apple 导航栏的入口只叠环（showIcon: false），按钮同样因未看过的失败常驻，
+    // 红点不能跟着图标一起省掉。
+    await tester.pumpWidget(
+      _host(
+        const BackgroundTasksGlyph(
+          tasks: <BackgroundTask>[failedDone],
+          showIcon: false,
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('background-tasks-error-dot')),
+      findsOneWidget,
+    );
+    expect(find.byIcon(FushiIcons.sync), findsNothing);
+
     await tester.pumpWidget(
       _host(
         const BackgroundTasksGlyph(
