@@ -15,6 +15,7 @@
     - 守卫登记：`exportWindowRecording` 改登记 `internal:`（制卡管线内部取录制帧，用户入口是 `game mine`）。
 - **剩余（守卫里 `pending cli-ui-only-ops-gaps` 的条目，每接一个删一条；第三批方案见 `docs/specs/2026-11-23-cli-ui-flow-gaps-batch3.md`）**：
   - 视频：`importIptvChannels`（IPTV 播放列表）、`pickAndApplyVideoFrameCover`（取帧当封面）。
+  - 音乐：`importFiles`（歌词可视化素材包导入图片，`LyricVisualizerAssetStore`）。
   - 有声书 / TTS：`exportTranscribedSrt`（转录结果导出 SRT）、`exportTtsAudiobookM4b`（TTS 有声书导出 M4B）。
   - 阅读历史：`importSyncedBookFile`（云端列表下载单本；云同步对比那条已由 `config run sync.compare_apply` 覆盖，互联远端书库走 `InterconnectDownloadManager` 的那条还没有路由）。
   - 守卫扫不到的非 import/export 命名写操作：音乐**歌单增删改 / 加歌**、歌词搜索没有路由。**歌词单独编辑界面在功能黑名单里**（`docs/agent/feature-blacklist.md`），不做路由。

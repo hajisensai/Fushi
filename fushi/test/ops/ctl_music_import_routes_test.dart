@@ -14,10 +14,14 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/disc/music_disc_import.dart';
+import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/music_audio_intake_port.dart';
+import 'package:fushi/src/media/music/music_online_sources.dart'
+    show musicPluginSourceKey;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/ctl_music_import_routes.dart';
 import 'package:fushi/src/ops/ctl_music_routes.dart' show kMusicCtlRoot;
 import 'package:fushi/src/ops/op_context.dart';
@@ -125,6 +129,7 @@ void main() {
   late MusicAudioCdJobs cdJobs;
   late List<String> rippedImports;
   late String discDir;
+  late PreferencesRepository prefs;
 
   MusicDiscInfo discInfo(String root) {
     final String ifo = p.join(root, 'VIDEO_TS', 'VIDEO_TS.IFO');
@@ -168,11 +173,13 @@ void main() {
     discs = <String, MusicDiscInfo>{discDir: discInfo(discDir)};
     cdJobs = MusicAudioCdJobs();
     rippedImports = <String>[];
+    prefs = PreferencesRepository(db);
+    await prefs.loadFromDb();
     routes = buildMusicImportCtlRoutesFor(
       MusicImportCtlDeps(
         database: () => db,
         musicEnabled: () => true,
-        importFiles: (FushiDatabase d, List<String> paths) async {
+        intakeAudioFiles: (FushiDatabase d, List<String> paths) async {
           importedBatches.add(paths);
           return MusicAudioIntakeResult(
             importedFiles: <String>[
@@ -193,6 +200,7 @@ void main() {
         discCandidates: (String path) async =>
             discs.containsKey(path) ? <String>[path] : const <String>[],
         plugins: () => pluginsAvailable ? plugins : null,
+        prefs: () => prefs,
         exportLyrics:
             (MusicLyricsTrackRef track, String format, bool overwrite) async {
               if (track.trackUid == 'no-lyrics') return null;
@@ -544,6 +552,13 @@ void main() {
         ),
         _status(400),
       );
+      // 「来源」页里它的顺序 / 开关条目：卸载（与设置页同一方法）才清，别的来源不动。
+      await prefs.setMusicOnlineSourcesRaw(
+        serializeLyricsProviders(<LyricsProviderEntry>[
+          LyricsProviderEntry(id: musicPluginSourceKey('lyr'), enabled: false),
+          const LyricsProviderEntry(id: 'server:s1', enabled: true),
+        ]),
+      );
       await call(
         'DELETE',
         '$kMusicCtlRoot/plugins/:id',
@@ -551,6 +566,12 @@ void main() {
         body: <String, Object?>{'confirm': true},
       );
       expect(plugins.enabled, isEmpty);
+      expect(
+        parseLyricsProviders(prefs.musicOnlineSourcesRaw),
+        const <LyricsProviderEntry>[
+          LyricsProviderEntry(id: 'server:s1', enabled: true),
+        ],
+      );
     });
   });
 

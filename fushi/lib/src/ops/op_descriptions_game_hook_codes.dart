@@ -96,7 +96,8 @@ List<OpDescription> describeGameHookCodeOps(OpDescribeKit kit) {
           if (before is! String) {
             return const OpUndoOutcome.failed('撤销载荷里没有导入前的配置');
           }
-          await store.save(parseLunaHookCodeProfiles(before));
+          // 原样写回导入前的整份文本（手写注释 / 行序 / 未知列都保留），不经解析再编码。
+          await store.file.writeAsString(before, encoding: utf8, flush: true);
           return const OpUndoOutcome.done();
         },
       ),

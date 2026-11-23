@@ -18,6 +18,7 @@ import 'package:fushi/src/mining/gal_hook_failure_text.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
+import 'package:fushi/src/mining/galgame_home_selection.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
@@ -229,8 +230,9 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
   }
 
   /// [g] 在首页可见：没被「隐藏成人向」藏、也不是上锁（未解锁）的作品。
+  /// 判据与侧栏游戏速览同一份（[galgameShownOnHome]）。
   bool _shows(GalgameEntry g, {required bool hideNsfw}) =>
-      !(hideNsfw && g.isNsfw) && !_visibility.hidesGame(g.id);
+      galgameShownOnHome(g, hideNsfw: hideNsfw, visibility: _visibility);
 
   /// 首页各区块的数据源：整库去掉被隐藏的成人向条目与上锁的作品。
   List<GalgameEntry> get _visibleGames => _hideNsfw || _visibility.hidesAnything
@@ -354,44 +356,24 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     return <ActivityEventRow>[...gameRows, ...synthesizedAdds];
   }
 
-  /// 最近游玩的游戏（lastPlayedMs 最大且 > 0）；从未游玩返回 null。
-  GalgameEntry? get _recentGame {
-    GalgameEntry? best;
-    for (final GalgameEntry g in _visibleGames) {
-      if (g.lastPlayedMs <= 0) continue;
-      if (best == null || g.lastPlayedMs > best.lastPlayedMs) best = g;
-    }
-    return best;
-  }
-
   /// 最近玩过的前 4 个游戏（按 lastPlayedMs 倒序）。
   List<GalgameEntry> get _recentlyPlayed => _playedByRecency.take(4).toList();
 
   /// 全部玩过的可见游戏，按 lastPlayedMs 倒序。
   List<GalgameEntry> get _playedByRecency =>
-      _visibleGames.where((GalgameEntry g) => g.lastPlayedMs > 0).toList()
-        ..sort(
-          (GalgameEntry a, GalgameEntry b) =>
-              b.lastPlayedMs.compareTo(a.lastPlayedMs),
-        );
+      galgamePlayedByRecency(_visibleGames);
 
   /// 本机 Hook 会话正在跑的那条（会话的 exe 路径就是它的 exe）；没有为 null。
-  GalgameEntry? get _runningGame {
-    final GalHookSessionState? state = _session?.state;
-    final String? exe = state?.launchExe;
-    if (state == null || !state.isActive || exe == null || exe.isEmpty) {
-      return null;
-    }
-    final String key = _exeKey(exe);
-    for (final GalgameEntry g in _visibleGames) {
-      if (g.exePath.isNotEmpty && _exeKey(g.exePath) == key) return g;
-    }
-    return null;
-  }
+  GalgameEntry? get _runningGame =>
+      galgameRunningEntry(_visibleGames, galHookRunningExe(_session?.state));
 
-  /// Windows 路径比较口径：分隔符统一、大小写不敏感。
-  static String _exeKey(String path) =>
-      path.replaceAll('/', r'\').toLowerCase();
+  /// 「继续」首块与其余（[galgameHomeContinue]，侧栏游戏速览同一份）：运行中的
+  /// 游戏优先，否则最近玩过的；都没有时首页退到随机推荐。
+  ({GalgameEntry? hero, List<GalgameEntry> rest}) get _continue =>
+      galgameHomeContinue(
+        _visibleGames,
+        runningExe: galHookRunningExe(_session?.state),
+      );
 
   /// 随机取一个游戏：优先保留 [keep]（仍在库里就不动，避免每次重算都跳），否则随机。
   GalgameEntry? _pickRandom(List<GalgameEntry> games, {GalgameEntry? keep}) {
@@ -764,7 +746,7 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool wide = constraints.maxWidth >= 1000;
         final double page = tokens.spacing.page;
-        final GalgameEntry? hero = _recentGame ?? _random;
+        final GalgameEntry? hero = _continue.hero ?? _random;
         final List<GalgameEntry> recent = _recentlyPlayed;
         // 宽屏方案 A：最近玩过的其余游戏排在「继续游戏」主卡旁边；并排时下面那条
         // 「最近玩过」行就不再画（同一批封面不出现两次），窄屏照旧。
@@ -920,12 +902,11 @@ class _GalgameHomePageState extends ConsumerState<GalgameHomePage> {
     final double chromeTop = MediaQuery.paddingOf(context).top;
     final List<GalgameEntry> visible = _visibleGames;
     final GalgameEntry? running = _runningGame;
-    final List<GalgameEntry> played = _playedByRecency;
-    final GalgameEntry? hero =
-        running ?? (played.isNotEmpty ? played.first : _random);
+    final ({GalgameEntry? hero, List<GalgameEntry> rest}) cont = _continue;
+    final GalgameEntry? hero = cont.hero ?? _random;
     // 原侧栏 12 项 = 首块 + 3 个普通块 +「+N」列表块（其余进库页按最近游玩排序）。
     final List<GalgameEntry> rest = <GalgameEntry>[
-      for (final GalgameEntry g in played)
+      for (final GalgameEntry g in cont.rest)
         if (g.id != hero?.id) g,
     ];
     final List<GalgameEntry> continued = rest.take(3).toList();

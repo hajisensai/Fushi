@@ -5,7 +5,7 @@
 ///
 /// **三条真实陷阱**（原生侧同样写了一份，这里是给 Dart 调用方看的）：
 ///
-/// 1. **版本门**：`PictureInPictureParams` 是 API 26 才有的，而本 app minSdk 24；
+/// 1. **版本门**：`PictureInPictureParams` 是 API 26 才有的，本 app minSdk 26 已恒满足；
 ///    另外电视 / 部分定制 ROM 会整块关掉 PiP。所以「支不支持」只能问原生，不能
 ///    靠版本号在 Dart 侧猜。非 Android 平台恒 false，且**不发任何通道调用**——
 ///    那边压根没注册这条通道，发过去只会换来一个 MissingPluginException。

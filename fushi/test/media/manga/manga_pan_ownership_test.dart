@@ -38,6 +38,11 @@ String _doc({
   zoomPercent: zoomPercent,
 );
 
+/// `#manga-root` 那张过渡样式表（浮层按钮等别的规则也有自己的 transition，不能整篇搜）。
+String _rootAnimCss(String doc) => RegExp(
+  r'<style id="manga-anim-css">(.*?)</style>',
+).firstMatch(doc)!.group(1)!;
+
 /// 截出右键拖动那一支（起止锚点都是全文档唯一字面量）。
 String _rightDragBranch(String doc) {
   const String head = 'if (rightDrag.moved && ZOOM > 1) {';
@@ -152,13 +157,13 @@ void main() {
 
     test('翻页动画本身不受影响：slide 仍声明 transition:transform', () {
       expect(
-        _doc().contains('transition:transform '),
+        _rootAnimCss(_doc()).contains('transition:transform '),
         isTrue,
         reason: '只是首次定位不走过渡，翻页动画偏好照旧生效',
       );
       expect(
-        _doc(
-          animation: MangaPageAnimation.none,
+        _rootAnimCss(
+          _doc(animation: MangaPageAnimation.none),
         ).contains('transition:transform '),
         isFalse,
       );

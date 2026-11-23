@@ -6,16 +6,29 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart'
     show isLocalMangaVolume;
 import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart';
+import 'package:fushi/src/media/downloads/download_task_browser.dart'
+    show downloadTaskStatusLabel, selectDownloadTasks;
+import 'package:fushi/src/media/downloads/download_task_entry.dart'
+    show DownloadTaskEntry, DownloadTaskStatus;
 import 'package:fushi/src/media/media_item.dart';
-import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/collections/book_continue.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
+    show filterShelfEntriesByMangaSplit;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show localMediaServerItemKeyOfVideo;
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi_engine/privacy/media_nsfw.dart';
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
+import 'package:fushi/src/mining/gal_hook_session_controller.dart'
+    show GalHookSessionController;
+import 'package:fushi/src/mining/galgame_home_selection.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/mining/galgame_library_query.dart'
+    show GalgameLibraryView;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart'
@@ -23,11 +36,29 @@ import 'package:fushi/src/media/music/music_output_backend.dart'
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/models/module_registry.dart' show moduleOfHomeTab;
+import 'package:fushi/src/media/audiobook/audiobook_transcribe_tasks_section.dart'
+    show AudiobookTranscribeTasksSection;
+import 'package:fushi/src/media/discovery/discovery_download_tasks_section.dart'
+    show DiscoveryDownloadTasksSection;
+import 'package:fushi/src/media/downloads/download_task_share.dart';
+import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart'
+    show MangaDownloadTaskSources, mangaDownloadTaskSnapshot;
+import 'package:fushi/src/pages/implementations/anime_download_dialog.dart'
+    show animeDownloadTaskSnapshot;
+import 'package:fushi/src/pages/implementations/download_task_sources.dart'
+    show DownloadTaskSource, collectDownloadTaskSnapshot;
+import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart'
+    show interconnectDownloadTaskEntries;
+import 'package:fushi/src/pages/implementations/video_download_jobs_panel.dart'
+    show videoDownloadJobTaskEntry;
+import 'package:fushi/src/sync/interconnect_download_manager.dart'
+    show interconnectDownloadManagerProvider;
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart'
     show fushiWebBrowserRoute, openFushiWebBrowser;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
-    show MusicEmbeddedCoverCache;
+    show MusicEmbeddedCoverCache, musicCoverImageProvider;
+import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
+    show musicNowPlayingByline;
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
@@ -40,7 +71,15 @@ import 'package:fushi/src/web_browser/data/web_browser_store_provider.dart';
 import 'package:fushi/src/web_browser/web_browser_prefs.dart'
     show webBrowserRestoreTabs;
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
-    show openLocalVideoBook;
+    show openLocalVideoBook, openRemoteVideoStream;
+import 'package:fushi/src/media/video/video_continue_watching.dart';
+import 'package:fushi/src/media/video/video_duration_pref.dart'
+    show videoDurationMsFromPref, videoDurationPrefKey;
+import 'package:fushi/src/sync/remote_cover_image.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoClient, RemoteVideoSource;
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteVideoInfo;
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart'
     show SrsReviewCell;
@@ -50,7 +89,8 @@ import 'package:fushi_engine/media/collections/collection_cover.dart'
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
-import 'package:fushi/src/utils/cover_image.dart' show resizedFileImage;
+import 'package:fushi/src/utils/cover_image.dart'
+    show kLocalCoverDecodePixelWidth, resizedFileImage;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -64,14 +104,37 @@ import 'package:fushi_core/fushi_core.dart'
         VideoBookRow,
         VideoMetadataImageRow,
         VideoMetadataWorkRow,
-        VideoDownloadJobLifecycle,
-        VideoDownloadJobRow;
+        VideoDownloadJobRow,
+        VideoFileSpecRow,
+        kActivityMediaVideo;
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
-import 'package:fushi_engine/media/collections/shelf_sort.dart'
-    show ShelfReadStatus, classifyShelfReadStatus;
 import 'package:fushi_dictionary/fushi_dictionary.dart'
     show Dictionary, DictionarySearchResult, JapaneseLanguage;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/pages/implementations/home_continue_compose.dart';
+import 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart'
+    show DashboardVideoProgress, dashboardVideoContinueProgress;
+import 'package:fushi/src/pages/implementations/home_dashboard_derived.dart'
+    show HomeDashboardVideoIndex;
+import 'package:fushi/src/sync/interconnect_sync_backend.dart'
+    show InterconnectSyncBackend;
+import 'package:fushi/src/utils/misc/dashboard_remote_continue_feed.dart'
+    show RemoteContinueFeed;
+import 'package:fushi/src/utils/misc/dashboard_remote_merge.dart'
+    show RemoteContinueCandidate;
+import 'package:fushi/src/utils/misc/dashboard_server_continue.dart'
+    show ServerContinueCandidate;
+import 'package:fushi/src/utils/misc/dashboard_server_continue_feed.dart'
+    show ServerContinueFeed;
+import 'package:fushi/src/utils/misc/dashboard_server_continue_gates.dart'
+    show serverContinueGates;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/media/collections/book_series_key.dart'
+    show collectionMemberVolumeNumber;
+import 'package:fushi_engine/media/video/m3u8_playlist.dart'
+    show playlistEpisodeCount;
+import 'package:fushi_engine/stats/stat_facts.dart'
+    show StatFacts, StatFactsScope, loadStatFacts;
 import 'package:material_ui/material_ui.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/src/media/media_source.dart';
@@ -104,13 +167,13 @@ RoundedPolygon homeNavRailShapeFor(HomeTab tab) => switch (tab) {
 /// 「最近」= 其余顶层牌组；浏览给下载任务：「继续」= 最近更新的进行中任务（带
 /// 进度），「最近」= 其余最近更新的任务（2026-10-25 用户「侧边栏预览给复习和
 /// 浏览加一下」）。2026-10-26 用户「所有的都支持一下」补齐其余目的地：首页 =
-/// 书 / 漫画 / 视频 / 游戏按最近时刻混排（与 dashboard「继续」同口径，关掉的
-/// 模块不进）；音乐 = 正在播放 + 最近播放（按专辑折叠）；查词 = 查词历史（没有
+/// 与 dashboard「继续」区同一份 [composeHomeContinue] 编排（含互联远端、服务器条目，
+/// BUG-5331）；音乐 = 正在播放 + 最近播放（按专辑折叠）；查词 = 查词历史（没有
 /// 历史时列已装词典）；网页 = 上次的标签页 + 浏览历史；设置 = 最近打开的分类
 /// （还没打开过时列前几个分类）。
 ///
-/// 口径对齐首页 dashboard 的「继续」区：书按 `reader_positions.updatedAt` 排、
-/// 只把「在读」的书当继续项（与首页同一判据 [classifyShelfReadStatus]）；视频按最后播放时刻；
+/// 口径对齐各自打开的库页：书 / 漫画的继续项与书架顶部「继续阅读」、首页「继续」
+/// 区同一份 [selectMediaItemContinueCandidates]（合集 Next-Up、散书只收在读）；视频按最后播放时刻；
 /// 游戏按最后游玩时刻、没有完成度。打开方式也与首页同：书 / 漫画进阅读器、
 /// 视频进播放页、游戏切到游戏库（首页同样不直接启动游戏）。
 AdaptiveNavPeek homeNavPeekFor(
@@ -150,7 +213,9 @@ AdaptiveNavPeek homeNavPeekFor(
         load: () async => (await _loadVideos(
           appModel: appModel,
           repo: videoRepo(),
+          share: ref.read(videoContinueShareProvider),
           contextOf: contextOf,
+          openVideoTab: () => goToTab(HomeTab.video),
         )).toData(),
       );
     case HomeTab.games:
@@ -199,8 +264,11 @@ AdaptiveNavPeek homeNavPeekFor(
       );
     case HomeTab.browse:
       return AdaptiveNavPeek(
-        load: () =>
-            _loadDownloads(appModel: appModel, openDownloads: openDownloads),
+        load: () => _loadDownloads(
+          ref: ref,
+          appModel: appModel,
+          openDownloads: openDownloads,
+        ),
       );
   }
 }
@@ -236,6 +304,64 @@ Future<Map<String, _MangaPeekAudio>> _loadMangaPeekAudio(
   return out;
 }
 
+/// 书 / 漫画速览「最近」里的一项：继续阅读候选，或最近读过、不在继续阅读里的
+/// 条目（按合集折叠后的单元，如整套读完的系列）。二者恰一非空。
+typedef BookNavPeekItem<T> = ({
+  BookContinueCandidate<T>? candidate,
+  NavPeekUnit<T>? read,
+});
+
+/// 续读候选在速览里的副行前缀：「第 N 卷」（卷号判据同首页继续卡徽标，
+/// [BookContinueCandidate.volumeNumber]），单卷合集退回合集名，散书 null。
+String? bookNavPeekSeriesCue(
+  BookContinueCandidate<MediaItem> candidate, {
+  String? collectionName,
+}) {
+  final num? volume = candidate.volumeNumber(bookContinueDisplayTitle);
+  if (volume != null) return t.home_continue_volume(n: volume);
+  return candidate.isSeries ? collectionName : null;
+}
+
+/// 书 / 漫画速览的编排（纯函数，BUG-5332）：「继续」= 继续阅读第一项（与书架 /
+/// 漫画库顶部「继续阅读」主卡同一份 [selectBookContinueCandidates] 结果）；
+/// 「最近」= 其余继续阅读候选，再接最近读过的其它条目（按合集折叠，已在继续阅读
+/// 里的合集 / 散书不再重复）。只看本机书架（与它打开的库页一致，不混互联远端）。
+({BookContinueCandidate<T>? resume, List<BookNavPeekItem<T>> recent})
+planBookNavPeek<T>({
+  required List<BookContinueCandidate<T>> candidates,
+  required List<T> recentlyRead,
+  required String Function(T item) compositeKeyOf,
+  required Map<String, int> primaryCollectionIdByEntry,
+  required Map<int, MediaCollectionRow> collectionsById,
+  int recentCount = _kPeekRecentCount,
+}) {
+  final Set<int> coveredCollections = <int>{
+    for (final BookContinueCandidate<T> c in candidates)
+      if (c.collectionId case final int id) id,
+  };
+  final Set<T> coveredItems = <T>{
+    for (final BookContinueCandidate<T> c in candidates)
+      if (!c.isSeries) c.item,
+  };
+  return (
+    resume: candidates.firstOrNull,
+    recent: <BookNavPeekItem<T>>[
+      for (final BookContinueCandidate<T> c in candidates.skip(1))
+        (candidate: c, read: null),
+      for (final NavPeekUnit<T> unit in foldNavPeekByCollection<T>(
+        recentFirst: recentlyRead,
+        compositeKeyOf: compositeKeyOf,
+        primaryCollectionIdByEntry: primaryCollectionIdByEntry,
+        collectionsById: collectionsById,
+      ))
+        if (unit.collectionId == null
+            ? !coveredItems.contains(unit.item)
+            : !coveredCollections.contains(unit.collectionId))
+          (candidate: null, read: unit),
+    ].take(recentCount).toList(),
+  );
+}
+
 Future<NavPeekFeed> _loadBooks({
   required WidgetRef ref,
   required AppModel appModel,
@@ -246,7 +372,8 @@ Future<NavPeekFeed> _loadBooks({
   final MediaVisibility lockVisibility = await MediaVisibility.load(
     appModel.database,
   );
-  final List<MediaItem> all = <MediaItem>[
+  // 与库页同一条书 / 漫画分架谓词（[filterShelfEntriesByMangaSplit]）。
+  final List<MediaItem> all = filterShelfEntriesByMangaSplit(<MediaItem>[
     for (final MediaItem item in await ref.read(
       fushiBooksProvider(JapaneseLanguage.instance).future,
     ))
@@ -254,7 +381,7 @@ Future<NavPeekFeed> _loadBooks({
           case final String? key
           when key == null || !lockVisibility.hidesBook(key))
         item,
-  ];
+  ], mangaOnly: manga);
   final Map<String, int> lastReadByUid = await ref.read(
     bookLastReadAtProvider.future,
   );
@@ -273,23 +400,51 @@ Future<NavPeekFeed> _loadBooks({
   }
 
   final _NavPeekCollections collections = await _loadCollections(appModel);
+  final Map<String, int> memberSortIndex = await loadPrimaryMemberSortIndex(
+    appModel.database,
+    collections.primaryByEntry,
+  );
   final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
-  final List<MediaItem> read =
-      all
-          .where(
-            (MediaItem item) =>
-                (item.mediaSourceIdentifier == MangaFushiSource.kUniqueKey) ==
-                    manga &&
-                recentOf(item) > 0,
-          )
-          .toList()
-        ..sort((MediaItem a, MediaItem b) => recentOf(b) - recentOf(a));
+  String compositeKeyOf(MediaItem item) => bookCollectionEntryKey(
+    item,
+    epubUidByKey: uidByKey,
+    primaryCollectionIdByEntry: collections.primaryByEntry,
+  );
+  final ({
+    BookContinueCandidate<MediaItem>? resume,
+    List<BookNavPeekItem<MediaItem>> recent,
+  })
+  plan = planBookNavPeek<MediaItem>(
+    candidates: selectMediaItemContinueCandidates(
+      books: all,
+      lastReadAtByUid: lastReadByUid,
+      epubUidByKey: uidByKey,
+      completedBookKeys: completed,
+      primaryCollectionIdByEntry: collections.primaryByEntry,
+      collectionIds: collections.byId.keys.toSet(),
+      memberSortIndex: memberSortIndex,
+    ),
+    recentlyRead: all.where((MediaItem item) => recentOf(item) > 0).toList()
+      ..sort((MediaItem a, MediaItem b) => recentOf(b) - recentOf(a)),
+    compositeKeyOf: compositeKeyOf,
+    primaryCollectionIdByEntry: collections.primaryByEntry,
+    collectionsById: collections.byId,
+  );
   // 漫画行的有声入口（2026-11-20 反馈 #6）：已有有声版常显「有声」签，没有的
   // 悬停 / 聚焦时给「加声音」打开有声漫画工作台。生成 / 导入受听书模块门控。
   Map<String, _MangaPeekAudio> audio = const <String, _MangaPeekAudio>{};
-  AdaptiveNavPeekEntry entryOf(MediaItem item, {String? collection}) {
-    final String itemTitle = ReaderFushiSource.instance
-        .getDisplayTitleFromMediaItem(item);
+  if (manga && appModel.moduleVisibility.isEnabled(ModuleId.listening)) {
+    audio = await _loadMangaPeekAudio(appModel, <String>[
+      if (plan.resume case final BookContinueCandidate<MediaItem> c)
+        keyOf(c.item),
+      for (final BookNavPeekItem<MediaItem> e in plan.recent)
+        keyOf(e.candidate?.item ?? e.read!.item),
+    ]);
+  }
+  // 条目呈现：标题恒为这一卷的书名（与书架 hero、首页继续卡同一份
+  // [bookContinueDisplayTitle]）；副行 = 「第 N 卷」（续读候选，卷号判据同首页
+  // 徽标）或合集名（最近读过的折叠单元）· 进度。
+  AdaptiveNavPeekEntry entryOf(MediaItem item, {String? seriesCue}) {
     final ImageProvider image = ReaderFushiSource.instance
         .getDisplayThumbnailFromMediaItem(appModel: appModel, item: item);
     final bool noCover =
@@ -301,7 +456,7 @@ Future<NavPeekFeed> _loadBooks({
     final _MangaPeekAudio? audioState = audio[bookKey];
     final bool hasAudio = audioState == _MangaPeekAudio.ready;
     return AdaptiveNavPeekEntry(
-      title: collection ?? itemTitle,
+      title: bookContinueDisplayTitle(item),
       cover: noCover ? null : image,
       blurCover: nsfw(MediaNsfwTarget.book(bookKey)),
       status: hasAudio ? t.manga_audio_workbench_has_audio : null,
@@ -320,7 +475,7 @@ Future<NavPeekFeed> _loadBooks({
           : null,
       progress: progress,
       subtitle: _peekSubtitle(
-        collection == null ? null : itemTitle,
+        seriesCue,
         progress == null ? null : '${(progress * 100).round()}%',
       ),
       onOpen: () => unawaited(
@@ -333,147 +488,310 @@ Future<NavPeekFeed> _loadBooks({
     );
   }
 
-  // 与书架同一份折叠：同一系列 / 合集只占一项，由其最近读过的那本代表
-  // （2026-10-25 用户「侧栏预览系列和合集没正确显示」：此前逐本列，同一系列
-  // 的几卷各占一格、标题是单卷名）。合集身份键与书架同为 `epub|<uid>`。
-  final List<NavPeekUnit<MediaItem>> units = foldNavPeekByCollection<MediaItem>(
-    recentFirst: read,
-    compositeKeyOf: (MediaItem item) {
-      final String key = keyOf(item);
-      return MediaKind.epub.compositeKey(uidByKey[key] ?? key);
-    },
-    primaryCollectionIdByEntry: collections.primaryByEntry,
-    collectionsById: collections.byId,
+  NavPeekTimed candidateTimed(BookContinueCandidate<MediaItem> c) => (
+    at: c.recentMs,
+    entry: entryOf(
+      c.item,
+      seriesCue: bookNavPeekSeriesCue(
+        c,
+        collectionName: collections.byId[c.collectionId]?.name,
+      ),
+    ),
   );
-  final NavPeekUnit<MediaItem>? resume = units
-      .where(
-        (NavPeekUnit<MediaItem> unit) =>
-            classifyShelfReadStatus(
-              completed: completed.contains(keyOf(unit.item)),
-              position: unit.item.position,
-              duration: unit.item.duration,
-            ) ==
-            ShelfReadStatus.reading,
-      )
-      .firstOrNull;
-  final List<NavPeekUnit<MediaItem>> recentUnits = units
-      .where((NavPeekUnit<MediaItem> unit) => !identical(unit, resume))
-      .take(_kPeekRecentCount)
-      .toList();
-  if (manga && appModel.moduleVisibility.isEnabled(ModuleId.listening)) {
-    audio = await _loadMangaPeekAudio(appModel, <String>[
-      if (resume != null) keyOf(resume.item),
-      for (final NavPeekUnit<MediaItem> unit in recentUnits) keyOf(unit.item),
-    ]);
-  }
-  NavPeekTimed timed(NavPeekUnit<MediaItem> unit) => (
-    at: recentOf(unit.item),
-    entry: entryOf(unit.item, collection: unit.collectionName),
-  );
+
   return NavPeekFeed(
-    resume: resume == null ? null : timed(resume),
-    recent: recentUnits.map(timed).toList(),
+    resume: plan.resume == null ? null : candidateTimed(plan.resume!),
+    recent: <NavPeekTimed>[
+      for (final BookNavPeekItem<MediaItem> e in plan.recent)
+        if (e.candidate case final BookContinueCandidate<MediaItem> c)
+          candidateTimed(c)
+        else
+          (
+            at: recentOf(e.read!.item),
+            entry: entryOf(e.read!.item, seriesCue: e.read!.collectionName),
+          ),
+    ],
+  );
+}
+
+/// 速览「最近」里的一项：继续观看候选，或最近播放过、不在继续观看里的本地条目
+/// （按合集折叠后的单元）。二者恰一非空。
+typedef VideoNavPeekItem = ({
+  VideoContinueCandidate? candidate,
+  NavPeekUnit<VideoBookRow>? played,
+});
+
+/// 视频速览的编排（纯函数）：「继续」= 继续观看第一项（与视频首页首屏主卡同一份
+/// [selectVideoContinueCandidates] 结果）；「最近」= 其余继续观看候选，再接最近播放
+/// 过的其它本地条目（按合集折叠，已在继续观看里的合集 / 散片不再重复）。
+({VideoContinueCandidate? resume, List<VideoNavPeekItem> recent})
+planVideoNavPeek({
+  required List<VideoContinueCandidate> candidates,
+  required List<VideoBookRow> recentlyPlayed,
+  required Map<String, int> primaryCollectionIdByEntry,
+  required Map<int, MediaCollectionRow> collectionsById,
+  int recentCount = _kPeekRecentCount,
+}) {
+  final Set<int> coveredCollections = <int>{};
+  final Set<String> coveredUids = <String>{};
+  for (final VideoContinueCandidate c in candidates) {
+    switch (c) {
+      case VideoContinueSeriesCandidate(:final MediaCollectionRow collection):
+        coveredCollections.add(collection.id);
+      case VideoContinueLocalCandidate(:final VideoBookRow book):
+        coveredUids.add(book.bookUid);
+      case VideoContinueRemoteCandidate(:final RemoteVideoInfo video):
+        coveredUids.add(video.id);
+    }
+  }
+  final List<NavPeekUnit<VideoBookRow>> played = <NavPeekUnit<VideoBookRow>>[
+    for (final NavPeekUnit<VideoBookRow> unit
+        in foldNavPeekByCollection<VideoBookRow>(
+          recentFirst: recentlyPlayed,
+          compositeKeyOf: (VideoBookRow v) =>
+              MediaKind.video.compositeKey(v.bookUid),
+          primaryCollectionIdByEntry: primaryCollectionIdByEntry,
+          collectionsById: collectionsById,
+        ))
+      if (unit.collectionId == null
+          ? !coveredUids.contains(unit.item.bookUid)
+          : !coveredCollections.contains(unit.collectionId))
+        unit,
+  ];
+  return (
+    resume: candidates.firstOrNull,
+    recent: <VideoNavPeekItem>[
+      for (final VideoContinueCandidate c in candidates.skip(1))
+        (candidate: c, played: null),
+      for (final NavPeekUnit<VideoBookRow> unit in played)
+        (candidate: null, played: unit),
+    ].take(recentCount).toList(),
   );
 }
 
 Future<NavPeekFeed> _loadVideos({
   required AppModel appModel,
   required VideoBookRepository repo,
+  required VideoContinueShare share,
   required BuildContext Function() contextOf,
+  required VoidCallback openVideoTab,
 }) async {
-  final _NavPeekCollections collections = await _loadCollections(appModel);
   final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
   final MediaVisibility lockVisibility = await MediaVisibility.load(
     appModel.database,
   );
-  final List<VideoBookRow> rows =
-      (await repo.listForShelf())
-          .where(
-            (VideoBookRow v) =>
-                (v.lastPlayedAt ?? 0) > 0 &&
-                !lockVisibility.hidesVideo(v.bookUid),
-          )
-          .toList()
+  final VideoContinueLibrary library = await loadVideoContinueLibrary(
+    appModel.database,
+    listBooks: repo.listForShelf,
+  );
+  int? durationMsOf(String bookUid) => videoDurationMsFromPref(
+    appModel.prefsRepo.getPref(videoDurationPrefKey(bookUid)),
+  );
+  final VideoContinueInputs inputs = library.inputs(durationMsOf: durationMsOf);
+  // 上锁（未解锁）的视频与上锁合集里的视频不进速览（与视频页同口径）。
+  bool hiddenByCollection(VideoBookRow b) {
+    final int? cid = inputs.collectionIdByUid[b.bookUid];
+    return cid != null && lockVisibility.hidesCollection(cid);
+  }
+
+  final List<VideoBookRow> visible = <VideoBookRow>[
+    for (final VideoBookRow b in library.books)
+      if (!lockVisibility.hidesVideo(b.bookUid) && !hiddenByCollection(b)) b,
+  ];
+  // 与视频首页同一个纯函数、同一批表现算（每次悬停都按此刻的库与上锁口径，不吃
+  // 视频页可能已过期的结果）；远端清单只用视频页取到的那份（速览本身不发网络请求）。
+  final List<VideoContinueCandidate> candidates = selectVideoContinueCandidates(
+    local: visible,
+    remote: visibleHomeRemoteVideos(
+      remote: share.remoteVideos ?? const <RemoteVideoInfo>[],
+      local: visible,
+      primaryCollectionByEntry: library.primaryCollectionByEntry,
+      visibility: lockVisibility,
+      showRemoteEntries: appModel.prefsRepo.showRemoteEntries,
+    ),
+    inputs: inputs,
+  );
+  final List<VideoBookRow> recentlyPlayed =
+      visible.where((VideoBookRow v) => (v.lastPlayedAt ?? 0) > 0).toList()
         ..sort(
           (VideoBookRow a, VideoBookRow b) =>
               (b.lastPlayedAt ?? 0) - (a.lastPlayedAt ?? 0),
         );
-  AdaptiveNavPeekEntry entryOf(
-    VideoBookRow v, {
-    String? collection,
-    int? collectionId,
-    ImageProvider? collectionCover,
-  }) {
+  final ({VideoContinueCandidate? resume, List<VideoNavPeekItem> recent}) plan =
+      planVideoNavPeek(
+        candidates: candidates,
+        recentlyPlayed: recentlyPlayed,
+        primaryCollectionIdByEntry: library.primaryCollectionByEntry,
+        collectionsById: library.collectionsById,
+      );
+  final RemoteVideoSource? remoteSource = share.remoteSource;
+
+  // 合集项用合集自己的封面（与视频库合集卡同一条链），不是最近那一集的抽帧
+  // 截图——否则一排都是分集画面，认不出是哪部剧。只查要显示的那几个合集。
+  final Map<int, ImageProvider> covers = <int, ImageProvider>{};
+  Future<void> loadCover(int? cid) async {
+    if (cid == null || covers.containsKey(cid)) return;
+    final MediaCollectionRow? collection = library.collectionsById[cid];
+    if (collection == null) return;
+    final ImageProvider? cover = await _videoCollectionCover(
+      appModel,
+      collection,
+    );
+    if (cover != null) covers[cid] = cover;
+  }
+
+  for (final VideoContinueCandidate? c in <VideoContinueCandidate?>[
+    plan.resume,
+    for (final VideoNavPeekItem item in plan.recent) item.candidate,
+  ]) {
+    if (c is VideoContinueSeriesCandidate) await loadCover(c.collection.id);
+  }
+  for (final VideoNavPeekItem item in plan.recent) {
+    await loadCover(item.played?.collectionId);
+  }
+
+  ImageProvider? localCover(VideoBookRow v) {
     final String? cover = v.coverPath;
+    return cover == null || cover.isEmpty || !File(cover).existsSync()
+        ? null
+        : resolveMediaCoverImage(kind: MediaKind.video, localPath: cover);
+  }
+
+  ImageProvider? remoteCover(RemoteVideoInfo v) {
+    final String? path = v.coverPath;
+    if (path != null && path.isNotEmpty && File(path).existsSync()) {
+      return resizedFileImage(File(path));
+    }
+    final String? url = v.coverUrl;
+    final RemoteCoverFetcher? fetcher = remoteCoverFetcherFor(remoteSource);
+    if (url == null || url.isEmpty || fetcher == null) return null;
+    return ResizeImage(
+      RemoteCoverImage(url, fetcher, cacheKey: v.id),
+      width: kLocalCoverDecodePixelWidth,
+      allowUpscaling: false,
+    );
+  }
+
+  void openLocal(VideoBookRow v, {int? collectionId}) {
+    final BuildContext context = contextOf();
+    if (!context.mounted) return;
+    unawaited(
+      openLocalVideoBook(
+        context: context,
+        repo: repo,
+        bookUid: v.bookUid,
+        playlistCollectionId: collectionId,
+      ),
+    );
+  }
+
+  // 远端那集与视频页远端卡同一条流播入口；来源没有 live 能力（云盘）或清单已不
+  // 可用时切到视频页，由视频页的下载 / 不可达提示接手。
+  void openRemote(RemoteVideoInfo v) {
+    final BuildContext context = contextOf();
+    if (!context.mounted) return;
+    final RemoteVideoSource? source = remoteSource;
+    if (source is RemoteVideoClient) {
+      unawaited(
+        openRemoteVideoStream(
+          context: context,
+          repo: repo,
+          client: source,
+          video: v,
+        ),
+      );
+    } else {
+      openVideoTab();
+    }
+  }
+
+  double? fraction(int positionMs, int? durationMs) =>
+      positionMs <= 0 || durationMs == null || durationMs <= 0
+      ? null
+      : (positionMs / durationMs).clamp(0.0, 1.0);
+
+  AdaptiveNavPeekEntry candidateEntry(VideoContinueCandidate c) {
+    switch (c) {
+      case VideoContinueSeriesCandidate():
+        final VideoHomeSlot target = c.target;
+        final int cid = c.collection.id;
+        final VideoBookRow? local = target.local;
+        final RemoteVideoInfo? remote = target.remote;
+        return AdaptiveNavPeekEntry(
+          title: c.title,
+          subtitle: videoContinueSeriesSubtitle(c),
+          blurCover:
+              nsfw(MediaNsfwTarget.collection(cid)) ||
+              (local != null && nsfw(MediaNsfwTarget.video(local.bookUid))),
+          cover:
+              covers[cid] ??
+              (local != null ? localCover(local) : remoteCover(remote!)),
+          progress:
+              (local != null
+                  ? fraction(local.lastPositionMs, durationMsOf(local.bookUid))
+                  : fraction(remote!.positionMs, remote.durationMs)) ??
+              c.completedCount / c.members.length,
+          onOpen: () => local != null
+              ? openLocal(local, collectionId: cid)
+              : openRemote(remote!),
+        );
+      case VideoContinueLocalCandidate(:final VideoBookRow book):
+        return AdaptiveNavPeekEntry(
+          title: book.title,
+          blurCover: nsfw(MediaNsfwTarget.video(book.bookUid)),
+          cover: localCover(book),
+          subtitle: t.video_watched_up_to(
+            time: formatVideoPosition(book.lastPositionMs),
+          ),
+          progress: fraction(book.lastPositionMs, durationMsOf(book.bookUid)),
+          onOpen: () => openLocal(book),
+        );
+      case VideoContinueRemoteCandidate(:final RemoteVideoInfo video):
+        return AdaptiveNavPeekEntry(
+          title: video.title,
+          cover: remoteCover(video),
+          subtitle: t.video_watched_up_to(
+            time: formatVideoPosition(video.positionMs),
+          ),
+          progress: fraction(video.positionMs, video.durationMs),
+          onOpen: () => openRemote(video),
+        );
+    }
+  }
+
+  AdaptiveNavPeekEntry playedEntry(NavPeekUnit<VideoBookRow> unit) {
+    final VideoBookRow v = unit.item;
+    final int? cid = unit.collectionId;
+    final ImageProvider? collectionCover = cid == null ? null : covers[cid];
     return AdaptiveNavPeekEntry(
-      title: collection ?? v.title,
+      title: unit.collectionName ?? v.title,
       // 这一集自己（含所在 NSFW 合集）；用的是合集封面时再看合集。
       blurCover:
           nsfw(MediaNsfwTarget.video(v.bookUid)) ||
           (collectionCover != null &&
-              collectionId != null &&
-              nsfw(MediaNsfwTarget.collection(collectionId))),
-      cover:
-          collectionCover ??
-          (cover == null || cover.isEmpty || !File(cover).existsSync()
-              ? null
-              : resolveMediaCoverImage(
-                  kind: MediaKind.video,
-                  localPath: cover,
-                )),
+              cid != null &&
+              nsfw(MediaNsfwTarget.collection(cid))),
+      cover: collectionCover ?? localCover(v),
       subtitle: _peekSubtitle(
-        collection == null ? null : v.title,
+        unit.collectionName == null ? null : v.title,
         v.lastPositionMs > 0 ? formatVideoPosition(v.lastPositionMs) : null,
       ),
-      onOpen: () {
-        final BuildContext context = contextOf();
-        if (!context.mounted) return;
-        unawaited(
-          openLocalVideoBook(context: context, repo: repo, bookUid: v.bookUid),
-        );
-      },
+      onOpen: () => openLocal(v, collectionId: cid),
     );
   }
 
-  // 多季 / 合集与视频库同一份折叠（身份键 `video|<bookUid>`）。
-  final List<NavPeekUnit<VideoBookRow>> units =
-      foldNavPeekByCollection<VideoBookRow>(
-        recentFirst: rows,
-        compositeKeyOf: (VideoBookRow v) =>
-            MediaKind.video.compositeKey(v.bookUid),
-        primaryCollectionIdByEntry: collections.primaryByEntry,
-        collectionsById: collections.byId,
-      );
-  // 合集项用合集自己的封面（与视频库合集卡同一条链），不是最近那一集的抽帧
-  // 截图——否则一排都是分集画面，认不出是哪部剧（2026-10-25 用户「视频没有
-  // 看到系列」）。只查要显示的那几个合集。
-  final List<NavPeekUnit<VideoBookRow>> shown = units
-      .take(_kPeekRecentCount + 1)
-      .toList();
-  final Map<int, ImageProvider> covers = <int, ImageProvider>{};
-  for (final NavPeekUnit<VideoBookRow> unit in shown) {
-    final int? cid = unit.collectionId;
-    if (cid == null || covers.containsKey(cid)) continue;
-    final ImageProvider? cover = await _videoCollectionCover(
-      appModel,
-      collections.byId[cid]!,
-    );
-    if (cover != null) covers[cid] = cover;
-  }
-  NavPeekTimed unitEntry(NavPeekUnit<VideoBookRow> unit) => (
-    at: unit.item.lastPlayedAt ?? 0,
-    entry: entryOf(
-      unit.item,
-      collection: unit.collectionName,
-      collectionId: unit.collectionId,
-      collectionCover: unit.collectionId == null
-          ? null
-          : covers[unit.collectionId],
-    ),
-  );
+  final VideoContinueCandidate? resume = plan.resume;
   return NavPeekFeed(
-    resume: shown.isEmpty ? null : unitEntry(shown.first),
-    recent: shown.skip(1).map(unitEntry).toList(),
+    resume: resume == null
+        ? null
+        : (at: resume.recentMs, entry: candidateEntry(resume)),
+    recent: <NavPeekTimed>[
+      for (final VideoNavPeekItem item in plan.recent)
+        if (item.candidate case final VideoContinueCandidate c)
+          (at: c.recentMs, entry: candidateEntry(c))
+        else if (item.played case final NavPeekUnit<VideoBookRow> unit)
+          (at: unit.item.lastPlayedAt ?? 0, entry: playedEntry(unit)),
+    ],
   );
 }
 
@@ -488,34 +806,58 @@ Future<NavPeekFeed> _loadGames({
   final MediaVisibility lockVisibility = await MediaVisibility.load(
     appModel.database,
   );
-  final List<GalgameEntry> played =
-      games
-          .where(
-            (GalgameEntry g) =>
-                g.lastPlayedMs > 0 && !lockVisibility.hidesGame(g.id),
-          )
-          .toList()
-        ..sort(
-          (GalgameEntry a, GalgameEntry b) => b.lastPlayedMs - a.lastPlayedMs,
-        );
-  NavPeekTimed entryOf(GalgameEntry g) {
-    final String? cover = g.coverPath;
-    return (
-      at: g.lastPlayedMs,
-      entry: AdaptiveNavPeekEntry(
+  return navPeekGamesFeed(
+    games,
+    hideNsfw: GalgameLibraryView.decode(appModel.galgameLibraryView).hideNsfw,
+    visibility: lockVisibility,
+    // galgame Hook 只做 Windows（与游戏首页 `_session` 同一判据）。
+    runningExe: Platform.isWindows
+        ? galHookRunningExe(GalHookSessionController.instance.state)
+        : null,
+    nowMs: DateTime.now().millisecondsSinceEpoch,
+    entryOf: (GalgameEntry g) {
+      final String? cover = g.coverPath;
+      return AdaptiveNavPeekEntry(
         title: g.displayName,
         cover: cover == null || cover.isEmpty || !File(cover).existsSync()
             ? null
             : resolveMediaCoverImage(kind: MediaKind.game, localPath: cover),
         blurCover: nsfw(MediaNsfwTarget.game(g.id, adult: g.isNsfw)),
         onOpen: open,
-      ),
-    );
-  }
+      );
+    },
+  );
+}
 
+/// 游戏速览：与游戏首页同一份可见口径（[galgameShownOnHome]：「隐藏成人向」偏好
+/// + 上锁）与同一份「继续」选取（[galgameHomeContinue]：正在运行的游戏优先，
+/// 从没玩过也算；否则最近玩过的）。正在运行的那条按此刻 [nowMs] 计时（首页速览
+/// 混排时它就是最近的）。
+NavPeekFeed navPeekGamesFeed(
+  List<GalgameEntry> games, {
+  required bool hideNsfw,
+  required MediaVisibility visibility,
+  required String? runningExe,
+  required int nowMs,
+  required AdaptiveNavPeekEntry Function(GalgameEntry game) entryOf,
+}) {
+  final List<GalgameEntry> visible = <GalgameEntry>[
+    for (final GalgameEntry g in games)
+      if (galgameShownOnHome(g, hideNsfw: hideNsfw, visibility: visibility)) g,
+  ];
+  final ({GalgameEntry? hero, List<GalgameEntry> rest}) cont =
+      galgameHomeContinue(visible, runningExe: runningExe);
+  final GalgameEntry? hero = cont.hero;
+  final bool heroRunning =
+      hero != null && galgameRunningEntry(visible, runningExe)?.id == hero.id;
   return NavPeekFeed(
-    resume: played.isEmpty ? null : entryOf(played.first),
-    recent: played.skip(1).take(_kPeekRecentCount).map(entryOf).toList(),
+    resume: hero == null
+        ? null
+        : (at: heroRunning ? nowMs : hero.lastPlayedMs, entry: entryOf(hero)),
+    recent: <NavPeekTimed>[
+      for (final GalgameEntry g in cont.rest.take(_kPeekRecentCount))
+        (at: g.lastPlayedMs, entry: entryOf(g)),
+    ],
   );
 }
 
@@ -607,97 +949,138 @@ Future<AdaptiveNavPeekData> _loadSrsDecks({
 }
 
 Future<AdaptiveNavPeekData> _loadDownloads({
+  required WidgetRef ref,
   required AppModel appModel,
   required VoidCallback openDownloads,
-}) async {
-  final List<VideoDownloadJobRow> jobs =
-      (await appModel.database.getVideoDownloadJobs()).toList()..sort(
-        (VideoDownloadJobRow a, VideoDownloadJobRow b) =>
-            b.updatedAt - a.updatedAt,
-      );
-  final AdaptiveNavPeekEntry Function(VideoDownloadJobRow job) entryOf =
+}) async => navPeekDownloadData(
+  await loadDownloadTaskSnapshot(appModel: appModel, ref: ref),
+  openDownloads: openDownloads,
+);
+
+/// 侧栏下载速览的数据：与下载页同一份来源清单、同一份逐来源映射，只读此刻的
+/// 本地状态，悬停一次不打网络、不扫盘：
+///
+/// * 视频任务读任务表；后端实时观测（暂停 / 排队、速率）不在悬停时去问，进行中
+///   的任务按持久生命周期算作「下载中」。
+/// * 远端 host 的代下载任务与「可重新入库」的漫画只由下载页去取，这里读下载页
+///   最近一次的结果（[DownloadTaskShare]；下载页还没打开过时这两部分为空）。
+///
+/// 条目只用于展示字段：速览不调 builder、不挂动作。
+Future<List<DownloadTaskEntry>> loadDownloadTaskSnapshot({
+  required AppModel appModel,
+  required WidgetRef ref,
+}) => collectDownloadTaskSnapshot(
+  videoJobs: () async => <DownloadTaskEntry>[
+    for (final VideoDownloadJobRow job
+        in await appModel.database.getVideoDownloadJobs())
+      videoDownloadJobTaskEntry(job, builder: _summaryOnlyTaskCard),
+  ],
+  source: (DownloadTaskSource source) => switch (source) {
+    DownloadTaskSource.transcribe =>
+      switch (AudiobookTranscribeTasksSection.appQueue(appModel)) {
+        null => const <DownloadTaskEntry>[],
+        final queue => AudiobookTranscribeTasksSection.entriesOf(queue),
+      },
+    DownloadTaskSource.legacy => animeDownloadTaskSnapshot(appModel),
+    DownloadTaskSource.direct => switch (DiscoveryDownloadTasksSection.appQueue(
+      appModel,
+    )) {
+      null => const <DownloadTaskEntry>[],
+      final queue => const DiscoveryDownloadTasksSection().entriesOf(
+        queue,
+        external: DiscoveryDownloadTasksSection.externalSourceResolver(
+          appModel,
+        ),
+      ),
+    },
+    DownloadTaskSource.manga => mangaDownloadTaskSnapshot(
+      MangaDownloadTaskSources.ofApp(appModel),
+    ),
+    DownloadTaskSource.remote => DownloadTaskShare.instance.entriesOf(
+      DownloadTaskSharedPart.remoteHosts,
+    ),
+    DownloadTaskSource.interconnect => interconnectDownloadTaskEntries(
+      ref,
+      ref.read(interconnectDownloadManagerProvider),
+    ),
+  },
+);
+
+Widget _summaryOnlyTaskCard(BuildContext _) => const SizedBox.shrink();
+
+/// 下载速览：与下载页「任务」列表同一份条目（[loadDownloadTaskSnapshot]：持久视频
+/// 任务 + 旧番剧计划 / 直链 / 漫画 / 远端 host / 互联 / 转录入库），按页面缺省
+/// 排序（[selectDownloadTasks]，新建的在前）。「继续」= 最前的那条下载中任务，
+/// 「最近」= 其余的前几条；点哪条都进下载页。
+AdaptiveNavPeekData navPeekDownloadData(
+  List<DownloadTaskEntry> tasks, {
+  required VoidCallback openDownloads,
+}) {
+  final List<DownloadTaskEntry> ordered = selectDownloadTasks(tasks);
+  final AdaptiveNavPeekEntry Function(DownloadTaskEntry task) entryOf =
       navPeekDownloadEntry(openDownloads);
-  final VideoDownloadJobRow? resume = jobs
+  final DownloadTaskEntry? resume = ordered
       .where(
-        (VideoDownloadJobRow j) =>
-            j.lifecycle == VideoDownloadJobLifecycle.active,
+        (DownloadTaskEntry task) => task.status == DownloadTaskStatus.active,
       )
       .firstOrNull;
   return AdaptiveNavPeekData(
     resume: resume == null ? null : entryOf(resume),
     resumeLabel: t.download_task_lifecycle_active,
     recentLabel: t.nav_downloads,
-    summary: navPeekDownloadSummary(jobs),
-    recent: jobs
-        .where((VideoDownloadJobRow j) => !identical(j, resume))
+    summary: navPeekDownloadSummary(ordered),
+    recent: ordered
+        .where((DownloadTaskEntry task) => !identical(task, resume))
         .take(_kPeekRecentCount)
         .map(entryOf)
         .toList(),
   );
 }
 
-/// 下载任务的速览条目：标题是作品名，副行是具体资源名（同一部作品的不同集 /
-/// 版本靠它区分——只有作品名时两条任务看起来是同一项），尾部状态签是进行中的
-/// 百分比或生命周期（已完成 / 需要处理 / 已失败 / 已取消）。
-AdaptiveNavPeekEntry Function(VideoDownloadJobRow job) navPeekDownloadEntry(
+/// 下载任务的速览条目：标题与副行同任务卡（副行是资源名 / 来源 / 设备，同一部
+/// 作品的不同集 / 版本靠它区分），尾部状态签是下载中的百分比或状态名
+/// （[downloadTaskStatusLabel]，与下载页同一份文案）。
+AdaptiveNavPeekEntry Function(DownloadTaskEntry task) navPeekDownloadEntry(
   VoidCallback openDownloads,
-) => (VideoDownloadJobRow job) {
-  final String? cover = job.coverUrl;
-  final bool done = job.lifecycle == VideoDownloadJobLifecycle.completed;
-  final double progress = done
+) => (DownloadTaskEntry task) {
+  final String? cover = task.coverUrl;
+  final double progress = task.status == DownloadTaskStatus.completed
       ? 1
-      : job.stageProgress.clamp(0.0, 1.0).toDouble();
-  final String? resource = job.resourceTitle?.trim();
-  final (
-    String status,
-    AdaptiveNavPeekStatusTone tone,
-  ) = switch (job.lifecycle) {
-    VideoDownloadJobLifecycle.completed => (
-      t.download_task_lifecycle_completed,
-      AdaptiveNavPeekStatusTone.done,
-    ),
-    VideoDownloadJobLifecycle.needsAttention => (
-      t.download_task_lifecycle_needs_attention,
-      AdaptiveNavPeekStatusTone.attention,
-    ),
-    VideoDownloadJobLifecycle.failed => (
-      t.download_task_lifecycle_failed,
-      AdaptiveNavPeekStatusTone.error,
-    ),
-    VideoDownloadJobLifecycle.cancelled => (
-      t.download_task_lifecycle_cancelled,
-      AdaptiveNavPeekStatusTone.neutral,
-    ),
-    _ => ('${(progress * 100).round()}%', AdaptiveNavPeekStatusTone.active),
+      : (task.progress ?? 0).clamp(0.0, 1.0).toDouble();
+  final AdaptiveNavPeekStatusTone tone = switch (task.status) {
+    DownloadTaskStatus.active => AdaptiveNavPeekStatusTone.active,
+    DownloadTaskStatus.completed => AdaptiveNavPeekStatusTone.done,
+    DownloadTaskStatus.attention => AdaptiveNavPeekStatusTone.attention,
+    DownloadTaskStatus.queued ||
+    DownloadTaskStatus.paused ||
+    DownloadTaskStatus.cancelled => AdaptiveNavPeekStatusTone.neutral,
   };
+  final String? subtitle = task.subtitle?.trim();
   return AdaptiveNavPeekEntry(
-    title: job.title,
+    title: task.title,
     cover: cover == null || cover.isEmpty ? null : AppHttpImage(cover),
     progress: progress,
-    subtitle: resource == null || resource.isEmpty
-        ? (job.year == null ? null : '${job.year}')
-        : resource,
-    status: status,
+    subtitle: subtitle == null || subtitle.isEmpty ? null : subtitle,
+    status: task.status == DownloadTaskStatus.active
+        ? '${(progress * 100).round()}%'
+        : downloadTaskStatusLabel(task.status),
     statusTone: tone,
     onOpen: openDownloads,
   );
 };
 
-/// 下载速览页头的概况：「活动 2 · 完成 35」，需要处理 / 失败的有才拼上。
-String? navPeekDownloadSummary(List<VideoDownloadJobRow> jobs) {
-  int count(String lifecycle) =>
-      jobs.where((VideoDownloadJobRow j) => j.lifecycle == lifecycle).length;
-  final int active = count(VideoDownloadJobLifecycle.active);
-  final int attention =
-      count(VideoDownloadJobLifecycle.needsAttention) +
-      count(VideoDownloadJobLifecycle.failed);
-  final int completed = count(VideoDownloadJobLifecycle.completed);
-  if (jobs.isEmpty) return null;
+/// 下载速览页头的概况，与下载页顶部概况卡（`DownloadSummaryHero`）同一组计数：
+/// 「下载中 2 · 排队 1 · 已完成 35」，需要处理的有才拼上。
+String? navPeekDownloadSummary(List<DownloadTaskEntry> tasks) {
+  if (tasks.isEmpty) return null;
+  int count(DownloadTaskStatus status) =>
+      tasks.where((DownloadTaskEntry task) => task.status == status).length;
+  final int attention = count(DownloadTaskStatus.attention);
   return <String>[
-    t.download_summary_active(n: active),
-    if (attention > 0)
-      '${t.download_task_lifecycle_needs_attention} $attention',
-    t.download_summary_completed(n: completed),
+    t.download_summary_active(n: count(DownloadTaskStatus.active)),
+    t.download_summary_queued(n: count(DownloadTaskStatus.queued)),
+    if (attention > 0) '${t.download_task_status_attention} $attention',
+    t.download_summary_completed(n: count(DownloadTaskStatus.completed)),
   ].join(' · ');
 }
 
@@ -830,26 +1213,20 @@ class NavPeekFeed {
   );
 }
 
-/// 把各模块的速览混成首页那一张：「继续」= 各模块继续项里最近的那个，「最近」=
-/// 其余条目（含别的模块的继续项）按时刻倒序取前 [_kPeekRecentCount] 个。
-AdaptiveNavPeekData mergeNavPeekFeeds(List<NavPeekFeed> feeds) {
-  final List<NavPeekTimed> resumes = <NavPeekTimed>[
-    for (final NavPeekFeed f in feeds)
-      if (f.resume case final NavPeekTimed r) r,
-  ]..sort((NavPeekTimed a, NavPeekTimed b) => b.at - a.at);
-  final NavPeekTimed? resume = resumes.firstOrNull;
-  final List<NavPeekTimed> rest = <NavPeekTimed>[
-    ...resumes.skip(1),
-    for (final NavPeekFeed f in feeds) ...f.recent,
-  ]..sort((NavPeekTimed a, NavPeekTimed b) => b.at - a.at);
-  return AdaptiveNavPeekData(
-    resume: resume?.entry,
-    recent: <AdaptiveNavPeekEntry>[
-      for (final NavPeekTimed e in rest.take(_kPeekRecentCount)) e.entry,
-    ],
-  );
-}
+/// 首页速览的编排（纯函数）：与首页 dashboard「继续」区同一份 [composeHomeContinue]
+/// 结果、同一顺序——「继续」= 第一张卡，「最近」= 接下来的 [recentCount] 张
+/// （2026-11-22 用户拍板「每张卡跟它打开的页面一致」，BUG-5331）。
+({HomeContinueUnit? resume, List<HomeContinueUnit> recent}) planHomeNavPeek(
+  List<HomeContinueUnit> units, {
+  int recentCount = _kPeekRecentCount,
+}) => (
+  resume: units.firstOrNull,
+  recent: units.skip(1).take(recentCount).toList(),
+);
 
+/// 首页速览：输入按首页 dashboard 载入的同一批表 / provider 现读，互联远端补位与
+/// 服务器条目只读首页取好的进程级结果（[RemoteContinueFeed] / [ServerContinueFeed]，
+/// 悬停不发网络请求），交给与 dashboard 同一个 [composeHomeContinue] 编排。
 Future<AdaptiveNavPeekData> _loadHome({
   required WidgetRef ref,
   required AppModel appModel,
@@ -857,32 +1234,310 @@ Future<AdaptiveNavPeekData> _loadHome({
   required VideoBookRepository videoRepo,
   required ValueChanged<HomeTab> goToTab,
 }) async {
-  bool enabled(HomeTab tab) {
-    final ModuleId? module = moduleOfHomeTab(tab);
-    return module == null || appModel.moduleVisibility.isEnabled(module);
+  final FushiDatabase db = appModel.database;
+  final ModuleVisibility modules = appModel.moduleVisibility;
+  final bool videoOn = modules.isEnabled(ModuleId.video);
+  final MediaVisibility lockVisibility = await MediaVisibility.load(db);
+  final Future<List<MediaItem>> booksF = ref.read(
+    fushiBooksProvider(JapaneseLanguage.instance).future,
+  );
+  final Future<Map<String, int>> lastReadF = ref.read(
+    bookLastReadAtProvider.future,
+  );
+  final Future<Map<String, String>> uidByKeyF = ref.read(
+    epubBookUidByKeyProvider.future,
+  );
+  final Future<Set<String>> completedF = ref.read(
+    completedEpubBookKeysProvider.future,
+  );
+  final Future<List<VideoBookRow>> videosF = videoRepo.listForShelf();
+  final Future<List<MediaCollectionRow>> collectionsF = db
+      .getAllMediaCollections();
+  final Future<Map<String, ({int collectionId, int sortIndex})>> membershipF =
+      db.getLocalPrimaryCollectionMembership();
+  final Future<List<GalgameEntry>> gamesF = appModel.galgameRepo.isLoaded
+      ? Future<List<GalgameEntry>>.value(appModel.galgameRepo.games)
+      : appModel.galgameRepo.load();
+  // 视频的最近观看时刻（与首页同一份观看域事实；视频模块关着时视频卡本就出局）。
+  final Future<Map<String, int>> watchAtF = videoOn
+      ? loadStatFacts(
+          db,
+          scope: const StatFactsScope.domain(kActivityMediaVideo),
+        ).then(
+          (StatFacts facts) => homeContinueVideoWatchAtByUid(facts.dailyVideos),
+        )
+      : Future<Map<String, int>>.value(const <String, int>{});
+  final bool Function(MediaNsfwTarget) nsfw = await _loadNsfwJudge(appModel);
+
+  final List<MediaItem> books = <MediaItem>[
+    for (final MediaItem item in await booksF)
+      if (!homeContinueHidesBook(lockVisibility, item)) item,
+  ];
+  final List<VideoBookRow> videos = <VideoBookRow>[
+    for (final VideoBookRow v in await videosF)
+      if (!lockVisibility.hidesVideo(v.bookUid)) v,
+  ];
+  final List<GalgameEntry> games = <GalgameEntry>[
+    for (final GalgameEntry g in await gamesF)
+      if (!lockVisibility.hidesGame(g.id)) g,
+  ];
+  final Map<String, String> uidByKey = await uidByKeyF;
+  final ({Map<String, int> primaryByEntry, Map<String, int> sortIndex})
+  membership = splitPrimaryCollectionMembership(await membershipF);
+  final Map<int, MediaCollectionRow> collectionsById =
+      <int, MediaCollectionRow>{
+        for (final MediaCollectionRow c in await collectionsF) c.id: c,
+      };
+  final RemoteContinueFeed remoteFeed = RemoteContinueFeed.of(db);
+  final ({bool mediaServers, bool audiobookshelf, String signature}) gates =
+      serverContinueGates(
+        prefs: appModel.isPreferencesReady ? appModel.prefsRepo : null,
+        visibility: modules,
+      );
+  int? durationMsOf(String bookUid) => videoDurationMsFromPref(
+    appModel.prefsRepo.getPref(videoDurationPrefKey(bookUid)),
+  );
+  final List<HomeContinueUnit> units = composeHomeContinue(
+    HomeContinueInputs(
+      books: books,
+      lastReadByUid: await lastReadF,
+      epubUidByKey: uidByKey,
+      completedBookKeys: await completedF,
+      bookTitleOf: bookContinueDisplayTitle,
+      primaryCollectionByEntry: membership.primaryByEntry,
+      memberSortIndex: membership.sortIndex,
+      collectionNamesById: <int, String>{
+        for (final MediaCollectionRow c in collectionsById.values) c.id: c.name,
+      },
+      videoIndex: HomeDashboardVideoIndex.build(
+        videos: videos,
+        primaryCollectionByEntry: membership.primaryByEntry,
+        memberSortIndex: membership.sortIndex,
+      ),
+      videoWatchAtByUid: await watchAtF,
+      videoDurationMsOf: durationMsOf,
+      localMediaServerItemKeyOf: localMediaServerItemKeyOfVideo,
+      games: games,
+      // 「显示远端条目」关着时首页不混排远端（首页取数前同一道门）。
+      remote: appModel.prefsRepo.showRemoteEntries
+          ? remoteFeed.current
+          : const <RemoteContinueCandidate>[],
+      server: ServerContinueFeed.of(db).current,
+      mediaServerGate: gates.mediaServers,
+      audiobookshelfGate: gates.audiobookshelf,
+      isModuleEnabled: modules.isEnabled,
+    ),
+  );
+  final ({HomeContinueUnit? resume, List<HomeContinueUnit> recent}) plan =
+      planHomeNavPeek(units);
+  final List<HomeContinueUnit> shown = <HomeContinueUnit>[
+    ?plan.resume,
+    ...plan.recent,
+  ];
+
+  // 视频进度条要总时长：只查要显示的本地文件（首页同一张探测缓存表）。
+  final Map<String, VideoFileSpecRow> specs = await db
+      .videoFileSpecsByPath(<String>[
+        for (final HomeContinueUnit u in shown)
+          if (u is HomeContinueVideoUnit) u.row.videoPath,
+      ]);
+  // 合集卡用合集自己的封面（与视频库合集卡同一条链），只查要显示的几个。
+  final Map<int, ImageProvider> collectionCovers = <int, ImageProvider>{};
+  for (final HomeContinueUnit u in shown) {
+    if (u is! HomeContinueVideoUnit) continue;
+    final MediaCollectionRow? collection = collectionsById[u.collectionId];
+    if (collection == null || collectionCovers.containsKey(collection.id)) {
+      continue;
+    }
+    final ImageProvider? cover = await _videoCollectionCover(
+      appModel,
+      collection,
+    );
+    if (cover != null) collectionCovers[collection.id] = cover;
+  }
+  final RemoteCoverFetcher? remoteFetcher = remoteCoverFetcherFor(
+    InterconnectSyncBackend.instance,
+  );
+
+  ImageProvider? localCover(MediaKind kind, String? path) =>
+      path == null || path.isEmpty || !File(path).existsSync()
+      ? null
+      : resolveMediaCoverImage(kind: kind, localPath: path);
+
+  AdaptiveNavPeekEntry entryOf(HomeContinueUnit unit) {
+    switch (unit) {
+      case HomeContinueBookUnit(:final MediaItem item):
+        final ImageProvider image = ReaderFushiSource.instance
+            .getDisplayThumbnailFromMediaItem(appModel: appModel, item: item);
+        final bool noCover =
+            image is MemoryImage && identical(image.bytes, kTransparentImage);
+        final int percent = item.duration > 0
+            ? ((item.position / item.duration) * 100).clamp(0, 100).round()
+            : 0;
+        final int? ordinal = unit.memberOrdinal;
+        final num? volume = ordinal == null
+            ? null
+            : collectionMemberVolumeNumber(
+                title: unit.title,
+                memberTitles: <String>[
+                  for (final MediaItem m in unit.collectionMembers)
+                    ReaderFushiSource.instance.getDisplayTitleFromMediaItem(m),
+                ],
+                memberOrdinal: ordinal,
+              );
+        final String? srtUid = ReaderFushiSource.parseSrtBookUid(
+          item.mediaIdentifier,
+        );
+        final String? bookKey = ReaderFushiSource.parseBookKey(
+          item.mediaIdentifier,
+        );
+        return AdaptiveNavPeekEntry(
+          title: unit.displayTitle,
+          cover: noCover ? null : image,
+          blurCover: srtUid != null
+              ? nsfw(MediaNsfwTarget.srtBook(srtUid))
+              : bookKey != null && nsfw(MediaNsfwTarget.book(bookKey)),
+          progress: percent / 100,
+          subtitle: _peekSubtitle(
+            unit.collectionName == null ? null : unit.title,
+            volume != null ? t.home_continue_volume(n: volume) : '$percent%',
+          ),
+          onOpen: () => unawaited(
+            appModel.openMedia(
+              ref: ref,
+              mediaSource: item.getMediaSource(appModel: appModel),
+              item: item,
+            ),
+          ),
+        );
+      case HomeContinueVideoUnit(:final VideoBookRow row):
+        final DashboardVideoProgress p = dashboardVideoContinueProgress(
+          completed: row.completedAt != null,
+          positionMs: row.lastPositionMs,
+          durationMs: specs[row.videoPath]?.durationMs,
+          currentEpisode: row.currentEpisode,
+          playlistEpisodeCount: playlistEpisodeCount(row.playlistJson),
+          collectionEpisode: unit.collectionEpisode,
+          collectionEpisodeCount: unit.collectionEpisodeCount,
+        );
+        final int? episode = p.episode;
+        final int? percent = p.percent;
+        final int? positionMs = p.positionMs;
+        final int? cid = unit.collectionId;
+        final ImageProvider? collectionCover = cid == null
+            ? null
+            : collectionCovers[cid];
+        return AdaptiveNavPeekEntry(
+          title: unit.displayTitle,
+          cover: collectionCover ?? localCover(MediaKind.video, row.coverPath),
+          blurCover:
+              nsfw(MediaNsfwTarget.video(row.bookUid)) ||
+              (collectionCover != null &&
+                  cid != null &&
+                  nsfw(MediaNsfwTarget.collection(cid))),
+          progress: p.fraction,
+          subtitle: _peekSubtitle(
+            unit.collectionName == null ? null : row.title,
+            episode != null
+                ? t.home_continue_episode(n: episode)
+                : percent != null
+                ? '$percent%'
+                : (positionMs != null ? formatVideoPosition(positionMs) : null),
+          ),
+          onOpen: () {
+            final BuildContext context = contextOf();
+            if (!context.mounted) return;
+            // 与首页卡同一条续播入口：合集成员带主合集 id（剧集面板 / 连播）。
+            unawaited(
+              openLocalVideoBook(
+                context: context,
+                repo: videoRepo,
+                bookUid: row.bookUid,
+                playlistCollectionId: membership
+                    .primaryByEntry[MediaKind.video.compositeKey(row.bookUid)],
+              ),
+            );
+          },
+        );
+      case HomeContinueGameUnit(:final GalgameEntry game):
+        // 游戏卡切到游戏库（首页同样不直接启动游戏，BUG-1111）。
+        return AdaptiveNavPeekEntry(
+          title: unit.displayTitle,
+          subtitle: unit.collectionName == null ? null : game.displayName,
+          cover: localCover(MediaKind.game, game.coverPath),
+          blurCover: nsfw(MediaNsfwTarget.game(game.id, adult: game.isNsfw)),
+          onOpen: () => goToTab(HomeTab.games),
+        );
+      case HomeContinueRemoteUnit(:final RemoteContinueCandidate candidate):
+        final String? url = candidate.coverUrl;
+        return AdaptiveNavPeekEntry(
+          title: unit.displayTitle,
+          subtitle: _peekSubtitle(
+            unit.collectionName == null ||
+                    unit.collectionName == candidate.title
+                ? null
+                : candidate.title,
+            remoteFeed.deviceName ?? t.home_remote_source,
+          ),
+          cover: url == null || url.isEmpty || remoteFetcher == null
+              ? null
+              : ResizeImage(
+                  RemoteCoverImage(url, remoteFetcher, cacheKey: candidate.id),
+                  width: kLocalCoverDecodePixelWidth,
+                  allowUpscaling: false,
+                ),
+          progress: candidate.isVideo ? null : candidate.percent / 100,
+          // 与首页远端卡同一落地：切到对应库页，远端占位卡在那里承接播放 / 下载。
+          onOpen: () =>
+              goToTab(candidate.isVideo ? HomeTab.video : HomeTab.books),
+        );
+      case HomeContinueServerUnit(:final ServerContinueCandidate candidate):
+        final String? url = candidate.coverUrl;
+        final RemoteCoverFetcher? fetcher = candidate.coverFetcher;
+        return AdaptiveNavPeekEntry(
+          title: unit.displayTitle,
+          subtitle: _peekSubtitle(
+            unit.collectionName == null ||
+                    unit.collectionName == candidate.title
+                ? null
+                : candidate.title,
+            candidate.serverName,
+          ),
+          cover: url == null || url.isEmpty
+              ? null
+              : fetcher != null
+              ? RemoteCoverImage(
+                  url,
+                  fetcher,
+                  cacheKey: candidate.coverCacheKey,
+                )
+              : AppCachedHttpImage(url, cacheKey: candidate.coverCacheKey),
+          progress: candidate.progress,
+          // 与首页服务器卡同一落地：媒体服务器起播，ABS 打开条目详情页。
+          onOpen: () {
+            final BuildContext context = contextOf();
+            if (!context.mounted) return;
+            unawaited(
+              candidate.open(context).catchError((Object e, StackTrace stack) {
+                ErrorLogService.instance.log(
+                  'homeNavPeek.openServerContinue',
+                  e,
+                  stack,
+                );
+              }),
+            );
+          },
+        );
+    }
   }
 
-  final List<NavPeekFeed> feeds = await Future.wait(<Future<NavPeekFeed>>[
-    if (enabled(HomeTab.books))
-      _loadBooks(
-        ref: ref,
-        appModel: appModel,
-        manga: false,
-        contextOf: contextOf,
-      ),
-    if (enabled(HomeTab.manga))
-      _loadBooks(
-        ref: ref,
-        appModel: appModel,
-        manga: true,
-        contextOf: contextOf,
-      ),
-    if (enabled(HomeTab.video))
-      _loadVideos(appModel: appModel, repo: videoRepo, contextOf: contextOf),
-    if (enabled(HomeTab.games))
-      _loadGames(appModel: appModel, open: () => goToTab(HomeTab.games)),
-  ]);
-  return mergeNavPeekFeeds(feeds);
+  final HomeContinueUnit? resume = plan.resume;
+  return AdaptiveNavPeekData(
+    resume: resume == null ? null : entryOf(resume),
+    recent: <AdaptiveNavPeekEntry>[
+      for (final HomeContinueUnit u in plan.recent) entryOf(u),
+    ],
+  );
 }
 
 /// 音乐：「继续」= 正在播放的曲目（点了切到音乐库，播放条在那里）；没在播时
@@ -945,22 +1600,23 @@ Future<AdaptiveNavPeekData> _loadMusic({
   final MusicPlayItem? current = engine.current;
   AdaptiveNavPeekEntry? resume;
   if (current != null) {
-    final MusicTrackRow? track = await db.getMusicTrack(current.trackUid);
-    if (track != null) {
-      final MusicAlbumRow? album = await albumOf(track.albumUid);
-      resume = AdaptiveNavPeekEntry(
-        title: track.title,
-        cover: await _musicCover(db, track: track, album: album),
-        subtitle: <String>[
-          if (track.artistCredit ?? album?.albumArtistCredit
-              case final String artist)
-            artist,
-          ?album?.title,
-        ].join(' · '),
-        onOpen: openMusic,
-      );
-      units.removeWhere((MusicTrackRow t) => unitKey(t) == unitKey(track));
+    // 「继续」照播放条画：标题 / 副行 / 封面都取播放项本身。服务器、插件、
+    // Apple Music 的曲目 uid 是合成的、不在曲库表里，不能先去表里查。
+    ImageProvider? cover = musicCoverImageProvider(current.coverPath);
+    if (cover == null) {
+      // 曲库曲目只有内嵌封面时播放项不带封面路径：按曲库那一行补上。
+      final MusicTrackRow? track = await db.getMusicTrack(current.trackUid);
+      if (track != null) {
+        cover = await _musicCover(
+          db,
+          track: track,
+          album: await albumOf(track.albumUid),
+        );
+      }
     }
+    resume = navPeekNowPlayingEntry(current, cover: cover, onOpen: openMusic);
+    final String playingKey = current.albumUid ?? current.trackUid;
+    units.removeWhere((MusicTrackRow t) => unitKey(t) == playingKey);
   } else if (units.isNotEmpty) {
     resume = await entryOf(units.removeAt(0));
   }
@@ -971,6 +1627,22 @@ Future<AdaptiveNavPeekData> _loadMusic({
       for (final MusicTrackRow track in units.take(_kPeekRecentCount))
         await entryOf(track),
     ],
+  );
+}
+
+/// 音乐速览的「正在播放」条目：与播放条同一份标题与副行
+/// （[musicNowPlayingByline]），只看播放项本身，曲库表外的曲目同样有。
+AdaptiveNavPeekEntry navPeekNowPlayingEntry(
+  MusicPlayItem item, {
+  required ImageProvider? cover,
+  required VoidCallback onOpen,
+}) {
+  final String byline = musicNowPlayingByline(item);
+  return AdaptiveNavPeekEntry(
+    title: item.title,
+    cover: cover,
+    subtitle: byline.isEmpty ? null : byline,
+    onOpen: onOpen,
   );
 }
 

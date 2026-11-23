@@ -11,6 +11,7 @@
 | `exportTranscribedSrt` | 有声书 · 转录结果导出 SRT | `POST /api/admin/audiobook/:key/export-srt`（`path`、`overwrite`） | `audiobook export-srt <key> <路径> [--overwrite]` | irreversible（写盘），已存在要 overwrite |
 | `exportTtsAudiobookM4b` | TTS 有声书 · 导出 M4B | `POST /api/admin/tts/audiobook/:key/export-m4b`，长任务 | `tts export-m4b <key> <路径> [--overwrite]` + `task get --wait` | irreversible + longRunning |
 | `importSyncedBookFile`（互联远端） | 阅读历史 · 互联远端书库下载单本 | `POST /api/admin/peer/:peer/books/:id/download`，走 `InterconnectDownloadManager` | `peer book-download <peer> <id>` | write；撤销 = 删下载得到的本地书 |
+| `importFiles`（`LyricVisualizerAssetStore`） | 音乐 · 歌词可视化素材包 · 导入图片 | `POST /api/admin/music/lyric-visualizer/:style/:pack/files`（`paths`）+ `GET` 列出 | `music visualizer-import <style> <pack> <图片...>` | write；撤销 = 删本次复制进包的文件 |
 | 音乐歌单增删改 / 加歌 | 音乐 · 歌单页 | `GET/POST/PATCH/DELETE /api/admin/music/playlists[/:id[/tracks]]` | `music playlist …` | write，全部可撤销 |
 | 音乐歌词搜索 | 音乐 · 正在播放 · 搜歌词 | `GET /api/admin/music/tracks/:uid/lyrics/search` + 选用 `POST …/lyrics/apply` | `music lyrics-search` / `lyrics-apply` | apply 为 write，可撤销 |
 

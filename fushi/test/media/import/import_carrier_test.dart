@@ -79,8 +79,23 @@ void main() {
       );
     });
 
-    test('isManga 覆盖且仅覆盖四种漫画载体', () {
+    test('.fushi-manga-audio → mangaAudioPackage（是 zip 也不读包、不当页图压缩包）', () {
+      expect(
+        classify(
+          '/m/vol1.fushi-manga-audio',
+          imageArchives: <String>{'/m/vol1.fushi-manga-audio'},
+        ),
+        ImportCarrier.mangaAudioPackage,
+      );
+      expect(
+        classify('/m/VOL1.FUSHI-MANGA-AUDIO'),
+        ImportCarrier.mangaAudioPackage,
+      );
+    });
+
+    test('isManga 覆盖且仅覆盖五种漫画载体', () {
       expect(ImportCarrier.mangaFolder.isManga, isTrue);
+      expect(ImportCarrier.mangaAudioPackage.isManga, isTrue);
       expect(ImportCarrier.mangaBatchFolder.isManga, isTrue);
       expect(ImportCarrier.mangaMokuro.isManga, isTrue);
       expect(ImportCarrier.mangaArchive.isManga, isTrue);

@@ -34,7 +34,7 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
-    show listSidecarSubtitles;
+    show listSidecarSubtitles, ownedSidecarSuffix;
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_work_identity.dart';
 
@@ -317,8 +317,8 @@ class VideoSubtitleBackfillService {
         continue;
       }
       try {
-        final String target = sidecarPathFor(video.path, download);
-        if (!await _writeSidecar(video, download)) {
+        final String target = await _sidecarDest(video, download);
+        if (!await _writeSidecar(video, download, target)) {
           return _sameNameExists(target);
         }
         return SubtitleBackfillResult(
@@ -404,10 +404,12 @@ class VideoSubtitleBackfillService {
         detail: 'download failed: $error',
       );
     }
-    final String dest = sidecarPathFor(video.path, download);
+    final String dest = await _sidecarDest(video, download);
     if (await File(dest).exists()) return _sameNameExists(dest);
     try {
-      if (!await _writeSidecar(video, download)) return _sameNameExists(dest);
+      if (!await _writeSidecar(video, download, dest)) {
+        return _sameNameExists(dest);
+      }
       return SubtitleBackfillResult(
         SubtitleBackfillOutcome.installed,
         installedPath: dest,
@@ -478,11 +480,7 @@ class VideoSubtitleBackfillService {
 
   Future<List<String>> _existingSidecars(File video) async {
     try {
-      final Directory dir = video.parent;
-      final List<String> names = <String>[
-        await for (final FileSystemEntity entity in dir.list())
-          if (entity is File) p.basename(entity.path),
-      ];
+      final List<String> names = await _dirFileNames(video);
       return listSidecarSubtitles(
         p.basenameWithoutExtension(video.path),
         names,
@@ -491,6 +489,27 @@ class VideoSubtitleBackfillService {
       // 目录读不了就当「不确定有没有」，按有处理——宁可不补，也不能覆盖。
       return const <String>['<unreadable>'];
     }
+  }
+
+  Future<List<String>> _dirFileNames(File video) async => <String>[
+    await for (final FileSystemEntity entity in video.parent.list())
+      if (entity is File) p.basename(entity.path),
+  ];
+
+  /// 这次下载要落的 sidecar 路径：[sidecarPathFor] 带上同目录文件名，名字会被 stem
+  /// 更长的同目录视频认领时退回无语言标记（[ownedSidecarSuffix]）。目录读不了就按
+  /// 原名（后面的写入照样会失败 / 被同名检查挡住）。
+  Future<String> _sidecarDest(
+    File video,
+    VideoSubtitleDownload download,
+  ) async {
+    List<String> names = const <String>[];
+    try {
+      names = await _dirFileNames(video);
+    } on FileSystemException {
+      names = const <String>[];
+    }
+    return sidecarPathFor(video.path, download, dirFiles: names);
   }
 
   /// 同名 sidecar 已经在了：不是这次写的，报 [SubtitleBackfillOutcome.alreadyHasSubtitle]
@@ -503,11 +522,14 @@ class VideoSubtitleBackfillService {
         detail: 'a subtitle file with the same name already exists',
       );
 
-  /// 落 sidecar：`<video 基名>.<lang><ext>`。**已存在同名文件就不写**（上面已经
+  /// 落 sidecar 到 [target]（[_sidecarDest]）。**已存在同名文件就不写**（上面已经
   /// 查过整目录的 sidecar，这里是防并发的第二道）。返回 true = 这次真写了；false =
   /// 同名文件已在（写之前就在，或对齐期间被别人落下），什么都没写。
-  Future<bool> _writeSidecar(File video, VideoSubtitleDownload download) async {
-    final String target = sidecarPathFor(video.path, download);
+  Future<bool> _writeSidecar(
+    File video,
+    VideoSubtitleDownload download,
+    String target,
+  ) async {
     final File dest = File(target);
     if (await dest.exists()) return false;
     // 先写临时文件再 rename：半截字幕文件比没有字幕更糟——播放页会把它当成
@@ -536,13 +558,24 @@ class VideoSubtitleBackfillService {
 }
 
 /// 一条下载结果在 [videoPath] 旁的 sidecar 路径：`<video 基名>.<lang><ext>`。纯函数。
-String sidecarPathFor(String videoPath, VideoSubtitleDownload download) =>
-    p.join(
-      p.dirname(videoPath),
-      '${p.basenameWithoutExtension(videoPath)}.'
-      '${sidecarLanguageTag(download.language)}'
-      '${sidecarSubtitleExtension(download.fileName)}',
-    );
+///
+/// [dirFiles] 是同目录文件名清单：`<video 基名>.<lang><ext>` 会被 stem 更长的同目录
+/// 视频认领时（「最长主干认领」，[ownedSidecarSuffix]）退回 `<video 基名><ext>`，
+/// 不把字幕落成别的视频的。
+String sidecarPathFor(
+  String videoPath,
+  VideoSubtitleDownload download, {
+  List<String> dirFiles = const <String>[],
+}) {
+  final String stem = p.basenameWithoutExtension(videoPath);
+  final String suffix =
+      '.${sidecarLanguageTag(download.language)}'
+      '${sidecarSubtitleExtension(download.fileName)}';
+  return p.join(
+    p.dirname(videoPath),
+    '$stem${ownedSidecarSuffix(stem, suffix, dirFiles)}',
+  );
+}
 
 /// 语言标签归一到 sidecar 后缀白名单允许的字符集（见 `isSidecarSubtitleSuffix`：
 /// `[A-Za-z0-9_-]{1,32}`）。纯函数，与那条白名单成对单测。

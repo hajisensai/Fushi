@@ -37,6 +37,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 /// 两种能力都有时，两份候选靠这个区分。
 String musicLyricsCandidateTitle(String source, String label) {
   if (source == MusicLyricsSource.asr) return t.music_lyrics_source_asr;
+  if (source == MusicLyricsSource.server) return t.music_lyrics_source_server;
   if (MusicLyricsSource.isPlugin(source)) {
     return '$label · ${musicPluginCapabilityLabel('lyrics')}';
   }
@@ -220,14 +221,11 @@ class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
       destructive: true,
     );
     if (!ok) return;
-    await _manager.uninstall(p.id);
-    // 明确卸载才清它在「来源」页的顺序与开关（停用不清：重新启用后还在原位）。
-    if (widget.appModel.isPreferencesReady) {
-      await forgetMusicOnlineSource(
-        widget.appModel.prefsRepo,
-        musicPluginSourceKey(p.id),
-      );
-    }
+    await uninstallMusicPlugin(
+      _manager,
+      widget.appModel.isPreferencesReady ? widget.appModel.prefsRepo : null,
+      p.id,
+    );
     _reload();
   }
 

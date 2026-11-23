@@ -1045,6 +1045,7 @@ class _CtlModelState {
         ttsPresetsAfterDelete(presets, store.activePresetId, target.id);
     await store.savePresets(next.presets);
     await store.setActivePresetId(next.activeId);
+    await store.forgetMediaVoicePreset(target.id);
     await deleteOrphanedTtsReferenceAudio(target, next.presets);
     return <String, Object?>{
       'deleted': <String, Object?>{'id': target.id, 'name': target.name},

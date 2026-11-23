@@ -16,9 +16,12 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
 import 'package:fushi/src/media/music/disc/music_disc_import.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart';
+import 'package:fushi/src/media/music/music_online_sources.dart'
+    show uninstallMusicPlugin;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/ctl_music_routes.dart' show kMusicCtlRoot;
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart'
@@ -50,13 +53,15 @@ List<CtlRoute> buildMusicImportCtlRoutes(
     musicEnabled: () =>
         context.appModel.moduleVisibility.isEnabled(ModuleId.music),
     isReadonly: () => context.appModel.isMigrationReadonly,
-    importFiles: (FushiDatabase db, List<String> paths) =>
+    intakeAudioFiles: (FushiDatabase db, List<String> paths) =>
         MusicAudioIntake(db).importMusicFiles(paths),
     discService: (FushiDatabase db) => MusicDiscImportService(db),
     discCandidates: musicDiscCandidatesAt,
     plugins: () => isMusicPluginSourcesAvailable
         ? context.appModel.musicPluginManager
         : null,
+    prefs: () =>
+        context.appModel.isPreferencesReady ? context.appModel.prefsRepo : null,
     exportLyrics: (MusicLyricsTrackRef track, String format, bool overwrite) =>
         _exportLyrics(context.appModel.musicLyrics, track, format, overwrite),
     audioCd: const MusicCtlAudioCd(
@@ -140,13 +145,14 @@ class MusicImportCtlDeps {
   const MusicImportCtlDeps({
     required this.database,
     required this.musicEnabled,
-    required this.importFiles,
+    required this.intakeAudioFiles,
     required this.discService,
     required this.discCandidates,
     required this.plugins,
     required this.exportLyrics,
     required this.audioCd,
     this.isReadonly,
+    this.prefs,
     this.clock,
   });
 
@@ -157,12 +163,15 @@ class MusicImportCtlDeps {
     FushiDatabase db,
     List<String> paths,
   )
-  importFiles;
+  intakeAudioFiles;
   final MusicDiscImportService Function(FushiDatabase db) discService;
   final Future<List<String>> Function(String path) discCandidates;
 
   /// 本机能自己跑插件时的管理器；null = 不可用（iOS 合规门 / 没有插件运行时）。
   final MusicPluginManager? Function() plugins;
+
+  /// 偏好仓库（卸载插件时清它在「来源」页的条目）；null / 返回 null = 偏好没就绪，只卸载。
+  final PreferencesRepository? Function()? prefs;
 
   /// 解析 [track] 当前生效的歌词并导出到音频旁；没有歌词返回 null。
   final Future<String?> Function(
@@ -325,9 +334,10 @@ List<CtlRoute> buildMusicImportCtlRoutesFor(
         }
       }
       final FushiDatabase db = deps.database();
-      final MusicAudioIntakeResult result = await deps.importFiles(db, <String>[
-        for (final String path in paths) p.normalize(path),
-      ]);
+      final MusicAudioIntakeResult result = await deps.intakeAudioFiles(
+        db,
+        <String>[for (final String path in paths) p.normalize(path)],
+      );
       return <String, Object?>{
         if (result.errors.isNotEmpty) 'ok': false,
         'imported': result.importedFiles,
@@ -586,8 +596,8 @@ List<CtlRoute> buildMusicImportCtlRoutesFor(
       if (await _installed(manager, id) == null) {
         throw CtlFailure.notFound('没装插件 $id（见 music plugins）');
       }
-      // 设置页「卸载」同一方法：删包、插件存储与加密凭据。
-      await manager.uninstall(id);
+      // 设置页「卸载」同一方法：删包、插件存储与加密凭据，并清「来源」页里的条目。
+      await uninstallMusicPlugin(manager, deps.prefs?.call(), id);
       return <String, Object?>{'deleted': true, 'id': id};
     }),
 

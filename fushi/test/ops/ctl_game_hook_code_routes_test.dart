@@ -161,6 +161,10 @@ void main() {
         _profile('HS-4@0:b.exe', label: 'B'),
       ]),
     );
+    // 导入前是用户手写过的表（多一行注释）：撤销要逐字写回，不能解析后重新编码丢掉注释。
+    store.file.writeAsStringSync(
+      '${store.file.readAsStringSync()}# 手写备注：这台机器的补丁版\n',
+    );
     final String original = store.file.readAsStringSync();
     Future<OpInvocation> run() => OpInvoker(catalog).invoke(
       'game.hook-codes.import',
