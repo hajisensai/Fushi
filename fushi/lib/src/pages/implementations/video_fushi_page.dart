@@ -357,6 +357,7 @@ import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart'
         GraphicSubtitleTrackExtractionHub,
         GraphicSubtitleTrackLease,
         GraphicSubtitleTrackExtractOutcome;
+import 'package:fushi/src/media/video/video_background_media_session.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_screenshot_compose.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
@@ -476,6 +477,7 @@ import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
 import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart'
     show showManualDownloadTaskDialog;
@@ -2605,6 +2607,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 这个只问「是不是我们停的、该不该由我们续上」。
   bool _pausedForBackground = false;
 
+  /// 拍板台 42UUu_kcwD-media：此刻正「后台继续放声音」（进后台时开关开着、正在播，
+  /// 视频轨已挂起）。期间视频挂在系统媒体会话上（锁屏 / 通知 / 耳机键 / Android 前台
+  /// 服务），观看时长按有声书后台听书的口径照计（只计时长、不计字幕字数）；回前台清。
+  bool _backgroundAudioActive = false;
+
+  /// 后台放声音时的系统媒体会话（首次用到才建；没开过开关的人永远不碰 audio_service）。
+  VideoBackgroundMediaSession? _backgroundMediaSession;
+  VideoControllerMediaSessionTarget? _backgroundMediaTarget;
+  VideoPlayerController? _backgroundMediaTargetController;
+
+  /// 锁屏卡封面（本机文件）：按路径缓存是否存在，卡片每次推送都现取信息。
+  ({String path, Uri? uri})? _backgroundMediaCover;
+
   /// BUG-939：`_subtitleMenuSources` 已成功枚举时对应的本地视频路径。字幕轨枚举
   /// （ffprobe 探测内嵌轨 + 同目录外挂）按此 key 记忆：同一视频重开「字幕」分类直接
   /// 用缓存渲染，不再每次重跑 ffprobe 显加载条、也不再把已枚举出的字幕轨先清空重来
@@ -4364,6 +4379,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // [VideoFushiPage.shouldPauseForBackground]。
         if (state == AppLifecycleState.paused) _pauseForBackground();
       case AppLifecycleState.resumed:
+        // 拍板台 42UUu_kcwD-media：后台放声音那段结束——让出系统媒体会话、字幕字数
+        // 恢复计数。排在重启采样与计时门之前，回前台的时长按前台口径记。
+        _leaveBackgroundAudio();
         // 回前台：先重启位置采样，再按计时门续表（仍被盖住 / 手动暂停就不续；时钟
         // start() 重锚 tick 起点与空闲基准，后台那段不入账）。
         _watchTracker?.start();
@@ -4441,10 +4459,94 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       isMobile: isMobilePlatform,
     )) {
       unawaited(controller.suspendVideoForBackground());
+      _enterBackgroundAudio(controller);
       return;
     }
     _pausedForBackground = true;
     unawaited(controller.pause());
+  }
+
+  /// 拍板台 42UUu_kcwD-media：进入「后台继续放声音」。
+  ///
+  /// - 系统媒体会话：认领 [MediaSessionOwner.video]（正在放的有声书 / 音乐被抢走、
+  ///   暂停），挂锁屏 / 通知卡，耳机键与锁屏按钮发到本页播放器；Android 由此进媒体
+  ///   前台服务，进程后台放声音不被回收；来电等打断暂停、打断结束续播。
+  /// - 学习统计：与有声书后台听书同一口径（BUG-2558）——生命周期这一刻刚把采样与
+  ///   时钟停了（`paused` / `hidden` 分支），这里按「失焦但在播」重新放行：只要还在
+  ///   出声就计时长，锁屏上按了暂停即停表；不计字幕字数（没有画面）。
+  void _enterBackgroundAudio(VideoPlayerController controller) {
+    if (_backgroundAudioActive) return;
+    _backgroundAudioActive = true;
+    _watchTracker
+      ?..countSubtitleChars = false
+      ..start();
+    _studyClockGate.setUnfocused(true);
+    _studyClockGate.setLifecycleStopped(false);
+    final AudioController audio = appModel.audioCtrl;
+    final VideoBackgroundMediaSession session = _backgroundMediaSession ??=
+        VideoBackgroundMediaSession(
+          seat: audio.seat(MediaSessionOwner.video),
+          handler: () async {
+            await audio.initialiseHandler();
+            return audio.audioHandler;
+          },
+          controls: VideoMediaSessionControls.of(audio),
+          fullNotification: () => appModel.showMediaNotification,
+        );
+    unawaited(
+      session.engage(
+        _backgroundMediaTargetFor(controller),
+        _backgroundMediaInfo,
+      ),
+    );
+  }
+
+  /// 回前台：让出系统媒体会话（撤通知卡、结束前台服务），字幕字数恢复计数。
+  /// 视频轨的还原与计时门的复位由 `resumed` 分支照常做。
+  void _leaveBackgroundAudio() {
+    if (!_backgroundAudioActive) return;
+    _backgroundAudioActive = false;
+    _watchTracker?.countSubtitleChars = true;
+    unawaited(_backgroundMediaSession?.release());
+  }
+
+  VideoControllerMediaSessionTarget _backgroundMediaTargetFor(
+    VideoPlayerController controller,
+  ) {
+    final VideoControllerMediaSessionTarget? cached = _backgroundMediaTarget;
+    if (cached != null &&
+        identical(_backgroundMediaTargetController, controller)) {
+      return cached;
+    }
+    _backgroundMediaTargetController = controller;
+    return _backgroundMediaTarget = VideoControllerMediaSessionTarget(
+      controller,
+      // 锁屏「上 / 下一句」与底栏同名按钮同一条：无字幕时按设置的秒数跳。
+      skipSeekSeconds: () => _asbConfig.seekSeconds,
+    );
+  }
+
+  /// 锁屏卡内容：标题 = 当前这一集，副标题 = 作品名（与标题相同则不重复），
+  /// 封面 = 本机封面文件。每次推卡现取，后台连播换集时跟着换。
+  VideoMediaSessionInfo _backgroundMediaInfo() {
+    final String episode = (_title ?? '').trim();
+    final String work = (_playlistTitle ?? '').trim();
+    final String title = episode.isNotEmpty ? episode : work;
+    return VideoMediaSessionInfo(
+      title: title.isEmpty ? 'Fushi' : title,
+      subtitle: work.isEmpty || work == title ? null : work,
+      artUri: _backgroundMediaCoverUri(),
+    );
+  }
+
+  Uri? _backgroundMediaCoverUri() {
+    final String? path = _bookRow?.coverPath;
+    if (path == null || path.isEmpty) return null;
+    final ({String path, Uri? uri})? cached = _backgroundMediaCover;
+    if (cached != null && cached.path == path) return cached.uri;
+    final Uri? uri = File(path).existsSync() ? File(path).uri : null;
+    _backgroundMediaCover = (path: path, uri: uri);
+    return uri;
   }
 
   /// BUG-2544：回前台（`resumed`）时把上面停下的播放续上。
@@ -7394,6 +7496,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 (hasLibraryRow ? _libraryTrackingCompletion : null),
             onPlayingChanged: _studyClockGate.setPlaying,
           )
+          // 后台放声音期间换集（远端连播）：新采集器同样只计时长不计字。
+          ..countSubtitleChars = !_backgroundAudioActive
           ..attach(controller)
           ..start();
     // tracker.start() 只起采样；起不起表由计时门定（建表时已在后台 / 被盖住就不起）。
@@ -7889,6 +7993,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    // 拍板台 42UUu_kcwD-media：离页即让出系统媒体会话（已被别的页面 / 有声书 /
+    // 音乐接手时只拆自己的监听）。
+    _backgroundMediaSession?.dispose();
+    _backgroundMediaSession = null;
     // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
     WorkProfileScope.instance.leave(this);
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死

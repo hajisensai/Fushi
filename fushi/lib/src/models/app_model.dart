@@ -2410,7 +2410,8 @@ class AppModel
               );
             }());
           },
-          // 媒体会话与音乐互斥（音乐模块 §7.5）：音乐持有会话时，锁屏 / 耳机键不发给有声书。
+          // 媒体会话与音乐 / 后台视频互斥（音乐模块 §7.5、拍板台 42UUu_kcwD-media）：
+          // 会话归别人时，锁屏 / 耳机键不发给有声书。
           controlStreams: AudioControlStreams(
             playIntentStream: audioCtrl.streamFor(
               audioCtrl.playIntentStream,
@@ -2435,6 +2436,8 @@ class AppModel
           // 库没开时给 null（会话按「不记统计 / 不监听 cue 表」降级），不去碰 late 字段。
           database: () => isDatabaseReady ? database : null,
           studyIdleTimeout: () => readingIdleTimeout,
+          // 与音乐 / 后台视频争同一个系统媒体会话：后开播的认领，被抢的暂停。
+          mediaSeat: audioCtrl.seat(MediaSessionOwner.audiobook),
         )
         ..skipActionSeconds = (() =>
             ReaderFushiSource.instance.skipActionSeconds)

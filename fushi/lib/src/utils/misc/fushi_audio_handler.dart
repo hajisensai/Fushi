@@ -106,12 +106,16 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
   /// 不推播放态则后台必被冻结），但通知只剩一个播放 / 暂停键——不给上下句、悬浮
   /// 字幕键，也不声明 seek（Android 13+ 没有 seek 动作就不画进度条，iOS 控制中心
   /// 的进度条不可拖）。
+  ///
+  /// [floatingLyricControl] = false 时完整形态也不放「悬浮字幕」键（后台视频没有
+  /// 悬浮字幕可开）。
   void updatePlaybackState({
     required bool playing,
     required Duration position,
     required double speed,
     required Duration duration,
     bool minimal = false,
+    bool floatingLyricControl = true,
   }) {
     if (minimal) {
       playbackState.add(
@@ -128,7 +132,8 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
       );
       return;
     }
-    final bool withFloatingLyric = onToggleFloatingLyric != null;
+    final bool withFloatingLyric =
+        floatingLyricControl && onToggleFloatingLyric != null;
     playbackState.add(
       ag.PlaybackState(
         controls: [
