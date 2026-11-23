@@ -43,7 +43,6 @@ class AcHarness {
       trustedClock: SrsTrustedClock(
         wallClockMs: () => t++,
         bootClockMs: () => 0,
-        bootId: 'boot',
       ),
       styles: styles,
     );

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -10,11 +9,10 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/pages/implementations/music/music_cover.dart'
-    show kMusicCoverRequestHeaders;
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
+    show lyricVisualizerCoverProvider;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
-import 'package:fushi/src/utils/net/app_http_image.dart';
 
 // 歌词页流体背景（参照 QPlayer / Apple Music-like Lyrics 的三种背景思路，实现是
 // 本仓自写的 Canvas 版，不含上游代码）：
@@ -651,16 +649,10 @@ Size musicBackdropRenderSize(Size logical) {
   );
 }
 
-/// 封面地址 → ImageProvider：`http(s)://` 走全应用代理装配的 [AppHttpImage]，
-/// 本地文件存在才用 [FileImage]，其余 null（背景改用主题色 mesh）。
-ImageProvider? musicLyricsBackdropCoverProvider(String? coverPath) {
-  if (coverPath == null || coverPath.isEmpty) return null;
-  if (coverPath.startsWith('http://') || coverPath.startsWith('https://')) {
-    return AppHttpImage(coverPath, headers: kMusicCoverRequestHeaders);
-  }
-  final File file = File(coverPath);
-  return file.existsSync() ? FileImage(file) : null;
-}
+/// 封面地址 → ImageProvider（委托歌词动画框架的共享封面工具 [lyricVisualizerCoverProvider]）：
+/// `http(s)://` 走全应用代理，本地文件存在才用 [FileImage]，其余 null（背景改用主题色 mesh）。
+ImageProvider? musicLyricsBackdropCoverProvider(String? coverPath) =>
+    lyricVisualizerCoverProvider(coverPath);
 
 // ---------------------------------------------------------------------------
 // 组件
