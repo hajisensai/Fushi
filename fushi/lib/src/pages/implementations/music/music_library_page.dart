@@ -56,7 +56,7 @@ import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dar
     show musicImportPlaylistFile;
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
-    show MusicBarReserve, MusicFloatingBarHost;
+    show MusicBarReserve, MusicFloatingBarHost, openMusicPlayerPage;
 import 'package:fushi_engine/media/media_extensions.dart'
     show kAudioExtensions, kVideoExtensions;
 import 'package:fushi_engine/media/music/server/music_server.dart'
@@ -605,36 +605,43 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     MusicDiscArtIndex.instance.publish(found);
   }
 
-  /// 「继续收听」：从上次那首所在专辑、那一首起播（引擎不持久化播放位置，曲内
-  /// 从头开始）；散曲只播它自己。
+  /// 「继续收听」：进播放页接着听。上次那首就是引擎此刻的当前曲（迷你条上那首）时
+  /// 不重建队列、不从头重播，暂停着就接着放；否则从它所在专辑、那一首起播（散曲只播
+  /// 它自己）。两种情况都进播放页，与专辑页「播放全部」、迷你条点按一致。
   void _continueListening(MusicTrackRow track, MusicLibrarySnapshot snap) {
-    final MusicAlbumRow? album = track.albumUid == null
-        ? null
-        : snap.albumByUid[track.albumUid];
-    final List<MusicTrackRow> tracks = album == null
-        ? <MusicTrackRow>[track]
-        : snap.tracksOfAlbum(album.albumUid);
-    final int start = tracks.indexWhere(
-      (MusicTrackRow t) => t.trackUid == track.trackUid,
-    );
-    unawaited(
-      _app.musicSession.engine.playQueue(
-        <MusicPlayItem>[
-          for (final MusicTrackRow t in tracks)
-            musicPlayItemOf(t, album: album),
-        ],
-        startIndex: start < 0 ? 0 : start,
-        context: album == null
-            ? MusicQueueContext.mixed
-            : MusicQueueContext.album,
-      ),
-    );
+    final MusicPlayerEngine engine = _app.musicSession.engine;
+    if (engine.current?.trackUid == track.trackUid) {
+      if (!engine.isPlaying) unawaited(engine.play());
+    } else {
+      final MusicAlbumRow? album = track.albumUid == null
+          ? null
+          : snap.albumByUid[track.albumUid];
+      final List<MusicTrackRow> tracks = album == null
+          ? <MusicTrackRow>[track]
+          : snap.tracksOfAlbum(album.albumUid);
+      final int start = tracks.indexWhere(
+        (MusicTrackRow t) => t.trackUid == track.trackUid,
+      );
+      unawaited(
+        engine.playQueue(
+          <MusicPlayItem>[
+            for (final MusicTrackRow t in tracks)
+              musicPlayItemOf(t, album: album),
+          ],
+          startIndex: start < 0 ? 0 : start,
+          context: album == null
+              ? MusicQueueContext.mixed
+              : MusicQueueContext.album,
+        ),
+      );
+    }
+    openMusicPlayerPage(context);
   }
 
   /// 曲库顶部「继续收听」区：所有库页共用的「继续」组件
   /// [FushiContinueSpotlight]（2026-10-31 方案 A + 合一）。主卡是上次那首（专辑
   /// 封面 + 专辑名 + 曲名 · 艺人）；宽屏时最近听过的其余专辑排在旁边。点按 =
-  /// 续播，长按 / 右键 = 打开专辑（卡上不放按钮）。
+  /// 续播并进播放页，长按 / 右键 = 打开专辑（卡上不放按钮）。
   Widget? _buildContinueHero(MusicLibrarySnapshot snap) {
     if (_recentTracks.isEmpty) return null;
     MusicAlbumRow? albumOf(MusicTrackRow track) =>

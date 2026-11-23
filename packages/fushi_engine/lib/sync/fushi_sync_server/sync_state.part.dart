@@ -267,10 +267,14 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
   ) async {
     if (method != 'GET' && method != 'PUT') return shelf.Response(405);
     if (_securityContext == null) {
-      return shelf.Response.forbidden('HTTPS required for profile transfer');
+      return _interconnectProfileDenied(
+        InterconnectProfileDenial.httpsRequired,
+      );
     }
     if (!await _validatePeerAuth(request.headers['authorization'])) {
-      return shelf.Response.forbidden('Paired-device token required');
+      return _interconnectProfileDenied(
+        InterconnectProfileDenial.peerTokenRequired,
+      );
     }
     final FushiLibraryHostService? library = _libraryService;
     if (library is! InterconnectProfileHost) {
@@ -278,15 +282,18 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     }
     final InterconnectProfileHost host = library as InterconnectProfileHost;
     if (!await host.isInterconnectProfileTransferEnabled()) {
-      return shelf.Response.forbidden('Profile transfer disabled on host');
+      return _interconnectProfileDenied(InterconnectProfileDenial.disabled);
     }
     if (method == 'GET') {
       final String json;
       try {
         json = await host.exportInterconnectProfile();
       } on InterconnectProfileUnavailableException catch (e) {
-        // 懂端点、开关开着、只是眼下没东西可给：409 带原因，client 如实报给用户。
-        return shelf.Response(409, body: e.message);
+        // 懂端点、开关开着、只是眼下没东西可给：409 带结构化码，client 如实报给用户。
+        engineLog.logDiagnostic('InterconnectProfile', e.message);
+        return _interconnectProfileDenied(
+          InterconnectProfileDenial.unavailable,
+        );
       }
       return shelf.Response.ok(
         json,
@@ -309,6 +316,18 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
       return shelf.Response(400, body: 'Invalid profile payload: ${e.message}');
     }
   }
+
+  /// 配置搬运的拒绝响应：`{"error": code}`（反馈 G-ebgSnoK8：不再回英文自由文本，
+  /// client 按码给本地化原因）。
+  shelf.Response _interconnectProfileDenied(InterconnectProfileDenial denial) =>
+      shelf.Response(
+        denial.httpStatus,
+        body: interconnectProfileDenialBody(denial),
+        headers: const <String, String>{
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        },
+      );
 
   /// GET `/api/tombstones`：列 host 全部删除墓碑为 JSON 数组，供 client 拉取后与本地
   /// 在库键求交、弹逐条确认删本地（显式确认式删除传播，host→client 消费方向）。走已配对

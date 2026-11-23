@@ -126,6 +126,29 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // （gapless-audio / prefetch-playlist / replaygain），harness 里没有在播的 mpv。
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
+  // 全屏歌词动画：生效点是歌词页里的全屏动画层（harness 设置页里没有正在播的歌词页）。
+  // 歌词页把这几项偏好原样交给宿主，宿主 → 样式 context 由专项测试咬住。
+  'music/Animated lyrics style':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Random style for each song':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animation intensity':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animated lyrics text size':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Hide animated lyrics subtitles':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animated lyrics subtitle content':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animated lyrics subtitle size':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animated lyrics subtitle font':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animation background':
+      'test/media/music/visualizer/lyric_visualizer_host_test.dart（宿主按请求画背景）',
+  // 动作行：打开模型管理对话框；下载 / 删除与状态由专项测试咬住。
+  'music/Audio analysis models':
+      'test/media/music/analysis/music_analysis_wiring_test.dart',
   // 在线插件音质：生效点是插件曲目在 mpv 后端打开时经 musicPluginPlaybackHost.quality 取档，
   // harness 里没有插件也没有在播的 mpv。设置值 → 持久化 → 取流装配点拿到新档、清掉「只对这首」
   // 由 app_model_music_plugin_quality_test 咬住；只重开插件曲目 / 只重排下一首由

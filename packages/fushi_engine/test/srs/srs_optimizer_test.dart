@@ -149,7 +149,6 @@ void main() {
           trustedClock: SrsTrustedClock(
             wallClockMs: () => t,
             bootClockMs: () => t,
-            bootId: 'b',
           ),
         );
         final Random r = Random(7);

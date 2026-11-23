@@ -14,6 +14,33 @@ DownloadTaskEntry _task(String id, DownloadTaskActions actions) {
   );
 }
 
+class _FakeGroup implements DownloadTaskBatchGroup<String> {
+  _FakeGroup({required this.failIndexes});
+
+  final Set<int> failIndexes;
+  int calls = 0;
+
+  @override
+  bool handlesBatchAction(DownloadBatchAction action) => true;
+
+  @override
+  Future<List<DownloadTaskBatchFailure?>> runBatch(
+    DownloadBatchAction action,
+    List<String> items,
+  ) async {
+    calls++;
+    return <DownloadTaskBatchFailure?>[
+      for (int i = 0; i < items.length; i++)
+        failIndexes.contains(i)
+            ? DownloadTaskBatchFailure(
+                StateError('${items[i]} failed'),
+                StackTrace.current,
+              )
+            : null,
+    ];
+  }
+}
+
 void main() {
   group('runDownloadTaskBatch', () {
     test('不支持该动作的条目计入 unsupported，不算失败', () async {
@@ -52,6 +79,46 @@ void main() {
       expect(outcome.failed, 1);
       expect(outcome.unsupported, 0);
       expect(errors, hasLength(1));
+    });
+
+    test('失败逐条带上任务名与原因（BUG-5212）', () async {
+      final DownloadBatchOutcome outcome = await runDownloadTaskBatch(
+        tasks: <DownloadTaskEntry>[
+          _task('ok', DownloadTaskActions(resume: () async {})),
+          _task(
+            'Doraemon',
+            DownloadTaskActions(
+              resume: () async => throw StateError('torrent gone'),
+            ),
+          ),
+        ],
+        action: DownloadBatchAction.resume,
+      );
+      expect(outcome.failed, 1);
+      expect(outcome.failures.single.title, 'Doraemon');
+      expect(outcome.failures.single.reason, contains('torrent gone'));
+    });
+
+    test('整批执行的组：失败按组内位置对回各自的任务名', () async {
+      final _FakeGroup group = _FakeGroup(failIndexes: <int>{1});
+      DownloadTaskEntry member(String id) => _task(
+        id,
+        DownloadTaskActions(
+          resume: () async {},
+          batchMember: DownloadTaskBatchMember<String>(group: group, item: id),
+        ),
+      );
+      final DownloadBatchOutcome outcome = await runDownloadTaskBatch(
+        tasks: <DownloadTaskEntry>[member('a'), member('b'), member('c')],
+        action: DownloadBatchAction.resume,
+      );
+      expect(group.calls, 1);
+      expect(outcome.done, 2);
+      expect(
+        outcome.failures.map((DownloadBatchFailedTask f) => f.title),
+        <String>['b'],
+      );
+      expect(outcome.failures.single.reason, contains('b failed'));
     });
 
     test('串行执行：下一条开始前上一条必须已经结束', () async {

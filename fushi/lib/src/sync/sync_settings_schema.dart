@@ -681,20 +681,24 @@ SettingsDestination _buildSyncServerSettingsPage() {
 /// 数据放哪 + 占了多少是同一个问题的两半。
 /// 构建函数留在本库（[_DataRootWidget] 是本库私有 part），由
 /// `settings_schema_storage.dart` 调用；item id 保持 'sync.data_storage_location'
-/// 不变（历史命名前缀，搜索/导航锚点，仅换展示分类）。移动端沙箱固定，整个
-/// section 用 isDesktopPlatform 门控隐藏；桌面选新目录后走已实现的
-/// DataRootMigrator 整目录迁移 + 迁移成功后自动重启。
+/// 不变（历史命名前缀，搜索/导航锚点，仅换展示分类）。iOS 沙箱固定，整个 section
+/// 隐藏；桌面选新目录、Android 内部 / 外部切换，都走已实现的 DataRootMigrator 迁移 +
+/// 迁移成功后自动重启。
+/// 桌面可改到任意目录；Android 在内部 / 外部 app 专属目录之间切换；iOS 沙箱固定、不显示。
+bool get _dataStorageLocationAvailable =>
+    isDesktopPlatform || (!kIsWeb && Platform.isAndroid);
+
 SettingsSection buildDataStorageLocationSection() {
   return SettingsSection(
     id: 'storage.location.section',
     presentation: SettingsSectionPresentation.alwaysExpanded,
     title: t.settings_section_data_storage,
-    visible: (SettingsContext ctx) => isDesktopPlatform,
+    visible: (SettingsContext ctx) => _dataStorageLocationAvailable,
     items: <SettingsItem>[
       SettingsCustomItem(
         id: 'sync.data_storage_location',
         icon: FushiIcons.folder,
-        visible: (SettingsContext ctx) => isDesktopPlatform,
+        visible: (SettingsContext ctx) => _dataStorageLocationAvailable,
         builder: (SettingsContext ctx) => _DataRootWidget(settingsContext: ctx),
       ),
     ],
