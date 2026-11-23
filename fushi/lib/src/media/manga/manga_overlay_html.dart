@@ -835,6 +835,9 @@ String mangaWindowDocument(
   // 减弱动态效果时为 0；墨水屏在脚本里另判归零）。
   int bubbleZoomOpenMs = 325,
   int bubbleZoomCloseMs = 165,
+  // 浮层按钮（「×」收起、「⤢」逐格读）走 Apple 设计系统的外观（Dart 侧 isGlassDesign）；
+  // false = MD3。
+  bool bubbleZoomAppleStyle = false,
   // 文字条 / 台词栏（方案 C）：移动端底部文字条、桌面右侧台词栏。
   MangaTextStripLayout textStripLayout = MangaTextStripLayout.strip,
   // 逐格读：浮层「⤢」按钮的无障碍名；跨窗翻页重建文档时接着聚焦的首 / 末气泡
@@ -842,6 +845,8 @@ String mangaWindowDocument(
   String bubbleFocusLabel = '',
   String bubbleFocusResume = '',
   String textStripEmptyLabel = '',
+  // 放大浮层左上角「×」收起按钮的无障碍名（拍板台 _5emrTFV1l）。
+  String bubbleZoomCloseLabel = '',
 }) {
   final MangaReaderPreferences preferences =
       readerPreferences ?? const MangaReaderPreferences();
@@ -1084,11 +1089,9 @@ String mangaWindowDocument(
       // 类名换成 .manga-zoom-page，所以页级 / 图片规则两边都要写。
       '.manga-zoom-page{overflow:hidden;}'
       '$reserveCss'
-      // 浮层右上角「⤢ 逐格读」（manga_bubble_focus_js.dart）。
-      '.manga-bz-focus{position:absolute;right:6px;top:6px;width:36px;height:36px;'
-      'border:0;border-radius:18px;padding:0;z-index:2;cursor:pointer;'
-      'font:20px/36px sans-serif;text-align:center;'
-      '${preferences.einkMode ? 'background:#fff;color:#000;border:1px solid #000;' : 'background:rgba(20,20,20,.62);color:#fff;'}}'
+      // 浮层角上的按钮：左上「×」收起（manga_bubble_zoom_js.dart）、右上「⤢ 逐格读」
+      // （manga_bubble_focus_js.dart）。外观按设计系统分 MD3 / Apple，见 [mangaBubbleZoomButtonCss]。
+      '${mangaBubbleZoomButtonCss(einkMode: preferences.einkMode, appleStyle: bubbleZoomAppleStyle, motionMs: bubbleZoomCloseMs)}'
       // 逐格读压暗：一个与当前气泡同大的透明洞，四周用超大 box-shadow 压暗。
       '.manga-focus-dim{position:fixed;pointer-events:none;z-index:5;border-radius:12px;'
       'outline:2px solid rgba(255,196,0,.9);}'
@@ -1192,7 +1195,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx, bookRtl: spreadDirection == 'rtl', bubbleZoomOpenMs: bubbleZoomOpenMs, bubbleZoomCloseMs: bubbleZoomCloseMs, textStripLayout: textStripLayout, bubbleFocusLabel: bubbleFocusLabel, bubbleFocusResume: bubbleFocusResume, textStripEmptyLabel: textStripEmptyLabel)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx, bookRtl: spreadDirection == 'rtl', bubbleZoomOpenMs: bubbleZoomOpenMs, bubbleZoomCloseMs: bubbleZoomCloseMs, textStripLayout: textStripLayout, bubbleFocusLabel: bubbleFocusLabel, bubbleFocusResume: bubbleFocusResume, textStripEmptyLabel: textStripEmptyLabel, bubbleZoomCloseLabel: bubbleZoomCloseLabel)}'
       '</script>'
       '</body></html>';
 }
@@ -1300,6 +1303,8 @@ String _mangaGestureJs({
   String bubbleFocusLabel = '',
   String bubbleFocusResume = '',
   String textStripEmptyLabel = '',
+  // 放大浮层左上角「×」收起按钮的无障碍名（拍板台 _5emrTFV1l）。
+  String bubbleZoomCloseLabel = '',
 }) {
   final ({double right, double bottom}) reserve = mangaTextStripReserve(
     preferences,
@@ -3804,7 +3809,7 @@ String _mangaGestureJs({
   }
   // 气泡放大模块放在 IIFE 末尾：上面的钩子都用 typeof 守卫调它（函数声明会提升），
   // 只截取局部片段跑的 JS 单测不受影响。
-${mangaBubbleZoomJs(preferences: preferences, bookRtl: bookRtl, hoverKey: hoverKey, openMs: bubbleZoomOpenMs, closeMs: bubbleZoomCloseMs, easing: kMangaPageTurnEasing)}
+${mangaBubbleZoomJs(preferences: preferences, bookRtl: bookRtl, hoverKey: hoverKey, openMs: bubbleZoomOpenMs, closeMs: bubbleZoomCloseMs, easing: kMangaPageTurnEasing, closeLabel: bubbleZoomCloseLabel)}
 ${mangaBubbleFocusJs(preferences: preferences, focusMs: bubbleZoomOpenMs, focusLabel: bubbleFocusLabel, resumeEdge: bubbleFocusResume, stripLayout: textStripLayout, stripEmptyLabel: textStripEmptyLabel)}
 })();
 ''';

@@ -1,0 +1,9 @@
+## BUG-5278 · 阅读器等页面的查词自动发音从未走弹窗 `<audio>`，第一次要等一会
+- **报告**：2026-11-23（用户：查词的音频播放第一次就是会等一会才播放；补充：Windows 桌面、自动发音）
+- **真实性**：✅ 真 bug。真 app（Windows 离屏集成测试 runner + 用户本机真实 android.db）分段计时实测：阅读器查词自动发音 4 轮全部 `playInWebView == null`，回落 media_kit。
+  - 根因 `fushi/lib/src/pages/base_source_page.dart` 旧 `_playAutoReadWord`：播放目标取 `topPopupState`（`base_source_page.dart` 的 getter，只认**可见**弹窗层）。自动发音在查词结果一到就触发（`_autoReadWord` 两处调用），此时本次查词那一层还挂在「等首帧渲染再翻出」（`_revealPopupAfterRender` / `markPendingReveal`）上、不可见 → 顶层查词拿到 null，嵌套查词拿到下面那层旧弹窗。于是 `BaseSourcePage` 系宿主（阅读器 / 视频 / 有声书等）的自动发音从未走上 BUG-1093 设计的弹窗 `<audio>` 快路径，每次都回落 `DesktopAudioPlayback`（media_kit）：每次播放 `stop()` 都销毁重建 mpv 播放器，进程内第一次还要先串行跑完 BUG-1015 的静音预热（等静音片播到终态）才开始真实播放——首次最慢，即「第一次要等一会」。
+  - 同类隐患：`DictionaryPageMixin.autoReadWord` 在触发**当下**取 `entry.webViewKey.webViewState`，同一帧新建的层 state 可能还没挂上，也会回落。
+  - 排除项（实测）：本地库冷查询 2–6ms（NVMe），Dart 解析全链首次 68–74ms / 再次 2–5ms；WebView2 `<audio>` 播 `data:` URL 首次起播 96ms / 再次 9–14ms，空闲 130s 后仍 13ms（Chromium 音频管线冷启动只多 ~80ms）；media_kit 首次出声 243ms / 再次 47–60ms。
+- **[x] ① 已修复** — 自动发音的 WebView 播放目标改为**本次查词那一层**，并在解析完音频、真正要播时才取它的 state：新增 `DictionaryPopupWebViewState.lazyWordAudioPlayer`，`BaseSourcePage._autoReadWord` / `_playAutoReadWord` 绑定 `item`；`DictionaryPageMixin.autoReadWord` / `playPopupWordAudio`（含 `VideoRemotePage` 覆写、`HomeDictionaryPage` 调用）的 `popupState` 改为取值函数。层已关 / 未挂载时照旧回落 Dart 播放器，不会无声。修复后同一测试：首轮点击 → 弹窗 `<audio>` 真起播 309ms（含查词与首次解析），之后 ~55ms，四轮全部走 WebView。
+- **[x] ② 已加自动化测试** — `fushi/integration_test/reader_auto_read_popup_webview_itest.dart`（真 app + 真 WebView2：生成词典 + 现建极小本地音频库，冷查词与复查两轮断言路由为 `LookupAudioRoute.webView`，经 `debugLookupAudioRouteObserver` 观察）；`fushi/test/pages/auto_read_popup_target_guard_test.dart`（`lazyWordAudioPlayer` 惰性取值 / null 回落 + 三处接线源码守卫）。
+- **备注**：media_kit 路径本身「每播重建 mpv + 首播先跑完静音预热」仍是其余走宿主播放器的表面（app 外 galgame 浮窗兜底、无弹窗 WebView 的内联页）的固有开销，本条不改；Android 主引擎按 BUG-3311 走原生 MediaPlayer，不受影响。

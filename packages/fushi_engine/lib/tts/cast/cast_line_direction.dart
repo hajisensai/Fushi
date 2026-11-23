@@ -36,6 +36,19 @@ abstract final class CastLineLimits {
 
   /// 种子上限（32 位无符号，各引擎都能收）。
   static const int maxSeed = 0xFFFFFFFF;
+
+  /// 语气说明（自由文本）最多保留的字数；超出的截断。
+  static const int maxToneChars = 40;
+}
+
+/// 语气说明：去首尾空白、截到 [CastLineLimits.maxToneChars]；空或不是字符串返回 null。
+String? castToneOf(Object? raw) {
+  if (raw is! String) return null;
+  final String t = raw.trim();
+  if (t.isEmpty) return null;
+  return t.length <= CastLineLimits.maxToneChars
+      ? t
+      : t.substring(0, CastLineLimits.maxToneChars);
 }
 
 // 有限数值才算数（NaN / 无穷当作没给）。
@@ -54,7 +67,7 @@ double? castDoubleIn(Object? raw, double lo, double hi) {
 }
 
 /// 一句的演出字段（都可选）。JSON 键：`beat` / `e` / `ei` / `rate` / `pitch` /
-/// `vol` / `seed`（漫画与小说同名，冻结）。
+/// `vol` / `seed` / `tone`（漫画与小说同名，冻结）。
 class CastLineDirection {
   const CastLineDirection({
     this.beatMs = 0,
@@ -64,6 +77,7 @@ class CastLineDirection {
     this.pitchOffset,
     this.volumeOffset,
     this.seed,
+    this.tone,
   });
 
   /// 宽松解析：数值夹到 [CastLineLimits] 的范围，不认识的情绪当作没标（强度随之
@@ -93,6 +107,7 @@ class CastLineDirection {
         CastLineLimits.maxVolumeDb,
       ),
       seed: seed is int ? seed.clamp(0, CastLineLimits.maxSeed) : null,
+      tone: castToneOf(raw['tone']),
     );
   }
 
@@ -112,6 +127,10 @@ class CastLineDirection {
   /// 种子；null = 用作品默认种子（单句重生成时写入）。
   final int? seed;
 
+  /// 自由文本语气说明（如「おずおずと、申し訳なさそうに」）：情绪词表装不下的细微差别
+  /// （试探 / 辩解 / 保证 / 哀求）。能收自然语言的引擎拿它当演技指令。
+  final String? tone;
+
   Map<String, Object?> toJson() => <String, Object?>{
     if (beatMs != 0) 'beat': beatMs,
     if (emotion != null) 'e': emotion!.wire,
@@ -120,6 +139,7 @@ class CastLineDirection {
     if (pitchOffset != null) 'pitch': pitchOffset,
     if (volumeOffset != null) 'vol': volumeOffset,
     if (seed != null) 'seed': seed,
+    if (tone != null) 'tone': tone,
   };
 }
 

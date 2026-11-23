@@ -17,8 +17,9 @@ struct ImportResult {
   // Persisted next to blobs.bin as term_rules.flag (util/term_rules_flag.hpp);
   // false means the reader treats empty rules as the "*" wildcard.
   bool term_rules_present = false;
-  // Any written glossary is a pure Yomitan dictionary-deinflection redirect
-  // (`[[formOf, [rule...]], ...]`, util/redirect_glossary.hpp). Persisted as
+  // Any written glossary is a pure redirect: Yomitan dictionary deinflection
+  // (`[[formOf, [rule...]], ...]`) or a Jitendex `redirect-glossary` link card
+  // (util/redirect_glossary.hpp). Persisted as
   // redirect_glossary.flag; false lets Lookup skip per-glossary redirect
   // detection for this dictionary.
   bool redirect_glossary_present = false;

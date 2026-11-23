@@ -157,6 +157,70 @@ typedef VideoDownloadJobMetricsLoader =
 typedef VideoDownloadJobSelectedSizeLoader =
     Future<Map<String, int>> Function(Iterable<VideoDownloadJobRow> jobs);
 
+/// 一条视频下载任务行 → 统一任务列表条目（[snapshot] 是后端实时观测，没有时按
+/// 持久生命周期判状态）。下载页与侧栏下载速览共用这一份映射
+/// （见 `download_task_sources.dart`）。
+DownloadTaskEntry videoDownloadJobTaskEntry(
+  VideoDownloadJobRow job, {
+  required WidgetBuilder builder,
+  TorrentSnapshot? snapshot,
+  DownloadTaskActions actions = DownloadTaskActions.none,
+}) {
+  final DownloadTaskKind kind =
+      DownloadTaskKind.values.asNameMap()[job.mediaKind] ??
+      DownloadTaskKind.video;
+  final DownloadTaskStatus status = switch (job.lifecycle) {
+    VideoDownloadJobLifecycle.completed => DownloadTaskStatus.completed,
+    VideoDownloadJobLifecycle.cancelled => DownloadTaskStatus.cancelled,
+    VideoDownloadJobLifecycle.failed ||
+    VideoDownloadJobLifecycle.needsAttention => DownloadTaskStatus.attention,
+    _ => switch (snapshot == null
+        ? null
+        : torrentDisplayStatusFor(snapshot.state)) {
+      TorrentDisplayStatus.paused => DownloadTaskStatus.paused,
+      TorrentDisplayStatus.queued => DownloadTaskStatus.queued,
+      TorrentDisplayStatus.error => DownloadTaskStatus.attention,
+      _ => DownloadTaskStatus.active,
+    },
+  };
+  final String? collectionKey = job.collectionId != null
+      ? 'collection:${job.collectionId}'
+      : job.metadataProvider != null && job.externalId != null
+      ? 'series:${job.metadataProvider}:${job.externalId}'
+      : null;
+  final String? resource = job.resourceTitle?.trim();
+  return DownloadTaskEntry(
+    id: job.jobId,
+    title: job.title,
+    kind: kind,
+    status: status,
+    createdAt: job.createdAt,
+    progress: snapshot?.progress ?? videoDownloadJobComparableProgress(job),
+    // 资源名区分同一部作品的不同集 / 版本；没有时退到年份。
+    subtitle: resource == null || resource.isEmpty
+        ? (job.year == null ? null : '${job.year}')
+        : resource,
+    collectionKey: collectionKey,
+    collectionTitle: job.title,
+    coverUrl: job.coverUrl,
+    workIdentity: DownloadTaskWorkIdentity.maybe(
+      job.metadataProvider,
+      job.externalId,
+    ),
+    seeding:
+        snapshot != null &&
+        torrentDisplayStatusFor(snapshot.state) == TorrentDisplayStatus.seeding,
+    downRateBps: snapshot?.downRateBps,
+    upRateBps: snapshot?.upRateBps,
+    searchTerms: <String>[
+      if (job.resourceTitle != null) job.resourceTitle!,
+      job.resourceProvider,
+    ],
+    actions: actions,
+    builder: builder,
+  );
+}
+
 /// Narrow read port used by [VideoDownloadJobsPanel].
 ///
 /// Production can use [DatabaseVideoDownloadJobsPanelStore], while widget tests
@@ -1103,54 +1167,9 @@ class _VideoDownloadJobListState extends State<_VideoDownloadJobList> {
           };
       for (final VideoDownloadJobRow job in widget.jobs) {
         final TorrentSnapshot? snapshot = _snapshots[job.jobId];
-        final DownloadTaskKind kind =
-            DownloadTaskKind.values.asNameMap()[job.mediaKind] ??
-            DownloadTaskKind.video;
-        final DownloadTaskStatus status = switch (job.lifecycle) {
-          VideoDownloadJobLifecycle.completed => DownloadTaskStatus.completed,
-          VideoDownloadJobLifecycle.cancelled => DownloadTaskStatus.cancelled,
-          VideoDownloadJobLifecycle.failed ||
-          VideoDownloadJobLifecycle.needsAttention =>
-            DownloadTaskStatus.attention,
-          _ => switch (snapshot == null
-              ? null
-              : torrentDisplayStatusFor(snapshot.state)) {
-            TorrentDisplayStatus.paused => DownloadTaskStatus.paused,
-            TorrentDisplayStatus.queued => DownloadTaskStatus.queued,
-            TorrentDisplayStatus.error => DownloadTaskStatus.attention,
-            _ => DownloadTaskStatus.active,
-          },
-        };
-        final String? collectionKey = job.collectionId != null
-            ? 'collection:${job.collectionId}'
-            : job.metadataProvider != null && job.externalId != null
-            ? 'series:${job.metadataProvider}:${job.externalId}'
-            : null;
-        entries[job.jobId] = DownloadTaskEntry(
-          id: job.jobId,
-          title: job.title,
-          kind: kind,
-          status: status,
-          createdAt: job.createdAt,
-          progress:
-              snapshot?.progress ?? videoDownloadJobComparableProgress(job),
-          collectionKey: collectionKey,
-          collectionTitle: job.title,
-          coverUrl: job.coverUrl,
-          workIdentity: DownloadTaskWorkIdentity.maybe(
-            job.metadataProvider,
-            job.externalId,
-          ),
-          seeding:
-              snapshot != null &&
-              torrentDisplayStatusFor(snapshot.state) ==
-                  TorrentDisplayStatus.seeding,
-          downRateBps: snapshot?.downRateBps,
-          upRateBps: snapshot?.upRateBps,
-          searchTerms: <String>[
-            if (job.resourceTitle != null) job.resourceTitle!,
-            job.resourceProvider,
-          ],
+        entries[job.jobId] = videoDownloadJobTaskEntry(
+          job,
+          snapshot: snapshot,
           actions: widget.actionsFor(job, snapshot),
           builder: (BuildContext context) => widget.itemBuilder(
             context,

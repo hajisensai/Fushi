@@ -65,6 +65,7 @@ class MangaRenderedLine {
     this.voice,
     this.seed,
     this.shape,
+    this.direction,
   });
 
   /// [MangaScriptLine.lineId]。
@@ -103,6 +104,10 @@ class MangaRenderedLine {
   /// 记 null。
   final String? shape;
 
+  /// 出这段音频时生效的演出指纹（情绪 / 强度 / 语气说明 / 偏移，按引擎能力取舍后；
+  /// `mangaDirectionKey`）。null = 没有生效的演出（含没有这个字段的旧清单行）。
+  final String? direction;
+
   MangaTimedLine get timed => MangaTimedLine(
     page: page,
     speaker: speaker,
@@ -121,6 +126,7 @@ class MangaRenderedLine {
     String? text,
     String? spoken,
     String? shape,
+    String? direction,
   }) => MangaRenderedLine(
     lineId: lineId,
     page: page,
@@ -136,6 +142,7 @@ class MangaRenderedLine {
     voice: voice,
     seed: seed,
     shape: shape,
+    direction: direction,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -153,6 +160,7 @@ class MangaRenderedLine {
     if (voice != null) 'voice': voice,
     if (seed != null) 'seed': seed,
     if (shape != null) 'shape': shape,
+    if (direction != null) 'dir': direction,
   };
 
   static MangaRenderedLine? fromJson(Object? raw) {
@@ -181,6 +189,7 @@ class MangaRenderedLine {
     final Object? voice = raw['voice'];
     final Object? seed = raw['seed'];
     final Object? shape = raw['shape'];
+    final Object? direction = raw['dir'];
     return MangaRenderedLine(
       lineId: id,
       page: page,
@@ -199,6 +208,7 @@ class MangaRenderedLine {
       voice: voice is String ? voice : null,
       seed: seed is int ? seed : null,
       shape: shape is String ? shape : null,
+      direction: direction is String ? direction : null,
     );
   }
 }

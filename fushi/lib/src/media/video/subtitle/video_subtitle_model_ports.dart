@@ -15,6 +15,7 @@ import 'package:fushi_asr_core/asr_core.dart'
     show
         AsrAccelerationPreference,
         AsrAudioProfile,
+        AsrEncoderVariant,
         AsrLanguage,
         AsrTranscribePlan,
         AsrTranscriptionService,
@@ -108,11 +109,15 @@ class AppVideoSubtitleAsrModelPort implements VideoSubtitleAsrModelPort {
       mixedKey: mixedKey,
       songKey: _key(language, audioProfile),
       downloadMixedMissing: downloadMixed,
-      mixedReady: () async => (await _plan(
-        _service(AsrAudioProfile.mixedAudio),
-        asrLanguage,
-      )).modelReady,
-      downloadSongMissing: () => _downloadMissing(asrLanguage, audioProfile),
+      mixedReadyVariant: () async {
+        final AsrTranscribePlan mixed = await _plan(
+          _service(AsrAudioProfile.mixedAudio),
+          asrLanguage,
+        );
+        return mixed.modelReady ? mixed.variant : null;
+      },
+      downloadSongMissing: (AsrEncoderVariant variant) =>
+          _downloadSongMissing(asrLanguage, audioProfile, variant),
     );
   }
 
@@ -125,6 +130,18 @@ class AppVideoSubtitleAsrModelPort implements VideoSubtitleAsrModelPort {
           ? sharedModelDownloads.attach(_key(language, audioProfile))
           : null) ??
       sharedModelDownloads.attach(_key(language, AsrAudioProfile.mixedAudio));
+
+  /// 歌曲素材只补分离模型：按混音包**在盘的**识别变体 [variant] 下（见
+  /// [joinSongModelDownload]），不按歌曲包此刻的推荐变体。
+  static Stream<ModelDownloadEvent> _downloadSongMissing(
+    AsrLanguage language,
+    AsrAudioProfile profile,
+    AsrEncoderVariant variant,
+  ) async* {
+    final AsrTranscriptionService service = _service(profile);
+    if ((await _plan(service, language)).modelReady) return;
+    yield* service.downloadModel(language: language, variant: variant);
+  }
 
   static Stream<ModelDownloadEvent> _downloadMissing(
     AsrLanguage language,

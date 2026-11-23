@@ -145,6 +145,42 @@ void main() {
     expect(estimate['requests'], 0);
   });
 
+  // BUG-5283：待确认身份队列的「让 AI 重试」。
+  test('scrape/retry：参数校验；记一趟只含该阶段、带 target 的运行', () async {
+    await expectLater(
+      call(
+        'POST',
+        '$kLibraryCurateCtlRoot/scrape/retry',
+        body: const <String, Object?>{'stage': 'video', 'ref': 'x'},
+      ),
+      throwsA(isA<CtlFailure>()),
+    );
+    await expectLater(
+      call(
+        'POST',
+        '$kLibraryCurateCtlRoot/scrape/retry',
+        body: const <String, Object?>{'stage': 'books'},
+      ),
+      throwsA(isA<CtlFailure>()),
+    );
+    final Map<String, Object?> run =
+        await call(
+              'POST',
+              '$kLibraryCurateCtlRoot/scrape/retry',
+              body: const <String, Object?>{'stage': 'games', 'ref': 'game:1'},
+            )
+            as Map<String, Object?>;
+    expect(run['trigger'], 'manual');
+    expect(run['target'], 'game:1');
+    expect(
+      <Object?>[
+        for (final Object? s in run['stages']! as List<Object?>)
+          (s! as Map)['stage'],
+      ],
+      <Object?>['scrape.games'],
+    );
+  });
+
   test('wait=false：后台开跑立即返回运行 id', () async {
     final Map<String, Object?> r =
         await call(
