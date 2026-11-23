@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T16:43:29Z",
+ "generatedAt": "2026-11-23T16:56:35Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "f61e72ab2cb645227aeb0d5557f3926049871633",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "f61e72ab2cb645227aeb0d5557f3926049871633",
    "unknown": false,
-   "publishedAt": "2026-11-23T16:43:16Z",
-   "testflight": false,
+   "publishedAt": "2026-11-23T16:56:20Z",
+   "testflight": true,
    "baseSeq": 32049,
    "prs": [
     4296,
@@ -92,16 +92,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45210314256"
+     "state": "ok"
     },
     "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45210314256"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45210314256"
+     "state": "ok"
     }
    }
   },
@@ -207,138 +204,6 @@
    "platforms": {
     "android": {
      "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32001,
-   "version": "3.4.0",
-   "sha": "4e31e0e4ab4af4c10d4669fdc116be21c5f383a5",
-   "unknown": false,
-   "publishedAt": "2026-11-23T13:55:49Z",
-   "testflight": true,
-   "baseSeq": 31907,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "4e31e0e4ab4af4c10d4669fdc116be21c5f383a5",
-     "subject": "fix: 第二批合流后守卫收口——拆出 AnimeSourceBookSpec 让同步编排层退出 import 大环；中继走统一出站装配点；补 game ocr-start/ocr-region CLI；v178 查词索引的 v105 种子、格式枚举比较、偏好键序、横拖、封面派生登记、纯 Dart 测试"
-    },
-    {
-     "sha": "622aba0f8ef3e386f3a7fe2d4d3442b1413f69ed",
-     "subject": "chore(engine): 清掉 fushi_engine 包 analyze 的 6 条遗留告警"
-    },
-    {
-     "sha": "d9bcb4cd4220981e26de8c8efd605903fdc7f777",
-     "subject": "feat(cli): library curate-retry——补上待确认队列单条重试路由的 CLI 命令（ctl_cli_route_coverage 守卫红）"
-    },
-    {
-     "sha": "10faccc7e40238795ac13f59f0d7294b38285e5f",
-     "subject": "docs(bugs): 第二批合流后重建 BUGS.md 索引"
-    },
-    {
-     "sha": "1d524e8e18a50d4bf962f437286ca7e0004a06f9",
-     "subject": "Merge #4271 (claude/imusic-impl) into develop"
-    },
-    {
-     "sha": "bb97d9d757c40b6fd499f97064df74ada3d84289",
-     "subject": "Merge #4280 (claude/fix-manga-audio-import-busy) into develop"
-    },
-    {
-     "sha": "cdfd298d4f0a6d7feaeb938adf86c31ec02739eb",
-     "subject": "Merge #4264 (claude/dec-4kowk3c2mn) into develop"
-    },
-    {
-     "sha": "c70272b47c89b76914cc1308381c7b029e6d54cf",
-     "subject": "Merge #4261 (claude/dec-fmicnouu6v-manual-meta) into develop"
-    },
-    {
-     "sha": "b9c802463e2706ab38a9e78bc77993eeac8da995",
-     "subject": "Merge #4259 (claude/dec-screen-ocr-crop-on-mine) into develop"
-    },
-    {
-     "sha": "bc966978d30fad52b85301b937a970b6bd3df2ec",
-     "subject": "Merge #4262 (claude/dec-pitch-positions-inline) into develop"
-    },
-    {
-     "sha": "7ee741ef89cf7f050c74a955ab39aba3e9c1888e",
-     "subject": "Merge #4266 (claude/dec-tujsilpl9d-audiobook-follow) into develop"
-    },
-    {
-     "sha": "8955a77ee1e977dd35dba02d6154c09e42f6612a",
-     "subject": "Merge #4255 (claude/dec-manga-audio-external-inplace) into develop"
-    },
-    {
-     "sha": "eb8c14f0975d18032487b3e465d0e6abed9412b1",
-     "subject": "Merge #4267 (claude/dec-tw9ete-fhx-p3) into develop"
-    },
-    {
-     "sha": "40214d9b318c934d9f520702130c596e6ea3660f",
-     "subject": "Merge #4275 (claude/fb-3ERe-0Q4q8) into develop"
-    },
-    {
-     "sha": "ea974db9e3d899d6a856f407e09a4e4b7a2b4bff",
-     "subject": "Merge #4276 (claude/fb-rXKCdG5iya) into develop"
-    },
-    {
-     "sha": "21d7412e3a590a457f5755b1229fab983fdb8c24",
-     "subject": "Merge #4274 (claude/fb-WiApB3TljP) into develop"
-    },
-    {
-     "sha": "d49960c3d66ae7caf2634b3b7b5c5d795a1afeb8",
-     "subject": "Merge #4277 (claude/fb-XjVrPWOjL6) into develop"
-    },
-    {
-     "sha": "5b3f0e79e07a979f407a82e0db61ab52de04304a",
-     "subject": "Merge #4260 (claude/dec-um72-lookup-chips) into develop"
-    },
-    {
-     "sha": "1b2b34f714abe6c3960a81aef642c7d56198c7eb",
-     "subject": "Merge #4257 (claude/dec-pr4211-followups) into develop"
-    },
-    {
-     "sha": "36232a3ff83448d2b25898c078a27d3e6ad0fab4",
-     "subject": "Merge #4265 (claude/dec-ztedu-youtube-live-chat) into develop"
-    },
-    {
-     "sha": "b583c1c04e450de6b9fbe47d1f889f44b1d3ff07",
-     "subject": "Merge #4269 (claude/dec-texthook-auto-lookup) into develop"
-    },
-    {
-     "sha": "b052fd02bdc3787b216b6b4bee486e7f637f3a4e",
-     "subject": "Merge #4270 (claude/dec-ocr-game-phase2) into develop"
-    },
-    {
-     "sha": "ad66c687c58ff0626aa2e0143298927527ed35e7",
-     "subject": "Merge #4263 (claude/dec-42uuu-kcwd-media) into develop"
-    },
-    {
-     "sha": "22d11cf974073257c8a34d5e32f3bc6ca4046114",
-     "subject": "Merge #4268 (claude/dec-combo-node-split) into develop"
-    },
-    {
-     "sha": "34243aa2eb664cca537ccf4d18ea8d5f2959e857",
-     "subject": "Merge #4273 (claude/dec-my5vwg1nd-online-sync) into develop"
-    },
-    {
-     "sha": "a2ac2360153f5b1edf91a83966e407c4bf827cd5",
-     "subject": "Merge #4279 (claude/dec-pgppujl99g-cli-batch2) into develop"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45176121572"
     },
     "windows": {
      "state": "ok"
