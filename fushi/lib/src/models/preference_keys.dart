@@ -766,6 +766,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // base64 的密码 / API key → 同时登记在 kCredentialPreferenceKeys、
   // PrefRedactionPolicy.sensitiveKeys 与 deviceLocalPrefKeys。
   'music_subsonic_servers',
+  // String（JSON map `{条目身份: bool}`，默认空 = 全部按默认开）：音乐库生成字幕前
+  // 「先分离人声」按条目记住的选择（拍板 W_wrz-ZPU8；身份是 `music:track:<uid>` /
+  // `music:album:<uid>` / `music:source:<本库 id>`）。键含本库自增 id 与本机曲库身份：
+  // 设备本地（deviceLocalPrefKeys）。
+  'music_subtitle_vocal_separation',
   // bool（默认 false）：VGMdb 补充（社区镜像 vgmdb.info，无官方 API，频率保守、可关）。
   'music_vgmdb_enabled',
   // bool（默认 false）：打开全屏歌词动画时给还没有 AI 主题的歌自动生成一份
