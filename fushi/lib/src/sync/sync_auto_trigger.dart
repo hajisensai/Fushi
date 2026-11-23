@@ -1711,6 +1711,8 @@ Future<SyncConflict?> syncExitedBookOnChannel({
   required EpubBookRow book,
 }) async {
   if (backend is InterconnectSyncBackend) {
+    // 章节式互联漫画没有可与 host 对齐的书级进度（BUG-5352）。
+    if (!InterconnectBookProgressSync.syncsBookProgress(book)) return null;
     final InterconnectBookProgressSync sync = InterconnectBookProgressSync(
       db: db,
       backend: backend,
