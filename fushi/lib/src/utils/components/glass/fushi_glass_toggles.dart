@@ -3928,7 +3928,10 @@ class FushiAppleSegmentData {
 /// 库 ios27 静止态的实测值（见 [_appleSegmentThumbDecoration]）：轨道
 /// tertiarySystemFill 灰胶囊、选中滑块深色是更亮的灰（≈ systemGray4）、浅色是
 /// 白。这些都是不透明度固定的实色填充，不挂模糊 / 着色器，所以四个玻璃画质档
-/// 位（含实色档）观感一致。
+/// 位（含实色档）静止观感一致。按下 / 拖动 / 切换滑动途中，着色器档（标准 /
+/// 高级）额外在文字层之上浮起一颗库 [AnimatedGlassIndicator] 透镜（只画近乎
+/// 无色的折射玻璃、不画实色体，实色滑块同时淡出），落位后收回实色；精简 /
+/// 实色档与减少动态效果下没有透镜（见 [_AppleSegmentThumbMotion]）。
 ///
 /// 交互：点一段选中；在控件上横拖时滑块跟手，松开吸附到最近一段；每段一个
 /// 焦点停靠点（Enter / 手柄 A → [ActivateIntent]），键盘焦点画强调色环；
@@ -4132,6 +4135,27 @@ class _FushiAppleSegmentedControlState
                 local.dx <= left + visualWidths[visualOf(selected)];
           }
 
+          final Widget labels = Row(
+            textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
+            children: <Widget>[
+              for (int i = 0; i < count; i++)
+                SizedBox(
+                  width: logicalWidths[i],
+                  child: _buildCell(
+                    context,
+                    i,
+                    apple,
+                    selected: i == selected,
+                    radius: radius,
+                  ),
+                ),
+            ],
+          );
+          // 透镜只在着色器档（标准 / 高级）且动效开着时出现；精简 / 实色档、
+          // 减少动态效果下仍是实色滑块 + 0.95 微缩。
+          final bool lensAllowed =
+              _appleLensAllowed(context) && slide.duration > Duration.zero;
+
           return RawGestureDetector(
             behavior: HitTestBehavior.opaque,
             gestures: <Type, GestureRecognizerFactory>{
@@ -4192,61 +4216,88 @@ class _FushiAppleSegmentedControlState
                       };
                     }),
             },
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                // 选中滑块：在文字层之下。
-                if (selected >= 0 && count > 0)
-                  AnimatedPositioned(
-                    // 拖动中跟手（零时长），其余时候位置与宽度一起按弹簧插值。
-                    duration: _dragCenter != null
-                        ? Duration.zero
-                        : slide.duration,
-                    curve: slide.curve,
-                    left: thumbLeft,
-                    top: _inset,
-                    width: thumbWidth,
-                    height: thumbHeight,
-                    child: IgnorePointer(
-                      // 按住选中段 / 拖着滑块时滑块微缩到 0.95（iOS 27）。
-                      child: AnimatedScale(
-                        scale: _dragCenter != null || _pressedIndex == selected
-                            ? 0.95
-                            : 1,
-                        duration: press.duration,
-                        curve: press.curve,
-                        child: DecoratedBox(
-                          decoration: _appleSegmentThumbDecoration(
-                            context,
-                            radius: radius,
+            child: _AppleSegmentThumbMotion(
+              left: thumbLeft,
+              width: thumbWidth,
+              // 拖动中跟手（零时长），其余时候位置与宽度一起按弹簧插值。
+              slideDuration: _dragCenter != null
+                  ? Duration.zero
+                  : slide.duration,
+              slideCurve: slide.curve,
+              lensAllowed: lensAllowed,
+              lensHeld: _dragCenter != null || _pressedIndex == selected,
+              builder: (double left, double width, double lens) {
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    // 选中滑块（实色）：在文字层之下；透镜浮起时淡出。
+                    if (selected >= 0 && count > 0)
+                      Positioned(
+                        left: left,
+                        top: _inset,
+                        width: width,
+                        height: thumbHeight,
+                        child: IgnorePointer(
+                          // 无透镜档：按住选中段 / 拖着滑块时滑块微缩到 0.95
+                          // （iOS 27）。透镜档由透镜放大接手，实色体不缩。
+                          child: AnimatedScale(
+                            scale:
+                                !lensAllowed &&
+                                    (_dragCenter != null ||
+                                        _pressedIndex == selected)
+                                ? 0.95
+                                : 1,
+                            duration: press.duration,
+                            curve: press.curve,
+                            child: Opacity(
+                              opacity: (1 - lens * 1.2).clamp(0.0, 1.0),
+                              child: DecoratedBox(
+                                decoration: _appleSegmentThumbDecoration(
+                                  context,
+                                  radius: radius,
+                                ),
+                              ),
+                            ),
                           ),
                         ),
                       ),
+                    Positioned(
+                      left: _inset,
+                      right: _inset,
+                      top: 0,
+                      bottom: 0,
+                      child: labels,
                     ),
-                  ),
-                Positioned(
-                  left: _inset,
-                  right: _inset,
-                  top: 0,
-                  bottom: 0,
-                  child: Row(
-                    textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
-                    children: <Widget>[
-                      for (int i = 0; i < count; i++)
-                        SizedBox(
-                          width: logicalWidths[i],
-                          child: _buildCell(
-                            context,
-                            i,
-                            apple,
-                            selected: i == selected,
-                            radius: radius,
-                          ),
+                    // 液态玻璃透镜（iOS 26 / 27 `UISegmentedControl` 按下 /
+                    // 拖动 / 切换滑动时的放大镜）：库 [AnimatedGlassIndicator]
+                    // 只画玻璃、不画实色体，叠在文字层**之上**——它是近乎
+                    // 无色、不模糊的折射透镜，文字透过它被放大折射，不会被
+                    // 盖住（10-05 的「白胶囊盖字」是库 premium 指示器参数 +
+                    // 实色体同画在上层，这里实色体留在文字下、透镜只折射）。
+                    if (selected >= 0 && count > 0 && lens > 0.01)
+                      AnimatedGlassIndicator(
+                        velocity: 0,
+                        itemCount: count,
+                        alignment: Alignment.centerLeft,
+                        thickness: lens.clamp(0.0, 1.0),
+                        quality: fushiGlassQuality(context, prominent: true),
+                        indicatorColor: Colors.transparent,
+                        isBackgroundIndicator: false,
+                        paintBackground: false,
+                        borderRadius: radius,
+                        padding: const EdgeInsets.symmetric(vertical: _inset),
+                        exactOffset: left,
+                        exactWidth: width,
+                        expansion: EdgeInsets.symmetric(
+                          horizontal: math.max(4, width * 0.08),
+                          vertical: thumbHeight * 0.16,
                         ),
-                    ],
-                  ),
-                ),
-              ],
+                        settings: _appleSegmentLensSettings(context),
+                        pinchStrength: 0.4,
+                      ),
+                  ],
+                );
+              },
             ),
           );
         },
@@ -4364,6 +4415,69 @@ class _SegmentThumbDragRecognizer extends HorizontalDragGestureRecognizer {
     }
     return super.isPointerAllowed(event);
   }
+}
+
+/// 分段滑块的位置 / 宽度弹簧插值 + 透镜浮起量（0 = 实色胶囊，1 = 完整透镜）。
+///
+/// 透镜在三种时刻浮起：按住选中段、拖着滑块、以及换段后滑块弹簧滑动的途中
+/// （插值位置离目标还超过 0.5 px）；落位后收回实色。[lensAllowed] 为 false
+/// （精简 / 实色档、减少动态效果）时浮起量恒为 0。
+class _AppleSegmentThumbMotion extends StatelessWidget {
+  const _AppleSegmentThumbMotion({
+    required this.left,
+    required this.width,
+    required this.slideDuration,
+    required this.slideCurve,
+    required this.lensAllowed,
+    required this.lensHeld,
+    required this.builder,
+  });
+
+  final double left;
+  final double width;
+  final Duration slideDuration;
+  final Curve slideCurve;
+  final bool lensAllowed;
+  final bool lensHeld;
+  final Widget Function(double left, double width, double lens) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final Duration lensDuration = _appleLensDuration(context);
+    return TweenAnimationBuilder<Offset>(
+      tween: Tween<Offset>(end: Offset(left, width)),
+      duration: slideDuration,
+      curve: slideCurve,
+      builder: (BuildContext context, Offset frame, Widget? _) {
+        final bool sliding =
+            (frame.dx - left).abs() > 0.5 || (frame.dy - width).abs() > 0.5;
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(
+            end: lensAllowed && (lensHeld || sliding) ? 1 : 0,
+          ),
+          duration: lensDuration,
+          curve: Curves.easeOutCubic,
+          builder: (BuildContext context, double lens, Widget? _) =>
+              builder(frame.dx, frame.dy, lensAllowed ? lens : 0),
+        );
+      },
+    );
+  }
+}
+
+/// 分段透镜的玻璃参数：近乎无色、不模糊、一圈细亮边 + 折射（与底栏胶囊的
+/// 选中透镜同一套取值），深色收低光照，避免整颗透镜泛白盖住文字。
+LiquidGlassSettings _appleSegmentLensSettings(BuildContext context) {
+  final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
+  return LiquidGlassSettings(
+    glassColor: Colors.white.withValues(alpha: dark ? 0.03 : 0.12),
+    thickness: 16,
+    refractiveIndex: 1.18,
+    lightIntensity: dark ? 0.4 : 0.8,
+    ambientRim: dark ? 0.25 : 0.3,
+    chromaticAberration: 0,
+    blur: 0,
+  );
 }
 
 /// 分段控件选中滑块（[FushiAppleSegmentedControl] 与多选 / 竖排退回形态
