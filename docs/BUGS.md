@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4659 条。点号进各自文件。
+> 共 4661 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5362](bugs/BUG-5362-overlay-handoff-reading-mismatch.md) | ✅ | ✅ | 覆盖窗转交高级制卡：同表记异读音时定位到错词条 |
+| [BUG-5361](bugs/BUG-5361-overlay-handoff-stale-locate-reply.md) | ✅ | ✅ | 覆盖窗转交高级制卡：定位往返途中手动查别的词，旧回包仍开对话框 |
 | [BUG-5357](bugs/BUG-5357-manga-novel-arrow-direction-parity.md) | ✅ | ✅ | 小说与漫画左右翻页方向判据不一致 |
 | [BUG-5356](bugs/BUG-5356-bluray-playall-episode-axis-anchors.md) | ✅ | ✅ | 原盘「全部播放」按集换库身份后，时间锚点仍在整条播放列表时间轴上 |
 | [BUG-5355](bugs/BUG-5355-music-visualizer-top-band-and-picker-clip.md) | ✅ | ✅ | music-visualizer-top-band-and-picker-clip |
