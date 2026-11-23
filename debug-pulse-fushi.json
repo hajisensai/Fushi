@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T18:06:27Z",
+ "generatedAt": "2026-11-23T18:16:45Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "e6d7347eaf265f9bb4faa42ed914abfdeb5275b8",
-  "seq": 32125
+  "sha": "6996c736bbdfc493cc728c80b8e0fb8ff758f520",
+  "seq": 32135
  },
  "builds": [
   {
@@ -13,7 +13,7 @@
    "sha": "e6d7347eaf265f9bb4faa42ed914abfdeb5275b8",
    "unknown": false,
    "publishedAt": "2026-11-23T18:06:08Z",
-   "testflight": false,
+   "testflight": true,
    "baseSeq": 32101,
    "prs": [],
    "direct": [
@@ -249,7 +249,52 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "6996c736bbdfc493cc728c80b8e0fb8ff758f520",
+  "headSeq": 32135,
+  "prs": [],
+  "direct": [
+   {
+    "sha": "6996c736bbdfc493cc728c80b8e0fb8ff758f520",
+    "subject": "Merge #4320 (claude/fix-develop-red-video-music) into develop"
+   },
+   {
+    "sha": "464e37d4c3977d1006f98bd24f3157e6144fcbf1",
+    "subject": "Merge #4319 (claude/fix-develop-red-popup) into develop"
+   },
+   {
+    "sha": "89fb2d8669b0c0a47672b513b83175568b218de7",
+    "subject": "Merge #4318 (claude/fix-develop-red-reader-srs) into develop"
+   },
+   {
+    "sha": "86ece60d21c37bf59847a9733f75169015557738",
+    "subject": "Merge #4317 (claude/fix-develop-red-manga-js) into develop"
+   },
+   {
+    "sha": "43fb12d5326a61cac60ab9522ad35f479d7a7c0c",
+    "subject": "Merge #4316 (claude/fix-develop-red-ops) into develop"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45236069961"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45236069950"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45236069950"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45236069950"
+   }
+  }
+ },
  "prs": {
   "4278": {
    "number": 4278,
