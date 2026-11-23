@@ -15,11 +15,12 @@
 /// 音量为 0（静音）时不跟滑块：截出一段无声的卡没有意义，这时只施加响度那部分增益。
 library;
 
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
+import 'package:fushi/src/utils/misc/desktop_audio_playback.dart'
+    show justAudioUsesMediaKitBackend;
 
 /// 播放后端的音量曲线：滑块值 → 实际振幅倍数的换算方式。
 enum PlaybackVolumeCurve {
@@ -62,11 +63,11 @@ double? musicMiningClipGainDb({
       playbackVolumeGainDb(settings.volume, PlaybackVolumeCurve.mpvCubic);
 }
 
-/// 有声书播放器（just_audio）在本平台的音量曲线：Windows / Linux 由
-/// `JustAudioMediaKit.ensureInitialized()`（缺省只接管这两端）交给 libmpv，其余平台走
-/// just_audio 原生后端。
+/// 有声书播放器（just_audio）在本平台的音量曲线：走 media_kit 后端的平台交给 libmpv
+/// （立方曲线），其余平台走 just_audio 原生后端（线性）。平台判据只认
+/// [justAudioUsesMediaKitBackend] 一处，不另写 `Platform.is*`。
 PlaybackVolumeCurve get audiobookPlaybackVolumeCurve =>
-    Platform.isWindows || Platform.isLinux
+    justAudioUsesMediaKitBackend
     ? PlaybackVolumeCurve.mpvCubic
     : PlaybackVolumeCurve.linear;
 
