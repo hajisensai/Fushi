@@ -573,6 +573,7 @@ Map<String, Object?> settingsIndexEntryJson(
     if (max != null) 'max': max,
     if (reset != null) 'default': reset.defaultLabel,
     if (reset != null) 'modified': reset.modified,
+    if (reset != null && reset.pinnedAtDefault) 'pinnedAtDefault': true,
     if (settingsIndexRunnable(entry)) 'runnable': true,
     if (item is SettingsActionItem &&
         (item.destructive || cli?.confirm == true))

@@ -2,10 +2,12 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 
 import '../helpers/test_platform_services.dart';
 
@@ -142,6 +144,53 @@ void main() {
         containsPair('书', 999),
         reason: '刚读完的书必须立即反映新时间戳，hero/最近阅读才不陈旧',
       );
+    });
+
+    // BUG-5332 G5：在线漫画只在作品页「标记已读」过的章不写 reader_positions，
+    // 时刻表要并进章 readAt，且标记后（经 fushiBooksProvider 转手）即时失效重算。
+    test('并进章 readAt（取大）；标记章已读后时刻表即时失效', () async {
+      await db.upsertReaderPosition(
+        const ReaderPositionsCompanion(
+          bookUid: Value('书'),
+          sectionIndex: Value(0),
+          normCharOffset: Value(1),
+          updatedAt: Value(5),
+        ),
+      );
+      final ProviderSubscription<AsyncValue<List<MediaItem>>> books = container
+          .listen(
+            fushiBooksProvider(JapaneseLanguage.instance),
+            (AsyncValue<List<MediaItem>>? _, AsyncValue<List<MediaItem>> _) {},
+          );
+      final ProviderSubscription<AsyncValue<Map<String, int>>> recency =
+          container.listen(
+            bookLastReadAtProvider,
+            (
+              AsyncValue<Map<String, int>>? _,
+              AsyncValue<Map<String, int>> _,
+            ) {},
+          );
+      await container.read(
+        fushiBooksProvider(JapaneseLanguage.instance).future,
+      );
+      expect(await container.read(bookLastReadAtProvider.future), <String, int>{
+        '书': 5,
+      });
+
+      await db.markMangaChaptersRead(
+        bookUid: '在线漫画',
+        chapterKeys: <String>['c1', 'c2'],
+      );
+      Map<String, int>? latest;
+      for (int i = 0; i < 100; i++) {
+        latest = container.read(bookLastReadAtProvider).valueOrNull;
+        if (latest?.containsKey('在线漫画') ?? false) break;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(latest, containsPair('书', 5));
+      expect(latest!['在线漫画'], greaterThan(0));
+      books.close();
+      recency.close();
     });
   });
 }

@@ -1547,11 +1547,7 @@ class _DictionaryDialogPageState extends BasePageState {
     final List<String> paths = await pickSystemFilePaths(
       context: context,
       allowedExtensions: const <String>{
-        'zip',
-        '7z',
-        'rar',
-        'dsl',
-        'mdx',
+        ...kDictionarySurfaceDropExtensions,
         'ifo',
         'css',
       },
@@ -1682,7 +1678,7 @@ class _DictionaryDialogPageState extends BasePageState {
     }
   }
 
-  /// 桌面拖放落地处理：把拖入文件按扩展名分类，取出词典包（`.zip`/`.dsl`/`.mdx`）+
+  /// 桌面拖放落地处理：把拖入文件按扩展名分类，取出词典包（`.zip`/`.dsl`/`.mdx`/`.7z`/`.rar`）+
   /// 同批拖入的 `.css` 样式附件，交给与「导入词典」按钮同源的 [_importDictionaryPaths]。
   /// 没有词典包时给用户明确反馈；移动端无桌面拖放，[FushiFileDropTarget] 已直接
   /// 透传 child，本回调在移动端永不触发。纯分类逻辑见 [classifyDroppedFilesForDictionary]。
@@ -4124,11 +4120,7 @@ class _DictionaryDialogPageState extends BasePageState {
     final String? pickedPath = await pickSystemFilePath(
       context: context,
       allowedExtensions: const <String>{
-        'zip',
-        '7z',
-        'rar',
-        'dsl',
-        'mdx',
+        ...kDictionarySurfaceDropExtensions,
         'ifo',
       },
     );

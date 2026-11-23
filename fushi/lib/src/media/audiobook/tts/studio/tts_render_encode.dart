@@ -15,6 +15,7 @@ import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_cast_timing.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:path/path.dart' as p;
@@ -100,16 +101,37 @@ String buildTtsConcatList(List<({String path, int durationMs})> entries) {
 }
 
 /// 一句实际下发的演出参数：种子按选角表（单句重生成写下的 → 作品默认
-/// [TtsCast.defaultSeed]），再去掉引擎 [support] 不支持的字段（缓存键只含生效的
-/// 字段，见 [TtsDirection.cacheIdentity]）。
+/// [TtsCast.defaultSeed]），语气（情绪 + 强度、语气说明、语速 / 音高 / 音量偏移）取
+/// 这句的标注行，再去掉引擎 [support] 不支持的字段（情绪按需折成偏移；缓存键只含生效
+/// 的字段，见 [TtsDirection.cacheIdentity]）。
 TtsDirection ttsSentenceDirection({
   required TtsDirectionSupport support,
   required TtsCast cast,
   required TtsPlanSentence sentence,
-}) => effectiveTtsDirection(
-  support,
-  TtsDirection(seed: cast.seedFor(sentence.section, sentence.matchStart)),
-);
+}) {
+  final int seed = cast.seedFor(sentence.section, sentence.matchStart);
+  final TtsCastLine? line =
+      cast.lines[ttsLineKey(sentence.section, sentence.matchStart)];
+  return effectiveTtsDirection(
+    support,
+    line == null
+        ? TtsDirection(seed: seed)
+        : TtsDirection.fromLine(line.direction, seed: seed),
+  );
+}
+
+/// 一句在合成缓存里的键：声音身份 + 实际生效的演出（[ttsSentenceDirection]）+ 念的
+/// 文字。制作（`tts_render_runner.dart`）与补回未配音句（`tts_unvoiced_backfill.dart`）
+/// 必须同一口径——补回写进缓存的音频要被随后的制作任务按同一个键命中，否则补回白做、
+/// 制作时又按原样重合成一遍。
+String ttsSentenceCacheKey({
+  required Map<String, Object?> voiceIdentity,
+  required TtsDirection direction,
+  required String text,
+}) => TtsAudioCache.keyFor(<String, Object?>{
+  ...voiceIdentity,
+  ...direction.cacheIdentity,
+}, text);
 
 /// 一章各处的停顿（毫秒），长度 = 句数 + 1：`[0]` 章首、`[k]`（1 ≤ k < n）第 k-1
 /// 句之后、`[n]` 章尾。

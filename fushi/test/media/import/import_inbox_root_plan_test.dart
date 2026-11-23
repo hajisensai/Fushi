@@ -53,7 +53,7 @@ void main() {
     ]);
   });
 
-  group('HBK-AUDIT-220：导入计划与播放器实际选字幕同一归属', () {
+  group('HBK-AUDIT-220：导入计划与播放器实际选字幕同一归属（最长主干认领）', () {
     /// 搬完后的目录里，每个视频按播放器规则（[pickSidecar]，学日语）选到的字幕必须
     /// 是它自己这一组带来的（或目录里原本就配它的），不能是别的视频的。
     void expectNoCrossPick({
@@ -62,6 +62,8 @@ void main() {
       required Map<String, String?> ownSubtitleOf,
     }) {
       final List<String> targets = plan(root, existing);
+      // 最长主干认领下这几种组合都不交叉，原名搬入、不出「(2)」。
+      expect(targets, root, reason: '目标名');
       final List<String> dir = <String>[...existing, ...targets];
       final Map<String, String> targetOf = <String, String>{
         for (int i = 0; i < root.length; i++) root[i]: targets[i],
@@ -121,5 +123,22 @@ void main() {
         },
       );
     });
+  });
+  test('同 stem 不同容器的旧视频带字幕：新视频整组改名（两个视频会同时认领）', () {
+    expect(
+      plan(
+        <String>['EP01.mkv', 'EP01.srt'],
+        <String>['EP01.mp4', 'EP01.ja.srt'],
+      ),
+      <String>['EP01 (2).mkv', 'EP01 (2).srt'],
+    );
+  });
+
+  test('新组的字幕会被更长 stem 的旧视频认领时整组改名', () {
+    // 旧 `EP01.ja.mkv` 会认领新来的 `EP01.ja.srt`（它对 `EP01` 也成立，但归最长的）。
+    expect(
+      plan(<String>['EP01.mkv', 'EP01.ja.srt'], <String>['EP01.ja.mkv']),
+      <String>['EP01 (2).mkv', 'EP01 (2).ja.srt'],
+    );
   });
 }

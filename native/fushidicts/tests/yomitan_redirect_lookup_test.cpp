@@ -17,6 +17,10 @@
 // 「sidecar 确实被读」的反向证据（伪造 0 后重定向记录原样浮上来）。R1–R7 在每种
 // sidecar 状态下都必须原样成立。
 //
+// BUG-5272：Jitendex 的重定向词条（「⟶ 目标词」链接卡 + formOf，或只有链接卡）同样
+// 跟随到目标词条（J1–J4）；判据放宽后旧版 sidecar 失效重扫（S8），只有链接卡的词典
+// 导入端 / 迁移扫描同样打标（S9）。
+//
 // Usage: yomitan_redirect_lookup_test <path/to/fushi/assets/transforms/en.json>
 #include <cstdio>
 #include <filesystem>
@@ -72,6 +76,17 @@ std::string definition_row(const std::string& expr) {
 
 std::string redirect_row(const std::string& expr, const std::string& target) {
   return "[\"" + expr + "\",\"\",\"\",\"\",0,[[\"" + target + "\",[\"Redirected from " + expr + "\"]]],0,\"\"]";
+}
+
+// Jitendex 重定向词条的链接卡（真词典里 怖気つく 那条的形态，ruby 简化成纯文本）。
+std::string jitendex_card(const std::string& query_encoded, const std::string& label) {
+  return R"J({"type":"structured-content","content":{"tag":"div","lang":"ja","data":{"content":"redirect-glossary"},"content":["⟶",{"tag":"a","href":"?query=)J" +
+         query_encoded + R"J(&wildcards=off","content":[")J" + label + R"J("]}]}})J";
+}
+
+// Jitendex 重定向行：读音空、score 为负（真词典 -101～-105）。
+std::string jitendex_row(const std::string& expr, const std::string& glossary_items) {
+  return "[\"" + expr + "\",\"\",\"\",\"\",-105,[" + glossary_items + "],-2007480,\"\"]";
 }
 
 // R1–R7：一份词典装载状态下的全部断言。[label] 标明装载时 sidecar 的状态，
@@ -149,6 +164,55 @@ void run_redirect_checks(const Lookup& lk, const std::string& label) {
       fail(label + " R7 mixed self-redirect + definition record must stay as-is; got " + dump(results));
     }
   }
+
+  // J1：Jitendex 重定向（链接卡 + formOf）：直接出目标词条，匹配长度是原词，rule 进变形链；
+  // 重定向词条本身（只剩「⟶ 怖気づく」的卡）不出。
+  {
+    auto results = lk.lookup("怖気つくな", 16);
+    const LookupResult* hit = find_expr(results, "怖気づく");
+    if (hit == nullptr || results.front().term.expression != "怖気づく" || hit->matched != "怖気つく") {
+      fail(label + " J1 怖気つく -> 怖気づく first, matched 怖気つく; got " + dump(results));
+    } else if (hit->trace.size() != 1 || hit->trace.back().name != "redirected from 怖気つく") {
+      fail(label + " J1 the Jitendex formOf rule must be the trace (followed once); got " + dump(results));
+    }
+    if (find_expr(results, "怖気つく") != nullptr) {
+      fail(label + " J1 the Jitendex redirect card must not surface as a result; got " + dump(results));
+    }
+  }
+
+  // J2：只有链接卡、没有 formOf 项：目标取 href 的 query（百分号解码），不带 rule。
+  {
+    auto results = lk.lookup("アホんだらめ", 16);
+    const LookupResult* hit = find_expr(results, "阿呆陀羅");
+    if (hit == nullptr || hit->matched != "アホんだら" || !hit->trace.empty()) {
+      fail(label + " J2 link-only card アホんだら -> 阿呆陀羅 (matched アホんだら, empty trace); got " + dump(results));
+    }
+    if (find_expr(results, "アホんだら") != nullptr) {
+      fail(label + " J2 the link-only redirect card must not surface; got " + dump(results));
+    }
+  }
+
+  // J3：formOf 在前、链接卡在后的顺序同样认；同一目标只跟一次。
+  {
+    auto results = lk.lookup("怖じけづく", 16);
+    const LookupResult* hit = find_expr(results, "怖気づく");
+    if (hit == nullptr || hit->matched != "怖じけづく" || hit->trace.size() != 1 ||
+        hit->trace.front().name != "redirected from 怖じけづく") {
+      fail(label + " J3 formOf-first order 怖じけづく -> 怖気づく with exactly its one rule; got " + dump(results));
+    }
+  }
+
+  // J4：链接卡混着真释义的记录不是纯重定向，原样保留、不跟随。
+  {
+    auto results = lk.lookup("怖じ気", 16);
+    const LookupResult* hit = find_expr(results, "怖じ気");
+    if (hit == nullptr || hit->term.glossaries.size() != 1 || !hit->trace.empty()) {
+      fail(label + " J4 a Jitendex card mixed with a definition must stay as-is; got " + dump(results));
+    }
+    if (find_expr(results, "怖気づく") != nullptr) {
+      fail(label + " J4 a non-pure record must not be followed; got " + dump(results));
+    }
+  }
 }
 
 }  // namespace
@@ -183,6 +247,17 @@ int main(int argc, char** argv) {
       redirect_row("dangling phrase", "no such headword"),
       // 释义与自指重定向标签混排（OALDPE10 形态，BUG-2566）：不是纯重定向，原样保留。
       "[\"give up\",\"\",\"\",\"\",0,[[\"give up\",[\"Redirected from give up\"]],\"to stop trying\"],0,\"\"]",
+      // Jitendex（BUG-5272）。%E6%80%96%E6%B0%97%E3%81%A5%E3%81%8F = 怖気づく，
+      // %E9%98%BF%E5%91%86%E9%99%80%E7%BE%85 = 阿呆陀羅。
+      definition_row("怖気づく"),
+      definition_row("阿呆陀羅"),
+      jitendex_row("怖気つく", jitendex_card("%E6%80%96%E6%B0%97%E3%81%A5%E3%81%8F", "怖気づく") +
+                                   ",[\"怖気づく\",[\"redirected from 怖気つく\"]]"),
+      jitendex_row("アホんだら", jitendex_card("%E9%98%BF%E5%91%86%E9%99%80%E7%BE%85", "阿呆陀羅")),
+      jitendex_row("怖じけづく", "[\"怖気づく\",[\"redirected from 怖じけづく\"]]," +
+                                     jitendex_card("%E6%80%96%E6%B0%97%E3%81%A5%E3%81%8F", "怖気づく")),
+      jitendex_row("怖じ気",
+                   jitendex_card("%E6%80%96%E6%B0%97%E3%81%A5%E3%81%8F", "怖気づく") + ",\"fear; nervousness\""),
   };
   std::string bank = "[";
   for (size_t i = 0; i < rows.size(); i++) {
@@ -214,8 +289,8 @@ int main(int argc, char** argv) {
 
   // S1：导入端在写 marker 之前写好 redirect_glossary.flag = 1（本词典有纯重定向）。
   if (!imported.redirect_glossary_present) fail("S1 ImportResult.redirect_glossary_present must be true");
-  if (read_file(flag_path) != "1 " + std::to_string(blobs_size) + "\n") {
-    fail("S1 redirect_glossary.flag must be \"1 <blobs size>\"; got \"" + read_file(flag_path) + "\"");
+  if (read_file(flag_path) != "1 " + std::to_string(blobs_size) + " 2\n") {
+    fail("S1 redirect_glossary.flag must be \"1 <blobs size> 2\"; got \"" + read_file(flag_path) + "\"");
   }
   check_with_fresh_query("[S1 sidecar=1]");
 
@@ -225,21 +300,21 @@ int main(int argc, char** argv) {
 
   // S3：迁移扫描（fushidicts_ensure_redirect_flag 的实现）认出重定向并回填 sidecar。
   if (ensure_redirect_glossary_flag(dict_dir) != 1) fail("S3 ensure_redirect_glossary_flag must report 1");
-  if (read_file(flag_path) != "1 " + std::to_string(blobs_size) + "\n") {
+  if (read_file(flag_path) != "1 " + std::to_string(blobs_size) + " 2\n") {
     fail("S3 migration must rewrite redirect_glossary.flag as 1; got \"" + read_file(flag_path) + "\"");
   }
   check_with_fresh_query("[S3 migrated sidecar=1]");
 
   // S4：sidecar 的大小钉不上（覆盖式恢复留下的陈旧文件）就不采信，照旧检测。
   {
-    std::ofstream(flag_path, std::ios::binary | std::ios::trunc) << "0 " << (blobs_size + 1) << "\n";
+    std::ofstream(flag_path, std::ios::binary | std::ios::trunc) << "0 " << (blobs_size + 1) << " 2\n";
     check_with_fresh_query("[S4 stale sidecar]");
   }
 
   // S5：读侧确实按 sidecar 跳过检测——伪造一份「0」，纯重定向记录就原样浮上来。这条
   // 是反向证据：如果 sidecar 根本没被读，S1/S3 的绿就什么也证明不了。
   {
-    std::ofstream(flag_path, std::ios::binary | std::ios::trunc) << "0 " << blobs_size << "\n";
+    std::ofstream(flag_path, std::ios::binary | std::ios::trunc) << "0 " << blobs_size << " 2\n";
     DictionaryQuery q;
     q.add_term_dict(dict_dir);
     Lookup lk(q, d);
@@ -271,7 +346,7 @@ int main(int argc, char** argv) {
       const std::string plain_dir = plain_out + "/" + plain.title;
       const auto plain_size = std::filesystem::file_size(plain_dir + "/blobs.bin");
       if (plain.redirect_glossary_present) fail("S6 plain dict must report redirect_glossary_present=false");
-      if (read_file(plain_dir + "/redirect_glossary.flag") != "0 " + std::to_string(plain_size) + "\n") {
+      if (read_file(plain_dir + "/redirect_glossary.flag") != "0 " + std::to_string(plain_size) + " 2\n") {
         fail("S6 plain dict sidecar must be \"0 <size>\"");
       }
       std::filesystem::remove(plain_dir + "/redirect_glossary.flag");
@@ -299,9 +374,44 @@ int main(int argc, char** argv) {
     } else {
       const std::string simple_dir = simple_out + "/" + simple.title;
       const auto simple_size = std::filesystem::file_size(simple_dir + "/blobs.bin");
-      if (read_file(simple_dir + "/redirect_glossary.flag") != "0 " + std::to_string(simple_size) + "\n") {
+      if (read_file(simple_dir + "/redirect_glossary.flag") != "0 " + std::to_string(simple_size) + " 2\n") {
         fail("S7 simple dict sidecar must be \"0 <size>\"");
       }
+    }
+  }
+
+  // S8：判据放宽前（v1，没有第三列）写的 sidecar 不采信。存量 Jitendex 的旧 sidecar 是
+  // 「0」——采信它就永远认不出 Jitendex 重定向。读侧照旧逐条检测（R / J 全部照样成立），
+  // 迁移扫描按新判据重写成带版本的「1」。
+  {
+    std::ofstream(flag_path, std::ios::binary | std::ios::trunc) << "0 " << blobs_size << "\n";
+    check_with_fresh_query("[S8 v1 sidecar]");
+    if (ensure_redirect_glossary_flag(dict_dir) != 1) fail("S8 a v1 sidecar must be rescanned and report 1");
+    if (read_file(flag_path) != "1 " + std::to_string(blobs_size) + " 2\n") {
+      fail("S8 migration must rewrite the v1 sidecar as \"1 <size> 2\"; got \"" + read_file(flag_path) + "\"");
+    }
+  }
+
+  // S9：只有 Jitendex 链接卡（没有 Yomitan formOf 项）的词典，导入端与迁移扫描同样认作含重定向。
+  {
+    const std::string jit_out = fushi_test::temp_dir() + "/fushi_yomitan_redirect_jitendex_out";
+    std::filesystem::remove_all(jit_out);
+    const std::string jit_bank =
+        "[" + definition_row("阿呆陀羅") + "," +
+        jitendex_row("アホんだら", jitendex_card("%E9%98%BF%E5%91%86%E9%99%80%E7%BE%85", "阿呆陀羅")) + "]";
+    const std::vector<fushi_test::ZipFile> jit_files = {
+        {"index.json", "{\"title\":\"JitendexLike\",\"format\":3,\"revision\":\"1\"}"},
+        {"term_bank_1.json", jit_bank},
+    };
+    ImportResult jit =
+        dictionary_importer::import(fushi_test::write_zip("yomitan_redirect_jitendex", jit_files), jit_out);
+    if (!jit.success) {
+      fail("S9 Jitendex-like import failed");
+    } else {
+      const std::string jit_dir = jit_out + "/" + jit.title;
+      if (!jit.redirect_glossary_present) fail("S9 a link-card-only dict must report redirect_glossary_present=true");
+      std::filesystem::remove(jit_dir + "/redirect_glossary.flag");
+      if (ensure_redirect_glossary_flag(jit_dir) != 1) fail("S9 migration scan of a link-card-only dict must report 1");
     }
   }
 

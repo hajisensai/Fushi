@@ -88,6 +88,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_media_voice_scope.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_read_along.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_read_along_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
@@ -96,8 +97,8 @@ import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiChoiceOption, showFushiChoiceDialog;
+import 'package:fushi_engine/tts/render/tts_cast.dart' show kTtsNarrator;
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
-import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart'

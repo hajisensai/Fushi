@@ -24,7 +24,7 @@
 
 | Platform | Durum | Notlar |
 |---|---|---|
-| Android | ✅ | Android 7.0 (API 24) veya üzeri |
+| Android | ✅ | Android 8.0 (API 26) veya üzeri |
 | Windows | ✅ | Galgame metin ve ses hook'lama yalnızca Windows'ta çalışır |
 | macOS | ✅ | Yalnızca Apple Silicon; Intel Mac'ler desteklenmez |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Keşif, çevrimiçi kaynaklar ve indirme merkezi yok (App Store yönergeleri) |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 En son sürümü [Fushi web sitesinden](https://fushi.moe/) indirin — Android APK, Windows yükleyicisi ve macOS sürümleri mevcuttur (yalnızca Apple Silicon; Intel Mac'ler desteklenmez); iOS, [TestFlight](https://testflight.apple.com/join/j88d69jx) üzerinden kurulur. Linux için henüz hazır bir uygulama sürümü yoktur; kaynaktan derleyin. Başsız Fushi Server ise ayrıca [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases) adresinden yayımlanır.
 
-> Android 7.0 (API 24) veya üzeri gerekir.
+> Android 8.0 (API 26) veya üzeri gerekir.
 
 ## Derleme
 

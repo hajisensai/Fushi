@@ -13,6 +13,7 @@ import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:path/path.dart' as p;
@@ -1036,6 +1037,65 @@ void main() {
       endsParagraph: false,
       sceneBreakAfter: false,
     );
+
+    test('缓存键带上生效的演出；制作 / 补回 / 试听共用同一口径', () {
+      final TtsCast cast = TtsCast(defaultSeed: 7);
+      cast.lines[ttsLineKey(1, 30)] = const TtsCastLine(
+        speaker: 'A',
+        source: TtsCastSource.llm,
+        emotion: CastEmotion.sadness,
+        intensity: 80,
+        tone: 'おずおずと',
+      );
+      const TtsDirectionSupport prosody = TtsDirectionSupport(
+        rate: true,
+        pitch: true,
+        volume: true,
+      );
+      const Map<String, Object?> identity = <String, Object?>{'p': 'edge'};
+      final TtsDirection directed = ttsSentenceDirection(
+        support: prosody,
+        cast: cast,
+        sentence: at(30),
+      );
+      // 不能原生表达情绪的引擎：情绪折成语速 / 音高 / 音量，语气说明不下发。
+      expect(directed.rateOffset, lessThan(0));
+      expect(directed.tone, isNull);
+      final String key = ttsSentenceCacheKey(
+        voiceIdentity: identity,
+        direction: directed,
+        text: '30',
+      );
+      expect(
+        key,
+        isNot(TtsAudioCache.keyFor(identity, '30')),
+        reason: '演出进了合成，缓存键必须随之区分',
+      );
+      // 没有演出的句子：键与改动前（只有声音身份 + 文字）逐字节一致。
+      expect(
+        ttsSentenceCacheKey(
+          voiceIdentity: identity,
+          direction: ttsSentenceDirection(
+            support: prosody,
+            cast: cast,
+            sentence: at(40),
+          ),
+          text: '40',
+        ),
+        TtsAudioCache.keyFor(identity, '40'),
+      );
+      // 补回未配音句与制作台试听都要按同一个键读写缓存：补回写进去的音频要被随后的
+      // 制作任务命中，试听要播成品里那一句。
+      for (final String path in <String>[
+        'lib/src/media/audiobook/tts/studio/tts_render_runner.dart',
+        'lib/src/media/audiobook/tts/studio/tts_unvoiced_backfill.dart',
+        'lib/src/media/audiobook/tts/studio/tts_studio_page.dart',
+      ]) {
+        final String src = File(path).readAsStringSync();
+        expect(src, contains('ttsSentenceCacheKey('), reason: path);
+        expect(src, contains('ttsSentenceDirection('), reason: path);
+      }
+    });
 
     test('种子：单句写下的优先，其次作品默认；只留引擎支持的字段', () {
       final TtsCast cast = TtsCast(defaultSeed: 7)..setLineSeed(1, 10, 42);

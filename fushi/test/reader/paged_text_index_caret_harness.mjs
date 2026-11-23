@@ -114,64 +114,87 @@ const check = `(async () => {
   if (!sameLocate(r.textNodeAtCharOffset(0), {node: extra.firstChild, remaining: 0})) fails.push('mutation locate');
   extra.remove();
 
-  // 光标：换行移动的落点与不做节点预筛时一致，几何查询远少于章内字数。
-  return Object.assign({fails: fails, scanRects: scanRects, nodes: nodes, total: total}, caretMoves(fails, total));
+  // 光标检查（换行移动的落点与不做节点预筛时一致，几何查询远少于章内字数）随后分步跑。
+  return {fails: fails, scanRects: scanRects, nodes: nodes, total: total};
 })()`;
 
 // 光标换行移动：落点与「每个与视口相交的节点都整节点逐字扫描」一致（参照实现
 // = _visibleSpan 恒返回整节点），记录每次移动的 getClientRects 次数（新 / 参照）。
-const caretMovesFn = `function caretMoves(fails, total) {
-  var r = window.fushiReader, R = Range.prototype, orig = R.getClientRects;
+//
+// 分步跑、每步一条 CDP 命令（evalHere）：参照实现每步都对整节点逐字量几何（长章一步
+// 约 8 万次 getClientRects），整套塞进一条 Runtime.evaluate 时合计约 70 万次，Linux CI
+// 的竖排在单条命令的 30s 挂死保护内跑不完（慢的是参照实现，生产路径一次移动只量几千次）。
+// 拆开后单条命令的工作量有界，与平台字体度量无关。
+const caretHarnessInstall = `window.__caretMoves = (function() {
+  var r = window.fushiReader, R = Range.prototype, orig = R.getClientRects, k = window.fushiCaret;
+  var st = {fails: [], caretRects: [], refRects: [], pageStops: 0, dirs: null};
   function goTo(f) {
     var m = r.buildPaginationMetrics(), ctx = r.getScrollContext();
     r.setPagePosition(ctx, Math.round((m.minScroll + (m.maxScroll - m.minScroll) * f) / ctx.pageSize) * ctx.pageSize);
   }
-  var k = window.fushiCaret, moves = 0, caretRects = [], refRects = [];
+  function wholeNode(node, text) { return {start: 0, end: text.length}; }
   // 页上全部落点（含页首 / 页尾行）与整节点逐字扫描逐个一致：只比较移动结果覆盖不到
   // 首末行，_visibleSpan 的二分边界偏一行（漏掉页首 / 页尾的字）也会被这里抓到。
   function stopKey(p) { return p ? (p.el ? 'el' : r.countChars(p.node.textContent) + '/' + p.offset + '/' + p.node.textContent.slice(0, 8)) : 'null'; }
-  function stopsAt(f) {
+  st.stopsAt = function(f) {
     goTo(f);
     var own = k._visibleSpan, got = k._collectVisibleStops(false), first = k._firstVisibleStop();
     var ref, refFirst;
-    k._visibleSpan = function(node, text) { return {start: 0, end: text.length}; };
+    k._visibleSpan = wholeNode;
     try { ref = k._collectVisibleStops(false); refFirst = k._firstVisibleStop(); } finally { k._visibleSpan = own; }
     var same = got.length === ref.length && got.every(function(s, i) {
       return s.node === ref[i].node && s.offset === ref[i].offset && s.el === ref[i].el;
     });
-    if (!ref.length) fails.push('no visible stops at ' + f);
-    if (!same) fails.push('visible stops at ' + f + ': ' + got.length + ' vs whole-node ' + ref.length);
-    if (!first || !refFirst || first.node !== refFirst.node || first.offset !== refFirst.offset) fails.push('first visible stop at ' + f + ': ' + stopKey(first) + ' vs ' + stopKey(refFirst));
-  }
-  [0, 0.4, 1].forEach(stopsAt);
-  goTo(0.4);
+    if (!ref.length) st.fails.push('no visible stops at ' + f);
+    if (!same) st.fails.push('visible stops at ' + f + ': ' + got.length + ' vs whole-node ' + ref.length);
+    if (!first || !refFirst || first.node !== refFirst.node || first.offset !== refFirst.offset) st.fails.push('first visible stop at ' + f + ': ' + stopKey(first) + ' vs ' + stopKey(refFirst));
+    return true;
+  };
   // 本页可落的字数（光标所在页的可见落点数）：几何查询的预期量级按它算，不按固定字数——
   // 一页装多少字随字体度量变（CI 的 Linux Chrome 与 Windows / macOS 字形宽度不同）。
-  var pageStops = k._collectVisibleStops(false).length;
-  k.enter();
-  var dirs = r.isVertical() ? ['left', 'right'] : ['down', 'up'];
-  for (var s = 0; s < 6; s++) {
-    var dir = s < 4 ? dirs[0] : dirs[1];
+  st.enter = function() {
+    goTo(0.4);
+    st.pageStops = k._collectVisibleStops(false).length;
+    k.enter();
+    st.dirs = r.isVertical() ? ['left', 'right'] : ['down', 'up'];
+    return true;
+  };
+  st.move = function(s) {
+    var dir = s < 4 ? st.dirs[0] : st.dirs[1];
     var from = {node: k.node, offset: k.offset, el: k.el};
     var n0 = 0; R.getClientRects = function() { n0++; return orig.apply(this, arguments); };
     var res; try { res = k.move(dir); } finally { R.getClientRects = orig; }
-    caretRects.push(n0);
+    st.caretRects.push(n0);
     var to = {node: k.node, offset: k.offset, el: k.el};
     k.node = from.node; k.offset = from.offset; k.el = from.el;
     var own = k._visibleSpan, n1 = 0;
-    k._visibleSpan = function(node, text) { return {start: 0, end: text.length}; };
+    k._visibleSpan = wholeNode;
     R.getClientRects = function() { n1++; return orig.apply(this, arguments); };
     var refRes; try { refRes = k.move(dir); } finally { k._visibleSpan = own; R.getClientRects = orig; }
-    refRects.push(n1);
-    if (res.status !== refRes.status || k.node !== to.node || k.offset !== to.offset || k.el !== to.el) fails.push('caret ' + dir + '#' + s + ' ' + res.status + '/' + refRes.status);
-    moves++;
-  }
-  var maxCaret = Math.max.apply(null, caretRects);
-  // 旧实现每次移动对整章每个字各量一次（>= total 次）；现在每个文本节点量一次行盒，
-  // 只有与视口相交的节点才逐字量。
-  if (!(maxCaret < total / 2)) fails.push('caret geometry ' + maxCaret + ' per move for ' + total + ' chars');
-  return {caretRects: caretRects, refRects: refRects, moves: moves, maxCaret: maxCaret, pageStops: pageStops};
-}`;
+    st.refRects.push(n1);
+    if (res.status !== refRes.status || k.node !== to.node || k.offset !== to.offset || k.el !== to.el) st.fails.push('caret ' + dir + '#' + s + ' ' + res.status + '/' + refRes.status);
+    return true;
+  };
+  st.result = function(total) {
+    var maxCaret = Math.max.apply(null, st.caretRects);
+    // 旧实现每次移动对整章每个字各量一次（>= total 次）；现在每个文本节点量一次行盒，
+    // 只有与视口相交的节点才逐字量。
+    if (!(maxCaret < total / 2)) st.fails.push('caret geometry ' + maxCaret + ' per move for ' + total + ' chars');
+    return {fails: st.fails, caretRects: st.caretRects, refRects: st.refRects, moves: st.caretRects.length, maxCaret: maxCaret, pageStops: st.pageStops};
+  };
+  return st;
+})()`;
+
+const CARET_MOVES = 6;
+
+// 在 evalOnPage 刚载入的页上逐步跑光标检查，结果并进 [base]（fails 合并）。
+async function caretMoves(base) {
+  for (const f of [0, 0.4, 1]) await driver.evalHere(`window.__caretMoves.stopsAt(${f})`);
+  await driver.evalHere('window.__caretMoves.enter()');
+  for (let s = 0; s < CARET_MOVES; s++) await driver.evalHere(`window.__caretMoves.move(${s})`);
+  const res = await driver.evalHere(`window.__caretMoves.result(${base.total})`);
+  return Object.assign({}, base, res, { fails: base.fails.concat(res.fails) });
+}
 
 // HBK-AUDIT-023：整章一个文本节点。每次移动的几何查询不超过页上字数的量级（一页约
 // 千字，加二分探测的对数项）；整节点扫描（旧实现）是该节点的全部字数。
@@ -180,19 +203,24 @@ const longCheck = `(async () => {
   var fails = [], r = window.fushiReader, w = r.createWalker(), n, total = 0, nodes = 0;
   while ((n = w.nextNode())) { total += r.countChars(n.textContent); nodes++; }
   if (nodes !== 1) fails.push('long chapter has ' + nodes + ' text nodes');
-  var res = caretMoves(fails, total);
+  return {fails: fails, total: total};
+})()`;
+
+function longFails(res) {
+  const fails = [];
   // 上限按本页落点数定（逐字量的只该是可见行盒里的字，外加两次二分各 ~log2(n) 次探测与行盒读取），
   // 不用「总字数 / 20」这种固定数：Linux CI 的 Chrome 字形更窄、一页装的字多，固定数在那里
   // 恒红（4426 > 3840），而按页算的量级关系各平台一致。另要求远少于整节点逐字扫描。
-  var probes = 2 * Math.ceil(Math.log2(total + 1)) + 64;
+  const probes = 2 * Math.ceil(Math.log2(res.total + 1)) + 64;
   if (!(res.maxCaret <= 4 * res.pageStops + probes)) fails.push('long caret geometry ' + res.maxCaret + ' per move for ' + res.pageStops + ' on-page stops');
-  if (!(res.maxCaret * 10 < Math.min.apply(null, res.refRects))) fails.push('long caret geometry ' + res.maxCaret + ' per move is not far below whole-node scan ' + Math.min.apply(null, res.refRects));
-  return Object.assign({fails: fails, total: total}, res);
-})()`;
+  const refMin = Math.min(...res.refRects);
+  if (!(res.maxCaret * 10 < refMin)) fails.push('long caret geometry ' + res.maxCaret + ' per move is not far below whole-node scan ' + refMin);
+  return fails;
+}
 
-// evalOnPage 只收表达式：把 caretMoves 声明包进一个立即调用的函数里。
-function withCaretMoves(expr) {
-  return `(function(){ ${caretMovesFn}
+// evalOnPage 只收表达式：先装好分步光标检查，再求 [expr]。
+function withCaretHarness(expr) {
+  return `(function(){ ${caretHarnessInstall};
  return ${expr}; })()`;
 }
 
@@ -201,7 +229,7 @@ let failed = 0;
 let cases = 0;
 try {
   for (const mode of ['horizontal-tb', 'vertical-rl']) {
-    const res = await driver.evalOnPage(page(mode, 'paras'), withCaretMoves(check));
+    const res = await caretMoves(await driver.evalOnPage(page(mode, 'paras'), withCaretHarness(check)));
     cases++;
     if (res.fails.length) {
       failed++;
@@ -213,7 +241,8 @@ try {
     }
   }
   for (const mode of ['horizontal-tb', 'vertical-rl']) {
-    const res = await driver.evalOnPage(page(mode, 'long'), withCaretMoves(longCheck));
+    const res = await caretMoves(await driver.evalOnPage(page(mode, 'long'), withCaretHarness(longCheck)));
+    res.fails = res.fails.concat(longFails(res));
     cases++;
     if (res.fails.length) {
       failed++;

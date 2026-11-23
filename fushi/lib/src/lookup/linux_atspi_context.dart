@@ -16,9 +16,17 @@
 // their ACTIVE top-level windows → the FOCUSED descendant (Collection.GetMatches
 // in one call where the toolkit implements it, else a bounded walk over SHOWING
 // nodes) → its Text interface: selection 0 and up to [maxExpand] characters on
-// each side. Anything missing (no a11y bus, toolkit a11y off, Flatpak's
-// filtered a11y proxy, nothing focused, no selection, timeout) yields null and
-// the caller falls back to the PRIMARY selection.
+// each side. Anything missing (no a11y bus, toolkit a11y off, a Flatpak
+// install without the host-bus permissions, nothing focused, no selection,
+// timeout) yields null and the caller falls back to the PRIMARY selection.
+//
+// Flatpak: the sandbox's AT_SPI_BUS_ADDRESS is a filtered proxy that only lets
+// the app register itself (flatpak-run-dbus.c `flatpak_run_add_a11y_dbus_args`)
+// and no finish-arg turns it off (only `flatpak run --no-a11y-bus`). So inside
+// Flatpak the host accessibility bus is reached directly instead: its address
+// from `org.a11y.Bus` on the session bus (`--talk-name=org.a11y.Bus`), its
+// socket under `$XDG_RUNTIME_DIR/at-spi` (`--filesystem=xdg-run/at-spi:ro`;
+// abstract-socket buses ride on `--share=network`). See [connectAtspiBus].
 //
 // This file imports only dart:* and package:dbus so it also runs under plain
 // `dart` (that is how it was verified against a GTK app in Xvfb).
@@ -131,11 +139,12 @@ const int kAtspiWalkNodeBudget = 1500;
 
 /// Finds the focused text with a non-empty selection in the foreground
 /// application and returns the selection with up to [maxExpand] characters of
-/// text on each side. [ownPid] is skipped: Fushi itself is active while its
-/// own windows have focus, and its text is never what the user selected.
+/// text on each side. Applications whose connection belongs to one of
+/// [ownPids] are skipped: Fushi itself is active while its own windows have
+/// focus, and its text is never what the user selected.
 Future<AtspiSelectionContext?> findFocusedSelectionContext(
   AtspiTree tree, {
-  required int ownPid,
+  required Set<int> ownPids,
   int maxExpand = 600,
   int nodeBudget = kAtspiWalkNodeBudget,
   void Function(String message)? log,
@@ -144,7 +153,7 @@ Future<AtspiSelectionContext?> findFocusedSelectionContext(
   // Applications are independent (one per D-Bus connection): ask them all at
   // once, so one slow app costs its own latency, not the sum.
   final List<List<AtspiRef>> activeWindows = await Future.wait(
-    apps.map((AtspiRef app) => _activeWindows(tree, app, ownPid)),
+    apps.map((AtspiRef app) => _activeWindows(tree, app, ownPids)),
   );
   final List<AtspiRef> windows = activeWindows
       .expand((List<AtspiRef> w) => w)
@@ -173,11 +182,11 @@ Future<AtspiSelectionContext?> findFocusedSelectionContext(
 Future<List<AtspiRef>> _activeWindows(
   AtspiTree tree,
   AtspiRef app,
-  int ownPid,
+  Set<int> ownPids,
 ) async {
   try {
     final int? pid = await tree.processId(app.bus);
-    if (pid == ownPid) return const <AtspiRef>[];
+    if (ownPids.contains(pid)) return const <AtspiRef>[];
     final List<AtspiRef> windows = await tree.children(app);
     final List<AtspiRef> active = <AtspiRef>[];
     for (final AtspiRef window in windows) {
@@ -294,32 +303,6 @@ class DBusAtspiTree implements AtspiTree {
   static const String _collection = 'org.a11y.atspi.Collection';
   static const String _registry = 'org.a11y.atspi.Registry';
   static const String _rootPath = '/org/a11y/atspi/accessible/root';
-
-  /// Connects to the accessibility bus: `AT_SPI_BUS_ADDRESS` when set (Flatpak
-  /// sets it to its filtered proxy), else the address `org.a11y.Bus` hands out
-  /// on the session bus. Null when there is no such bus.
-  static Future<DBusClient?> connect() async {
-    final String? env = Platform.environment['AT_SPI_BUS_ADDRESS'];
-    if (env != null && env.isNotEmpty) return DBusClient(DBusAddress(env));
-    final DBusClient session = DBusClient.session();
-    try {
-      final DBusMethodSuccessResponse reply =
-          await DBusRemoteObject(
-            session,
-            name: 'org.a11y.Bus',
-            path: DBusObjectPath('/org/a11y/bus'),
-          ).callMethod(
-            'org.a11y.Bus',
-            'GetAddress',
-            const <DBusValue>[],
-            replySignature: DBusSignature('s'),
-          );
-      final String address = reply.values.first.asString();
-      return address.isEmpty ? null : DBusClient(DBusAddress(address));
-    } finally {
-      await session.close();
-    }
-  }
 
   DBusRemoteObject _object(AtspiRef ref) =>
       DBusRemoteObject(client, name: ref.bus, path: DBusObjectPath(ref.path));
@@ -472,6 +455,146 @@ class DBusAtspiTree implements AtspiTree {
   )).first.asString();
 }
 
+/// Where the accessibility bus address came from.
+enum AtspiBusSource {
+  /// `AT_SPI_BUS_ADDRESS`, outside a sandbox (libatspi's own first choice).
+  environment,
+
+  /// `org.a11y.Bus.GetAddress` on the session bus, outside a sandbox.
+  registry,
+
+  /// Inside Flatpak: the host bus, from `org.a11y.Bus` on the session bus.
+  flatpakHost,
+
+  /// Inside Flatpak without `--talk-name=org.a11y.Bus`: Flatpak's filtered
+  /// proxy, on which no other application can be read.
+  flatpakProxy,
+}
+
+/// A resolved accessibility bus address.
+typedef AtspiBusAddress = ({String address, AtspiBusSource source});
+
+/// Picks the accessibility bus to read other applications from.
+///
+/// Outside a sandbox: [environmentAddress] when set, else [registryAddress].
+/// Inside Flatpak ([inFlatpak]) the environment points at Flatpak's filtered
+/// proxy, so the host bus from [registryAddress] comes first; the proxy is
+/// only the fallback when the session bus refuses `org.a11y.Bus` (an install
+/// whose permissions predate it). Null when there is no bus.
+Future<AtspiBusAddress?> resolveAtspiBusAddress({
+  required String? environmentAddress,
+  required bool inFlatpak,
+  required Future<String?> Function() registryAddress,
+  void Function(String message)? log,
+}) async {
+  final String? env = (environmentAddress == null || environmentAddress.isEmpty)
+      ? null
+      : environmentAddress;
+  if (inFlatpak) {
+    try {
+      final String? host = await registryAddress();
+      if (host != null && host.isNotEmpty) {
+        return (address: host, source: AtspiBusSource.flatpakHost);
+      }
+    } on DBusMethodResponseException catch (e) {
+      // The session bus proxy hides `org.a11y.Bus` (no talk permission) or
+      // there is no bus launcher on the host.
+      log?.call('atspi: flatpak host bus unavailable (${e.errorName})');
+    }
+    return env == null
+        ? null
+        : (address: env, source: AtspiBusSource.flatpakProxy);
+  }
+  if (env != null) return (address: env, source: AtspiBusSource.environment);
+  final String? registry = await registryAddress();
+  return (registry == null || registry.isEmpty)
+      ? null
+      : (address: registry, source: AtspiBusSource.registry);
+}
+
+/// The accessibility bus Fushi reads other applications from.
+class AtspiBus {
+  const AtspiBus(this.client, {required this.source, required this.ownPids});
+
+  final DBusClient client;
+  final AtspiBusSource source;
+
+  /// Process ids Fushi's own accessible applications show up under on
+  /// [client]: its own pid, plus (inside Flatpak) the pid of the D-Bus proxy
+  /// its toolkit registers through, since the host bus only sees the proxy.
+  final Set<int> ownPids;
+}
+
+/// `org.a11y.Bus.GetAddress` on the session bus.
+Future<String?> _registryBusAddress() async {
+  final DBusClient session = DBusClient.session();
+  try {
+    final DBusMethodSuccessResponse reply =
+        await DBusRemoteObject(
+          session,
+          name: 'org.a11y.Bus',
+          path: DBusObjectPath('/org/a11y/bus'),
+        ).callMethod(
+          'org.a11y.Bus',
+          'GetAddress',
+          const <DBusValue>[],
+          replySignature: DBusSignature('s'),
+        );
+    return reply.values.first.asString();
+  } finally {
+    await session.close();
+  }
+}
+
+/// The host pid of the D-Bus proxy behind [proxyAddress] (Flatpak's
+/// `/run/flatpak/at-spi-bus`). Fushi's own toolkit registers through that
+/// proxy, and the bus daemon sees the proxy process as the peer of every
+/// connection it forwards, so this is the pid the host bus reports for
+/// Fushi's accessible application. `GetId` is always allowed through
+/// xdg-dbus-proxy; `GetConnectionUnixProcessID` needs the name to be visible,
+/// which Flatpak's `--sloppy-names` a11y proxy grants for unique names.
+Future<int?> _flatpakProxyPid(
+  String proxyAddress,
+  void Function(String message)? log,
+) async {
+  final DBusClient proxy = DBusClient(DBusAddress(proxyAddress));
+  try {
+    await proxy.getId(); // Connects, so uniqueName is known.
+    return await proxy.getConnectionUnixProcessId(proxy.uniqueName);
+  } on DBusMethodResponseException catch (e) {
+    log?.call('atspi: flatpak proxy pid unavailable (${e.errorName})');
+    return null;
+  } finally {
+    await proxy.close();
+  }
+}
+
+/// Connects to the accessibility bus [resolveAtspiBusAddress] picks. Null
+/// when there is none.
+Future<AtspiBus?> connectAtspiBus({void Function(String message)? log}) async {
+  final String? env = Platform.environment['AT_SPI_BUS_ADDRESS'];
+  final AtspiBusAddress? bus = await resolveAtspiBusAddress(
+    environmentAddress: env,
+    // Flatpak's own marker file, present in every Flatpak sandbox.
+    inFlatpak: File('/.flatpak-info').existsSync(),
+    registryAddress: _registryBusAddress,
+    log: log,
+  );
+  if (bus == null) return null;
+  final Set<int> ownPids = <int>{pid};
+  if (bus.source == AtspiBusSource.flatpakHost &&
+      env != null &&
+      env.isNotEmpty) {
+    final int? proxyPid = await _flatpakProxyPid(env, log);
+    if (proxyPid != null) ownPids.add(proxyPid);
+  }
+  return AtspiBus(
+    DBusClient(DBusAddress(bus.address)),
+    source: bus.source,
+    ownPids: ownPids,
+  );
+}
+
 /// Captures the foreground application's selection context over AT-SPI.
 /// Never throws; null on any miss, after at most [timeout].
 Future<AtspiSelectionContext?> captureLinuxAtspiContext({
@@ -480,24 +603,34 @@ Future<AtspiSelectionContext?> captureLinuxAtspiContext({
   void Function(String message)? log,
 }) async {
   DBusClient? client;
+  AtspiBusSource? source;
   try {
-    client = await DBusAtspiTree.connect().timeout(timeout);
-    if (client == null) {
+    final AtspiBus? bus = await connectAtspiBus(log: log).timeout(timeout);
+    if (bus == null) {
       log?.call('atspi: no accessibility bus');
       return null;
     }
-    return await findFocusedSelectionContext(
+    client = bus.client;
+    source = bus.source;
+    final AtspiSelectionContext? context = await findFocusedSelectionContext(
       DBusAtspiTree(client),
-      ownPid: pid,
+      ownPids: bus.ownPids,
       maxExpand: maxExpand,
       log: log,
     ).timeout(timeout);
+    // Which bus a miss came from tells "Flatpak without the host-bus
+    // permissions" (flatpakProxy) from "the foreground app exposes no text".
+    if (context == null) log?.call('atspi: bus=${source.name}');
+    return context;
   } on TimeoutException {
-    log?.call('atspi: timed out after ${timeout.inMilliseconds} ms');
+    log?.call(
+      'atspi: timed out after ${timeout.inMilliseconds} ms '
+      '(bus=${source?.name ?? 'connecting'})',
+    );
     return null;
   } on Object catch (e) {
     // Privacy: the error type only, never text.
-    log?.call('atspi: ${e.runtimeType}');
+    log?.call('atspi: ${e.runtimeType} (bus=${source?.name ?? 'connecting'})');
     return null;
   } finally {
     unawaited(client?.close().catchError((Object _) {}));
