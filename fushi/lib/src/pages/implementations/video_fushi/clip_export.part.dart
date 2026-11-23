@@ -530,7 +530,8 @@ extension _VideoClipExport on _VideoFushiPageState {
       if (picked == null) return null;
       return _ensureMp4Extension(picked);
     }
-    final Directory docs = await getApplicationDocumentsDirectory();
+    // Android 落外部 app 专属目录（USB / 电脑可直接拿走），iOS 落「文件」App 可见的 Documents。
+    final Directory docs = await AppPaths.userExportsBaseDirectory();
     final Directory dir = Directory(p.join(docs.path, 'video_clips'));
     return p.join(dir.path, defaultName);
   }

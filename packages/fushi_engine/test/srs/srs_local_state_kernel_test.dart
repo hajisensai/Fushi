@@ -22,13 +22,9 @@ import 'package:fushi_engine/srs/srs_reads.dart';
 
 const String kUid = '01928c3e-0000-7000-8000-00000000d7a5';
 
-/// 墙钟 1000、开机时钟 [boot]（可调）的时钟；[bootId] 区分「进程」。
-SrsTrustedClock _clock(String bootId, {int Function()? boot}) =>
-    SrsTrustedClock(
-      wallClockMs: () => 1000,
-      bootClockMs: boot ?? () => 50,
-      bootId: bootId,
-    );
+/// 墙钟 1000、开机时钟 [boot]（可调，缺省 50）的时钟：开机时刻恒定，同一次开机。
+SrsTrustedClock _clock({int Function()? boot}) =>
+    SrsTrustedClock(wallClockMs: () => 1000, bootClockMs: boot ?? () => 50);
 
 Future<SrsDbStore> _open(SrsStorage storage, {SrsTrustedClock? clock}) =>
     SrsDbStore.open(
@@ -54,7 +50,7 @@ void main() {
 
   test('校时、待回收集合各管各的，互不抹掉；校时是一条内核命令、不发读命令', () async {
     final SrsStorage storage = await openTestSrsStorage();
-    final SrsDbStore s = await _open(storage, clock: _clock('boot-a'));
+    final SrsDbStore s = await _open(storage, clock: _clock());
     final String opened = await s.changeFingerprint();
 
     final int commands = s.debugCoreCommands;
@@ -68,7 +64,7 @@ void main() {
     expect(srsDebugReadCommands, 0);
     expect(s.debugCoreCommands - commands, 1);
     // 之后打开的同进程副本接上这份校时：可信时间 = 1700000000000 + (50 − 20)。
-    final SrsTrustedClock c1 = _clock('boot-a');
+    final SrsTrustedClock c1 = _clock();
     await _open(storage, clock: c1);
     expect(c1.isAnchored, isTrue);
     expect(c1.now().$1, 1700000000030);
@@ -79,7 +75,7 @@ void main() {
     // 校时没抹掉待回收集合，待回收集合也没抹掉校时。
     expect(await s.pendingMediaGc(), <String>{'a.png'});
     expect(await (await _open(storage)).pendingMediaGc(), <String>{'a.png'});
-    final SrsTrustedClock c2 = _clock('boot-a');
+    final SrsTrustedClock c2 = _clock();
     await _open(storage, clock: c2);
     expect(c2.now().$1, 1700000001020);
     // 纪元没换，修订号与库里一致。
@@ -112,13 +108,13 @@ void main() {
 
   test('没校过时的副本对象写入不抹掉另一个对象写下的校时状态', () async {
     final SrsStorage storage = await openTestSrsStorage();
-    final SrsDbStore a = await _open(storage, clock: _clock('boot-a'));
+    final SrsDbStore a = await _open(storage, clock: _clock());
     // b 在 a 校时之前打开：它的时钟既没校过、也没有接上的偏移。
-    final SrsDbStore b = await _open(storage, clock: _clock('boot-b'));
+    final SrsDbStore b = await _open(storage, clock: _clock());
     await a.anchorTime(1700000000000, observedAtBootMs: 20);
     await b.createDeck('乙');
     // 之后打开的副本接上这份校时（同一进程：完整恢复）。
-    final SrsTrustedClock c = _clock('boot-a');
+    final SrsTrustedClock c = _clock();
     await _open(storage, clock: c);
     expect(c.isAnchored, isTrue);
     expect(c.now().$1, 1700000000030);

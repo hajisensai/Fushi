@@ -2,15 +2,16 @@
 ///
 /// 一句 = overlay 的一个句子分组，跨块的一句只读一次，高亮框住组内全部块。句子与
 /// 先后顺序取 [mangaPageSentencesInReadingOrder]（与「复制本页文本」同一份排序；
-/// 注音块不进朗读文本、不参与排序）。
+/// 注音块不进朗读文本、不参与排序；底本按页面印着的注音念，见 `manga_ruby.dart`）。
 library;
 
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_text_split.dart';
 
 import 'package:fushi/src/media/manga/manga_overlay_html.dart'
-    show mangaBlockSentenceGroups;
+    show MangaBlockSentence, mangaBlockSentenceGroups;
 import 'package:fushi/src/media/manga/reader/manga_page_sentences.dart';
 
 /// 一页里要读的一句。
@@ -32,10 +33,10 @@ class MangaReadAloudUtterance {
   /// 这句覆盖的 OCR 块下标（与 `page.blocks` 同下标，含注音块）：高亮框住全部。
   final List<int> blocks;
 
-  /// OCR 原文（未经发音词典）。
+  /// OCR 原文（未经注音、发音词典）。
   final String displayText;
 
-  /// 送进引擎的文本：经发音词典替换、再按引擎单次输入上限切好的块。
+  /// 送进引擎的文本：底本换成注音读音、经发音词典替换、再按引擎单次输入上限切好的块。
   final List<String> spokenChunks;
 
   @override
@@ -47,6 +48,8 @@ class MangaReadAloudUtterance {
 final RegExp _speakable = RegExp(r'[\p{L}\p{N}]', unicode: true);
 
 /// [page] 按阅读顺序排好的朗读句。[rightToLeft] 是本卷翻页方向（日漫 RTL）。
+/// [learnedReadings] 是本卷前面页面注过音的词（只在首次出现处注音的词，后文也按那个
+/// 读音念）；发音词典里写了的词以词典为准。
 List<MangaReadAloudUtterance> planMangaPageReadAloud(
   MokuroImage page, {
   required int pageIndex,
@@ -54,22 +57,27 @@ List<MangaReadAloudUtterance> planMangaPageReadAloud(
   required List<TtsPronunciationRule> pronunciation,
   List<TtsPronunciationRule> preSynthesis = const <TtsPronunciationRule>[],
   required int maxInputLength,
+  MangaRubyReadings? learnedReadings,
 }) {
+  final Set<String> userWritten = <String>{
+    for (final TtsPronunciationRule r in pronunciation) r.written,
+    for (final TtsPronunciationRule r in preSynthesis) r.written,
+  };
   final List<MangaPageSentence> sentences = mangaPageSentencesInReadingOrder(
     page,
     rightToLeft: rightToLeft,
   );
 
   final List<MangaReadAloudUtterance> out = <MangaReadAloudUtterance>[];
-  final List<({int group, String sentence, bool ruby})> assignments =
-      mangaBlockSentenceGroups(page);
+  final List<MangaBlockSentence> assignments = mangaBlockSentenceGroups(page);
   for (final MangaPageSentence sentence in sentences) {
     final int group = sentence.group;
     final String text = sentence.sentence.trim();
     if (!_speakable.hasMatch(text)) continue;
     final List<String> chunks = splitTtsTextForInputLimit(
       applyTtsSpokenRules(
-        text,
+        learnedReadings?.apply(sentence.spoken.trim(), skip: userWritten) ??
+            sentence.spoken.trim(),
         pronunciation: pronunciation,
         preSynthesis: preSynthesis,
       ),

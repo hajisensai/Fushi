@@ -9,7 +9,7 @@
 mod cache;
 mod pipeline;
 mod queue;
-mod runtime;
+pub(crate) mod runtime;
 mod tile;
 
 use std::collections::HashMap;

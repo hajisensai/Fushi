@@ -153,6 +153,8 @@ pub struct Line {
     pub romanization: Option<String>,
     /// 来自 ASS 时的样式名（原样渲染用的样式指针）。
     pub style: Option<String>,
+    /// 来源标注的段落（Apple TTML `<div itunes:song-part="Verse|Chorus|…">`，原样保留）。
+    pub song_part: Option<String>,
 }
 
 impl Line {
