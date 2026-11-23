@@ -205,7 +205,7 @@ Future<MangaAudioWorkbenchSnapshot> loadMangaAudioWorkbenchSnapshot(
     );
   }
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
-    mangaRenderManifestFile(appModel, bookKey),
+    (await mangaAudioEditTarget(appModel, bookKey)).manifestFile,
   );
   final bool hasAudio = await mangaHasAudio(appModel.database, bookKey);
   return mangaAudioWorkbenchSnapshotOf(

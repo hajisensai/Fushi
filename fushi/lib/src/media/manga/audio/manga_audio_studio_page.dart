@@ -7,6 +7,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate.dart'
@@ -126,6 +127,9 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
   bool _loading = true;
   MangaRenderManifest? _manifest;
 
+  /// [_manifest] 的清单文件（登记的是外部导入的清单时在用户目录里，句文件与它同目录）。
+  File? _manifestFile;
+
   /// 已出音频、但按当前替换表 / 人名读法该念的文字已变的句子（载入与改表后重算）。
   List<MangaSpokenTextChange> _readingChanges = const <MangaSpokenTextChange>[];
   CastVoicingLedger _ledger = CastVoicingLedger();
@@ -184,8 +188,12 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
       widget.appModel,
       widget.bookKey,
     );
+    final File manifestFile = (await mangaAudioEditTarget(
+      widget.appModel,
+      widget.bookKey,
+    )).manifestFile;
     final MangaRenderManifest? manifest = await MangaRenderManifest.load(
-      mangaRenderManifestFile(widget.appModel, widget.bookKey),
+      manifestFile,
     );
     final CastVoicingLedger ledger = await ttsVoicingStoreFor(
       widget.appModel,
@@ -194,6 +202,7 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     setState(() {
       _volume = volume;
       _manifest = manifest;
+      _manifestFile = manifestFile;
       _ledger = ledger;
       _loading = false;
       if (volume?.series == null) _volumeOnly = true;
@@ -674,7 +683,9 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
   }
 
   String _linePath(MangaRenderedLine line) => p.join(
-    mangaRenderManifestFile(widget.appModel, widget.bookKey).parent.path,
+    (_manifestFile ?? mangaRenderManifestFile(widget.appModel, widget.bookKey))
+        .parent
+        .path,
     line.file,
   );
 
