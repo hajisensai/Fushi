@@ -287,19 +287,29 @@ class MangaRenderManifest {
        extras = extras == null
            ? const <String, Object?>{}
            : Map<String, Object?>.unmodifiable(extras),
-       lineExtras = lineExtras == null
+       lineExtras = lineExtras == null || lineExtras.isEmpty
            ? const <String, Map<String, Object?>>{}
-           : Map<String, Map<String, Object?>>.unmodifiable(
-               <String, Map<String, Object?>>{
-                 for (final MapEntry<String, Map<String, Object?>> e
-                     in lineExtras.entries)
-                   if (e.value.isNotEmpty &&
-                       lines.any((MangaRenderedLine l) => l.lineId == e.key))
-                     e.key: Map<String, Object?>.unmodifiable(e.value),
-               },
-             );
+           : _liveExtras(lineExtras, lines);
 
   static const int schemaVersion = 1;
+
+  /// [extras] 里行身份仍在 [lines] 中、且非空的那些（不可改）。行身份先收成集合，
+  /// 整卷几千句也是线性的。
+  static Map<String, Map<String, Object?>> _liveExtras(
+    Map<String, Map<String, Object?>> extras,
+    List<MangaRenderedLine> lines,
+  ) {
+    final Set<String> ids = <String>{
+      for (final MangaRenderedLine l in lines) l.lineId,
+    };
+    return Map<String, Map<String, Object?>>.unmodifiable(
+      <String, Map<String, Object?>>{
+        for (final MapEntry<String, Map<String, Object?>> e in extras.entries)
+          if (e.value.isNotEmpty && ids.contains(e.key))
+            e.key: Map<String, Object?>.unmodifiable(e.value),
+      },
+    );
+  }
 
   final int pageCount;
 
