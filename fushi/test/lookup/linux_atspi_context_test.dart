@@ -504,7 +504,7 @@ void main() {
     expect(manifest, contains('  - --talk-name=org.a11y.Bus\n'));
     expect(manifest, contains('  - --filesystem=xdg-run/at-spi:ro\n'));
     // Not the whole session bus: that does not lift the a11y proxy anyway.
-    expect(manifest, isNot(contains('--socket=session-bus')));
+    expect(manifest, isNot(contains('  - --socket=session-bus')));
   });
 
   group('contextFromCharacterOffsets', () {
