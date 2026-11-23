@@ -6,6 +6,7 @@ import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/music_study_tracker.dart';
+import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudyClock;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/stats/study_char_count.dart';
@@ -332,6 +333,17 @@ void main() {
       );
       expect(saved.ranges, <(int, int)>[(3000, 6000)]);
     });
+  });
+
+  test('每曲已计句子并集的动态偏好键前缀登记在偏好键注册表', () {
+    expect(
+      kKnownPreferenceKeyPrefixes,
+      contains(kMusicLyricCoveragePrefPrefix),
+    );
+    expect(
+      musicLyricCoveragePrefKey('uid-1'),
+      '${kMusicLyricCoveragePrefPrefix}uid-1',
+    );
   });
 
   test('判据：一句的时间窗过半已计过才算计过', () {
