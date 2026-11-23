@@ -234,7 +234,7 @@ class MusicStudyTracker {
       _lyricsWanted = lyricsWanted;
       _setLyricsWanted?.call(lyricsWanted);
     }
-    if (lyricsWanted && item != null) _ensureCoverage(item.trackUid);
+    if (lyricsWanted) _ensureCoverage(item.trackUid);
     final bool run =
         item != null &&
         musicStudyClockMayRun(
