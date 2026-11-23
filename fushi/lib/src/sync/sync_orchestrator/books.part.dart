@@ -215,7 +215,11 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
       db: _db,
       backend: backend,
     );
-    final List<EpubBookRow> localBooks = await _db.getAllEpubBooks();
+    // 没有书级进度可与 host 对齐的书（章节式互联漫画，BUG-5352）不进本阶段。
+    final List<EpubBookRow> localBooks = <EpubBookRow>[
+      for (final EpubBookRow book in await _db.getAllEpubBooks())
+        if (InterconnectBookProgressSync.syncsBookProgress(book)) book,
+    ];
     if (localBooks.isEmpty) return;
     // 先绑定这一轮的 host（BUG-4434）：基线读写落这台 host 的作用域，之后的 host
     // 读写都钉住它，中途换了 host 本阶段就此结束。

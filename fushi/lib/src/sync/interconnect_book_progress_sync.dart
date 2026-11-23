@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_baseline_scope.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
@@ -121,6 +123,57 @@ class InterconnectBookProgressSync {
     return _storageDimension!;
   }
 
+  /// 这本书在 host 上的 wire 键；null = 这本书没有可与 host 对齐的书级进度，
+  /// sweep / 退出书同步 / 对比弹窗一律跳过（BUG-5352）。
+  ///
+  /// 经互联收进本机的漫画行（runtime=interconnect 的在线描述符），本机 bookKey 是
+  /// [InterconnectMangaCatalog.localBookKeyFor] 推出的单向哈希（`interconnect-…`），
+  /// host 只认描述符里的对端键。此前进度读写直接用本机键，host 永远回空、推上去也
+  /// 判 missing：在 host 读到第 44 页，本机接过来仍从第 1 页开始。
+  ///
+  /// - 单卷条目：唯一一章就是整卷，本机 `reader_positions` 的页码与 host 那一行同一
+  ///   口径 → 用对端键同步。
+  /// - 章节式条目（`chaptered`）：`reader_positions` 只装「当前章读到第几页」，不带
+  ///   是哪一章；两端各自的当前章互不相干，拿它对齐会把 A 章的页码落到 B 章 → 不走
+  ///   书级进度（章级进度在 `manga_chapter_states`，见 BUG-5352「未尽事项」）。
+  /// - 其余书：本机键就是 wire 键。
+  static String? hostBookKeyOf(EpubBookRow book) {
+    final OnlineMangaLibraryEntry? entry = _interconnectMangaEntryOf(book);
+    if (entry == null) return book.bookKey;
+    if (entry.series.raw['chaptered'] == true) return null;
+    final String peerKey = entry.series.key;
+    return peerKey.isEmpty ? null : peerKey;
+  }
+
+  /// 这本书是否参与互联书级进度同步（[hostBookKeyOf] 非 null）。
+  static bool syncsBookProgress(EpubBookRow book) =>
+      hostBookKeyOf(book) != null;
+
+  /// 经互联收下的漫画行的描述符；其它书 null（非漫画不解析 JSON）。
+  static OnlineMangaLibraryEntry? _interconnectMangaEntryOf(EpubBookRow book) {
+    if (BookFormat.parseOrEpub(book.format) != BookFormat.manga) return null;
+    final OnlineMangaLibraryEntry? entry = OnlineMangaLibraryEntry.tryParse(
+      book.sourceMetadata,
+    );
+    if (entry == null || entry.runtime != OnlineMangaRuntimeKind.interconnect) {
+      return null;
+    }
+    return entry;
+  }
+
+  /// [hostBookKeyOf]；不参与同步的书走到 host 读写是调用方漏了过滤。
+  static String _hostKey(EpubBookRow book) {
+    final String? key = hostBookKeyOf(book);
+    if (key == null) {
+      throw ArgumentError.value(
+        book.bookKey,
+        'book',
+        'has no book-level progress to sync with the interconnect host',
+      );
+    }
+    return key;
+  }
+
   String get _baseDim => _storageDimension!;
   String get _pendingDim => _storagePendingDimension!;
 
@@ -194,7 +247,7 @@ class InterconnectBookProgressSync {
   /// [InterconnectHostChangedException]。
   Future<RemoteBookProgress> remoteProgress(EpubBookRow book) async {
     await bind();
-    return _backend.getLiveBookProgress(book.bookKey, pin: _pin);
+    return _backend.getLiveBookProgress(_hostKey(book), pin: _pin);
   }
 
   /// 老 host（无 [kBookProgressBatchPath]）逐本预取的并发上限。只是把同样多的
@@ -221,7 +274,7 @@ class InterconnectBookProgressSync {
       return <Future<RemoteBookProgressRead>>[
         for (final EpubBookRow book in books)
           Future<RemoteBookProgressRead>.value((
-            progress: all[book.bookKey] ?? RemoteBookProgress.empty,
+            progress: all[_hostKey(book)] ?? RemoteBookProgress.empty,
             error: null,
             stackTrace: null,
           )),
@@ -426,7 +479,7 @@ class InterconnectBookProgressSync {
       BookProgressBaseline.of(agreed).encode(),
     );
     final LiveBookProgressPush pushed = await _backend.putLiveBookProgress(
-      book.bookKey,
+      _hostKey(book),
       agreed,
       expected:
           expected ?? <BookProgressBaseline>[BookProgressBaseline.of(remote)],
@@ -519,7 +572,7 @@ class InterconnectBookProgressSync {
       // 位置相同、只推本端较新的戳 / 精确锚；host 判定后被改写（superseded）则
       // 这次判定作废，不对齐、不记基线。
       final LiveBookProgressPush pushed = await _backend.putLiveBookProgress(
-        book.bookKey,
+        _hostKey(book),
         winner,
         expected:
             expected ?? <BookProgressBaseline>[BookProgressBaseline.of(remote)],
@@ -548,18 +601,60 @@ class InterconnectBookProgressSync {
 
   /// 本端落地的唯一写口：仅当本地时间戳仍是判定时读到的 [expected] 才写
   /// （[FushiDatabase.upsertReaderPositionIfUnchanged]，BUG-3537）。
+  ///
+  /// 单卷互联漫画行还要把位置落进那唯一一章的 `manga_chapter_states`（BUG-5352）：
+  /// 书架在线条目开章时起始页只认章级进度，不读书级那行 `reader_positions`
+  /// （`MangaFushiPage` 的书架开章路径），只落书级那行，阅读器照样从第 1 页开始。
   Future<bool> _upsertLocalIfUnchanged(
     EpubBookRow book,
     RemoteBookProgress p, {
     required RemoteBookProgress expected,
-  }) => _db.upsertReaderPositionIfUnchanged(
-    ReaderPositionsCompanion(
-      bookUid: Value(book.uid),
-      sectionIndex: Value(p.sectionIndex),
-      normCharOffset: Value(p.normCharOffset),
-      charOffset: Value(p.charOffset),
-      updatedAt: Value(p.updatedAtMs),
-    ),
-    expectedUpdatedAt: expected.updatedAtMs,
-  );
+  }) async {
+    final bool written = await _db.upsertReaderPositionIfUnchanged(
+      ReaderPositionsCompanion(
+        bookUid: Value(book.uid),
+        sectionIndex: Value(p.sectionIndex),
+        normCharOffset: Value(p.normCharOffset),
+        charOffset: Value(p.charOffset),
+        updatedAt: Value(p.updatedAtMs),
+      ),
+      expectedUpdatedAt: expected.updatedAtMs,
+    );
+    if (written) await _landInterconnectVolumeChapter(book, p);
+    return written;
+  }
+
+  /// 把落到本端的书级位置同步进单卷互联漫画那唯一一章的章级进度；其它书不动。
+  ///
+  /// 漫画的书级位置：`sectionIndex` = 0-based 页码，`charOffset` = webtoon 页内千分比
+  /// （spread 恒 0）；章级进度同编码，只是「无精确偏移」记 -1（与阅读器写法一致）。
+  /// 页码与偏移都没变（只对齐了时间戳）就不写，不平白刷新章的 `updatedAt`。
+  Future<void> _landInterconnectVolumeChapter(
+    EpubBookRow book,
+    RemoteBookProgress p,
+  ) async {
+    if (book.uid.isEmpty) return;
+    final OnlineMangaLibraryEntry? entry = _interconnectMangaEntryOf(book);
+    if (entry == null || entry.series.raw['chaptered'] == true) return;
+    if (entry.series.key.isEmpty) return;
+    final String chapterKey = InterconnectMangaCatalog.chapterFor(
+      entry.series.key,
+    ).key;
+    final int fraction = p.charOffset > 0 ? p.charOffset : -1;
+    final MangaChapterStateRow? existing = await _db.getMangaChapterState(
+      bookUid: book.uid,
+      chapterKey: chapterKey,
+    );
+    if (existing != null &&
+        existing.lastPage == p.sectionIndex &&
+        (existing.lastFraction > 0 ? existing.lastFraction : -1) == fraction) {
+      return;
+    }
+    await _db.saveMangaChapterState(
+      bookUid: book.uid,
+      chapterKey: chapterKey,
+      lastPage: p.sectionIndex,
+      lastFraction: fraction,
+    );
+  }
 }

@@ -374,7 +374,9 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final List<EpubBookRow> liveJobs = <EpubBookRow>[
       if (bound)
         for (final EpubBookRow b in localBooks)
-          if (liveByTitle.containsKey(b.title)) b,
+          if (liveByTitle.containsKey(b.title) &&
+              InterconnectBookProgressSync.syncsBookProgress(b))
+            b,
     ];
     for (var i = 0; i < liveJobs.length; i += batchSize) {
       final List<EpubBookRow> batch = liveJobs.skip(i).take(batchSize).toList();
