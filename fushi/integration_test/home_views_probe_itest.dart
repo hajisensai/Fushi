@@ -2,8 +2,9 @@
 // 开着时头像菜单 / 提示 / 按语言筛选 / 筛空状态 / 管理页与编辑页。每步抓一帧
 // （observe-*.png）并打印可 diff 的文本证据；结束时把改过的偏好原样还原。
 //
-// 跑法（沙盒真数据）：在 fushi/ 下
-//   fushi-dev.ps1 flutter test integration_test/home_views_probe_itest.dart -d windows --no-pub
+// 需要库里至少有一部带语言的作品（空库会在 B 步断言失败），所以要对一份有数据的
+// 隔离副本跑，别对自己的真库跑。在 fushi/ 下：
+//   flutter test integration_test/home_views_probe_itest.dart --device-id=windows --no-pub
 import 'dart:async';
 
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
