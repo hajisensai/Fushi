@@ -4,16 +4,13 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi_core/fushi_core.dart' show BookTagRow;
+import 'package:fushi_core/fushi_core.dart' show BookTagRow, FushiDatabase;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_view.dart';
 import 'package:fushi/src/models/home_view_lookup.dart';
-import 'package:fushi/src/settings/glass_settings_renderer.dart'
-    show GlassSettingsRenderer;
+import 'package:fushi/src/models/home_views_host.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
@@ -35,98 +32,84 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 视图的显示名（用户起的名字优先，否则按筛选条件：语言显示名 / 未设语言 / `#标签`）。
-String homeViewNameOf(HomeView view, Map<int, String> tagNames) =>
-    homeViewDisplayName(
-      view,
-      languageLabel: contentLanguageLabelOf,
-      noLanguageLabel: t.home_view_no_language,
-      tagName: (int id) => tagNames[id],
-      everythingLabel: t.home_view_everything,
-    );
+String homeViewNameOf(HomeView view) => homeViewDisplayName(
+  view,
+  languageLabel: contentLanguageLabelOf,
+  noLanguageLabel: t.home_view_no_language,
+  everythingLabel: t.home_view_everything,
+);
 
 /// 打开「管理视图」页。
-Future<void> openHomeViewsPage(BuildContext context) =>
+Future<void> openHomeViewsPage(BuildContext context, HomeViewsHost host) =>
     Navigator.of(context).push<void>(
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => const HomeViewsPage(),
+        builder: (_) => HomeViewsPage(host: host),
       ),
     );
 
 /// 打开视图编辑页；保存返回编辑后的视图，返回 / 取消为 null。[initial] 为 null = 新建。
 Future<HomeView?> openHomeViewEditor(
-  BuildContext context, {
+  BuildContext context,
+  HomeViewsHost host, {
   HomeView? initial,
 }) => Navigator.of(context).push<HomeView>(
   adaptivePageRoute<HomeView>(
     context: context,
-    builder: (_) => HomeViewEditorPage(initial: initial),
+    builder: (_) => HomeViewEditorPage(host: host, initial: initial),
   ),
 );
 
 /// 首页菜单「新建视图…」：编辑、保存，并把首页切到它。
 Future<void> createHomeViewAndActivate(
   BuildContext context,
-  AppModel appModel,
+  HomeViewsHost host,
 ) async {
-  final HomeView? view = await openHomeViewEditor(context);
+  final HomeView? view = await openHomeViewEditor(context, host);
   if (view == null) return;
-  await appModel.setHomeViews(<HomeView>[...appModel.homeViews, view]);
-  await appModel.setHomeViewActiveId(view.id);
+  await host.setHomeViews(<HomeView>[...host.homeViews, view]);
+  await host.setHomeViewActiveId(view.id);
 }
 
 /// 「管理视图」：选本配置首页默认显示哪个视图，新建 / 编辑 / 删除视图。
-class HomeViewsPage extends ConsumerStatefulWidget {
-  const HomeViewsPage({super.key});
+class HomeViewsPage extends StatefulWidget {
+  const HomeViewsPage({super.key, required this.host});
+
+  final HomeViewsHost host;
 
   @override
-  ConsumerState<HomeViewsPage> createState() => _HomeViewsPageState();
+  State<HomeViewsPage> createState() => _HomeViewsPageState();
 }
 
-class _HomeViewsPageState extends ConsumerState<HomeViewsPage> {
-  Map<int, String> _tagNames = const <int, String>{};
+class _HomeViewsPageState extends State<HomeViewsPage> {
+  HomeViewsHost get _host => widget.host;
 
   /// 增删视图时换一代 key，入场动效重播。
   int _generation = 0;
 
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_loadTags());
-  }
-
-  Future<void> _loadTags() async {
-    final List<BookTagRow> tags = await ref
-        .read(appProvider)
-        .database
-        .getAllTags();
-    if (!mounted) return;
-    setState(
-      () => _tagNames = <int, String>{
-        for (final BookTagRow tag in tags) tag.id: tag.name,
-      },
-    );
-  }
-
-  Future<void> _create(AppModel appModel) async {
-    final HomeView? view = await openHomeViewEditor(context);
+  Future<void> _create(HomeViewsHost appModel) async {
+    final HomeView? view = await openHomeViewEditor(context, appModel);
     if (view == null || !mounted) return;
     await appModel.setHomeViews(<HomeView>[...appModel.homeViews, view]);
     if (mounted) setState(() => _generation++);
   }
 
-  Future<void> _edit(AppModel appModel, HomeView view) async {
-    final HomeView? edited = await openHomeViewEditor(context, initial: view);
+  Future<void> _edit(HomeViewsHost appModel, HomeView view) async {
+    final HomeView? edited = await openHomeViewEditor(
+      context,
+      appModel,
+      initial: view,
+    );
     if (edited == null || !mounted) return;
     await appModel.setHomeViews(<HomeView>[
       for (final HomeView v in appModel.homeViews) v.id == view.id ? edited : v,
     ]);
   }
 
-  Future<void> _delete(AppModel appModel, HomeView view) async {
+  Future<void> _delete(HomeViewsHost appModel, HomeView view) async {
     final bool confirmed = await showFushiConfirmDialog(
       context: context,
-      title: t.home_view_delete_confirm(name: homeViewNameOf(view, _tagNames)),
+      title: t.home_view_delete_confirm(name: homeViewNameOf(view)),
       icon: FushiIcons.delete,
       confirmLabel: t.home_view_delete,
       destructive: true,
@@ -150,8 +133,13 @@ class _HomeViewsPageState extends ConsumerState<HomeViewsPage> {
       : const SizedBox.shrink();
 
   @override
-  Widget build(BuildContext context) {
-    final AppModel appModel = ref.watch(appProvider);
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _host,
+    builder: (BuildContext context, Widget? _) => _buildBody(context),
+  );
+
+  Widget _buildBody(BuildContext context) {
+    final HomeViewsHost appModel = _host;
     final List<HomeView> views = appModel.homeViews;
     final String activeId =
         resolveActiveHomeView(
@@ -162,7 +150,7 @@ class _HomeViewsPageState extends ConsumerState<HomeViewsPage> {
         kHomeViewEverythingId;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double inset = isGlassDesign(context)
-        ? GlassSettingsRenderer.detailHorizontalInset(context)
+        ? settingsGlassDetailHorizontalInset(context)
         : tokens.spacing.page;
     final List<Widget> sections = <Widget>[
       AdaptiveSettingsSection(
@@ -180,7 +168,7 @@ class _HomeViewsPageState extends ConsumerState<HomeViewsPage> {
           for (final HomeView v in views)
             AdaptiveSettingsRow(
               key: ValueKey<String>('home-views-default/${v.id}'),
-              title: homeViewNameOf(v, _tagNames),
+              title: homeViewNameOf(v),
               icon: FushiIcons.filterList,
               showIcon: true,
               trailing: _check(activeId == v.id),
@@ -194,10 +182,10 @@ class _HomeViewsPageState extends ConsumerState<HomeViewsPage> {
           for (final HomeView v in views)
             AdaptiveSettingsRow(
               key: ValueKey<String>('home-views-edit/${v.id}'),
-              title: homeViewNameOf(v, _tagNames),
+              title: homeViewNameOf(v),
               subtitle: v.name.trim().isEmpty
                   ? null
-                  : homeViewNameOf(v.copyWith(name: ''), _tagNames),
+                  : homeViewNameOf(v.copyWith(name: '')),
               icon: FushiIcons.edit,
               showIcon: true,
               onTap: () => unawaited(_edit(appModel, v)),
@@ -254,17 +242,20 @@ class _HomeViewsPageState extends ConsumerState<HomeViewsPage> {
 }
 
 /// 视图编辑页：名字、语言（库里出现过的 + 未设语言）、标签（标签池）与标签匹配方式。
-class HomeViewEditorPage extends ConsumerStatefulWidget {
-  const HomeViewEditorPage({super.key, this.initial});
+class HomeViewEditorPage extends StatefulWidget {
+  const HomeViewEditorPage({super.key, required this.host, this.initial});
+
+  /// 只用它的数据库取语言 / 标签选项。
+  final HomeViewsHost host;
 
   /// null = 新建。
   final HomeView? initial;
 
   @override
-  ConsumerState<HomeViewEditorPage> createState() => _HomeViewEditorPageState();
+  State<HomeViewEditorPage> createState() => _HomeViewEditorPageState();
 }
 
-class _HomeViewEditorPageState extends ConsumerState<HomeViewEditorPage> {
+class _HomeViewEditorPageState extends State<HomeViewEditorPage> {
   late HomeView _view = widget.initial ?? HomeView(id: newHomeViewId());
   List<String> _libraryLanguages = const <String>[];
   bool _libraryHasNoLanguage = false;
@@ -278,10 +269,10 @@ class _HomeViewEditorPageState extends ConsumerState<HomeViewEditorPage> {
   }
 
   Future<void> _load() async {
-    final AppModel appModel = ref.read(appProvider);
+    final FushiDatabase db = widget.host.database;
     final ({List<String> languages, bool hasNoLanguage}) options =
-        await loadHomeViewLanguageOptions(appModel.database);
-    final List<BookTagRow> tags = await appModel.database.getAllTags();
+        await loadHomeViewLanguageOptions(db);
+    final List<BookTagRow> tags = await db.getAllTags();
     if (!mounted) return;
     setState(() {
       _libraryLanguages = options.languages;
@@ -290,10 +281,6 @@ class _HomeViewEditorPageState extends ConsumerState<HomeViewEditorPage> {
       _loaded = true;
     });
   }
-
-  Map<int, String> get _tagNames => <int, String>{
-    for (final BookTagRow tag in _tags) tag.id: tag.name,
-  };
 
   /// 可选语言 = 库里出现过的 ∪ 本视图已选的（库里已没有的也留着，能取消）。
   List<String> get _languageOptions =>
@@ -305,7 +292,7 @@ class _HomeViewEditorPageState extends ConsumerState<HomeViewEditorPage> {
       title: t.home_view_rename,
       message: t.home_view_editor_name_hint,
       initialValue: _view.name,
-      hintText: homeViewNameOf(_view.copyWith(name: ''), _tagNames),
+      hintText: homeViewNameOf(_view.copyWith(name: '')),
       confirmLabel: t.home_view_save,
       icon: FushiIcons.edit,
       allowEmpty: true,
@@ -320,9 +307,9 @@ class _HomeViewEditorPageState extends ConsumerState<HomeViewEditorPage> {
       return;
     }
     // 已删除的标签不留在视图里（否则「全部标签」永远凑不齐）。
-    final Set<int> existing = _tags.map((BookTagRow t) => t.id).toSet();
+    final Set<String> existing = _tags.map((BookTagRow t) => t.name).toSet();
     final HomeView cleaned = _loaded
-        ? _view.copyWith(tagIds: _view.tagIds.where(existing.contains).toSet())
+        ? _view.copyWith(tags: _view.tags.where(existing.contains).toSet())
         : _view;
     if (cleaned.isEverything) {
       FushiToast.show(msg: t.home_view_editor_empty_filter);
@@ -394,12 +381,12 @@ class _HomeViewEditorPageState extends ConsumerState<HomeViewEditorPage> {
               FushiFilterChip(
                 key: ValueKey<String>('home-view-tag/${tag.id}'),
                 label: Text('#${tag.name}'),
-                selected: _view.tagIds.contains(tag.id),
+                selected: _view.tags.contains(tag.name),
                 onSelected: (bool on) => setState(
                   () => _view = _view.copyWith(
-                    tagIds: on
-                        ? <int>{..._view.tagIds, tag.id}
-                        : (<int>{..._view.tagIds}..remove(tag.id)),
+                    tags: on
+                        ? <String>{..._view.tags, tag.name}
+                        : (<String>{..._view.tags}..remove(tag.name)),
                   ),
                 ),
               ),
@@ -435,7 +422,7 @@ class _HomeViewEditorPageState extends ConsumerState<HomeViewEditorPage> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double inset = isGlassDesign(context)
-        ? GlassSettingsRenderer.detailHorizontalInset(context)
+        ? settingsGlassDetailHorizontalInset(context)
         : tokens.spacing.page;
     final List<Widget> sections = <Widget>[
       AdaptiveSettingsSection(
@@ -443,7 +430,7 @@ class _HomeViewEditorPageState extends ConsumerState<HomeViewEditorPage> {
         children: <Widget>[
           AdaptiveSettingsRow(
             key: const ValueKey<String>('home-view-name'),
-            title: homeViewNameOf(_view, _tagNames),
+            title: homeViewNameOf(_view),
             subtitle: t.home_view_editor_name_hint,
             icon: FushiIcons.edit,
             showIcon: true,

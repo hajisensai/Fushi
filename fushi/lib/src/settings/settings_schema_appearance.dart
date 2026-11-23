@@ -929,7 +929,7 @@ SettingsSection buildHomePanelsSection() {
         showIcon: true,
         visible: (SettingsContext c) => c.appModel.homeViewsEnabled,
         onTap: (SettingsContext c) =>
-            pushSettingsPage(c, (_) => const HomeViewsPage()),
+            pushSettingsPage(c, (_) => HomeViewsPage(host: c.appModel)),
       ),
     ],
   );

@@ -12,10 +12,11 @@ import 'package:flutter/services.dart'
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_view.dart';
+import 'package:fushi/src/models/home_views_host.dart';
 import 'package:fushi/src/pages/implementations/home_views_page.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -26,11 +27,10 @@ const String _kMenuNewView = '#new';
 const String _kMenuEditViews = '#edit';
 
 /// 在 [anchor]（头像）下方弹出「首页显示」菜单：全部 + 保存的视图（单选），新建视图…，
-/// 编辑视图…。[tagNames] 用于视图自动名里的 `#标签`。
+/// 编辑视图…。
 Future<void> showHomeViewMenu({
   required BuildContext anchor,
-  required AppModel appModel,
-  required Map<int, String> tagNames,
+  required HomeViewsHost appModel,
 }) async {
   final List<HomeView> views = appModel.homeViews;
   final String activeId = appModel.activeHomeView?.id ?? kHomeViewEverythingId;
@@ -58,7 +58,7 @@ Future<void> showHomeViewMenu({
           key: ValueKey<String>('home-view-menu/${v.id}'),
           value: v.id,
           checked: activeId == v.id,
-          child: Text(homeViewNameOf(v, tagNames)),
+          child: Text(homeViewNameOf(v)),
         ),
       const PopupMenuDivider(),
       PopupMenuItem<String>(
@@ -78,7 +78,7 @@ Future<void> showHomeViewMenu({
     case _kMenuNewView:
       await createHomeViewAndActivate(anchor, appModel);
     case _kMenuEditViews:
-      await openHomeViewsPage(anchor);
+      await openHomeViewsPage(anchor, appModel);
     default:
       await appModel.setHomeViewActiveId(choice);
   }
@@ -146,10 +146,13 @@ class HomeViewTipAnchor extends StatefulWidget {
 class _HomeViewTipAnchorState extends State<HomeViewTipAnchor> {
   final OverlayPortalController _portal = OverlayPortalController();
 
-  /// 首页 tab 被藏起来 / 被别的页面盖住时 TickerMode 关掉：提示跟着收起（它画在
-  /// Overlay 里，不收会浮在别的页面上）。
+  /// 首页 tab 被藏起来 / 被别的页面盖住时 TickerMode 关掉；对话框之类不透明度不全的
+  /// 路由盖上来时 TickerMode 不关，但首页路由不再是栈顶。两种情况提示都收起（它画在
+  /// Overlay 里，不收会浮在别的页面 / 对话框上）。
   bool _visible(BuildContext context) =>
-      widget.show && TickerMode.valuesOf(context).enabled;
+      widget.show &&
+      TickerMode.valuesOf(context).enabled &&
+      (ModalRoute.isCurrentOf(context) ?? true);
 
   void _sync(bool visible) {
     // 头像第一次布局完才知道往哪儿放：显示推迟到帧后。
@@ -245,12 +248,13 @@ class _HomeViewTipCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget card = Material(
       key: const ValueKey<String>('home-view-tip'),
-      color: scheme.surfaceContainerHigh,
+      color: tokens.surfaces.overlay,
       elevation: 3,
       shadowColor: scheme.shadow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: tokens.radii.menuRadius),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 14, 8, 6),
         child: Column(
@@ -306,8 +310,5 @@ class _HomeViewTipCard extends StatelessWidget {
 /// 打开菜单的便捷封装（首页头像用）：[unawaited] 掉异步结果。
 void openHomeViewMenu({
   required BuildContext anchor,
-  required AppModel appModel,
-  required Map<int, String> tagNames,
-}) => unawaited(
-  showHomeViewMenu(anchor: anchor, appModel: appModel, tagNames: tagNames),
-);
+  required HomeViewsHost appModel,
+}) => unawaited(showHomeViewMenu(anchor: anchor, appModel: appModel));

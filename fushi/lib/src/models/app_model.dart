@@ -189,6 +189,7 @@ import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/home_view.dart';
+import 'package:fushi/src/models/home_views_host.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
@@ -1023,7 +1024,8 @@ class AppModel
         AudioProductionHost,
         ExternalStorageAccess,
         LookupMatchSearchHost,
-        StudyGoalHost {
+        StudyGoalHost,
+        HomeViewsHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -12810,10 +12812,14 @@ class AppModel
   bool get homeViewsEnabled => _prefsRepo?.homeViewsEnabled ?? false;
   Future<void> setHomeViewsEnabled(bool value) =>
       prefsRepo.setHomeViewsEnabled(value);
+  @override
   List<HomeView> get homeViews => decodeHomeViews(_prefsRepo?.homeViews ?? '');
+  @override
   Future<void> setHomeViews(List<HomeView> views) =>
       prefsRepo.setHomeViews(encodeHomeViews(views));
+  @override
   String get homeViewActiveId => _prefsRepo?.homeViewActive ?? '';
+  @override
   Future<void> setHomeViewActiveId(String id) =>
       prefsRepo.setHomeViewActive(id);
   bool get homeViewsTipShown => _prefsRepo?.homeViewsTipShown ?? false;
@@ -12821,6 +12827,7 @@ class AppModel
       prefsRepo.setHomeViewsTipShown(value);
 
   /// 首页此刻生效的视图（开关关着 / 选的是全部 / 指不到 = null）。
+  @override
   HomeView? get activeHomeView => resolveActiveHomeView(
     enabled: homeViewsEnabled,
     views: homeViews,

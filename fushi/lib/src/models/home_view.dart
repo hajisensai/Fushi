@@ -22,7 +22,7 @@ const String kHomeViewEverythingId = '';
 
 /// 一条保存的首页视图。
 ///
-/// 语言部分（[languages] ∪ [includeNoLanguage]）与标签部分（[tagIds]）都非空时取
+/// 语言部分（[languages] ∪ [includeNoLanguage]）与标签部分（[tags]）都非空时取
 /// AND；两部分都空 = 不筛选（等同「全部」，编辑器不允许保存这种视图）。
 @immutable
 class HomeView {
@@ -31,7 +31,7 @@ class HomeView {
     this.name = '',
     this.languages = const <String>{},
     this.includeNoLanguage = false,
-    this.tagIds = const <int>{},
+    this.tags = const <String>{},
     this.matchAllTags = false,
   });
 
@@ -47,8 +47,9 @@ class HomeView {
   /// 是否包含「没设语言」的作品（含远端 / 服务器条目，它们没有本地语言数据）。
   final bool includeNoLanguage;
 
-  /// 标签 id（`book_tags.id`）。
-  final Set<int> tagIds;
+  /// 标签名（`book_tags.name`）。存名字而不是本机自增 id：视图随 Profile 快照 /
+  /// 备份同步到别的设备，标签在那边按名字同步（`tag_sync`），id 却各自不同。
+  final Set<String> tags;
 
   /// 标签匹配方式：true = 全部标签都要有，false = 有任一即可。
   final bool matchAllTags;
@@ -57,7 +58,7 @@ class HomeView {
   bool get filtersLanguage => languages.isNotEmpty || includeNoLanguage;
 
   /// 标签部分是否参与筛选。
-  bool get filtersTags => tagIds.isNotEmpty;
+  bool get filtersTags => tags.isNotEmpty;
 
   /// 不筛选任何东西（等同「全部」）。
   bool get isEverything => !filtersLanguage && !filtersTags;
@@ -66,14 +67,14 @@ class HomeView {
     String? name,
     Set<String>? languages,
     bool? includeNoLanguage,
-    Set<int>? tagIds,
+    Set<String>? tags,
     bool? matchAllTags,
   }) => HomeView(
     id: id,
     name: name ?? this.name,
     languages: languages ?? this.languages,
     includeNoLanguage: includeNoLanguage ?? this.includeNoLanguage,
-    tagIds: tagIds ?? this.tagIds,
+    tags: tags ?? this.tags,
     matchAllTags: matchAllTags ?? this.matchAllTags,
   );
 
@@ -82,7 +83,7 @@ class HomeView {
     'name': name,
     'langs': (languages.toList()..sort()),
     'noLang': includeNoLanguage,
-    'tags': (tagIds.toList()..sort()),
+    'tags': (tags.toList()..sort()),
     'all': matchAllTags,
   };
 
@@ -107,13 +108,10 @@ class HomeView {
                 key,
       },
       includeNoLanguage: raw['noLang'] == true,
-      tagIds: <int>{
+      tags: <String>{
         if (tags is List)
           for (final Object? t in tags)
-            if (t is int)
-              t
-            else if (t is num && t == t.roundToDouble())
-              t.toInt(),
+            if (t is String && t.trim().isNotEmpty) t.trim(),
       },
       matchAllTags: raw['all'] == true,
     );
@@ -126,7 +124,7 @@ class HomeView {
       other.name == name &&
       setEquals(other.languages, languages) &&
       other.includeNoLanguage == includeNoLanguage &&
-      setEquals(other.tagIds, tagIds) &&
+      setEquals(other.tags, tags) &&
       other.matchAllTags == matchAllTags;
 
   @override
@@ -135,7 +133,7 @@ class HomeView {
     name,
     Object.hashAllUnordered(languages),
     includeNoLanguage,
-    Object.hashAllUnordered(tagIds),
+    Object.hashAllUnordered(tags),
     matchAllTags,
   );
 
@@ -194,12 +192,12 @@ bool _languageIncludes(String viewLanguage, String entryKey) {
 
 /// 一条作品是否出现在 [view] 里。
 ///
-/// [language] 是作品的原始语言列值（null / 空 / 认不出 = 没设语言）；[tagIds] 是作品
-/// （含其所属合集）的标签 id。
+/// [language] 是作品的原始语言列值（null / 空 / 认不出 = 没设语言）；[tags] 是作品
+/// （含其所属合集）的标签名。
 bool matchesHomeView(
   HomeView view, {
   String? language,
-  Set<int> tagIds = const <int>{},
+  Set<String> tags = const <String>{},
 }) {
   if (view.filtersLanguage) {
     final String key = normalizeLanguageBinding(language);
@@ -210,15 +208,15 @@ bool matchesHomeView(
   }
   if (view.filtersTags) {
     final bool ok = view.matchAllTags
-        ? view.tagIds.every(tagIds.contains)
-        : view.tagIds.any(tagIds.contains);
+        ? view.tags.every(tags.contains)
+        : view.tags.any(tags.contains);
     if (!ok) return false;
   }
   return true;
 }
 
 /// 作品在视图匹配里的两项事实（语言 + 标签）。
-typedef HomeViewSubject = ({String? language, Set<int> tagIds});
+typedef HomeViewSubject = ({String? language, Set<String> tags});
 
 /// 首页列表按视图过滤。[view] 为 null（开关关着 / 选的是「全部」）时**原样返回
 /// [entries] 本身**，不调用 [subjectOf]——关着时不需要任何查表。
@@ -231,19 +229,18 @@ List<T> filterForHomeView<T>(
   return <T>[
     for (final T e in entries)
       if (subjectOf(e) case final HomeViewSubject s
-          when matchesHomeView(view, language: s.language, tagIds: s.tagIds))
+          when matchesHomeView(view, language: s.language, tags: s.tags))
         e,
   ];
 }
 
 /// 视图的自动名：语言显示名（日本語 / 中文 / English）、「没设语言」、`#标签名`。
 /// 语言之间、标签之间用 ` + ` 连接，语言部分与标签部分之间用 ` · `；都没有时是
-/// [everythingLabel]。指不到的标签 id（已删除）不进名字。
+/// [everythingLabel]。
 String homeViewDefaultName(
   HomeView view, {
   required String Function(String language) languageLabel,
   required String noLanguageLabel,
-  required String? Function(int tagId) tagName,
   required String everythingLabel,
 }) {
   final List<String> langs = <String>[
@@ -251,8 +248,7 @@ String homeViewDefaultName(
     if (view.includeNoLanguage) noLanguageLabel,
   ];
   final List<String> tags = <String>[
-    for (final int id in view.tagIds.toList()..sort())
-      if (tagName(id) case final String name when name.isNotEmpty) '#$name',
+    for (final String name in view.tags.toList()..sort()) '#$name',
   ];
   final List<String> parts = <String>[
     if (langs.isNotEmpty) langs.join(' + '),
@@ -266,7 +262,6 @@ String homeViewDisplayName(
   HomeView view, {
   required String Function(String language) languageLabel,
   required String noLanguageLabel,
-  required String? Function(int tagId) tagName,
   required String everythingLabel,
 }) {
   final String custom = view.name.trim();
@@ -275,7 +270,6 @@ String homeViewDisplayName(
     view,
     languageLabel: languageLabel,
     noLanguageLabel: noLanguageLabel,
-    tagName: tagName,
     everythingLabel: everythingLabel,
   );
 }
@@ -287,7 +281,7 @@ String homeViewDisplayName(
 ///   的语言在首页已载入的行上，不在这里）；
 /// - [tags]：标签映射（键 `<TagAssignments.mediaKind>|<entryKey>` → 标签 id），
 ///   五种宿主一张表一条查询；
-/// - [tagNames]：标签池（视图显示名用）。
+/// - [tagNames]：标签池 id → 名字（把作品的标签 id 换成名字再匹配视图）。
 @immutable
 class HomeViewLookup {
   const HomeViewLookup({
@@ -301,7 +295,7 @@ class HomeViewLookup {
   final Map<String, String> languages;
   final Map<String, Set<int>> tags;
 
-  /// 标签池 id → 名字（视图自动名 `#标签名` 用）。
+  /// 标签池 id → 名字。
   final Map<int, String> tagNames;
 
   /// `<kind>|<entryKey>` 的语言（没有 = null）。
@@ -311,4 +305,10 @@ class HomeViewLookup {
   /// `<kind>|<entryKey>` 的标签 id（没有 = 空集）。
   Set<int> tagsOf(String kind, String entryKey) =>
       tags['$kind|$entryKey'] ?? const <int>{};
+
+  /// `<kind>|<entryKey>` 的标签名（视图按名字匹配，见 [HomeView.tags]）。
+  Set<String> tagNamesOf(String kind, String entryKey) => <String>{
+    for (final int id in tagsOf(kind, entryKey))
+      if (tagNames[id] case final String name) name,
+  };
 }

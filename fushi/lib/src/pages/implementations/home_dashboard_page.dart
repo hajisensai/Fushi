@@ -3402,7 +3402,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 语言 / 标签数据：一律当作「没设语言」、没有标签——只在「全部」或包含「未设语言」
   /// 的视图里出现。
   HomeViewSubject _homeViewSubjectOf(_ContinueEntry e) {
-    const HomeViewSubject none = (language: null, tagIds: <int>{});
+    const HomeViewSubject none = (language: null, tags: <String>{});
     if (e.remote != null || e.server != null) return none;
     final HomeViewLookup lookup = _homeViewLookup ?? HomeViewLookup.empty;
     final String? language;
@@ -3439,17 +3439,17 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     } else {
       return none;
     }
-    final Set<int> own = lookup.tagsOf(host.dbValue, entryKey);
-    final Set<int> tags = collectionId == null
+    final Set<String> own = lookup.tagNamesOf(host.dbValue, entryKey);
+    final Set<String> tags = collectionId == null
         ? own
-        : <int>{
+        : <String>{
             ...own,
-            ...lookup.tagsOf(
+            ...lookup.tagNamesOf(
               TagHostKind.collection.dbValue,
               collectionTagEntryKey(collectionId),
             ),
           };
-    return (language: language, tagIds: tags);
+    return (language: language, tags: tags);
   }
 
   List<_ContinueEntry> _computeContinueEntries(
@@ -5328,7 +5328,6 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       onOpenViewMenu: (BuildContext anchor) => openHomeViewMenu(
         anchor: anchor,
         appModel: appModel,
-        tagNames: _homeViewLookup?.tagNames ?? const <int, String>{},
       ),
       showViewTip:
           !appModel.homeViewsTipShown && _initialLoadDone && !_editingWidgets,

@@ -41,32 +41,47 @@ void main() {
   });
 
   group('matchesHomeView：标签', () {
-    const HomeView anyTags = HomeView(id: 'v', tagIds: <int>{1, 2});
+    const HomeView anyTags = HomeView(
+      id: 'v',
+      tags: <String>{'anime', 'school'},
+    );
     final HomeView allTags = anyTags.copyWith(matchAllTags: true);
 
     test('任一', () {
-      expect(matchesHomeView(anyTags, tagIds: <int>{2, 9}), isTrue);
-      expect(matchesHomeView(anyTags, tagIds: <int>{9}), isFalse);
+      expect(matchesHomeView(anyTags, tags: <String>{'school', 'x'}), isTrue);
+      expect(matchesHomeView(anyTags, tags: <String>{'x'}), isFalse);
       expect(matchesHomeView(anyTags), isFalse);
     });
 
     test('全部', () {
-      expect(matchesHomeView(allTags, tagIds: <int>{1, 2, 3}), isTrue);
-      expect(matchesHomeView(allTags, tagIds: <int>{1}), isFalse);
+      expect(
+        matchesHomeView(allTags, tags: <String>{'anime', 'school', 'x'}),
+        isTrue,
+      );
+      expect(matchesHomeView(allTags, tags: <String>{'anime'}), isFalse);
     });
 
     test('语言与标签都非空时取 AND', () {
-      final HomeView view = ja.copyWith(tagIds: <int>{5});
-      expect(matchesHomeView(view, language: 'ja', tagIds: <int>{5}), isTrue);
+      final HomeView view = ja.copyWith(tags: <String>{'ln'});
+      expect(
+        matchesHomeView(view, language: 'ja', tags: <String>{'ln'}),
+        isTrue,
+      );
       expect(matchesHomeView(view, language: 'ja'), isFalse);
-      expect(matchesHomeView(view, language: 'en', tagIds: <int>{5}), isFalse);
+      expect(
+        matchesHomeView(view, language: 'en', tags: <String>{'ln'}),
+        isFalse,
+      );
     });
 
     test('没有任何条件 = 全部', () {
       const HomeView empty = HomeView(id: 'v');
       expect(empty.isEverything, isTrue);
       expect(matchesHomeView(empty), isTrue);
-      expect(matchesHomeView(empty, language: 'xx', tagIds: <int>{1}), isTrue);
+      expect(
+        matchesHomeView(empty, language: 'xx', tags: <String>{'a'}),
+        isTrue,
+      );
     });
   });
 
@@ -109,10 +124,10 @@ void main() {
           name: 'Mine',
           languages: <String>{'ja', 'zh-Hant'},
           includeNoLanguage: true,
-          tagIds: <int>{3, 1},
+          tags: <String>{'school', 'anime'},
           matchAllTags: true,
         ),
-        const HomeView(id: 'b', tagIds: <int>{7}),
+        const HomeView(id: 'b', tags: <String>{'ln'}),
       ];
       expect(decodeHomeViews(encodeHomeViews(views)), views);
     });
@@ -124,7 +139,7 @@ void main() {
       final List<HomeView> views = decodeHomeViews(
         '[{"name":"no id"},{"id":""},'
         '{"id":"a","name":3,"langs":["ja-JP","!!",5],"noLang":"yes",'
-        '"tags":[1,"2",3.0,4.5],"all":1},'
+        '"tags":[1," anime ","",null,"school"],"all":1},'
         '{"id":"a","langs":["en"]},7]',
       );
       expect(views, hasLength(1));
@@ -133,7 +148,7 @@ void main() {
       expect(a.name, '');
       expect(a.languages, <String>{'ja'});
       expect(a.includeNoLanguage, isFalse);
-      expect(a.tagIds, <int>{1, 3});
+      expect(a.tags, <String>{'anime', 'school'});
       expect(a.matchAllTags, isFalse);
     });
   });
@@ -144,7 +159,6 @@ void main() {
       languageLabel: (String l) =>
           <String, String>{'ja': '日本語', 'zh': '中文', 'en': 'English'}[l] ?? l,
       noLanguageLabel: 'No language set',
-      tagName: (int id) => <int, String>{1: 'anime', 2: 'school'}[id],
       everythingLabel: 'Everything',
     );
 
@@ -160,9 +174,12 @@ void main() {
         ),
         'English + 中文 + No language set',
       );
-      expect(nameOf(const HomeView(id: 'v', tagIds: <int>{1})), '#anime');
       expect(
-        nameOf(ja.copyWith(tagIds: <int>{2, 1, 99})),
+        nameOf(const HomeView(id: 'v', tags: <String>{'anime'})),
+        '#anime',
+      );
+      expect(
+        nameOf(ja.copyWith(tags: <String>{'school', 'anime'})),
         '日本語 · #anime + #school',
       );
       expect(nameOf(const HomeView(id: 'v')), 'Everything');
@@ -183,7 +200,7 @@ void main() {
         view: null,
         subjectOf: (String _) {
           lookups++;
-          return (language: null, tagIds: const <int>{});
+          return (language: null, tags: const <String>{});
         },
       );
       expect(identical(out, entries), isTrue);
@@ -221,7 +238,7 @@ void main() {
         filterForHomeView<String>(
           langs.keys.toList(),
           view: ja,
-          subjectOf: (String e) => (language: langs[e], tagIds: const <int>{}),
+          subjectOf: (String e) => (language: langs[e], tags: const <String>{}),
         ),
         <String>['a', 'd'],
       );

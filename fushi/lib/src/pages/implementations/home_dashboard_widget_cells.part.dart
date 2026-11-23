@@ -144,32 +144,34 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
       // 色块外观：主条目是拼贴首块（带状态 chip 与「继续」按钮外观），其余是半高块。
       return KeyedSubtree(
         key: const ValueKey<String>('home-continue-blocks'),
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints c) {
-            Widget hero(double _) => _continueBlock(
-              tokens,
-              appModel,
-              entries.first,
-              0,
-              FushiCoverBlockSize.hero,
-              // 首页拼贴（BUG-4903）：视频一律竖版海报摆法，没有海报时剧照裁成
-              // 竖版，不整张铺成横版背景（小块里看起来像没封面）。
-              portraitOnly: true,
-            );
-            final _ContinueSplit split = _continueSplitFor(
-              c.biggest,
-              entries.length,
-              minSide: _kContinueBlockSideMin,
-            );
-            if (split == _ContinueSplit.none) return hero(c.maxHeight);
-            return _heroWithSide(
-              area: c.biggest,
-              sideways: split == _ContinueSplit.side,
-              hero: hero,
-              side: (Size area) =>
-                  _continueBlockSide(tokens, appModel, entries, area),
-            );
-          },
+        child: _withHomeViewBadge(
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints c) {
+              Widget hero(double _) => _continueBlock(
+                tokens,
+                appModel,
+                entries.first,
+                0,
+                FushiCoverBlockSize.hero,
+                // 首页拼贴（BUG-4903）：视频一律竖版海报摆法，没有海报时剧照裁成
+                // 竖版，不整张铺成横版背景（小块里看起来像没封面）。
+                portraitOnly: true,
+              );
+              final _ContinueSplit split = _continueSplitFor(
+                c.biggest,
+                entries.length,
+                minSide: _kContinueBlockSideMin,
+              );
+              if (split == _ContinueSplit.none) return hero(c.maxHeight);
+              return _heroWithSide(
+                area: c.biggest,
+                sideways: split == _ContinueSplit.side,
+                hero: hero,
+                side: (Size area) =>
+                    _continueBlockSide(tokens, appModel, entries, area),
+              );
+            },
+          ),
         ),
       );
     }
@@ -745,10 +747,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
   String? get _homeViewName {
     final HomeView? view = _activeHomeView;
     if (view == null) return null;
-    return homeViewNameOf(
-      view,
-      _homeViewLookup?.tagNames ?? const <int, String>{},
-    );
+    return homeViewNameOf(view);
   }
 
   /// 媒体组件标题：视图不是全部时缀上视图名（「继续 · 中文」），否则原样。
@@ -757,6 +756,59 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     return view == null
         ? base
         : t.home_view_widget_title(title: base, view: view);
+  }
+
+  /// 色块外观的「继续」主角没有组件标题栏：视图不是全部时在左上角叠一枚视图名
+  /// 标签，筛选状态照样看得见；全部 / 开关关着时原样返回 [child]。
+  Widget _withHomeViewBadge(Widget child) {
+    final String? view = _homeViewName;
+    if (view == null) return child;
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final TextStyle? style = Theme.of(
+      context,
+    ).textTheme.labelMedium?.copyWith(color: scheme.onSecondaryContainer);
+    return Stack(
+      children: <Widget>[
+        Positioned.fill(child: child),
+        PositionedDirectional(
+          top: 8,
+          start: 8,
+          child: IgnorePointer(
+            child: Semantics(
+              label: t.home_view_widget_title(
+                title: t.home_continue,
+                view: view,
+              ),
+              child: DecoratedBox(
+                key: const ValueKey<String>('home-view-poster-badge'),
+                decoration: BoxDecoration(
+                  color: scheme.secondaryContainer,
+                  borderRadius: FushiDesignTokens.of(context).radii.chipRadius,
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      FushiIcon(
+                        FushiIcons.filterList,
+                        size: 14,
+                        color: scheme.onSecondaryContainer,
+                      ),
+                      const SizedBox(width: 4),
+                      ExcludeSemantics(child: Text(view, style: style)),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   void _showEverythingOnHome() => unawaited(
