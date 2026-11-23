@@ -271,11 +271,7 @@ void main() {
       profileUid: _profile,
       deviceId: 'v',
       engine: engine,
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        bootClockMs: () => t,
-        bootId: 'boot-v',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t),
       fallbackRolloverHour: () => 4,
       localOffsetMin: () => 540,
     );
