@@ -206,14 +206,6 @@ const KNOWN: &[Known] = &[
               build's library) to prove the migration refuses it as corrupt: protocol 3's own catch-up fails on \
               the missing table, so there is no protocol 3 cache baseline when the preparation copy is closed",
     },
-    Known {
-        test: "store::sync2::tests_channel::channel_is_for_a_profile_holding_nothing_but_its_own_builtins",
-        what: "entities",
-        old: None,
-        why: "the ch-missing-row device deletes the srs_entities row of a builtin note type by hand (to check \
-              that the channel stays shut when a projected row is gone): its own log still holds the identity \
-              record",
-    },
 ];
 
 /// 这个场景的一类差异（协议 3 一侧 [old]、新代一侧 [new]）在 [KNOWN] 里对得上的那条。
@@ -238,6 +230,8 @@ fn protocol_3_caches(
     src: &Connection,
     profile: &str,
     cfg: &str,
+    t: &Truth<'_>,
+    col: i64,
 ) -> Result<CacheRows, OldCachesError> {
     use OldCachesError::{Protocol3, Setup};
     let read = || -> Result<CacheRows, String> {
@@ -280,8 +274,8 @@ fn protocol_3_caches(
             crate::store::sync2::semantics::refresh_tags_row(src, profile, note, &mut touched)
                 .map_err(Protocol3)?;
         }
-        // 旧代码重放改写过、再没改回来的日志结果先改回（`stale.rs`，与干跑同一份判据）。
-        let stale = super::stale::find(src, profile).map_err(Setup)?;
+        // 旧代码重放改写过、或重复日志停留在败者副本的日志结果先改回（`stale.rs`，与干跑同一份判据）。
+        let stale = super::stale::find(src, profile, t, col).map_err(Setup)?;
         super::stale::heal(src, &stale).map_err(Protocol3)?;
         crate::store::caches::rebuild(src, profile, &cfg).map_err(Protocol3)?;
         read().map_err(Setup)
@@ -307,7 +301,7 @@ pub(crate) fn against_protocol_3(src: &Connection, profile: &str, t: &Truth<'_>,
             t,
             col,
             &mut |src: &Connection, profile: &str, cfg: &str| {
-                protocol_3_caches(src, profile, cfg).inspect_err(|e| {
+                protocol_3_caches(src, profile, cfg, t, col).inspect_err(|e| {
                     if let OldCachesError::Protocol3(text) = e {
                         protocol_3_failed = Some(text.clone());
                     }

@@ -69,7 +69,25 @@ class _FakeBackend implements MangaRenderBackend {
   }
 
   final List<String> synthCalls = <String>[];
+
+  /// 每次合成收到的这句演出（与 [synthCalls] 同序）。
+  final List<CastLineDirection> synthDirections = <CastLineDirection>[];
   int clipCalls = 0;
+
+  /// 引擎能表达的演出字段（[directionKey] 按它取舍 / 折算，同 app 后端）。
+  TtsDirectionSupport support = const TtsDirectionSupport(
+    seed: true,
+    emotion: true,
+    tone: true,
+  );
+
+  @override
+  Future<String?> directionKey({
+    required String voice,
+    required CastLineDirection direction,
+  }) async => mangaDirectionKey(
+    effectiveTtsDirection(support, TtsDirection.fromLine(direction)),
+  );
 
   /// 每次合成开头收到要念的整句文字（测试在这里中途取消）。
   void Function(String text)? onSynthesize;
@@ -97,10 +115,12 @@ class _FakeBackend implements MangaRenderBackend {
     required String voice,
     required int seed,
     required List<String> segments,
+    required CastLineDirection direction,
     required String outputPath,
     required TtsRenderCancelToken cancel,
   }) async {
     onSynthesize?.call(segments.join());
+    synthDirections.add(direction);
     cancel.throwIfCancelled();
     synthCalls.add('$voice|$seed|${segments.join('/')}');
     if (failVoices.contains(voice)) {
@@ -409,6 +429,86 @@ void main() {
       expect(again.reused, 3);
       expect(again.produced, 0);
       expect(backend.synthCalls, hasLength(1));
+    });
+
+    test('重跑：语气 / 情绪改了的句子重出并把演出交给后端；引擎表达不了的字段改了照用', () async {
+      final CastVoicingLedger ledger = CastVoicingLedger();
+      final MangaRenderOutcome first = await run(script0(), ledger);
+      expect(
+        first.manifest.lines.map((MangaRenderedLine l) => l.direction),
+        everyElement(isNull),
+      );
+      backend.synthCalls.clear();
+      backend.synthDirections.clear();
+
+      final MangaAudioScript toned = script0();
+      toned.replaceLine(
+        'p0b0',
+        (MangaScriptLine l) => l.copyWith(
+          emotion: CastEmotion.sadness,
+          intensity: 70,
+          tone: 'おずおずと',
+        ),
+      );
+      final MangaRenderOutcome second = await run(
+        toned,
+        ledger,
+        previous: first.manifest,
+      );
+      expect(second.produced, 1);
+      expect(backend.synthDirections.single.tone, 'おずおずと');
+      expect(backend.synthDirections.single.emotion, CastEmotion.sadness);
+      final String? key = second.manifest.lines[0].direction;
+      expect(key, contains('おずおずと'));
+      // 指纹进清单 JSON（短键 `dir`），读回来照样比对。
+      final MangaRenderManifest reloaded = MangaRenderManifest.fromJson(
+        second.manifest.toJson(),
+      )!;
+      expect(reloaded.lines[0].direction, key);
+
+      // 同样的演出：沿用。
+      backend.synthCalls.clear();
+      final MangaRenderOutcome same = await run(
+        toned,
+        ledger,
+        previous: reloaded,
+      );
+      expect(same.produced, 0);
+      expect(backend.synthCalls, isEmpty);
+
+      // 只改语气说明：收自然语言的引擎要重出。
+      final MangaAudioScript retoned = script0();
+      retoned.replaceLine(
+        'p0b0',
+        (MangaScriptLine l) => l.copyWith(
+          emotion: CastEmotion.sadness,
+          intensity: 70,
+          tone: '必死に食い下がる',
+        ),
+      );
+      final MangaRenderOutcome third = await run(
+        retoned,
+        ledger,
+        previous: same.manifest,
+      );
+      expect(third.produced, 1);
+
+      // 引擎只收种子：演出全部不生效，指纹为空，改语气不重出。
+      backend.support = const TtsDirectionSupport(seed: true);
+      final MangaRenderOutcome plain = await run(
+        retoned,
+        ledger,
+        previous: third.manifest,
+      );
+      expect(plain.manifest.lines[0].direction, isNull);
+      backend.synthCalls.clear();
+      final MangaRenderOutcome ignored = await run(
+        toned,
+        ledger,
+        previous: plain.manifest,
+      );
+      expect(ignored.produced, 0);
+      expect(backend.synthCalls, isEmpty);
     });
 
     test('重跑：没变的句子沿用；改了文字的重录；占位句再试一次，成功后出账', () async {

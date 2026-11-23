@@ -367,6 +367,34 @@ void main() {
     );
   });
 
+  test('逐个入库的原盘流文件（BDMV/STREAM/*.m2ts）不当作品计划（BUG-5280）', () async {
+    final int sourceId = await addSource('D:/dl');
+    const String disc = 'D:/dl/[BDMV] Hibike! Euphonium/Vol1';
+    for (final String clip in <String>['00000', '00002', '00003']) {
+      await addVideo('m2ts-$clip', '$disc/BDMV/STREAM/$clip.m2ts', sourceId);
+    }
+    await addVideo('vob-1', 'D:/dl/Some DVD/VIDEO_TS/VTS_01_1.VOB', sourceId);
+    // 非盘内的 m2ts（录播等）照常进计划。
+    await addVideo('rec', 'D:/dl/rec/Frieren - 01.m2ts', sourceId);
+    final int collectionId = await db.createMediaCollection(
+      'Hibike! Euphonium',
+      collectionType: 'playlist',
+    );
+    for (final String clip in <String>['00000', '00002', '00003']) {
+      await db.addToCollection(collectionId, MediaKind.video, 'm2ts-$clip');
+    }
+
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+      db,
+    ).plan(source);
+
+    expect(
+      works.map((VideoSourceScrapeWork work) => work.members.single.bookUid),
+      <String>['rec'],
+    );
+  });
+
   test('按集展开、跨两张盘的原盘合集是一部剧集作品，集号按合集顺序连续', () async {
     // 只有「全部播放」的剧集盘入库后：同一发布的两张盘并在一个合集里，成员是虚拟的
     // 分集路径，按盘序 × 盘内集序排（docs/specs/2026-11-15-bluray-playitem-episodes.md）。

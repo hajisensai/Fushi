@@ -66,7 +66,11 @@ String? srsFushiItemHtml(
   FushiCardItem item,
   Map<String, String> fields,
 ) => switch (item) {
-  FushiCardFieldItem(style: FushiCardFieldStyle.tag) => null,
+  // 标签是纯文字胶囊、大号发音键是原生按钮：都不经 HTML 渲染器。
+  FushiCardFieldItem(
+    style: FushiCardFieldStyle.tag || FushiCardFieldStyle.audio,
+  ) =>
+    null,
   // 小字：与模板 `.fc-field--small` 同字号、同行高。
   FushiCardFieldItem(style: FushiCardFieldStyle.small, :final String field) =>
     '<div style="font-size:13px;line-height:1.5">${fields[field] ?? ''}</div>',

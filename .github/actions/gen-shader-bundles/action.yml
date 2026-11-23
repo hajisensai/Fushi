@@ -1,0 +1,18 @@
+name: Generate Flutter GPU shader bundles
+description: >-
+  Builds fushi/build/shaderbundles/*.shaderbundle (impellerc output, tied to the engine, not
+  tracked) by running the app's own hook/build.dart through fushi/tool/gen_shader_bundles.dart.
+  pubspec.yaml lists the bundles under flutter.assets, and `flutter analyze` runs no build hook,
+  so on a fresh checkout the analyzer reports asset_does_not_exist: every job that runs
+  `flutter analyze` under fushi/ calls this before it. `flutter run|build|test` do not need it
+  (they run the hook themselves). Needs Flutter on PATH and a finished pub get; uses the Flutter
+  SDK's own dart, next to which flutter_gpu_shaders finds impellerc.
+  Guard: fushi/test/build/shader_bundle_analyze_guard_test.dart.
+runs:
+  using: composite
+  steps:
+    - name: Build fushi/build/shaderbundles
+      shell: bash
+      run: |
+        set -euo pipefail
+        "$(dirname "$(command -v flutter)")/dart" fushi/tool/gen_shader_bundles.dart

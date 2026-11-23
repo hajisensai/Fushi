@@ -11,6 +11,7 @@ import 'package:fushi/src/models/preference_keys.dart'
         kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -1039,6 +1040,108 @@ void main() {
         );
       },
     );
+  });
+
+  // 页面背景图片按配置记、只留在本机：样式随快照走，图片路径按配置停放（与 TTS 兜底声音同一机制）。
+  group('页面背景图片按配置记、只留在本机', () {
+    final String landscape = PrefCodec.encode('/data/page_backdrop/a.png');
+    final String other = PrefCodec.encode('/data/page_backdrop/b.png');
+    final String modules = PrefCodec.encode(
+      '{"video":{"landscape":"/data/page_backdrop/v.png"}}',
+    );
+
+    Future<void> switchTo(ProfileRepository repo, int from, int to) async {
+      await repo.snapshotCurrentSettings(from);
+      await repo.setActiveProfileId(to);
+      await repo.applyProfile(to);
+    }
+
+    test('切配置换图（全局 / 竖屏 / 各模块 / 取色缓存），没设过图的配置沿用切换前的图', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      await repo.setActiveProfileId(a);
+      await db.setPref(kPageBackdropPresetPrefKey, PrefCodec.encode('custom'));
+      await db.setPref(kPageBackdropLandscapeImagePrefKey, landscape);
+      await db.setPref(kPageBackdropModuleImagesPrefKey, modules);
+      await db.setPref(kPageBackdropSeedCachePrefKey, PrefCodec.encode('c'));
+
+      // B 从没停放过：沿用 A 的图（升级前的全局图 = 每份配置的初始图，不需要迁移）。
+      await switchTo(repo, a, b);
+      expect(await db.getPref(kPageBackdropLandscapeImagePrefKey), landscape);
+      expect(await db.getPref(kPageBackdropModuleImagesPrefKey), modules);
+
+      // B 换一张、去掉模块图、加竖屏图。
+      await db.setPref(kPageBackdropLandscapeImagePrefKey, other);
+      await db.deletePref(kPageBackdropModuleImagesPrefKey);
+      await db.setPref(kPageBackdropPortraitImagePrefKey, other);
+      await switchTo(repo, b, a);
+      expect(await db.getPref(kPageBackdropLandscapeImagePrefKey), landscape);
+      expect(await db.getPref(kPageBackdropModuleImagesPrefKey), modules);
+      expect(await db.getPref(kPageBackdropPortraitImagePrefKey), isNull);
+      expect(
+        await db.getPref(kPageBackdropSeedCachePrefKey),
+        PrefCodec.encode('c'),
+      );
+      // 样式照旧随快照走：A 的预设回来了。
+      expect(
+        await db.getPref(kPageBackdropPresetPrefKey),
+        PrefCodec.encode('custom'),
+      );
+
+      await switchTo(repo, a, b);
+      expect(await db.getPref(kPageBackdropLandscapeImagePrefKey), other);
+      expect(await db.getPref(kPageBackdropPortraitImagePrefKey), other);
+      expect(await db.getPref(kPageBackdropModuleImagesPrefKey), isNull);
+    });
+
+    test('停放键归为设备本地：不进配置快照、导出与备份', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      await db.setPref(kPageBackdropLandscapeImagePrefKey, landscape);
+      await repo.snapshotCurrentSettings(a);
+
+      final String uid = await db.profileUidOf(a);
+      final Set<String> keys = await _prefKeys(db, a);
+      for (final MapEntry<String, String> e
+          in kPageBackdropProfileParkedPrefKeyPrefixes.entries) {
+        final String parked = '${e.value}$uid';
+        expect(keys, isNot(contains(e.key)));
+        expect(keys, isNot(contains(parked)));
+        expect(ProfileKeys.isExcludedPref(parked), isTrue, reason: parked);
+        expect(
+          PrefRedactionPolicy.isDeviceLocalOrCredential(parked),
+          isTrue,
+          reason: parked,
+        );
+      }
+      expect(
+        await db.getPref('$kPageBackdropLandscapeImagePrefKey::$uid'),
+        landscape,
+      );
+      final String json = await repo.exportProfileToJson(a);
+      expect(json, isNot(contains('/data/page_backdrop/')));
+    });
+
+    test('复制配置：副本一开始用源配置的图；非激活配置的视图取它自己的图', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      await repo.setActiveProfileId(a);
+      await db.setPref(kPageBackdropLandscapeImagePrefKey, landscape);
+      await switchTo(repo, a, b);
+      await db.setPref(kPageBackdropLandscapeImagePrefKey, other);
+
+      final viewA = (await repo.loadSettingsView(a))!;
+      expect(viewA.prefsMap[kPageBackdropLandscapeImagePrefKey], landscape);
+
+      final int copy = await repo.copyProfile(a, 'A2');
+      await switchTo(repo, b, copy);
+      expect(await db.getPref(kPageBackdropLandscapeImagePrefKey), landscape);
+    });
   });
 
   // 拍板台 olNAZUnEy6（方案 A）：TTS 兜底声音按配置记、只留在本机。

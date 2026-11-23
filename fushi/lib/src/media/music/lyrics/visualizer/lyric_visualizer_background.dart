@@ -186,6 +186,16 @@ LyricVisualizerBackgroundEntry? resolveLyricVisualizerBackground(
   }
 }
 
+/// 歌词页正在放 MV 背景时，这个样式的共享背景要不要让位（不画，MV 从下面透上来）：
+/// 用共享背景 / 指定背景的样式让位；自己画全部背景（`none`）或本来就透明的样式不变。
+bool lyricVisualizerBackgroundYieldsToMv(
+  LyricVisualizerBackgroundRequest request, {
+  required bool mvShowing,
+}) =>
+    mvShowing &&
+    (request.kind == LyricVisualizerBackgroundKind.selected ||
+        request.kind == LyricVisualizerBackgroundKind.specific);
+
 /// 背景 [background] 这一帧生效的参数：用户存的值（[stored]）叠上样式请求里的覆盖
 /// （[LyricVisualizerBackgroundRequest.tuningOverrides]），再按背景声明规整。
 LyricVisualizerTuning lyricVisualizerBackgroundTuning(

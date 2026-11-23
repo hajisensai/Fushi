@@ -210,6 +210,40 @@ void main() {
       expect(row.subtitleFormat, 'ass');
     });
 
+    test('同目录有 stem 更长的视频：不动人家的字幕，落成本视频认得的无标记名', () async {
+      // `movie.ja.srt` 归 `movie.ja.mkv`（最长主干认领）：给 `movie` 设默认字幕既不能
+      // 把它当「压过新字幕的旧档」备份掉，也不能把新字幕落成 `movie.ja.*`（那是
+      // `movie.ja.mkv` 的字幕，`movie` 播放时看不到）。
+      final Directory vidDir = Directory(p.join(work.path, 'vids'))
+        ..createSync(recursive: true);
+      await _seedVideo(db, vidDir);
+      File(p.join(vidDir.path, 'movie.ja.mkv')).writeAsBytesSync(<int>[9]);
+      final File neighbour = File(p.join(vidDir.path, 'movie.ja.srt'))
+        ..writeAsStringSync(_srtOriginal);
+      final File upload = File(p.join(work.path, 'upload.tmp'))
+        ..writeAsStringSync(_srtUploaded);
+
+      final LocalLibraryHostService svc = _hostService(db: db, work: work);
+      final String placed = await svc.importDefaultVideoSubtitle(
+        upload,
+        id: 'video/movie',
+        format: 'srt',
+      );
+
+      expect(placed, '.srt');
+      expect(neighbour.readAsStringSync(), _srtOriginal);
+      expect(
+        File('${neighbour.path}$kDisplacedSidecarBackupSuffix').existsSync(),
+        isFalse,
+      );
+      final File landed = File(p.join(vidDir.path, 'movie.srt'));
+      expect(landed.readAsStringSync(), _srtUploaded);
+      expect(
+        (await svc.resolveVideoSubtitle('video/movie'))?.path,
+        landed.path,
+      );
+    });
+
     test('播放列表第 N 集：落到那一集文件旁、让位同集旧档，第 0 集的库行与字幕不动', () async {
       final Directory vidDir = Directory(p.join(work.path, 'vids'))
         ..createSync(recursive: true);

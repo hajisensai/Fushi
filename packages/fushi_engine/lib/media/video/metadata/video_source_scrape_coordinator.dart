@@ -5436,7 +5436,7 @@ class VideoSourceScrapeCoordinator
         AiVideoIdentityCandidate(
           key: _aiCandidateKey(option),
           titles: _aiCandidateTitles(option.work),
-          mediaKind: option.lookup.mediaKind,
+          mediaKind: _aiCandidateKind(option.work),
           year: option.work.year,
           episodeCount: option.work.episodeCount,
           synopsis: option.work.plot,
@@ -5583,6 +5583,27 @@ class VideoSourceScrapeCoordinator
   static String _aiCandidateKey(
     VideoSourceScrapeConfirmationCandidate candidate,
   ) => '${candidate.lookup.provider.name}:${candidate.lookup.externalId}';
+
+  /// 交给 AI 的候选类型：资料源**自己说了**的类型，说不出就 null（BUG-5282）。
+  ///
+  /// AniDB 的 [VideoMetadataWork.kind] 不是候选的真实类型：标题目录命中只有标题
+  /// 与 id，kind 是本地这次的搜索类型；完整资料里 OVA / Web / TV Special 也按本地
+  /// 形态回填（`_mediaKindForAnime`）。把它当候选类型给模型，单文件（按电影搜）
+  /// 搜到的 TV 系列会被标成「movie」，模型看到「类型不符」就压低置信度、不采用。
+  /// AniDB 只认原始 `type` 里的 Movie / TV Series；MAL / TMDB 的 kind 来自资料源本身。
+  static VideoMetadataMediaKind? _aiCandidateKind(VideoMetadataWork work) {
+    if (work.provider != VideoMetadataProviderKind.anidb) return work.kind;
+    final Map<String, Object?>? payload = work.rawPayload;
+    if (payload == null ||
+        payload[AniDbVideoMetadataProvider.catalogOnlyPayloadKey] == true) {
+      return null;
+    }
+    return switch ('${payload['type'] ?? ''}'.trim().toLowerCase()) {
+      'movie' => VideoMetadataMediaKind.movie,
+      'tv series' => VideoMetadataMediaKind.tv,
+      _ => null,
+    };
+  }
 
   /// 候选的各语言标题：主标题 + 原名 + 别名（去空去重由 [AiVideoIdentityCandidate] 做）。
   static List<String> _aiCandidateTitles(VideoMetadataWork work) => <String>[

@@ -346,6 +346,7 @@ class _TtsVoiceSettingsPageState extends State<TtsVoiceSettingsPage> {
     _saveDebounce?.cancel();
     await _store.savePresets(_presets);
     await _store.setActivePresetId(_activeId);
+    await _store.forgetMediaVoicePreset(id);
     if (removed != null) {
       await deleteOrphanedTtsReferenceAudio(removed, _presets);
     }
