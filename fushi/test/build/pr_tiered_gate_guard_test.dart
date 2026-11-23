@@ -157,6 +157,50 @@ void main() {
     expect(tool, contains("args.contains('--app-tests-only')"));
   });
 
+  test('Flutter GPU 测试只在相关改动时跑（拍板 pr4211-ci-mesa=b），全量 / 快门各挂一处', () {
+    // 每次都 apt 装 mesa 跑 lavapipe 只增加开销与外部软件源依赖；但相关改动时必须真跑，
+    // 全量模式（改 pubspec / 本 workflow 等）下 affected-tests 不跑，所以第 0 片那一步也要挂同一个门。
+    final String plan = job('plan');
+    expect(plan, contains(r'gpu: ${{ steps.gpu.outputs.run }}'));
+    expect(plan, contains('id: gpu\n'));
+    for (final String guard in <String>[
+      r'[ "$EVENT_NAME" = "pull_request" ] || run true ',
+      'run true "could not list the changed files of this PR"',
+      r'[ -n "$changed" ] || run true ',
+      '-lt 3000 ] || run true ',
+    ]) {
+      expect(plan, contains(guard), reason: 'gpu 判定缺 fail safe：$guard');
+    }
+    for (final String alt in <String>[
+      'shaders/',
+      'hook/',
+      'lib/src/media/music/lyrics/visualizer/',
+      'test/media/music/visualizer/',
+      r'pubspec\.lock$',
+      r'\.github/workflows/main\.yml$',
+    ]) {
+      expect(plan, contains(alt), reason: 'gpu 判定缺路径 $alt');
+    }
+    const String gate = "needs.plan.outputs.gpu == 'true'";
+    final Map<String, String> steps = <String, String>{
+      'unit-tests': 'Flutter GPU tests',
+      'affected-tests': 'Flutter GPU tests (when GPU rendering changed)',
+    };
+    steps.forEach((String jobName, String step) {
+      final String body = job(jobName);
+      final int at = body.indexOf('- name: $step\n');
+      expect(at, greaterThanOrEqualTo(0), reason: '$jobName 缺步骤 $step');
+      final String head = body.substring(at).split('\n').take(2).join('\n');
+      expect(head, contains(gate), reason: '$jobName 的 $step 没挂 gpu 门');
+    });
+    // mesa 只在这两步里装：别处再出现就是又加回了无条件的那一步。
+    expect(
+      'mesa-vulkan-drivers'.allMatches(mainWorkflow).length,
+      2,
+      reason: 'mesa 安装只应出现在两个挂了 gpu 门的步骤里',
+    );
+  });
+
   test('合并后的全量兜底还在：release.yml 在 develop 的 push 上跑 4 片单测', () {
     // 快门选不到只经传递依赖受影响的测试；这条兜底没了，分层就是在裸奔。
     final String on = releaseWorkflow.substring(

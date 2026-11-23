@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 
 /// 有序列表里的一项（id + 是否启用）。歌词来源列表（[mergeLyricsSourceList]）里是
 /// LRCLIB（[MusicLyricsSource.lrclib]）或一个歌词插件 id；「来源」页的在线音源顺序也复用它。

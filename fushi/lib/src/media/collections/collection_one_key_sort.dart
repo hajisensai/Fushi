@@ -1,3 +1,5 @@
+import 'package:fushi_engine/media/collections/book_series_key.dart'
+    show BookVolumeSortKey, bookVolumeSortKey, compareBookVolumeSortKeys;
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
 import 'package:fushi/src/mining/metadata/galgame_metadata_merge.dart'
@@ -17,7 +19,9 @@ typedef CollectionSortMeta = ({String title, int importedAt, String key});
 /// 右键菜单要现查四表，视频详情页的成员行已经在内存里）。**规则**收口在这里，
 /// 「怎么拿到标题」不强行收口——那是 IO，不是规则。
 ///
-/// - [byTitle]：按名称 natural（卷1 < 卷2 < 卷10），平局比导入时刻，再平局比身份键；
+/// - [byTitle]：按卷号（[compareBookVolumeSortKeys]：系列 → 卷号 → 话号 → 正篇先于
+///   同卷特典册 → natural 书名，卷1 < 卷2 < 卷10），平局比导入时刻，再平局比身份键——
+///   与合集详情页「按卷号」视图同一判据，「存为手动顺序」落盘的就是看到的序；
 /// - 否则按导入时刻旧→新，平局比名称，再平局比身份键。
 int compareCollectionMembers(
   CollectionSortMeta a,
@@ -25,7 +29,10 @@ int compareCollectionMembers(
   required bool byTitle,
 }) {
   if (byTitle) {
-    final int byName = naturalCompare(a.title, b.title);
+    final int byName = compareBookVolumeSortKeys(
+      bookVolumeSortKey(a.title),
+      bookVolumeSortKey(b.title),
+    );
     if (byName != 0) return byName;
     final int byTime = a.importedAt.compareTo(b.importedAt);
     return byTime != 0 ? byTime : a.key.compareTo(b.key);
@@ -42,7 +49,8 @@ int compareCollectionMembers(
 /// 此前三个库页都直接按选择集（`Set<String>`，迭代序 = 点选/框选顺序）逐条
 /// `addToCollection`，sortIndex 就此定型：用户框选一整季建出来的合集，「选集」
 /// 列表是乱序的（E09、E10、E07、E12…），必须再手动跑一次「一键整理」才正常
-/// （BUG-1436）。规则复用「一键整理·按名称」的 [naturalCompare]，两条路径同序。
+/// （BUG-1436）。规则复用「一键整理·按卷号」的 [compareBookVolumeSortKeys]，两条
+/// 路径同序。
 ///
 /// 只排**本次批次**——并入既有合集时不动已有成员的相对序（那可能是用户手动拖拽
 /// 排好的，重排即破坏）。标题相同则保持输入序：`List.sort` 非稳定排序，装饰上
@@ -51,20 +59,21 @@ List<T> sortNewCollectionMembersNaturally<T>(
   List<T> items, {
   required String Function(T) titleOf,
 }) {
-  final List<({T item, String title, int index})> decorated =
-      <({T item, String title, int index})>[
+  final List<({T item, BookVolumeSortKey key, int index})> decorated =
+      <({T item, BookVolumeSortKey key, int index})>[
         for (int i = 0; i < items.length; i++)
-          (item: items[i], title: titleOf(items[i]), index: i),
+          (item: items[i], key: bookVolumeSortKey(titleOf(items[i])), index: i),
       ];
   decorated.sort((
-    ({T item, String title, int index}) a,
-    ({T item, String title, int index}) b,
+    ({T item, BookVolumeSortKey key, int index}) a,
+    ({T item, BookVolumeSortKey key, int index}) b,
   ) {
-    final int byName = naturalCompare(a.title, b.title);
+    final int byName = compareBookVolumeSortKeys(a.key, b.key);
     return byName != 0 ? byName : a.index.compareTo(b.index);
   });
   return <T>[
-    for (final ({T item, String title, int index}) d in decorated) d.item,
+    for (final ({T item, BookVolumeSortKey key, int index}) d in decorated)
+      d.item,
   ];
 }
 
@@ -108,7 +117,7 @@ Future<List<MediaCollectionItemRow>> sortedCollectionRows({
 
 /// 合集详情页「成员排序方式」的每合集偏好键前缀（值 = `CollectionMemberSort.name`）。
 ///
-/// 没有这条偏好时详情页默认按**卷号**（显示名 natural）排——成员表的 sortIndex 是
+/// 没有这条偏好时详情页默认按**卷号**（[compareBookVolumeSortKeys]）排——成员表的 sortIndex 是
 /// 加入顺序（逐本加入 / 目录自动合集按扫描序），不是用户排出来的序；只有用户
 /// 明确选过「手动」、拖拽过或「存为手动顺序 / 一键整理」落过盘，才写 `manual`，
 /// 此后默认走手动序。键里是本机合集自增 id，属于设备本地状态，不进 Profile 快照

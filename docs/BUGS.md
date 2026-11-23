@@ -39,6 +39,14 @@
 |---|:--:|:--:|---|
 | [BUG-5338](bugs/BUG-5338-music-visualizer-gpu-fromimage-commit-leak.md) | ✅ | ✅ | music-visualizer-gpu-fromimage-commit-leak |
 | [BUG-5337](bugs/BUG-5337-music-visualizer-top-band-and-picker-clip.md) | ✅ | ✅ | music-visualizer-top-band-and-picker-clip |
+> 共 4648 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5348](bugs/BUG-5348-music-mv-backdrop-toggle-off.md) | ✅ | ✅ | 歌词页开着时关掉「有 MV 时背景放 MV」，MV 照放不停 |
+| [BUG-5347](bugs/BUG-5347-overlay-card-advanced-mining-sentence.md) | 🚧 | 🚧 | 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上 |
+| [BUG-5340](bugs/BUG-5340-manga-audio-ui-line-edit-hijacks-drama-registration.md) | 🚧 | 🚧 | 登记的是广播剧 / 动画音轨时，app 内单句补回 / 保留候选会把登记悄悄换回合成成品 |
+| [BUG-5337](bugs/BUG-5337-manga-audio-package-import-busy.md) | ✅ | ✅ | manga-audio-package-import-busy |
 | [BUG-5336](bugs/BUG-5336-music-peek-remote-now-playing.md) | ✅ | ✅ | 音乐速览：播放服务器 / 插件 / Apple Music 曲目时「继续」为空 |
 | [BUG-5335](bugs/BUG-5335-games-peek-running-game.md) | ✅ | ✅ | 游戏速览「继续」不认正在运行的游戏 |
 | [BUG-5334](bugs/BUG-5334-games-peek-hide-nsfw.md) | ✅ | ✅ | 游戏速览无视「隐藏成人向」偏好 |
@@ -46,6 +54,20 @@
 | [BUG-5332](bugs/BUG-5332-book-peek-continue-mismatch.md) | ✅ | ✅ | 书 / 漫画的侧栏速览、库页「继续阅读」、首页「继续」三处给出三个不同的续读项 |
 | [BUG-5331](bugs/BUG-5331-home-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠 |
 | [BUG-5330](bugs/BUG-5330-video-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」 |
+| [BUG-5311](bugs/BUG-5311-music-disc-art-cold-start-cache.md) | ✅ | ✅ | music-disc-art-cold-start-cache |
+| [BUG-5310](bugs/BUG-5310-overlay-card-selection-hotkey-nested-lookup.md) | ✅ | ✅ | 应用外查词卡片里选中文字再按查词热键，卡片收起后在鼠标处重弹原词，不做嵌套查词 |
+| [BUG-5309](bugs/BUG-5309-collection-volume-sort-bonus-first.md) | ✅ | ✅ | 合集「按卷号」排序把『』开头的特典册排到第 1 卷前面 |
+| [BUG-5308](bugs/BUG-5308-manga-read-aloud-highlight-not-rotated.md) | ✅ | ✅ | manga-read-aloud-highlight-not-rotated |
+| [BUG-5307](bugs/BUG-5307-imusic-offline-download.md) | ✅ | ✅ | 互联音乐库：把 host 曲目下载到本机离线听（design-imusic-q12） |
+| [BUG-5306](bugs/BUG-5306-imusic-remote-mv-rematch.md) | ✅ | ✅ | 互联音乐库：客户端请 host 重新匹配 / 手动绑定 MV（design-imusic-q9） |
+| [BUG-5305](bugs/BUG-5305-imusic-host-transcode.md) | ✅ | ✅ | 互联音乐库：客户端设码率上限时 host 转码（design-imusic-q6） |
+| [BUG-5304](bugs/BUG-5304-imusic-disc-cdda-share.md) | ✅ | ✅ | 互联音乐库：光盘标题与 CDDA 曲目共享（design-imusic-q5） |
+| [BUG-5303](bugs/BUG-5303-imusic-relay-network-source.md) | ✅ | ✅ | 互联音乐库：host 网络来源曲目经 host 中继（design-imusic-q4） |
+| [BUG-5302](bugs/BUG-5302-imusic-mv-remote-client.md) | ✅ | ✅ | 互联音乐库：客户端歌词页 / 卡拉 OK 页放 host 的 MV（依赖 #4249） |
+| [BUG-5301](bugs/BUG-5301-imusic-server-scan-packaging.md) | 🚧 | 🚧 | 互联音乐库第 3 期：服务端扫描音乐与随包 fushi_music |
+| [BUG-5300](bugs/BUG-5300-imusic-engine-read-layer.md) | ✅ | ✅ | 互联音乐库第 1 期余项：歌词本地层与封面选取搬进引擎 |
+| [BUG-5299](bugs/BUG-5299-game-ocr-mode-phase3.md) | 🚧 | 🚧 | OCR 游戏模式第三期：持续截窗直出框内像素、OCR 行的游戏内嵌查词 |
+| [BUG-5298](bugs/BUG-5298-imusic-legacy-library-modules.md) | 🚧 | 🚧 | 互联老库类迁入统一模块层（design-imusic-q0） |
 | [BUG-5297](bugs/BUG-5297-listening-preset-unrecognized-layout.md) | ✅ | ✅ | 新加的「听力」模板一打开就报「区块以外的代码被改过」，复习走 WebView 卡面 |
 | [BUG-5296](bugs/BUG-5296-gen4-duplicate-log-representative.md) | ✅ | ✅ | gen4 迁移对拍：重复日志在协议 3 停在先到的副本上、新代取最小操作号，两份副本任何一处不同都整份撤回 |
 | [BUG-5295](bugs/BUG-5295-gen4-register-winners-note-source-deleted.md) | ✅ | ✅ | gen4 迁移对拍：笔记 `source` / `deleted` 寄存器两侧胜者不同（协议 3 多出 1049 条活着的修改记录），整份撤回 |
@@ -54,6 +76,7 @@
 | [BUG-5292](bugs/BUG-5292-song-asr-download-refetches-recognizer.md) | ✅ | ✅ | 歌曲字幕补分离模型时按推荐变体重下整套识别模型 |
 | [BUG-5291](bugs/BUG-5291-music-play-source-host-slash.md) | ✅ | ✅ | music-play-source-host-slash |
 | [BUG-5290](bugs/BUG-5290-music-history-server-credentials.md) | ✅ | ✅ | music-history-server-credentials |
+| [BUG-5289](bugs/BUG-5289-music-lyric-coverage-sync.md) | 🚧 | 🚧 | 音乐歌词「已计句子」并集不跨设备同步 |
 | [BUG-5288](bugs/BUG-5288-media-server-grid-stale-watched.md) | ✅ | ✅ | 媒体服务器网格 / 首页在标记未看后仍显示旧的已看状态 |
 | [BUG-5287](bugs/BUG-5287-book-art-scrape-ignores-edition-language.md) | ✅ | ✅ | Cover scraping uses Japanese MangaBaka covers for non-Japanese editions |
 | [BUG-5286](bugs/BUG-5286-series-grouper-merges-language-editions.md) | ✅ | ✅ | Book series grouper merges same-title editions in different languages into one collection |
@@ -199,7 +222,7 @@
 | [BUG-5144](bugs/BUG-5144-music-plugin-empty-page-stops-paging.md) | ✅ | ✅ | music-plugin-empty-page-stops-paging |
 | [BUG-5143](bugs/BUG-5143-video-section-undo-overwrites-concurrent-edit.md) | ✅ | ✅ | video-section-undo-overwrites-concurrent-edit |
 | [BUG-5142](bugs/BUG-5142-favorite-sentence-refavorite-lost-under-tombstone.md) | 🚧 | 🚧 | 同键收藏句合并只留最早 createdAt：删了重收藏后遇到墓碑会被整条压掉 |
-| [BUG-5141](bugs/BUG-5141-game-ocr-mode-phase2.md) | 🚧 | 🚧 | OCR 游戏模式第二期：持续截窗、按游戏记区域、小字预处理、游戏内嵌查词、AI 操作路由 |
+| [BUG-5141](bugs/BUG-5141-game-ocr-mode-phase2.md) | ✅ | ✅ | OCR 游戏模式第二期：等待动画卡死稳定判据、按游戏记区域、小字预处理、AI 操作路由 |
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | ✅ | ✅ | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
 | [BUG-5139](bugs/BUG-5139-cross-app-audio-preview-trim.md) | ✅ | ✅ | 跨应用语音缓存：制卡前试听 + 调起止（波形选区）两端都还没有 |
 | [BUG-5138](bugs/BUG-5138-decision-api-key-leaks-feedback.md) | ✅ | ✅ | 拍板台个人密钥 API 带出关联反馈原文 / 附件与账户 id |
@@ -229,8 +252,8 @@
 | [BUG-5114](bugs/BUG-5114-local-audio-identity-ignores-recordings.md) | ✅ | ✅ | local-audio-identity-ignores-recordings |
 | [BUG-5113](bugs/BUG-5113-upscale-cache-io-under-state-lock.md) | ✅ | ✅ | 漫画超分：工作线程持状态锁写磁盘缓存，UI isolate 的同步 FFI 跟着排队 |
 | [BUG-5112](bugs/BUG-5112-upscale-stale-generation-models-failed.md) | ✅ | ✅ | 漫画超分：旧档迟到的模型加载失败能关掉新档、清掉新档的队列 |
-| [BUG-5111](bugs/BUG-5111-book-manual-summary-fill.md) | 🚧 | 🚧 | 书的简介没有手填入口（BUG-5082 书侧剩余项） |
-| [BUG-5110](bugs/BUG-5110-video-work-locks-lost-on-collection-promotion.md) | 🚧 | 🚧 | 单集作品长成多集合集后重刮，挂在那一集上的手填值 / 字段锁丢失 |
+| [BUG-5111](bugs/BUG-5111-book-manual-summary-fill.md) | ✅ | ✅ | 书的简介没有手填入口（BUG-5082 书侧剩余项） |
+| [BUG-5110](bugs/BUG-5110-video-work-locks-lost-on-collection-promotion.md) | ✅ | ✅ | 单集作品长成多集合集后重刮，挂在那一集上的手填值 / 字段锁丢失 |
 | [BUG-5109](bugs/BUG-5109-manga-series-page-other-book-progress-refresh.md) | ✅ | ✅ | manga-series-page-other-book-progress-refresh |
 | [BUG-5108](bugs/BUG-5108-manga-download-pause-waits-verify.md) | ✅ | ✅ | manga-download-pause-waits-verify |
 | [BUG-5107](bugs/BUG-5107-tts-silence-not-at-shared-entry.md) | ✅ | ✅ | 纯标点句判定只接了部分合成入口：漫画配音 / Galgame 朗读 / 试听仍把「……」「！」送引擎 |

@@ -10,7 +10,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi_audio/fushi_audio.dart' show AudioCue;
 
 /// 竖屏学习版式下半屏的页签（拍板台 P9AS-fvjJh 设计图 B）。
-enum VideoPortraitTab { subtitles, episodes, chapters }
+enum VideoPortraitTab { subtitles, episodes, chapters, chat }
 
 /// 页签描述：页面层按当前视频有没有选集 / 章节决定给哪几个。
 class VideoPortraitTabSpec {

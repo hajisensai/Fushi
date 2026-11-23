@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/media/audiobook/audiobook_follow_style.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_library_dialog.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
@@ -136,6 +137,73 @@ SettingsDestination buildListeningDestination() {
             },
           ),
           buildInvertAudiobookSkipDirectionItem(),
+          // 「跟随音频」遇到跨页句子 / 连续滚动时怎么跟（反馈 tUJsiLpL9d，所有者拍板
+          // A+B、两项默认新行为）。只在对应阅读模式下显示；VN 有自己的「有声句保持在
+          // 同一屏」，不切句，不显示。见 media/audiobook/audiobook_follow_style.dart。
+          SettingsSegmentedItem<String>(
+            id: 'listening.page_split_follow',
+            title: t.audiobook_page_split_title,
+            subtitle: t.audiobook_page_split_hint,
+            icon: FushiIcons.lastPage,
+            controlBelow: true,
+            visible: (SettingsContext c) =>
+                c.readerSource.readerViewMode == 'paginated',
+            reader: const ReaderPlacement(
+              group: ReaderGroup.audiobook,
+              order: 2,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: kAudiobookPageSplitNextSentence,
+                label: t.audiobook_page_split_next_sentence,
+                tooltip: t.audiobook_page_split_next_sentence,
+              ),
+              SettingsSegmentOption<String>(
+                value: kAudiobookPageSplitPageEdge,
+                label: t.audiobook_page_split_page_edge,
+                tooltip: t.audiobook_page_split_page_edge,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.readerSource.audiobookPageSplitFollow,
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setAudiobookPageSplitFollow(v);
+              notifyReaderSettingsChanged(c);
+            },
+            defaultValue: kAudiobookPageSplitPageEdge,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'listening.scroll_follow',
+            title: t.audiobook_scroll_follow_title,
+            subtitle: t.audiobook_scroll_follow_hint,
+            icon: FushiIcons.alignTop,
+            controlBelow: true,
+            visible: (SettingsContext c) =>
+                c.readerSource.readerViewMode == 'continuous',
+            reader: const ReaderPlacement(
+              group: ReaderGroup.audiobook,
+              order: 3,
+            ),
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: kAudiobookScrollFollowMargin,
+                label: t.audiobook_scroll_follow_margin,
+                tooltip: t.audiobook_scroll_follow_margin,
+              ),
+              SettingsSegmentOption<String>(
+                value: kAudiobookScrollFollowLineAlign,
+                label: t.audiobook_scroll_follow_line_align,
+                tooltip: t.audiobook_scroll_follow_line_align,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                c.readerSource.audiobookScrollFollow,
+            onChanged: (SettingsContext c, String v) async {
+              await c.readerSource.setAudiobookScrollFollow(v);
+              notifyReaderSettingsChanged(c);
+            },
+            defaultValue: kAudiobookScrollFollowLineAlign,
+          ),
         ],
       ),
       // 朗读声音：没有录音有声书的书也能由阅读器朗读并逐句高亮，入口单独成组。

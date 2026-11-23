@@ -54,6 +54,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/music_cover_source.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -162,11 +163,7 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
     final MusicAlbumRow? album = albumUid == null
         ? null
         : await _db.getMusicAlbum(albumUid);
-    String? cover;
-    final String? coverTrack = album?.coverTrackUid;
-    if (coverTrack != null) {
-      cover = (await _db.getMusicTrack(coverTrack))?.path;
-    }
+    final String? cover = await musicAlbumEmbeddedCoverPath(_db, album);
     return (track: track, album: album, cover: cover);
   }
 

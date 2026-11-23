@@ -191,6 +191,15 @@ class GlobalLookupWindow {
   // （手柄动作是瞬时输入，不做 pending 缓存）。
   void DispatchGamepadAction(const std::string& action, double dy);
 
+  // BUG-5310 — app 外查词热键 / 手柄 / 鼠标侧键按下时，卡片在屏且卡片里有非空
+  // 选区（host 经 overlaySelection 上报的 selection_present_）就由卡片接手：让 host
+  // 把这段选区当作「点了释义正文」发一次 textSelected，走既有的嵌套查词链；返回
+  // |done| 收到 true 表示 host 已发出嵌套查词，Dart 不再收卡、不再去抓前台程序的
+  // 选区；false（没选区 / 卡片已收 / host 取不到可查的字）则照旧走前台抓取。
+  // |done| 恰好调用一次：结果取自 host 脚本的返回值，不在脚本入队时就臆断接手。
+  // 卡片窗口 WS_EX_NOACTIVATE、永不成为前台，前台抓取只会抓到底下程序里原来那个词。
+  void LookupOverlaySelection(std::function<void(bool)> done);
+
   // Resolves a deferred JS bridge promise. |json_value| is a JSON literal
   // (e.g. "\"file:///a.mp3\"", "true", "null") passed straight to
   // window.__fushiBridgeResolve(id, json_value). Used by the audio handlers,

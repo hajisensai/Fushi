@@ -386,3 +386,16 @@ Future<String> adoptPickedVideoCopy({
   }
   return target;
 }
+
+/// 一行视频展开成集（主题曲比对与 `anime_episode` 类 MV 解析共用）：有播放列表按列表各项，否则就是 `videoPath` 一个文件。只留本机
+/// 绝对路径（远端流 / 网页源没有可解码的本地音轨）。
+List<({int index, String path})> themeSongFilesOf(VideoBookRow row) {
+  final List<String> playlist = playlistEntryPaths(row.playlistJson);
+  final List<String> paths = playlist.isEmpty
+      ? <String>[row.videoPath]
+      : playlist;
+  return <({int index, String path})>[
+    for (int i = 0; i < paths.length; i++)
+      if (isLocalVideoFilePath(paths[i])) (index: i, path: paths[i]),
+  ];
+}

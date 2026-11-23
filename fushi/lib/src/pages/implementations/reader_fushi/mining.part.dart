@@ -173,6 +173,13 @@ extension _ReaderMining on _ReaderFushiPageState {
               appModel.miningAudioFollowPlaybackSpeed
               ? _audiobookController?.speed
               : null;
+          // 句子音频跟随播放音量（d7mXlstcv9）：开关开着时片段整体加上有声书播放器当前
+          // 音量滑块的增益（按本平台播放后端的真实音量曲线换算）；关 → null（原始电平）。
+          final double? sentenceAudioGainDb = audiobookMiningClipGainDb(
+            followPlayback: appModel.miningAudioFollowPlaybackVolume,
+            volume: _audiobookController?.volume,
+            curve: audiobookPlaybackVolumeCurve,
+          );
           sentenceAudioPath = await TtsChannel.instance.extractAudioSegment(
             inputPath: audioInput.input,
             httpHeaders: audioInput.headers,
@@ -182,6 +189,7 @@ extension _ReaderMining on _ReaderFushiPageState {
             audioChannels: mediaCompression.audioChannels,
             audioBitrate: mediaCompression.audioBitrate,
             tempo: sentenceAudioTempo,
+            gainDb: sentenceAudioGainDb,
             onFailure: (String summary) {
               sentenceAudioFailure = summary;
             },

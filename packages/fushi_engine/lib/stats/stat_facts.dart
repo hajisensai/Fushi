@@ -107,8 +107,9 @@ class StatCounterFacts {
   /// 制卡的按日全局计数（`mining_statistics`，已按 (sourceType, dateKey) 聚合）。
   final List<MiningStatisticRow> mining;
 
-  /// 查词 / 制卡的 per-book 计数（`lookup_mining_counters`）。查词数只有这一个
-  /// 来源（查词不落逐次记录，只有按日计数）。
+  /// 查词 / 制卡的 per-book 计数：`lookup_mining_counters` 的按天行，加上 v178 起
+  /// 段内查词（`study_segments.lookups`）聚合出的同形行（`id` = 0、`mineCount` = 0；
+  /// 见 [FushiDatabase.getStudySegmentLookupCounters]）。两处互斥写入，直接相加。
   final List<LookupMiningCounterRow> lookupCounters;
 
   /// 收藏词（`favorite_words`，每行一条 = 计 1）。
@@ -587,16 +588,23 @@ Future<StatFacts> _loadStatFactsHere(
   final Future<StatCounterFacts> countersF = !request.includeCounters
       ? Future<StatCounterFacts>.value(StatCounterFacts.empty)
       : mediaKey == null
-      ? _loadCounterFacts(db)
-      : db
-            .getLookupMiningCountersForBook(
+      ? _loadCounterFacts(db, profile)
+      : Future.wait<List<LookupMiningCounterRow>>(
+          <Future<List<LookupMiningCounterRow>>>[
+            db.getLookupMiningCountersForBook(
               bookKey: mediaKey,
               orTitle: fallbackTitle,
-            )
-            .then(
-              (List<LookupMiningCounterRow> rows) =>
-                  StatCounterFacts(lookupCounters: rows),
-            );
+            ),
+            db.getStudySegmentLookupCounters(
+              profileId: profile,
+              mediaKey: mediaKey,
+            ),
+          ],
+        ).then(
+          (List<List<LookupMiningCounterRow>> parts) => StatCounterFacts(
+            lookupCounters: <LookupMiningCounterRow>[...parts[0], ...parts[1]],
+          ),
+        );
   await Future.wait<Object?>(<Future<Object?>>[
     epubRowsF,
     readingF,
@@ -748,10 +756,26 @@ Future<StatReviewGrid> _loadStatReviewGrid(
 
 /// 计数面的四个全表读（与主事实面同一批并发）。收藏句只取三列（v166 起是表；
 /// 之前是偏好里的整段 JSON，每次在主 isolate 解码，大库 27.6 ms）。
-Future<StatCounterFacts> _loadCounterFacts(FushiDatabase db) async {
+///
+/// 查词两处来源相加（v178，拍板台 4KOWK3c2mn）：按天计数表 + [profile] 的段内查词
+/// （[FushiDatabase.getStudySegmentLookupCounters]，同形行）。两处互斥写入，不双计。
+Future<StatCounterFacts> _loadCounterFacts(
+  FushiDatabase db,
+  int profile,
+) async {
   final Future<List<MiningStatisticRow>> miningF = db.getAllMiningStatistics();
-  final Future<List<LookupMiningCounterRow>> countersF = db
-      .getAllLookupMiningCounters();
+  final Future<List<LookupMiningCounterRow>> countersF =
+      Future.wait<List<LookupMiningCounterRow>>(
+        <Future<List<LookupMiningCounterRow>>>[
+          db.getAllLookupMiningCounters(),
+          db.getStudySegmentLookupCounters(profileId: profile),
+        ],
+      ).then(
+        (List<List<LookupMiningCounterRow>> parts) => <LookupMiningCounterRow>[
+          ...parts[0],
+          ...parts[1],
+        ],
+      );
   final Future<List<FavoriteWordRow>> favoriteWordsF = db.getAllFavoriteWords();
   final Future<List<FavoriteSentenceStatRow>> favoriteSentencesF = db
       .getFavoriteSentenceStatRows();

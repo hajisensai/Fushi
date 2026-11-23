@@ -24,6 +24,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
     show kMangaChromeBarHeight, MangaChromeAction, MangaReaderTopBar;
@@ -102,6 +103,10 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   bool get mangaPageTurnFollowDrag => kMangaPageTurnFollowDragDefault;
+
+  @override
+  double get mangaSwipePageTurnSensitivity =>
+      kMangaSwipePageTurnSensitivityDefault;
 
   @override
   bool get mangaTapZonePaging => true;

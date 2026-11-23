@@ -148,12 +148,15 @@ class LunaHookCodeProfile {
 List<LunaHookCodeProfile> parseLunaHookCodeProfiles(String input) {
   final List<LunaHookCodeProfile> result = <LunaHookCodeProfile>[];
   for (final String rawLine in const LineSplitter().convert(input)) {
-    final String line = rawLine.trimRight();
+    // 只为判空 / 注释去右侧空白；拆列用原行（LineSplitter 已去掉 CRLF 的 CR）：
+    // trimRight 会把空的末列（备注为空时行尾的 TAB）一起吃掉，自己写出的表就读不回来。
+    final String trimmed = rawLine.trimRight();
+    final String line = rawLine;
     // 注释行（含首行版本说明）一律跳过、不校验文字：改名前写的
     // `# Hibiki Luna hook-code profiles v1/v2` 与现在的 `# Fushi …` 同样能读。
-    if (line.isEmpty ||
-        line.startsWith('#') ||
-        line.startsWith(_profileHeaderPrefix)) {
+    if (trimmed.isEmpty ||
+        trimmed.startsWith('#') ||
+        trimmed.startsWith(_profileHeaderPrefix)) {
       continue;
     }
     final List<String> fields = line.split('\t');

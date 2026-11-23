@@ -5,6 +5,7 @@ import 'package:flutter/services.dart'
     show LengthLimitingTextInputFormatter, TextInputFormatter;
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
@@ -36,30 +37,38 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 enum MangaReaderPreferenceKind { choice, toggle, integer }
 
-/// 阅读器面板「阅读模式」页里的翻页动画三项：效果四选一、速度三档、拖动跟手。
+/// 阅读器面板「阅读模式」页里的翻页设置：效果四选一、速度三档、拖动跟手、滑动翻页
+/// 灵敏度。
 ///
-/// 这三项是**全局偏好**（`manga_page_animation` / `manga_page_animation_speed` /
-/// `manga_page_turn_follow_drag`），不进作品覆盖：作用域条切到哪一层都写全局。
+/// 这四项是**全局偏好**（`manga_page_animation` / `manga_page_animation_speed` /
+/// `manga_page_turn_follow_drag` / `manga_swipe_page_turn_sensitivity`），不进作品覆盖：
+/// 作用域条切到哪一层都写全局。
 @immutable
 class MangaPageTurnSettings {
   const MangaPageTurnSettings({
     this.animation = kMangaPageAnimationDefault,
     this.speed = PageTurnAnimationSpeed.normal,
     this.followDrag = kMangaPageTurnFollowDragDefault,
+    this.swipeSensitivity = kMangaSwipePageTurnSensitivityDefault,
   });
 
   final MangaPageAnimation animation;
   final PageTurnAnimationSpeed speed;
   final bool followDrag;
 
+  /// 滑动翻页灵敏度（越大越灵敏，R721ZgWVSB）。
+  final double swipeSensitivity;
+
   MangaPageTurnSettings copyWith({
     MangaPageAnimation? animation,
     PageTurnAnimationSpeed? speed,
     bool? followDrag,
+    double? swipeSensitivity,
   }) => MangaPageTurnSettings(
     animation: animation ?? this.animation,
     speed: speed ?? this.speed,
     followDrag: followDrag ?? this.followDrag,
+    swipeSensitivity: swipeSensitivity ?? this.swipeSensitivity,
   );
 
   @override
@@ -67,10 +76,12 @@ class MangaPageTurnSettings {
       other is MangaPageTurnSettings &&
       other.animation == animation &&
       other.speed == speed &&
-      other.followDrag == followDrag;
+      other.followDrag == followDrag &&
+      other.swipeSensitivity == swipeSensitivity;
 
   @override
-  int get hashCode => Object.hash(animation, speed, followDrag);
+  int get hashCode =>
+      Object.hash(animation, speed, followDrag, swipeSensitivity);
 }
 
 class MangaReaderPreferenceDescriptor {
@@ -544,6 +555,9 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
   MangaPageTurnSettings? _pageTurn;
   MangaPageTurnSettings? _pageTurnPersisted;
   Future<void> _pageTurnChain = Future<void>.value();
+
+  /// 滑动翻页灵敏度滑条拖动中的草稿值（松手才写偏好、推给文档）。
+  double? _swipeSensitivityDraft;
 
   @override
   void initState() {
@@ -1366,7 +1380,45 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
                     unawaited(_setPageTurn(value.copyWith(followDrag: v)))
               : null,
         ),
+        // 滑动翻页灵敏度（R721ZgWVSB）：跟手 / 不跟手两组阈值一起缩放，与效果无关，
+        // 恒显示。拖动只改草稿，松手写一次（写偏好 + 推阈值给文档）。
+        _swipeSensitivityRow(value, editable: editable),
       ],
+    );
+  }
+
+  Widget _swipeSensitivityRow(
+    MangaPageTurnSettings value, {
+    required bool editable,
+  }) {
+    final double current = normalizeMangaSwipePageTurnSensitivity(
+      _swipeSensitivityDraft ?? value.swipeSensitivity,
+    );
+    final String readout = current.toStringAsFixed(1);
+    return AdaptiveSettingsSliderRow(
+      key: const ValueKey<String>('manga_swipe_page_turn_sensitivity'),
+      title: t.swipe_page_turn_sensitivity,
+      icon: FushiIcons.swipe,
+      showIcon: true,
+      value: current,
+      min: kMangaSwipePageTurnSensitivityMin,
+      max: kMangaSwipePageTurnSensitivityMax,
+      divisions: 25,
+      label: readout,
+      readout: readout,
+      onChanged: editable
+          ? (double v) => setState(() => _swipeSensitivityDraft = v)
+          : (_) {},
+      onChangeEnd: editable
+          ? (double v) async {
+              await _setPageTurn(
+                value.copyWith(
+                  swipeSensitivity: normalizeMangaSwipePageTurnSensitivity(v),
+                ),
+              );
+              if (mounted) setState(() => _swipeSensitivityDraft = null);
+            }
+          : null,
     );
   }
 

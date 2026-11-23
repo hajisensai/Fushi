@@ -28,7 +28,11 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
         MusicServerBrowser,
         MusicServerKind,
         MusicServerTrack,
+        fushiHostMusicCoverPath,
+        fushiHostMusicTrackPath,
         musicServerAlbumUid,
+        parseFushiHostMusicCoverPath,
+        parseFushiHostMusicTrackPath,
         musicServerTrackUid;
 import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
     show
@@ -61,7 +65,11 @@ enum MusicRemoteTrackKind {
 
   /// 媒体服务器曲目（Jellyfin / Subsonic，v149；宿主 = 服务器配置身份
   /// [MusicServerBrowser.serverId]，条目 id = 服务器侧曲目 id）。
-  server('server');
+  server('server'),
+
+  /// 互联 host 的曲库曲目（design-imusic-q1 选 a：宿主 = 配对身份 [MusicServerBrowser.serverId]，
+  /// 条目 id = host 的 `track_uid`，播放身份同它，不另起命名空间）。
+  fushiHost('fushi_host');
 
   const MusicRemoteTrackKind(this.wire);
 
@@ -92,13 +100,16 @@ bool musicRemoteKindAvailable(
   required bool online,
 }) => switch (kind) {
   MusicRemoteTrackKind.server => true,
+  MusicRemoteTrackKind.fushiHost => interconnectMusicLibraryAvailable,
   MusicRemoteTrackKind.youtube || MusicRemoteTrackKind.plugin => online,
 };
 
 /// 能作为远程曲目入库的服务器种类：Jellyfin / Subsonic。Apple Music 不收（授权 / 合规另议），
 /// YouTube 内置音源走自己的 `youtube` 种类（占位路径，不经服务器客户端）。
 bool musicServerKindStorable(MusicServerKind kind) => switch (kind) {
-  MusicServerKind.jellyfin || MusicServerKind.subsonic => true,
+  MusicServerKind.jellyfin ||
+  MusicServerKind.subsonic ||
+  MusicServerKind.fushiHost => true,
   MusicServerKind.appleMusic || MusicServerKind.youtube => false,
 };
 
@@ -149,6 +160,16 @@ MusicRemoteIdentity? musicRemoteIdentityOfPath(String path) {
       itemId: plugin.trackId,
     );
   }
+  final ({String hostId, String trackUid})? host = parseFushiHostMusicTrackPath(
+    path,
+  );
+  if (host != null) {
+    return (
+      kind: MusicRemoteTrackKind.fushiHost,
+      sourceKey: host.hostId,
+      itemId: host.trackUid,
+    );
+  }
   return null;
 }
 
@@ -157,12 +178,17 @@ String musicRemoteTrackUidOf(MusicRemoteIdentity id) => switch (id.kind) {
   MusicRemoteTrackKind.youtube ||
   MusicRemoteTrackKind.server => musicServerTrackUid(id.sourceKey, id.itemId),
   MusicRemoteTrackKind.plugin => musicPluginTrackUid(id.sourceKey, id.itemId),
+  MusicRemoteTrackKind.fushiHost => id.itemId,
 };
 
 /// 远程身份 → 播放路径占位；服务器曲目没有占位（地址带凭据，起播时由客户端现算），回 null。
 String? musicRemoteTrackPathOf(MusicRemoteIdentity id) => switch (id.kind) {
   MusicRemoteTrackKind.youtube => youtubeMusicTrackPath(id.itemId),
   MusicRemoteTrackKind.plugin => musicPluginTrackPath(id.sourceKey, id.itemId),
+  MusicRemoteTrackKind.fushiHost => fushiHostMusicTrackPath(
+    id.sourceKey,
+    id.itemId,
+  ),
   MusicRemoteTrackKind.server => null,
 };
 
@@ -222,6 +248,10 @@ MusicRemoteTracksCompanion? musicRemoteTrackCompanionOf(MusicPlayItem item) {
     album: Value<String?>(item.album),
     durationMs: Value<int?>(item.durationMs),
     coverUrl: Value<String?>(httpCover ? cover : null),
+    // 互联 host 曲目的封面是占位（经钉扎通道取），只存 host 侧引用。
+    coverRef: Value<String?>(
+      cover == null ? null : parseFushiHostMusicCoverPath(cover)?.trackUid,
+    ),
     // 插件曲目的「去艺人 / 去专辑」跳转靠这两项（#3046 遗留）。
     albumId: Value<String?>(item.sourceAlbumId),
     artistRefs: Value<String?>(musicRemoteArtistRefsJson(item.artistRefs)),
@@ -237,9 +267,15 @@ MusicRemoteTracksCompanion? musicServerRemoteTrackCompanion(
   String? albumTitle,
 }) {
   if (!musicServerKindStorable(browser.kind)) return null;
+  final bool host = browser.kind == MusicServerKind.fushiHost;
   return MusicRemoteTracksCompanion(
-    trackUid: Value<String>(musicServerTrackUid(browser.serverId, track.id)),
-    kind: Value<String>(MusicRemoteTrackKind.server.wire),
+    trackUid: Value<String>(
+      host ? track.id : musicServerTrackUid(browser.serverId, track.id),
+    ),
+    kind: Value<String>(
+      (host ? MusicRemoteTrackKind.fushiHost : MusicRemoteTrackKind.server)
+          .wire,
+    ),
     sourceKey: Value<String>(browser.serverId),
     itemId: Value<String>(track.id),
     title: Value<String>(track.title),
@@ -286,7 +322,8 @@ bool _boundTo(MusicRemoteTrackRow row, MusicServerBinding? server) =>
 /// 这一行服务器曲目在本机的离线副本（[musicServerLocalCopyLookup]）；不是服务器曲目或没有
 /// 副本回 null。
 MusicServerLocalCopy? musicRemoteLocalCopyOf(MusicRemoteTrackRow row) =>
-    row.kind == MusicRemoteTrackKind.server.wire
+    row.kind == MusicRemoteTrackKind.server.wire ||
+        row.kind == MusicRemoteTrackKind.fushiHost.wire
     ? musicServerLocalCopyLookup?.call(row.trackUid)
     : null;
 
@@ -337,6 +374,44 @@ MusicPlayItem? musicPlayItemOfRemote(
         track,
         maxBitrateKbps: server.maxBitrateKbps,
       );
+    case MusicRemoteTrackKind.fushiHost:
+      final String? coverRef = row.coverRef;
+      final String? hostCover = coverRef == null
+          ? null
+          : fushiHostMusicCoverPath(id.sourceKey, coverRef);
+      // 下了离线副本（design-imusic-q12）：放本机文件，host 离线照样能放。
+      final MusicServerLocalCopy? hostLocal = musicRemoteLocalCopyOf(row);
+      if (hostLocal != null) {
+        return musicServerLocalPlayItem(
+          row.trackUid,
+          hostLocal,
+          MusicServerTrack(
+            id: id.itemId,
+            title: row.title,
+            artist: row.artist,
+            album: row.album,
+            durationMs: row.durationMs,
+            albumId: albumId,
+            coverRef: coverRef,
+          ),
+          albumUid: albumId,
+          fallbackCoverPath: hostCover,
+          kind: MusicServerKind.fushiHost,
+        );
+      }
+      // 占位路径，起播时才向 host 签票（host 离线时按单曲播放失败，同插件曲目）。
+      return MusicPlayItem(
+        trackUid: row.trackUid,
+        path: musicRemoteTrackPathOf(id)!,
+        title: row.title,
+        artist: row.artist,
+        album: row.album,
+        albumUid: albumId,
+        durationMs: row.durationMs,
+        coverPath: coverRef == null
+            ? null
+            : fushiHostMusicCoverPath(id.sourceKey, coverRef),
+      );
     case MusicRemoteTrackKind.youtube:
     case MusicRemoteTrackKind.plugin:
       final bool plugin = id.kind == MusicRemoteTrackKind.plugin;
@@ -369,5 +444,10 @@ String? musicRemoteCoverUrlOf(
         (_boundTo(row, server)
             ? server!.browser.coverUri(row.coverRef)?.toString()
             : null),
+  MusicRemoteTrackKind.fushiHost =>
+    musicRemoteLocalCopyOf(row)?.coverPath ??
+        (row.coverRef == null
+            ? null
+            : fushiHostMusicCoverPath(row.sourceKey, row.coverRef!)),
   _ => row.coverUrl,
 };

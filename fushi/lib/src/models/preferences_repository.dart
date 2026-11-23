@@ -163,6 +163,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show MiningMediaCompression, miningAnimatedPlayOnceReader;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/update_check_cache.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
@@ -1316,6 +1317,16 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 捕获工作台「新句自动查词」（反馈 q9Jcu_Zr2_）：新台词到达且列表在跟随实时时，
+  /// 自动从该句第一个可查字起弹查词。默认关——自动弹窗会挡画面、频繁打扰。
+  bool get texthookerAutoLookupNewLines =>
+      getPref('texthooker_auto_lookup_new_lines', defaultValue: false) as bool;
+
+  Future<void> setTexthookerAutoLookupNewLines(bool value) async {
+    await setPref('texthooker_auto_lookup_new_lines', value);
+    notifyListeners();
+  }
+
   // ── galgame 游戏库（首页「游戏」tab）─────────────────────────────────────
 
   /// legacy：v55 之前用户添加的 galgame 列表（单一 JSON 数组落 KV 表）。
@@ -1413,6 +1424,17 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setScreenOcrCardImage(bool value) async {
     await setPref('screen_ocr.card_image', value);
+    notifyListeners();
+  }
+
+  /// 截屏识字 / 拍照查词每次点「+」制卡前先推出截图框选页（拍板 EuOLprw_dV 选 b：
+  /// 用户想让卡图带上文字旁边的发帖人、时间等上下文）。「制卡」按框出图，「×」不制这张
+  /// 卡。只在 [screenOcrCardImage] 开着时生效。默认关：一键「+」照旧自动裁到文本块。
+  bool get screenOcrCardFrameOnMine =>
+      getPref('screen_ocr.card_frame_on_mine', defaultValue: false);
+
+  Future<void> setScreenOcrCardFrameOnMine(bool value) async {
+    await setPref('screen_ocr.card_frame_on_mine', value);
     notifyListeners();
   }
 
@@ -3202,6 +3224,24 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoPortraitSubtitleList(bool value) async {
     await setPref('video_portrait_subtitle_list', value);
+    notifyListeners();
+  }
+
+  /// 拍板台 zTedU_pOQF：YouTube 直播回放带聊天回放时，开始播放就打开聊天栏（默认关）。
+  bool get videoLiveChatAutoOpen =>
+      getPref('video_live_chat_auto_open', defaultValue: false) as bool;
+
+  Future<void> setVideoLiveChatAutoOpen(bool value) async {
+    await setPref('video_live_chat_auto_open', value);
+    notifyListeners();
+  }
+
+  /// 拍板台 zTedU_pOQF：聊天栏每条消息上方显示发送者（默认开）。
+  bool get videoLiveChatShowAuthor =>
+      getPref('video_live_chat_show_author', defaultValue: true) as bool;
+
+  Future<void> setVideoLiveChatShowAuthor(bool value) async {
+    await setPref('video_live_chat_show_author', value);
     notifyListeners();
   }
 
@@ -5166,6 +5206,21 @@ class PreferencesRepository extends ChangeNotifier
     await setPref(
       'mining_audio_follow_playback_speed',
       !miningAudioFollowPlaybackSpeed,
+    );
+    notifyListeners();
+  }
+
+  /// 制卡句子音频跟随播放音量（反馈 d7mXlstcv9，维护者拍板默认开）：歌曲卡施加与播放
+  /// 相同的 ReplayGain + 音量滑块，有声书卡施加音量滑块，卡里的响度与当时听到的一致；
+  /// 关掉则一律按源文件原始电平裁。见 `mining_playback_volume_gain.dart`。
+  bool get miningAudioFollowPlaybackVolume =>
+      getPref('mining_audio_follow_playback_volume', defaultValue: true)
+          as bool;
+
+  void toggleMiningAudioFollowPlaybackVolume() async {
+    await setPref(
+      'mining_audio_follow_playback_volume',
+      !miningAudioFollowPlaybackVolume,
     );
     notifyListeners();
   }
@@ -7254,6 +7309,20 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMangaPageTurnFollowDrag(bool value) async {
     await setPref('manga_page_turn_follow_drag', value);
+    notifyListeners();
+  }
+
+  /// 漫画滑动翻页灵敏度（R721ZgWVSB，值越大越灵敏，默认 1.0）。读写都夹回值域。
+  double get mangaSwipePageTurnSensitivity =>
+      normalizeMangaSwipePageTurnSensitivity(
+        getPref(kMangaSwipePageTurnSensitivityKey) as num?,
+      );
+
+  Future<void> setMangaSwipePageTurnSensitivity(double value) async {
+    await setPref(
+      kMangaSwipePageTurnSensitivityKey,
+      normalizeMangaSwipePageTurnSensitivity(value),
+    );
     notifyListeners();
   }
 

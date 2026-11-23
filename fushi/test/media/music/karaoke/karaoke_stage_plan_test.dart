@@ -3,7 +3,7 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:image/image.dart' as img;
 
 /// 卡拉 OK 字幕页（音乐 P3）的纯判据：默认叠加（特效检测 × 设置项）、`sub-delay` 符号、

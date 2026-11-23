@@ -36652,6 +36652,17 @@ class $ItemScrapeMetaTable extends ItemScrapeMeta
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _lockedFieldsMeta = const VerificationMeta(
+    'lockedFields',
+  );
+  @override
+  late final GeneratedColumn<String> lockedFields = GeneratedColumn<String>(
+    'locked_fields',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     mediaType,
@@ -36667,6 +36678,7 @@ class $ItemScrapeMetaTable extends ItemScrapeMeta
     tagsJson,
     detailUrl,
     scrapedAt,
+    lockedFields,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -36772,6 +36784,15 @@ class $ItemScrapeMetaTable extends ItemScrapeMeta
     } else if (isInserting) {
       context.missing(_scrapedAtMeta);
     }
+    if (data.containsKey('locked_fields')) {
+      context.handle(
+        _lockedFieldsMeta,
+        lockedFields.isAcceptableOrUnknown(
+          data['locked_fields']!,
+          _lockedFieldsMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -36833,6 +36854,10 @@ class $ItemScrapeMetaTable extends ItemScrapeMeta
         DriftSqlType.int,
         data['${effectivePrefix}scraped_at'],
       )!,
+      lockedFields: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}locked_fields'],
+      ),
     );
   }
 
@@ -36883,6 +36908,12 @@ class ItemScrapeMetaRow extends DataClass
 
   /// 本行写入毫秒戳。
   final int scrapedAt;
+
+  /// v172 字段锁（与视频 `video_metadata_works.locked_fields` 同形）：逗号分隔的
+  /// 可锁字段名，例如 `summary`。用户手填过的字段进这里，之后条目刮削一律保留
+  /// 旧值（BUG-5111）。NULL / 空 = 无锁；值域由引擎 `ItemScrapeLockableField`
+  /// 维护，未知值静默忽略（前向兼容）。
+  final String? lockedFields;
   const ItemScrapeMetaRow({
     required this.mediaType,
     required this.entryKey,
@@ -36897,6 +36928,7 @@ class ItemScrapeMetaRow extends DataClass
     this.tagsJson,
     this.detailUrl,
     required this.scrapedAt,
+    this.lockedFields,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -36932,6 +36964,9 @@ class ItemScrapeMetaRow extends DataClass
       map['detail_url'] = Variable<String>(detailUrl);
     }
     map['scraped_at'] = Variable<int>(scrapedAt);
+    if (!nullToAbsent || lockedFields != null) {
+      map['locked_fields'] = Variable<String>(lockedFields);
+    }
     return map;
   }
 
@@ -36968,6 +37003,9 @@ class ItemScrapeMetaRow extends DataClass
           ? const Value.absent()
           : Value(detailUrl),
       scrapedAt: Value(scrapedAt),
+      lockedFields: lockedFields == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lockedFields),
     );
   }
 
@@ -36990,6 +37028,7 @@ class ItemScrapeMetaRow extends DataClass
       tagsJson: serializer.fromJson<String?>(json['tagsJson']),
       detailUrl: serializer.fromJson<String?>(json['detailUrl']),
       scrapedAt: serializer.fromJson<int>(json['scrapedAt']),
+      lockedFields: serializer.fromJson<String?>(json['lockedFields']),
     );
   }
   @override
@@ -37009,6 +37048,7 @@ class ItemScrapeMetaRow extends DataClass
       'tagsJson': serializer.toJson<String?>(tagsJson),
       'detailUrl': serializer.toJson<String?>(detailUrl),
       'scrapedAt': serializer.toJson<int>(scrapedAt),
+      'lockedFields': serializer.toJson<String?>(lockedFields),
     };
   }
 
@@ -37026,6 +37066,7 @@ class ItemScrapeMetaRow extends DataClass
     Value<String?> tagsJson = const Value.absent(),
     Value<String?> detailUrl = const Value.absent(),
     int? scrapedAt,
+    Value<String?> lockedFields = const Value.absent(),
   }) => ItemScrapeMetaRow(
     mediaType: mediaType ?? this.mediaType,
     entryKey: entryKey ?? this.entryKey,
@@ -37042,6 +37083,7 @@ class ItemScrapeMetaRow extends DataClass
     tagsJson: tagsJson.present ? tagsJson.value : this.tagsJson,
     detailUrl: detailUrl.present ? detailUrl.value : this.detailUrl,
     scrapedAt: scrapedAt ?? this.scrapedAt,
+    lockedFields: lockedFields.present ? lockedFields.value : this.lockedFields,
   );
   ItemScrapeMetaRow copyWithCompanion(ItemScrapeMetaCompanion data) {
     return ItemScrapeMetaRow(
@@ -37062,6 +37104,9 @@ class ItemScrapeMetaRow extends DataClass
       tagsJson: data.tagsJson.present ? data.tagsJson.value : this.tagsJson,
       detailUrl: data.detailUrl.present ? data.detailUrl.value : this.detailUrl,
       scrapedAt: data.scrapedAt.present ? data.scrapedAt.value : this.scrapedAt,
+      lockedFields: data.lockedFields.present
+          ? data.lockedFields.value
+          : this.lockedFields,
     );
   }
 
@@ -37080,7 +37125,8 @@ class ItemScrapeMetaRow extends DataClass
           ..write('ratingCount: $ratingCount, ')
           ..write('tagsJson: $tagsJson, ')
           ..write('detailUrl: $detailUrl, ')
-          ..write('scrapedAt: $scrapedAt')
+          ..write('scrapedAt: $scrapedAt, ')
+          ..write('lockedFields: $lockedFields')
           ..write(')'))
         .toString();
   }
@@ -37100,6 +37146,7 @@ class ItemScrapeMetaRow extends DataClass
     tagsJson,
     detailUrl,
     scrapedAt,
+    lockedFields,
   );
   @override
   bool operator ==(Object other) =>
@@ -37117,7 +37164,8 @@ class ItemScrapeMetaRow extends DataClass
           other.ratingCount == this.ratingCount &&
           other.tagsJson == this.tagsJson &&
           other.detailUrl == this.detailUrl &&
-          other.scrapedAt == this.scrapedAt);
+          other.scrapedAt == this.scrapedAt &&
+          other.lockedFields == this.lockedFields);
 }
 
 class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
@@ -37134,6 +37182,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
   final Value<String?> tagsJson;
   final Value<String?> detailUrl;
   final Value<int> scrapedAt;
+  final Value<String?> lockedFields;
   final Value<int> rowid;
   const ItemScrapeMetaCompanion({
     this.mediaType = const Value.absent(),
@@ -37149,6 +37198,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
     this.tagsJson = const Value.absent(),
     this.detailUrl = const Value.absent(),
     this.scrapedAt = const Value.absent(),
+    this.lockedFields = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ItemScrapeMetaCompanion.insert({
@@ -37165,6 +37215,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
     this.tagsJson = const Value.absent(),
     this.detailUrl = const Value.absent(),
     required int scrapedAt,
+    this.lockedFields = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : mediaType = Value(mediaType),
        entryKey = Value(entryKey),
@@ -37184,6 +37235,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
     Expression<String>? tagsJson,
     Expression<String>? detailUrl,
     Expression<int>? scrapedAt,
+    Expression<String>? lockedFields,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -37200,6 +37252,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
       if (tagsJson != null) 'tags_json': tagsJson,
       if (detailUrl != null) 'detail_url': detailUrl,
       if (scrapedAt != null) 'scraped_at': scrapedAt,
+      if (lockedFields != null) 'locked_fields': lockedFields,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -37218,6 +37271,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
     Value<String?>? tagsJson,
     Value<String?>? detailUrl,
     Value<int>? scrapedAt,
+    Value<String?>? lockedFields,
     Value<int>? rowid,
   }) {
     return ItemScrapeMetaCompanion(
@@ -37234,6 +37288,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
       tagsJson: tagsJson ?? this.tagsJson,
       detailUrl: detailUrl ?? this.detailUrl,
       scrapedAt: scrapedAt ?? this.scrapedAt,
+      lockedFields: lockedFields ?? this.lockedFields,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -37280,6 +37335,9 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
     if (scrapedAt.present) {
       map['scraped_at'] = Variable<int>(scrapedAt.value);
     }
+    if (lockedFields.present) {
+      map['locked_fields'] = Variable<String>(lockedFields.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -37302,6 +37360,7 @@ class ItemScrapeMetaCompanion extends UpdateCompanion<ItemScrapeMetaRow> {
           ..write('tagsJson: $tagsJson, ')
           ..write('detailUrl: $detailUrl, ')
           ..write('scrapedAt: $scrapedAt, ')
+          ..write('lockedFields: $lockedFields, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -56767,6 +56826,18 @@ class $StudySegmentsTable extends StudySegments
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _lookupsMeta = const VerificationMeta(
+    'lookups',
+  );
+  @override
+  late final GeneratedColumn<int> lookups = GeneratedColumn<int>(
+    'lookups',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _updatedAtMeta = const VerificationMeta(
     'updatedAt',
   );
@@ -56805,6 +56876,7 @@ class $StudySegmentsTable extends StudySegments
     durationMs,
     chars,
     pages,
+    lookups,
     updatedAt,
     profileId,
   ];
@@ -56916,6 +56988,12 @@ class $StudySegmentsTable extends StudySegments
         pages.isAcceptableOrUnknown(data['pages']!, _pagesMeta),
       );
     }
+    if (data.containsKey('lookups')) {
+      context.handle(
+        _lookupsMeta,
+        lookups.isAcceptableOrUnknown(data['lookups']!, _lookupsMeta),
+      );
+    }
     if (data.containsKey('updated_at')) {
       context.handle(
         _updatedAtMeta,
@@ -56991,6 +57069,10 @@ class $StudySegmentsTable extends StudySegments
         DriftSqlType.int,
         data['${effectivePrefix}pages'],
       )!,
+      lookups: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}lookups'],
+      )!,
       updatedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
@@ -57045,6 +57127,17 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
   /// 页数（漫画 / PDF；EPUB 恒 0）。
   final int pages;
 
+  /// v172（拍板台 4KOWK3c2mn 方案 b）：本段时间里**在这个媒体上**的查词次数。
+  ///
+  /// 查词发生时本媒体的 [StudySegments] 时钟在跑，就记进当前段（与字数同一行、同一
+  /// uid、同一次绝对值写）；这样查词与字数 / 时长同一小时粒度，编辑会话改日期时随段
+  /// 一起平移，删会话 / 按天删时随段写零，同步走段的 uid LWW（可传播「挪动」，
+  /// `lookup_mining_counters` 的 MAX-union 做不到）。时钟没在跑（手动暂停 / 别的进程 /
+  /// 无书查词）的查词仍记按天的 `lookup_mining_counters`，存量按天数据不动。
+  /// 读取面经 `FushiDatabase.getStudySegmentLookupCounters` 聚合成与计数表同形的行，
+  /// 两份相加（两处互斥写入，不双计）。0 = 这段没有查词（存量段一律 0）。
+  final int lookups;
+
   /// 最后写入毫秒戳：同步 v2 同 uid 取大者（LWW），墓碑仲裁用它与 deletedAt 比。
   final int updatedAt;
 
@@ -57076,6 +57169,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     required this.durationMs,
     required this.chars,
     required this.pages,
+    required this.lookups,
     required this.updatedAt,
     required this.profileId,
   });
@@ -57095,6 +57189,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     map['duration_ms'] = Variable<int>(durationMs);
     map['chars'] = Variable<int>(chars);
     map['pages'] = Variable<int>(pages);
+    map['lookups'] = Variable<int>(lookups);
     map['updated_at'] = Variable<int>(updatedAt);
     map['profile_id'] = Variable<int>(profileId);
     return map;
@@ -57115,6 +57210,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
       durationMs: Value(durationMs),
       chars: Value(chars),
       pages: Value(pages),
+      lookups: Value(lookups),
       updatedAt: Value(updatedAt),
       profileId: Value(profileId),
     );
@@ -57139,6 +57235,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
       durationMs: serializer.fromJson<int>(json['durationMs']),
       chars: serializer.fromJson<int>(json['chars']),
       pages: serializer.fromJson<int>(json['pages']),
+      lookups: serializer.fromJson<int>(json['lookups']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       profileId: serializer.fromJson<int>(json['profileId']),
     );
@@ -57160,6 +57257,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
       'durationMs': serializer.toJson<int>(durationMs),
       'chars': serializer.toJson<int>(chars),
       'pages': serializer.toJson<int>(pages),
+      'lookups': serializer.toJson<int>(lookups),
       'updatedAt': serializer.toJson<int>(updatedAt),
       'profileId': serializer.toJson<int>(profileId),
     };
@@ -57179,6 +57277,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     int? durationMs,
     int? chars,
     int? pages,
+    int? lookups,
     int? updatedAt,
     int? profileId,
   }) => StudySegmentRow(
@@ -57195,6 +57294,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     durationMs: durationMs ?? this.durationMs,
     chars: chars ?? this.chars,
     pages: pages ?? this.pages,
+    lookups: lookups ?? this.lookups,
     updatedAt: updatedAt ?? this.updatedAt,
     profileId: profileId ?? this.profileId,
   );
@@ -57215,6 +57315,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
           : this.durationMs,
       chars: data.chars.present ? data.chars.value : this.chars,
       pages: data.pages.present ? data.pages.value : this.pages,
+      lookups: data.lookups.present ? data.lookups.value : this.lookups,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       profileId: data.profileId.present ? data.profileId.value : this.profileId,
     );
@@ -57236,6 +57337,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
           ..write('durationMs: $durationMs, ')
           ..write('chars: $chars, ')
           ..write('pages: $pages, ')
+          ..write('lookups: $lookups, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('profileId: $profileId')
           ..write(')'))
@@ -57257,6 +57359,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     durationMs,
     chars,
     pages,
+    lookups,
     updatedAt,
     profileId,
   );
@@ -57277,6 +57380,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
           other.durationMs == this.durationMs &&
           other.chars == this.chars &&
           other.pages == this.pages &&
+          other.lookups == this.lookups &&
           other.updatedAt == this.updatedAt &&
           other.profileId == this.profileId);
 }
@@ -57295,6 +57399,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
   final Value<int> durationMs;
   final Value<int> chars;
   final Value<int> pages;
+  final Value<int> lookups;
   final Value<int> updatedAt;
   final Value<int> profileId;
   final Value<int> rowid;
@@ -57312,6 +57417,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     this.durationMs = const Value.absent(),
     this.chars = const Value.absent(),
     this.pages = const Value.absent(),
+    this.lookups = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.profileId = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -57330,6 +57436,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     this.durationMs = const Value.absent(),
     this.chars = const Value.absent(),
     this.pages = const Value.absent(),
+    this.lookups = const Value.absent(),
     required int updatedAt,
     this.profileId = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -57357,6 +57464,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     Expression<int>? durationMs,
     Expression<int>? chars,
     Expression<int>? pages,
+    Expression<int>? lookups,
     Expression<int>? updatedAt,
     Expression<int>? profileId,
     Expression<int>? rowid,
@@ -57375,6 +57483,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
       if (durationMs != null) 'duration_ms': durationMs,
       if (chars != null) 'chars': chars,
       if (pages != null) 'pages': pages,
+      if (lookups != null) 'lookups': lookups,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (profileId != null) 'profile_id': profileId,
       if (rowid != null) 'rowid': rowid,
@@ -57395,6 +57504,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     Value<int>? durationMs,
     Value<int>? chars,
     Value<int>? pages,
+    Value<int>? lookups,
     Value<int>? updatedAt,
     Value<int>? profileId,
     Value<int>? rowid,
@@ -57413,6 +57523,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
       durationMs: durationMs ?? this.durationMs,
       chars: chars ?? this.chars,
       pages: pages ?? this.pages,
+      lookups: lookups ?? this.lookups,
       updatedAt: updatedAt ?? this.updatedAt,
       profileId: profileId ?? this.profileId,
       rowid: rowid ?? this.rowid,
@@ -57461,6 +57572,9 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     if (pages.present) {
       map['pages'] = Variable<int>(pages.value);
     }
+    if (lookups.present) {
+      map['lookups'] = Variable<int>(lookups.value);
+    }
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
@@ -57489,6 +57603,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
           ..write('durationMs: $durationMs, ')
           ..write('chars: $chars, ')
           ..write('pages: $pages, ')
+          ..write('lookups: $lookups, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('profileId: $profileId, ')
           ..write('rowid: $rowid')
@@ -114089,6 +114204,7 @@ typedef $$ItemScrapeMetaTableCreateCompanionBuilder =
       Value<String?> tagsJson,
       Value<String?> detailUrl,
       required int scrapedAt,
+      Value<String?> lockedFields,
       Value<int> rowid,
     });
 typedef $$ItemScrapeMetaTableUpdateCompanionBuilder =
@@ -114106,6 +114222,7 @@ typedef $$ItemScrapeMetaTableUpdateCompanionBuilder =
       Value<String?> tagsJson,
       Value<String?> detailUrl,
       Value<int> scrapedAt,
+      Value<String?> lockedFields,
       Value<int> rowid,
     });
 
@@ -114180,6 +114297,11 @@ class $$ItemScrapeMetaTableFilterComposer
 
   ColumnFilters<int> get scrapedAt => $composableBuilder(
     column: $table.scrapedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lockedFields => $composableBuilder(
+    column: $table.lockedFields,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -114257,6 +114379,11 @@ class $$ItemScrapeMetaTableOrderingComposer
     column: $table.scrapedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get lockedFields => $composableBuilder(
+    column: $table.lockedFields,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ItemScrapeMetaTableAnnotationComposer
@@ -114310,6 +114437,11 @@ class $$ItemScrapeMetaTableAnnotationComposer
 
   GeneratedColumn<int> get scrapedAt =>
       $composableBuilder(column: $table.scrapedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get lockedFields => $composableBuilder(
+    column: $table.lockedFields,
+    builder: (column) => column,
+  );
 }
 
 class $$ItemScrapeMetaTableTableManager
@@ -114362,6 +114494,7 @@ class $$ItemScrapeMetaTableTableManager
                 Value<String?> tagsJson = const Value.absent(),
                 Value<String?> detailUrl = const Value.absent(),
                 Value<int> scrapedAt = const Value.absent(),
+                Value<String?> lockedFields = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemScrapeMetaCompanion(
                 mediaType: mediaType,
@@ -114377,6 +114510,7 @@ class $$ItemScrapeMetaTableTableManager
                 tagsJson: tagsJson,
                 detailUrl: detailUrl,
                 scrapedAt: scrapedAt,
+                lockedFields: lockedFields,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -114394,6 +114528,7 @@ class $$ItemScrapeMetaTableTableManager
                 Value<String?> tagsJson = const Value.absent(),
                 Value<String?> detailUrl = const Value.absent(),
                 required int scrapedAt,
+                Value<String?> lockedFields = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ItemScrapeMetaCompanion.insert(
                 mediaType: mediaType,
@@ -114409,6 +114544,7 @@ class $$ItemScrapeMetaTableTableManager
                 tagsJson: tagsJson,
                 detailUrl: detailUrl,
                 scrapedAt: scrapedAt,
+                lockedFields: lockedFields,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -131303,6 +131439,7 @@ typedef $$StudySegmentsTableCreateCompanionBuilder =
       Value<int> durationMs,
       Value<int> chars,
       Value<int> pages,
+      Value<int> lookups,
       required int updatedAt,
       Value<int> profileId,
       Value<int> rowid,
@@ -131322,6 +131459,7 @@ typedef $$StudySegmentsTableUpdateCompanionBuilder =
       Value<int> durationMs,
       Value<int> chars,
       Value<int> pages,
+      Value<int> lookups,
       Value<int> updatedAt,
       Value<int> profileId,
       Value<int> rowid,
@@ -131398,6 +131536,11 @@ class $$StudySegmentsTableFilterComposer
 
   ColumnFilters<int> get pages => $composableBuilder(
     column: $table.pages,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lookups => $composableBuilder(
+    column: $table.lookups,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -131486,6 +131629,11 @@ class $$StudySegmentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get lookups => $composableBuilder(
+    column: $table.lookups,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
@@ -131547,6 +131695,9 @@ class $$StudySegmentsTableAnnotationComposer
   GeneratedColumn<int> get pages =>
       $composableBuilder(column: $table.pages, builder: (column) => column);
 
+  GeneratedColumn<int> get lookups =>
+      $composableBuilder(column: $table.lookups, builder: (column) => column);
+
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
@@ -131604,6 +131755,7 @@ class $$StudySegmentsTableTableManager
                 Value<int> durationMs = const Value.absent(),
                 Value<int> chars = const Value.absent(),
                 Value<int> pages = const Value.absent(),
+                Value<int> lookups = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int> profileId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -131621,6 +131773,7 @@ class $$StudySegmentsTableTableManager
                 durationMs: durationMs,
                 chars: chars,
                 pages: pages,
+                lookups: lookups,
                 updatedAt: updatedAt,
                 profileId: profileId,
                 rowid: rowid,
@@ -131640,6 +131793,7 @@ class $$StudySegmentsTableTableManager
                 Value<int> durationMs = const Value.absent(),
                 Value<int> chars = const Value.absent(),
                 Value<int> pages = const Value.absent(),
+                Value<int> lookups = const Value.absent(),
                 required int updatedAt,
                 Value<int> profileId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -131657,6 +131811,7 @@ class $$StudySegmentsTableTableManager
                 durationMs: durationMs,
                 chars: chars,
                 pages: pages,
+                lookups: lookups,
                 updatedAt: updatedAt,
                 profileId: profileId,
                 rowid: rowid,

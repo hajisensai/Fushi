@@ -15,7 +15,8 @@ List<OpDescription> describeLibraryScrapeOps(
     pattern: '$kLibraryScrapeCtlItems/:key/scrape-meta',
     summary:
         'Read the scrape details (summary, date, rating, genres) and landscape '
-        'backdrop / logo of a book, manga, audiobook or game.',
+        'backdrop / logo of a book, manga, audiobook or game. lockedFields '
+        'lists fields the user typed by hand; scraping never overwrites them.',
     params: <OpParam>[_keyParam],
   ),
   OpDescription(
@@ -25,7 +26,8 @@ List<OpDescription> describeLibraryScrapeOps(
     summary:
         'Set scrape details and/or a landscape backdrop / logo for a book, '
         'manga, audiobook or game (drives the series block on the shelf and '
-        'game library). Fields not given are kept unless replace=true.',
+        'game library). Fields not given are kept unless replace=true. Values '
+        'given here are written even on user-locked fields; the lock stays.',
     risk: OpRisk.write,
     // backdropUrl / logoUrl 会让 app 去请求模型给的地址：先让用户确认（spec §5.2）。
     confirm: true,

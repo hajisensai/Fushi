@@ -304,7 +304,12 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         YoutubeVideoVariant,
         YoutubeVariantSet,
         isYoutubeUrl,
+        youtubeVideoIdOrNull,
         YoutubeManifestException;
+import 'package:fushi_engine/media/video/youtube_live_chat_replay.dart'
+    show YoutubeChatMessage, fetchYoutubeChatReplayEntry;
+import 'package:fushi/src/media/video/video_live_chat_panel.dart';
+import 'package:fushi/src/media/video/video_live_chat_replay.dart';
 import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
 import 'package:fushi/src/media/video/video_long_press_session_detector.dart';
@@ -357,6 +362,7 @@ import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart'
         GraphicSubtitleTrackExtractionHub,
         GraphicSubtitleTrackLease,
         GraphicSubtitleTrackExtractOutcome;
+import 'package:fushi/src/media/video/video_background_media_session.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_screenshot_compose.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
@@ -476,6 +482,7 @@ import 'package:fushi/src/diagnostics/video_diag_log.dart';
 import 'package:fushi/src/diagnostics/video_frame_timing_probe.dart';
 import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart'
     show showManualDownloadTaskDialog;
@@ -609,6 +616,7 @@ part 'video_fushi/companion.part.dart';
 part 'video_fushi/controller_lookup.part.dart';
 part 'video_fushi/study_stats.part.dart';
 part 'video_fushi/portrait.part.dart';
+part 'video_fushi/live_chat.part.dart';
 
 /// 一次「当前主字幕是不是对齐产物」检查：起跑时的代次 + 结果（见
 /// `_startPrimarySubtitleAlignmentCheck`）。
@@ -2535,6 +2543,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 同样用 [ValueNotifier]（全屏路由也响应，与 [_subtitleListVisible] 同源，BUG-120）。
   /// 与字幕列表互斥：同一时刻右栏只占其一，开一个先关另一个（避免两侧栏分占右栏）。
   final ValueNotifier<bool> _episodeListVisible = ValueNotifier<bool>(false);
+
+  /// YouTube 聊天回放栏（横屏推挤式侧栏）可见性（拍板台 zTedU_pOQF）。与字幕列表 /
+  /// 选集轨道 / 浮层面板互斥，用 [ValueNotifier] 的理由同 [_subtitleListVisible]。
+  final ValueNotifier<bool> _liveChatVisible = ValueNotifier<bool>(false);
+
+  /// 当前 YouTube 视频的聊天回放；没有聊天回放 / 不是 YouTube 流时为 null
+  /// （见 live_chat.part.dart）。
+  VideoLiveChatReplay? _liveChat;
+
+  /// [_liveChat] 绑定的播放器（位置推送源）；换了播放器就重建会话。
+  VideoPlayerController? _liveChatController;
+
+  /// 聊天回放探测代号：换源时作废还没回来的旧探测。
+  int _liveChatProbeSeq = 0;
+
+  /// 聊天栏字符命中句柄（查词浮层 barrier 用，同 [_subtitleListHitTester]）。
+  final VideoLiveChatHitTester _liveChatHitTester = VideoLiveChatHitTester();
+
+  /// 聊天栏上正在查的词（消息 id + 字位区间）；只在查词浮层开着时显示。
+  ({String messageId, int start, int count})? _liveChatLookupHighlight;
+
+  /// 「聊天栏显示用户名」偏好的本页快照（偏好变了经 [_onLiveChatPrefsChanged] 重建）。
+  bool _liveChatShowAuthorPref = true;
+
   final ValueNotifier<_VideoSidePanelState?> _videoSidePanel =
       ValueNotifier<_VideoSidePanelState?>(null);
 
@@ -2604,6 +2636,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 事：那个只问「进没进过后台」（进后台时本就暂停的视频也置位，用于重建解码链），
   /// 这个只问「是不是我们停的、该不该由我们续上」。
   bool _pausedForBackground = false;
+
+  /// 拍板台 42UUu_kcwD-media：此刻正「后台继续放声音」（进后台时开关开着、正在播，
+  /// 视频轨已挂起）。期间视频挂在系统媒体会话上（锁屏 / 通知 / 耳机键 / Android 前台
+  /// 服务），观看时长按有声书后台听书的口径照计（只计时长、不计字幕字数）；回前台清。
+  bool _backgroundAudioActive = false;
+
+  /// 后台放声音时的系统媒体会话（首次用到才建；没开过开关的人永远不碰 audio_service）。
+  VideoBackgroundMediaSession? _backgroundMediaSession;
+  VideoControllerMediaSessionTarget? _backgroundMediaTarget;
+  VideoPlayerController? _backgroundMediaTargetController;
+
+  /// 锁屏卡封面（本机文件）：按路径缓存是否存在，卡片每次推送都现取信息。
+  ({String path, Uri? uri})? _backgroundMediaCover;
 
   /// BUG-939：`_subtitleMenuSources` 已成功枚举时对应的本地视频路径。字幕轨枚举
   /// （ffprobe 探测内嵌轨 + 同目录外挂）按此 key 记忆：同一视频重开「字幕」分类直接
@@ -3391,18 +3436,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       }
       return;
     }
-    final SubtitleListHit? listHit = _subtitleListHitTester.hitTest(
-      _lastGlobalPointerPos,
-    );
+    // 字幕列表 / 聊天回放栏（推挤式侧栏，[_sideListHitAt]）。
+    final _SideListHit? listHit = _sideListHitAt(_lastGlobalPointerPos);
     if (listHit != null) {
       // 与上面画面字幕那条（走 [_handleSubtitleHoverLookup]）同一性质：按 Shift 在指针
       // 所在处查词就是悬停查词，只是省掉了「抖一下鼠标」，故同样算悬停会话。
-      _handleSubtitleListLookup(
-        listHit.cue,
-        listHit.graphemeIndex,
-        listHit.anchorRect,
-        fromHover: true,
-      );
+      listHit.lookup(fromHover: true);
     }
   }
 
@@ -4282,6 +4321,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 不拼接）。
     _subtitleListVisible.addListener(_logSubtitleListToggleForDiag);
     _episodeListVisible.addListener(_applyControlsVisibilityFromMediaKit);
+    // 聊天回放栏与字幕列表同为推挤式侧栏：进 [_hasVideoOverlay]（光标策略）。
+    _liveChatVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
     // 学习计时门的页内遮挡输入（侧板 / 布局编辑；剧集列表不盖画面、不停表）。
     _videoSidePanel.addListener(_syncStudyClockLocalCover);
@@ -4297,6 +4338,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 拍板台 P9AS-fvjJh：播放中在快捷设置里开关「竖屏时显示字幕列表」立即换版式。
     _portraitSubtitleListPref = appModel.videoPortraitSubtitleList;
     appModel.prefsRepo.addListener(_onPortraitPrefsChanged);
+    _liveChatShowAuthorPref = appModel.videoLiveChatShowAuthor;
+    appModel.prefsRepo.addListener(_onLiveChatPrefsChanged);
     _exitFlushCallback = ExitFlushRegistry.instance.register(
       _flushAllForProcessExit,
     );
@@ -4364,6 +4407,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // [VideoFushiPage.shouldPauseForBackground]。
         if (state == AppLifecycleState.paused) _pauseForBackground();
       case AppLifecycleState.resumed:
+        // 拍板台 42UUu_kcwD-media：后台放声音那段结束——让出系统媒体会话、字幕字数
+        // 恢复计数。排在重启采样与计时门之前，回前台的时长按前台口径记。
+        _leaveBackgroundAudio();
         // 回前台：先重启位置采样，再按计时门续表（仍被盖住 / 手动暂停就不续；时钟
         // start() 重锚 tick 起点与空闲基准，后台那段不入账）。
         _watchTracker?.start();
@@ -4441,10 +4487,94 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       isMobile: isMobilePlatform,
     )) {
       unawaited(controller.suspendVideoForBackground());
+      _enterBackgroundAudio(controller);
       return;
     }
     _pausedForBackground = true;
     unawaited(controller.pause());
+  }
+
+  /// 拍板台 42UUu_kcwD-media：进入「后台继续放声音」。
+  ///
+  /// - 系统媒体会话：认领 [MediaSessionOwner.video]（正在放的有声书 / 音乐被抢走、
+  ///   暂停），挂锁屏 / 通知卡，耳机键与锁屏按钮发到本页播放器；Android 由此进媒体
+  ///   前台服务，进程后台放声音不被回收；来电等打断暂停、打断结束续播。
+  /// - 学习统计：与有声书后台听书同一口径（BUG-2558）——生命周期这一刻刚把采样与
+  ///   时钟停了（`paused` / `hidden` 分支），这里按「失焦但在播」重新放行：只要还在
+  ///   出声就计时长，锁屏上按了暂停即停表；不计字幕字数（没有画面）。
+  void _enterBackgroundAudio(VideoPlayerController controller) {
+    if (_backgroundAudioActive) return;
+    _backgroundAudioActive = true;
+    _watchTracker
+      ?..countSubtitleChars = false
+      ..start();
+    _studyClockGate.setUnfocused(true);
+    _studyClockGate.setLifecycleStopped(false);
+    final AudioController audio = appModel.audioCtrl;
+    final VideoBackgroundMediaSession session = _backgroundMediaSession ??=
+        VideoBackgroundMediaSession(
+          seat: audio.seat(MediaSessionOwner.video),
+          handler: () async {
+            await audio.initialiseHandler();
+            return audio.audioHandler;
+          },
+          controls: VideoMediaSessionControls.of(audio),
+          fullNotification: () => appModel.showMediaNotification,
+        );
+    unawaited(
+      session.engage(
+        _backgroundMediaTargetFor(controller),
+        _backgroundMediaInfo,
+      ),
+    );
+  }
+
+  /// 回前台：让出系统媒体会话（撤通知卡、结束前台服务），字幕字数恢复计数。
+  /// 视频轨的还原与计时门的复位由 `resumed` 分支照常做。
+  void _leaveBackgroundAudio() {
+    if (!_backgroundAudioActive) return;
+    _backgroundAudioActive = false;
+    _watchTracker?.countSubtitleChars = true;
+    unawaited(_backgroundMediaSession?.release());
+  }
+
+  VideoControllerMediaSessionTarget _backgroundMediaTargetFor(
+    VideoPlayerController controller,
+  ) {
+    final VideoControllerMediaSessionTarget? cached = _backgroundMediaTarget;
+    if (cached != null &&
+        identical(_backgroundMediaTargetController, controller)) {
+      return cached;
+    }
+    _backgroundMediaTargetController = controller;
+    return _backgroundMediaTarget = VideoControllerMediaSessionTarget(
+      controller,
+      // 锁屏「上 / 下一句」与底栏同名按钮同一条：无字幕时按设置的秒数跳。
+      skipSeekSeconds: () => _asbConfig.seekSeconds,
+    );
+  }
+
+  /// 锁屏卡内容：标题 = 当前这一集，副标题 = 作品名（与标题相同则不重复），
+  /// 封面 = 本机封面文件。每次推卡现取，后台连播换集时跟着换。
+  VideoMediaSessionInfo _backgroundMediaInfo() {
+    final String episode = (_title ?? '').trim();
+    final String work = (_playlistTitle ?? '').trim();
+    final String title = episode.isNotEmpty ? episode : work;
+    return VideoMediaSessionInfo(
+      title: title.isEmpty ? 'Fushi' : title,
+      subtitle: work.isEmpty || work == title ? null : work,
+      artUri: _backgroundMediaCoverUri(),
+    );
+  }
+
+  Uri? _backgroundMediaCoverUri() {
+    final String? path = _bookRow?.coverPath;
+    if (path == null || path.isEmpty) return null;
+    final ({String path, Uri? uri})? cached = _backgroundMediaCover;
+    if (cached != null && cached.path == path) return cached.uri;
+    final Uri? uri = File(path).existsSync() ? File(path).uri : null;
+    _backgroundMediaCover = (path: path, uri: uri);
+    return uri;
   }
 
   /// BUG-2544：回前台（`resumed`）时把上面停下的播放续上。
@@ -7163,6 +7293,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     } else {
       unawaited(_loadDanmakuForVideo(null));
     }
+    // YouTube 直播回放：探测聊天回放（有才出「聊天」按钮，拍板台 zTedU_pOQF）。
+    unawaited(_loadLiveChatForCurrentVideo());
     _prewarmNextEpisodeSubtitleCache();
 
     _onDiscNavigationChanged();
@@ -7394,6 +7526,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 (hasLibraryRow ? _libraryTrackingCompletion : null),
             onPlayingChanged: _studyClockGate.setPlaying,
           )
+          // 后台放声音期间换集（远端连播）：新采集器同样只计时长不计字。
+          ..countSubtitleChars = !_backgroundAudioActive
           ..attach(controller)
           ..start();
     // tracker.start() 只起采样；起不起表由计时门定（建表时已在后台 / 被盖住就不起）。
@@ -7889,6 +8023,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    // 拍板台 42UUu_kcwD-media：离页即让出系统媒体会话（已被别的页面 / 有声书 /
+    // 音乐接手时只拆自己的监听）。
+    _backgroundMediaSession?.dispose();
+    _backgroundMediaSession = null;
     // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
     WorkProfileScope.instance.leave(this);
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
@@ -7933,6 +8071,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
     WidgetsBinding.instance.removeObserver(this);
     appModel.prefsRepo.removeListener(_onPortraitPrefsChanged);
+    appModel.prefsRepo.removeListener(_onLiveChatPrefsChanged);
     // BUG-2105：进程级显示态（系统栏回调 / 横屏锁 / macOS 交通灯）统一在
     // [_releaseVideoDisplayClaim] 里按所有者记账还原——本页不是最后一个持有者
     // （换集期间新页已认领）就不得还原，否则会把新页刚设好的显示态掰掉。
@@ -8031,6 +8170,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.removeListener(_logSubtitleListToggleForDiag);
     _episodeListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
+    _liveChatVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoSidePanel.removeListener(_syncStudyClockLocalCover);
     _videoControlEditMode.removeListener(_syncStudyClockLocalCover);
@@ -8040,6 +8180,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _subtitleListVisible.dispose();
     _subtitleSearchRequests.dispose();
     _episodeListVisible.dispose();
+    _liveChatVisible.dispose();
+    _liveChatProbeSeq++;
+    _liveChat?.dispose();
+    _liveChat = null;
     _videoSidePanel.dispose();
     _controlPopoverHoverDismiss.dispose();
     _videoControlPopover.dispose();
@@ -8187,6 +8331,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       _videoSidePanel.value != null ||
       _videoControlPopover.value != null ||
       _subtitleListVisible.value ||
+      _liveChatVisible.value ||
       _episodeListVisible.value ||
       _videoControlEditMode.value ||
       _lookupOverlayActive.value;
@@ -8484,25 +8629,19 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 抢走 hover，故 Shift 悬停列表里下一个词若不在此反查就连续换不了词（与 barrier tap 的
     // 列表兜底 [_onDismissBarrierTap] 对称）。复用 barrier hover 的「同句同 grapheme」去重键
     // （cue.text 作句 key）避免同词反复 replaceStack 闪烁。
-    final SubtitleListHit? listHit = _subtitleListHitTester.hitTest(
-      event.position,
-    );
+    // 聊天回放栏与字幕列表同为推挤式侧栏，同一条反查（[_sideListHitAt]）。
+    final _SideListHit? listHit = _sideListHitAt(event.position);
     if (listHit != null) {
-      if (listHit.cue.text == _barrierHoverLastSentence &&
+      if (listHit.text == _barrierHoverLastSentence &&
           listHit.graphemeIndex == _barrierHoverLastGrapheme) {
         return;
       }
-      _barrierHoverLastSentence = listHit.cue.text;
+      _barrierHoverLastSentence = listHit.text;
       _barrierHoverLastGrapheme = listHit.graphemeIndex;
       // 列表这条仍按「同句同 grapheme」去重；画面字幕的「同词」键随之作废，免得回到画面
       // 同一句时拿列表查词之前的起点误判成同一个词。
       _barrierHoverLastSpanStart = -1;
-      _handleSubtitleListLookup(
-        listHit.cue,
-        listHit.graphemeIndex,
-        listHit.anchorRect,
-        fromHover: true,
-      );
+      listHit.lookup(fromHover: true);
     }
   }
 
@@ -8575,7 +8714,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 命中用**宽**容差（不传 exactOnly）：与悬停换词同一口径。字幕行周围半字宽的裙边仍
     // 算「在字幕上」，避免指针在字与字之间的缝里划过时反复起表 / 撤表。
     if (_subtitleHitTester.hitTest(globalPos) != null ||
-        _subtitleListHitTester.hitTest(globalPos) != null) {
+        _sideListHitAt(globalPos) != null) {
       _cancelHoverLeaveResume();
       return;
     }
@@ -8663,7 +8802,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // hover 事件若都落在节流阈值内不会撤表。
       overSubtitle:
           _subtitleHitTester.hitTest(_lastGlobalPointerPos) != null ||
-          _subtitleListHitTester.hitTest(_lastGlobalPointerPos) != null,
+          _sideListHitAt(_lastGlobalPointerPos) != null,
       caretHoldsPause: _videoCaretActive,
       hiddenByDialog: lookupPopupHiddenByDialog,
       pointerOverFloatingBall: appFloatingBallPointerInside.value,
@@ -8746,16 +8885,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 容差，点面板行距 / 行尾空白想关闭浮层会被误判成「切列表里的词」反复重查（用户报「点半
     // 个屏幕外的空白一直重复查一个词」；截图里查到的词根本不在画面字幕里、只在列表面板里）。
     // exactOnly 只在点**落在列表字形盒内**才切词，点面板空白落回下方 dismiss+续播。
-    final SubtitleListHit? listHit = _subtitleListHitTester.hitTest(
-      globalPos,
-      exactOnly: true,
-    );
+    // 聊天回放栏同理（[_sideListHitAt]：字幕列表 / 聊天栏同一口径）。
+    final _SideListHit? listHit = _sideListHitAt(globalPos, exactOnly: true);
     if (listHit != null) {
-      _handleSubtitleListLookup(
-        listHit.cue,
-        listHit.graphemeIndex,
-        listHit.anchorRect,
-      );
+      listHit.lookup();
       return;
     }
     // TODO-834（反转 TODO-720 / BUG-403）：点**所有弹窗外**的真空白 = 一次性清整栈
@@ -10555,6 +10688,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         on = _subtitleListVisible.value;
       case VideoControlItem.episodeList:
         on = _episodeListVisible.value;
+      case VideoControlItem.liveChat:
+        on = _liveChatVisible.value;
       case VideoControlItem.chapterList:
         on = panel == _VideoSidePanelKind.chapters;
       case VideoControlItem.settings:
@@ -10599,6 +10734,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       Listenable.merge(<Listenable>[
         _subtitleListVisible,
         _episodeListVisible,
+        _liveChatVisible,
         _videoSidePanel,
         _studyClockManualPaused,
       ]);
@@ -11009,6 +11145,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.previousChapter:
       case VideoControlItem.nextChapter:
       case VideoControlItem.chapterList:
+      case VideoControlItem.liveChat:
       case VideoControlItem.danmaku:
       case VideoControlItem.ocrFrame:
       case VideoControlItem.statistics:
@@ -11162,6 +11299,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.nextChapter:
       case VideoControlItem.chapterList:
         return _hasChapters;
+      // 聊天回放：只有探测到聊天回放的 YouTube 直播回放才有（见 live_chat.part.dart）。
+      case VideoControlItem.liveChat:
+        return _hasLiveChat;
       // 弹幕来源是本地文件（sidecar / Dandanplay 按文件 hash 匹配），或能向 host
       // 取文件指纹的互联远端流（BUG-3614，见 `_loadDanmakuForVideo`）；其余远端流
       // 没有弹幕来源，与章节 / 选集一样直接不渲染，免得放一个按了也不会有弹幕的开关。
@@ -11511,6 +11651,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return Icons.last_page;
       case VideoControlItem.chapterList:
         return Icons.format_list_numbered;
+      case VideoControlItem.liveChat:
+        return FushiIcons.forum;
       // 图标表达当前状态（同沉浸锁）：开 = 弹幕气泡，关 = 划掉的气泡。
       case VideoControlItem.danmaku:
         return appModel.videoDanmakuEnabled
@@ -11605,6 +11747,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return t.shortcut_action_video_next_chapter;
       case VideoControlItem.chapterList:
         return t.video_chapters;
+      case VideoControlItem.liveChat:
+        return t.video_live_chat_title;
       // tooltip 说「按下会怎样」：开着时提示隐藏，关着时提示显示。
       case VideoControlItem.danmaku:
         return appModel.videoDanmakuEnabled
@@ -11789,6 +11933,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         break;
       case VideoControlItem.chapterList:
         _showChapterPanel(controller, sourceSlot: sourceSlot);
+        break;
+      case VideoControlItem.liveChat:
+        _toggleLiveChat();
         break;
       case VideoControlItem.danmaku:
         // 与设置面板「显示弹幕」开关同一出口（[_setVideoDanmakuEnabled]：写穿

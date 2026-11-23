@@ -208,6 +208,9 @@ const List<_PublicRoute> _kPublicRoutes = <_PublicRoute>[
   _PublicRoute(<String>{'GET'}, _isPingPath),
   // 视频流 / HLS / 蓝光码流：media_kit 拿裸 URL 播放，门是 URL 里的短时 token。
   _PublicRoute(<String>{'GET'}, _isVideoStreamPath),
+  // 统一流票的取流（音乐曲目 / MV，设计 2026-11-23 §4.3）：播放器拿裸 URL 取流，门是 URL 里的短时
+  // 票（handler 内校验签发凭据仍有效）。签发与释放两条照常要 Basic。
+  _PublicRoute(<String>{'GET', 'HEAD'}, _isLibraryMediaStreamPath),
   // 远端原盘的盘目录：libbluray / libdvdnav 在 libmpv 里直接取文件，带不了
   // Authorization；门是路径里的会话 token（handler 内校验、按空闲过期）。
   _PublicRoute(<String>{'GET'}, isDiscShareSessionPath),

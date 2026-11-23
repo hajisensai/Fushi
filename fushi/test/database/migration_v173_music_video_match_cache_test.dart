@@ -58,7 +58,10 @@ void main() {
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, kFushiDbSchemaVersion);
+    expect(
+      probe.select('PRAGMA user_version').first.values.first,
+      kFushiDbSchemaVersion,
+    );
     for (final String t in <String>[
       'music_video_prints',
       'music_video_match_checks',
