@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 915 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 921 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -128,6 +128,7 @@ How to read this:
 | `floating_ball.show_labels` | Show button labels | 显示按钮文字 | Display | bool |  | `true` | Show text beside expanded buttons. Turn off to show icons only |
 | `floating_ball.auto_restore` | Auto-restore floating ball | 自动恢复悬浮球 | Display | choice | `both`, `inApp`, `off` | `inApp` | Whether the floating ball comes back automatically when you return to Fushi after closing it |
 | `floating_ball.screen_ocr_card_image` | Add screenshot to cards | 截屏识字制卡带截图 | Screen OCR | bool |  | `true` | When making a card, put the text block around the tapped text into the card's image field |
+| `floating_ball.screen_ocr_card_frame_on_mine` | Frame the screenshot when adding a card | 制卡时框选截图 | Screen OCR | bool |  | `false` | Before each card is added, choose how much of the screenshot goes on it, such as the poster and post time around the text |
 | `floating_ball.screen_ocr_engine` | Screen OCR engine | 截屏识字引擎 | Screen OCR | choice | `followGlobal`, `localModel`, `googleLens` | `followGlobal` | Follows the OCR engine in Settings › Models › OCR by default. Built-in OCR is fastest on horizontal on-screen text, vertical text needs the local model, and Google Lens uploads the whole screenshot. If the followed local model isn't downloaded yet, built-in OCR is used. · *only on android, windows, macos* |
 | `floating_ball.screen_ocr_keep_session` | Keep screen capture session | 保持截屏会话 | Screen OCR | bool |  | `false` | After allowing screen recording once, screen OCR stops showing the system confirmation every time · *only on android* |
 | `floating_ball.app_audio_capture` | Capture other apps' audio | 缓存其他应用的声音 | Game voice | bool |  | `false` | Keeps the last 60 seconds of sound played by other apps in memory (Android 10+). Cards mined from out-of-app lookups get the voice line from just before the lookup as sentence audio. Some games block capture and record silence. · *user only* |
@@ -278,6 +279,8 @@ How to read this:
 | `listening.volume_key_sentence_nav` | Volume key sentence navigation | 音量键句子导航 | Playback | bool |  | `true` | Use the volume keys to jump to the previous or next sentence. · *only on android* |
 | `listening.audiobook_jump_threshold` | Return-to-position jump distance | 返回原位置的跳转距离 | Playback | choice | `15`, `30`, `60`, `120`, `300`, `600`, `900`, `1800` | `120` | Audio jumps at least this far (dragging the progress bar, tapping a sentence, chapter jumps) offer a return-to-position pill |
 | `reading_controls.invert_audiobook_skip_direction` | Invert bottom-bar skip buttons | 反转底栏前进后退按钮 | Playback | bool |  | `false` | Swap the previous and next sentence buttons in the bottom bar. |
+| `listening.page_split_follow` | Sentences split across pages | 跨页句子 | Playback | choice | `next_sentence`, `page_edge` | `page_edge` | Applies when Follow audio is on. Decides when to turn the page if a sentence is split across two pages. |
+| `listening.scroll_follow` | Follow scrolling | 跟随滚动 | Playback | choice | `margin`, `line_align` | `line_align` | Applies when Follow audio is on. Line align: stays put while the whole sentence is on screen; otherwise scrolls the sentence's first line to the starting edge so no half line shows there. |
 | `listening.tts_voices` | Read-aloud voices | 朗读声音 | Read-aloud voices | action |  |  | GPT-SoVITS, Microsoft, Google or the system voice |
 | `listening.audiobook_material_library` | Audiobook material library | 有声书素材库 | Materials and transcription | action |  |  | Folders of subtitle and text files named by work id. Downloads are paired against them automatically. |
 | `listening.audiobook_auto_transcribe` | Auto-transcribe downloaded audiobooks | 下载后自动转录有声书 | Materials and transcription | bool |  | `true` | Audiobooks downloaded without subtitles are transcribed on this device, aligned to the book text if it came with one, and added to the library. Takes a while; the speech model is downloaded automatically if missing. |
@@ -314,6 +317,7 @@ How to read this:
 | `manga.page_animation` | Page turn animation | 翻页动画 | Viewing and page turning | choice | `none`, `slide`, `cover`, `fade`, `curl` | `slide` |  |
 | `manga.page_animation_speed` | Animation speed | 动画速度 | Viewing and page turning | choice | `fast`, `normal`, `slow` | `normal` |  |
 | `manga.page_turn_follow_drag` | Follow finger while dragging | 拖动跟手 | Viewing and page turning | bool |  | `true` | The page moves with your finger; release past a quarter of the width or flick to turn, otherwise it springs back |
+| `manga.swipe_page_turn_sensitivity` | Swipe page-turn sensitivity | 滑动翻页灵敏度 | Viewing and page turning | number | 0.5 – 3.0 | `1.0` |  |
 | `manga.tap_zone_paging` | Tap edges to turn pages | 点击边缘翻页 | Viewing and page turning | bool |  | `true` | Tap the left or right edge of the page to turn |
 | `manga.tap_zone_layout` | Tap zone layout | 点击区域布局 | Viewing and page turning | choice | `left_right`, `l_shaped`, `kindle`, `top_bottom` | `left_right` | Where a tap turns the page |
 | `manga.resume_target` | Reopen at | 重新打开时 | Viewing and page turning | choice | `furthest`, `last` | `furthest` | Online manga only: continue with the next chapter once the last one is finished, or return to the page you left. |
@@ -424,6 +428,8 @@ How to read this:
 | `video.danmaku.enabled` | Show danmaku | 显示弹幕 | Danmaku | bool |  | `false` | Render local or matched danmaku over the video without blocking controls. |
 | `video.danmaku.online` | Online Dandanplay match | 在线匹配 Dandanplay | Danmaku | bool |  | `true` | When there is no local comment file, match the current video with Dandanplay. |
 | `video.danmaku.max_active` | Active danmaku limit | 同时显示上限 | Danmaku | number | 10.0 – 200.0 | `80.0` | Caps comments rendered per frame to keep large files responsive. |
+| `video.live_chat.auto_open` | Open chat replay automatically | 有聊天回放时自动打开聊天栏 | Danmaku | bool |  | `false` | When a YouTube stream archive has a chat replay, open the chat panel as playback starts |
+| `video.live_chat.show_author` | Show names in chat replay | 聊天栏显示用户名 | Danmaku | bool |  | `true` | Show who sent each message above it |
 | `video.playback.screenshot_destination` | Screenshot destination | 截图去向 | Screenshots and clips | choice | `ask`, `clipboard`, `directory` | `ask` | Where screenshots go: a save dialog, the clipboard, or straight into a folder |
 | `video.playback.screenshot_directory` | Screenshot folder | 截图保存目录 | Screenshots and clips | action |  |  |  |
 | `video.playback.clip_export_video_bitrate` | Clip export video bitrate | 片段导出视频码率 | Screenshots and clips | number | 0 – 100000 | `0` | 0 = follow the source (the stream is copied when possible); any other value re-encodes the video at that bitrate |
@@ -455,7 +461,7 @@ How to read this:
 | `video.danmaku.speed` | Speed | 速度 |  | number | 0.5 – 2.0 | `1.0` | Higher is faster; scrolling danmaku cross the screen sooner. |
 | `video.danmaku.area` | Display area | 显示区域 |  | number | 0.25 – 1.0 | `1.0` | Fraction of the screen height danmaku may occupy, from the top. |
 | `video.player.danmaku_block_rules` | video.player.danmaku_block_rules | video.player.danmaku_block_rules |  | text |  |  | 多行文本，每行一条；/pattern/ 为正则，其余为子串 |
-| `video.player.controls_editor` | video.player.controls_editor | video.player.controls_editor |  | text |  | `{"layout":{"version":3,"slots":{"bottomLeft":["playPause","positionIndicator"],"bottomCenter":[],"bottomRight":["volume","subtitleTrack","speed","fullscreen"],"screenLeft":["immersiveLock"],"screenRight":["subtitleList"],"topLeft":["back"],"topCenter":["title"],"topRight":["episodeList","chapterList","screenshot","settings"]},"removed":["favoriteSentence","seekBackward","seekForward","frameBackward","frameForward","previousCue","nextCue","replayCue","clipExport","audioTrack","previousEpisode","nextEpisode","previousChapter","nextChapter","danmaku","ocrFrame","statistics","studyTimer","customAction1","customAction2","customAction3","customAction4"]},"customActions":""}` | {"layout": <布局 JSON，含 version 与 slots>, "customActions": "动作key,动作key,,"}（config get 的输出可改后原样写回） |
+| `video.player.controls_editor` | video.player.controls_editor | video.player.controls_editor |  | text |  | `{"layout":{"version":3,"slots":{"bottomLeft":["playPause","positionIndicator"],"bottomCenter":[],"bottomRight":["volume","subtitleTrack","liveChat","speed","fullscreen"],"screenLeft":["immersiveLock"],"screenRight":["subtitleList"],"topLeft":["back"],"topCenter":["title"],"topRight":["episodeList","chapterList","screenshot","settings"]},"removed":["favoriteSentence","seekBackward","seekForward","frameBackward","frameForward","previousCue","nextCue","replayCue","clipExport","audioTrack","previousEpisode","nextEpisode","previousChapter","nextChapter","danmaku","ocrFrame","statistics","studyTimer","customAction1","customAction2","customAction3","customAction4"]},"customActions":""}` | {"layout": <布局 JSON，含 version 与 slots>, "customActions": "动作key,动作key,,"}（config get 的输出可改后原样写回） |
 
 ## Music (音乐)
 
