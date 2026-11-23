@@ -508,9 +508,14 @@ SettingsDestination buildMusicDestination() {
                 .prefsRepo
                 .setMusicLyricsBackdropStyle(value.prefValue),
             defaultValue: MusicLyricsBackdropStyle.defaultStyle,
-            // 恢复默认 = 删行回到「跟出厂默认」，不把默认值钉成手选（BUG-5167）。
-            resetToDefault: (SettingsContext c) =>
-                c.appModel.prefsRepo.clearMusicLyricsBackdropStyle(),
+            // 恢复默认 = 删行回到「跟出厂默认」，不把默认值钉成手选（BUG-5167）；
+            // 手选回 Pixi 的显式行也能被页级恢复删掉（HBK-AUDIT-235）。
+            storedChoice: SettingsStoredChoice(
+              isStored: (SettingsContext c) =>
+                  c.appModel.prefsRepo.hasStoredMusicLyricsBackdropStyle,
+              clear: (SettingsContext c) =>
+                  c.appModel.prefsRepo.clearMusicLyricsBackdropStyle(),
+            ),
           ),
           SettingsSliderItem(
             id: 'music.lyrics_backdrop_saturation',

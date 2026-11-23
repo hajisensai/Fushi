@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4586 条。点号进各自文件。
+> 共 4587 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5276](bugs/BUG-5276-settings-reset-pinned-default.md) | ✅ | ✅ | 「恢复本页默认」删不掉与默认同值的显式选择，跟别的设置走的行恢复后反被钉死 |
 | [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | 🚧 | 🚧 | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
 | [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | 🚧 | 🚧 | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
 | [BUG-5269](bugs/BUG-5269-srs4-parity-unverified-card-stats.md) | 🚧 | 🚧 | srs4-parity-unverified-card-stats |
