@@ -11220,6 +11220,7 @@
   "srs_import_options_title": "导入选项",
   "srs_import_pick_title": "导入 Anki 包",
   "srs_import_report_cards": "新增卡片：$n",
+  "srs_import_report_cards_kept_deck": "已有卡片留在本机原来的牌组：$n 张",
   "srs_import_report_conflicts_kind_mismatch": "$n 条「$name」类型的笔记被跳过：Fushi 里对应的笔记类型种类不同（普通与填空）",
   "srs_import_report_conflicts_missing_type": "$n 条笔记被跳过：包里缺少它们的笔记类型",
   "srs_import_report_conflicts_other_profile": "$n 条「$name」类型的笔记被跳过：同一个库里另一份配置已有同一批笔记，但属于另一个笔记类型。要导进这里，请用与那份配置相同的笔记类型（Anki 包请打开「合并笔记模板」）",
