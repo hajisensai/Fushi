@@ -10610,6 +10610,7 @@
   "srs_import_options_title": "Import options",
   "srs_import_pick_title": "Import Anki package",
   "srs_import_report_cards": "Cards added: $n",
+  "srs_import_report_cards_kept_deck": "Cards already in your collection kept in their current deck: $n",
   "srs_import_report_conflicts_kind_mismatch": "$n notes of note type \"$name\" were skipped: the matching note type in Fushi is a different kind (standard vs. cloze)",
   "srs_import_report_conflicts_missing_type": "$n notes were skipped because their note type is missing from the package",
   "srs_import_report_conflicts_other_profile": "$n notes of note type \"$name\" were skipped: another profile in this library already has the same notes under a different note type. To import them here, use the same note type as that profile (for Anki packages, turn on Merge note types)",

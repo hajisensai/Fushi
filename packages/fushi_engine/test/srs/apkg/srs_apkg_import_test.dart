@@ -1376,8 +1376,90 @@ void main() {
       expect(deckOld, isNot(jp), reason: '本机挪牌组比来源卡片新：不改回');
       expect(suspOld, isTrue, reason: '本机暂停比来源卡片新：不取消暂停');
       final (String deckNew, bool suspNew) = await run(localEditAt + 3600000);
-      expect(deckNew, jp, reason: '来源卡片更新：按来源');
-      expect(suspNew, isFalse);
+      // 已有卡的牌组不随重导改动（同 Anki，BUG-5274）：来源卡片更新也留在本机挪去的牌组。
+      expect(deckNew, isNot(jp), reason: '已有卡不随重导换牌组');
+      expect(suspNew, isFalse, reason: '暂停：来源卡片更新，按来源');
+    });
+
+    test('重导新版包：牌组改过名 / 挪过父牌组时已有卡留在原牌组，删掉新建的同源牌组不删笔记（BUG-5274）', () async {
+      final SrsKernelIds ids = SrsKernelIds(kProfile);
+      final String nt = basicNt(kProfile);
+      final String n1 = ids.note('g1');
+      final String c11 = SrsIds.card(n1, SrsIds.template(nt, 333), 0);
+      final String c12 = SrsIds.card(
+        n1,
+        SrsIds.templateByName(nt, 'Card 2'),
+        0,
+      );
+      final String lang = srsImportedDeckId(kProfile, 'Lang');
+      final String jp = srsImportedDeckId(kProfile, 'Lang::JP');
+
+      Future<void> run(
+        String label,
+        Future<void> Function(SrsDbStore s) localChange,
+      ) async {
+        t = ms(2026, 10, 14, 12);
+        final SrsDbStore s = await seeded();
+        expect((await s.cardRow(c11))!.deckId, jp, reason: label);
+        expect((await s.cardRow(c12))!.deckId, lang, reason: label);
+        t += 60000;
+        await localChange(s);
+        t += 3600000;
+        // 新版包：笔记内容与卡片都比本机新（最坏情形：卡片 mod 晚于本机任何改动）。
+        final int newer = (t + 3600000) ~/ 1000;
+        final SrsImportReport rep = await importInto(
+          s,
+          customApkg(
+            t,
+            patch: (Database db) {
+              db.execute(
+                "UPDATE notes SET mod = ?, flds = ? WHERE guid = 'g1'",
+                <Object?>[newer, '猫<img src="a.png">neko'],
+              );
+              db.execute('UPDATE cards SET mod = ?', <Object?>[newer]);
+            },
+          ),
+        );
+        expect(rep.notesUpdated, greaterThan(0), reason: label);
+        expect(rep.cardsKeptInDeck, 2, reason: label);
+        expect(
+          jsonEncode(rep.toJson()),
+          contains('"cardsKeptInDeck":2'),
+          reason: label,
+        );
+        expect((await s.note(n1))!.field(SrsIds.field(nt, 222)), 'neko');
+        expect((await s.cardRow(c11))!.deckId, jp, reason: '$label：卡留在原牌组');
+        expect((await s.cardRow(c12))!.deckId, lang, reason: '$label：卡留在原牌组');
+
+        // 认不出原牌组，另建了同源的新顶层「Lang」：用户当它是重复牌组连卡删掉。
+        final SrsDeckTree tree = await s.deckTree();
+        final List<String> dup = <String>[
+          for (final SrsDeckView d in tree.decks)
+            if (tree.parentOf(d.id) == null && d.name == 'Lang' && d.id != lang)
+              d.id,
+        ];
+        expect(dup, hasLength(1), reason: '$label：另建了同源牌组');
+        final List<String> gone = await s.deleteDeck(
+          dup.single,
+          deleteCards: true,
+        );
+        expect(gone, isEmpty, reason: '$label：删新牌组不连带删旧牌组的笔记');
+        expect((await s.note(n1))!.deletedAt, isNull, reason: label);
+        final SrsCardCacheRow r11 = (await s.cardRow(c11))!;
+        expect(r11.deckId, jp, reason: label);
+        expect(r11.hidden, isFalse, reason: label);
+        expect((await s.cardRow(c12))!.deckId, lang, reason: label);
+      }
+
+      await run('改名', (SrsDbStore s) async {
+        await s.editFields(SrsEntityKind.deck, lang, <String, Object?>{
+          SrsFieldKeys.name: '蛋卷',
+        });
+      });
+      await run('挪到自建父牌组下', (SrsDbStore s) async {
+        final String parent = await s.createDeck('01正在背');
+        expect(await s.moveDeck(lang, parent), SrsDeckMoveResult.moved);
+      });
     });
 
     test('更新笔记模板：较新时按来源 mod 比；总是 / 从不', () async {
