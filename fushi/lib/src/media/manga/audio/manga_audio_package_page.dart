@@ -43,6 +43,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_package_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart'
     show isLocalMangaVolume;
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_volume_busy.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
@@ -60,16 +61,29 @@ import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
-/// 这一卷现在不能导出 / 被导入替换的原因（标注 / 生成任务在跑）。
-MangaPackageBusyCheck mangaAudioPackageBusyCheck(AppModel appModel) {
+/// 这一卷现在不能导出 / 被导入替换 / 撤销导入的原因（标注 / 生成在跑，或别的导入占着
+/// 它，判据见 [mangaVolumeBusy]）。[packages] = 起导入任务的那张任务表；[except] =
+/// 导入任务落库时复查用，不把它自己算进去。
+MangaPackageBusyCheck mangaAudioPackageBusyCheck(
+  AppModel appModel, {
+  MangaAudioPackageTasks? packages,
+  MangaAudioPackageTask? except,
+}) {
   final MangaAnnotateTasks annotate = mangaAnnotateTasksFor(appModel);
   final TtsRenderQueue queue = ttsRenderQueueFor(appModel);
-  return (String bookKey) {
-    final TtsRenderJob? job = queue.latestFor(bookKey);
-    if (annotate.isRunning(bookKey) || (job != null && !job.isTerminal)) {
-      return t.manga_audio_package_error_busy;
-    }
-    return null;
+  final MangaAudioPackageTasks tasks =
+      packages ?? MangaAudioPackageTasks.instance;
+  return (String bookKey) => switch (mangaVolumeBusy(
+    bookKey,
+    annotate: annotate,
+    renderQueue: queue,
+    packages: tasks,
+    except: except,
+  )) {
+    null => null,
+    MangaVolumeBusy.importing => t.manga_audio_package_error_importing,
+    MangaVolumeBusy.annotating ||
+    MangaVolumeBusy.rendering => t.manga_audio_package_error_busy,
   };
 }
 
@@ -86,6 +100,8 @@ String mangaAudioPackageErrorText(String? code) => switch (code) {
   'package_corrupt' => t.manga_audio_package_error_corrupt,
   'busy' => t.manga_audio_package_error_busy,
   'export_running' => t.manga_audio_package_error_export_running,
+  'import_running' => t.manga_audio_package_error_importing,
+  'plan_stale' => t.manga_audio_package_error_plan_stale,
   'conflict' => t.manga_audio_package_result_skipped,
   _ => t.manga_audio_package_error_generic(code: code ?? 'internal'),
 };
@@ -220,7 +236,10 @@ class _MangaAudioPackageExportPageState
         seriesTitle = (await db.getMediaCollectionById(collection))?.name;
       }
     }
-    final MangaPackageBusyCheck busy = mangaAudioPackageBusyCheck(app);
+    final MangaPackageBusyCheck busy = mangaAudioPackageBusyCheck(
+      app,
+      packages: _tasks,
+    );
     final MangaAudioScriptStore scripts = mangaAudioScriptStoreFor(app);
     final List<_ExportCandidate> candidates = <_ExportCandidate>[];
     for (final String key in keys) {
@@ -314,7 +333,7 @@ class _MangaAudioPackageExportPageState
           for (final _ExportCandidate c in picked)
             MangaPackageExportItem(c.bookKey, scriptOnly: c.audioLines == null),
         ],
-        busy: mangaAudioPackageBusyCheck(widget.appModel),
+        busy: mangaAudioPackageBusyCheck(widget.appModel, packages: _tasks),
       );
     } on MangaAudioPackageException catch (e) {
       if (mounted) setState(() => _starting = false);
@@ -532,7 +551,7 @@ class _MangaAudioPackageImportPageState
         widget.path,
         asNew: _asNew,
         availableVoices: _availableVoices(),
-        busy: mangaAudioPackageBusyCheck(widget.appModel),
+        busy: mangaAudioPackageBusyCheck(widget.appModel, packages: _tasks),
       );
       if (mounted) setState(() => _plan = plan);
     } on MangaAudioPackageException catch (e) {
@@ -580,22 +599,35 @@ class _MangaAudioPackageImportPageState
       if (!ok || !mounted) return;
     }
     setState(() => _starting = true);
-    final MangaPackageBusyCheck busy = mangaAudioPackageBusyCheck(
-      widget.appModel,
-    );
-    final MangaAudioPackageTask task = _tasks.start(
-      kind: MangaAudioPackageTaskKind.import,
-      path: widget.path,
-      run: (MangaAudioPackageTask task) => runMangaAudioPackageImport(
-        widget.appModel,
-        plan,
-        runId: task.id,
-        busy: busy,
-        onProgress: task.report,
-        onCommit: task.markCommitting,
-        cancel: task.cancelToken,
-      ),
-    );
+    final MangaAudioPackageTask task;
+    try {
+      task = _tasks.start(
+        kind: MangaAudioPackageTaskKind.import,
+        path: widget.path,
+        claims: mangaPackageImportClaims(plan),
+        run: (MangaAudioPackageTask task) => runMangaAudioPackageImport(
+          widget.appModel,
+          plan,
+          runId: task.id,
+          busy: mangaAudioPackageBusyCheck(
+            widget.appModel,
+            packages: _tasks,
+            except: task,
+          ),
+          onProgress: task.report,
+          onCommit: task.markCommitting,
+          onCreated: task.claimVolume,
+          cancel: task.cancelToken,
+        ),
+      );
+    } on MangaAudioPackageException catch (e) {
+      if (mounted) setState(() => _starting = false);
+      FushiToast.show(
+        msg: mangaAudioPackageErrorText(e.code),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     setState(() {
       _starting = false;
       _task = task..addListener(_onTask);

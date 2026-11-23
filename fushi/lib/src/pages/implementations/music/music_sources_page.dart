@@ -323,7 +323,8 @@ class _MusicOnlineSourcesViewState
         MusicServerKind.jellyfin => 'Jellyfin / Emby',
         MusicServerKind.subsonic => 'OpenSubsonic',
         MusicServerKind.appleMusic ||
-        MusicServerKind.youtube => musicServerSubtitle(browser),
+        MusicServerKind.youtube ||
+        MusicServerKind.fushiHost => musicServerSubtitle(browser),
       },
     _AppleMusicOffSource() => t.music_server_apple_music_subtitle,
     _YoutubeOffSource() => t.music_server_youtube_subtitle,

@@ -58,7 +58,7 @@ function _bridge(){ return {callHandler:(n,d)=>{ if(n==='onMangaTurn') turns.pus
 function _onTap(){ taps++; }
 // 本 harness 不喂 pointermove（不跟手），翻页动画的设施只需占位。
 let PAGE_ANIM='slide', FOLLOW_DRAG=true;
-const FOLLOW_COMMIT=0.25, FOLLOW_FLING=0.6;
+// 提交阈值随抽出的 `_end` 段一起注入（灵敏度 1.0）。
 function _animMs(){ return 240; }
 function _finishPageAnim(){}
 function _dropDragHandoff(){}

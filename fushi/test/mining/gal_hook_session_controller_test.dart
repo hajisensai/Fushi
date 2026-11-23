@@ -2703,6 +2703,7 @@ void main() {
           ({
             required int hwnd,
             required GalOcrRegion region,
+            required bool binarize,
             required GalOcrRecognize recognize,
             required void Function(String text) onLine,
             required void Function(GalOcrSourceIssue issue, Object? detail)
@@ -2712,6 +2713,7 @@ void main() {
             return GalOcrLineSource(
               hwnd: hwnd,
               region: region,
+              binarize: binarize,
               recognize: recognize,
               onLine: onLine,
               interval: const Duration(hours: 1),

@@ -32,6 +32,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.d
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
+import 'package:fushi/src/media/audiobook/audiobook_follow_style.dart';
 import 'package:fushi/src/media/audiobook/text_leads_page_stop.dart';
 import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart'
     show InterconnectMangaCatalog;
@@ -2750,6 +2751,32 @@ class ReaderFushiSource extends ReaderMediaSource {
 
   bool get audiobookTextLeads =>
       audiobookLinkDirection == kAudiobookLinkDirectionText;
+
+  /// 分页模式「跨页句子」：[kAudiobookPageSplitPageEdge]（默认，读到页边就翻）或
+  /// [kAudiobookPageSplitNextSentence]（等下一句再翻）。全局偏好，见
+  /// `media/audiobook/audiobook_follow_style.dart`。
+  String get audiobookPageSplitFollow => getPreference<String>(
+    key: 'audiobook_page_split_follow',
+    defaultValue: kAudiobookPageSplitPageEdge,
+  );
+
+  Future<void> setAudiobookPageSplitFollow(String value) async {
+    await setPreference<String>(
+      key: 'audiobook_page_split_follow',
+      value: value,
+    );
+  }
+
+  /// 连续模式「跟随滚动」：[kAudiobookScrollFollowLineAlign]（默认，整行对齐）或
+  /// [kAudiobookScrollFollowMargin]（保留边距）。全局偏好。
+  String get audiobookScrollFollow => getPreference<String>(
+    key: 'audiobook_scroll_follow',
+    defaultValue: kAudiobookScrollFollowLineAlign,
+  );
+
+  Future<void> setAudiobookScrollFollow(String value) async {
+    await setPreference<String>(key: 'audiobook_scroll_follow', value: value);
+  }
 
   String get readerTheme =>
       readerSettings?.theme ??

@@ -226,7 +226,10 @@ final class MusicRemoteEntry extends MusicLibraryEntry {
     null => false,
     MusicRemoteTrackKind.server =>
       server != null || musicRemoteLocalCopyOf(track) != null,
-    MusicRemoteTrackKind.youtube || MusicRemoteTrackKind.plugin => true,
+    // 互联 host 曲目：起播时才找 host，离线时按单曲播放失败（同插件曲目）；下了离线副本的放本机文件。
+    MusicRemoteTrackKind.youtube ||
+    MusicRemoteTrackKind.plugin ||
+    MusicRemoteTrackKind.fushiHost => true,
   };
 
   /// 封面地址（服务器曲目按当前配置现算）。

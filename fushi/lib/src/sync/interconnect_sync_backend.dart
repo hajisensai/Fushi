@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
+import 'package:fushi_engine/sync/online_library_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -2360,6 +2361,56 @@ class InterconnectSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'POST /api/library/media-links');
     final String body = await _readBodyBounded(res);
     return MediaLinkManifest.fromJson(jsonDecode(body));
+  }
+
+  // ── Live online library items (interconnect-only) ──────────────────────
+  // 在线源条目清单（`online_library_sync.dart`，拍板台 mY5VWg1nD-）。
+
+  /// GET host 上的各设备在线源条目清单（含 host 自己的）。老 host 无端点（404）
+  /// 返回 null，调用方记「对端版本过旧」后跳过。
+  Future<List<OnlineLibraryManifest>?> getRemoteOnlineLibraryManifests() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase$kOnlineLibraryItemsPath',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    _ops!.checkStatus(res.statusCode, 'GET $kOnlineLibraryItemsPath');
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    final Object? list = decoded is Map ? decoded['manifests'] : null;
+    if (list is! List) {
+      throw const FormatException('online library manifests: bad body');
+    }
+    final List<OnlineLibraryManifest> out = <OnlineLibraryManifest>[];
+    for (final Object? raw in list) {
+      // 单份坏清单只丢那一份（那台设备下次推送时覆盖），不让整轮作废。
+      try {
+        out.add(OnlineLibraryManifest.fromJson(raw));
+      } on FormatException {
+        continue;
+      }
+    }
+    return out;
+  }
+
+  /// PUT 本机在线源条目清单到 host。
+  Future<void> putRemoteOnlineLibraryManifest(
+    OnlineLibraryManifest manifest,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase$kOnlineLibraryItemsPath',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(manifest.canonicalJson()));
+    final HttpClientResponse res = await _sendBounded(req);
+    _ops!.checkStatus(res.statusCode, 'PUT $kOnlineLibraryItemsPath');
+    await res.drain<void>();
   }
 
   // ── Live video metadata (interconnect-only, #7) ────────────────────────

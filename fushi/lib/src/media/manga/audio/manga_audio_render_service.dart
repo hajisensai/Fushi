@@ -156,14 +156,13 @@ Future<AppMangaRenderBackend> _backendFor(
   );
 }
 
-MangaAudioRenderer _rendererFor(
+/// 改已生成成品（补回 / 单句重生成）的生成器：登记的是哪份清单就改哪份（外部导入的
+/// 原地改写，[mangaAudioEditTarget]）。
+Future<MangaAudioRenderer> _editRendererFor(
   AudioProductionHost appModel,
   String bookKey,
   MangaRenderBackend backend,
-) => MangaAudioRenderer(
-  backend: backend,
-  manifestFile: mangaRenderManifestFile(appModel, bookKey),
-);
+) async => (await mangaAudioEditTarget(appModel, bookKey)).renderer(backend);
 
 Future<void> _ensureFfmpeg(FfmpegBackend backend) async {
   final FfmpegRunResult result = await backend.runQuery(const <String>[
@@ -199,11 +198,13 @@ Future<({bool verified, List<TtsRenderFlag> flags})> runMangaRenderJob(
     appModel,
     volume.script,
   );
-  final MangaAudioRenderer renderer = _rendererFor(
-    appModel,
-    job.bookKey,
-    backend,
-  );
+  // 整卷生成总是出到本机目录、整份登记（替换外部导入的登记）；补回改登记的那份。
+  final MangaAudioRenderer renderer = job.lineRequests.isEmpty
+      ? MangaAudioRenderer(
+          backend: backend,
+          manifestFile: mangaRenderManifestFile(appModel, job.bookKey),
+        )
+      : await _editRendererFor(appModel, job.bookKey, backend);
   final CastVoicingStore voicing = ttsVoicingStoreFor(appModel);
   final CastVoicingLedger ledger = await voicing.load(job.bookKey);
   final MangaRenderManifest? previous = await MangaRenderManifest.load(
@@ -300,7 +301,11 @@ Future<MangaRegenerateCandidate> regenerateMangaLine(
     volume.script,
   );
   try {
-    return await _rendererFor(appModel, volume.bookKey, backend).regenerate(
+    return await (await _editRendererFor(
+      appModel,
+      volume.bookKey,
+      backend,
+    )).regenerate(
       script: volume.script,
       pageBlocks: volume.pageBlocks,
       defaultVoice: defaultVoice,
@@ -325,13 +330,13 @@ Future<MangaRenderBackend> mangaLocalAudioBackend() async {
   );
 }
 
-/// 候选音频的绝对路径（试听用；保留前它在暂存文件里）。
-String mangaCandidatePath(
+/// 候选音频的绝对路径（试听用；保留前它在暂存文件里，与登记的那份清单同目录）。
+Future<String> mangaCandidatePath(
   AudioProductionHost appModel,
   String bookKey,
   MangaRegenerateCandidate candidate,
-) => p.join(
-  mangaRenderManifestFile(appModel, bookKey).parent.path,
+) async => p.join(
+  (await mangaAudioEditTarget(appModel, bookKey)).manifestFile.parent.path,
   candidate.stagedFile,
 );
 
@@ -342,14 +347,15 @@ Future<bool> keepMangaCandidate(
   required MangaAudioVolume volume,
   required MangaRegenerateCandidate candidate,
 }) async {
-  final File manifestFile = mangaRenderManifestFile(appModel, volume.bookKey);
+  final MangaAudioEditTarget target = await mangaAudioEditTarget(
+    appModel,
+    volume.bookKey,
+  );
+  final File manifestFile = target.manifestFile;
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
     manifestFile,
   );
-  final MangaAudioRenderer renderer = MangaAudioRenderer(
-    backend: const _NoBackend(),
-    manifestFile: manifestFile,
-  );
+  final MangaAudioRenderer renderer = target.renderer(const _NoBackend());
   if (manifest == null) {
     await renderer.discardCandidate(candidate);
     return false;
@@ -386,7 +392,11 @@ Future<bool> dropMangaUnreadLines(
   required MangaAudioScript script,
   required Iterable<String> lineIds,
 }) async {
-  final File manifestFile = mangaRenderManifestFile(appModel, bookKey);
+  final MangaAudioEditTarget target = await mangaAudioEditTarget(
+    appModel,
+    bookKey,
+  );
+  final File manifestFile = target.manifestFile;
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
     manifestFile,
   );
@@ -402,11 +412,9 @@ Future<bool> dropMangaUnreadLines(
   await appModel.audiobookSession.stopIfPlayingAny(<String>[bookKey]);
   final CastVoicingStore voicing = ttsVoicingStoreFor(appModel);
   final CastVoicingLedger ledger = await voicing.load(bookKey);
-  final List<String> dropped =
-      await MangaAudioRenderer(
-        backend: const _NoBackend(),
-        manifestFile: manifestFile,
-      ).dropUnreadLines(
+  final List<String> dropped = await target
+      .renderer(const _NoBackend())
+      .dropUnreadLines(
         script: script,
         manifest: manifest,
         ledger: ledger,
@@ -428,10 +436,10 @@ Future<void> discardMangaCandidate(
   AudioProductionHost appModel,
   String bookKey,
   MangaRegenerateCandidate candidate,
-) => MangaAudioRenderer(
-  backend: const _NoBackend(),
-  manifestFile: mangaRenderManifestFile(appModel, bookKey),
-).discardCandidate(candidate);
+) async => (await mangaAudioEditTarget(
+  appModel,
+  bookKey,
+)).renderer(const _NoBackend()).discardCandidate(candidate);
 
 /// 保留 / 撤回候选只动文件与清单，不合成。
 class _NoBackend implements MangaRenderBackend {

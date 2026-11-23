@@ -27,6 +27,10 @@ dependencies:
     path: ../fushi_platform
   fushi_torrent:
     path: ../fushi_torrent
+  # 音乐 Rust 胖核心的 FFI（纯 dart:ffi，库按需加载）。互联音乐库 host 与歌词来源判据在引擎里
+  # （设计 docs/specs/2026-11-23-interconnect-music-library-design.md §4.1）。
+  fushi_music:
+    path: ../fushi_music
   # 互联 P2P 隧道（iroh，纯 Dart FFI；原生库缺失时能力判不可用）。
   fushi_p2p:
     path: ../fushi_p2p

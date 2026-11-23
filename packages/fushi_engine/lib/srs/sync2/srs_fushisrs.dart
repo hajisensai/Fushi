@@ -392,6 +392,8 @@ Future<Map<String, Object?>> _kernelImport(
   } on Object catch (e) {
     final Object mapped = srsFushiSrsKernelError(e);
     if (identical(mapped, e)) rethrow;
+    // 映射结果是内核错误类型（可能不继承 Exception），原样抛给调用方。
+    // ignore: only_throw_errors
     throw mapped;
   }
 }

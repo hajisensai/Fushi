@@ -17,6 +17,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
+import 'package:fushi/src/lookup/captured_context_sentences.dart';
 import 'package:fushi/src/lookup/linux_atspi_context.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 
@@ -211,6 +212,7 @@ abstract final class SelectionCapture {
         selStart: ctx.selStart,
         selLen: ctx.selLen,
         elapsedMs: watch.elapsedMilliseconds,
+        maxExpand: maxExpand,
       );
     }
     if (!Platform.isWindows && !Platform.isMacOS) {
@@ -236,6 +238,7 @@ abstract final class SelectionCapture {
         selStart: (reply['selStart'] as num?)?.toInt() ?? 0,
         selLen: (reply['selLen'] as num?)?.toInt() ?? 0,
         elapsedMs: (reply['elapsedMs'] as num?)?.toInt() ?? -1,
+        maxExpand: maxExpand,
       );
     } catch (e) {
       // MissingPluginException (channel not registered) or any native error:
@@ -248,6 +251,10 @@ abstract final class SelectionCapture {
   /// Turns a captured context buffer (offsets in UTF-16 code units) into the
   /// selected term plus the sentence around it. Null when the buffer is empty
   /// or the offsets do not fit it (the caller then falls back).
+  ///
+  /// [maxExpand] is the per-side character budget the capture used: it tells
+  /// the neighbour-sentence split ([splitCapturedContext]) which buffer edge was
+  /// cut mid-text, so a half sentence at that edge is dropped (rf--UcsGta).
   @visibleForTesting
   static ForegroundSelectionContext? contextFromCapture({
     required String source,
@@ -255,6 +262,7 @@ abstract final class SelectionCapture {
     required int selStart,
     required int selLen,
     required int elapsedMs,
+    int? maxExpand,
   }) {
     if (contextText.isEmpty ||
         selLen <= 0 ||
@@ -286,6 +294,12 @@ abstract final class SelectionCapture {
       sentence: sentence.sentence,
       sentenceSelStart: sentence.selStart,
       sentenceSelLen: sentence.selLen,
+      sentences: splitCapturedContext(
+        contextText: contextText,
+        selStart: selStart,
+        selLen: selLen,
+        maxExpand: maxExpand,
+      ),
     );
   }
 
@@ -373,6 +387,7 @@ class ForegroundSelectionContext {
     required this.sentence,
     required this.sentenceSelStart,
     required this.sentenceSelLen,
+    this.sentences,
   });
 
   /// The originally-selected text (the query for the dictionary lookup).
@@ -387,4 +402,9 @@ class ForegroundSelectionContext {
 
   /// The selection's length within [sentence] (UTF-16 code units).
   final int sentenceSelLen;
+
+  /// The whole captured buffer cut into the current sentence plus the complete
+  /// sentences around it (rf--UcsGta): feeds the advanced-mining sentence
+  /// section's previous / next sentence picker. Null when the split failed.
+  final CapturedSentenceContext? sentences;
 }

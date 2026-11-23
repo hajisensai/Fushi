@@ -18,6 +18,8 @@ import 'package:fushi/src/media/audiobook/tts/studio/audio_production_host.dart'
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_runner.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_volume_busy.dart'
+    show kMangaPackageImportingCode, mangaVolumeImportBlocker;
 
 TtsRenderQueue? _queue;
 
@@ -31,6 +33,10 @@ TtsRenderQueue ttsRenderQueueFor(AudioProductionHost appModel) {
     ),
     workRoot: ttsRenderWorkRoot(appModel),
     runner: AppTtsRenderRunner(appModel: appModel),
+    // 正在导入导出包的漫画卷不收新任务：导入落库时再生成同一卷会和它抢着写成品与登记。
+    admission: (String bookKey) => mangaVolumeImportBlocker(bookKey) == null
+        ? null
+        : kMangaPackageImportingCode,
   );
   _queue = queue;
   queue.load();

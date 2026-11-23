@@ -17,6 +17,10 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/lookup/lookup_match_measure.dart'
     show lookupHighlightCharCount;
 import 'package:fushi/src/pages/base_tab_page.dart';
+import 'package:fushi/src/lookup/captured_context_sentences.dart';
+import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart'
+    show AdvancedMiningSentenceSection;
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/lookup/source_lookup_sentence.dart';
 import 'package:fushi/src/lookup/lookup_audio_playback.dart'
@@ -232,6 +236,15 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   Timer? _debounceTimer;
   String _sourceLookupText = '';
   int _searchGeneration = 0;
+
+  /// 拍板台 rf--UcsGta：应用外热键查词开了「抓取上下文」时随请求带来的当前句与前后句
+  /// （[DesktopLookupRequest.capturedContext]），以及它对应的源文本。只在源文本条仍是
+  /// 那次请求的文本时生效（[_activeCapturedContext]）——用户改查别的词就不再属于它。
+  CapturedSentenceContext? _capturedContext;
+  String _capturedSourceText = '';
+
+  /// 结果区高级制卡选的前后句（与阅读器 / 视频同一份草稿语义），每次新请求清空。
+  final MiningSentenceDraft _capturedDraft = MiningSentenceDraft();
 
   /// 源文本条上「这次查的是哪几个字」的 Yomitan 式扫描高亮。
   ///
@@ -466,6 +479,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     if (request == null) return;
     DesktopLookupService.instance.clearPending();
     _sourceLookupText = request.text;
+    _capturedContext = request.capturedContext;
+    _capturedSourceText = request.text;
+    _capturedDraft.clear();
     if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
       _runDesktopLookup(request);
     } else {
@@ -2189,6 +2205,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                         onOpenAdvancedMining: advancedMiningOpenerFor(
                           _resultWebViewKey,
                           lookupContext: () => _resultLookupContext,
+                          sentenceSection: _capturedSentenceSection,
                         ),
                         onScrolledToBottom: _allLoaded ? null : _loadMore,
                         onTopPullReleased: _clearSearchFromResultPull,
@@ -2374,6 +2391,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 里的词语境是被点处那一句（[miningFieldsForLayer]），所以不覆写宿主级的
   /// [favoriteLookupContext]。
   FavoriteLookupContext? get _resultLookupContext {
+    final String? captured = _capturedMiningSentence;
+    if (captured != null) return FavoriteLookupContext(sentence: captured);
     final String sentence = sourceLookupMiningSentence(
       sourceText: _sourceLookupText,
       highlight: _sourceHighlight,
@@ -2382,9 +2401,44 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     return sentence.isEmpty ? null : FavoriteLookupContext(sentence: sentence);
   }
 
-  /// 结果区制卡字段：JS 没带例句时补上 [_resultLookupContext] 那一句。
-  Map<String, String> _withSourceSentence(Map<String, String> fields) =>
-      withFallbackMiningSentence(fields, _resultLookupContext?.sentence ?? '');
+  /// 结果区制卡字段：JS 没带例句时补上 [_resultLookupContext] 那一句。高级制卡里
+  /// 选过前后句 / 改过句子（[_capturedDraft] 非空或有手改）时那就是用户对这张卡的
+  /// 明确选择，直接写进例句。
+  Map<String, String> _withSourceSentence(Map<String, String> fields) {
+    final String? captured = _capturedMiningSentence;
+    if (captured != null &&
+        (!_capturedDraft.isEmpty || _capturedDraft.hasEdits)) {
+      return <String, String>{...fields, 'sentence': captured};
+    }
+    return withFallbackMiningSentence(
+      fields,
+      _resultLookupContext?.sentence ?? '',
+    );
+  }
+
+  /// 源文本条仍是那次应用外请求的文本时，请求带来的抓取上下文；否则 null。
+  CapturedSentenceContext? get _activeCapturedContext =>
+      _capturedContext != null && _sourceLookupText == _capturedSourceText
+      ? _capturedContext
+      : null;
+
+  /// 抓取上下文合成的例句（当前句 + 草稿里选的前后句）；没有抓取上下文时 null。
+  String? get _capturedMiningSentence {
+    final CapturedSentenceContext? context = _activeCapturedContext;
+    if (context == null || context.current.isEmpty) return null;
+    return _capturedDraft.composeText(context.current);
+  }
+
+  /// 结果区高级制卡的句子分区：抓取上下文切出了前后句才有，否则 null（对话框照旧
+  /// 没有句子分区；手输查词没有来源，拍板台 rf--UcsGta 明确不做）。
+  AdvancedMiningSentenceSection? _capturedSentenceSection() {
+    final CapturedSentenceContext? context = _activeCapturedContext;
+    if (context == null || !context.hasNeighbours) return null;
+    return capturedContextSentenceSection(
+      draft: _capturedDraft,
+      context: context,
+    );
+  }
 
   Future<int> _pushNestedPopup(
     String query,

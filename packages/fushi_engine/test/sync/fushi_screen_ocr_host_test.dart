@@ -63,6 +63,8 @@ class _FakeService implements MangaOcrService, MangaOcrPageService {
   Future<MangaOcrModelStatus> modelStatus() async {
     statusCalls++;
     final Object? error = statusError;
+    // 测试替身：按调用方注入的对象原样抛出。
+    // ignore: only_throw_errors
     if (error != null) throw error;
     return _status();
   }

@@ -1,0 +1,6 @@
+## BUG-5306 · 互联音乐库：客户端请 host 重新匹配 / 手动绑定 MV（design-imusic-q9）
+- **报告**：2026-11-23（拍板台 design-imusic-q0..q12 实现分期，PR 分支 `claude/imusic-impl`）
+- **真实性**：✅ 真缺口（拍板「做」，未实现）。MV 自动匹配与手动绑定在**未合并**的 PR #4249，develop 上 host 没有匹配器可调。
+- **[x] ① 已修复** — 引擎 `MusicLibraryHostModule` 加 `POST tracks/<uid>/videos/rematch`（host 重新找本机 MV，回绑上个数）、`GET …/videos/candidates?source=online|anime`（待确认候选，`RemoteMusicVideoCandidate`）、`POST …/videos`（绑定选定候选）、`DELETE …/videos/<id>`（解绑）；匹配走 host 注入的 `MusicHostVideoMatcher`（`packages/fushi_engine/lib/media/music/host/engine_music_library_host.dart`），没注入回 501、能力位 `videoMatch` 为 false，客户端据此隐藏入口。app 当 host 时由 `AppMusicHostVideoMatcher`（`fushi/lib/src/media/music/metadata/music_video_service.dart`）转给 `MusicVideoService`（本机匹配 / 动画候选 / 在线候选受 host 的 YouTube 门约束）。客户端 `InterconnectMusicBrowser.rematchVideos` / `videoCandidates` / `bindVideo` / `unbindVideo` + host MV 页按钮。原计划「客户端浏览 host 文件树手选文件」改为 host 给候选、客户端选：匹配与解码只在 host 上对 host 文件跑（§6.4），客户端不需要看到 host 路径。进度没接 jobs：重新匹配在请求内跑完（单曲规模）。
+- **[x] ② 已加自动化测试** — 引擎 `packages/fushi_engine/test/sync/music_library_host_module_test.dart`（四条路由、未知 source 400、无匹配器 501、能力位）；客户端 `fushi/test/media/music/server/interconnect_music_mv_test.dart`（请求形状、host 侧匹配器的 YouTube 门与绑定转发）。
+- **备注**：设计与拍板见 `docs/specs/2026-11-23-interconnect-music-library-design.md` §8 / §9。

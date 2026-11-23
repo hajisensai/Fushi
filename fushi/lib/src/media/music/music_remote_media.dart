@@ -14,6 +14,8 @@
 library;
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show isFushiHostMusicPath;
 import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
     show isYoutubeMusicTrackPath;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
@@ -42,10 +44,19 @@ MusicRemoteMediaResolver? musicRemoteMediaResolver;
 
 /// 曲目是否需要起播时联网取流：插件曲目、YouTube 内置音源曲目，或带 sourceId 的 `sftp://` /
 /// http(s) 曲目（网络音乐来源的条目地址）。服务器曲库曲目没有 sourceId，不算。
+/// 互联 host 曲目（`fushi-host-music:///`）起播时签票取流（[InterconnectMusicHosts.openTrackPath]）。
+typedef MusicFushiHostTrackOpener =
+    Future<({String url, int? startMs, int? endMs})> Function(String path);
+
+/// 进程级装配点：`AppModel` 建音乐会话时装上；未装配时互联 host 曲目放不了（抛
+/// [StateError]，走既有的播放失败路径）。
+MusicFushiHostTrackOpener? musicFushiHostTrackOpener;
+
 bool musicItemResolvesStream(MusicPlayItem? item) {
   if (item == null) return false;
   if (isMusicPluginPath(item.path)) return true;
   if (isYoutubeMusicTrackPath(item.path)) return true;
+  if (isFushiHostMusicPath(item.path)) return true;
   return isMusicRemoteSourceTrack(sourceId: item.sourceId, path: item.path);
 }
 

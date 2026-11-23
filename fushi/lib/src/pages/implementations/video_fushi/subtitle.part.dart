@@ -112,6 +112,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (_episodeListVisible.value) {
         _closeEpisodeList();
       }
+      // 与聊天回放栏互斥（同为右侧推挤式侧栏）。
+      if (_liveChatVisible.value) _liveChatVisible.value = false;
       _subtitleListVisible.value = true;
       if (_videoSidePanel.value != null) {
         _hideVideoSidePanel();
