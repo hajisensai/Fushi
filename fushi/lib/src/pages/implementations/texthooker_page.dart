@@ -2804,7 +2804,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                     label: t.game_auto_lookup_new_lines,
                     tooltip: t.game_auto_lookup_new_lines_tooltip,
                     iconOnly: compact,
-                    leadingIcon: Icons.manage_search_rounded,
+                    leadingIcon: FushiIcons.manageSearch,
                     selected: _autoLookupNewLines,
                     focusId: const FushiFocusId('game-auto-lookup'),
                     onSelected: _setAutoLookupNewLines,

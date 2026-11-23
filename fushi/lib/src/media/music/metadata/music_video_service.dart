@@ -281,9 +281,12 @@ List<MusicVideoFileStamp> _discStreamStamps(
   for (final Directory root in roots) {
     if (!seenRoots.add(p.normalize(root.path))) continue;
     final Directory stream = Directory(p.join(root.path, 'BDMV', 'STREAM'));
-    if (!stream.existsSync()) continue;
     final List<MusicVideoFileStamp> files = <MusicVideoFileStamp>[];
     try {
+      // 候选盘根含上一级目录的**所有**子目录，其中可能有本用户无权进入的（Linux
+      // `/tmp/systemd-private-*`、Windows 盘根的 `System Volume Information`）：对它们
+      // existsSync 会抛 EACCES，与 listSync 失败同一结论——这里读不到盘，看下一个。
+      if (!stream.existsSync()) continue;
       for (final FileSystemEntity e in stream.listSync(followLinks: false)) {
         if (e is! File) continue;
         if (p.extension(e.path).toLowerCase() != '.m2ts') continue;

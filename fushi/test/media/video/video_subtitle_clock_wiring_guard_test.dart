@@ -43,6 +43,15 @@ String _lineFrom(String src, int start) {
   return src.substring(start, end < 0 ? src.length : end);
 }
 
+/// 按 miningCues 取句、但时间点**本来就不是播放头**的调用点：实参写死的是那一刻的媒体
+/// 时间戳，不存在「读哪个当前时钟」的问题，按完整实参文本逐条登记（只许按真实用途加）。
+///
+/// - 聊天回放栏查词（拍板台 zTedU_pOQF，live_chat.part.dart）：制卡音频锚在消息发出那一
+///   刻正在播的字幕句，时间点是消息自带的视频内偏移 `message.offsetMs`。
+const Set<String> _kHistoricalTimestampPositions = <String>{
+  'positionMs: message.offsetMs',
+};
+
 List<File> _videoPageSources() {
   final Directory root = Directory('lib/src/pages/implementations');
   return <File>[
@@ -99,6 +108,7 @@ void main() {
         ) {
           final String args = _argsFrom(src, at + call.length);
           if (!args.contains('.miningCues')) continue;
+          if (_kHistoricalTimestampPositions.any(args.contains)) continue;
           hits++;
           if (!args.contains('.miningPositionMs')) {
             offenders.add('${file.path}: $call');
