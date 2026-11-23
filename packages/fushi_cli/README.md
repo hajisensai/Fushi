@@ -25,14 +25,18 @@ fushi_cli mcp               # MCP server（stdio）：让外部 AI 客户端调�
 | `reader` | 遥控当前打开的 EPUB / PDF / 漫画阅读器：状态、翻页、按章 / 页 / 百分比跳转 |
 | `audiobook` / `ocr` | 有声书附着 / 替换音频与字幕、重新匹配、转录（含挂到已有书 `--into`）及任务；漫画整卷 OCR（`--force` / `--engine` / `--consent-upload`） |
 | `dict` / `anki` | 词典管理、推荐词典与推荐包下载导入、改名与语言覆盖；Anki 制卡、待发队列（pending / send / retry / discard）、内置同步客户端登录与同步 |
-| `config` / `module` / `profile` / `stats` / `keys` | 设置项读写与动作执行（`config get/set/run/reset`，列表型 `config items`；独立设置页的条目也在其中）、模块开关与排序、Profile 及媒体 / 语言绑定、学习统计、快捷键改绑 / 解绑 / 重置 |
+| `config` / `module` / `profile` / `stats` / `keys` | 设置项读写与动作执行（`config get/set/run/reset`，列表型 `config items`；独立设置页的条目也在其中）、模块开关与排序、Profile 及媒体 / 语言绑定、学习统计、快捷键改绑 / 解绑 / 重置；页面背景图从文件导入（`config backdrop-image <路径> [--portrait] [--module <模块>]`） |
 | `ai` / `models` / `voice` / `audiosrc` | LLM 提供商与功能指派、OCR / ASR / GPT-SoVITS 模型下载与删除及本机服务起停、TTS 声音与语速、查词音频来源 |
 | `task` / `update` | 通用后台任务查询 / 等待 / 取消；检查更新、下载、安装 |
 | `backup` / `sync` / `dl` / `sub` / `mediaserver` / `peer` / `storage` | 备份（含按书 / 视频）与恢复、云同步与差异逐条应用、下载中心（直接入队、目标库、字幕策略、执行设备、优先级、互联 host 上的任务）、视频下载订阅（列表 / 逐集历史 / 立即检查 / 启停 / 编辑规则 / 删除；新建走 `aidl`）、Jellyfin / Emby / Plex（含 Plex PIN 授权）、互联配对链接与吊销、存储占用与数据目录迁移 |
 | `ext` / `source` / `discover` / `play` / `nav` / `aidl` | 扩展启停、源启停 / 置顶 / 偏好 / 筛选浏览、漫画章节与视频剧集下载任务、发现与一键获取、播放遥控、页面跳转、AI 下载会话（消歧 / 确认 / 取消） |
 | `video` | 作品与刮削（含 `video confirm` 回答待确认候选）、播放器音量 / 音轨 / 主副字幕、字幕导入 / OCR / 转录 / 对轴、在线字幕立即补 / 手动搜 / 点名下载（`video sub-fetch` / `sub-search` / `sub-get`）、字幕位置、着色器、制卡与暂存队列、片段导出、长任务、生成日语字幕（`video subtitle-gen` / `video subtitle-glossary`） |
 | `tts` | 漫画有声：演出稿查看与改句 / 改角色、AI 看图标注、单句重生成、按角色批量重生成（`tts regenerate-character <key> <角色> [--kind] [--dry-run]`，排进制作队列）、按句换上本地音频（`tts replace <key> <行 id>=<音频路径>…` 或 `--map <映射 JSON>`，全有或全无，`--dry-run` 只预检；只改本机生成的成品）、整卷生成与取消、导入外部做好的成品清单（`tts import <key> <manifest.json>`，已有成品加 `--yes` 才替换） |
-| `game`（仅 Windows） | 游戏库管理与刮削、启动 / 附着 / 停止、文本线程与当前台词、音轨与补录、分阶段能力状态、制卡、内嵌查词模式与截图校准 |
+| `game`（仅 Windows） | 游戏库管理与刮削、启动 / 附着 / 停止、文本线程与当前台词、音轨与补录、分阶段能力状态、制卡、内嵌查词模式与截图校准、Hook Code 配置列出 / 导出 / 导入（`game hook-codes` / `hook-codes-export <路径> [--overwrite]` / `hook-codes-import <路径>`，导入可撤销） |
+| `music` | 音乐库读取、刮削、来源、播放遥控；导入音频文件（`music import <路径>…`）、碟片（`disc-add` / `disc-rm --yes` / `disc-titles` / `disc-chapters --title …`）、歌词 / 元数据插件（`plugins` / `plugin-inspect` / `plugin-install --yes [--digest]` / `plugin-enable` / `plugin-disable` / `plugin-rm --yes`）、歌词导出到音频旁（`lyrics-export <uid> [--format ttml\|lrc] [--overwrite]`）、音频 CD 抓轨导入（`audio-cd [目录]` / `audio-cd-status` / `audio-cd-cancel`） |
+| `srs` | 复习库读写；制卡历史一键导入复习库（`srs import-mined --yes`，已导入的跳过） |
+| `leaderboard` | 排行榜状态；恢复码导入（`leaderboard recovery-import --from-env <变量> [--consent]`，不带 `--from-env` 时从 stdin 读；AI 助手 / MCP 调用一律拒绝） |
+| `anime` | 动画下载计划列表、元数据就绪后立即导入边下边播（`anime import-now <计划 id>`） |
 
 app 侧路由在 `fushi/lib/src/ops/ctl_*.dart`，CLI 侧命令在 `lib/src/commands/*_commands.dart`；
 每条路由都调用 app 里 UI 按钮背后的同一个方法，不另写业务逻辑。破坏性操作（删除、恢复备份、覆盖）必须加

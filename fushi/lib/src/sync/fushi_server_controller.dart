@@ -29,6 +29,7 @@ import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/graphic_subtitle_track_export.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart';
@@ -117,6 +118,7 @@ class FushiSyncServerController extends ChangeNotifier {
     HostSubscriptionHost Function()? subscriptionsFactory,
     HostTorrentEngine Function()? torrentEngineFactory,
     HostAssistantProvider Function()? assistantFactory,
+    List<InterconnectHostModule> Function()? modulesFactory,
     VideoSubtitleBackfillRunner? videoSubtitleBackfill,
     GraphicSubtitleTrackExporter? graphicSubtitleTrackExporter,
     HostSelfUpdater Function()? hostSelfUpdater,
@@ -147,6 +149,7 @@ class FushiSyncServerController extends ChangeNotifier {
        _subscriptionsFactory = subscriptionsFactory,
        _torrentEngineFactory = torrentEngineFactory,
        _assistantFactory = assistantFactory,
+       _modulesFactory = modulesFactory,
        _videoSubtitleBackfill = videoSubtitleBackfill,
        _graphicSubtitleTrackExporter =
            graphicSubtitleTrackExporter ??
@@ -201,6 +204,10 @@ class FushiSyncServerController extends ChangeNotifier {
 
   /// AI 助手会话（`/api/assistant`：手机把一句话交给本机的 AI 去办）。
   final HostAssistantProvider Function()? _assistantFactory;
+
+  /// 按统一互联模块层写的功能（设计 2026-11-23 §3.5，如音乐库）：每次 start 新建，交给 server 的
+  /// 模块表分发、拼能力位、注册流解析器。
+  final List<InterconnectHostModule> Function()? _modulesFactory;
 
   /// 「立即给这个视频补字幕」（`POST /api/library/videos/<id>/subtitle/backfill`）。
   /// null（headless/单测）= 端点 501。
@@ -863,6 +870,8 @@ class FushiSyncServerController extends ChangeNotifier {
             subscriptions: _subscriptionsFactory?.call(),
             torrentEngine: _torrentEngineFactory?.call(),
             assistant: _assistantFactory?.call(),
+            modules:
+                _modulesFactory?.call() ?? const <InterconnectHostModule>[],
             securityContext: securityContext,
             hostFingerprint: hostFingerprint,
             deviceName: deviceName,

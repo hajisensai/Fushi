@@ -7,6 +7,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:isolate';
 import 'dart:math' as math;
 
@@ -70,6 +71,16 @@ class GalOcrRegion {
     'width': width,
     'height': height,
   };
+
+  /// 解析 [toJson] 的 JSON 文本（偏好里存的形态）；空 / 坏 JSON / 非法框返回 null。
+  static GalOcrRegion? fromJsonString(String? json) {
+    if (json == null || json.isEmpty) return null;
+    try {
+      return fromJson(jsonDecode(json));
+    } on FormatException {
+      return null;
+    }
+  }
 
   /// 解析 [toJson] 的结果；缺字段 / 非法框返回 null（调用方用 [defaultDialogue]）。
   static GalOcrRegion? fromJson(Object? json) {
@@ -150,8 +161,10 @@ class GalOcrLineSource {
     GalOcrWindowCapture? capture,
     GalOcrFrameFeeder? feedFrame,
     FfcOcrLineTracker Function()? trackerFactory,
+    bool binarize = false,
     this.interval = const Duration(milliseconds: 500),
   }) : _region = region,
+       _binarize = binarize,
        _recognize = recognize,
        _onLine = onLine,
        _onIssue = onIssue,
@@ -173,6 +186,11 @@ class GalOcrLineSource {
   final FfcOcrLineTracker Function() _trackerFactory;
 
   GalOcrRegion _region;
+
+  /// 送 OCR 前是否二值化（Rust tracker 的预处理选项）。每轮开始前若与已下发的不同就下发，
+  /// 与换区域一样只在轮与轮之间改 tracker，不和在途的后台判帧抢。
+  bool _binarize;
+  bool? _appliedBinarize;
   FfcOcrLineTracker? _tracker;
   bool _running = false;
   bool _stopped = false;
@@ -187,6 +205,7 @@ class GalOcrLineSource {
   GalOcrSourceIssue _lastIssue = GalOcrSourceIssue.none;
 
   GalOcrRegion get region => _region;
+  bool get binarize => _binarize;
   bool get isRunning => _running;
 
   /// 开始泵（幂等）。
@@ -203,6 +222,13 @@ class GalOcrLineSource {
     if (region == _region) return;
     _region = region;
     _regionGeneration++;
+    _wake();
+  }
+
+  /// 开关「二值化」预处理（会话中在框选对话框里改）。同一画面会按新选项再识别一次。
+  void setBinarize(bool binarize) {
+    if (binarize == _binarize) return;
+    _binarize = binarize;
     _wake();
   }
 
@@ -248,6 +274,10 @@ class GalOcrLineSource {
     if (_trackerGeneration != _regionGeneration) {
       tracker.reset();
       _trackerGeneration = _regionGeneration;
+    }
+    if (_appliedBinarize != _binarize) {
+      tracker.configure(binarize: _binarize);
+      _appliedBinarize = _binarize;
     }
     final int generation = _regionGeneration;
     final GalOcrRegion region = _region;

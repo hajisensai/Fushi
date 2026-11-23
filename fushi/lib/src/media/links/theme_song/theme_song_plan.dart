@@ -9,6 +9,9 @@ import 'dart:convert';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart';
 
+export 'package:fushi_engine/media/video/video_local_files.dart'
+    show themeSongFilesOf;
+
 /// 主题曲在一集里的角色。落库值是 `media_links.role`（`op` / `ed` / `insert` / `theme`）。
 enum ThemeSongRole {
   op('op'),
@@ -162,18 +165,6 @@ class ThemeSongPlan {
 /// 组曲 / 广播剧，只会白白拖慢比对。
 const int kThemeSongMaxTrackMs = 8 * 60 * 1000;
 
-/// 一行视频展开成集：有播放列表按列表各项，否则就是 `videoPath` 一个文件。只留本机
-/// 绝对路径（远端流 / 网页源没有可解码的本地音轨）。
-List<({int index, String path})> themeSongFilesOf(VideoBookRow row) {
-  final List<String> playlist = playlistEntryPaths(row.playlistJson);
-  final List<String> paths = playlist.isEmpty
-      ? <String>[row.videoPath]
-      : playlist;
-  return <({int index, String path})>[
-    for (int i = 0; i < paths.length; i++)
-      if (isLocalVideoFilePath(paths[i])) (index: i, path: paths[i]),
-  ];
-}
 
 /// 视频端点 → 按作品顺序展开的全部集。合集按成员顺序（`sort_index`），每个成员再按
 /// 播放列表展开；集号连续递增（远端成员、非本地路径的集跳过但仍占号——集号要与用户

@@ -1,15 +1,24 @@
 ## BUG-5123 · cli-ui-only-ops-gaps
 - **报告**：2026-11-22（拍板台 PGpPujl99g，维护者：「全部都补齐 cli，cli 不是要支持所有功能吗，应该支持就得支持」）
 - **真实性**：✅ 真缺口。操作目录（`fushi/lib/src/ops/`）只覆盖已写路由的动作；界面里还有一批导入 / 导出 / 选文件流程没有 ctl 路由，`fushi_cli` / AI 助手 / MCP 都做不了。首个实例：漫画卡「导入漫画有声」只有 `pickAndImportMangaAudio`（`fushi/lib/src/media/manga/audio/manga_audio_import_flow.dart:37`）选文件入口，没有路由。已有守卫（`ctl_cli_route_coverage_guard_test` 路由↔CLI、`op_catalog_ratchet_guard_test` 路由↔描述、`ctl_ui_action_facade_coverage_guard_test` 已登记门面）都只管「已经有路由的」，管不到「根本没路由的界面流程」。
-- **[ ] ① 部分修复** — 本批（分支 `claude/fix-dec-pgppujl99g`）：
-  - 漫画有声成品导入：`POST /api/admin/tts/manga/:key/import` + `tts.manga.import` + `fushi_cli tts import <key> <manifest.json> [--yes]`；校验抽成 `checkMangaAudioManifest` 与界面共用；已有成品要 `confirm` 才替换；撤销按登记指纹放回前态。
-  - 结构保证：新守卫 `fushi/test/ops/ctl_ui_flow_cli_coverage_guard_test.dart` 扫 `lib/`（`ops/` 以外）所有公开 `Future<…> pickAnd*/import*/export*(`，名字没在 `lib/src/ops/` 出现就必须登记 `covered:` / `ui-only:` / `internal:` / `pending cli-ui-only-ops-gaps:` 之一，新流程不接路由也不登记就红。
-- **剩余（守卫里 `pending cli-ui-only-ops-gaps` 的条目，每接一个删一条）**：
-  - 音乐：`importMusicFiles`（导入音频文件）、碟片 `pickAndAddMusicDiscs` / `pickAndAddMusicDiscImages` / `importChapters` / `importMusicDiscChapters`、`pickAndInstallMusicPlugin`（歌词 / 元数据插件）、`exportBesideAudio`（歌词导出）、`importAudioCdIfPresent`（音频 CD）、`importFiles`（歌词可视化素材包导入图片，`LyricVisualizerAssetStore`）。另：音乐路由只有读、刮削、来源、播放遥控，**歌单增删改 / 加歌、歌词搜索与编辑**也没有路由（不是 import/export 命名，守卫扫不到，在此登记）。
-  - 视频：`importIptvChannels`（IPTV 播放列表）、`pickAndApplyVideoFrameCover`（取帧当封面）、`importNow`（动画下载计划立即导入）。
+- **[ ] ① 部分修复**
+  - 第一批（分支 `claude/fix-dec-pgppujl99g`）：
+    - 漫画有声成品导入：`POST /api/admin/tts/manga/:key/import` + `tts.manga.import` + `fushi_cli tts import <key> <manifest.json> [--yes]`；校验抽成 `checkMangaAudioManifest` 与界面共用；已有成品要 `confirm` 才替换；撤销按登记指纹放回前态。
+    - 结构保证：新守卫 `fushi/test/ops/ctl_ui_flow_cli_coverage_guard_test.dart` 扫 `lib/`（`ops/` 以外）所有公开 `Future<…> pickAnd*/import*/export*(`，名字没在 `lib/src/ops/` 出现就必须登记 `covered:` / `ui-only:` / `internal:` / `pending cli-ui-only-ops-gaps:` 之一，新流程不接路由也不登记就红。
+  - 第二批（分支 `claude/dec-pgppujl99g-cli-batch2`），每条都是「路由 + 操作描述 + CLI 命令」，调用界面按钮背后的同一方法：
+    - 音乐（`ctl_music_import_routes.dart` / `op_descriptions_music_import.dart` / `fushi_cli music …`）：导入音频文件 `importMusicFiles`；碟片添加（目录 / 镜像，`musicDiscCandidatesAt` + `registerMusicDiscs` 与界面共用，可撤销）、移除、列标题、按标题导入章节（`importChapters` / `importMusicDiscChapters`）；歌词 / 元数据插件列出、预检、安装（确认 + 可选摘要钉住）、启停（可撤销）、卸载；歌词导出到音频旁 `exportBesideAudio`（ttml / lrc）；音频 CD 抓轨导入（后台任务，`importRippedAudioCd` 从 `importAudioCdIfPresent` 抽出共用）。
+    - Galgame：Hook Code 配置列出 / 导出（`exportTo`，已存在要 overwrite）/ 导入（`replaceFrom`，可撤销，之后被改过报 superseded）。顺带根因修复：`parseLunaHookCodeProfiles` 先 `trimRight` 再拆列，备注为空的行会被吃掉末列，自己写出的表读不回来（`fushi/lib/src/mining/galgame_hook_code_profile.dart`）。
+    - SRS：制卡历史一键导入复习库 `importMinedSentencesIntoSrs`（`srs import-mined --yes`）。
+    - 排行榜：恢复码导入 `importRecoveryCode`（`leaderboard recovery-import`，恢复码只经环境变量 / stdin；路由拒绝 AI 助手 / MCP 调用，模型不经手凭据）。
+    - 动画下载：计划列表 + 立即导入边下边播 `importNow`（`anime plans` / `anime import-now`，iOS 合规按 `downloads` 能力门控）。
+    - 页面背景图：`importPageBackdropImage` / `importPageBackdropModuleImage`（`config backdrop-image <路径> [--portrait] [--module]`）。
+    - 守卫登记：`exportWindowRecording` 改登记 `internal:`（制卡管线内部取录制帧，用户入口是 `game mine`）。
+- **剩余（守卫里 `pending cli-ui-only-ops-gaps` 的条目，每接一个删一条；第三批方案见 `docs/specs/2026-11-23-cli-ui-flow-gaps-batch3.md`）**：
+  - 视频：`importIptvChannels`（IPTV 播放列表）、`pickAndApplyVideoFrameCover`（取帧当封面）。
+  - 音乐：`importFiles`（歌词可视化素材包导入图片，`LyricVisualizerAssetStore`）。
   - 有声书 / TTS：`exportTranscribedSrt`（转录结果导出 SRT）、`exportTtsAudiobookM4b`（TTS 有声书导出 M4B）。
-  - Galgame：`exportTo`（Hook 码配置导出）、`exportWindowRecording`（窗口录制导出）。
-  - SRS / 其它：`importMinedSentencesIntoSrs`（制卡历史导入 SRS）、`importRecoveryCode`（排行榜恢复码，凭据只经 stdin）、`importPageBackdropImage` / `importPageBackdropModuleImage`（页面背景图，设置项缺 CLI 入口）、`importSyncedBookFile`（阅读历史云端列表下载单本）。
-  - 盘点的局限：守卫按命名扫「搬进 / 搬出」类流程；不叫 import/export/pickAnd 的纯界面写操作（如上面的歌单编辑）要靠按域逐页盘点，每补一个域顺手盘一遍该域页面并补进这里。
-- **[x] ② 已加自动化测试** — `fushi/test/ops/ctl_tts_routes_test.dart`（导入的 400 / 422 各原因 / 409 需确认 / 替换 / 撤销逐级放回 / 生成中 409）、`packages/fushi_cli/test/commands/tts_commands_test.dart`（import 命令）、`fushi/test/ops/ctl_ui_flow_cli_coverage_guard_test.dart`（缺口守卫）。
+  - 阅读历史：`importSyncedBookFile`（云端列表下载单本；云同步对比那条已由 `config run sync.compare_apply` 覆盖，互联远端书库走 `InterconnectDownloadManager` 的那条还没有路由）。
+  - 守卫扫不到的非 import/export 命名写操作：音乐**歌单增删改 / 加歌**、歌词搜索没有路由。**歌词单独编辑界面在功能黑名单里**（`docs/agent/feature-blacklist.md`），不做路由。
+  - 盘点的局限：守卫按命名扫「搬进 / 搬出」类流程；不叫 import/export/pickAnd 的纯界面写操作要靠按域逐页盘点，每补一个域顺手盘一遍该域页面并补进这里。
+- **[x] ② 已加自动化测试** — 第一批：`fushi/test/ops/ctl_tts_routes_test.dart`、`packages/fushi_cli/test/commands/tts_commands_test.dart`、`fushi/test/ops/ctl_ui_flow_cli_coverage_guard_test.dart`。第二批：`fushi/test/ops/ctl_music_import_routes_test.dart`、`ctl_game_hook_code_routes_test.dart`、`ctl_srs_mined_import_routes_test.dart`、`ctl_anime_leaderboard_routes_test.dart`、`fushi/test/mining/galgame_hook_code_profile_test.dart`（空备注往返）、`packages/fushi_cli/test/commands/music_commands_test.dart`、`cli_gap_batch2_commands_test.dart`。
 - **备注**：撤销导入时 `ensureAudiobook` 清掉的 sync 删除墓碑不恢复（导入即「重新拥有」，与界面导入一致）。

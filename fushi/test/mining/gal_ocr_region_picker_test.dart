@@ -68,4 +68,54 @@ void main() {
     expect(region.right, 1.0);
     expect(region.bottom, 1.0);
   });
+
+  testWidgets('对话框：二值化开关带初值，确认时与框一起交回（BUG-5141 ③）', (
+    WidgetTester tester,
+  ) async {
+    // 对话框内容（截图 + 开关）比默认 800×600 测试窗高：给一个桌面量级的窗口。
+    tester.view.physicalSize = const Size(1600, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    GalOcrRegionChoice? result;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: Center(
+              child: FilledButton(
+                onPressed: () async {
+                  result = await showDialog<GalOcrRegionChoice>(
+                    context: context,
+                    builder: (_) => GalOcrRegionDialog(
+                      framePng: png,
+                      aspectRatio: 2,
+                      initial: GalOcrRegion.defaultDialogue,
+                      initialBinarize: true,
+                    ),
+                  );
+                },
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('gal-ocr-binarize'),
+    );
+    expect(toggle, findsOneWidget);
+    await tester.ensureVisible(toggle);
+    await tester.pumpAndSettle();
+    // 初值是这个游戏上次的选择（开）；关掉再确认。
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('gal-ocr-region-confirm')),
+    );
+    await tester.pumpAndSettle();
+    expect(result, (region: GalOcrRegion.defaultDialogue, binarize: false));
+  });
 }

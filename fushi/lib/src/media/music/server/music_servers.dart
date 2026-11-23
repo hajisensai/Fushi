@@ -12,6 +12,7 @@
 ///   资料库按方案 §4 v1 不混）。
 library;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_library_client.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart';
@@ -25,10 +26,13 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart'
     show MusicServerBinding;
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart';
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';
 import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/store_compliance.dart'
+    show interconnectMusicLibraryAvailable;
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -78,6 +82,16 @@ Future<List<MusicServerBrowser>> loadMusicServerBrowsers(AppModel app) async {
     }
     if (isYoutubeMusicSourceAvailable && app.prefsRepo.musicYoutubeEnabled) {
       out.add(YoutubeMusicClient(displayName: 'YouTube'));
+    }
+  }
+  // 已配对、提供音乐库的互联 host（design-imusic-q2：与视频库 / 书库同级，跟着互联总开关走）。
+  final InterconnectMusicHosts? hosts = InterconnectMusicHosts.instance;
+  if (interconnectMusicLibraryAvailable && hosts != null) {
+    try {
+      out.addAll(await hosts.browsers());
+    } on Object catch (e) {
+      // 配对表读不出来（库还没好）时只是不列互联 host，不拖垮其他服务器。
+      debugPrint('[music-interconnect] list hosts failed: $e');
     }
   }
   return out;
@@ -193,7 +207,9 @@ AppleMusicLinkedSources? appleMusicLinkedSourcesFor(
 
 /// 这类来源能不能混排进本地曲库（Apple Music 只有热门榜、没有「整库」，不混）。
 bool musicServerSupportsLibraryMix(MusicServerKind kind) => switch (kind) {
-  MusicServerKind.jellyfin || MusicServerKind.subsonic => true,
+  MusicServerKind.jellyfin ||
+  MusicServerKind.subsonic ||
+  MusicServerKind.fushiHost => true,
   MusicServerKind.appleMusic || MusicServerKind.youtube => false,
 };
 
@@ -202,7 +218,8 @@ bool musicServerSupportsLibraryMix(MusicServerKind kind) => switch (kind) {
 bool musicServerHasBrowse(MusicServerKind kind) => switch (kind) {
   MusicServerKind.jellyfin ||
   MusicServerKind.subsonic ||
-  MusicServerKind.appleMusic => true,
+  MusicServerKind.appleMusic ||
+  MusicServerKind.fushiHost => true,
   MusicServerKind.youtube => false,
 };
 
@@ -216,6 +233,7 @@ String musicServerSubtitle(MusicServerBrowser server) => switch (server) {
     MusicServerKind.subsonic => t.music_server_subsonic_subtitle,
     MusicServerKind.appleMusic => t.music_server_apple_music_subtitle,
     MusicServerKind.youtube => t.music_server_youtube_subtitle,
+    MusicServerKind.fushiHost => t.music_server_fushi_host_subtitle,
   },
 };
 

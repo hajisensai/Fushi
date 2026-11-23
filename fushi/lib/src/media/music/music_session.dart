@@ -124,6 +124,8 @@ class MusicSession extends ChangeNotifier {
       ..resolveStartPosition = _resolveStartPosition
       ..addListener(_onEngineChanged);
     _audiobook.addListener(_onAudiobookChanged);
+    // 会话被别人抢走（视频进后台继续放声音、有声书开播）：音乐暂停，不停会话。
+    _audio.seat(MediaSessionOwner.music).onPreempted = _onMediaSessionPreempted;
     // 开关一变就重发当前媒体卡：暂停时没有进度 tick，不主动重发的话锁屏会一直挂着
     // 开关变化前发布的原图（HBK-AUDIT-217）。
     _blurNsfwCovers?.addListener(_publishMediaSession);
@@ -362,6 +364,11 @@ class MusicSession extends ChangeNotifier {
     if (controller != null && controller.isPlaying) {
       unawaited(controller.pause());
     }
+  }
+
+  /// 媒体会话被另一方认领（[AudioController.claimSession]）：音乐暂停。
+  void _onMediaSessionPreempted() {
+    if (engine.isPlaying) unawaited(engine.pause());
   }
 
   /// 有声书开始出声：把会话让回去，音乐暂停。
@@ -699,6 +706,7 @@ class MusicSession extends ChangeNotifier {
     unawaited(_nsfwSub?.cancel());
     _blurNsfwCovers?.removeListener(_publishMediaSession);
     _audiobook.removeListener(_onAudiobookChanged);
+    _audio.seat(MediaSessionOwner.music).onPreempted = null;
     favorites?.removeListener(notifyListeners);
     favorites?.dispose();
     appleMusicFavorites?.removeListener(notifyListeners);

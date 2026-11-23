@@ -587,33 +587,14 @@ extension _FushiSyncServerPairing on FushiSyncServer {
 
   Future<shelf.Response> _handleCapabilities() async {
     final bool lib = _libraryService != null;
-    // 漫画 P3 能力协商：仅接线了 OCR 任务管理器的 host 带 `mangaOcr` 字段；老
-    // host 响应里没有该字段 → client 隐藏「已配对主机」OCR 选项（零破坏）。
-    final Map<String, Object?>? mangaOcr = await _mangaOcrJobs?.capability();
-    final Map<String, Object?>? jobs = await _hostJobs?.capability();
-    final Map<String, Object?>? downloads = await _downloads?.capability();
-    final Map<String, Object?>? torrentEngine =
-        (await _torrentEngine?.capability())?.toJson();
-    final Map<String, Object?>? subscriptions = await _subscriptions
-        ?.capability();
-    final Map<String, Object?>? assistant = await _assistant?.capability();
+    // 互联模块的能力位（漫画 OCR `mangaOcr`、通用任务 `jobs`、代下载 `downloads`、借 BT 引擎
+    // `torrentEngine`、订阅 `subscriptions`、助手 `assistant`，以及新模块如 `music`）：模块各给各的，
+    // 未接线 → null → 键不出现（老 client 读不到也不崩）。按注册顺序插在这里，键序与迁移前相同。
+    final Map<String, Object?> modules = await _modules.capabilities();
     return jsonResponse(<String, dynamic>{
       // 复习同步的长轮询通知（`GET /api/srs/changes`）。老 host 没有这一位，客户端只按定时同步。
       'srsChangesV1': true,
-      if (mangaOcr != null) 'mangaOcr': mangaOcr,
-      // 通用任务能力位：`jobs.kinds` + 每种 kind 的就绪信息；老 client 读不到也不崩。
-      if (jobs != null) 'jobs': jobs,
-      // `deleteFilesParam`：本路由的 DELETE 认 `?deleteFiles=`（BUG-3437）；老 host
-      // 没有这个键，client 据此决定能不能让用户选「同时删除已下载文件」。
-      if (downloads != null)
-        'downloads': <String, Object?>{
-          ...downloads,
-          kHostDownloadDeleteFilesParamCapability: true,
-        },
-      // 把本机 BT 引擎借给已配对设备当下载后端（`/api/torrent-engine`）。
-      if (torrentEngine != null) kTorrentEngineCapability: torrentEngine,
-      if (subscriptions != null) 'subscriptions': subscriptions,
-      if (assistant != null) 'assistant': assistant,
+      ...modules,
       // 查词 / 制卡 / 查词历史 / 游戏串流：这台 host 是否接了对应 service（老 host
       // 无这些字段，client 照旧以端点 404 判断）。只说「懂不懂这条路由」，不代表此刻
       // 一定成功——例如制卡还要 host 已登录 Anki、查词还要 host 装了词典。
@@ -659,6 +640,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联作品图谱同步（`/api/library/media-links`）。老 host 无此字段 / false
         // → client 跳过作品图谱维度。
         'mediaLinks': _libraryService is MediaLinkSyncHost,
+        // 在线源条目清单（`/api/library/online-items`，拍板台 mY5VWg1nD-）。老 host
+        // 无此字段 → client 遇 404 时提示升级对端。
+        kLiveLibraryOnlineItemsCapability:
+            _libraryService is OnlineLibrarySyncHost,
         // 流媒体书注册（`PUT /api/library/videos/<id>/streamentry`，拍板台
         // Z2OhxAjKVv）。老 host 无此字段 → client 不推（见该端点注释）。
         kLiveLibraryStreamVideosCapability:

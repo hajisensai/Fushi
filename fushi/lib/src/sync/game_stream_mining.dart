@@ -329,6 +329,7 @@ const Set<String> kGameStreamHostMineFieldKeys = <String>{
   'glossaryFirst',
   'singleGlossaries',
   'pitchPositions',
+  'pitchPositionsInline',
   'pitchCategories',
   'phoneticTranscriptions',
   'popupSelectionText',

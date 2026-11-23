@@ -6,6 +6,7 @@ import 'package:fushi/src/models/library_grid_columns.dart'
 import 'package:fushi/src/models/preference_keys.dart'
     show
         kAnkiSettingsPrefKey,
+        kOnlineLibraryLedgerPrefKey,
         kWhatsNewCardDismissedVersionPrefKey,
         kWhatsNewSeenSeqPrefKey,
         kWhatsNewSeenVersionPrefKey,
@@ -2197,6 +2198,9 @@ class SyncRepository {
     _keyInterconnectSourceShareHostItems,
     _keyInterconnectSourceSharePlugins,
     'interconnect_source_share_ledger',
+    // 在线源条目同步账本（拍板台 mY5VWg1nD-）：记的是这台设备的库见过哪些在线条目，
+    // 随 Profile 快照 / 备份走会让本机删过的条目被建回、或对端新加的建不出来。
+    kOnlineLibraryLedgerPrefKey,
     // 「当 host 时愿不愿意为对端转码视频」是本机算力的意愿：一台台式机说「可以」，
     // 不代表那台跑着同一份备份的旧笔记本也愿意被烤。
     kInterconnectTranscodeEnabledPref,
