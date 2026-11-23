@@ -367,6 +367,47 @@ void main() {
     expect(notifier.pageBackdropAccentSeed, const Color(red));
   });
 
+  test('非激活配置的只读视图按它自己停放的图与取色缓存取色，不借激活配置那张图', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    expect(notifier.pageBackdropAccentSeed, const Color(green));
+
+    // 另一份配置停放的是自己的图与取色缓存（loadSettingsView 把停放值换进视图偏好）。
+    final String other = '${scratch.path}/other-profile.png';
+    final ThemeNotifier view =
+        ThemeNotifier.profileView(notifier, <String, String>{
+          'design_system': PrefCodec.encode('material'),
+          'app_theme_key': PrefCodec.encode('m3-baseline'),
+          kPageBackdropPresetPrefKey: PrefCodec.encode('custom'),
+          kPageBackdropLandscapeImagePrefKey: PrefCodec.encode(other),
+          kPageBackdropSeedCachePrefKey: PrefCodec.encode('$other|1:1|$red'),
+        });
+    expect(view.pageBackdropAccentSeed, const Color(red));
+    view.dispose();
+
+    // 那份配置没选自定义图片：激活配置的图再怎么取色，视图也不被覆盖。
+    final ThemeNotifier plain =
+        ThemeNotifier.profileView(notifier, <String, String>{
+          'design_system': PrefCodec.encode('material'),
+          'app_theme_key': PrefCodec.encode('m3-baseline'),
+        });
+    expect(plain.pageBackdropAccentSeed, isNull);
+    plain.dispose();
+
+    // 与激活配置同一张图：沿用 live 已取到的颜色。
+    final ThemeNotifier same =
+        ThemeNotifier.profileView(notifier, <String, String>{
+          'design_system': PrefCodec.encode('material'),
+          'app_theme_key': PrefCodec.encode('m3-baseline'),
+          kPageBackdropPresetPrefKey: PrefCodec.encode('custom'),
+          kPageBackdropLandscapeImagePrefKey: PrefCodec.encode(
+            pageBackdropSettings.value.landscapeImagePath!,
+          ),
+        });
+    expect(same.pageBackdropAccentSeed, const Color(green));
+    same.dispose();
+  });
+
   test('偏好里的图在这台设备上不存在：回落默认样式、不取色', () async {
     notifier = build(<String, String>{
       kPageBackdropPresetPrefKey: PrefCodec.encode('custom'),

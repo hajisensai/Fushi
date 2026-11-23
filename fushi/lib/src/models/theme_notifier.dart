@@ -865,9 +865,10 @@ class ThemeNotifier extends ChangeNotifier {
   /// 反馈 biLEesNqWb：某个**非激活配置**的只读主题视图（浏览器扩展所选配置的查词弹窗
   /// 配色用）。[prefs] 是该配置合成后的整份偏好（`ProfileSettingsView.prefsMap`）。
   ///
-  /// 设备侧的取色输入从 [live] 拷过来——系统调色板 / 系统强调色、自定义图标与页面背景图
-  /// 取出的种子都来自这台设备（图标选择与背景图路径本就是设备本地、不随配置走），而
-  /// 「用不用它们」的开关仍按 [prefs] 判。视图不订阅任何全局通知、不跑载入期迁移；任何
+  /// 设备侧的取色输入从 [live] 拷过来——系统调色板 / 系统强调色、自定义图标取出的种子都来自
+  /// 这台设备（图标选择设备本地、不随配置走），而「用不用它们」的开关仍按 [prefs] 判。页面
+  /// 背景图片按配置停放，[prefs] 里就是这份配置自己的图与取色缓存，按它算
+  /// （[_profileViewPageBackdropSeeds]）。视图不订阅任何全局通知、不跑载入期迁移；任何
   /// 写入（`_set` / 自定义主题迁移回写）都不落库：设置器抛 [UnsupportedError]，读路径上
   /// 的旧自定义主题迁移只改本视图的内存副本。
   ThemeNotifier.profileView(ThemeNotifier live, Map<String, String> prefs)
@@ -890,7 +891,42 @@ class ThemeNotifier extends ChangeNotifier {
     _systemPaletteIdentity = live._systemPaletteIdentity;
     _systemAccentColor = live._systemAccentColor;
     _appIconSeed = live._appIconSeed;
-    _pageBackdropSeeds = live._pageBackdropSeeds;
+    // 背景图片按配置停放（`kPageBackdropProfileParkedPrefKeyPrefixes`）：[prefs] 里是这份配置
+    // 自己的图片路径与取色缓存，样式也是它自己的。生效设置与种子按它算，不借激活配置发布到
+    // 全局 [pageBackdropSettings] 的那份——否则浏览器扩展按别的配置查词时，弹窗配色取的是
+    // 激活配置那张图的颜色。
+    _pageBackdropImagePresence.addAll(live._pageBackdropImagePresence);
+    final PageBackdropSettings backdrop = _readPageBackdropSettings();
+    _viewPageBackdropSettings = backdrop;
+    _pageBackdropSeeds = _profileViewPageBackdropSeeds(live, backdrop);
+  }
+
+  /// 只读视图自己的页面背景生效设置（[ThemeNotifier.profileView] 建时算定）；live 实例为
+  /// null，读全局 [pageBackdropSettings]。
+  PageBackdropSettings? _viewPageBackdropSettings;
+
+  /// 本实例的页面背景生效设置：只读视图用自己那份，live 用发布到全局的快照。
+  PageBackdropSettings get _effectivePageBackdropSettings =>
+      _viewPageBackdropSettings ?? pageBackdropSettings.value;
+
+  /// 只读视图的背景图候选种子色：横屏图与激活配置同一张时沿用 live 已取到的颜色；否则用这份
+  /// 配置停放的取色缓存（路径对得上才算）。视图不落库，也不在后台重新取色。
+  List<Color> _profileViewPageBackdropSeeds(
+    ThemeNotifier live,
+    PageBackdropSettings backdrop,
+  ) {
+    if (!backdrop.hasCustomImage) return const <Color>[];
+    final String? path = backdrop.landscapeImagePath;
+    final PageBackdropSettings liveBackdrop = pageBackdropSettings.value;
+    if (liveBackdrop.hasCustomImage &&
+        liveBackdrop.landscapeImagePath == path) {
+      return live._pageBackdropSeeds;
+    }
+    final ({String path, String stamp, List<int> seeds})? cache =
+        _readPageBackdropSeedCache();
+    return cache != null && cache.path == path
+        ? cache.seeds.map(Color.new).toList(growable: false)
+        : const <Color>[];
   }
 
   /// true = [ThemeNotifier.profileView] 建的只读视图。
@@ -1163,7 +1199,7 @@ class ThemeNotifier extends ChangeNotifier {
   /// 「从图片取色」实际生效的种子：选了自定义图片、图片在、开关开着、且已取到色。
   /// 只读已发布的快照，不碰文件系统（主题每次构建都会走到这里）。
   Color? get pageBackdropAccentSeed {
-    if (!pageBackdropSettings.value.hasCustomImage) return null;
+    if (!_effectivePageBackdropSettings.hasCustomImage) return null;
     if (!followPageBackdropAccent) return null;
     if (_pageBackdropSeeds.isEmpty) return null;
     return _pageBackdropSeeds[math.min(
