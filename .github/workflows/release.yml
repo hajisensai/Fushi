@@ -1170,7 +1170,7 @@ jobs:
         done
 
     # build.gradle 的 release signingConfig 显式开了 v1 + v2 + v3，并在 packageRelease 后用 apksigner
-    # 强制补 v1（minSdk 24 时 AGP 无视 enableV1Signing，只签 v2/v3）。HarmonyOS 4.x 安装器会因没有 JAR（v1）签名报「无证书」拒装（反馈 j3ChbSpKgJ）。
+    # 强制补 v1（minSdk ≥ 24 时 AGP 无视 enableV1Signing，只签 v2/v3）。HarmonyOS 4.x 安装器会因没有 JAR（v1）签名报「无证书」拒装（反馈 j3ChbSpKgJ）。
     # 这三个开关被删 / 被 AGP 升级改了默认都不会让构建失败，这里对每个 release 签名的 APK
     # （release-signed 调试通道包与 split release 包；Gradle 出的 `*-release.apk`，debug 签名
     # 的 `*-debug.apk` 不在其列）跑 apksigner，三种方案缺一个就挡在发布前。
@@ -1194,7 +1194,7 @@ jobs:
         fi
         failed=0
         for apk in "${apks[@]}"; do
-          # apksigner verify 按 APK 自己的 minSdk（24）判：那个口径下 v2 已足够，它**根本不看** v1，
+          # apksigner verify 按 APK 自己的 minSdk（26）判：那个口径下 v2 已足够，它**根本不看** v1，
           # 恒报 v1=false。v1 要按「API 23 及以下 / 只认 JAR 签名的安装器」口径单独验。
           out="$("$APKSIGNER" verify --verbose "$apk")"
           out_v1="$("$APKSIGNER" verify --verbose --min-sdk-version 23 "$apk")"

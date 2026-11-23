@@ -24,7 +24,7 @@
 
 | Платформа | Статус | Примечания |
 |---|---|---|
-| Android | ✅ | Android 7.0 (API 24) или новее |
+| Android | ✅ | Android 8.0 (API 26) или новее |
 | Windows | ✅ | Перехват текста и голоса galgame работает только в Windows |
 | macOS | ✅ | Только Apple Silicon; Mac на Intel не поддерживаются |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Нет поиска источников, онлайн-источников и центра загрузок (правила App Store) |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 Скачайте последний релиз на [сайте Fushi](https://fushi.moe/) — доступны APK для Android, установщик для Windows и сборки для macOS (только Apple Silicon; Mac на Intel не поддерживаются); iOS устанавливается через [TestFlight](https://testflight.apple.com/join/j88d69jx). Готового релиза приложения для Linux пока нет; собирайте из исходников. Безголовый Fushi Server выпускается отдельно в [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
 
-> Требуется Android 7.0 (API 24) или выше.
+> Требуется Android 8.0 (API 26) или выше.
 
 ## Сборка
 

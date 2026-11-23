@@ -1,0 +1,197 @@
+// Mihon / Aniyomi 扩展 ABI 守卫（拍板台 design-mihon-desugar-abi，反馈 uhUVUI-Avo）。
+//
+// 扩展是独立编译的 APK，按「标准 JDK 类型」链接宿主里的 kotlin-stdlib / okhttp / jsoup 等公开 API。
+// 宿主开着 coreLibraryDesugaring 时，凡 minSdk 以下没有的 JDK 类型（minSdk 24 时的 java.time）会被
+// L8/R8 改写成 j$.*：kotlin.time.Instant.toJavaInstant() 在宿主 dex 里变成返回 j$.time.Instant，
+// 扩展按 ()Ljava/time/Instant; 调用 → NoSuchMethodError（getDetailsManga 连续失败）。
+//
+// 根因修法是 minSdk 26（java.time 原生可用，L8 不再改写它），本文件守两层：
+//  1. 配置期：开着 desugaring 时 minSdk 不得低于 26；
+//  2. 产物期：release 的 R8 输出 dex 里，声明在扩展可见包下的方法 / 字段签名不得出现 j$/ 类型。
+// 第 2 层直接读 dex 的 type / proto / field / method 表，不依赖 build-tools 的 dexdump。
+
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+// 扩展字节码会直接链接的宿主包（与 proguard-rules.pro 里给扩展 keep 的那组一致）。
+ext.fushiExtensionApiPrefixes = [
+    'Lkotlin/',
+    'Lkotlinx/',
+    'Lokhttp3/',
+    'Lokio/',
+    'Lorg/jsoup/',
+    'Lrx/',
+    'Leu/kanade/tachiyomi/',
+    'Ltachiyomi/',
+    'Lmihon/',
+    'Luy/kohesive/injekt/',
+    'Lapp/cash/quickjs/',
+    'Lcom/squareup/zstd/',
+    'Landroidx/preference/',
+    'Landroidx/compose/runtime/',
+]
+
+/// 读 dex 的 MUTF-8 字符串（类型描述符都是 ASCII，按字节解即可）。
+static String fushiDexString(ByteBuffer b, int stringIdsOff, int index) {
+    int dataOff = b.getInt(stringIdsOff + index * 4)
+    int p = dataOff
+    // 跳过 uleb128 utf16_size。
+    while ((b.get(p) & 0x80) != 0) {
+        p++
+    }
+    p++
+    int end = p
+    while (b.get(end) != 0) {
+        end++
+    }
+    byte[] bytes = new byte[end - p]
+    for (int i = 0; i < bytes.length; i++) {
+        bytes[i] = b.get(p + i)
+    }
+    return new String(bytes, 'UTF-8')
+}
+
+/// 扫一个 dex：返回 [违规描述列表, 扫到的扩展 API 成员数]。
+static List fushiScanDexForDesugaredApi(byte[] dex, List<String> prefixes) {
+    ByteBuffer b = ByteBuffer.wrap(dex).order(ByteOrder.LITTLE_ENDIAN)
+    int stringIdsOff = b.getInt(0x3C)
+    int typeIdsSize = b.getInt(0x40)
+    int typeIdsOff = b.getInt(0x44)
+    int protoIdsOff = b.getInt(0x4C)
+    int fieldIdsSize = b.getInt(0x50)
+    int fieldIdsOff = b.getInt(0x54)
+    int methodIdsSize = b.getInt(0x58)
+    int methodIdsOff = b.getInt(0x5C)
+
+    String[] types = new String[typeIdsSize]
+    for (int i = 0; i < typeIdsSize; i++) {
+        types[i] = fushiDexString(b, stringIdsOff, b.getInt(typeIdsOff + i * 4))
+    }
+    def isApiClass = { String descriptor -> prefixes.any { descriptor.startsWith(it) } }
+    def isDesugared = { String descriptor -> descriptor.contains('Lj$/') }
+
+    List<String> violations = []
+    int checked = 0
+    for (int i = 0; i < methodIdsSize; i++) {
+        int off = methodIdsOff + i * 8
+        String owner = types[b.getShort(off) & 0xFFFF]
+        if (!isApiClass(owner)) {
+            continue
+        }
+        checked++
+        int protoOff = protoIdsOff + (b.getShort(off + 2) & 0xFFFF) * 12
+        List<String> sig = [types[b.getInt(protoOff + 4)]]
+        int paramsOff = b.getInt(protoOff + 8)
+        if (paramsOff != 0) {
+            int n = b.getInt(paramsOff)
+            for (int k = 0; k < n; k++) {
+                sig << types[b.getShort(paramsOff + 4 + k * 2) & 0xFFFF]
+            }
+        }
+        if (sig.any(isDesugared)) {
+            String name = fushiDexString(b, stringIdsOff, b.getInt(off + 4))
+            violations << "${owner}->${name}(${sig.drop(1).join('')})${sig[0]}"
+        }
+    }
+    for (int i = 0; i < fieldIdsSize; i++) {
+        int off = fieldIdsOff + i * 8
+        String owner = types[b.getShort(off) & 0xFFFF]
+        if (!isApiClass(owner)) {
+            continue
+        }
+        checked++
+        String type = types[b.getShort(off + 2) & 0xFFFF]
+        if (isDesugared(type)) {
+            String name = fushiDexString(b, stringIdsOff, b.getInt(off + 4))
+            violations << "${owner}->${name}:${type}"
+        }
+    }
+    return [violations, checked]
+}
+
+/// 校验一组 dex（名字 → 字节）：任一扩展 API 签名带 j$/ 即失败；一个 dex 都没有、或一条 kotlin/time
+/// 成员都没扫到（输出路径变了、守卫空转）也失败，不让守卫静默放行。
+ext.fushiVerifyExtensionAbiDex = { String source, Map<String, byte[]> dexes ->
+    if (dexes.isEmpty()) {
+        throw new GradleException("Extension ABI guard: no .dex found in ${source}; " +
+            "the R8 output layout changed, update extension_abi_guard.gradle.")
+    }
+    List<String> violations = []
+    int checked = 0
+    boolean sawKotlinTime = false
+    dexes.each { String name, byte[] bytes ->
+        def (List<String> v, int c) = fushiScanDexForDesugaredApi(bytes, fushiExtensionApiPrefixes)
+        violations.addAll(v.collect { "${name}: ${it}" })
+        checked += c
+        if (!sawKotlinTime) {
+            sawKotlinTime = fushiScanDexForDesugaredApi(bytes, ['Lkotlin/time/'])[1] > 0
+        }
+    }
+    if (!sawKotlinTime) {
+        throw new GradleException("Extension ABI guard: scanned ${dexes.size()} dex file(s) in ${source} but found " +
+            "no kotlin/time members; the guard would pass vacuously. Check the R8 output and keep rules.")
+    }
+    if (!violations.isEmpty()) {
+        throw new GradleException("Extension ABI guard: ${violations.size()} extension-visible member(s) in ${source} " +
+            "carry desugared j\$/ types, so independently compiled Mihon/Aniyomi extensions will hit " +
+            "NoSuchMethodError (see extension_abi_guard.gradle):\n  " + violations.take(50).join('\n  '))
+    }
+    logger.lifecycle("Extension ABI guard: ${checked} extension-visible members in ${dexes.size()} dex file(s) " +
+        "of ${source}, no j\$/ types.")
+}
+
+/// R8 任务输出（目录 / 文件混合）里的全部 .dex。
+ext.fushiVerifyExtensionAbiOutputs = { Iterable<File> roots ->
+    Map<String, byte[]> dexes = [:]
+    roots.each { File root ->
+        List<File> files = []
+        if (root.isFile()) {
+            files << root
+        } else if (root.isDirectory()) {
+            root.eachFileRecurse { File f -> files << f }
+        }
+        files.findAll { it.isFile() && it.name.endsWith('.dex') }.each { File f ->
+            dexes[f.absolutePath] = f.bytes
+        }
+    }
+    fushiVerifyExtensionAbiDex("R8 output ${roots}", dexes)
+}
+
+// 手动验任意 APK（例如线上发布包）：
+//   gradlew :app:verifyExtensionAbiApk -PfushiAbiGuardApk=<path/to/app-release.apk>
+tasks.register('verifyExtensionAbiApk') {
+    group = 'verification'
+    description = 'Fails if extension-visible signatures in an APK carry desugared j$/ types.'
+    doLast {
+        Object path = project.findProperty('fushiAbiGuardApk')
+        if (path == null) {
+            throw new GradleException('Pass -PfushiAbiGuardApk=<path/to/app.apk>.')
+        }
+        File apk = file(path)
+        Map<String, byte[]> dexes = [:]
+        new java.util.zip.ZipFile(apk).withCloseable { zip ->
+            zip.entries().findAll { !it.isDirectory() && it.name ==~ /classes\d*\.dex/ }.each { entry ->
+                dexes[entry.name] = zip.getInputStream(entry).bytes
+            }
+        }
+        fushiVerifyExtensionAbiDex(apk.name, dexes)
+    }
+}
+
+afterEvaluate {
+    boolean desugaring = android.compileOptions.coreLibraryDesugaringEnabled
+    int minSdk = android.defaultConfig.minSdk
+    if (desugaring && minSdk < 26) {
+        throw new GradleException("minSdk ${minSdk} < 26 with coreLibraryDesugaring enabled rewrites " +
+            "kotlin-stdlib's java.time signatures to j\$.time and breaks Mihon/Aniyomi extensions " +
+            "(decision design-mihon-desugar-abi). Keep minSdk >= 26.")
+    }
+}
+
+tasks.configureEach { task ->
+    if (task.name == 'minifyReleaseWithR8') {
+        task.doLast {
+            fushiVerifyExtensionAbiOutputs(task.outputs.files.files)
+        }
+    }
+}
