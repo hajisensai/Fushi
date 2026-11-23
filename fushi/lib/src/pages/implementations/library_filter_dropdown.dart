@@ -1,4 +1,3 @@
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_control_metrics.dart';
@@ -9,13 +8,10 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
-import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
-import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
-    show GlassContainer, LiquidRoundedSuperellipse;
 
 /// 库页搜索栏右侧的单选下拉筛选（书架与漫画库的阅读状态、游戏库的游玩状态共用；
 /// 视频库的几个下拉复用 [LibraryFilterChip] 视觉）。
@@ -104,8 +100,12 @@ double librarySearchFieldHeight(BuildContext context) =>
 /// MD3（M3 Expressive filter chip）：与搜索框同高的全胶囊；未激活 = surfaceContainerHigh
 /// 填充（与并排的填充式搜索框同一语言）+ onSurfaceVariant 字；激活 =
 /// secondaryContainer 填充 + 前置对勾 + onSecondaryContainer 字。
-/// Apple（iOS / macOS 26 弹出按钮）：无色透明液态玻璃胶囊 + 上下双箭头；激活 =
-/// 强调色淡染的玻璃 + 强调色字。降低透明度时两者回落实色。
+/// Apple：公共 pop-up 按钮外观 [FushiApplePopUpButtonFace]——iOS 27 是
+/// `tertiarySystemFill` 灰填充胶囊（无描边、内容自适应宽、15pt + 上下双箭头），
+/// macOS 27 宽窗是 `secondarySystemFill` 圆角 7 的 pop-up button（13pt）；高度
+/// 与并排搜索框同为 [fushiInlineControlHeight]。激活 = 强调色淡染底 + 强调色字。
+///
+/// @design dual
 ///
 /// eink：primary / outline / onSurfaceVariant 全塌成前景色，激活与未激活逐像素
 /// 相同；改反色填充表达激活（chipTheme / segmentedButtonTheme 同一套处理）。
@@ -123,23 +123,41 @@ class LibraryFilterChip extends StatelessWidget
   /// 与下面画出来的胶囊同一个形状：[FushiPopupMenuButton] 用它裁剪悬停 / 按压
   /// 状态层（2026-10-05 用户反馈：灰色反馈范围与高亮 chip 对不上）。
   @override
-  ShapeBorder menuTriggerShape(BuildContext context) => isEinkTheme(context)
-      ? RoundedRectangleBorder(
-          borderRadius: const OutlineInputBorder().borderRadius,
-        )
-      : const StadiumBorder();
+  ShapeBorder menuTriggerShape(BuildContext context) {
+    if (isEinkTheme(context)) {
+      return RoundedRectangleBorder(
+        borderRadius: const OutlineInputBorder().borderRadius,
+      );
+    }
+    if (isGlassDesign(context)) {
+      return RoundedRectangleBorder(
+        borderRadius: FushiApplePopUpButtonFace.radiusOf(
+          context,
+          libraryFilterChipHeight(context),
+        ),
+      );
+    }
+    return const StadiumBorder();
+  }
 
   @override
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
     if (eink) return _buildEink(context, colors);
-    final bool glass = isGlassDesign(context);
     final double height = libraryFilterChipHeight(context);
-    final FushiAppleColors apple = appleColorsOf(context);
-    final Color foreground = glass
-        ? (active ? apple.accent : apple.label)
-        : (active ? colors.onSecondaryContainer : colors.onSurfaceVariant);
+    if (isGlassDesign(context)) {
+      return FushiApplePopUpButtonFace(
+        label: label,
+        active: active,
+        height: height,
+        // 长档位名（德语等）在窄窗口里不能把整条工具栏撑溢出。
+        maxLabelWidth: 160,
+      );
+    }
+    final Color foreground = active
+        ? colors.onSecondaryContainer
+        : colors.onSurfaceVariant;
     final TextStyle? textStyle = Theme.of(context).textTheme.labelLarge
         ?.copyWith(
           color: foreground,
@@ -148,7 +166,7 @@ class LibraryFilterChip extends StatelessWidget
     final Widget row = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (active && !glass) ...<Widget>[
+        if (active) ...<Widget>[
           Icon(Icons.check_rounded, size: 18, color: foreground),
           const SizedBox(width: 6),
         ],
@@ -163,37 +181,9 @@ class LibraryFilterChip extends StatelessWidget
           ),
         ),
         const SizedBox(width: 4),
-        glass
-            ? Icon(
-                CupertinoIcons.chevron_up_chevron_down,
-                size: 12,
-                color: foreground,
-              )
-            : Icon(Icons.expand_more_rounded, size: 18, color: foreground),
+        Icon(Icons.expand_more_rounded, size: 18, color: foreground),
       ],
     );
-    if (glass) {
-      final bool dark = colors.brightness == Brightness.dark;
-      // 未激活：macOS 26 弹出按钮的无色透明玻璃（只有高光边）。激活：同一枚
-      // 胶囊淡染强调色（默认单色强调色 = 浅色下淡黑 / 深色下淡白）。
-      return GlassContainer(
-        useOwnLayer: true,
-        quality: fushiGlassQuality(context),
-        settings: active
-            ? fushiGlassSettings(
-                context,
-                tint: apple.accent.withValues(alpha: dark ? 0.26 : 0.12),
-              )
-            : fushiClearGlassSettings(context),
-        shape: LiquidRoundedSuperellipse(borderRadius: height / 2),
-        child: Container(
-          height: height,
-          padding: const EdgeInsetsDirectional.only(start: 12, end: 10),
-          alignment: Alignment.center,
-          child: row,
-        ),
-      );
-    }
     return AnimatedContainer(
       duration: FushiMotion.short,
       curve: FushiSpringCurve.effects,

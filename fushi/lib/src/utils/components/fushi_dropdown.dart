@@ -1,4 +1,3 @@
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_control_metrics.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -8,6 +7,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -46,6 +46,9 @@ bool _isPolledGamepadPlatform(BuildContext context) {
 /// route-pop. Only on Android does it fall back to a stock [DropdownMenu] (the
 /// engine delivers real key events there). Looks like an expand-in-place
 /// dropdown.
+///
+/// @design dual —— Apple 分支的触发器是 [FushiApplePopUpButtonFace]（iOS 27 灰
+/// 填充胶囊 / macOS 27 pop-up button），菜单走 `showFushiMenu`。
 class GamepadMenuDropdown<T> extends StatefulWidget {
   const GamepadMenuDropdown({
     required this.entries,
@@ -437,77 +440,28 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       );
     }
     if (isGlassDesign(context)) {
-      // iOS / macOS 26 的 pop-up button（Niratan「Klee ⌃⌄」）：控件层，无色
-      // 透明液态玻璃 bezel（不是 systemFill 灰块），label 色文字、上下双箭头，
-      // 悬停 / 按下由 FushiPlainButton 给；降低透明度时玻璃回落实色。
-      final FushiAppleColors apple = appleColorsOf(context);
-      final bool compact = fushiAppleCompact(context);
+      // iOS 27 / macOS 27 的 pop-up button：公共外观 [FushiApplePopUpButtonFace]
+      // （iOS tertiarySystemFill 灰胶囊、macOS secondarySystemFill 圆角 6），
+      // 实色内容层控件、不是玻璃。底由 FushiPlainButton 画（悬停 / 按下在底色
+      // 上叠前景色、键盘焦点环），外观只画文字与双箭头。行内用法钉成行内控件
+      // 高度、内容自适应宽；表单 / 设置行（撑满父级）整宽、长选项可折两行。
       final bool enabled = onPressed != null;
-      final double minHeight = inlineHeight ?? (compact ? 34 : 44);
-      final double radius = capsule ? minHeight / 2 : 10;
-      // 深色下无色透明玻璃（黑 14%）压在纯黑分组底上是隐形的，只剩文字和
-      // 箭头飘着：静止态自绘 tertiarySystemFill + 0.5px 低 alpha 细描边给出
-      // 轮廓（与玻璃搜索胶囊同一口径）；浅色玻璃本身是白雾面 + 投影，不叠。
-      final bool dark =
-          Theme.of(context).colorScheme.brightness == Brightness.dark;
-      return fushiClearGlassBezel(
-        context,
-        radius: radius,
-        child: FushiPlainButton(
-          focusNode: _triggerFocus,
-          onPressed: onPressed,
-          borderRadius: BorderRadius.circular(radius),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: dark ? apple.tertiaryFill : null,
-              borderRadius: BorderRadius.circular(radius),
-              border: dark
-                  ? Border.all(
-                      color: Colors.white.withValues(alpha: 0.12),
-                      width: 0.5,
-                    )
-                  : null,
-            ),
-            child: ConstrainedBox(
-              constraints: inlineHeight != null
-                  ? BoxConstraints.tightFor(height: inlineHeight)
-                  : BoxConstraints(minHeight: minHeight),
-              child: Opacity(
-                opacity: enabled ? 1 : 0.4,
-                child: Padding(
-                  padding: EdgeInsetsDirectional.only(
-                    start: capsule ? 14 : 12,
-                    end: 10,
-                    top: inlineHeight != null ? 0 : 6,
-                    bottom: inlineHeight != null ? 0 : 6,
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          text,
-                          maxLines: inlineHeight != null ? 1 : 2,
-                          softWrap: true,
-                          overflow: inlineHeight != null
-                              ? TextOverflow.ellipsis
-                              : null,
-                          style: tokens.type.listTitle.copyWith(
-                            color: apple.label,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Icon(
-                        CupertinoIcons.chevron_up_chevron_down,
-                        size: 13,
-                        color: apple.secondaryLabel,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
+      final bool expand = !capsule || widget.width != null;
+      final double height =
+          inlineHeight ?? FushiApplePopUpButtonFace.defaultHeightOf(context);
+      return FushiPlainButton(
+        focusNode: _triggerFocus,
+        onPressed: onPressed,
+        semanticLabel: widget.label,
+        borderRadius: FushiApplePopUpButtonFace.radiusOf(context, height),
+        fill: FushiApplePopUpButtonFace.fillOf(context),
+        child: FushiApplePopUpButtonFace(
+          label: text,
+          enabled: enabled,
+          height: height,
+          expand: expand,
+          paintFill: false,
+          labelMaxLines: inlineHeight != null ? 1 : 2,
         ),
       );
     }

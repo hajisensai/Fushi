@@ -2,8 +2,7 @@ import 'dart:async' show FutureOr, unawaited;
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
-import 'package:cupertino_ui/cupertino_ui.dart'
-    show CupertinoIcons, CupertinoSearchTextField;
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
@@ -1070,6 +1069,12 @@ class _FushiListItemState extends State<FushiListItem> {
   }
 }
 
+/// 搜索框形态层（[FushiSearchBar] 的底）。
+///
+/// @design dual —— MD3：40 高填充胶囊（large 档 56 的 M3 SearchBar）；macOS 原生
+/// 平台：MacosTextField；Apple 设计系统：iOS 27 `tertiarySystemFill` 实色搜索
+/// 胶囊（高 36、无描边、灰放大镜 / 占位字、有内容时灰色 ⊗），macOS 27 宽窗
+/// 高 28、13pt（见 `FushiTextFieldControl` 的 Apple 分支）。
 class FushiSearchField extends StatelessWidget {
   const FushiSearchField({
     required this.controller,
@@ -1137,21 +1142,32 @@ class FushiSearchField extends StatelessWidget {
     final EdgeInsets padding = large
         ? const EdgeInsets.all(12)
         : const EdgeInsets.all(4);
+    // Apple（iOS 27 UISearchTextField / macOS 27 NSSearchField）：清除钮是灰色
+    // 实心 ⊗（xmark.circle.fill），屏幕键盘 / 粘贴辅助钮同为灰色小图标、排在
+    // 清除钮之后；macOS 宽窗的搜索框只有 28 高，图标再收一档。
+    final bool apple = isGlassDesign(context);
+    final bool appleDesktop = apple && FushiAppleMetrics.of(context).desktop;
+    final double appleIconSize = appleDesktop ? 14 : 16;
+    final Color? appleIconColor = apple
+        ? appleColorsOf(context).secondaryLabel
+        : null;
     final Widget? inputSuffix = _fushiTextFieldInputSuffix(
       context: context,
       controller: controller,
       onChanged: onChanged,
-      iconSize: iconSize,
-      padding: padding,
+      iconSize: apple ? appleIconSize : iconSize,
+      padding: apple ? const EdgeInsets.all(3) : padding,
+      color: appleIconColor,
     );
     return <Widget>[
       if (onClear != null && value.text.isNotEmpty)
         FushiIconButton(
           key: clearButtonKey,
-          icon: FushiIcons.close,
+          icon: apple ? CupertinoIcons.clear_circled_solid : FushiIcons.close,
           tooltip: t.clear,
-          size: iconSize,
-          padding: padding,
+          size: apple ? appleIconSize : iconSize,
+          padding: apple ? const EdgeInsets.all(3) : padding,
+          enabledColor: appleIconColor,
           padTouchTarget: true,
           onTap: () {
             onClear?.call();
@@ -1321,13 +1337,11 @@ class FushiSearchField extends StatelessWidget {
         valueListenable: controller,
         builder: (context, value, _) {
           final List<Widget> trailing = _trailing(context, value);
-          // 用户 2026-10-04「所有组件都要往液态玻璃靠」：搜索框是 iOS 26 的
-          // 玻璃搜索胶囊。胶囊形态（玻璃 bezel、深色下的静止底与细描边、
-          // 聚焦内环、降低透明度时回落实色）全由 FushiTextFieldControl 认出
-          // 前缀放大镜后给出，与库页搜索框同一实现——以前这里外包一层自己的
-          // GlassContainer、再把输入框填充压成近乎透明，聚焦光圈的 BoxShadow
-          // 会透过那层填充把整枚胶囊染成灰 / 白块。large 档在 Apple 下同为
-          // 36 的 iOS 搜索胶囊（Apple 没有 56 的搜索栏）。
+          // iOS 27 搜索胶囊（tertiarySystemFill 实色、无描边、高 36）/ macOS 27
+          // 宽窗搜索框（高 28）：形态全由 FushiTextFieldControl 认出前缀放大镜
+          // 后给出（与设置页 / 库页页头的 CupertinoSearchTextField 同一套参数），
+          // 这里只装配放大镜、灰色 ⊗ 清除钮与输入辅助钮。large 档在 Apple 下
+          // 同为 iOS 搜索胶囊（Apple 没有 56 的搜索栏）。
           return FushiTextFieldControl(
             key: fieldKey,
             controller: controller,
@@ -2022,13 +2036,15 @@ Widget? _fushiTextFieldInputSuffix({
   double? iconSize,
   EdgeInsets? padding,
   bool padTouchTarget = true,
+  Color? color,
 }) {
   if (controller == null) return null;
   // 彩色色块里的字段：尾部钮跟指示线 / 标题同一档压暗的块前景色；其余用
-  // IconButton 默认（M3 trailing icon = onSurfaceVariant）。
-  final Color? quiet = FushiFieldFillScope.foregroundOf(
-    context,
-  )?.withValues(alpha: 0.72);
+  // [color]（Apple 搜索框的灰色辅助钮）或 IconButton 默认（M3 trailing icon =
+  // onSurfaceVariant）。
+  final Color? quiet =
+      FushiFieldFillScope.foregroundOf(context)?.withValues(alpha: 0.72) ??
+      color;
   final TargetPlatform platform = Theme.of(context).platform;
   final bool isDesktop =
       platform == TargetPlatform.windows ||
@@ -7822,7 +7838,7 @@ class SchemeMiniUiPainter extends CustomPainter {
 }
 
 /// Apple 库页大标题下的整宽搜索框（iOS 27 图书：tertiarySystemFill 胶囊、灰
-/// 放大镜、无描边，与设置页搜索框同一套 [CupertinoSearchTextField] 参数）。
+/// 放大镜、无描边）——公共 [FushiSearchField] 的 Apple 分支。
 /// 绑定页头搜索的输入框与焦点（[FushiHeaderSearchController]），Ctrl+F / `/`
 /// 照旧落到这里；获得焦点时把本页主滚动区滚回顶部（大标题展开、搜索框露出）。
 /// Esc：有内容先清空，空框再按交还焦点。IME 组字期间不发查询。
@@ -7894,8 +7910,7 @@ class _AppleHeaderSearchFieldState extends State<_AppleHeaderSearchField> {
 
   @override
   Widget build(BuildContext context) {
-    final FushiAppleColors apple = appleColorsOf(context);
-    final bool desktop = fushiAppleCompact(context);
+    final bool desktop = FushiAppleMetrics.of(context).desktop;
     final FushiHeaderSearchController search = widget.controller;
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -7908,28 +7923,18 @@ class _AppleHeaderSearchFieldState extends State<_AppleHeaderSearchField> {
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: _onKey,
-        child: CupertinoSearchTextField(
-          key: search.fieldKey,
+        // 公共搜索框（[FushiSearchField] 的 Apple 分支：iOS 27 tertiaryFill
+        // 胶囊 / macOS 27 宽窗 28 高搜索框），与扩展页、库页工具条同一实现。
+        child: FushiSearchField(
+          fieldKey: search.fieldKey,
           controller: search.textController,
           focusNode: _focus,
-          placeholder: search.hintText,
-          backgroundColor: apple.tertiaryFill,
-          borderRadius: BorderRadius.circular(desktop ? 15 : 20),
-          itemColor: apple.secondaryLabel,
-          itemSize: desktop ? 15 : 18,
-          style: TextStyle(fontSize: desktop ? 13 : 17, color: apple.label),
-          placeholderStyle: TextStyle(
-            fontSize: desktop ? 13 : 17,
-            color: apple.secondaryLabel,
-          ),
-          padding: desktop
-              ? const EdgeInsetsDirectional.fromSTEB(4, 6, 6, 6)
-              : const EdgeInsetsDirectional.fromSTEB(5, 9, 6, 9),
+          hintText: search.hintText,
           onChanged: (String query) {
             if (!_composing) search.onQueryChanged(query);
           },
           onSubmitted: search.onQueryChanged,
-          onSuffixTap: search.clear,
+          onClear: search.clear,
         ),
       ),
     );

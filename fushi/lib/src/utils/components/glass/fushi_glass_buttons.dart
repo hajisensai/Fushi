@@ -7,6 +7,8 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -266,7 +268,72 @@ bool fushiAppleCompact(BuildContext context) {
   }
 }
 
-/// Apple 按钮的共用渲染，形态对齐 iOS 26 / macOS 26 的 UIButton 配置：
+/// Apple 按钮（iOS 27 UIButton / macOS 27 NSButton）的尺寸档。
+///
+/// @design dual —— 只服务 Apple 分支；MD3 的尺寸档见 [FushiButtonMetrics]。
+/// 档位按 [FushiAppleMetrics.desktop]：桌面宽窗 = macOS，触屏 / 桌面窄窗 = iOS。
+///
+/// | 档 | iOS 高 / 字号 | macOS 高 / 字号 |
+/// |---|---|---|
+/// | [FushiButtonSize.xs] | 28 / 15 | 22 / 13（small） |
+/// | [FushiButtonSize.s] | 34 / 15（regular） | 24 / 13（regular） |
+/// | null / m / l / xl | 44 / 17（large） | 28 / 13（large） |
+@immutable
+class FushiAppleButtonMetrics {
+  const FushiAppleButtonMetrics._({
+    required this.height,
+    required this.fontSize,
+    required this.iconSize,
+    required this.horizontalPadding,
+    required this.plainHorizontalPadding,
+    required this.iconGap,
+  });
+
+  /// 按当前档位与 [size] 取度量。
+  factory FushiAppleButtonMetrics.of(
+    BuildContext context, [
+    FushiButtonSize? size,
+  ]) {
+    final bool desktop = FushiAppleMetrics.of(context).desktop;
+    if (desktop) {
+      return FushiAppleButtonMetrics._(
+        height: switch (size) {
+          FushiButtonSize.xs => 22,
+          FushiButtonSize.s => 24,
+          _ => 28,
+        },
+        fontSize: 13,
+        iconSize: 14,
+        horizontalPadding: size == FushiButtonSize.xs ? 8 : 10,
+        plainHorizontalPadding: 6,
+        iconGap: 4,
+      );
+    }
+    final bool small = size == FushiButtonSize.xs || size == FushiButtonSize.s;
+    return FushiAppleButtonMetrics._(
+      height: switch (size) {
+        FushiButtonSize.xs => 28,
+        FushiButtonSize.s => 34,
+        _ => 44,
+      },
+      fontSize: small ? 15 : 17,
+      iconSize: small ? 16 : 19,
+      horizontalPadding: small ? 14 : 20,
+      plainHorizontalPadding: 10,
+      iconGap: 6,
+    );
+  }
+
+  /// 胶囊高度（`.bordered` / `.borderedProminent` / 玻璃按钮；plain 的最小高）。
+  final double height;
+  final double fontSize;
+  final double iconSize;
+  final double horizontalPadding;
+  final double plainHorizontalPadding;
+  final double iconGap;
+}
+
+/// Apple 按钮的共用渲染，形态对齐 iOS 27 / macOS 27 的 UIButton 配置：
 /// - filled = `.glassProminent`：强调色着色的玻璃胶囊，onAccent 字 semibold；
 /// - tonal / outlined = `.bordered`：tertiaryFill 灰底胶囊 + 强调色字（内容
 ///   层控件，不是玻璃）；
@@ -275,7 +342,8 @@ bool fushiAppleCompact(BuildContext context) {
 ///   里的非主操作保持透明玻璃胶囊 + label 色字；调用方给了实底背景色时按
 ///   着色玻璃画。
 ///
-/// 高度：移动端 44、桌面 34（plain 桌面 28）；圆角恒为全胶囊。
+/// 高度与字号见 [FushiAppleButtonMetrics]（iOS 44 / 34、macOS 28 / 24 / 22）；
+/// alert 动作区仍按平台 36 / 48。圆角恒为全胶囊。
 /// [style] 里能映射的字段（前景 / 背景色、内边距、最小 / 固定尺寸、字体）照用，
 /// 其余忽略。
 Widget _glassButton(
@@ -291,12 +359,17 @@ Widget _glassButton(
   required Widget? icon,
   required Widget? label,
   required IconAlignment? iconAlignment,
+  FushiButtonSize? size,
   bool destructive = false,
   bool overImage = false,
 }) {
   final ThemeData theme = Theme.of(context);
   final FushiAppleColors apple = appleColorsOf(context);
   final bool compact = fushiAppleCompact(context);
+  final FushiAppleButtonMetrics metrics = FushiAppleButtonMetrics.of(
+    context,
+    size,
+  );
   final bool enabled = onPressed != null || onLongPress != null;
   final Set<WidgetState> resolveStates = enabled
       ? const <WidgetState>{}
@@ -355,25 +428,28 @@ Widget _glassButton(
     }
   }
 
-  final double height = alertAction ? (compact ? 36 : 48) : (compact ? 34 : 44);
+  final double height = alertAction ? (compact ? 36 : 48) : metrics.height;
   final EdgeInsetsGeometry padding =
       style?.padding?.resolve(resolveStates) ??
       EdgeInsets.symmetric(
-        horizontal: plain ? (compact ? 8 : 10) : (compact ? 14 : 20),
+        horizontal: plain
+            ? metrics.plainHorizontalPadding
+            : metrics.horizontalPadding,
       );
   final Size? minimumSize = style?.minimumSize?.resolve(resolveStates);
   final Size? fixedSize = style?.fixedSize?.resolve(resolveStates);
 
-  final TextStyle textStyle = fushiAppleButtonTextStyle(
-    context,
-    prominent: weight == FontWeight.w600,
-  ).merge(style?.textStyle?.resolve(resolveStates)).copyWith(color: fg);
+  final TextStyle textStyle =
+      fushiAppleButtonTextStyle(context, prominent: weight == FontWeight.w600)
+          .copyWith(fontSize: metrics.fontSize)
+          .merge(style?.textStyle?.resolve(resolveStates))
+          .copyWith(color: fg);
   Widget content;
   if (icon != null && label != null) {
     final bool trailing = iconAlignment == IconAlignment.end;
     final List<Widget> parts = <Widget>[
       icon,
-      SizedBox(width: compact ? 5 : 6),
+      SizedBox(width: metrics.iconGap),
       Flexible(child: label),
     ];
     content = Row(
@@ -384,7 +460,7 @@ Widget _glassButton(
     content = label ?? icon ?? const SizedBox.shrink();
   }
   content = IconTheme.merge(
-    data: IconThemeData(color: fg, size: compact ? 16 : 19),
+    data: IconThemeData(color: fg, size: metrics.iconSize),
     child: DefaultTextStyle.merge(
       style: textStyle,
       maxLines: 1,
@@ -396,7 +472,7 @@ Widget _glassButton(
       fixedSize?.height ??
       (minimumSize != null && minimumSize.height > 0
           ? minimumSize.height
-          : (plain ? (compact ? 28 : 44) : height));
+          : (plain ? (metrics.height < 44 ? metrics.height : 44) : height));
   content = ConstrainedBox(
     constraints: BoxConstraints(
       minWidth: fixedSize?.width ?? minimumSize?.width ?? (plain ? 0 : height),
@@ -503,7 +579,8 @@ TextStyle fushiAppleButtonTextStyle(
 
 /// iOS `.bordered` / `.borderedProminent` 胶囊按钮（内容层实色，不是玻璃）：
 /// [prominent] = 强调色底 + onAccent 字 semibold，否则 tertiaryFill 灰底 +
-/// 强调色字；禁用态底保留、字褪成 tertiaryLabel。高度桌面 34 / 移动 44，
+/// 强调色字；禁用态底保留、字褪成 tertiaryLabel。高度见
+/// [FushiAppleButtonMetrics]（[size] 档；iOS 44 / 34、macOS 28 / 24），
 /// 按下变淡、悬停叠前景色（[FushiPlainButton]），焦点环 + Enter →
 /// ActivateIntent 同 plain 按钮。[trailing] 画在标签之后（如 pull-down 的
 /// chevron）。
@@ -517,27 +594,31 @@ Widget fushiAppleBorderedButton(
   FocusNode? focusNode,
   bool autofocus = false,
   String? semanticLabel,
+  FushiButtonSize? size,
 }) {
   final FushiAppleColors apple = appleColorsOf(context);
-  final bool compact = fushiAppleCompact(context);
+  final FushiAppleButtonMetrics metrics = FushiAppleButtonMetrics.of(
+    context,
+    size,
+  );
   final bool enabled = onPressed != null;
   final Color fg = !enabled
       ? apple.tertiaryLabel
       : (prominent ? apple.onAccent : apple.accent);
-  final double height = compact ? 34 : 44;
-  final double gap = compact ? 5 : 6;
+  final double height = metrics.height;
+  final double gap = metrics.iconGap;
   final TextStyle textStyle = fushiAppleButtonTextStyle(
     context,
     prominent: prominent,
-  ).copyWith(color: fg);
+  ).copyWith(fontSize: metrics.fontSize, color: fg);
   final Widget content = IconTheme.merge(
-    data: IconThemeData(color: fg, size: compact ? 16 : 19),
+    data: IconThemeData(color: fg, size: metrics.iconSize),
     child: DefaultTextStyle.merge(
       style: textStyle,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: compact ? 14 : 20),
+        padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -849,6 +930,7 @@ class FushiTextButton extends StatelessWidget {
       return _glassButton(
         context,
         kind: _FushiButtonKind.text,
+        size: size,
         onPressed: onPressed,
         onLongPress: onLongPress,
         onHover: onHover,
@@ -1035,6 +1117,7 @@ class FushiFilledButton extends StatelessWidget {
       return _glassButton(
         context,
         kind: tonal ? _FushiButtonKind.tonal : _FushiButtonKind.filled,
+        size: size,
         onPressed: onPressed,
         onLongPress: onLongPress,
         onHover: onHover,
@@ -1229,6 +1312,7 @@ class FushiOutlinedButton extends StatelessWidget
       return _glassButton(
         context,
         kind: _FushiButtonKind.outlined,
+        size: size,
         onPressed: onPressed,
         onLongPress: onLongPress,
         onHover: onHover,

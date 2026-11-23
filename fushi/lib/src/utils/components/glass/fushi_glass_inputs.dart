@@ -13,6 +13,8 @@ import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
     show FushiM3eShape;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -682,6 +684,11 @@ class _FushiFieldIndicatorScope extends InheritedWidget {
 }
 
 /// [TextField] 的设计系统分派版。
+///
+/// @design dual —— MD3 走 [TextField] + M3E 字段装饰；Apple 走无边框
+/// [CupertinoTextField] + 自绘壳：iOS 27 `tertiarySystemFill` 圆角 10 无描边
+/// （搜索装饰 = 高 36 全胶囊），macOS 27 宽窗白底 / 深色 tertiaryFill + 0.5px
+/// 描边圆角 6（搜索装饰 = 高 28 灰填充胶囊），正文 17 / 13。
 class FushiTextFieldControl extends StatelessWidget {
   const FushiTextFieldControl({
     super.key,
@@ -1237,22 +1244,23 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final bool enabled = _enabled;
     final bool focused = _focusNode.hasFocus;
     final bool hasError = _hasError;
+    // 尺寸档：桌面宽窗按 macOS 27（正文 13、搜索框高 28、输入框圆角 6 + 描边），
+    // 触屏 / 桌面窄窗按 iOS 27（正文 17、搜索胶囊高 36、输入框圆角 10 无描边）。
+    final bool desktop = FushiAppleMetrics.of(context).desktop;
 
-    // 桌面（macOS 尺度）正文 15，移动端 iOS 17。
-    final TextStyle style =
-        ((fushiAppleCompact(context) ? tt.bodyMedium : tt.bodyLarge) ??
-                const TextStyle())
-            .copyWith(
-              color: enabled ? apple.label : apple.tertiaryLabel,
-              // 单行框：正文主题行高 1.5 的行距按字体 ascent/descent 比例分配，
-              // CJK 字体多分在下方，文字明显低于放大镜 / 胶囊中线。收紧行高并
-              // 上下均分，文字与占位符落在框的光学中线上。
-              height: _c.maxLines == 1 ? 1.25 : null,
-              leadingDistribution: _c.maxLines == 1
-                  ? TextLeadingDistribution.even
-                  : null,
-            )
-            .merge(_c.style);
+    final TextStyle style = (tt.bodyLarge ?? const TextStyle())
+        .copyWith(
+          fontSize: desktop ? 13 : 17,
+          color: enabled ? apple.label : apple.tertiaryLabel,
+          // 单行框：正文主题行高 1.5 的行距按字体 ascent/descent 比例分配，
+          // CJK 字体多分在下方，文字明显低于放大镜 / 胶囊中线。收紧行高并
+          // 上下均分，文字与占位符落在框的光学中线上。
+          height: _c.maxLines == 1 ? 1.25 : null,
+          leadingDistribution: _c.maxLines == 1
+              ? TextLeadingDistribution.even
+              : null,
+        )
+        .merge(_c.style);
 
     final Widget editable = _buildEditable(context, style, hasError);
 
@@ -1283,7 +1291,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       return IconTheme.merge(
         data: IconThemeData(
           color: iconColor,
-          size: search ? 17 : (dense ? 18 : 20),
+          size: desktop
+              ? (search ? 14 : 15)
+              : (search ? 17 : (dense ? 18 : 20)),
         ),
         child: icon,
       );
@@ -1296,13 +1306,18 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
           ? const FushiIcon(CupertinoIcons.search)
           : decoration.prefixIcon,
     );
-    // 搜索胶囊定高 36：调用方常把标准图标按钮（40–48 高）塞进 suffixIcon 当
-    // 清除钮，它会把输入行撑高、在定高父级里溢出，文字随之偏离竖直中线（用户
-    // 2026-10-04「搜索框文字没有垂直居中」）。布局上只给尾部图标 28 高，按钮
-    // 本体照原尺寸居中绘制在上面（OverflowBox），点按区不变小。
+    // 搜索胶囊定高（iOS 36 / macOS 28）：调用方常把标准图标按钮（40–48 高）
+    // 塞进 suffixIcon 当清除钮，它会把输入行撑高、在定高父级里溢出，文字随之
+    // 偏离竖直中线（用户 2026-10-04「搜索框文字没有垂直居中」）。布局上只给
+    // 尾部图标比胶囊矮 8 的高度，按钮本体照原尺寸居中绘制在上面
+    // （OverflowBox），点按区不变小。
+    final double searchHeight = desktop ? 28 : 36;
     Widget? suffixIcon = iconSlot(decoration.suffixIcon);
     if (search && suffixIcon != null && _c.maxLines == 1) {
-      suffixIcon = _CappedHeightBox(height: 28, child: suffixIcon);
+      suffixIcon = _CappedHeightBox(
+        height: searchHeight - 8,
+        child: suffixIcon,
+      );
     }
     final Widget? prefix = affix(
       decoration.prefix,
@@ -1338,57 +1353,49 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       row = Align(alignment: AlignmentDirectional.topStart, child: row);
     }
 
-    // iOS 输入框是内容层控件：实色 tertiarySystemFill 底、圆角 10、无下划线
-    // 无描边（iOS 26 的 roundedRect 文本框）；搜索框是高 36 的全胶囊（控件层，
-    // 无色透明玻璃，见下）。调用方显式 filled + fillColor 时尊重它。
+    // iOS 27：输入框是内容层控件——实色 tertiarySystemFill 底、圆角 10、无下划线
+    // 无描边（roundedRect 文本框）；搜索框是同色的全胶囊（UISearchTextField，
+    // 高 36）。macOS 27 宽窗：输入框是圆角 6 的白底（深色 tertiaryFill）+
+    // 0.5px 分隔线描边（NSTextField bezel），搜索框是高 28 的灰填充胶囊
+    // （NSSearchField）。都不是玻璃——玻璃只给浮在内容上的导航 / 控件层，所以
+    // 不随玻璃画质档变化。调用方显式 filled + fillColor 时尊重它。
     final EdgeInsetsGeometry padding =
         decoration.contentPadding ??
         (search
-            ? const EdgeInsets.symmetric(horizontal: 10)
-            : EdgeInsets.symmetric(
-                horizontal: dense ? 10 : 12,
-                vertical: dense ? 7 : 11,
-              ));
+            ? EdgeInsets.symmetric(horizontal: desktop ? 8 : 10)
+            : (desktop
+                  ? EdgeInsets.symmetric(horizontal: 8, vertical: dense ? 3 : 5)
+                  : EdgeInsets.symmetric(
+                      horizontal: dense ? 10 : 12,
+                      vertical: dense ? 7 : 11,
+                    )));
     final Color? customFill = (decoration.filled ?? false)
         ? decoration.fillColor
         : null;
     final bool capsule = search && !multiline;
-    // 搜索胶囊是控件层（macOS 26 工具栏 / 侧栏顶的搜索框、iOS 26 的搜索
-    // 胶囊）：无色透明液态玻璃，不铺 systemFill 灰底；普通输入框仍是内容层
-    // 实色字段。调用方显式给了填充色时照旧实色。
-    final bool glassSearch =
-        capsule && !(customFill != null && customFill.a > 0);
     final bool dark = theme.colorScheme.brightness == Brightness.dark;
-    // 深色下的玻璃搜索胶囊：无色透明玻璃（深色配方是黑 14%）压在纯黑分组底上
-    // 等于隐形——只剩一枚放大镜飘着。静止态在玻璃里自绘一层 tertiarySystemFill
-    // （iOS 深色 UISearchTextField 的底）+ 0.5px 低 alpha 细描边给出轮廓，文字
-    // 始终在这层之上；浅色玻璃本身是白 62% 雾面 + 投影，轮廓清楚，不再叠灰。
+    final bool macField = desktop && !search;
     final Color fill = customFill != null && customFill.a > 0
         ? customFill
-        : (glassSearch
-              ? (dark ? apple.tertiaryFill : Colors.transparent)
+        : (macField
+              ? (dark ? apple.tertiaryFill : Colors.white)
               : apple.tertiaryFill);
-    final BorderRadius shellRadius = BorderRadius.circular(capsule ? 18 : 10);
+    final BorderRadius shellRadius = BorderRadius.circular(
+      capsule ? searchHeight / 2 : (desktop ? 6 : 10),
+    );
     // 聚焦本身在 iOS 上没有描边；这里只给一圈细的强调色内环（1.5px、画在框内），
-    // 作为键盘 / 手柄导航落到输入框时的焦点指示。以前是 3px 外扩的 BoxShadow：
-    // 单色强调色在深色下是白色，外扩一圈就是一道厚白边；搜索胶囊外面还包着
-    // 玻璃，外扩部分被玻璃形状裁掉，而 BoxShadow 又会透过近乎透明的填充把整个
-    // 胶囊染成一块灰 / 白（浅色聚焦时整枚胶囊变成灰块）。错误态 1px destructive。
+    // 作为键盘 / 手柄导航落到输入框时的焦点指示（macOS 的 focus ring 同理）。
+    // 错误态 1px destructive；macOS 输入框静止态 0.5px 分隔线描边。
     final Border? restingBorder = enabled && hasError
         ? Border.all(color: apple.destructive)
-        : (glassSearch && dark
-              ? Border.all(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  width: 0.5,
-                )
-              : null);
+        : (macField ? Border.all(color: apple.separator, width: 0.5) : null);
     Widget shell = AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeOut,
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
       padding: padding,
-      // 搜索胶囊定高 36（文字更高时随文字长高），内容竖直居中。
+      // 搜索胶囊定高（文字更高时随文字长高），内容竖直居中。
       constraints: capsule
-          ? const BoxConstraints(minHeight: 36)
+          ? BoxConstraints(minHeight: searchHeight)
           : const BoxConstraints(),
       decoration: BoxDecoration(
         color: fill,
@@ -1412,9 +1419,6 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
             )
           : row,
     );
-    if (glassSearch) {
-      shell = fushiClearGlassBezel(context, radius: 18, child: shell);
-    }
     if (decoration.constraints != null) {
       shell = ConstrainedBox(
         constraints: decoration.constraints!,
