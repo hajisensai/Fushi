@@ -5763,6 +5763,7 @@
   "manga_audio_estimate_title": "开始标注？",
   "manga_audio_failure_bad_output": "回复格式不对",
   "manga_audio_failure_clip_missing": "关联有声书里的这一段取不到",
+  "manga_audio_failure_drama_registered": "这一卷登记的有声成品是广播剧 / 动画音轨，不能按句改。先整卷生成，换成合成成品。",
   "manga_audio_failure_empty_text": "没有可念的文字",
   "manga_audio_failure_ffmpeg_missing": "本机没有可用的 FFmpeg",
   "manga_audio_failure_image": "页图读不出",

@@ -506,11 +506,19 @@ Future<bool> _reviewCandidate(
       }
       await player.stop();
       if (action == 'keep') {
-        kept = await keepMangaCandidate(
-          host,
-          volume: volume,
-          candidate: candidate,
-        );
+        try {
+          kept = await keepMangaCandidate(
+            host,
+            volume: volume,
+            candidate: candidate,
+          );
+        } on TtsRenderFailure catch (e) {
+          // 试听期间这卷登记成了广播剧：候选已撤回，什么都没写。
+          FushiToast.show(
+            msg: ttsRenderFailureText(e.code),
+            severity: ToastSeverity.warning,
+          );
+        }
       } else {
         await discardMangaCandidate(host, volume.bookKey, candidate);
       }
@@ -623,12 +631,21 @@ Future<void> editMangaAudioLineInPlace(
       FushiToast.show(msg: t.manga_audio_line_not_read_render_busy);
       return;
     }
-    await dropMangaUnreadLines(
-      host,
-      bookKey: bookKey,
-      script: session.script,
-      lineIds: <String>[line.lineId],
-    );
+    try {
+      await dropMangaUnreadLines(
+        host,
+        bookKey: bookKey,
+        script: session.script,
+        lineIds: <String>[line.lineId],
+      );
+    } on TtsRenderFailure catch (e) {
+      // 登记的是广播剧：演出稿已存，成品不动，提示先整卷生成。
+      FushiToast.show(
+        msg: ttsRenderFailureText(e.code),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
     FushiToast.show(msg: t.manga_audio_line_not_read_dropped);
     return;
   }

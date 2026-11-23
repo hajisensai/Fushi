@@ -290,22 +290,23 @@ void requireNotRendering(TtsCtlDeps deps, String bookKey) {
 /// 登记的是哪份就改哪份——本机生成的、或 `tts import` 导入的外部清单（原地改写用户
 /// 目录里的清单与音频，拍板 isATnQZ_eN-external）；没登记（只生成没入库）改本机那份，
 /// 之后按它整份登记。登记的是广播剧 / 动画音轨成品时 409：那些段不是按演出稿逐句出的，
-/// 改本机清单再按句写库会把两份清单的句子混进同一份登记。
+/// 改本机清单再按句写库会把两份清单的句子混进同一份登记。判据与 app 内入口共用
+/// [mangaLineEditTarget]。
 Future<MangaAudioEditTarget> requireLineEditableAudio(
   TtsCtlDeps deps,
   String bookKey,
 ) async {
-  final MangaAudioEditTarget target = await mangaAudioEditTarget(
-    deps.appModel,
-    bookKey,
-  );
-  if (target.kind != MangaAudioProductKind.drama) return target;
-  throw const CtlFailure(
-    409,
-    'manga_audio_drama',
-    '这一卷登记的有声成品是广播剧 / 动画音轨（段不是按演出稿逐句出的），不能按句改：'
-        '先整卷生成（tts render）换成合成成品',
-  );
+  try {
+    return await mangaLineEditTarget(deps.appModel, bookKey);
+  } on TtsRenderFailure catch (e) {
+    if (e.code != kMangaAudioDramaFailure) rethrow;
+    throw const CtlFailure(
+      409,
+      kMangaAudioDramaFailure,
+      '这一卷登记的有声成品是广播剧 / 动画音轨（段不是按演出稿逐句出的），不能按句改：'
+      '先整卷生成（tts render）换成合成成品',
+    );
+  }
 }
 
 /// 撤销载荷里记下的那份清单（操作当时改的就是它）；旧载荷没记时按当前登记找。

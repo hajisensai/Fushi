@@ -39,7 +39,7 @@
 |---|:--:|:--:|---|
 | [BUG-5348](bugs/BUG-5348-music-mv-backdrop-toggle-off.md) | ✅ | ✅ | 歌词页开着时关掉「有 MV 时背景放 MV」，MV 照放不停 |
 | [BUG-5347](bugs/BUG-5347-overlay-card-advanced-mining-sentence.md) | 🚧 | 🚧 | 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上 |
-| [BUG-5340](bugs/BUG-5340-manga-audio-ui-line-edit-hijacks-drama-registration.md) | 🚧 | 🚧 | 登记的是广播剧 / 动画音轨时，app 内单句补回 / 保留候选会把登记悄悄换回合成成品 |
+| [BUG-5340](bugs/BUG-5340-manga-audio-ui-line-edit-hijacks-drama-registration.md) | ✅ | ✅ | 登记的是广播剧 / 动画音轨时，app 内单句补回 / 保留候选会把登记悄悄换回合成成品 |
 | [BUG-5337](bugs/BUG-5337-manga-audio-package-import-busy.md) | ✅ | ✅ | manga-audio-package-import-busy |
 | [BUG-5336](bugs/BUG-5336-music-peek-remote-now-playing.md) | ✅ | ✅ | 音乐速览：播放服务器 / 插件 / Apple Music 曲目时「继续」为空 |
 | [BUG-5335](bugs/BUG-5335-games-peek-running-game.md) | ✅ | ✅ | 游戏速览「继续」不认正在运行的游戏 |
