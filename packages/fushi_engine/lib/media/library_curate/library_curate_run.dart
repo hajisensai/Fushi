@@ -92,6 +92,8 @@ class LibraryCuratePendingItem {
     required this.title,
     this.ref,
     this.reason,
+    this.candidates,
+    this.ai,
   });
 
   final LibraryCurateStage stage;
@@ -108,12 +110,21 @@ class LibraryCuratePendingItem {
   final String? ref;
   final String? reason;
 
+  /// 书 / 游戏刮削待确认：资料源给了几个候选（旧记录没有为 null）。
+  final int? candidates;
+
+  /// 书 / 游戏刮削待确认：AI 那一步的结论（`PendingIdentityAiOutcome.wire`；旧记录
+  /// 没有为 null）。
+  final String? ai;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'stage': stage.wire,
     'kind': kind,
     'title': title,
     if (ref != null) 'ref': ref,
     if (reason != null) 'reason': reason,
+    if (candidates != null) 'candidates': candidates,
+    if (ai != null) 'ai': ai,
   };
 
   static LibraryCuratePendingItem? fromJson(Object? raw) {
@@ -128,6 +139,8 @@ class LibraryCuratePendingItem {
       title: '${raw['title'] ?? ''}',
       ref: raw['ref'] as String?,
       reason: raw['reason'] as String?,
+      candidates: (raw['candidates'] as num?)?.toInt(),
+      ai: raw['ai'] as String?,
     );
   }
 }
@@ -208,6 +221,7 @@ class LibraryCurateRun {
     List<LibraryCuratePendingItem>? pendingItems,
     this.undoneAt,
     this.full = false,
+    this.target,
   }) : stages = stages ?? <LibraryCurateStageResult>[],
        pendingItems = pendingItems ?? <LibraryCuratePendingItem>[];
 
@@ -223,6 +237,9 @@ class LibraryCurateRun {
 
   /// 忽略水位、对全库跑（手动「整理整个库」/ CLI `--full`）。
   final bool full;
+
+  /// 单条重试（待确认队列「AI 重试」）的目标条目键；正常一趟为 null。
+  final String? target;
 
   /// 写操作的记账会话（`ai_agent_actions.session_id`）。
   String get sessionId => libraryCurateSessionId(id);
@@ -249,6 +266,7 @@ class LibraryCurateRun {
     if (finishedAt != null) 'finishedAt': finishedAt,
     'status': status.name,
     if (full) 'full': true,
+    if (target != null) 'target': target,
     'changes': changes,
     'pending': pending,
     'requests': requests,
@@ -279,6 +297,7 @@ class LibraryCurateRun {
         orElse: () => LibraryCurateRunStatus.failed,
       ),
       full: raw['full'] == true,
+      target: raw['target'] as String?,
       stages: <LibraryCurateStageResult>[
         for (final Object? s in (raw['stages'] as List?) ?? const <Object?>[])
           ?LibraryCurateStageResult.fromJson(s),

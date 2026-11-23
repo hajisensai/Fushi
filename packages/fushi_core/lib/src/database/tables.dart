@@ -3509,7 +3509,7 @@ class StudySegments extends Table {
   /// 页数（漫画 / PDF；EPUB 恒 0）。
   IntColumn get pages => integer().withDefault(const Constant(0))();
 
-  /// v172（拍板台 4KOWK3c2mn 方案 b）：本段时间里**在这个媒体上**的查词次数。
+  /// v178（拍板台 4KOWK3c2mn 方案 b）：本段时间里**在这个媒体上**的查词次数。
   ///
   /// 查词发生时本媒体的 [StudySegments] 时钟在跑，就记进当前段（与字数同一行、同一
   /// uid、同一次绝对值写）；这样查词与字数 / 时长同一小时粒度，编辑会话改日期时随段

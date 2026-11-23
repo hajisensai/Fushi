@@ -261,9 +261,11 @@ void main() {
           globalDefaults: const MangaReaderPreferences(),
           // 纵向分页：只对它生效的「显示页间距」也要出现（见下一条测试）。
           // 台词文字条开着：只在它开着时才有意义的「文字条字号」也要出现。
+          // 桌面放大触发选「停留」：只在它下才有意义的「停留时长」也要出现（默认是按住 Ctrl）。
           overrides: const <String, Object?>{
             'mode': 'paged_vertical',
             'bubbleTextStrip': true,
+            'bubbleZoomHover': 'dwell',
           },
           onChanged: (Map<String, Object?> next) async {},
         ),

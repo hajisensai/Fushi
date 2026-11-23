@@ -833,7 +833,7 @@ class StudySegmentRecord {
   /// 找本机同名 Profile；找不到 / 为空落进当前激活 Profile。
   final String profileName;
 
-  /// v172：段内查词次数（`study_segments.lookups`，拍板台 4KOWK3c2mn）。additive
+  /// v178：段内查词次数（`study_segments.lookups`，拍板台 4KOWK3c2mn）。additive
   /// 字段：旧端不发 = 0，0 也不发（无查词的段 JSON 逐字节不变）。随段 uid LWW 走，
   /// 所以会话编辑把段挪到别的日期时，查词跟着传到对端。
   final int lookups;

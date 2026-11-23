@@ -369,7 +369,7 @@ mixin _FushiDbInfra on _$FushiDatabase {
         'ON study_segments (profile_id, media_kind, media_key, title)',
       );
     }
-    // v172：段内查词的读取面（[getStudySegmentLookupCounters]）只看 `lookups > 0`
+    // v178：段内查词的读取面（[getStudySegmentLookupCounters]）只看 `lookups > 0`
     // 的段——绝大多数段没有查词，部分索引让它不必扫本 Profile 的全部段。
     if (await _tableExists('study_segments') &&
         await _columnExists('study_segments', 'profile_id') &&

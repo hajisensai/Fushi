@@ -1,10 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/models/home_tab.dart';
-import 'package:fushi/src/pages/implementations/home_background_tasks_scope.dart';
 import 'package:fushi/src/pages/implementations/home_collage_widgets.dart';
-import 'package:fushi/src/sync/background_tasks_indicator.dart'
-    show BackgroundTask;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockColors, FushiCoverBlockSize;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
@@ -19,7 +15,9 @@ import 'package:material_ui/material_ui.dart';
 /// - BUG-4903（H4）：桌面「继续」右侧的卡被窗口切掉一半——旧版是「首块 + 两行
 ///   半高卡横滑」，横滑条铺到内容区外、最后一列总是被视口切在窗口边。新网格按
 ///   可用宽度算列数，任何宽度下每一块都完整落在内容区里，放不下的进「全部 ›」。
-/// - BUG-4902（H3）：首页不再挂右下的「后台任务」FAB，同步状态改画在头像外圈。
+/// - BUG-4902（H3）：MD3 手机内容底部渐隐（下面「首页底部渐隐」组）。原修复 ① 「首页
+///   不挂后台任务 FAB、状态画在头像外圈」已于 2026-11-23 按拍板台
+///   design-avatar-combo-placement 撤回（头像只管账户）。
 void main() {
   group('HomeContinueGrid（H4）', () {
     test('列数随可用宽度增加、夹在 1…最大列数', () {
@@ -211,44 +209,7 @@ void main() {
     });
   });
 
-  group('H3 头像同步状态', () {
-    test('只有首页由头像承载后台任务（不挂右下 FAB）', () {
-      for (final HomeTab tab in HomeTab.values) {
-        expect(homeBackgroundTasksOnAvatar(tab), tab == HomeTab.home);
-      }
-    });
-
-    test('空 = idle，在跑 = running，有失败 = failed（失败优先）', () {
-      const BackgroundTask running = BackgroundTask(
-        id: 'sync-1',
-        icon: FushiIcons.sync,
-        line: 'Syncing',
-      );
-      const BackgroundTask failedDone = BackgroundTask(
-        id: 'sync-2',
-        icon: FushiIcons.sync,
-        line: 'Synced',
-        errors: <String>['boom'],
-        finished: true,
-      );
-      expect(
-        homeAvatarSyncStateOf(const <BackgroundTask>[]),
-        HomeAvatarSyncState.idle,
-      );
-      expect(
-        homeAvatarSyncStateOf(const <BackgroundTask>[running]),
-        HomeAvatarSyncState.running,
-      );
-      expect(
-        homeAvatarSyncStateOf(const <BackgroundTask>[running, failedDone]),
-        HomeAvatarSyncState.failed,
-      );
-      expect(
-        homeAvatarSyncStateOf(const <BackgroundTask>[failedDone]),
-        HomeAvatarSyncState.failed,
-      );
-    });
-
+  group('首页底部渐隐', () {
     test('底部渐隐：从底栏上沿开始淡，到底栏中线全透明', () {
       final LinearGradient g = homeBottomFadeGradient(height: 800, inset: 100);
       expect(g.stops, <double>[0, (800 - 100) / 800, (800 - 50) / 800]);

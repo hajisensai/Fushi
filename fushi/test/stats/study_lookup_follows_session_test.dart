@@ -134,6 +134,50 @@ void main() {
     expect(segs.single.durationMs, greaterThan(0));
   });
 
+  test('写穿：查词当场落库，不等下一 tick / flush', () async {
+    final FushiDatabase db = await _openDb();
+    DateTime now = DateTime(2026, 9, 8, 10);
+    final StudyClock clock = _clock(db, () => now)..start();
+    now = now.add(const Duration(minutes: 2));
+    await _lookup(db, 'b1', now);
+    await pumpEventQueue();
+
+    final List<StudySegmentRow> segs = await db.getStudySegments();
+    expect(segs, hasLength(1), reason: '统计侧栏随查随见；进程被杀也不丢');
+    expect(segs.single.lookups, 1);
+    expect(clock.isRunning, isTrue);
+  });
+
+  test('空闲封掉的段已随会话删除退役：查词不记进它（会被丢弃），另开新段', () async {
+    final FushiDatabase db = await _openDb();
+    DateTime now = DateTime(2026, 9, 8, 10);
+    final StudyClock clock = _clock(
+      db,
+      () => now,
+      idleTimeout: const Duration(minutes: 1),
+    )..start();
+    now = now.add(const Duration(seconds: 30));
+    await clock.flushNow();
+    now = now.add(const Duration(minutes: 5));
+    await clock.flushNow();
+    final String sealedUid = (await db.getStudySegments()).single.uid;
+    retireStudySegmentUids(<String>[sealedUid]);
+
+    expect(clock.addLookup(), isTrue);
+    await clock.stop();
+
+    final List<StudySegmentRow> segs = await db.getStudySegments();
+    expect(
+      segs.firstWhere((StudySegmentRow r) => r.uid == sealedUid).lookups,
+      0,
+    );
+    expect(
+      segs.where((StudySegmentRow r) => r.uid != sealedUid).single.lookups,
+      1,
+      reason: '退役段的写会被丢弃，查词必须落到别的段上',
+    );
+  });
+
   test('编辑会话改日期：查词随会话挪到新日期；读取面两处相加', () async {
     final FushiDatabase db = await _openDb();
     DateTime now = DateTime(2026, 9, 8, 10);

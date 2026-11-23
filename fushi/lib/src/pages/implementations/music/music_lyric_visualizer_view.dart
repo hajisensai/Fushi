@@ -19,7 +19,10 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_registr
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_subtitle.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiTextField;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
@@ -62,6 +65,7 @@ class MusicLyricVisualizerView extends StatefulWidget {
     this.onSeek,
     this.intensity = LyricVisualizerIntensity.normal,
     this.backgroundId,
+    this.mvBackdrop = false,
     this.subtitle = LyricVisualizerSubtitleSettings.defaults,
     this.theme,
     this.audio,
@@ -93,6 +97,10 @@ class MusicLyricVisualizerView extends StatefulWidget {
 
   /// 用户选的共享背景（`music_visualizer_background`）；null = 默认（歌词页背景）。
   final String? backgroundId;
+
+  /// 歌词页正在放 MV 背景（`MusicMvBackdropController.showing`）：用共享背景的样式不画
+  /// 背景，让下面的 MV 透上来（[lyricVisualizerBackgroundYieldsToMv]）。
+  final bool mvBackdrop;
 
   /// 全局字幕偏好（`music_visualizer_subtitle_*`），原样进样式 context。
   final LyricVisualizerSubtitleSettings subtitle;
@@ -249,11 +257,17 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
       // 背景层（folia 背景独立组合）：样式按参数请求，宿主画在样式下面。
       final LyricVisualizerBackgroundRequest backgroundRequest = entry
           .backgroundFor(tuning);
+      // 歌词页在放 MV 背景时共享背景让位，MV 从下面透上来。
       final LyricVisualizerBackgroundEntry? background =
-          resolveLyricVisualizerBackground(
+          lyricVisualizerBackgroundYieldsToMv(
             backgroundRequest,
-            widget.backgroundId,
-          );
+            mvShowing: widget.mvBackdrop,
+          )
+          ? null
+          : resolveLyricVisualizerBackground(
+              backgroundRequest,
+              widget.backgroundId,
+            );
       body = Stack(
         fit: StackFit.expand,
         children: <Widget>[
@@ -371,9 +385,11 @@ class _HoverBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return Material(
-      color: scheme.surfaceContainerHigh.withValues(alpha: 0.72),
+      // 浮在画面上的控件条：浮层面板色阶，再压一层透明度透出底下的动画。
+      color: FushiDesignTokens.of(
+        context,
+      ).surfaces.overlay.withValues(alpha: 0.72),
       shape: const StadiumBorder(),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -679,8 +695,8 @@ class _StyleTile extends StatelessWidget {
           key: ValueKey<String>('music_visualizer_style_${entry.mode.name}'),
           color: selected
               ? scheme.primaryContainer
-              : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(20),
+              : FushiDesignTokens.of(context).surfaces.overlay,
+          borderRadius: FushiM3eShape.cardRadius,
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
@@ -698,7 +714,6 @@ class _StyleTile extends StatelessWidget {
                           key: ValueKey<String>(
                             'music_visualizer_tune_${entry.mode.name}',
                           ),
-                          visualDensity: VisualDensity.compact,
                           tooltip: t.music_visualizer_tuning,
                           onPressed: onTune,
                           icon: const Icon(FushiIcons.settings, size: 18),
@@ -1449,7 +1464,7 @@ class _AssetPackTuningRowState extends State<_AssetPackTuningRow> {
 
   Widget _thumbnail(BuildContext context, File f) {
     final Widget image = ClipRRect(
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: FushiM3eShape.smallRadius,
       child: Image.file(
         f,
         width: 64,
@@ -1468,12 +1483,12 @@ class _AssetPackTuningRowState extends State<_AssetPackTuningRow> {
         type: MaterialType.transparency,
         child: InkWell(
           key: ValueKey<String>('music_visualizer_asset_select_$name'),
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: FushiM3eShape.smallRadius,
           onTap: () => setState(() => _editing = selected ? null : name),
           child: DecoratedBox(
             position: DecorationPosition.foreground,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: FushiM3eShape.smallRadius,
               border: selected
                   ? Border.all(
                       color: Theme.of(context).colorScheme.primary,
@@ -1542,7 +1557,6 @@ class _AssetPackTuningRowState extends State<_AssetPackTuningRow> {
                               'music_visualizer_asset_delete_${f.uri.pathSegments.last}',
                             ),
                             tooltip: t.music_visualizer_assets_delete,
-                            visualDensity: VisualDensity.compact,
                             onPressed: () => unawaited(_delete(f)),
                             icon: const Icon(FushiIcons.delete, size: 16),
                           ),

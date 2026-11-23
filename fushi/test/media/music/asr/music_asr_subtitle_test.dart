@@ -18,6 +18,10 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerKind, musicServerAlbumUid, musicServerTrackUid;
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerTrackRef;
 import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
 
@@ -383,6 +387,77 @@ void main() {
       'ありがとう',
       'またね',
     ]);
+  });
+
+  test('媒体服务器曲目（Jellyfin / Subsonic）：专辑批量按取到本机的副本 / 离线副本转写，'
+      '登记成服务器曲目 uid 的 asr 行（从服务器页与音乐库播都是这个 uid）；'
+      '取到本机的副本登记后删，离线副本不删', () async {
+    const MusicServerTrackRef ref1 = MusicServerTrackRef(
+      kind: MusicServerKind.jellyfin,
+      serverId: 'src-1',
+      trackId: 'jf-t1',
+      albumId: 'jf-a1',
+    );
+    const MusicServerTrackRef ref2 = MusicServerTrackRef(
+      kind: MusicServerKind.jellyfin,
+      serverId: 'src-1',
+      trackId: 'jf-t2',
+      albumId: 'jf-a1',
+    );
+    final String uid1 = musicServerTrackUid('src-1', 'jf-t1');
+    final String uid2 = musicServerTrackUid('src-1', 'jf-t2');
+    final String albumUid = musicServerAlbumUid('src-1', 'jf-a1');
+    MusicPlayItem item(MusicServerTrackRef ref, String uid, String title) =>
+        MusicPlayItem(
+          trackUid: uid,
+          // 播放路径是带凭据的流地址：生成字幕不碰它。
+          path: 'http://nas:8096/Audio/${ref.trackId}/universal?api_key=tok',
+          title: title,
+          album: '初恋テスト',
+          albumUid: albumUid,
+          durationMs: 3 * 60 * 1000,
+          serverTrack: ref,
+        );
+    final File staged = File(audio('plugin_audio/$uid1.wav', bytes: 64));
+    final File offline = File(audio('offline/02.flac', bytes: 64));
+    final AppVideoSubtitleTarget target = await targets().forRemoteTracks(
+      tracks: <MusicRemoteAsrTrack>[
+        (item: item(ref1, uid1, 'Track 1'), audio: staged, staged: true),
+        (item: item(ref2, uid2, 'Track 2'), audio: offline, staged: false),
+      ],
+      title: '初恋テスト',
+      key: 'music:server-album:src-1:jf-a1',
+      skipped: 1,
+    );
+    expect(target.isMusic, isTrue);
+    expect(target.wholeSeason, isTrue, reason: '多首 = 专辑批量');
+    expect(target.work.workKey, 'album:$albumUid');
+    expect(target.videoPaths, <String>[staged.path, offline.path]);
+    expect(target.trackCounts, (pending: 2, skipped: 1));
+
+    final AppVideoSubtitleService svc = service();
+    final AppVideoSubtitleJob job = svc.start(
+      target,
+      const AppVideoSubtitleOptions(),
+    );
+    await job.done;
+    expect(
+      job.status,
+      AppVideoSubtitleJobStatus.succeeded,
+      reason: '${job.errorMessage}',
+    );
+    expect(job.registeredBookUids, unorderedEquals(<String>[uid1, uid2]));
+    expect(staged.existsSync(), isFalse, reason: '取到本机的副本登记完删掉');
+    expect(offline.existsSync(), isTrue, reason: '离线副本是用户的文件，不删');
+
+    final MusicLyricsResolution? r = await lyrics.resolve(
+      MusicLyricsTrackRef(
+        trackUid: uid1,
+        path: 'http://nas:8096/Audio/jf-t1/universal?api_key=other',
+        title: 'Track 1',
+      ),
+    );
+    expect(r?.source, MusicLyricsSource.asr);
   });
 
   group('歌曲素材（人声分离，拍板 I9ici7ZmKd）', () {

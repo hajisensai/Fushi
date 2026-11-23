@@ -19,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/media/downloads/download_task_share.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_download_client.dart';
 import 'package:fushi/src/sync/interconnect_host_channel.dart';
@@ -139,6 +140,10 @@ class _RemoteDownloadTasksSectionState
   void dispose() {
     _timer?.cancel();
     if (widget.clientOverride == null) _client.close();
+    DownloadTaskShare.instance.clearOwner(
+      DownloadTaskSharedPart.remoteHosts,
+      this,
+    );
     super.dispose();
   }
 
@@ -298,6 +303,7 @@ class _RemoteDownloadTasksSectionState
       status: status,
       createdAt: job.createdAt,
       progress: job.stageProgress,
+      subtitle: target.label,
       collectionKey: 'remote:$hostKey',
       collectionTitle: t.download_remote_jobs_title(device: target.label),
       searchTerms: <String>[job.title, target.label],
@@ -399,6 +405,7 @@ class _RemoteDownloadTasksSectionState
       title: o.label,
       kind: DownloadTaskKind.video,
       status: DownloadTaskStatus.attention,
+      subtitle: reason,
       collectionKey: 'remote:$hostKey',
       collectionTitle: t.download_remote_jobs_title(device: o.label),
       searchTerms: <String>[o.label],
@@ -445,6 +452,14 @@ class _RemoteDownloadTasksSectionState
             ],
         },
     ];
+    // 远端任务只由本段轮询；侧栏下载速览读这里递出去的最近一份，悬停不打网络。
+    if (widget.clientOverride == null) {
+      DownloadTaskShare.instance.publish(
+        DownloadTaskSharedPart.remoteHosts,
+        this,
+        entries,
+      );
+    }
     return widget.tasksBuilder(context, entries);
   }
 }

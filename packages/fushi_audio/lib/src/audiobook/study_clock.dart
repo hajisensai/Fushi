@@ -113,7 +113,7 @@ class _OpenSegment {
   int chars = 0;
   int pages = 0;
 
-  /// 本段里在这个媒体上的查词次数（v172，见 [StudyClock.addLookup]）。
+  /// 本段里在这个媒体上的查词次数（v178，见 [StudyClock.addLookup]）。
   int lookups = 0;
 
   /// 有未落库的改动。写失败保持 true，下个 tick 用绝对值重写——重试不会翻倍。
@@ -500,7 +500,7 @@ class StudyClock {
     _trace('+${pages}p → ${_describe(_open!)}');
   }
 
-  /// 记一次查词到当前打开段（没有就以 0 时长开一段；v172）。只经
+  /// 记一次查词到当前打开段（没有就以 0 时长开一段；v178）。只经
   /// [creditLookupToRunningStudyClock] 调用：查词面不持有时钟，按媒体身份找过来。
   ///
   /// **查词不喂空闲门**（不 [touch]，统计口径见 docs/agent/statistics.md），也不算
@@ -510,7 +510,12 @@ class StudyClock {
   ///
   /// 空闲门刚把段封掉（停在一页上查了很久的词）时，查词记回**同一统计日**里最近封
   /// 的那一段并重新排队落库（绝对值重写，同 [retractChars] 改已封段），而不是另开
-  /// 一条 0 时长段：0 时长段不进会话流，编辑会话时就挪不走这次查词。
+  /// 一条 0 时长段：0 时长段不进会话流，编辑会话时就挪不走这次查词。那一段若已随
+  /// 会话删除 / 编辑退役（[retireStudySegmentUids]），不往它上记（写会被丢弃，查词
+  /// 就丢了），照常开新段。
+  ///
+  /// **写穿**：查词当场排队落库（与 v178 前 `addLookupCount` 每次查词即写同一口径），
+  /// 不等下一 tick——统计侧栏 / 统计页随查随见，进程被杀也不丢这一分钟内的查词。
   bool addLookup() {
     if (!isRunning) return false;
     final DateTime now = _now();
@@ -518,6 +523,7 @@ class StudyClock {
     final _OpenSegment? sealed = _lastSealed;
     if (_open == null &&
         sealed != null &&
+        !_retiredStudySegmentUids.contains(sealed.uid) &&
         sealed.dateKey == FushiDatabase.statDateKeyOf(now)) {
       sealed.lookups += 1;
       sealed.dirty = true;
@@ -528,6 +534,7 @@ class StudyClock {
     final _OpenSegment seg = _ensureOpen(now);
     seg.lookups += 1;
     seg.dirty = true;
+    if (_needsWrite(seg)) _enqueueWrite(seg);
     _trace('+1 lookup → ${_describe(seg)}');
     return true;
   }

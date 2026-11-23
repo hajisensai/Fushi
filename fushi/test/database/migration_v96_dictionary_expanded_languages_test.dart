@@ -116,7 +116,10 @@ void main() {
       mode: sqlite3.OpenMode.readOnly,
     );
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 172);
+      expect(
+        probe.select('PRAGMA user_version').first.values.first,
+        kFushiDbSchemaVersion,
+      );
       expect(
         hasColumn(probe, 'dictionary_metadata', 'expanded_languages_json'),
         isTrue,

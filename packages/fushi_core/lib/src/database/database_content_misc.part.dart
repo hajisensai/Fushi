@@ -388,6 +388,7 @@ mixin _FushiDbContentMisc
             epubBooks.title,
             epubBooks.format,
             epubBooks.sourceMetadata,
+            epubBooks.language,
           ])
           ..orderBy(<OrderingTerm>[OrderingTerm.desc(epubBooks.importedAt)]);
     final List<TypedResult> rows = await query.get();
@@ -399,6 +400,7 @@ mixin _FushiDbContentMisc
             title: row.read(epubBooks.title)!,
             format: row.read(epubBooks.format)!,
             sourceMetadata: row.read(epubBooks.sourceMetadata),
+            language: row.read(epubBooks.language),
           ),
         )
         .toList(growable: false);

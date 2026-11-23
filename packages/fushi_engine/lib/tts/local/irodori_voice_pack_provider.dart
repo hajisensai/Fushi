@@ -13,6 +13,8 @@ import 'dart:io';
 import 'package:fushi_engine/tts/local/irodori_batch_worker.dart';
 import 'package:fushi_engine/tts/local/irodori_local_engine.dart';
 import 'package:fushi_engine/tts/local/irodori_voice_pack.dart';
+import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart'
+    show irodoriCaptionWithDelivery;
 import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
@@ -114,30 +116,64 @@ IrodoriBatchItem? irodoriBatchItemFromPreset(
   );
 }
 
-/// 按演出参数改写一句请求：[direction] 给了种子 / 时长就用它的（时长为 null 时保留
-/// [item] 自带的短句规则结果），否则原样。
+/// 按演出参数改写一句请求（[direction] 已按 [irodoriPackDirectionSupport] 过滤）：
+/// - 种子：给了就用它的，否则保留 [item] 的；
+/// - 时长：给了就用它的（定长优先，不再按语速缩放）；否则保留 [item] 自带的短句规则
+///   结果，有语速偏移时按 `秒数 / (1 + rateOffset)` 缩短 / 拉长；走时长预测时语速偏移
+///   变成 `duration_scale = 1 / (1 + rateOffset)`（与官方服务处理 `speed` 同一换算，
+///   `Irodori-TTS-Server` app.py `_build_sampling_request`）；
+/// - 情绪 / 语气说明：[ttsDeliveryInstruction] 作为 Voice Design caption（v4-Large
+///   模型卡：caption 与参考音频同时用时，参考定音色，caption 定情绪 / 风格）。
+/// 没有演出参数时原样返回同样的字段。
 IrodoriBatchItem irodoriDirectedItem(
   IrodoriBatchItem item,
   TtsDirection direction,
-) => IrodoriBatchItem(
-  id: item.id,
-  text: item.text,
-  refs: item.refs,
-  outputPath: item.outputPath,
-  adapterDir: item.adapterDir,
-  seconds: direction.durationSeconds ?? item.seconds,
-  seed: direction.seed ?? item.seed,
-  steps: item.steps,
-  cfgText: item.cfgText,
-  cfgSpeaker: item.cfgSpeaker,
-);
+) {
+  final double? rate = direction.rateOffset;
+  final double speed = rate == null
+      ? 1
+      : (1 + rate).clamp(kIrodoriPackMinSpeed, kIrodoriPackMaxSpeed).toDouble();
+  final bool scaled = (speed - 1).abs() > 1e-9;
+  final double? seconds =
+      direction.durationSeconds ??
+      (item.seconds == null || !scaled ? item.seconds : item.seconds! / speed);
+  final String caption = irodoriCaptionWithDelivery(
+    item.caption ?? '',
+    ttsDeliveryInstruction(direction),
+  );
+  return IrodoriBatchItem(
+    id: item.id,
+    text: item.text,
+    refs: item.refs,
+    outputPath: item.outputPath,
+    adapterDir: item.adapterDir,
+    seconds: seconds,
+    seed: direction.seed ?? item.seed,
+    steps: item.steps,
+    cfgText: item.cfgText,
+    cfgSpeaker: item.cfgSpeaker,
+    caption: caption.isEmpty ? null : caption,
+    durationScale: seconds == null && scaled
+        ? (1 / speed * 1000).round() / 1000
+        : item.durationScale,
+  );
+}
 
-/// 声音包虚拟预设能表达的演出字段：种子、给定时长都收；挂没挂 LoRA 看 adapter 参数。
+/// 声音包语速倍率的范围：与语速偏移的标注范围（[CastLineLimits]）一致，再宽也没有
+/// 意义（时长预测缩放到 0.5 / 2 倍以外音质明显变差）。
+const double kIrodoriPackMinSpeed = 0.5;
+const double kIrodoriPackMaxSpeed = 2.0;
+
+/// 声音包虚拟预设能表达的演出字段：种子、给定时长、情绪 + 语气说明（caption）、语速
+/// （时长缩放）；音高 / 音量模型没有控制，不声明。挂没挂 LoRA 看 adapter 参数。
 TtsDirectionSupport irodoriPackDirectionSupport(TtsVoicePreset preset) =>
     TtsDirectionSupport(
       seed: true,
       duration: true,
       adapter: preset.param(IrodoriPackParams.adapter).trim().isNotEmpty,
+      emotion: true,
+      tone: true,
+      rate: true,
     );
 
 /// 声音包引擎描述符（见库注释：不进注册表）。
@@ -225,7 +261,7 @@ class _IrodoriVoicePackProvider extends TtsProvider
     direction: TtsDirection.none,
   );
 
-  /// 单句也走 worker（一句一个任务）；种子 / 给定时长按 [direction] 改写请求。整卷
+  /// 单句也走 worker（一句一个任务）；种子 / 时长 / 语气按 [direction] 改写请求。整卷
   /// 批量合成由漫画生成端直接调 [IrodoriBatchWorker.run]（按参考音频组成批）。
   @override
   Future<TtsResult> synthesizeDirected(

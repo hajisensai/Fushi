@@ -810,7 +810,7 @@ mixin _FushiDbStatistics
     };
   }
 
-  /// v172：段内查词（`study_segments.lookups`）按（媒体种类, 媒体, 统计日）聚合成与
+  /// v178：段内查词（`study_segments.lookups`）按（媒体种类, 媒体, 统计日）聚合成与
   /// `lookup_mining_counters` **同形**的行（拍板台 4KOWK3c2mn）。
   ///
   /// 查词有两处互斥的写入：媒体时钟在跑时记进当前段（随会话编辑平移、随段写零、

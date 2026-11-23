@@ -107,7 +107,7 @@ class StatCounterFacts {
   /// 制卡的按日全局计数（`mining_statistics`，已按 (sourceType, dateKey) 聚合）。
   final List<MiningStatisticRow> mining;
 
-  /// 查词 / 制卡的 per-book 计数：`lookup_mining_counters` 的按天行，加上 v172 起
+  /// 查词 / 制卡的 per-book 计数：`lookup_mining_counters` 的按天行，加上 v178 起
   /// 段内查词（`study_segments.lookups`）聚合出的同形行（`id` = 0、`mineCount` = 0；
   /// 见 [FushiDatabase.getStudySegmentLookupCounters]）。两处互斥写入，直接相加。
   final List<LookupMiningCounterRow> lookupCounters;
@@ -757,7 +757,7 @@ Future<StatReviewGrid> _loadStatReviewGrid(
 /// 计数面的四个全表读（与主事实面同一批并发）。收藏句只取三列（v166 起是表；
 /// 之前是偏好里的整段 JSON，每次在主 isolate 解码，大库 27.6 ms）。
 ///
-/// 查词两处来源相加（v172，拍板台 4KOWK3c2mn）：按天计数表 + [profile] 的段内查词
+/// 查词两处来源相加（v178，拍板台 4KOWK3c2mn）：按天计数表 + [profile] 的段内查词
 /// （[FushiDatabase.getStudySegmentLookupCounters]，同形行）。两处互斥写入，不双计。
 Future<StatCounterFacts> _loadCounterFacts(
   FushiDatabase db,

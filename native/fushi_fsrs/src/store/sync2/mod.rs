@@ -1878,13 +1878,13 @@ fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<i64, String> {
             1,
             "srs_field_edits",
             "srs_idt(t.writer_id), t.seq",
-            "srs_idt(t.writer_id) NOT LIKE 'sync2:%' AND NOT EXISTS (SELECT 1 FROM sync2_edit_ops o WHERE o.edit_id = t.id)",
+            "srs_idt(t.writer_id) NOT LIKE 'sync2:%' AND NOT EXISTS (SELECT 1 FROM sync2_edit_ops o WHERE o.edit_id = t.id AND o.profile_uid = t.profile_uid)",
         ),
         (
             2,
             "srs_review_logs",
             "t.occurred_at, srs_idt(t.id)",
-            "NOT EXISTS (SELECT 1 FROM sync2_log_meta m WHERE m.log_id = t.id)",
+            "NOT EXISTS (SELECT 1 FROM sync2_log_meta m WHERE m.log_id = t.id AND m.profile_uid = t.profile_uid)",
         ),
         (
             3,
@@ -1910,6 +1910,25 @@ fn enqueue_legacy_rows(c: &Connection, profile: &str) -> Result<i64, String> {
     c.execute_batch("DELETE FROM temp.sync2_migrate_known;")
         .map_err(sql)?;
     Ok(base)
+}
+
+/// 本 profile 投影里有没有还没被**本 profile** 的操作代表的旧修改记录 / 日志（判据同 [enqueue_legacy_rows] 的
+/// 1、2 两段；身份记录与不认识的事件要扫操作日志才判得出，留给 [enqueue_legacy_rows]）。只读，按主键查，不建临时表：
+/// 迁移前提核对（`store/gen4/legacy.rs` `preflight`）在只读快照上也调它。
+pub(crate) fn has_unrepresented_rows(c: &Connection, profile: &str) -> Result<bool, String> {
+    for q in [
+        "SELECT 1 FROM srs_field_edits t WHERE t.profile_uid = srs_id(?1) AND srs_idt(t.writer_id) NOT LIKE 'sync2:%'          AND NOT EXISTS (SELECT 1 FROM sync2_edit_ops o WHERE o.edit_id = t.id AND o.profile_uid = t.profile_uid) LIMIT 1",
+        "SELECT 1 FROM srs_review_logs t WHERE t.profile_uid = srs_id(?1)          AND NOT EXISTS (SELECT 1 FROM sync2_log_meta m WHERE m.log_id = t.id AND m.profile_uid = t.profile_uid) LIMIT 1",
+    ] {
+        if c.prepare_cached(q)
+            .map_err(sql)?
+            .exists([profile])
+            .map_err(sql)?
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// 把本 profile 操作日志里已有的身份记录 / 不认识的事件按 `(phase, id)` 记进 `temp.sync2_migrate_known`（先清空）：
@@ -1961,14 +1980,21 @@ fn load_known(c: &Connection, profile: &str) -> Result<(), String> {
 /// `SrsDbStore.migrateLegacy`），批与批之间可能插进收到的操作——别的设备迁出的同一条旧行先到了，这一批就不再包它，
 /// 否则又是第二条重复的操作流（BUG-4011）。身份记录 / 不认识的事件查 `temp.sync2_migrate_known`（调用方本批先
 /// [load_known]）。
-fn represented(c: &Connection, phase: i64, src: &str) -> Result<bool, String> {
+fn represented(c: &Connection, profile: &str, phase: i64, src: &str) -> Result<bool, String> {
     let q = match phase {
-        0 => "SELECT 1 FROM temp.sync2_migrate_known WHERE phase = 0 AND id = srs_id(?1)",
-        1 => "SELECT 1 FROM sync2_edit_ops WHERE edit_id = srs_id(?1)",
-        2 => "SELECT 1 FROM sync2_log_meta WHERE log_id = srs_id(?1)",
-        _ => "SELECT 1 FROM temp.sync2_migrate_known WHERE phase = 3 AND id = srs_id(?1)",
+        0 => {
+            "SELECT 1 FROM temp.sync2_migrate_known WHERE phase = 0 AND id = srs_id(?1) AND ?2 IS NOT NULL"
+        }
+        1 => "SELECT 1 FROM sync2_edit_ops WHERE edit_id = srs_id(?1) AND profile_uid = srs_id(?2)",
+        2 => "SELECT 1 FROM sync2_log_meta WHERE log_id = srs_id(?1) AND profile_uid = srs_id(?2)",
+        _ => {
+            "SELECT 1 FROM temp.sync2_migrate_known WHERE phase = 3 AND id = srs_id(?1) AND ?2 IS NOT NULL"
+        }
     };
-    c.prepare_cached(q).map_err(sql)?.exists([src]).map_err(sql)
+    c.prepare_cached(q)
+        .map_err(sql)?
+        .exists(params![src, profile])
+        .map_err(sql)
 }
 
 /// 一条排队的旧行 → 操作载荷；行已经不在了（批与批之间本机删掉 / 撤销了它）返回 `None`。
@@ -2069,7 +2095,7 @@ fn finish_migration(
     local.migrated = true;
     local.save(c)?;
     c.execute(
-        "UPDATE sync2_self SET migrated_at = ?2 WHERE profile_uid = srs_id(?1)",
+        "UPDATE sync2_self SET migrated_at = COALESCE(migrated_at, ?2) WHERE profile_uid = srs_id(?1)",
         params![profile, now],
     )
     .map_err(sql)?;
@@ -2283,7 +2309,10 @@ impl SrsCore {
                 Some(l) => l,
                 None => Local::create(c, profile, now)?,
             };
-            if local.migrated {
+            // 已迁移过的 profile 也可能有没被本 profile 的操作代表的旧行（BUG-5295：以前「已被代表」的判据不分
+            // profile，别的 profile 的操作占着同一个修改记录 / 日志 ID 时这里的旧行就漏包了）。投影里看得见、操作日志
+            // 里没有，换代（只认操作日志）会丢掉它们：照样补包。没有就和以前一样什么都不写。
+            if local.migrated && !has_unrepresented_rows(c, profile)? {
                 return Ok(json!({"done": true, "ops": 0, "remaining": 0}));
             }
             c.execute_batch(MIGRATE_QUEUE_SCHEMA).map_err(sql)?;
@@ -2323,7 +2352,7 @@ impl SrsCore {
                 load_known(c, profile)?;
             }
             for (_, phase, src) in &batch {
-                if recheck && represented(c, *phase, src)? {
+                if recheck && represented(c, profile, *phase, src)? {
                     continue;
                 }
                 let Some(body) = legacy_body(c, *phase, src)? else {

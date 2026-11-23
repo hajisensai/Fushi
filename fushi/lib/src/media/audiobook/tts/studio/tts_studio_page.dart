@@ -18,6 +18,7 @@ import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
@@ -33,6 +34,7 @@ import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_lines_page.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_render_encode.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_render_unvoiced.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_run.dart';
@@ -1171,9 +1173,16 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
     final TtsProvider provider = descriptor.create(preset, _tts.host);
     try {
       final TtsAudioCache cache = await _tts.cache();
-      final String key = TtsAudioCache.keyFor(
-        descriptor.audioIdentity(preset),
-        text,
+      // 与制作同一口径带上这句的演出（种子 / 情绪 / 语气）：试听的就是成品里那一句。
+      final TtsDirection direction = ttsSentenceDirection(
+        support: ttsDirectionSupportOf(provider),
+        cast: _cast,
+        sentence: plan.sentences[sentence],
+      );
+      final String key = ttsSentenceCacheKey(
+        voiceIdentity: descriptor.audioIdentity(preset),
+        direction: direction,
+        text: text,
       );
       final TtsCachedAudio audio = await cache.obtain(
         key,
@@ -1182,6 +1191,7 @@ class _TtsStudioPageState extends State<TtsStudioPage> {
           text,
           outputPath: out,
           cancel: cancel,
+          direction: direction,
         ),
       );
       if (!mounted || cancel.isCancelled) return;

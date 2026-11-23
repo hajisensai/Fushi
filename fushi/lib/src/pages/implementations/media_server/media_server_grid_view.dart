@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
+import 'package:fushi/src/pages/implementations/media_server/media_server_user_data_refresh.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_routes.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
@@ -63,7 +64,8 @@ class MediaServerGridView extends StatefulWidget {
   State<MediaServerGridView> createState() => _MediaServerGridViewState();
 }
 
-class _MediaServerGridViewState extends State<MediaServerGridView> {
+class _MediaServerGridViewState extends State<MediaServerGridView>
+    with MediaServerUserDataRefresh {
   static const Duration _searchDebounce = Duration(milliseconds: 350);
 
   final TextEditingController _searchController = TextEditingController();
@@ -86,6 +88,14 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
   bool _hasMore = false;
   bool _loading = true;
   bool _loadingMore = false;
+
+  /// 用户数据变了之后的原地重拉在途（[refreshUserDataInPlace]）：期间不追加页，
+  /// 否则追加页会接在重拉前的旧清单尾部。
+  bool _refreshingInPlace = false;
+
+  /// 用户数据变更到达时首页 / 追加页正在拉：那一页结束后补一次原地重拉，
+  /// 不丢这次变更。
+  bool _userDataStale = false;
 
   /// 首页失败（整页错误 + 重试）与追加页失败（保留已有条目 + 底部重试）分开记。
   Object? _firstPageError;
@@ -209,10 +219,66 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         _loading = false;
       });
     }
+    _afterPage();
+  }
+
+  /// 一页（首页 / 追加页）落定后：期间到过用户数据变更就补一次原地重拉。
+  void _afterPage() {
+    if (!mounted || !_userDataStale || _loading || _loadingMore) return;
+    unawaited(refreshUserDataInPlace());
+  }
+
+  @override
+  String get userDataServerId => widget.session.serverId;
+
+  /// 服务器上的已播放 / 断点变了（详情页标记未看后退回、播放页退回）：从头按页
+  /// 重拉到已加载的条数，整体换掉 [_items]——不出加载态、不滚回顶部、不重放进场。
+  /// 首页 / 追加页在途时记下 [_userDataStale]，那一页结束后补拉（[_afterPage]）。
+  /// 失败保留旧清单。
+  @override
+  Future<void> refreshUserDataInPlace() async {
+    if (_loading || _loadingMore) {
+      _userDataStale = true;
+      return;
+    }
+    _userDataStale = false;
+    if (_items.isEmpty) return;
+    final int generation = _generation;
+    final int loaded = _nextStartIndex;
+    _refreshingInPlace = true;
+    try {
+      final List<MediaServerItem> fresh = <MediaServerItem>[];
+      int start = 0;
+      MediaServerPage page;
+      do {
+        page = await _fetch(start);
+        if (!mounted || generation != _generation) return;
+        fresh.addAll(page.items);
+        if (page.nextStartIndex <= start) break;
+        start = page.nextStartIndex;
+      } while (page.hasMore && start < loaded);
+      setState(() {
+        _items = List<MediaServerItem>.unmodifiable(fresh);
+        _nextStartIndex = page.nextStartIndex;
+        _hasMore = page.hasMore;
+      });
+      // 重拉期间被挡下的视口补页（[_loadMore] 在重拉中直接返回）这里补上。
+      _fillViewportAfterPage();
+    } catch (e) {
+      debugPrint('[media-server] grid refresh in place failed: $e');
+    } finally {
+      _refreshingInPlace = false;
+    }
   }
 
   Future<void> _loadMore() async {
-    if (_loading || _loadingMore || !_hasMore || _loadMoreFailed) return;
+    if (_loading ||
+        _loadingMore ||
+        _refreshingInPlace ||
+        !_hasMore ||
+        _loadMoreFailed) {
+      return;
+    }
     final int generation = _generation;
     setState(() => _loadingMore = true);
     try {
@@ -241,6 +307,7 @@ class _MediaServerGridViewState extends State<MediaServerGridView> {
         _loadMoreFailed = true;
       });
     }
+    _afterPage();
   }
 
   void _retryLoadMore() {

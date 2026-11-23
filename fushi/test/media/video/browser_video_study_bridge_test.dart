@@ -516,7 +516,7 @@ void main() {
         BrowserVideoStudyActivity.mine,
       );
       await rig.bridge.stopAll();
-      // 同 key 正在计时的查词记进统计段（v172，拍板台 4KOWK3c2mn）；别的 key 的制卡
+      // 同 key 正在计时的查词记进统计段（v178，拍板台 4KOWK3c2mn）；别的 key 的制卡
       // 仍记按天计数表。两处合起来就是统计面读到的查词 / 制卡行。
       final Map<String, String> titleByKey = <String, String>{
         for (final LookupMiningCounterRow r in <LookupMiningCounterRow>[
