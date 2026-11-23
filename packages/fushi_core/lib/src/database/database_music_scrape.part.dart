@@ -234,20 +234,24 @@ mixin _FushiDbMusicScrape on _$FushiDatabase {
 
   // ── MV 绑定（music_videos，v130 已建表）──
 
+  /// 曲目的 MV 绑定，按「用户确认优先、置信度降序」排。
   Future<List<MusicVideoRow>> listMusicVideos(String trackUid) =>
-      (select(musicVideos)
-            ..where(($MusicVideosTable t) => t.trackUid.equals(trackUid))
-            ..orderBy(<OrderingTerm Function($MusicVideosTable)>[
-              ($MusicVideosTable t) => OrderingTerm(
-                expression: t.isUserBound,
-                mode: OrderingMode.desc,
-              ),
-              ($MusicVideosTable t) => OrderingTerm(
-                expression: t.confidence,
-                mode: OrderingMode.desc,
-              ),
-            ]))
-          .get();
+      _musicVideosOf(trackUid).get();
+
+  /// 同 [listMusicVideos]，绑定增删改（后台匹配绑上、手动找 / 改偏移 / 解绑）时重发。
+  Stream<List<MusicVideoRow>> watchMusicVideos(String trackUid) =>
+      _musicVideosOf(trackUid).watch();
+
+  SimpleSelectStatement<$MusicVideosTable, MusicVideoRow> _musicVideosOf(
+    String trackUid,
+  ) => select(musicVideos)
+    ..where(($MusicVideosTable t) => t.trackUid.equals(trackUid))
+    ..orderBy(<OrderingTerm Function($MusicVideosTable)>[
+      ($MusicVideosTable t) =>
+          OrderingTerm(expression: t.isUserBound, mode: OrderingMode.desc),
+      ($MusicVideosTable t) =>
+          OrderingTerm(expression: t.confidence, mode: OrderingMode.desc),
+    ]);
 
   /// 绑定 / 更新一条 MV（按 `(track_uid, kind, ref)` 唯一）。
   Future<void> upsertMusicVideo(MusicVideosCompanion row) =>

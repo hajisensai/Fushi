@@ -74,6 +74,32 @@ bool heavyCommandNeedsI18n(
   return false;
 }
 
+/// Whether [command], about to run here from [cwd], is a `flutter analyze` /
+/// `dart analyze` inside `<checkout>/fushi`. Such a run needs the untracked
+/// Flutter GPU shader bundles under `fushi/build/shaderbundles/` that
+/// pubspec.yaml lists as assets (else asset_does_not_exist): the build hook
+/// makes them for `flutter run|build|test`, but analyze runs no hooks, so
+/// heavy.dart runs fushi/tool/gen_shader_bundles.dart first (an offloaded
+/// run's worker does in worker_analyze.sh).
+bool heavyCommandAnalyzesApp(
+  List<String> command, {
+  required String cwd,
+  required String checkout,
+  required bool isWindows,
+}) {
+  if (command.isEmpty) return false;
+  final String app = _norm('$checkout/fushi', isWindows);
+  final String here = _norm(cwd, isWindows);
+  if (here != app && !here.startsWith('$app/')) return false;
+  final String name = _launcherName(command.first);
+  if (name != 'flutter' && name != 'dart') return false;
+  final String? sub = command
+      .skip(1)
+      .cast<String?>()
+      .firstWhere((String? a) => !a!.startsWith('-'), orElse: () => null);
+  return sub == 'analyze';
+}
+
 /// Whether [command], about to run here from [cwd], is a gradle build of the
 /// app (`gradlew` inside `<checkout>/fushi/android`). Gradle reads
 /// `local.properties` (flutter.sdk) and the plugin registration

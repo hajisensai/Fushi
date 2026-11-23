@@ -80,7 +80,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 171);
+    expect(migrated.schemaVersion, kFushiDbSchemaVersion);
     final String conflicts = await planOf(
       migrated,
       'SELECT entity_kind, entity_id, field_key FROM srs_field_edits '
@@ -108,7 +108,10 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 171);
+    expect(
+      probe.select('PRAGMA user_version').first.values.first,
+      kFushiDbSchemaVersion,
+    );
     expect(indexesOf(probe), containsAll(indexes));
     expect(
       probe.select('SELECT COUNT(*) AS n FROM srs_field_edits').first['n'],
@@ -128,6 +131,9 @@ void main() {
     await reopened.customSelect('SELECT 1').get();
     await reopened.close();
     expect(indexesOf(probe), containsAll(indexes));
-    expect(probe.select('PRAGMA user_version').first.values.first, 171);
+    expect(
+      probe.select('PRAGMA user_version').first.values.first,
+      kFushiDbSchemaVersion,
+    );
   });
 }

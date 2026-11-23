@@ -335,6 +335,19 @@ SyncTaskHandle beginSyncTask(
   SyncRunTicket? ticket,
 }) => _board.begin(kind, title: title, ticket: ticket);
 
+/// 用户看过后台任务明细：把已结束（只因有失败才留在表里）的那几轮移出任务表。
+/// 还在跑的不动。入口按钮的失败红点与「只剩失败也常驻」都以此为确认点——不确认就
+/// 一直提醒，确认后消失（拍板台 design-avatar-combo-placement，2026-11-23）。
+void acknowledgeFinishedSyncTasks() {
+  final List<SyncTask> current = _board.tasks.value;
+  if (current.every((SyncTask t) => t.isActive)) return;
+  _board.tasks.value = <SyncTask>[
+    for (final SyncTask t in current)
+      if (t.isActive) t,
+  ];
+  _board._publish();
+}
+
 /// 测试用：清空任务表（模块级状态在测试间必须可复位）并可注入时钟。
 @visibleForTesting
 void resetSyncTasksForTest({int Function()? now}) {

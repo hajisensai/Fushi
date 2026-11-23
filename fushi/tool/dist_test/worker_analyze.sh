@@ -45,6 +45,19 @@ trap 'kill "$heartbeat" 2>/dev/null; [ -n "$pid" ] && kill -TERM "$pid" 2>/dev/n
 touch -c "$state/lock" 2>/dev/null
 echo "$$" > "$state/runner.pid"
 
+# pubspec.yaml lists the Flutter GPU shader bundles (build/shaderbundles/,
+# untracked hook output) as assets and analyze runs no build hook: build them
+# with the app's own hook first, its output on stderr so stdout stays the
+# analyzer's (tool/gen_shader_bundles.dart).
+"$(dirname "$(command -v flutter)")/dart" tool/gen_shader_bundles.dart >&2 < /dev/null
+gen=$?
+if [ "$gen" -ne 0 ]; then
+  echo "error: tool/gen_shader_bundles.dart failed (exit $gen)" >&2
+  kill "$heartbeat" 2>/dev/null
+  rm -f "$state/runner.pid"
+  exit "$gen"
+fi
+
 flutter analyze --no-pub "$@" ${paths[@]+"${paths[@]}"} < /dev/null &
 pid=$!
 echo "$pid" > "$state/run.pid"

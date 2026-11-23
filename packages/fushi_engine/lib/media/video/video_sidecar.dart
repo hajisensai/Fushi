@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
+
 /// sidecar 字幕的「无语言标记」基础扩展名优先级（查词主语言用的是带语言标记版）。
 ///
 /// `.srt` > `.ass` > `.ssa` > `.vtt`。
@@ -30,6 +32,37 @@ List<String> _sidecarSuffixPriority(String langCode) {
   return suffixes;
 }
 
+/// 外挂字幕的归属规则（三处共用：播放器选 / 列字幕、删视频带走字幕、iOS 收件箱搬入
+/// 配对；拍板台 review-hbk-audit-220-player-sub-owner）：**最长文件名主干认领字幕**。
+///
+/// 字幕 `<stem>[.lang].srt|ass|ssa|vtt` 按前缀配对，同目录两个视频的 stem 互为前缀时
+/// （`EP01.mkv` 与 `EP01.ja.mkv`、`ep01.mkv` 与 `ep01.5.mkv`），`EP01.ja.srt` 字面上对
+/// 两边都成立（对 `EP01` 而言 `.ja` 像语言标记）。它只归能配上它的 stem 里**最长**的
+/// 那个：`EP01.ja.srt` 是 `EP01.ja.mkv` 的字幕，不再被 `EP01.mkv` 当日语轨选上。
+///
+/// 纯函数：字幕文件名 [subtitleName] 在同目录主文件 stem [ownerStems] 里归谁——能配上它
+/// 的**最长** stem（不分大小写比较，返回 [ownerStems] 里的原样写法；等长并列取先出现
+/// 的），一个都配不上返回 null。
+String? sidecarSubtitleOwnerStem(
+  String subtitleName,
+  Iterable<String> ownerStems,
+) {
+  String? owner;
+  for (final String stem in ownerStems) {
+    if (owner != null && stem.length <= owner.length) continue;
+    if (_isRawSidecarOf(stem.toLowerCase(), subtitleName)) owner = stem;
+  }
+  return owner;
+}
+
+/// 字面配对：[name] 是否是 `<stemLower><可选语言标记><字幕扩展名>`（不看同目录别的
+/// 视频；归属请走 [sidecarSubtitleOwnerStem] / [listSidecarSubtitles]）。
+bool _isRawSidecarOf(String stemLower, String name) =>
+    stemLower.isNotEmpty &&
+    name.length > stemLower.length &&
+    name.toLowerCase().startsWith(stemLower) &&
+    isSidecarSubtitleSuffix(name.substring(stemLower.length));
+
 /// 纯函数：给「去掉视频扩展名的 basename」与「同目录文件名列表」，按 app 学习语言
 /// [langCode] 的优先级挑出第一个匹配的 sidecar 字幕文件名；无则返回 null。
 ///
@@ -37,9 +70,10 @@ List<String> _sidecarSuffixPriority(String langCode) {
 /// `.ja.srt > .ja.ass > .ja.ssa > .ja.vtt > .srt > .ass > .ssa > .vtt`，即先找
 /// 带学习语言标记的同前缀字幕，再回退无语言标记的字幕。
 ///
-/// 匹配规则：候选文件名（不区分大小写比较）等于 `<videoBaseNameNoExt><suffix>`，
-/// 其中 suffix 取自 [_sidecarSuffixPriority]。返回的是 [dirFiles] 中的原始文件名
-/// （保留原始大小写），便于调用方直接拼回目录得到绝对路径。
+/// 候选只取 [listSidecarSubtitles] 认给这个视频的（同目录 stem 更长的视频认领走的
+/// 不算，见 [sidecarSubtitleOwnerStem]）；候选（不区分大小写比较）等于
+/// `<videoBaseNameNoExt><suffix>`，suffix 取自 [_sidecarSuffixPriority]。返回的是
+/// [dirFiles] 中的原始文件名（保留原始大小写），便于调用方直接拼回目录得到绝对路径。
 ///
 /// 抽成纯函数是为可测：不碰文件系统，只做字符串优先级匹配。
 String? pickSidecar(
@@ -47,10 +81,12 @@ String? pickSidecar(
   List<String> dirFiles, {
   required String langCode,
 }) {
+  final List<String> mine = listSidecarSubtitles(videoBaseNameNoExt, dirFiles);
+  if (mine.isEmpty) return null;
   final String baseLower = videoBaseNameNoExt.toLowerCase();
   for (final String suffix in _sidecarSuffixPriority(langCode)) {
     final String wantLower = '$baseLower$suffix';
-    for (final String name in dirFiles) {
+    for (final String name in mine) {
       if (name.toLowerCase() == wantLower) {
         return name;
       }
@@ -63,21 +99,61 @@ String? pickSidecar(
 /// 文件名（不区分大小写匹配，返回原始文件名，保持 [dirFiles] 顺序）。
 ///
 /// 匹配规则：`<stem><suffix>`，suffix 为可选语言标记 + 字幕扩展名
-/// （`.srt` / `.ja.srt` / `.zh-Hans.ass` …），与 [pickSidecar] 的按语言挑选互补——
-/// 互联 live push 用它把视频的全部外挂字幕推给 host（BUG-964），host 端再按自己的
-/// 学习语言用 [pickSidecar] 解析首选，不在传输层替对端做语言决策。
+/// （`.srt` / `.ja.srt` / `.zh-Hans.ass` …），再按「最长主干认领」去掉同目录 stem
+/// 更长的视频文件（[kVideoExtensions]）认领的那些（[sidecarSubtitleOwnerStem]）。
+/// 与 [pickSidecar] 的按语言挑选互补——互联 live push 用它把视频的全部外挂字幕推给
+/// host（BUG-964），host 端再按自己的学习语言用 [pickSidecar] 解析首选，不在传输层
+/// 替对端做语言决策；删视频带走字幕（`sidecarSubtitlesForDeletedVideo`）也是它。
 List<String> listSidecarSubtitles(
   String videoBaseNameNoExt,
   List<String> dirFiles,
 ) {
   final String baseLower = videoBaseNameNoExt.toLowerCase();
-  return <String>[
+  final List<String> raw = <String>[
     for (final String name in dirFiles)
-      if (name.length > baseLower.length &&
-          name.toLowerCase().startsWith(baseLower) &&
-          isSidecarSubtitleSuffix(name.substring(baseLower.length)))
-        name,
+      if (_isRawSidecarOf(baseLower, name)) name,
   ];
+  if (raw.isEmpty) return raw;
+  // 只有 stem 更长且以本 stem 开头的视频才可能抢走本 stem 的候选。
+  final List<String> longerVideoStems = <String>[
+    for (final String name in dirFiles)
+      if (kVideoExtensions.contains(p.extension(name).toLowerCase()))
+        if (p.basenameWithoutExtension(name) case final String stem
+            when stem.length > baseLower.length &&
+                stem.toLowerCase().startsWith(baseLower))
+          stem,
+  ];
+  if (longerVideoStems.isEmpty) return raw;
+  return <String>[
+    for (final String name in raw)
+      if (sidecarSubtitleOwnerStem(name, longerVideoStems) == null) name,
+  ];
+}
+
+/// 纯函数：写入端的同一条「最长主干认领」——给 `<videoBaseNameNoExt>` 落一份后缀
+/// [suffix] 的外挂字幕时，实际该用的后缀。
+///
+/// `<stem><suffix>` 会被同目录 stem 更长的视频认领时（`EP01.mkv` 旁有 `EP01.ja.mkv`，
+/// 给 `EP01` 落 `.ja.srt` 得到的 `EP01.ja.srt` 归 `EP01.ja.mkv`），照原名写既让本视频
+/// 看不到这份字幕（[pickSidecar] / [listSidecarSubtitles] 不认），又会盖掉 / 冒充别的
+/// 视频的字幕；这时退回无语言标记的 `.<ext>`——`<stem>.<ext>` 恒归本视频（更长的
+/// stem 后面剩不下一个合法的 `.<ext>` 后缀）。[dirFiles] 是同目录文件名清单。
+/// [suffix] 不是合法 sidecar 后缀（[isSidecarSubtitleSuffix]）时原样返回，由调用方
+/// 自己的校验处理。
+String ownedSidecarSuffix(
+  String videoBaseNameNoExt,
+  String suffix,
+  List<String> dirFiles,
+) {
+  if (!isSidecarSubtitleSuffix(suffix)) return suffix;
+  final String name = '$videoBaseNameNoExt$suffix';
+  final String nameLower = name.toLowerCase();
+  final bool owned = listSidecarSubtitles(videoBaseNameNoExt, <String>[
+    ...dirFiles,
+    name,
+  ]).any((String n) => n.toLowerCase() == nameLower);
+  if (owned) return suffix;
+  return suffix.substring(suffix.lastIndexOf('.'));
 }
 
 /// 纯函数：[suffix] 是否是合法的 sidecar 字幕后缀（`.<ext>` 或 `.<langTag>.<ext>`，

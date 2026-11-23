@@ -408,58 +408,22 @@ Future<VideoAcquisitionIntent> requestVideoAcquisitionIntent({
 // 多义作品选择（复用刮削身份判定的契约与解析）
 // ---------------------------------------------------------------------------
 
-/// 系统提示：语境是「用户口头说了作品名、候选已取回」，与刮削那份（本地目录名）
-/// 的规则不同——用户没说季而候选多季 → null；不选剧场版 / OVA 除非用户说了。
-String buildAiVideoAcquisitionIdentitySystemPrompt({required String locale}) =>
-    '''
-The user named a video work they want to download, and a metadata provider
-returned several candidate works. You choose exactly one candidate that the
-user meant, or null. The candidates were already fetched; you only choose among
-them and must not invent other works or identifiers.
-
-Answer with a single JSON object and nothing else:
-{"key": "<candidate key or null>", "confidence": <number 0.0-1.0>, "reason": "..."}
-
-Rules:
-- "key" must be copied verbatim from one candidate's "key", or be null.
-- "localTitles" holds what the user said (title as typed, plus spellings the
-  app derived from it); "season", "year" and "sampleFileNames" are what the
-  user mentioned, when anything.
-- Return null for "key" whenever any of these holds: several candidates fit the
-  user's words equally well; the user did not mention a season and the
-  candidates are different seasons of the same work; no candidate plausibly
-  matches.
-- Do not pick a movie, OVA, special or spin-off unless the user said so; when
-  the user just names the franchise, prefer the main TV series.
-- "confidence" is your honest probability that the chosen candidate is the
-  right work. Use 0.9 or higher only when title, type and (when mentioned)
-  year and season all agree; otherwise stay below 0.85.
-- Compare titles across languages and romanizations (Japanese, Chinese,
-  Korean, English, romaji), ignoring case and punctuation.
-- "reason" is one short sentence written in the language with tag "$locale".
-$kAiIdentityReferenceRule''';
-
-/// 跑一次「用户说的是哪一部」判定。失败原样抛 [AiChatFailure]。
+/// 跑一次「用户说的是哪一部」判定（[AiIdentityScenario.videoRequest]：用户没说季
+/// 而候选多季 → null；不选剧场版 / OVA 除非用户说了）。失败原样抛 [AiChatFailure]。
 Future<AiVideoIdentityDecision> requestAiVideoAcquisitionIdentity({
   required AiChatClient client,
   required AiProviderConfig provider,
   required AiVideoIdentityQuery query,
   List<WebKnowledgePage> references = const <WebKnowledgePage>[],
-}) async {
-  final String reply = await client.complete(
-    provider: provider,
-    messages: <AiChatMessage>[
-      AiChatMessage.system(
-        buildAiVideoAcquisitionIdentitySystemPrompt(locale: query.locale),
-      ),
-      AiChatMessage.user(
-        buildAiVideoIdentityUserPrompt(query, references: references),
-      ),
-    ],
-    maxTokens: 512,
-  );
-  return parseAiVideoIdentityDecision(reply, allowedKeys: query.candidateKeys);
-}
+}) => requestAiIdentityDecision(
+  client: client,
+  provider: provider,
+  scenario: AiIdentityScenario.videoRequest,
+  locale: query.locale,
+  payload: query.toJson(),
+  allowedKeys: query.candidateKeys,
+  references: references,
+);
 
 // ---------------------------------------------------------------------------
 // 别名 → 正式名（联网资料）
@@ -610,25 +574,25 @@ AiVideoIdentityDecider createPreferencesVideoAcquisitionIdentityDecider(
 }) => (AiVideoIdentityQuery query) async {
   final AiProviderConfig? provider = resolveVideoAcquireAiProvider(prefsRepo);
   if (provider == null) return null;
-  final AiChatClient client = clientFactory?.call() ?? AiChatClient();
-  final WebKnowledgeClient web =
-      webFactory?.call() ??
-      WebKnowledgeClient(sites: prefsRepo.aiWebKnowledgeSites);
-  try {
-    return await requestAiVideoAcquisitionIdentity(
-      client: client,
-      provider: provider,
-      query: query,
-      references: await fetchAiIdentityReferences(web, query),
-    );
-  } catch (error, stack) {
-    engineLog.logDiagnostic(
-      'VideoAcquisition.identity',
-      '${query.localTitles.join(' / ')}: $error\n$stack',
-    );
-    rethrow;
-  } finally {
-    client.close();
-    web.close();
-  }
+  return runAiIdentityRequest<AiVideoIdentityDecision>(
+    provider: provider,
+    referenceTitle: query.localTitles.firstOrNull,
+    logTag: 'VideoAcquisition.identity',
+    logSubject: query.localTitles.join(' / '),
+    clientFactory: clientFactory ?? AiChatClient.new,
+    webFactory: () =>
+        webFactory?.call() ??
+        WebKnowledgeClient(sites: prefsRepo.aiWebKnowledgeSites),
+    request:
+        (
+          AiChatClient client,
+          AiProviderConfig provider,
+          List<WebKnowledgePage> references,
+        ) => requestAiVideoAcquisitionIdentity(
+          client: client,
+          provider: provider,
+          query: query,
+          references: references,
+        ),
+  );
 };
