@@ -82,8 +82,9 @@ class AudiobookSession extends ChangeNotifier {
   /// 会话被别人抢走（音乐开播 / 视频进后台继续放声音）：有声书暂停，会话保留。
   void _onMediaSessionPreempted() {
     final AudiobookPlayerController? controller = _controller;
-    if (controller != null && controller.isPlaying)
+    if (controller != null && controller.isPlaying) {
       unawaited(controller.pause());
+    }
   }
 
   /// 「未播放 → 播放」翻转时认领会话；持有方因此换了就重推本书的媒体卡（锁屏上
