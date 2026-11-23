@@ -7,7 +7,7 @@ import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-5266：非日文版的系列在结果面板里按系列选「保留书里的封面 / 用 MangaBaka 封面」。
+/// BUG-5287：非日文版的系列在结果面板里按系列选「保留书里的封面 / 用 MangaBaka 封面」。
 void main() {
   BookArtRunResult resultWith({required bool original}) => BookArtRunResult(
     dryRun: false,

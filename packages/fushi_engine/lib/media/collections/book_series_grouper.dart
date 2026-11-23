@@ -664,7 +664,7 @@ class _Volume {
   /// 本卷内容语言的主语言子标签（[bookSeriesLanguageKey]），未知为空串。
   final String language;
 
-  /// 同系列（同书架、同系列名）的卷带着两种以上已知语言（BUG-5265：日文版与台版
+  /// 同系列（同书架、同系列名）的卷带着两种以上已知语言（BUG-5286：日文版与台版
   /// 《化物語》同名）：按语言分成各自的系列。只有一种已知语言的系列不分（语言为空
   /// 的卷照旧并进去），与修复前逐字节一致。由 [_markLanguageSplits] 设置。
   bool splitByLanguage = false;

@@ -266,7 +266,7 @@ void main() {
     expect(store.recordFor('k2'), isNull);
   });
 
-  // BUG-5266：台版只有第 1 卷在 MangaBaka 上有中文封面；第 2 卷只有日文版封面，
+  // BUG-5287：台版只有第 1 卷在 MangaBaka 上有中文封面；第 2 卷只有日文版封面，
   // 默认保留书里的封面，用户按系列改选「用 MangaBaka 封面」才用日文版。
   test('非日文版：本语言封面优先；缺卷默认保留书里的封面，可按系列改用原版封面并记住', () async {
     await seed('k1', 'テスト漫画 1');

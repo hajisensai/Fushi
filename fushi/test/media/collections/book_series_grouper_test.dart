@@ -452,7 +452,7 @@ void main() {
       ];
     }
 
-    // BUG-5265：日文版与台版《化物語》同名，以前被并进同一个合集。
+    // BUG-5286：日文版与台版《化物語》同名，以前被并进同一个合集。
     test('同名不同语言的版本各建一个合集，名字带语言；单一语言的系列照旧', () async {
       Future<void> addIn(String title, String bookKey, String? language) async {
         await db.insertEpubBook(

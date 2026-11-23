@@ -69,7 +69,7 @@ void main() {
     expect(picked.containsKey(5), isFalse);
   });
 
-  // BUG-5266：台版《化物語》不能拿到日文版的卷封面。
+  // BUG-5287：台版《化物語》不能拿到日文版的卷封面。
   test('按版本语言挑卷封面：zh 只收 zh / zh-tw，不回落 ja；默认仍是日文版', () {
     final List<MangaBakaImage> images = <MangaBakaImage>[
       _img(1, 1),

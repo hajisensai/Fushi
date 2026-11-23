@@ -93,7 +93,7 @@ bool _downloadable(MangaBakaRawImage raw) {
 /// 把 MangaBaka 图片列表按卷号分组，每卷挑一张：只看 `type=volume`、[language]
 /// 版（按主语言子标签比：`zh` 收 `zh` / `zh-tw` / `zh-hk`，默认日文版）、白名单
 /// 格式与大小；分级 safe 优先于 suggestive（erotica / pornographic 不要）；常规版
-/// （`note == null`）优先于变体；最后比面积。别的语言版本的封面一律不选（BUG-5266）。
+/// （`note == null`）优先于变体；最后比面积。别的语言版本的封面一律不选（BUG-5287）。
 Map<num, MangaBakaImage> pickMangaBakaVolumeImages(
   Iterable<MangaBakaImage> images, {
   String language = 'ja',

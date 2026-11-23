@@ -380,7 +380,7 @@ class _CollectionArtScrapeDialogState extends State<CollectionArtScrapeDialog> {
           ),
           style: small,
         ),
-      // 非日文版、MangaBaka 只有原版（日文版）封面的卷：按系列选用哪一种（BUG-5266）。
+      // 非日文版、MangaBaka 只有原版（日文版）封面的卷：按系列选用哪一种（BUG-5287）。
       if (s.decision == BookArtDecision.accepted &&
           s.originalEditionVolumes > 0)
         Row(

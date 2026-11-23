@@ -186,7 +186,7 @@ class BookArtSeriesPlan {
   final String? edition;
 
   /// 本版本语言在 MangaBaka 上没有、但原版（日文版）有卷封面的卷数。>0 时结果面板
-  /// 让用户在「保留书里的封面」与「用 MangaBaka 封面」之间选（BUG-5266）。
+  /// 让用户在「保留书里的封面」与「用 MangaBaka 封面」之间选（BUG-5287）。
   final int originalEditionVolumes;
 
   /// 这个系列当前用的是「用 MangaBaka 封面」（本次请求或之前记下的选择）。
@@ -363,8 +363,8 @@ class BookArtScrapeService {
   }) async {
     final Map<String, List<EpubBookRow>> groups = <String, List<EpubBookRow>>{};
     final Map<String, String> groupTitles = <String, String>{};
-    // 同名、不同语言的版本（日文版与台版《化物語》）分成各自的组（BUG-5266，与书籍
-    // 归组 BUG-5265 同一判据）：同一系列名带两种以上已知语言时，组键加上语言。
+    // 同名、不同语言的版本（日文版与台版《化物語》）分成各自的组（BUG-5287，与书籍
+    // 归组 BUG-5286 同一判据）：同一系列名带两种以上已知语言时，组键加上语言。
     final List<({EpubBookRow row, BookSeriesKey? series, String base})> found =
         <({EpubBookRow row, BookSeriesKey? series, String base})>[];
     final Map<String, Set<String>> languagesByBase = <String, Set<String>>{};
@@ -464,7 +464,7 @@ class BookArtScrapeService {
   }) async {
     final List<String> errors = <String>[];
     // 这组书的版本语言：MangaBaka 的卷图与 Bangumi 的单行本都是按版本的，非日文版
-    // 只能用同语言的封面，找不到就保留书里的封面（BUG-5266）。
+    // 只能用同语言的封面，找不到就保留书里的封面（BUG-5287）。
     final String edition = language.isEmpty ? 'ja' : language;
     final bool japaneseEdition = edition == 'ja';
     // 用户按系列选「用 MangaBaka 封面」才回落原版（日文版）卷封面；只对非日文版有意义。

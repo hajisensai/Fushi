@@ -136,7 +136,7 @@ class BookArtRecord {
   final List<String> rejectedCoverUrls;
 
   /// 非日文版的系列，用户在结果面板选了「用 MangaBaka 封面」：本版本语言没有的卷
-  /// 用原版（日文版）卷封面。默认 false = 保留书里的封面（BUG-5266）。按系列记，
+  /// 用原版（日文版）卷封面。默认 false = 保留书里的封面（BUG-5287）。按系列记，
   /// 同组每本的记录都带着，重刮沿用。
   final bool originalEditionCovers;
 
