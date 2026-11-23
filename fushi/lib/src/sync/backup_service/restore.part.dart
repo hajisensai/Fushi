@@ -382,6 +382,20 @@ class BackupRestoreService {
         as int;
   }
 
+  /// 恢复进来的库：清洗播放流快照里带账号凭据的服务器地址（BUG-5290，
+  /// [FushiDatabase.scrubMusicPlayEventCredentials]，幂等）。
+  /// 低层调用方换进来的不是 SQLite 库（测试夹具）时没有可清洗的行，跳过。
+  static Future<void> _scrubRestoredMusicCredentials(String dbDirectory) async {
+    final String dbPath = p.join(dbDirectory, _dbName);
+    if (!File(dbPath).existsSync() || !await _hasSqliteHeader(dbPath)) return;
+    final FushiDatabase db = FushiDatabase(dbDirectory);
+    try {
+      await db.scrubMusicPlayEventCredentials();
+    } finally {
+      await db.close();
+    }
+  }
+
   /// Restores [_deviceLocalTables] from [bakPath] (this device's pre-import
   /// snapshot) into the freshly-overwritten DB in [dbDirectory] (BUG-816). The
   /// backup carries these tables EMPTY by design (`_stripCredentials`), so
@@ -1301,6 +1315,11 @@ class BackupRestoreService {
           onBytes: reportBytes,
         );
       }
+
+      // 2d) BUG-5290：备份里的播放流快照可能带着旧版本落的服务器凭据（Jellyfin
+      //     api_key、Subsonic u + t + s / apiKey）。打开时迁移（< v172）会清洗一遍；
+      //     同版本 / 外来拼出的备份迁移不跑，这里不论版本再清洗一次。
+      await _scrubRestoredMusicCredentials(dbDirectory);
 
       // 3) Restore what must stay on this device — inline, not deferred to
       //    startup, so the common path never depends on bak surviving a restart.
