@@ -116,7 +116,13 @@ CapturedSentenceContext? splitCapturedContext({
       cursor,
       cursor,
     );
-    if (b.end == len && trailingCut && !_endsWithDelimiter(contextText)) break;
+    // 截断端的最后一段只有真碰到句末标点（[kSentenceDelimiters]）才算完整句：
+    // 以「、」「）」「」」之类收尾的是被截在句中的半句，同样丢掉。
+    if (b.end == len &&
+        trailingCut &&
+        !_containsDelimiter(contextText, cursor, b.end)) {
+      break;
+    }
     final String s = contextText.substring(cursor, b.end).trim();
     if (s.isNotEmpty) after.add(s);
     cursor = b.end;
@@ -130,13 +136,13 @@ CapturedSentenceContext? splitCapturedContext({
   );
 }
 
-/// 缓冲最后一个非空白字符是不是句末标点 / 句末闭括号（是 = 最后一句是完整的）。
-bool _endsWithDelimiter(String text) {
-  final String t = text.trimRight();
-  if (t.isEmpty) return false;
-  final String last = t[t.length - 1];
-  return kSentenceDelimiters.contains(last) ||
-      kTrailingSentenceChars.contains(last);
+/// `text[from, to)` 里有没有句末标点。[sentenceBoundsAt] 的前向扫描停在第一个句末
+/// 标点（再吞掉其后的闭括号），所以一段切到缓冲尾的句子含句末标点 = 它是完整的。
+bool _containsDelimiter(String text, int from, int to) {
+  for (int i = from; i < to; i++) {
+    if (kSentenceDelimiters.contains(text[i])) return true;
+  }
+  return false;
 }
 
 /// 高级制卡的句子分区：前后句来自 [context]，选择落进 [draft]（与阅读器 / 视频 /

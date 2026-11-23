@@ -84,6 +84,21 @@ void main() {
       expect(c.after, <String>['次の文。']);
     });
 
+    test('截断端以读点 / 闭括号收尾（没碰到句末标点）仍是半句，丢掉', () {
+      for (final String tail in <String>['次の文は、', '次の（注）', '彼は言った」']) {
+        final String text = '猫がいる。$tail';
+        final CapturedSentenceContext c = splitCapturedContext(
+          contextText: text,
+          selStart: 0,
+          selLen: 1,
+          maxExpand: 2,
+        )!;
+        expect(c.after, isEmpty, reason: tail);
+        // 没截断时同一段照旧保留。
+        expect(split(text, '猫', maxExpand: 600).after, <String>[tail]);
+      }
+    });
+
     test('缓冲里只有一句：没有前后句（对话框保持原样）', () {
       final CapturedSentenceContext c = split('猫がいる。', '猫');
       expect(c.before, isEmpty);
