@@ -23,6 +23,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/ai/ai_manga_audio_assistant.dart'
+    show findMangaNameReadings;
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/cast_substitutions_page.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
@@ -446,6 +448,18 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
             series: series.roster,
             volume: volume.script.roster,
           ).values,
+          findReadings: (List<CastTextSubstitution> names) =>
+              findMangaNameReadings(
+                widget.appModel,
+                bookKey: volume.bookKey,
+                seriesKey: seriesKey,
+                workTitle: series.title.isNotEmpty
+                    ? series.title
+                    : volume.row.title,
+                names: names,
+                substitutions:
+                    volume.series?.substitutions ?? series.substitutions,
+              ),
           save: (List<CastTextSubstitution> next) async {
             final SeriesCastProfile fresh =
                 await seriesCastStoreFor(widget.appModel).update(
