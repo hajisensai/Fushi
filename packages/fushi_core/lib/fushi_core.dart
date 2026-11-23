@@ -36,6 +36,7 @@ export 'src/utils/fushi_debug_print.dart';
 export 'src/utils/jp_codepoint_fold.dart';
 export 'src/utils/latin1_mojibake.dart';
 export 'src/utils/local_file_deletion.dart';
+export 'src/utils/media_title_clean.dart';
 export 'src/utils/media_title_fold.dart';
 export 'src/utils/mime_types.dart';
 export 'src/utils/path_identity.dart';
