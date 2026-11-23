@@ -64,6 +64,8 @@ void main() {
       await tester.runAsync(() async {
         await repo.ensureDefaultProfile();
         goneId = await repo.createProfile('Second');
+        // 用过复习的 Profile 都有 uid（复习数据按它归属）；没有 uid 的不碰复习库。
+        await db.profileUidOf(goneId);
         vm = ProfileViewModel(
           repo,
           () async {},
@@ -126,10 +128,13 @@ void main() {
       final int opensBeforeConfirm = storageOpens;
 
       // 删除按钮不可点：点了什么都不做，对话框还在，Profile 原样保留。
-      final Finder confirm = find.descendant(
-        of: find.byType(ProfileDeleteDialog),
-        matching: find.text(t.profile_delete),
-      );
+      // 标题也是「Delete」：按钮在底部，取最后一个。
+      final Finder confirm = find
+          .descendant(
+            of: find.byType(ProfileDeleteDialog),
+            matching: find.text(t.profile_delete),
+          )
+          .last;
       await tester.tap(confirm, warnIfMissed: false);
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),

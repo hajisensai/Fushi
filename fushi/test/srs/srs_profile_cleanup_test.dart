@@ -670,6 +670,7 @@ void main() {
     test('impact and delete report it; the profile is kept', () async {
       final ProfileViewModel vm = await vmWith(cleanupWith(migrationFailed));
       final int goneId = await repo.createProfile('blocked');
+      await uidOf(goneId);
 
       await expectLater(
         vm.deletionImpact(goneId),
@@ -695,6 +696,7 @@ void main() {
 
     test('the orphan sweep waits for the upgrade instead of failing', () async {
       final ProfileViewModel vm = await vmWith(cleanupWith(migrationFailed));
+      await uidOf(await repo.getActiveProfileId());
 
       expect(await vm.sweepOrphanProfileData(), 0);
     });
@@ -704,6 +706,7 @@ void main() {
       final ProfileViewModel vm = await vmWith(
         cleanupWith(() async => throw StateError('srs storage is closed')),
       );
+      await uidOf(await repo.getActiveProfileId());
 
       await expectLater(
         vm.sweepOrphanProfileData(),
