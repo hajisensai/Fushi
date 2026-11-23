@@ -994,6 +994,7 @@ mixin AnkiNoteComposer {
         enabled: compactGlossaries,
       ),
       pitchPositions: payload.pitchPositions,
+      pitchPositionsInline: payload.pitchPositionsInline,
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,
