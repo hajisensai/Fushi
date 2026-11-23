@@ -1149,6 +1149,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         event,
         registry: _app.shortcutRegistry,
         engine: _app.musicSession.engine,
+        // 曲库：裸方向键留给网格焦点移动（播放页才有裸 ←/→ ±5 秒）。
+        surface: MusicShortcutSurface.library,
       );
 
   /// 打开专辑：有盘面扫描图的 CD 专辑从被点的色块原位（[origin]，全局矩形）放大成

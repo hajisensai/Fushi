@@ -1571,14 +1571,16 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     // 2026-10-30「视频、小说、漫画、音乐都要占满」）。配色取封面主题的表面色，
     // 只用来托窗口按钮的柔光；macOS 红绿灯收不起，不上报，保持原来的叠放。
     page = _TitleBarScope(child: page);
-    // 播放控制键（空格 / K / N / P / Shift+←→ / 媒体键）与曲库页同一份执行体；autofocus
-    // 让打开歌词页即能收键（页内没有别的控件持焦时主焦点落在这里）。
+    // 播放控制键（空格 / K / N / P / Shift+←→ / 媒体键）与曲库页同一份执行体，另加播放页
+    // 独有的裸 ←/→ ±5 秒（MusicShortcutSurface.player）；autofocus 让打开歌词页即能收键
+    // （页内没有别的控件持焦时主焦点落在这里）。
     page = Focus(
       autofocus: true,
       onKeyEvent: (FocusNode node, KeyEvent event) => handleMusicShortcutKey(
         event,
         registry: appModel.shortcutRegistry,
         engine: _engine,
+        surface: MusicShortcutSurface.player,
       ),
       child: page,
     );

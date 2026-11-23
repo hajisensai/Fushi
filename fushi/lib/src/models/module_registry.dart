@@ -192,6 +192,7 @@ ModuleId? moduleOfShortcutScope(ShortcutScope scope) => switch (scope) {
   ShortcutScope.manga => ModuleId.manga,
   ShortcutScope.video => ModuleId.video,
   ShortcutScope.music => ModuleId.music,
+  ShortcutScope.musicPlayer => ModuleId.music,
   ShortcutScope.srsReview => ModuleId.srs,
 };
 
