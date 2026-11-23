@@ -10,7 +10,11 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart'
-    show MusicServerTrack, MusicServerTrackRef, musicServerTrackUid;
+    show
+        MusicServerTrack,
+        MusicServerTrackRef,
+        musicServerAlbumUid,
+        musicServerTrackUid;
 
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -22,7 +26,11 @@ import 'package:fushi/src/media/music/music_remote_tracks.dart'
         musicServerBindingLoader,
         musicServerKindStorable;
 import 'package:fushi/src/media/music/server/music_server_play_item.dart'
-    show musicServerPlayItem;
+    show
+        MusicServerLocalCopy,
+        musicServerLocalCopyLookup,
+        musicServerLocalPlayItem,
+        musicServerPlayItem;
 
 /// 播放项 + 队列来源 → 落库快照（重播所需的字段都在里面）。
 ///
@@ -175,7 +183,8 @@ MusicServerBinding? _bindingOfServerTrack(
 /// 否则用事件快照重建；两边都没有（不会出现，查询已过滤）返回 null。
 ///
 /// 服务器曲目（快照是身份占位）经 [servers] 里对应的服务器现算播放流与封面；这台设备没配
-/// 那台服务器（配置删了 / 记录从别的设备合并来）时回 null（不可用，不进列表）。
+/// 那台服务器（配置删了 / 记录从别的设备合并来）时，有离线副本（[musicServerLocalCopyLookup]）
+/// 就放本机文件，没有才回 null（不可用，不进列表）。
 MusicPlayItem? musicPlayItemOfRecent(
   MusicRecentPlay play, {
   Map<String, MusicServerBinding> servers =
@@ -200,8 +209,31 @@ MusicPlayItem? musicPlayItemOfRecent(
       e.trackUid,
       servers,
     );
-    if (binding == null) return null;
     final MusicServerRef? cover = parseMusicServerRef(e.coverPath);
+    if (binding == null) {
+      // 配置删了 / 没配那台服务器：下好的离线副本照样能放（与曲库里的这首同一条路）。
+      final MusicServerLocalCopy? local = musicServerLocalCopyLookup?.call(
+        e.trackUid,
+      );
+      if (local == null) return null;
+      final String? albumId = ref.albumId;
+      return musicServerLocalPlayItem(
+        e.trackUid,
+        local,
+        MusicServerTrack(
+          id: local.trackId,
+          title: e.title ?? '',
+          artist: e.artist,
+          album: e.album,
+          albumId: albumId,
+          durationMs: e.durationMs,
+          coverRef: cover?.kind == MusicServerRefKind.cover ? cover!.id : null,
+        ),
+        albumUid: albumId == null
+            ? null
+            : musicServerAlbumUid(local.serverId, albumId),
+      );
+    }
     final MusicPlayItem item = musicServerPlayItem(
       binding.browser,
       MusicServerTrack(

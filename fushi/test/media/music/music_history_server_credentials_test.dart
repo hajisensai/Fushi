@@ -333,6 +333,49 @@ void main() {
     expect(back.rgAlbumGain, -3);
   });
 
+  test('服务器配置删了：有离线副本的仍留在最近播放（放本机文件），没副本的不列出', () async {
+    final JellyfinMusicClient jf = JellyfinMusicClient(jfConfig);
+    final String uid = musicServerTrackUid(jf.serverId, track.id);
+    final String local = '${directory.path}/Server Song.flac';
+    musicServerLocalCopyLookup = (String u) => u == uid
+        ? (
+            path: local,
+            coverPath: '${directory.path}/cover.jpg',
+            codec: 'flac',
+            serverId: jf.serverId,
+            trackId: track.id,
+            loudness: const MusicServerLoudness(trackGainDb: -2),
+          )
+        : null;
+    addTearDown(() => musicServerLocalCopyLookup = null);
+    const MusicServerTrack other = MusicServerTrack(id: 'Tr-2', title: 'Gone');
+    for (final (int at, MusicServerTrack t) in <(int, MusicServerTrack)>[
+      (100, track),
+      (200, other),
+    ]) {
+      final MusicPlayItem item = musicServerPlayItem(jf, t);
+      await db.startMusicPlayEvent(
+        trackUid: item.trackUid,
+        startedAt: at,
+        snapshot: musicPlayEventSnapshotOf(item),
+      );
+    }
+
+    final List<MusicRecentTrack> recent = await loadRecentMusicTracks(
+      db,
+      servers: loaderOf(const <MusicServerBrowser>[]),
+    );
+    expect(recent, hasLength(1), reason: '没副本的那首不可用');
+    final MusicPlayItem back = recent.single.item;
+    expect(back.trackUid, uid);
+    expect(back.path, local);
+    expect(back.title, 'Server Song');
+    expect(back.coverPath, '${directory.path}/cover.jpg');
+    expect(back.albumUid, musicServerAlbumUid(jf.serverId, 'Al-1'));
+    expect(back.rgTrackGain, -2);
+    expect(back.serverTrack, isNull, reason: '没配那台服务器：不带服务器身份');
+  });
+
   test('Subsonic（token / apiKey 两种认证）：落库没有 u / t / s / apiKey，可重播', () async {
     for (final SubsonicServerConfig config in <SubsonicServerConfig>[
       ssConfig(password: ssPassword),
