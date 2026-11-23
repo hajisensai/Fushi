@@ -16782,8 +16782,8 @@
     "zh-CN": "制卡 › Anki › 制卡媒体"
    },
    "description": {
-    "en": "Song and audiobook sentence audio on cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
-    "zh-CN": "歌曲和有声书卡片里的句子音频套用播放时听到的增益：歌曲的 ReplayGain 加上当前音量滑块。关掉则一律按源文件原始音量截取。静音时不跟随。"
+    "en": "Sentence audio on song, audiobook, audio manga and video cards gets the gain you hear while playing: the song's ReplayGain plus the current volume slider. Turn off to always cut at the source file's original level. Muted playback is ignored.",
+    "zh-CN": "歌曲、有声书、有声漫画和视频卡片里的句子音频套用播放时听到的增益：歌曲的 ReplayGain 加上当前音量滑块。关掉则一律按源文件原始音量截取。静音时不跟随。"
    },
    "default": true
   },
