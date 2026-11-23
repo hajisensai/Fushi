@@ -102,9 +102,11 @@ void main() {
           'the worker thread is owned by the pool lifetime so retire can join it',
     );
     expect(
-      src.contains('DCompositionWaitForCompositorClock'),
+      src.contains('#include "frame_clock.h"') &&
+          src.contains('FrameClock clock(shared->stop_event'),
       isTrue,
-      reason: 'the worker is paced by the compositor clock',
+      reason:
+          'the worker is paced by FrameClock (compositor clock, frame_clock.h)',
     );
     expect(
       src.contains('Microsoft::WRL::ComPtr<WgcDeliverHandler> deliver_handler'),
@@ -457,9 +459,14 @@ void main() {
 
     // 3) 退回定时器的等待失败不能静默退出取帧线程（WebView 冻结且日志无迹）。
     final String clockBody = _body(
-      src,
+      maskComments(
+        _read(<String>[
+          'packages/flutter_inappwebview_windows/windows/custom_platform_view/frame_clock.h',
+          '../packages/flutter_inappwebview_windows/windows/custom_platform_view/frame_clock.h',
+        ], 'frame_clock.h'),
+      ),
       'class FrameClock {',
-      'void RunFrameWorker(',
+      '#endif',
     );
     expect(clockBody.contains('LogWaitFailed("timer_wait_failed"'), isTrue);
     expect(clockBody.contains('LogWaitFailed("sleep_wait_failed"'), isTrue);

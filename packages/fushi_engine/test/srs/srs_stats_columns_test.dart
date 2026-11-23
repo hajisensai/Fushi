@@ -102,11 +102,7 @@ void main() {
       profileUid: kProfile,
       deviceId: 'd',
       engine: const FakeFsrsEngine(),
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        bootClockMs: () => t,
-        bootId: 'boot-d',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t),
       fallbackRolloverHour: () => 4,
     );
     expect(shares(await (await loadSrsStats(reopened)).report()), expected);

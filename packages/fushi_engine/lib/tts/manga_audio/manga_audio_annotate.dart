@@ -18,6 +18,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:fushi_engine/ai/ai_reply_json.dart';
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
@@ -102,14 +103,15 @@ void _writeRoster(StringBuffer b, Iterable<TtsCastCharacter> roster) {
   }
 }
 
-/// 一块在提示词里的一行：下标、0..1000 归一化外框、竖 / 横、文字（JSON 字符串字面量，
-/// 多行与引号不会串行）。
+/// 一块在提示词里的一行：下标、0..1000 归一化外框、竖 / 横、（注音块）`ruby-of:<底本>`、
+/// 文字（JSON 字符串字面量，多行与引号不会串行）。
 String _blockLine(
   int index,
   MokuroBlock block,
   MokuroSize size,
-  List<CastTextSubstitution> substitutions,
-) {
+  List<CastTextSubstitution> substitutions, {
+  int? rubyOf,
+}) {
   int norm(double v, double extent) =>
       extent <= 0 ? 0 : (v / extent * 1000).round().clamp(0, 1000);
   final MokuroRect r = block.rectangle;
@@ -117,6 +119,7 @@ String _blockLine(
       '${norm(r.left, size.width)},${norm(r.top, size.height)},'
       '${norm(r.right, size.width)},${norm(r.bottom, size.height)}';
   return '$index [$box] ${block.isVertical ? 'V' : 'H'} '
+      '${rubyOf == null ? '' : 'ruby-of:$rubyOf '}'
       '${jsonEncode(applyCastSubstitutions(block.lines.join(), substitutions))}';
 }
 
@@ -161,8 +164,17 @@ String buildMangaRosterUserPrompt({
     b.writeln();
     b.writeln('[page ${e.page + 1} text blocks]');
     if (e.image.blocks.isEmpty) b.writeln('(no text)');
+    final MangaPageRuby ruby = detectMangaPageRuby(e.image.blocks);
     for (int i = 0; i < e.image.blocks.length; i++) {
-      b.writeln(_blockLine(i, e.image.blocks[i], e.image.size, substitutions));
+      b.writeln(
+        _blockLine(
+          i,
+          e.image.blocks[i],
+          e.image.size,
+          substitutions,
+          rubyOf: ruby.baseOfRuby[i],
+        ),
+      );
     }
   }
   return b.toString();
@@ -227,7 +239,7 @@ String get kMangaPageSystemPrompt =>
     '''
 You direct the audio drama of a manga, one page at a time. You get the page image, its OCR text blocks, the cast list, and the last lines already directed on earlier pages.
 
-Each block line is: index [x0,y0,x1,y1 box on a 0..1000 page grid] V(vertical)/H(horizontal) "text". The OCR order of blocks is NOT the reading order — decide the order from the image (Japanese manga: panels right-to-left, top-to-bottom; balloons inside a panel likewise).
+Each block line is: index [x0,y0,x1,y1 box on a 0..1000 page grid] V(vertical)/H(horizontal) "text". A block marked ruby-of:N is the furigana / reading printed beside block N: never make it a line of its own — put it in the same line as block N (or leave it out); the audio speaks block N with that reading automatically. The OCR order of blocks is NOT the reading order — decide the order from the image (Japanese manga: panels right-to-left, top-to-bottom; balloons inside a panel likewise).
 
 Return ONLY one JSON object — no prose, no code fence:
 {"lines":[{"b":[3,1],"s":"宮城","k":"spoken","beat":200,"e":"joy","ei":60,"tone":"からかうように","c":0.9}],"new":[{"name":"店員","gender":"female","age":"adult","desc":"polite clerk"}],"lead":700}
@@ -278,8 +290,17 @@ String buildMangaPageUserPrompt({
   }
   b.writeln();
   b.writeln('[text blocks]');
+  final MangaPageRuby ruby = detectMangaPageRuby(image.blocks);
   for (int i = 0; i < image.blocks.length; i++) {
-    b.writeln(_blockLine(i, image.blocks[i], image.size, substitutions));
+    b.writeln(
+      _blockLine(
+        i,
+        image.blocks[i],
+        image.size,
+        substitutions,
+        rubyOf: ruby.baseOfRuby[i],
+      ),
+    );
   }
   return b.toString();
 }

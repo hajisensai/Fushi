@@ -9,7 +9,8 @@ import 'package:fushi/src/asr_host/asr_host.dart';
 import 'package:fushi/src/media/audiobook/asr_transcribe_sheet.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/audiobook_m4b_export_flow.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
-    show ImportMatchOptionsCard, ImportProgressCard;
+    show ImportMatchOptionsCard;
+import 'package:fushi/src/media/import/import_progress_card.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
     show attachAsrCueTokenTiming, finalizeAlignedCues, parseCuesForFormat;
 import 'package:fushi_engine/media/audiobook/book_text_sections.dart'

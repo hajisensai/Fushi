@@ -33,6 +33,22 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+
+/// 把已经在磁盘上的页图目录 [directories] 交给 [MangaImportDialog] 导入（书名取目录名）。
+/// 返回是否真的导入了至少一卷。书籍侧的「一包书」解包后遇到漫画就走这里——它由调用方
+/// 以回调注入 `showBookArchiveImportDialog`，压缩包导入框本身不 import 漫画 UI。
+Future<bool> showMangaDirectoriesImportDialog({
+  required BuildContext context,
+  required FushiDatabase db,
+  required List<String> directories,
+}) async {
+  final bool? imported = await showAppDialog<bool>(
+    context: context,
+    builder: (_) => MangaImportDialog(db: db, initialPaths: directories),
+  );
+  return imported == true;
+}
 
 /// 漫画导入对话框。
 ///

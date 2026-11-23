@@ -13,6 +13,7 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.d
     show LyricsControlsStyle;
 import 'package:fushi/src/media/audiobook/audiobook_av_sync_stepper.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
+import 'package:fushi/src/media/audiobook/audiobook_volume_slider.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:intl/intl.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
@@ -3705,13 +3706,15 @@ class AudiobookVolumeRow extends StatelessWidget {
   });
 
   /// 音量上限（200%，与 [AudiobookPlayerController.setVolume] 的 clamp 一致）。
-  static const double maxVolume = 2.0;
+  /// 范围 / 档位 / 步进的唯一口径在 [AudiobookVolumeSlider]（漫画有声播放条的音量
+  /// 弹层同用）。
+  static const double maxVolume = AudiobookVolumeSlider.maxVolume;
 
   /// 拖动吸附档数：0–200% 共 200 档 = 1% 一档。
-  static const int sliderDivisions = 200;
+  static const int sliderDivisions = AudiobookVolumeSlider.sliderDivisions;
 
   /// 键盘 / 手柄左右键单按步进：5%。
-  static const double keyStep = 0.05;
+  static const double keyStep = AudiobookVolumeSlider.keyStep;
 
   /// 当前音量（0.0–2.0，1.0 = 100%）。
   final double volume;
@@ -3722,7 +3725,7 @@ class AudiobookVolumeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double value = volume.clamp(0.0, maxVolume);
-    final String percentLabel = '${(value * 100).round()}%';
+    final String percentLabel = AudiobookVolumeSlider.format(value);
     return AdaptiveSettingsSliderRow(
       // 与速度行同款的标题实时读数：1%/5% 的细步进没有可见读数等于白调。
       title: '${t.audio_volume} ($percentLabel)',

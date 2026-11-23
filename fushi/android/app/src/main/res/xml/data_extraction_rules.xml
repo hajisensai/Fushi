@@ -14,6 +14,10 @@
   flutter_secure_storage 的两份 SharedPreferences（FlutterSecureStorage.xml 存密文、
   FlutterSecureKeyStorage.xml 存被 Keystore 包裹的密钥）：Keystore 密钥不随备份走，恢复到新设备
   只会得到解不开的密文（插件文档要求排除），而且里面就是上面保险库的数据密钥。
+  书库与媒体（Android/data/<包名>/files = domain="external"；老安装的 app_flutter =
+  domain="root" 下的 app_flutter/）不进云备份：Android 云备份每个 app 上限 25MB，超了整次放弃，
+  有声书 / 下载一进来连数据库都备份不上。云备份只留数据库与偏好；书库换机靠设备迁移
+  （device-transfer 不设配额，照旧带上）或 Fushi 自己的备份 / 同步。见 AppPaths.androidDocumentsLocationPrefKey。
 -->
 <data-extraction-rules>
     <cloud-backup>
@@ -22,6 +26,8 @@
         <exclude domain="file" path="tracking_plugins/.credentials/" />
         <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage.xml" />
+        <exclude domain="external" path="." />
+        <exclude domain="root" path="app_flutter/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="leaderboard/" />
