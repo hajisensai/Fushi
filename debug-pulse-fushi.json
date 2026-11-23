@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T15:48:54Z",
+ "generatedAt": "2026-11-23T15:51:55Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "ca1e632298172c36ee90b6280788c55eb092d4d6",
-  "seq": 32092
+  "sha": "6ecc7b5e0ba6cd14475e7c4bd83905225f1ed73b",
+  "seq": 32093
  },
  "builds": [
   {
@@ -439,8 +439,8 @@
   }
  ],
  "pending": {
-  "headSha": "ca1e632298172c36ee90b6280788c55eb092d4d6",
-  "headSeq": 32092,
+  "headSha": "6ecc7b5e0ba6cd14475e7c4bd83905225f1ed73b",
+  "headSeq": 32093,
   "prs": [
    4296,
    4295,
@@ -451,6 +451,10 @@
    4286
   ],
   "direct": [
+   {
+    "sha": "6ecc7b5e0ba6cd14475e7c4bd83905225f1ed73b",
+    "subject": "test: 登记 #4287 新增歌词动画场景字号与码点排版（M3E / 计字口径守卫 develop 红）"
+   },
    {
     "sha": "ca1e632298172c36ee90b6280788c55eb092d4d6",
     "subject": "chore(bugs): settle BUG number collisions on 84c399b1a"
@@ -495,20 +499,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45206838134"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45209566371"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45206838253"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45209566368"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45206838253"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45209566368"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45206838253"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45209566368"
    }
   }
  },
