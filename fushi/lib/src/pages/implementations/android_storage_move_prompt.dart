@@ -4,9 +4,12 @@
 /// （[AppPaths.androidDocumentsLocationPrefKey]）。升级上来的老安装锚定内部、不自动搬：
 /// 内部 `app_flutter` 到外部跨挂载点，只能逐文件复制，GB 级书库在启动期悄悄搬会卡死
 /// 启动画面。所有者 2026-11-22 拍板：老用户弹一次提示，确认后走带进度遮罩的迁移
-/// （与设置「数据存储位置」同一条 [startAndroidDocumentsMigration]），迁完自动重启。
+/// （与设置「数据存储位置」同一条 `startAndroidDocumentsMigration`），迁完自动重启。
 ///
 /// 标记在弹框**之前**落：弹框期间杀进程也不会每次启动都弹；之后随时可在设置里迁。
+///
+/// 本文件不 import `AppModel` / 设置 schema：迁移入口由调用方（首页）注入，否则首页 →
+/// 本文件 → AppModel 会把它拉进 lib/ 最大 import 环（`import_cycle_guard_test.dart`）。
 library;
 
 import 'dart:io';
@@ -15,10 +18,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/storage/app_paths.dart';
-import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show startAndroidDocumentsMigration;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -32,11 +32,11 @@ bool shouldShowAndroidStorageMovePrompt({
   required bool prompted,
 }) => isAndroid && !documentsExternal && !prompted;
 
-/// 首页首帧调用：按判定落标记并弹提示；用户选「现在迁移」就开始迁移（遮罩接管界面，
-/// 成功后自动重启）。
+/// 首页首帧调用：按判定落标记并弹提示；用户选「现在迁移」就调 [startMigration]（首页传
+/// `startAndroidDocumentsMigration(toExternal: true)`：遮罩接管界面，成功后自动重启）。
 Future<void> maybeShowAndroidStorageMovePrompt({
   required BuildContext context,
-  required AppModel appModel,
+  required Future<void> Function() startMigration,
 }) async {
   if (!Platform.isAndroid) return;
   final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -51,11 +51,7 @@ Future<void> maybeShowAndroidStorageMovePrompt({
   if (!context.mounted) return;
   final bool move = await showAndroidStorageMovePromptDialog(context);
   if (!move || !context.mounted) return;
-  await startAndroidDocumentsMigration(
-    context: context,
-    appModel: appModel,
-    toExternal: true,
-  );
+  await startMigration();
 }
 
 /// 提示框本体，返回用户是否选了「现在迁移」。设置路径取界面上真实显示的标签。
