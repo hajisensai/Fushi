@@ -29,8 +29,6 @@ import 'package:share_plus/share_plus.dart' show XFile;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
-import 'package:fushi/src/media/audiobook/tts/studio/tts_audiobook_export.dart'
-    show prepareTtsAudiobookShareStagingDir;
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart'
     show ttsRenderQueueFor;
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
@@ -87,6 +85,7 @@ String mangaAudioPackageErrorText(String? code) => switch (code) {
   'content_mismatch' => t.manga_audio_package_error_mismatch,
   'package_corrupt' => t.manga_audio_package_error_corrupt,
   'busy' => t.manga_audio_package_error_busy,
+  'export_running' => t.manga_audio_package_error_export_running,
   'conflict' => t.manga_audio_package_result_skipped,
   _ => t.manga_audio_package_error_generic(code: code ?? 'internal'),
 };
@@ -296,10 +295,15 @@ class _MangaAudioPackageExportPageState
         outPath = '$outPath$kMangaAudioPackageExtension';
       }
     } else {
-      final Directory staging = await prepareTtsAudiobookShareStagingDir(
-        Directory(p.join(Directory.systemTemp.path, 'fushi_manga_audio_share')),
+      outPath = p.join((await _shareStagingDir()).path, fileName);
+    }
+    if (!mounted) return;
+    if (_tasks.activeExportTo(outPath) != null) {
+      FushiToast.show(
+        msg: mangaAudioPackageErrorText('export_running'),
+        severity: ToastSeverity.error,
       );
-      outPath = p.join(staging.path, fileName);
+      return;
     }
     setState(() => _starting = true);
     final MangaPackageExportPlan plan;
@@ -321,17 +325,27 @@ class _MangaAudioPackageExportPageState
       return;
     }
     final String out = outPath;
-    final MangaAudioPackageTask task = _tasks.start(
-      kind: MangaAudioPackageTaskKind.export,
-      path: out,
-      run: (MangaAudioPackageTask task) => runMangaAudioPackageExport(
-        plan,
-        outputPath: out,
-        appLabel: _appLabel(widget.appModel),
-        onProgress: task.report,
-        cancel: task.cancelToken,
-      ),
-    );
+    final MangaAudioPackageTask task;
+    try {
+      task = _tasks.start(
+        kind: MangaAudioPackageTaskKind.export,
+        path: out,
+        run: (MangaAudioPackageTask task) => runMangaAudioPackageExport(
+          plan,
+          outputPath: out,
+          appLabel: _appLabel(widget.appModel),
+          onProgress: task.report,
+          cancel: task.cancelToken,
+        ),
+      );
+    } on MangaAudioPackageException catch (e) {
+      if (mounted) setState(() => _starting = false);
+      FushiToast.show(
+        msg: mangaAudioPackageErrorText(e.code),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (!mounted) return;
     setState(() {
       _starting = false;
@@ -355,6 +369,32 @@ class _MangaAudioPackageExportPageState
         severity: ToastSeverity.error,
       );
     }
+  }
+
+  /// 移动端分享用的暂存目录：每次导出一个新子目录。导出任务离开本页照跑，同一根下
+  /// 别的导出可能还在写 `.part`，所以只清掉没有导出在写的旧子目录，不整根删。
+  Future<Directory> _shareStagingDir() async {
+    final Directory root = Directory(
+      p.join(Directory.systemTemp.path, 'fushi_manga_audio_share'),
+    );
+    final List<String> writing = <String>[
+      for (final MangaAudioPackageTask task in _tasks.tasks)
+        if (task.kind == MangaAudioPackageTaskKind.export && !task.isTerminal)
+          task.path,
+    ];
+    if (await root.exists()) {
+      await for (final FileSystemEntity e in root.list()) {
+        if (writing.any(
+          (String path) => p.equals(e.path, path) || p.isWithin(e.path, path),
+        )) {
+          continue;
+        }
+        await e.delete(recursive: true);
+      }
+    }
+    return Directory(
+      p.join(root.path, '${DateTime.now().microsecondsSinceEpoch}'),
+    ).create(recursive: true);
   }
 
   String _subtitle(_ExportCandidate c) {

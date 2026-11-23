@@ -111,19 +111,25 @@ class _PackageHandlers {
     } on MangaAudioPackageException catch (e) {
       throw ttsMangaPackageFailure(e);
     }
-    final MangaAudioPackageTask task = _tasks.start(
-      kind: MangaAudioPackageTaskKind.export,
-      path: out,
-      run: (MangaAudioPackageTask task) async => _wireExportResult(
-        await runMangaAudioPackageExport(
-          plan,
-          outputPath: out,
-          appLabel: _deps.appLabel(),
-          onProgress: task.report,
-          cancel: task.cancelToken,
+    final MangaAudioPackageTask task;
+    try {
+      // 计划期间可能已有别的导出起了同一个目标：任务表在起任务时再判一次。
+      task = _tasks.start(
+        kind: MangaAudioPackageTaskKind.export,
+        path: out,
+        run: (MangaAudioPackageTask task) async => _wireExportResult(
+          await runMangaAudioPackageExport(
+            plan,
+            outputPath: out,
+            appLabel: _deps.appLabel(),
+            onProgress: task.report,
+            cancel: task.cancelToken,
+          ),
         ),
-      ),
-    );
+      );
+    } on MangaAudioPackageException catch (e) {
+      throw ttsMangaPackageFailure(e);
+    }
     if (call.optBool('wait') == true) await task.whenDone;
     return task.toJson();
   }

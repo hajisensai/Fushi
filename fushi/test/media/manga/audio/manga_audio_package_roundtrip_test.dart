@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart' show sha1;
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +14,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
 import 'package:fushi/src/media/manga/audio/manga_audio_package_export.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_package_import.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_package_io.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_package_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
@@ -368,6 +371,75 @@ void main() {
     expect(await sourceDb.getEpubBook(_bookKey), isNotNull, reason: '已有的卷不删');
   });
 
+  test('撤销时卷在导入之后又被改过：卷留下，也留在原系列 / 合集里', () async {
+    final String path = await exportPackage();
+    final Map<String, Object?> result = await runMangaAudioPackageImport(
+      target,
+      await planMangaAudioPackageImport(target, path),
+      runId: 'r5',
+    );
+    final String newKey =
+        ((result['volumes']! as List<Object?>).single!
+                as Map<String, Object?>)['bookKey']!
+            as String;
+    final String seriesKey = (await resolveSeriesKey(target, newKey))!;
+    // 导入之后登记又被改过（重新生成 / 补句之类）。
+    await targetDb.patchAudiobook(
+      newKey,
+      const AudiobooksCompanion(audioRoot: Value<String?>('changed-later')),
+    );
+
+    final MangaPackageUndoResult undo = await revertMangaAudioPackageImport(
+      target,
+      'r5',
+    );
+    expect(undo.status, 'superseded', reason: undo.message);
+    expect(await targetDb.getEpubBook(newKey), isNotNull);
+    expect(
+      await resolveSeriesKey(target, newKey),
+      seriesKey,
+      reason: '留下的卷不能被摘出导入时进的合集',
+    );
+    expect(
+      (await seriesCastStoreFor(target).load(seriesKey)).members,
+      contains(newKey),
+      reason: '系列档案不放回导入前，否则留下的卷从成员里消失',
+    );
+  });
+
+  test('落库中途出错：已落库的部分照样写进撤销日志、能撤干净', () async {
+    final String path = await exportPackage();
+    expect(await targetDb.getAllMediaCollections(), isEmpty);
+    // 新建的合集在空库里 id = 1：把它的系列档案位置占成目录，系列这一步写档案必然失败。
+    Directory(
+      p.join(
+        target.databaseDirectory.path,
+        'tts_cast',
+        '${sha1.convert(utf8.encode('${kSeriesKeyCollectionPrefix}1'))}'
+            '.series-cast.json',
+      ),
+    ).createSync(recursive: true);
+    await expectLater(
+      runMangaAudioPackageImport(
+        target,
+        await planMangaAudioPackageImport(target, path),
+        runId: 'r6',
+      ),
+      throwsA(isA<FileSystemException>()),
+    );
+    final List<EpubBookRow> books = await targetDb.getAllEpubBooks();
+    expect(books, hasLength(1), reason: '卷已经落库');
+    expect(await targetDb.getAllMediaCollections(), hasLength(1));
+
+    final MangaPackageUndoResult undo = await revertMangaAudioPackageImport(
+      target,
+      'r6',
+    );
+    expect(undo.status, 'done', reason: undo.message);
+    expect(await targetDb.getAllEpubBooks(), isEmpty);
+    expect(await targetDb.getAllMediaCollections(), isEmpty);
+  });
+
   test('只导出演出稿：包里没有成品，导入后有演出稿、不登记有声', () async {
     final String path = await exportPackage(scriptOnly: true);
     final MangaAudioPackageVolume packed = (await readMangaAudioPackageManifest(
@@ -423,6 +495,43 @@ void main() {
       'package_corrupt',
     );
     expect(await targetDb.getAllEpubBooks(), isEmpty);
+  });
+
+  test('同一个目标文件已有导出在写：任务表拒绝再起一个', () async {
+    final MangaAudioPackageTasks tasks = MangaAudioPackageTasks();
+    final Completer<void> gate = Completer<void>();
+    final String out = p.join(tmp.path, 'same$kMangaAudioPackageExtension');
+    final MangaAudioPackageTask first = tasks.start(
+      kind: MangaAudioPackageTaskKind.export,
+      path: out,
+      run: (MangaAudioPackageTask task) async {
+        await gate.future;
+        return <String, Object?>{};
+      },
+    );
+    expect(
+      () => tasks.start(
+        kind: MangaAudioPackageTaskKind.export,
+        path: out,
+        run: (MangaAudioPackageTask task) async => <String, Object?>{},
+      ),
+      throwsA(
+        isA<MangaAudioPackageException>().having(
+          (MangaAudioPackageException e) => e.code,
+          'code',
+          'export_running',
+        ),
+      ),
+    );
+    gate.complete();
+    await first.whenDone;
+    final MangaAudioPackageTask second = tasks.start(
+      kind: MangaAudioPackageTaskKind.export,
+      path: out,
+      run: (MangaAudioPackageTask task) async => <String, Object?>{},
+    );
+    await second.whenDone;
+    expect(second.status, MangaAudioPackageTaskStatus.done);
   });
 
   test('不是有声漫画包：计划阶段就报 not_package', () async {

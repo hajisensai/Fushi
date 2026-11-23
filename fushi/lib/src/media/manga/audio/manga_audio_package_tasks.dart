@@ -11,6 +11,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ChangeNotifier;
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/audio/manga_audio_package_io.dart';
 
@@ -125,7 +126,7 @@ class MangaAudioPackageTasks extends ChangeNotifier {
   MangaAudioPackageTask? activeExportTo(String path) {
     for (final MangaAudioPackageTask task in _tasks) {
       if (task.kind == MangaAudioPackageTaskKind.export &&
-          task.path == path &&
+          p.equals(task.path, path) &&
           !task.isTerminal) {
         return task;
       }
@@ -136,12 +137,20 @@ class MangaAudioPackageTasks extends ChangeNotifier {
   /// 起一个任务并立即返回；[run] 的返回值落 [MangaAudioPackageTask.result]。
   /// [run] 抛 [MangaAudioPackageCancelled] = 取消；[MangaAudioPackageException] = 失败
   /// （带原因码）；别的异常 = 失败（`internal`）。
+  ///
+  /// 同一个目标文件已有导出在写时同步抛 [MangaAudioPackageException]
+  /// （`export_running`）：两个任务往同一个 `.part` 写会互相毁掉对方的包。判据放在
+  /// 任务表这里，界面与控制通道起任务都过这一道。
   MangaAudioPackageTask start({
     required MangaAudioPackageTaskKind kind,
     required String path,
     required Future<Map<String, Object?>> Function(MangaAudioPackageTask task)
     run,
   }) {
+    if (kind == MangaAudioPackageTaskKind.export &&
+        activeExportTo(path) != null) {
+      throw MangaAudioPackageException('export_running', '已经在往 $path 导出');
+    }
     final int now = _now().millisecondsSinceEpoch;
     final MangaAudioPackageTask task = MangaAudioPackageTask._(
       id: 'manga-pkg-${kind.name}-$now-${_seq++}',

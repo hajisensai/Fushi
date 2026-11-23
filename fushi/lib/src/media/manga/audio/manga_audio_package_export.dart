@@ -26,6 +26,8 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart'
     show mangaPayloadOcrSignature;
+import 'package:fushi_engine/utils/misc/safe_file_name.dart'
+    show safeWindowsFileName;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
@@ -583,6 +585,6 @@ Future<Map<String, Object?>> runMangaAudioPackageExport(
 String mangaAudioPackageFileName(String title) {
   final String base = title.trim().isEmpty
       ? 'manga-audio'
-      : title.trim().replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_');
+      : safeWindowsFileName(title.trim());
   return '$base$kMangaAudioPackageExtension';
 }

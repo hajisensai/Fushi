@@ -5773,6 +5773,7 @@
   "manga_audio_package_as_new": "Import conflicting volumes as new volumes",
   "manga_audio_package_error_busy": "Annotating or rendering; wait for it to finish",
   "manga_audio_package_error_corrupt": "The package is damaged or was modified",
+  "manga_audio_package_error_export_running": "Already exporting to this file; wait for it to finish",
   "manga_audio_package_error_generic": "Something went wrong (${code})",
   "manga_audio_package_error_invalid": "Not a valid manga audio package",
   "manga_audio_package_error_mismatch": "The finished audio doesn't match the volume's current pages / OCR",

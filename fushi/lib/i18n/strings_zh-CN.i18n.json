@@ -5773,6 +5773,7 @@
   "manga_audio_package_as_new": "冲突的卷作为新卷导入",
   "manga_audio_package_error_busy": "正在标注或生成，等它结束",
   "manga_audio_package_error_corrupt": "包损坏或被改过",
+  "manga_audio_package_error_export_running": "已经在往这个文件导出，等它结束",
   "manga_audio_package_error_generic": "出错了（${code}）",
   "manga_audio_package_error_invalid": "不是有效的有声漫画包",
   "manga_audio_package_error_mismatch": "成品与这一卷当前的页数 / OCR 不符",

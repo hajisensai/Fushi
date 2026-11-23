@@ -23,6 +23,8 @@ import 'dart:isolate';
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:fushi_compute/fushi_compute.dart' show ffcSha256File;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/collections/collection_asset_reclaim.dart'
+    show deleteMediaCollectionWithAssets;
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart' show MangaStorage;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -386,41 +388,46 @@ Future<Map<String, Object?>> runMangaAudioPackageImport(
             o.status != 'failed')
           o,
     ];
-    for (int i = 0; i < todo.length; i++) {
-      onProgress?.call('importing', i / todo.length);
-      await _importVolume(host, staging, undoDir, todo[i], busy);
-    }
-    onProgress?.call('importing', 1);
     final List<Map<String, Object?>> seriesJournal = <Map<String, Object?>>[];
     final List<Map<String, Object?>> seriesResult = <Map<String, Object?>>[];
-    for (final MangaAudioPackageSeries series in plan.manifest.series) {
-      final Map<String, Object?>? entry = await _importSeries(
-        host,
-        staging,
-        series,
-        outcomes,
-      );
-      if (entry == null) continue;
-      seriesJournal.add(entry);
-      seriesResult.add(<String, Object?>{
-        'id': series.id,
-        'title': series.title,
-        'seriesKey': entry['seriesKey'],
-      });
+    // 落库阶段一旦开始，不论后面哪一步抛出，撤销日志都要落盘：已经落库的卷、已经
+    // 改过的系列 / 合集都得能撤（否则任务失败、日志没写，撤销只能报「记录不在」）。
+    try {
+      for (int i = 0; i < todo.length; i++) {
+        onProgress?.call('importing', i / todo.length);
+        await _importVolume(host, staging, undoDir, todo[i], busy);
+      }
+      onProgress?.call('importing', 1);
+      for (final MangaAudioPackageSeries series in plan.manifest.series) {
+        final Map<String, Object?>? entry = await _importSeries(
+          host,
+          staging,
+          series,
+          outcomes,
+          seriesJournal,
+        );
+        if (entry == null) continue;
+        seriesResult.add(<String, Object?>{
+          'id': series.id,
+          'title': series.title,
+          'seriesKey': entry['seriesKey'],
+        });
+      }
+    } finally {
+      final Map<String, Object?> journal = <String, Object?>{
+        'v': 1,
+        'runId': runId,
+        'package': plan.packagePath,
+        'volumes': <Map<String, Object?>>[
+          for (final _VolumeOutcome o in outcomes)
+            if (o.journal != null) o.journal!,
+        ],
+        'series': seriesJournal,
+      };
+      await File(
+        p.join(undoDir.path, 'journal.json'),
+      ).writeAsString(jsonEncode(journal), flush: true);
     }
-    final Map<String, Object?> journal = <String, Object?>{
-      'v': 1,
-      'runId': runId,
-      'package': plan.packagePath,
-      'volumes': <Map<String, Object?>>[
-        for (final _VolumeOutcome o in outcomes)
-          if (o.journal != null) o.journal!,
-      ],
-      'series': seriesJournal,
-    };
-    await File(
-      p.join(undoDir.path, 'journal.json'),
-    ).writeAsString(jsonEncode(journal), flush: true);
     await _pruneUndoRuns(host, keep: runId);
     return <String, Object?>{
       'runId': runId,
@@ -659,6 +666,7 @@ Future<Map<String, Object?>?> _importSeries(
   Directory staging,
   MangaAudioPackageSeries series,
   List<_VolumeOutcome> outcomes,
+  List<Map<String, Object?>> journal,
 ) async {
   final List<_VolumeOutcome> members = <_VolumeOutcome>[];
   for (final String id in series.members) {
@@ -686,7 +694,15 @@ Future<Map<String, Object?>?> _importSeries(
     seriesKey = await resolveSeriesKey(host, o.bookKey!);
     if (seriesKey != null) break;
   }
-  int? createdCollection;
+  final List<Map<String, Object?>> collectionAdds = <Map<String, Object?>>[];
+  final List<String> linksAdded = <String>[];
+  // 日志条目先登记、再逐步改：中途抛出时已做的那几步（建合集、进合集、关联）照样能撤。
+  final Map<String, Object?> entry = <String, Object?>{
+    'members': <String>[for (final _VolumeOutcome o in members) o.bookKey!],
+    'collectionAdds': collectionAdds,
+    'linksAdded': linksAdded,
+  };
+  journal.add(entry);
   if (seriesKey == null) {
     final String name = series.title.trim().isNotEmpty
         ? series.title.trim()
@@ -694,12 +710,11 @@ Future<Map<String, Object?>?> _importSeries(
     final bool existed =
         await db.getMediaCollectionByNaturalKey(name, 'collection') != null;
     final int id = await db.createMediaCollection(name);
-    if (!existed) createdCollection = id;
+    if (!existed) entry['createdCollection'] = id;
     seriesKey = '$kSeriesKeyCollectionPrefix$id';
   }
+  entry['seriesKey'] = seriesKey;
   final int? collection = seriesCollectionId(seriesKey);
-  final List<Map<String, Object?>> collectionAdds = <Map<String, Object?>>[];
-  final List<String> linksAdded = <String>[];
   for (final _VolumeOutcome o in members) {
     final String bookKey = o.bookKey!;
     if (await resolveSeriesKey(host, bookKey) != null) continue;
@@ -711,13 +726,14 @@ Future<Map<String, Object?>?> _importSeries(
       collectionAdds.add(<String, Object?>{
         'collection': collection,
         'entryKey': entryKey,
+        'bookKey': bookKey,
       });
     } else {
       await store.link(bookKey, seriesKey);
       linksAdded.add(bookKey);
     }
   }
-  final Map<String, Object?> before = (await store.load(seriesKey)).toJson();
+  entry['before'] = (await store.load(seriesKey)).toJson();
   final SeriesCastProfile after = await store.update(seriesKey, (
     SeriesCastProfile profile,
   ) {
@@ -726,14 +742,8 @@ Future<Map<String, Object?>?> _importSeries(
       for (final _VolumeOutcome o in members) o.bookKey!,
     ]);
   });
-  return <String, Object?>{
-    'seriesKey': seriesKey,
-    'before': before,
-    'after': after.toJson(),
-    'collectionAdds': collectionAdds,
-    'linksAdded': linksAdded,
-    'createdCollection': ?createdCollection,
-  };
+  entry['after'] = after.toJson();
+  return entry;
 }
 
 Future<void> _pruneUndoRuns(
@@ -799,52 +809,9 @@ Future<MangaPackageUndoResult> revertMangaAudioPackageImport(
   final FushiDatabase db = host.database;
   final SeriesCastStore store = seriesCastStoreFor(host);
   final List<String> kept = <String>[];
+  final Set<String> keptVolumes = <String>{};
+  final Set<String> deletedVolumes = <String>{};
   int undone = 0;
-
-  final List<Map<String, Object?>> series = <Map<String, Object?>>[
-    if (raw['series'] is List)
-      for (final Object? s in raw['series']! as List<Object?>)
-        if (s is Map) Map<String, Object?>.from(s),
-  ];
-  for (final Map<String, Object?> s in series.reversed) {
-    final String seriesKey = '${s['seriesKey']}';
-    final Object? before = s['before'];
-    final Object? after = s['after'];
-    final SeriesCastProfile current = await store.load(seriesKey);
-    if (after is Map &&
-        jsonEncode(_withoutUpdated(current.toJson())) ==
-            jsonEncode(_withoutUpdated(Map<String, Object?>.from(after)))) {
-      final SeriesCastProfile? previous = SeriesCastProfile.fromJson(before);
-      if (previous != null) {
-        await store.update(seriesKey, (SeriesCastProfile profile) {
-          _replaceProfile(profile, previous);
-        });
-      }
-    } else {
-      kept.add(seriesKey);
-    }
-    for (final Object? add
-        in (s['collectionAdds'] as List<Object?>?) ?? const <Object?>[]) {
-      if (add is! Map) continue;
-      await db.removeFromCollection(
-        (add['collection']! as num).toInt(),
-        MediaKind.epub,
-        '${add['entryKey']}',
-      );
-    }
-    for (final String bookKey in <String>[
-      for (final Object? k
-          in (s['linksAdded'] as List<Object?>?) ?? const <Object?>[])
-        '$k',
-    ]) {
-      await store.link(bookKey, null);
-    }
-    final Object? created = s['createdCollection'];
-    if (created is num &&
-        (await db.getCollectionItems(created.toInt())).isEmpty) {
-      await db.deleteMediaCollection(created.toInt());
-    }
-  }
 
   for (final Map<String, Object?> v in volumes.reversed) {
     final String bookKey = '${v['bookKey']}';
@@ -852,6 +819,7 @@ Future<MangaPackageUndoResult> revertMangaAudioPackageImport(
     if (revision != null &&
         await audiobookRegistrationRevision(db, bookKey) != revision) {
       kept.add(bookKey);
+      keptVolumes.add(bookKey);
       continue;
     }
     final Object? script = v['script'];
@@ -859,6 +827,7 @@ Future<MangaPackageUndoResult> revertMangaAudioPackageImport(
         await File(script).exists() &&
         _sha1Of(await File(script).readAsString()) != v['scriptSha1']) {
       kept.add(bookKey);
+      keptVolumes.add(bookKey);
       continue;
     }
     await host.audiobookSession.stopIfPlayingAny(<String>[bookKey]);
@@ -867,6 +836,7 @@ Future<MangaPackageUndoResult> revertMangaAudioPackageImport(
         : const <String, Object?>{};
     if (v['created'] == true) {
       await _deleteCreatedBook(db, bookKey);
+      deletedVolumes.add(bookKey);
       for (final Object? d in dirs.values) {
         if (d is! Map) continue;
         final Directory dir = Directory('${d['dir']}');
@@ -901,6 +871,62 @@ Future<MangaPackageUndoResult> revertMangaAudioPackageImport(
     }
     undone++;
   }
+
+  final List<Map<String, Object?>> series = <Map<String, Object?>>[
+    if (raw['series'] is List)
+      for (final Object? s in raw['series']! as List<Object?>)
+        if (s is Map) Map<String, Object?>.from(s),
+  ];
+  // 系列在卷之后撤：留下没撤的卷（导入之后又被改过）还要待在原来的系列 / 合集里，
+  // 这样的系列档案也不放回导入前（放回会把这些卷从成员里抹掉），只摘掉已撤卷的成员。
+  for (final Map<String, Object?> s in series.reversed) {
+    final Object? rawKey = s['seriesKey'];
+    final String? seriesKey = rawKey is String ? rawKey : null;
+    final bool keepsMember = <Object?>[
+      ...?(s['members'] as List<Object?>?),
+    ].any((Object? k) => keptVolumes.contains('$k'));
+    final Object? before = s['before'];
+    final Object? after = s['after'];
+    if (seriesKey != null && after is Map) {
+      final SeriesCastProfile current = await store.load(seriesKey);
+      final bool untouched =
+          jsonEncode(_withoutUpdated(current.toJson())) ==
+          jsonEncode(_withoutUpdated(Map<String, Object?>.from(after)));
+      final SeriesCastProfile? previous = SeriesCastProfile.fromJson(before);
+      if (untouched && !keepsMember && previous != null) {
+        await store.update(seriesKey, (SeriesCastProfile profile) {
+          _replaceProfile(profile, previous);
+        });
+      } else {
+        if (!untouched) kept.add(seriesKey);
+        if (deletedVolumes.isNotEmpty) {
+          await store.update(seriesKey, (SeriesCastProfile profile) {
+            profile.members.removeWhere(deletedVolumes.contains);
+          });
+        }
+      }
+    }
+    for (final Object? add
+        in (s['collectionAdds'] as List<Object?>?) ?? const <Object?>[]) {
+      if (add is! Map || keptVolumes.contains('${add['bookKey']}')) continue;
+      await db.removeFromCollection(
+        (add['collection']! as num).toInt(),
+        MediaKind.epub,
+        '${add['entryKey']}',
+      );
+    }
+    for (final Object? k
+        in (s['linksAdded'] as List<Object?>?) ?? const <Object?>[]) {
+      if (keptVolumes.contains('$k')) continue;
+      await store.link('$k', null);
+    }
+    final Object? created = s['createdCollection'];
+    if (created is num &&
+        (await db.getCollectionItems(created.toInt())).isEmpty) {
+      await deleteMediaCollectionWithAssets(db, created.toInt());
+    }
+  }
+
   await undoDir.delete(recursive: true);
   if (kept.isEmpty) {
     return (status: 'done', message: '已撤销 $undone 卷');
