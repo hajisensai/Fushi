@@ -264,6 +264,10 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       cue,
     )).isNotEmpty;
     if (!alreadyInDb) {
+      // 锚点落在句子所属那一行的时间轴上（原盘「全部播放」= 那一集，BUG-5340）。
+      final ({String bookUid, int ms})? anchor = cue == null
+          ? null
+          : _libraryAnchorAt(cue.startMs);
       await repo.add(
         FavoriteSentence(
           // 视频标题尚未加载（_title==null）时回退到 bookUid，保证 bookTitle 永远非空
@@ -271,9 +275,9 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
           text: sentence,
           bookTitle: _title ?? _activeBookUid,
           createdAt: DateTime.now(),
-          bookKey: _activeBookUid,
+          bookKey: anchor?.bookUid ?? _activeBookUid,
           sectionIndex: _favoriteSectionIndex,
-          normCharOffset: cue?.startMs,
+          normCharOffset: anchor?.ms,
           normCharLength: cue == null
               ? null
               : (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
@@ -461,14 +465,16 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       }
     } else if ((await _matchingVideoFavorites(sentence, cue)).isEmpty) {
       // 镜像可能落后于页外来源（收藏夹页、同步合并）：库里已有就不写第二条。
+      // 锚点按句子所属那一行换算（原盘「全部播放」= 那一集，BUG-5340）。
+      final ({String bookUid, int ms}) anchor = _libraryAnchorAt(cue.startMs);
       await repo.add(
         FavoriteSentence(
           text: sentence,
           bookTitle: _title ?? _activeBookUid,
           createdAt: DateTime.now(),
-          bookKey: _activeBookUid,
+          bookKey: anchor.bookUid,
           sectionIndex: _favoriteSectionIndex,
-          normCharOffset: cue.startMs,
+          normCharOffset: anchor.ms,
           normCharLength: (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
           source: kFavoriteSentenceSourceVideo,
           dateKey: statTodayKey(),
@@ -509,11 +515,15 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   /// 拉本视频已收藏句填充 [_favoritedVideoSentences]（打开字幕跳转列表前调一次）。
   /// 只取本 bookKey + video 来源那批，按 `text` 建集供同步查询。
   ///
+  /// 镜像在**播放器时间轴**上（键里的起点与 [_isCueFavorited] 拿到的 cue 同轴）：
+  /// 原盘「全部播放」时取整条播放列表各集的收藏，按各集起点平移回来（BUG-5340），
+  /// 播放头跨集只换库身份、不用重读，新一集已收藏的句子照样亮星。
+  ///
   /// 填完补刷查词浮层星标（video-25：浮层星标也读这份镜像，查词可能早于首次填充）。
   /// 读库期间本页又增删过收藏（[_favoriteMirrorRevision] 变了）时，这份快照可能早于
   /// 那次写，丢掉重读——否则刚收藏的句子会被旧快照盖掉。
   Future<void> _refreshFavoritedCueCache() async {
-    final String bookUid = _activeBookUid;
+    final String scope = _playerAxisScope;
     final int generation = _episodeLoadSeq;
     final FavoriteSentenceRepository repo = FavoriteSentenceRepository(
       appModel.database,
@@ -533,30 +543,47 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
     final List<FavoriteSentence> all = await repo.getAll();
     if (!mounted ||
         generation != _episodeLoadSeq ||
-        bookUid != _activeBookUid) {
+        scope != _playerAxisScope) {
       return;
     }
     if (revision != _favoriteMirrorRevision) return _refreshFavoritedCueCache();
     _rebuild(() {
       _favoritedVideoSentences
         ..clear()
-        ..addAll(
-          all
-              .where(
-                (FavoriteSentence s) =>
-                    s.bookKey == bookUid &&
-                    s.source == kFavoriteSentenceSourceVideo,
-              )
-              .map(
-                (FavoriteSentence s) => _videoFavoriteCacheKey(
-                  s.text.trim(),
-                  s.normCharOffset,
-                  s.sectionIndex,
-                ),
-              ),
-        );
+        ..addAll(all.map(_favoriteMirrorKey).whereType<String>());
       _currentVideoSentenceIsFavorited = _isLookupSentenceFavorited();
     });
+  }
+
+  /// [favorite] 在收藏镜像里的键（播放器时间轴）；不属于本页此刻所播的视频时为 null。
+  String? _favoriteMirrorKey(FavoriteSentence favorite) {
+    if (favorite.source != kFavoriteSentenceSourceVideo ||
+        !_favoriteMirrorCovers(favorite.bookKey)) {
+      return null;
+    }
+    final int? offset = favorite.normCharOffset;
+    // 旧条目没有起点：按文本兼容匹配。
+    if (offset == null) {
+      return _videoFavoriteCacheKey(
+        favorite.text.trim(),
+        null,
+        favorite.sectionIndex,
+      );
+    }
+    final int? startMs = _playerMsOfAnchor(favorite.bookKey, offset);
+    if (startMs == null) return null;
+    return _videoFavoriteCacheKey(
+      favorite.text.trim(),
+      startMs,
+      favorite.sectionIndex,
+    );
+  }
+
+  /// 收藏镜像要不要收 [bookKey] 这一行的收藏：本页此刻所播的视频；原盘「全部播放」
+  /// 时是整条播放列表里的每一集。
+  bool _favoriteMirrorCovers(String? bookKey) {
+    if (bookKey == null) return false;
+    return _discMenuEpisodes?.hasEpisode(bookKey) ?? bookKey == _activeBookUid;
   }
 
   String _videoFavoriteCacheKey(String text, int? startMs, int? episodeIndex) =>
@@ -576,16 +603,21 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
       appModel.database,
     ).getAll();
     final int? episodeIndex = _favoriteSectionIndex;
+    // 库里的锚点在句子所属那一行的时间轴上（原盘「全部播放」= 那一集，BUG-5340）。
+    final ({String bookUid, int ms})? anchor = cue == null
+        ? null
+        : _libraryAnchorAt(cue.startMs);
+    final String bookUid = anchor?.bookUid ?? _activeBookUid;
     // 与镜像判据同一组键（[videoFavoriteMatchesSentence]）：星标亮着就一定删得到。
     return all
         .where(
           (FavoriteSentence s) =>
               s.source == kFavoriteSentenceSourceVideo &&
-              s.bookKey == _activeBookUid &&
+              s.bookKey == bookUid &&
               videoFavoriteMatchesSentence(
                 s,
                 sentence: text,
-                cueStartMs: cue?.startMs,
+                cueStartMs: anchor?.ms,
                 episodeIndex: episodeIndex,
                 isPlaylist: _favoriteIsPlaylist,
               ),

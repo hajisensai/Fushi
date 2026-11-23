@@ -4,6 +4,12 @@
   - 观看统计 `VideoWatchTracker`（`fushi/lib/src/media/video/video_watch_tracker.dart` `_sample` / `stop` → `_checkCompletionAt`）：完成判定 = 整条播放列表的 `positionMs / durationMs ≥ 0.9`，第 1、2 集永远不报「看完」（媒体追踪不推进），末集刚过一大半就报；覆盖并集按集键（`videoWatchCoverageEpisodePrefKey(uid, 0)`）存却是播放列表时间，日后直接打开这一集时字幕计字去重对不上。
   - 收藏句（`video_fushi/lookup_favorite.part.dart` 写 `bookKey: _activeBookUid, normCharOffset: cue.startMs`）、制卡历史 / 回跳锚点（`video_fushi/lookup_mining.part.dart` 的 `miningPositionMs` / `cue.startMs`）：键是这一集、时间是播放列表时间，从收藏 / 历史回跳打开这一集（分集路径自己的时间轴从 0 开始）会落到错位置或越过片尾。
   - 跨集换身份时（`_discMenuEpisodeProgress`）没有重载收藏句缓存（`_refreshFavoritedCueCache`），新一集的已收藏句不显示。
-- **[ ] ① 未修复** — 两条路，需拍板：(a) 播放页加一层「原盘分集时间轴」换算：当前集起点偏移统一作用于所有按集身份落库 / 判定的时间（tracker 用包一层的 `VideoPlaybackSource` 平移位置 / 时长 / 当前句，收藏、制卡、历史写入减偏移、读取加偏移），跨集时重载收藏缓存；(b) 菜单「全部播放」不按集换身份，回到一条整卷身份但不进合集选集列表（进度不同步到各集）。PR #4278 选的是 (a) 的一部分。
-- **[ ] ② 未加自动化测试** — 修法定下后补：分集绑定下完成判定按集长、收藏 / 制卡锚点为集内时间。
+- **[x] ① 已修复**（拍板台 pr4278 定 (a)，2026-11-23）— 播放页加一层「原盘分集时间轴」：播放器（字幕、制卡裁剪、跳转记录、收藏镜像）留在整条播放列表的时间轴上，凡「键是某一集、时间是锚点」的落库 / 判定统一在边界换算。
+  - 换算本体在引擎 `BlurayMenuTitleBinding`（`packages/fushi_engine/lib/media/video/bluray/bluray_library_title.dart`）：`anchorAt`（播放列表毫秒 → `(那一集 bookUid, 集内毫秒)`）/ `playlistMsOf`（反向）/ `episodeOf`。页面侧入口在 `video_fushi/disc_menu.part.dart`：`_libraryAnchorAt` / `_playerMsOfAnchor` / `_activeEpisodeAxisMs` / `_playerAxisScope`。
+  - 观看采集器：`_ensureWatchTracker` 原盘「全部播放」时给 `VideoWatchTracker` 接 `EpisodeAxisPlaybackSource`（`fushi/lib/src/media/video/video_episode_axis_source.dart`，位置 / 时长 / 当前句平移到这一集、越界夹在集长内），完成判定按集长 90%、覆盖并集按集轴存；区间在建采集器时定死，跨集时旧采集器离开那次结算仍按旧集（越过集尾 = 看完）。看完上报的身份也在建采集器时冻结（`_libraryTrackingCompletionFor`），不再按离开那一刻已换成下一集的 `_activeBookUid` 报。
+  - 收藏句：写入（`_toggleFavoriteSentenceForVideo` / `_toggleFavoriteCueForVideo`）与库内匹配（`_matchingVideoFavorites`）按句子所在那一集记 `bookKey` + 集内起点；镜像（`_refreshFavoritedCueCache`）收整条播放列表各集的收藏并平移回播放器轴，作用域按 `_playerAxisScope`，跨集不必重读、新一集的已收藏句照样亮星。收藏词（`favoriteLookupContext`）换到当前集时间轴。
+  - 制卡历史回跳锚点（`lookup_mining.part.dart` 本机制卡、`remote_control.part.dart` 手机制卡）按句子所在那一集记。
+  - 手机遥控：`VideoRemotePlaybackBinding.libraryAnchor`（`fushi/lib/src/sync/video_remote_host.dart`）让手机收藏的写入 / 匹配走同一换算；手机「打开收藏」落在本条播放列表某一集上时平移回播放器轴页内跳（`matchVideoRemoteFavoriteCue(playerStartMs:)`）。
+  - 跳转记录作用域（`_videoJumpScopeKey`）跨集不再作废（播放器时间轴没变）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_episode_axis_source_test.dart`（第 1 集按集长 90% 报看完、末集过整条 90% 不报、跨集后旧采集器离开按旧集结算、覆盖并集按集轴存、平移视图本身）；`packages/fushi_engine/test/media/video/bluray/bluray_menu_title_binding_test.dart`（锚点正反换算互逆、别的视频不平移）；`fushi/test/sync/video_remote_host_test.dart`（手机收藏按集锚点落库与匹配）；`fushi/test/media/video/video_remote_binding_support_test.dart`（打开收藏按平移后的起点匹配）。
 - **备注**：真盘复测已按维护者意见取消。

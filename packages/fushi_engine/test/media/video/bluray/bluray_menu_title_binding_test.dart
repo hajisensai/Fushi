@@ -89,11 +89,33 @@ void main() {
     expect(binding.hasEpisode('other'), isFalse);
   });
 
+  test('原盘分集时间轴：锚点正反换算互逆，别的视频的锚点不平移（BUG-5340）', () async {
+    final BlurayMenuTitleBinding binding =
+        (await ensureBlurayMenuTitleInLibrary(db, mpls('00001')))!;
+    final String ep1 = binding.episodes[0].row.bookUid;
+    final String ep2 = binding.episodes[1].row.bookUid;
+
+    // 第 2 集第 11 秒的字幕句：收藏 / 制卡写成 (ep2, 11000)，与直接打开第 2 集同轴。
+    expect(binding.anchorAt(1453000), (bookUid: ep2, ms: 11000));
+    expect(binding.anchorAt(30000), (bookUid: ep1, ms: 30000));
+    expect(binding.playlistMsOf(ep2, 11000), 1453000);
+    expect(binding.playlistMsOf(ep1, 30000), 30000);
+    for (final int ms in <int>[0, 5000, 1441999, 1442000, 2000000]) {
+      final ({String bookUid, int ms}) anchor = binding.anchorAt(ms)!;
+      expect(binding.playlistMsOf(anchor.bookUid, anchor.ms), ms);
+    }
+    expect(binding.episodeOf(ep2)!.startMs, 1442000);
+    expect(binding.playlistMsOf('other', 1000), isNull);
+    expect(binding.episodeOf('other'), isNull);
+  });
+
   test('没被切开的播放列表（特典）照旧是单条标题', () async {
     final BlurayMenuTitleBinding binding =
         (await ensureBlurayMenuTitleInLibrary(db, mpls('00002')))!;
     expect(binding.episodes, isEmpty);
     expect(binding.row!.videoPath, mpls('00002'));
     expect(binding.progressAt(5000), isNull);
+    expect(binding.anchorAt(5000), isNull);
+    expect(binding.playlistMsOf(binding.row!.bookUid, 5000), isNull);
   });
 }

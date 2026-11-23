@@ -366,33 +366,13 @@ Future<String?> _extractVideoCoverUnlocked({
   required String? tlsPinSha256,
   required bool diagnosticOnly,
 }) async {
-  // 蓝光标题的 `videoPath` 是 `BDMV/PLAYLIST/*.mpls`（或分集的虚拟路径
-  // `00001.p03.mpls`）——「描述怎么播」的文件，不是码流。它不带内嵌封面、也没有
-  // 「头部全零」可判，直接按这条标题自己的时间轴抽帧：ffmpeg 后端
-  // （`BlurayFfmpegBackend`）把它改写成只含这条标题各段的 concat 清单，加密段经
-  // AACS 会话解密，与制卡抽取同一条输入链。
-  //
-  // BUG-5312：原来换成第一段 `STREAM/*.m2ts` 直接交给 ffmpeg——加密盘的 m2ts 是密文
-  // （`could not find sync byte`），各集一律没有封面；第一集的第一段还是几秒的厂标，
-  // 10 秒处根本没有画面。
+  // 蓝光标题（`BDMV/PLAYLIST/*.mpls`）不是码流，另走 [_extractBlurayTitleCover]。
   if (isBlurayPlaylistPath(videoPath)) {
-    if (await readBlurayMemberPlaylist(videoPath) == null) return null;
-    final Directory coverDir = await enginePaths.videoCoversDirectory();
-    return grabFirstNonBlackCoverFrame(
-      outputPath: p.join(coverDir.path, videoCoverFileName(bookUid)),
-      candidateSeconds: coverFrameCandidateSeconds(atSeconds),
+    return _extractBlurayTitleCover(
+      videoPath: videoPath,
+      bookUid: bookUid,
+      atSeconds: atSeconds,
       diagnosticOnly: diagnosticOnly,
-      grab:
-          ({
-            required String outputPath,
-            required double atSeconds,
-            required bool diagnosticOnly,
-          }) => extractVideoFrameViaFfmpeg(
-            inputPath: videoPath,
-            outputPath: outputPath,
-            atSeconds: atSeconds,
-            diagnosticOnly: diagnosticOnly,
-          ),
     );
   }
   // BUG-1564：**本地**播放列表清单（.m3u8/.m3u）是文本列表不是媒体流，两条 ffmpeg
@@ -448,6 +428,43 @@ Future<String?> _extractVideoCoverUnlocked({
           outputPath: outputPath,
           atSeconds: atSeconds,
           tlsPinSha256: tlsPinSha256,
+          diagnosticOnly: diagnosticOnly,
+        ),
+  );
+}
+
+/// 蓝光标题的 `videoPath` 是 `BDMV/PLAYLIST/*.mpls`（或分集的虚拟路径
+/// `00001.p03.mpls`）——「描述怎么播」的文件，不是码流。它不带内嵌封面、也没有
+/// 「头部全零」可判，直接按这条标题自己的时间轴抽帧：ffmpeg 后端
+/// （`BlurayFfmpegBackend`）把它改写成只含这条标题各段的 concat 清单，加密段经
+/// AACS 会话解密，与制卡抽取同一条输入链。
+///
+/// BUG-5312：原来换成第一段 `STREAM/*.m2ts` 直接交给 ffmpeg——加密盘的 m2ts 是密文
+/// （`could not find sync byte`），各集一律没有封面；第一集的第一段还是几秒的厂标，
+/// 10 秒处根本没有画面。
+///
+/// 空洞拒收（[hasHollowMediaHeader]）不适用：路径指向的是清单而不是码流。
+Future<String?> _extractBlurayTitleCover({
+  required String videoPath,
+  required String bookUid,
+  required double atSeconds,
+  required bool diagnosticOnly,
+}) async {
+  if (await readBlurayMemberPlaylist(videoPath) == null) return null;
+  final Directory coverDir = await enginePaths.videoCoversDirectory();
+  return grabFirstNonBlackCoverFrame(
+    outputPath: p.join(coverDir.path, videoCoverFileName(bookUid)),
+    candidateSeconds: coverFrameCandidateSeconds(atSeconds),
+    diagnosticOnly: diagnosticOnly,
+    grab:
+        ({
+          required String outputPath,
+          required double atSeconds,
+          required bool diagnosticOnly,
+        }) => extractVideoFrameViaFfmpeg(
+          inputPath: videoPath,
+          outputPath: outputPath,
+          atSeconds: atSeconds,
           diagnosticOnly: diagnosticOnly,
         ),
   );

@@ -221,23 +221,26 @@ bool _isPopupMediaPlaceholder(Object? filename) =>
 
 /// 收藏句在当前句子列表里的那一行：先按起点 + 文本，起点对得上但文本改过时退回只按起点。
 /// 多行同时匹配回 409 `favorite_subtitle_ambiguous`，找不到回 404 `favorite_subtitle_missing`。
+///
+/// [playerStartMs] 给了就用它代替收藏里存的起点：收藏的锚点在它那一集自己的时间轴上，
+/// 而本页播的是包含这一集的整条播放列表（原盘「全部播放」，BUG-5340），调用方先把
+/// 锚点平移到播放器时间轴再来匹配。
 VideoRemoteCue matchVideoRemoteFavoriteCue(
   List<VideoRemoteCue> rows,
-  FavoriteSentence favorite,
-) {
+  FavoriteSentence favorite, {
+  int? playerStartMs,
+}) {
+  final int? startMs = playerStartMs ?? favorite.normCharOffset;
   final List<VideoRemoteCue> candidates = rows
       .where(
         (VideoRemoteCue item) =>
-            (favorite.normCharOffset == null ||
-                item.startMs == favorite.normCharOffset) &&
+            (startMs == null || item.startMs == startMs) &&
             item.text.trim() == favorite.text.trim(),
       )
       .toList();
-  if (candidates.isEmpty && favorite.normCharOffset != null) {
+  if (candidates.isEmpty && startMs != null) {
     candidates.addAll(
-      rows.where(
-        (VideoRemoteCue item) => item.startMs == favorite.normCharOffset,
-      ),
+      rows.where((VideoRemoteCue item) => item.startMs == startMs),
     );
   }
   if (candidates.length > 1) {

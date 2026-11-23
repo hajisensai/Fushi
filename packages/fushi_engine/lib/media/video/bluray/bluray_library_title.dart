@@ -102,8 +102,35 @@ class BlurayMenuTitleBinding {
   }
 
   /// [bookUid] 是不是这次绑定里的某一集。
-  bool hasEpisode(String bookUid) =>
-      episodes.any((BlurayMenuEpisode e) => e.row.bookUid == bookUid);
+  bool hasEpisode(String bookUid) => episodeOf(bookUid) != null;
+
+  /// 库行 [bookUid] 在这次绑定里对应的那一集；不在其中（或不是分集绑定）时为 null。
+  BlurayMenuEpisode? episodeOf(String bookUid) {
+    for (final BlurayMenuEpisode episode in episodes) {
+      if (episode.row.bookUid == bookUid) return episode;
+    }
+    return null;
+  }
+
+  /// 「原盘分集时间轴」的正向换算（BUG-5340）：播放列表时间轴上的 [playlistMs]
+  /// （播放位置或字幕句起点）在库里该记到哪一集（`bookUid`）的哪一刻（这一集自己的
+  /// 时间轴，与直接打开这一集时同一根轴）。按 [progressAt] 选集并夹在集长内；不是
+  /// 分集绑定时为 null。收藏句、制卡历史这类「键是某一集、时间是锚点」的写入都走它。
+  ({String bookUid, int ms})? anchorAt(int playlistMs) {
+    final ({BlurayMenuEpisode episode, int positionMs})? progress = progressAt(
+      playlistMs,
+    );
+    if (progress == null) return null;
+    return (bookUid: progress.episode.row.bookUid, ms: progress.positionMs);
+  }
+
+  /// 「原盘分集时间轴」的反向换算：库行 [bookUid] 自己时间轴上的 [episodeMs] 在这条
+  /// 播放列表时间轴上是哪一刻。[bookUid] 不是这次绑定里的集时为 null（锚点属于别的
+  /// 视频，不能平移到这条播放列表上）。
+  int? playlistMsOf(String bookUid, int episodeMs) {
+    final BlurayMenuEpisode? episode = episodeOf(bookUid);
+    return episode == null ? null : episode.startMs + episodeMs;
+  }
 }
 
 /// 原盘菜单进入 [playlistPath] 时该绑的库身份；不是盘内 MPLS 路径、或盘读不出来时

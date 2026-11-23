@@ -337,15 +337,22 @@ extension _VideoLookupMining on _VideoFushiPageState {
     );
     final int queuedEpisode = _currentEpisode;
     final AudioCue? historyCue = _lastLookupCue;
+    // 制卡历史的回跳锚点按句子所属那一行的时间轴记（原盘「全部播放」= 那一集，
+    // BUG-5340），与收藏句同一口径。
+    final ({String bookUid, int ms})? historyAnchor = historyCue == null
+        ? null
+        : _libraryAnchorAt(historyCue.startMs);
     final VideoMiningHistorySnapshot historySnapshot =
         VideoMiningHistorySnapshot.capture(
           fields: fields,
           sentence: range.sentence,
           documentTitle: _title ?? _activeBookUid,
-          bookKey: _activeBookUid,
+          bookKey: historyAnchor?.bookUid ?? _activeBookUid,
           sectionIndex: _favoriteSectionIndex,
-          cueStartMs: historyCue?.startMs,
-          cueEndMs: historyCue?.endMs,
+          cueStartMs: historyAnchor?.ms,
+          cueEndMs: historyCue == null || historyAnchor == null
+              ? null
+              : historyAnchor.ms + (historyCue.endMs - historyCue.startMs),
           dateKey: statTodayKey(),
         );
 
