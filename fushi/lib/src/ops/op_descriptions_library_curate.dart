@@ -159,6 +159,61 @@ List<OpDescription> describeLibraryCurateOps(OpDescribeKit kit) {
         ),
       ],
     ),
+    OpDescription(
+      id: 'library.curate.scrape.retry',
+      method: 'POST',
+      pattern: '$kLibraryCurateCtlRoot/scrape/retry',
+      summary:
+          'Retry identifying ONE book / manga or game the curator left '
+          'unidentified (book_scrape_pending / game_scrape_pending in '
+          'library.curate.pending): search its metadata sources again and let '
+          'the LLM pick among candidates; writes only when confident. Recorded '
+          'as a curator run (undo reverts it); does not move the watermark.',
+      risk: OpRisk.write,
+      params: const <OpParam>[
+        OpParam.string(
+          'stage',
+          description: 'books (books and manga) or games.',
+          required: true,
+          enumValues: <String>['books', 'games'],
+        ),
+        OpParam.string(
+          'ref',
+          description:
+              'Item key: collection:<id> / book:<bookKey> for books, '
+              'game:<id> for games (the ref of the pending item).',
+          required: true,
+        ),
+        OpParam.userGate(
+          'yes',
+          description:
+              'User agreed to send library metadata to the AI providers.',
+        ),
+      ],
+      undo: opCustomUndo(
+        payloadOf:
+            (CtlCall call, Map<String, Object?> before, Object? result) =>
+                <String, Object?>{'runId': result is Map ? result['id'] : null},
+        describe: (Map<String, Object?> p) => 'curator retry ${p['runId']}',
+        revert: (Map<String, Object?> payload) async {
+          final Object? runId = payload['runId'];
+          if (runId == null) return const OpUndoOutcome.done();
+          final Object? r = await kit.callRoute(
+            'POST',
+            '$kLibraryCurateCtlRoot/runs/:id/undo',
+            params: <String, String>{'id': '$runId'},
+          );
+          final Map<Object?, Object?> m = r is Map ? r : const {};
+          if ((m['failed'] as num? ?? 0) > 0) {
+            return OpUndoOutcome.partial('${m['failed']} 处撤销失败');
+          }
+          if ((m['undone'] as num? ?? 0) == 0) {
+            return const OpUndoOutcome.superseded('这一趟没有可撤销的了');
+          }
+          return const OpUndoOutcome.done();
+        },
+      ),
+    ),
     const OpDescription(
       id: 'library.curate.pending',
       method: 'GET',

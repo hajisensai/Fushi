@@ -12,6 +12,7 @@ import 'dart:typed_data';
 
 import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_models.dart';
+import 'package:fushi_engine/models/content_language.dart';
 import 'package:image/image.dart' as img;
 
 /// 刮来的图要比本地大这么多倍（面积）才替换。
@@ -90,18 +91,20 @@ bool _downloadable(MangaBakaRawImage raw) {
   return size == null || size <= kBookArtMaxImageBytes;
 }
 
-/// 把 MangaBaka 图片列表按卷号分组，每卷挑一张：只看 `type=volume`、ja、白名单
+/// 把 MangaBaka 图片列表按卷号分组，每卷挑一张：只看 `type=volume`、[language]
+/// 版（按主语言子标签比：`zh` 收 `zh` / `zh-tw` / `zh-hk`，默认日文版）、白名单
 /// 格式与大小；分级 safe 优先于 suggestive（erotica / pornographic 不要）；常规版
-/// （`note == null`）优先于变体；最后比面积。
+/// （`note == null`）优先于变体；最后比面积。别的语言版本的封面一律不选（BUG-5287）。
 Map<num, MangaBakaImage> pickMangaBakaVolumeImages(
-  Iterable<MangaBakaImage> images,
-) {
+  Iterable<MangaBakaImage> images, {
+  String language = 'ja',
+}) {
   final Map<num, MangaBakaImage> best = <num, MangaBakaImage>{};
   for (final MangaBakaImage image in images) {
     final num? index = image.indexNumeric;
     if (index == null ||
         image.type != 'volume' ||
-        image.language != 'ja' ||
+        contentLanguageKey(image.language) != language ||
         _ratingRank(image.contentRating) > 1 ||
         !_downloadable(image.raw)) {
       continue;

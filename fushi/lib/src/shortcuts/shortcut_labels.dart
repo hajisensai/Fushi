@@ -306,6 +306,11 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_music_seek_forward;
       case ShortcutAction.musicSeekBackward:
         return t.shortcut_action_music_seek_backward;
+      // 与 music 那对同名：设置页按 scope 分卡片，卡片标题（「音乐播放页」）已说明范围。
+      case ShortcutAction.musicPlayerSeekForward:
+        return t.shortcut_action_music_seek_forward;
+      case ShortcutAction.musicPlayerSeekBackward:
+        return t.shortcut_action_music_seek_backward;
       case ShortcutAction.srsReviewPrimary:
         return t.shortcut_action_srs_review_primary;
       case ShortcutAction.srsReviewAgain:
@@ -452,6 +457,8 @@ extension ShortcutScopeLabel on ShortcutScope {
         return t.shortcut_scope_dictionary_popup;
       case ShortcutScope.music:
         return t.shortcut_scope_music;
+      case ShortcutScope.musicPlayer:
+        return t.shortcut_scope_music_player;
       case ShortcutScope.srsReview:
         return t.shortcut_scope_srs_review;
     }

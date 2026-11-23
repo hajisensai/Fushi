@@ -586,7 +586,17 @@ mixin _FushiDbPrefsMedia
   /// （同 bookUid 重复登记、互联重下覆盖同一副本）时**永不改写**——那不是重新
   /// 拥有。互联下载登记把 `importedAt` 镜像成 host 值（BUG-2463），本列仍记本机
   /// 落地时刻（语义见 [FushiDatabase.insertEpubBook]）。
-  Future<void> upsertVideoBook(VideoBooksCompanion vb) async {
+  ///
+  /// 标题过 [cleanImportedTitle]（末尾 CRC 标签 / 扩展名不是标题）：视频的身份是
+  /// `bookUid`、标题只是显示名（用户改名直写本列），所以在写入单点清洗，导入 / 来源
+  /// 扫描 / 下载管线 / 互联登记的每条路径都一样；存量行由 v172 迁移清过一次。用户
+  /// 改名走 [updateVideoBookTitle]，原样写、不清洗。
+  Future<void> upsertVideoBook(VideoBooksCompanion input) async {
+    final VideoBooksCompanion vb = input.title.present
+        ? input.copyWith(
+            title: Value<String>(cleanImportedTitle(input.title.value)),
+          )
+        : input;
     await into(videoBooks).insert(
       vb.localAddedAt.present
           ? vb
@@ -602,6 +612,30 @@ mixin _FushiDbPrefsMedia
     if (vb.bookUid.present) {
       await clearSyncDeletionTombstone('video', vb.bookUid.value);
     }
+  }
+
+  /// 把存量 `video_books.title` 过一遍 [cleanImportedTitle]（v172 迁移步）：只写
+  /// 清洗后确有变化的行，返回改写行数；幂等。
+  ///
+  /// 只读写 `book_uid` / `title` 两列（裸 SQL：迁移阶梯中途表的其它列可能还没齐）。
+  /// 不碰统计 / 活动行里的标题快照——它们按 book_uid 归属，与用户改名
+  /// （[updateVideoBookTitle]）同一口径。
+  Future<int> cleanStoredVideoBookTitles() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT book_uid, title FROM video_books',
+    ).get();
+    int changed = 0;
+    for (final QueryRow row in rows) {
+      final String title = row.read<String>('title');
+      final String cleaned = cleanImportedTitle(title);
+      if (cleaned == title) continue;
+      await customStatement(
+        'UPDATE video_books SET title = ? WHERE book_uid = ?',
+        <Object>[cleaned, row.read<String>('book_uid')],
+      );
+      changed++;
+    }
+    return changed;
   }
 
   Future<VideoBookRow?> getVideoBookByBookUid(String bookUid) => (select(

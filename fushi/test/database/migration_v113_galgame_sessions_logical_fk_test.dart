@@ -119,7 +119,7 @@ void main() {
         isMainProcess: false,
       );
       addTearDown(migrated.close);
-      expect(migrated.schemaVersion, 171);
+      expect(migrated.schemaVersion, kFushiDbSchemaVersion);
 
       expect(
         await migrated

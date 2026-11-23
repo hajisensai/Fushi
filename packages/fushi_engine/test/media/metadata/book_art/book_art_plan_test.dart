@@ -69,6 +69,31 @@ void main() {
     expect(picked.containsKey(5), isFalse);
   });
 
+  // BUG-5287：台版《化物語》不能拿到日文版的卷封面。
+  test('按版本语言挑卷封面：zh 只收 zh / zh-tw，不回落 ja；默认仍是日文版', () {
+    final List<MangaBakaImage> images = <MangaBakaImage>[
+      _img(1, 1),
+      _img(2, 2),
+      _img(3, 1, language: 'zh-tw'),
+      _img(4, 3, language: 'zh'),
+      _img(5, 1, language: 'en', width: 4000, height: 6000),
+    ];
+    final Map<num, MangaBakaImage> zh = pickMangaBakaVolumeImages(
+      images,
+      language: 'zh',
+    );
+    expect(
+      zh.map((num k, MangaBakaImage v) => MapEntry<num, int>(k, v.id)),
+      <num, int>{1: 3, 3: 4},
+    );
+    expect(zh.containsKey(2), isFalse, reason: '中文版缺第 2 卷时不拿日文版的封面');
+    expect(
+      pickMangaBakaVolumeImages(images).values.map((MangaBakaImage i) => i.id),
+      <int>[1, 2],
+    );
+    expect(pickMangaBakaVolumeImages(images, language: 'ko'), isEmpty);
+  });
+
   group('chooseBookArtVolume', () {
     const BookArtImageOption mb = BookArtImageOption(
       source: BookArtSource.mangabaka,

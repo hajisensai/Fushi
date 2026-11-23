@@ -472,12 +472,13 @@ String get kTtsCastLinesSystemPrompt =>
 You attribute dialogue in a novel to speakers so an audiobook can give each character a different voice, and give each line a little direction.
 
 You get the cast list, the last few lines already attributed (for turn-taking), and numbered lines from one chapter (lines marked "context" only help you infer speakers; never label them). Return ONLY a JSON array, no prose, no code fence:
-[{"i":3,"s":"エミリア","k":"shout","e":"anger","ei":70,"c":0.95,"ev":"explicit"},{"i":5,"s":"スバル","k":"thought","beat":400,"c":0.6,"ev":"implicit"},{"i":8,"s":"unknown","c":0.2,"ev":"implicit"},{"i":11,"s":"narrator"}]
+[{"i":3,"s":"エミリア","k":"shout","e":"anger","ei":70,"tone":"必死に食い下がる","c":0.95,"ev":"explicit"},{"i":5,"s":"スバル","k":"thought","beat":400,"c":0.6,"ev":"implicit"},{"i":8,"s":"unknown","c":0.2,"ev":"implicit"},{"i":11,"s":"narrator"}]
 - "i": the line number.
 - "s": who speaks the line: EXACTLY one canonical name from the cast list; "unknown" when it is dialogue but you cannot tell who says it; or "narrator" for a starred line that nobody says aloud (see Rules). Never use a name that is not in the cast list; never use an alias.
 - "k": optional, one of ${kTtsCastDialogueKinds.map((CastLineKind k) => '"${k.wire}"').join(' | ')}. "spoken" = normal speech (the default); "shout"; "mutter" = quiet talking to oneself; "thought" = inner voice written as a quoted thought, e.g. （…）; "monologue" = a longer first-person inner passage set off like dialogue.
 - "beat": optional extra pause after the line in milliseconds (0..${CastLineLimits.maxBeatMs}), only for dramatic timing.
 - "e": optional emotion, one of ${CastEmotion.values.map((CastEmotion e) => '"${e.wire}"').join(' | ')}; "ei": its intensity 0..100. Omit both when neutral.
+- "tone": optional short Japanese acting note (at most 20 characters, e.g. "おずおずと", "必死に食い下がる", "声を落として") saying HOW the line is delivered — the nuance the emotion word cannot carry.
 - "c": your confidence from 0 to 1.
 - "ev": "explicit" (an attribution like 「…」とスバルは言った names the speaker), "anaphoric" (a pronoun, title or description refers to them, e.g. と彼女は言った, 少女が呟いた), or "implicit" (no tag; inferred from turn-taking, address terms, speech style).
 
@@ -487,6 +488,7 @@ Rules:
 - A long utterance may be split across several consecutive lines; label every line of it with the same speaker.
 - Use the attribution tags, turn-taking (in a two-person exchange speakers usually alternate), how characters address each other, their speech style and gender, and the surrounding narration (including context lines and the already-attributed lines).
 - Prefer "unknown" with a low "c" over guessing.
+- Direct each line's delivery on its own. When the same speaker says several lines in a row, do NOT copy one direction across all of them: read each line's sentence-final particles and what the line does (apology, excuse, empathy, promise, plea, emotional appeal, …) and give each line its own "e" / "ei" / "tone", so the delivery changes from line to line the way a real actor's would.
 ''';
 
 /// 滚动上下文里的一句已归属台词。
@@ -659,13 +661,14 @@ CastLineKind? ttsCastDialogueKind(Object? raw) {
   return kTtsCastDialogueKinds.contains(kind) ? kind : null;
 }
 
-/// AI 给的演出字段：只收一拍与情绪 + 强度（夹取规则与漫画共用
+/// AI 给的演出字段：只收一拍、情绪 + 强度与语气说明（夹取规则与漫画共用
 /// [CastLineDirection.fromJson]）；种子 / 语速 / 音高 / 音量不归 AI 定。
 CastLineDirection ttsCastAiDirection(Map<Object?, Object?> entry) {
   return CastLineDirection.fromJson(<Object?, Object?>{
     'beat': entry['beat'],
     'e': entry['e'],
     'ei': entry['ei'],
+    'tone': entry['tone'],
   });
 }
 
@@ -692,6 +695,7 @@ Map<String, TtsCastLine> ttsCastLinesForChunk(
           beatMs: l.direction.beatMs,
           emotion: l.direction.emotion,
           intensity: l.direction.intensity,
+          tone: l.direction.tone,
           confidence: l.confidence,
           evidence: l.evidence,
         ),

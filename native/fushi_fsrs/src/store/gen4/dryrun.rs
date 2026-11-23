@@ -15,9 +15,9 @@
 //! 刷新、没给缓存配置；预演只在 `migrationBlockers` 里报）。
 //! 4. 对拍（`compare.rs`，与测试装置同一份比法）。基准是**冻结的旧代码对旧库全量重建出来的缓存**，不是旧库里现成的
 //!    缓存表（它允许过期）；现成的与重建的另比一次，单列（§10 第 7 条，不计入判定）。协议 3 自己还欠着收尾的卡与笔记
-//!    （待重放集合、没刷新的合成标签行）只读连接上做不了，跳过并计数。旧代码重放改写过、再没改回来的日志结果（没有 `sc` 的
-//!    日志，投影行结果 ≠ 它操作里作者给的，`stale.rs` 逐条佐证）在影子日志表上改回、按协议 3 的重放重放后再重建，
-//!    报 `oldSideStaleResults`。
+//!    （待重放集合、没刷新的合成标签行）只读连接上做不了，跳过并计数。协议 3 一侧与操作集合不一致的日志结果（没有
+//!    `sc` 的旧日志投影行被旧重放改写，或存量重复日志停留在操作号更大的败者副本上，`stale.rs` 逐条佐证）在影子表上改回
+//!    并按协议 3 的重放重放后再重建，报 `oldSideStaleResults`。
 //! 5. 在对拍之外再按规范 ID 比（§6.1 第 5 步、§5.3）：每个寄存器的胜者、每张规范卡的调度状态、每张规范卡（含不在缓存
 //!    里的历史血统卡）名下的规范日志与有效复习。缓存层本身按规范 ID 物化，第 4 步的缓存三类也是按规范 ID 比的
 //!    （协议 3 一侧的行先改写成规范 ID，`compare.rs` 文件头「按规范 ID 比」）。
@@ -84,7 +84,9 @@ use crate::sync2::vv::OpId;
 ///   `error`（以前照样 `pass` / `fail`）。
 /// - 5：profile 报告加 `oldSideStaleResults`（`{logs, cards, examples}`，`stale.rs`）：协议 3 一侧被旧代码重放改写过、
 ///   再没改回来的日志结果，基准改回后重建，逐条佐证、不计入判定（反馈 RhMpA6bn8v）。
-pub const REPORT_VERSION: i64 = 5;
+/// - 6：`oldSideStaleResults` 也收协议 3 停在非代表副本上的重复日志（换成新代的最小操作号代表，PR #4245），多一项
+///   `swaps`（其中换代表的条数），这类例子写成「日志 卡 op: M -> W keys: [换了的键] … res: …」。
+pub const REPORT_VERSION: i64 = 6;
 
 /// `knownDifferences.entries` 最多列几条（只有 ID；超出的只计数，`truncated` 为真）。
 pub const KNOWN_ENTRIES: usize = 5_000;
@@ -644,8 +646,8 @@ pub(crate) fn profile_stages(
         "oldSidePending".into(),
         json!({"replayCards": skip.cards.len(), "staleTagNotes": skip.notes.len()}),
     );
-    // 协议 3 一侧被旧代码重放改写过、再没改回来的日志结果（`stale.rs`）：基准先改回再重建，逐条报出来。
-    let stale = stale::find(src, profile)?;
+    // 协议 3 一侧偏离操作集合规则（旧重放改写、或重复日志停在败者副本）的日志结果（`stale.rs`）：基准先改回再重建，逐条报出来。
+    let stale = stale::find(src, profile, t, col)?;
     out.insert("oldSideStaleResults".into(), stale::report(&stale));
     let mut peaks = Map::new();
     let mut mark = |what: &str| {
@@ -718,6 +720,7 @@ pub(crate) fn profile_stages(
     }
     out.insert("collidedNotes".into(), json!(collided.notes.len()));
     out.insert("collidedEntities".into(), json!(collided.entities.len()));
+    out.insert("orphanedEntities".into(), json!(collided.orphaned.len()));
     mark("canonLoad");
     let regs = registers(src, profile, t, col, &collided)?;
     mark("registerWinners");
@@ -764,6 +767,10 @@ pub(crate) fn profile_stages(
     out.insert(
         "idTrace".into(),
         trace::id_trace(t, col, &canon, baseline.rows(), &trace_ids)
+            .and_then(|mut v| {
+                compare::annotate_protocol_3(src, profile, &mut v)?;
+                Ok(v)
+            })
             .unwrap_or_else(|e| json!({ "error": e })),
     );
     drop(baseline);
@@ -1024,8 +1031,10 @@ fn old_side_pending(src: &Connection, profile: &str) -> Result<Skip, String> {
     Ok(skip)
 }
 
-/// 协议 3 的日志投影表（有过期结果要改回时也建影子，[old_caches]）。
+/// 协议 3 的日志投影表、日志元数据表与 S(e) 表（有要改回的日志投影时按需建影子，[old_caches]）。
 const LOG_TABLE: &str = "srs_review_logs";
+const LOG_META_TABLE: &str = "sync2_log_meta";
+const EVENT_LOCAL_TABLE: &str = "srs_event_local";
 
 /// 协议 3 缓存重建要写的表。
 const CACHE_TABLES: [&str; 4] = [
@@ -1039,8 +1048,9 @@ const CACHE_TABLES: [&str; 4] = [
 /// `main` 的定义建同名的空表与索引——不带库名的表名先找 `temp`，旧代码的读写都落在这几张临时表上——重建、读行、删表。
 /// [cfg] 已是协议 3 口径（带盐的内置 ID，`compare.rs` `cache_pairs` 经 `class.rs` `legacy_config_for` 换好的）。
 ///
-/// [stale] 是协议 3 一侧佐证得了的过期日志结果（`stale.rs`）：非空时日志投影表也在 `temp` 里建一份同名的（这个 profile
-/// 的行），先改回、按协议 3 的重放重放那些卡，再重建。
+/// [stale] 是协议 3 一侧佐证得了的、偏离操作集合规则的日志投影（`stale.rs`）：非空时日志投影表也在 `temp` 里建一份
+/// 同名的（这个 profile 的行；有换代表的再加 `sync2_log_meta`，换代表改了 S(e) 的再加 `srs_event_local`），先改回、
+/// 按协议 3 的重放重放那些卡，再重建。
 fn old_caches(
     src: &Connection,
     profile: &str,
@@ -1077,22 +1087,31 @@ fn old_caches_with(
     )
     .map_err(Setup)?;
     let mut tables: Vec<&str> = CACHE_TABLES.to_vec();
+    let mut copy_tables: Vec<&str> = Vec::new();
     if !stale.is_empty() {
-        tables.push(LOG_TABLE);
+        copy_tables.push(LOG_TABLE);
+        if stale::touches_meta(stale) {
+            copy_tables.push(LOG_META_TABLE);
+        }
+        if stale::touches_server_time(stale) {
+            copy_tables.push(EVENT_LOCAL_TABLE);
+        }
+        tables.extend(copy_tables.iter().copied());
     }
-    // 日志投影表的影子要拷行：只拷存储列（`json` 是生成列）。
-    let log_cols: Vec<String> = if stale.is_empty() {
-        Vec::new()
-    } else {
-        texts(
+    // 日志投影表与元数据表的影子要拷行：只拷存储列（`json` 是生成列）。
+    let mut copy_cols: Vec<(&str, String)> = Vec::with_capacity(copy_tables.len());
+    for table in &copy_tables {
+        let cols = texts(
             src,
-            &format!("SELECT name FROM pragma_table_xinfo('{LOG_TABLE}', 'main') WHERE hidden = 0"),
+            &format!("SELECT name FROM pragma_table_xinfo('{table}', 'main') WHERE hidden = 0"),
             &[],
         )
         .map_err(Setup)?
         .into_iter()
-        .collect()
-    };
+        .collect::<Vec<_>>()
+        .join(", ");
+        copy_cols.push((*table, cols));
+    }
     let defs: Vec<(String, String, String)> = (|| -> Result<_, String> {
         let marks = tables
             .iter()
@@ -1129,16 +1148,17 @@ fn old_caches_with(
             };
             src.execute_batch(&ddl).map_err(|e| Setup(sql(e)))?;
         }
-        if !stale.is_empty() {
-            let cols = log_cols.join(", ");
-            src.execute(
-                &format!(
-                    "INSERT INTO temp.{LOG_TABLE} ({cols}) SELECT {cols} FROM main.{LOG_TABLE} \
-                     WHERE profile_uid = srs_id(?1)"
-                ),
-                [profile],
-            )
-            .map_err(|e| Setup(sql(e)))?;
+        if !copy_cols.is_empty() {
+            for (table, cols) in &copy_cols {
+                src.execute(
+                    &format!(
+                        "INSERT INTO temp.{table} ({cols}) SELECT {cols} FROM main.{table} \
+                         WHERE profile_uid = srs_id(?1)"
+                    ),
+                    [profile],
+                )
+                .map_err(|e| Setup(sql(e)))?;
+            }
             stale::heal(src, stale).map_err(Protocol3)?;
         }
         rebuild(src, profile, &parsed).map_err(Protocol3)?;
@@ -2022,11 +2042,11 @@ pub(crate) mod tests {
         );
         assert_eq!(
             p["oldSideStaleResults"],
-            json!({"logs": 0, "cards": 0, "examples": []})
+            json!({"logs": 0, "cards": 0, "swaps": 0, "examples": []})
         );
         // 单设备、无改名写入者：没有按类判定的差异，报告里照样有这一节（版本 3）。
         let k = &p["knownDifferences"];
-        assert_eq!(r["version"], 5);
+        assert_eq!(r["version"], 6);
         assert_eq!(
             (&k["total"], &k["unproven"]),
             (&json!(0), &json!(0)),
