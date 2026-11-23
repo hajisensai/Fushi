@@ -257,6 +257,7 @@ Rules:
 - Write names exactly as the book writes them, in the book's original script. Never translate or romanize.
 - One canonical name per character: the name the book uses most for them (usually the given name or how the narration refers to them). Other forms — full name, nicknames, titles, name + honorific, descriptions the narration uses for them — go into "aliases".
 - A name that is already in the list, as a name or as an alias, is that character: use "update" with the canonical name, never "add" it again.
+- First-person books: when the narration says ${x.firstPerson} for its own point of view, the narrator is a character who also speaks. Add them under their name (or a label such as ${x.narratorLabel} until the name is known) and put the first-person word(s) the narration uses into their "aliases", so their quoted lines can be attributed to them.
 - If a speaker is never named, add them under a short descriptive label from the text (e.g. ${x.unnamedLabels}) so their lines can be attributed later; when their name is revealed, merge the label into the name.
 - Do not repeat what the list already says. If nothing changes, return [].
 ''';
@@ -490,6 +491,7 @@ You get the cast list, the last few lines already attributed (for turn-taking), 
 Rules:
 - Include the lines that are spoken (or clearly voiced aloud) by a character: dialogue, usually inside ${x.quotes}. Unstarred narration, descriptions, inner monologue written as narration and titles are the narrator: do NOT include them.
 - Lines numbered with a "*" (e.g. "7*: ${x.starredExample}") open or continue a quotation. Give EVERY starred line an entry: its speaker, "unknown", or {"i":N,"s":"narrator"} when the quoted text is not said by anyone — a book, song or work title (${x.workTitle}), a sign or notice (${x.sign}), a quoted word or phrase, a written message read silently. A starred line you leave out goes to a human for review, so decide it yourself; when it could be either, prefer "unknown" over "narrator".
+- First-person books: the character whose aliases include the narration's first-person word (${x.firstPerson}) is the narrator. Their quoted lines get THAT character's name — in a two-person scene they are usually every other line — while the unquoted narration stays the narrator and is not included. Characters who are only mentioned or remembered in the narration do not speak in the scene.
 - A long utterance may be split across several consecutive lines; label every line of it with the same speaker.
 - Use the attribution tags, turn-taking (in a two-person exchange speakers usually alternate), how characters address each other, their speech style and gender, and the surrounding narration (including context lines and the already-attributed lines).
 - Prefer "unknown" with a low "c" over guessing.
@@ -571,6 +573,8 @@ class _TtsCastExamples {
     required this.workTitle,
     required this.sign,
     required this.deliveryCues,
+    required this.firstPerson,
+    required this.narratorLabel,
   });
 
   factory _TtsCastExamples.of(TtsCastScript script) => switch (script) {
@@ -599,6 +603,10 @@ class _TtsCastExamples {
   final String sign;
   final String deliveryCues;
 
+  /// 第一人称叙述用的自称（第一人称小说里叙述者也是会说话的角色）。
+  final String firstPerson;
+  final String narratorLabel;
+
   static const _TtsCastExamples _ja = _TtsCastExamples(
     languageName: 'Japanese',
     heroine: 'エミリア',
@@ -619,6 +627,8 @@ class _TtsCastExamples {
     workTitle: '『書名』',
     sign: '「立ち入り禁止」',
     deliveryCues: 'sentence-final particles',
+    firstPerson: '"私", "僕", "俺"',
+    narratorLabel: '"僕"',
   );
 
   static const _TtsCastExamples _zh = _TtsCastExamples(
@@ -642,6 +652,8 @@ class _TtsCastExamples {
     workTitle: '《书名》',
     sign: '“禁止入内”',
     deliveryCues: 'sentence-final particles (吧、呢、啊、嘛…)',
+    firstPerson: '"我" (or "本小姐", "在下"…)',
+    narratorLabel: '"我"',
   );
 
   static const _TtsCastExamples _other = _TtsCastExamples(
@@ -664,6 +676,8 @@ class _TtsCastExamples {
     workTitle: 'a book title in quotes',
     sign: '"No Entry"',
     deliveryCues: 'wording and punctuation',
+    firstPerson: '"I"',
+    narratorLabel: '"I"',
   );
 }
 
