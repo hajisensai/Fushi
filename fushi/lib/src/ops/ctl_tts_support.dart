@@ -61,6 +61,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart'
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
     show audiobookRowHasRegistration, updateMangaAudioLine;
+import 'package:fushi/src/media/manga/audio/manga_audio_package_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -101,7 +102,10 @@ class TtsCtlDeps {
     required this.regenerate,
     required this.stopPlayback,
     required this.localAudioBackend,
-  });
+    MangaAudioPackageTasks Function()? packageTasks,
+    String Function()? appLabel,
+  }) : packageTasks = packageTasks ?? (() => MangaAudioPackageTasks.instance),
+       appLabel = appLabel ?? (() => 'fushi');
 
   factory TtsCtlDeps.of(OpContext context) => TtsCtlDeps(
     app: () => context.appModel,
@@ -134,6 +138,7 @@ class TtsCtlDeps {
     stopPlayback: (List<String> bookKeys) =>
         context.appModel.audiobookSession.stopIfPlayingAny(bookKeys),
     localAudioBackend: mangaLocalAudioBackend,
+    appLabel: () => 'fushi ${context.appModel.packageInfo.version}',
   );
 
   final AppModel Function() app;
@@ -162,6 +167,12 @@ class TtsCtlDeps {
   /// 「按句替换本地音频」整形用的后端（只整形本地音频；ffmpeg 不可用抛
   /// [TtsRenderFailure]）。
   final Future<MangaRenderBackend> Function() localAudioBackend;
+
+  /// 有声漫画导出包的任务表（工作台同一张，默认进程级那张）。
+  final MangaAudioPackageTasks Function() packageTasks;
+
+  /// 导出包里记的导出方（`fushi <版本>`）。
+  final String Function() appLabel;
 
   /// 标注任务结束时演出稿的指纹（`<bookKey>@<startedAt>` → 指纹）：撤销标注时据此判断
   /// 之后有没有被手改过。进程内有效；app 重启后撤销报 superseded，不盲目覆盖。

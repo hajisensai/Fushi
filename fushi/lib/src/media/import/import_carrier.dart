@@ -7,6 +7,8 @@ import 'package:fushi_engine/media/manga/manga_archive_importer.dart'
     show kMangaArchiveFileExtensions;
 import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
     show isLegacyMokuroHtmlVolume;
+import 'package:fushi_engine/tts/manga_audio/manga_audio_package.dart'
+    show kMangaAudioPackageExtension;
 
 /// 一个待导入路径的**载体身份**：它到底是哪种东西，因而该交给哪个 importer。
 ///
@@ -42,6 +44,12 @@ enum ImportCarrier {
   /// 走 `MangaModule.importArchive`。
   mangaArchive,
 
+  /// 有声漫画导出包（`.fushi-manga-audio`：页图 + OCR + 演出稿 + 成品音频 + 系列
+  /// 选角）。不是「一卷漫画」，而是若干卷连同有声成品：交给有声漫画包的导入页
+  /// （`manga_audio_package_page.dart`，按页数 + OCR 认本机同一卷、确认替换）。
+  /// 不进 [kMangaCarrierFileExtensions]——目录批量导入不把它当成一卷捡起来。
+  mangaAudioPackage,
+
   /// PDF。走 `PdfImporter`（真渲染，不经 TextToEpub 文本转换）。
   pdf,
 
@@ -57,7 +65,8 @@ enum ImportCarrier {
       this == ImportCarrier.mangaFolder ||
       this == ImportCarrier.mangaBatchFolder ||
       this == ImportCarrier.mangaMokuro ||
-      this == ImportCarrier.mangaArchive;
+      this == ImportCarrier.mangaArchive ||
+      this == ImportCarrier.mangaAudioPackage;
 
   /// 能不能在漫画库里成为一本漫画。= [isManga] + [ImportCarrier.pdf]。
   ///
@@ -156,6 +165,10 @@ ImportCarrier classifyImportCarrier(
 
   // .mokuro 同理：它的 JSON 内容会被文本分支当纯文本吞掉。
   if (ext == '.mokuro') return ImportCarrier.mangaMokuro;
+  // 有声漫画包是 zip，但不是页图压缩包：按扩展名认，交给有声漫画包导入。
+  if (ext == kMangaAudioPackageExtension) {
+    return ImportCarrier.mangaAudioPackage;
+  }
   if (ext == '.html' && isLegacyMokuroHtml(path)) {
     return ImportCarrier.mangaMokuro;
   }
