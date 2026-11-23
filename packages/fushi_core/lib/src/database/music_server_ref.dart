@@ -1,5 +1,5 @@
 /// 媒体服务器（Jellyfin / Subsonic）曲目与封面在落库快照里的**只认身份的占位**，以及
-/// 带凭据地址的识别与清洗（BUG-5267）。
+/// 带凭据地址的识别与清洗（BUG-5290）。
 ///
 /// 服务器客户端给的播放流 / 封面地址带账号凭据：Jellyfin `api_key=<access token>`，
 /// Subsonic `u` + `t`（md5(密码 + 盐)）+ `s`（可重放）或 OpenSubsonic `apiKey`。这些地址只能

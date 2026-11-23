@@ -8,7 +8,7 @@ import 'package:path/path.dart' as p;
 
 import 'temp_dir_cleanup.dart';
 
-/// BUG-5267：备份里的播放流快照可能带旧版本落的服务器凭据。迁移（< v172）会清洗，但同版本
+/// BUG-5290：备份里的播放流快照可能带旧版本落的服务器凭据。迁移（< v172）会清洗，但同版本
 /// / 外来拼出的备份不走迁移——覆盖恢复与合并导入之后都得再清洗，旧备份不能把凭据带回来。
 const String _token = 'JF-SECRET-TOKEN-1234';
 const String _streamUrl =

@@ -351,7 +351,7 @@ String musicServerAlbumUid(String serverId, String albumId) {
 
 /// 播放项里的服务器曲目身份（不含任何凭据）：播放流 / 封面地址带账号凭据、`trackUid` 是哈希，
 /// 两样都推不回是哪台服务器的哪一首；落库（最近播放快照）只存这份身份，重播 / 显示时由
-/// 当前配置的服务器客户端现算地址（BUG-5267）。
+/// 当前配置的服务器客户端现算地址（BUG-5290）。
 class MusicServerTrackRef {
   const MusicServerTrackRef({
     required this.kind,

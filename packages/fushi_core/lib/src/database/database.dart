@@ -3683,7 +3683,7 @@ class FushiDatabase extends _$FushiDatabase
       }
       if (from < 172) {
         // v172：表结构不变，清洗 music_play_events 快照里带账号凭据的服务器地址
-        // （BUG-5267：服务器曲目的播放流 / 封面地址原样落库，Jellyfin 带 api_key、
+        // （BUG-5290：服务器曲目的播放流 / 封面地址原样落库，Jellyfin 带 api_key、
         // Subsonic 带 u + t + s / apiKey）。认得出曲目 / 封面 id 的换成身份占位
         // （`fushi-music-server://…`，重播时由当前配置的服务器现算地址），认不出的置
         // NULL。v139 之前的库没有快照列，跳过；幂等。

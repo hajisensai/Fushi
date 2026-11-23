@@ -2,7 +2,7 @@
 /// 最近播放的曲目 / 来源（推荐页「最近播放」）。表与查询在 `fushi_core`
 /// （`music_play_events`，v139 起带快照与来源）。
 ///
-/// 媒体服务器（Jellyfin / Subsonic）曲目的播放流与封面地址带账号凭据（BUG-5267）：快照里
+/// 媒体服务器（Jellyfin / Subsonic）曲目的播放流与封面地址带账号凭据（BUG-5290）：快照里
 /// 只落身份占位（`fushi-music-server://…`，见 fushi_core `music_server_ref.dart`），重播 /
 /// 显示时由当前配置的服务器客户端现算地址。
 library;

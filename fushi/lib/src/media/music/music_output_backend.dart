@@ -60,7 +60,7 @@ class MusicPlayItem {
 
   /// 服务器曲库曲目（经 `musicServerPlayItem` 建的项）的服务器身份：[path] / [coverPath]
   /// 是带账号凭据的地址、[trackUid] 是哈希，都推不回是哪台服务器的哪一首。最近播放快照只落
-  /// 这份身份（BUG-5267），重播时由当前配置的服务器现算地址。其余曲目为 null。
+  /// 这份身份（BUG-5290），重播时由当前配置的服务器现算地址。其余曲目为 null。
   final MusicServerTrackRef? serverTrack;
 
   /// CUE 虚拟曲目在整轨文件里的起止（毫秒）；普通文件为 null。
