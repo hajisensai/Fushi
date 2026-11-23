@@ -56767,6 +56767,18 @@ class $StudySegmentsTable extends StudySegments
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _lookupsMeta = const VerificationMeta(
+    'lookups',
+  );
+  @override
+  late final GeneratedColumn<int> lookups = GeneratedColumn<int>(
+    'lookups',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _updatedAtMeta = const VerificationMeta(
     'updatedAt',
   );
@@ -56805,6 +56817,7 @@ class $StudySegmentsTable extends StudySegments
     durationMs,
     chars,
     pages,
+    lookups,
     updatedAt,
     profileId,
   ];
@@ -56916,6 +56929,12 @@ class $StudySegmentsTable extends StudySegments
         pages.isAcceptableOrUnknown(data['pages']!, _pagesMeta),
       );
     }
+    if (data.containsKey('lookups')) {
+      context.handle(
+        _lookupsMeta,
+        lookups.isAcceptableOrUnknown(data['lookups']!, _lookupsMeta),
+      );
+    }
     if (data.containsKey('updated_at')) {
       context.handle(
         _updatedAtMeta,
@@ -56991,6 +57010,10 @@ class $StudySegmentsTable extends StudySegments
         DriftSqlType.int,
         data['${effectivePrefix}pages'],
       )!,
+      lookups: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}lookups'],
+      )!,
       updatedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}updated_at'],
@@ -57045,6 +57068,17 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
   /// 页数（漫画 / PDF；EPUB 恒 0）。
   final int pages;
 
+  /// v172（拍板台 4KOWK3c2mn 方案 b）：本段时间里**在这个媒体上**的查词次数。
+  ///
+  /// 查词发生时本媒体的 [StudySegments] 时钟在跑，就记进当前段（与字数同一行、同一
+  /// uid、同一次绝对值写）；这样查词与字数 / 时长同一小时粒度，编辑会话改日期时随段
+  /// 一起平移，删会话 / 按天删时随段写零，同步走段的 uid LWW（可传播「挪动」，
+  /// `lookup_mining_counters` 的 MAX-union 做不到）。时钟没在跑（手动暂停 / 别的进程 /
+  /// 无书查词）的查词仍记按天的 `lookup_mining_counters`，存量按天数据不动。
+  /// 读取面经 `FushiDatabase.getStudySegmentLookupCounters` 聚合成与计数表同形的行，
+  /// 两份相加（两处互斥写入，不双计）。0 = 这段没有查词（存量段一律 0）。
+  final int lookups;
+
   /// 最后写入毫秒戳：同步 v2 同 uid 取大者（LWW），墓碑仲裁用它与 deletedAt 比。
   final int updatedAt;
 
@@ -57076,6 +57110,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     required this.durationMs,
     required this.chars,
     required this.pages,
+    required this.lookups,
     required this.updatedAt,
     required this.profileId,
   });
@@ -57095,6 +57130,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     map['duration_ms'] = Variable<int>(durationMs);
     map['chars'] = Variable<int>(chars);
     map['pages'] = Variable<int>(pages);
+    map['lookups'] = Variable<int>(lookups);
     map['updated_at'] = Variable<int>(updatedAt);
     map['profile_id'] = Variable<int>(profileId);
     return map;
@@ -57115,6 +57151,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
       durationMs: Value(durationMs),
       chars: Value(chars),
       pages: Value(pages),
+      lookups: Value(lookups),
       updatedAt: Value(updatedAt),
       profileId: Value(profileId),
     );
@@ -57139,6 +57176,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
       durationMs: serializer.fromJson<int>(json['durationMs']),
       chars: serializer.fromJson<int>(json['chars']),
       pages: serializer.fromJson<int>(json['pages']),
+      lookups: serializer.fromJson<int>(json['lookups']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
       profileId: serializer.fromJson<int>(json['profileId']),
     );
@@ -57160,6 +57198,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
       'durationMs': serializer.toJson<int>(durationMs),
       'chars': serializer.toJson<int>(chars),
       'pages': serializer.toJson<int>(pages),
+      'lookups': serializer.toJson<int>(lookups),
       'updatedAt': serializer.toJson<int>(updatedAt),
       'profileId': serializer.toJson<int>(profileId),
     };
@@ -57179,6 +57218,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     int? durationMs,
     int? chars,
     int? pages,
+    int? lookups,
     int? updatedAt,
     int? profileId,
   }) => StudySegmentRow(
@@ -57195,6 +57235,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     durationMs: durationMs ?? this.durationMs,
     chars: chars ?? this.chars,
     pages: pages ?? this.pages,
+    lookups: lookups ?? this.lookups,
     updatedAt: updatedAt ?? this.updatedAt,
     profileId: profileId ?? this.profileId,
   );
@@ -57215,6 +57256,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
           : this.durationMs,
       chars: data.chars.present ? data.chars.value : this.chars,
       pages: data.pages.present ? data.pages.value : this.pages,
+      lookups: data.lookups.present ? data.lookups.value : this.lookups,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       profileId: data.profileId.present ? data.profileId.value : this.profileId,
     );
@@ -57236,6 +57278,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
           ..write('durationMs: $durationMs, ')
           ..write('chars: $chars, ')
           ..write('pages: $pages, ')
+          ..write('lookups: $lookups, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('profileId: $profileId')
           ..write(')'))
@@ -57257,6 +57300,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
     durationMs,
     chars,
     pages,
+    lookups,
     updatedAt,
     profileId,
   );
@@ -57277,6 +57321,7 @@ class StudySegmentRow extends DataClass implements Insertable<StudySegmentRow> {
           other.durationMs == this.durationMs &&
           other.chars == this.chars &&
           other.pages == this.pages &&
+          other.lookups == this.lookups &&
           other.updatedAt == this.updatedAt &&
           other.profileId == this.profileId);
 }
@@ -57295,6 +57340,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
   final Value<int> durationMs;
   final Value<int> chars;
   final Value<int> pages;
+  final Value<int> lookups;
   final Value<int> updatedAt;
   final Value<int> profileId;
   final Value<int> rowid;
@@ -57312,6 +57358,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     this.durationMs = const Value.absent(),
     this.chars = const Value.absent(),
     this.pages = const Value.absent(),
+    this.lookups = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.profileId = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -57330,6 +57377,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     this.durationMs = const Value.absent(),
     this.chars = const Value.absent(),
     this.pages = const Value.absent(),
+    this.lookups = const Value.absent(),
     required int updatedAt,
     this.profileId = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -57357,6 +57405,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     Expression<int>? durationMs,
     Expression<int>? chars,
     Expression<int>? pages,
+    Expression<int>? lookups,
     Expression<int>? updatedAt,
     Expression<int>? profileId,
     Expression<int>? rowid,
@@ -57375,6 +57424,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
       if (durationMs != null) 'duration_ms': durationMs,
       if (chars != null) 'chars': chars,
       if (pages != null) 'pages': pages,
+      if (lookups != null) 'lookups': lookups,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (profileId != null) 'profile_id': profileId,
       if (rowid != null) 'rowid': rowid,
@@ -57395,6 +57445,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     Value<int>? durationMs,
     Value<int>? chars,
     Value<int>? pages,
+    Value<int>? lookups,
     Value<int>? updatedAt,
     Value<int>? profileId,
     Value<int>? rowid,
@@ -57413,6 +57464,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
       durationMs: durationMs ?? this.durationMs,
       chars: chars ?? this.chars,
       pages: pages ?? this.pages,
+      lookups: lookups ?? this.lookups,
       updatedAt: updatedAt ?? this.updatedAt,
       profileId: profileId ?? this.profileId,
       rowid: rowid ?? this.rowid,
@@ -57461,6 +57513,9 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
     if (pages.present) {
       map['pages'] = Variable<int>(pages.value);
     }
+    if (lookups.present) {
+      map['lookups'] = Variable<int>(lookups.value);
+    }
     if (updatedAt.present) {
       map['updated_at'] = Variable<int>(updatedAt.value);
     }
@@ -57489,6 +57544,7 @@ class StudySegmentsCompanion extends UpdateCompanion<StudySegmentRow> {
           ..write('durationMs: $durationMs, ')
           ..write('chars: $chars, ')
           ..write('pages: $pages, ')
+          ..write('lookups: $lookups, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('profileId: $profileId, ')
           ..write('rowid: $rowid')
@@ -127946,6 +128002,7 @@ typedef $$StudySegmentsTableCreateCompanionBuilder =
       Value<int> durationMs,
       Value<int> chars,
       Value<int> pages,
+      Value<int> lookups,
       required int updatedAt,
       Value<int> profileId,
       Value<int> rowid,
@@ -127965,6 +128022,7 @@ typedef $$StudySegmentsTableUpdateCompanionBuilder =
       Value<int> durationMs,
       Value<int> chars,
       Value<int> pages,
+      Value<int> lookups,
       Value<int> updatedAt,
       Value<int> profileId,
       Value<int> rowid,
@@ -128041,6 +128099,11 @@ class $$StudySegmentsTableFilterComposer
 
   ColumnFilters<int> get pages => $composableBuilder(
     column: $table.pages,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get lookups => $composableBuilder(
+    column: $table.lookups,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -128129,6 +128192,11 @@ class $$StudySegmentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get lookups => $composableBuilder(
+    column: $table.lookups,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
@@ -128190,6 +128258,9 @@ class $$StudySegmentsTableAnnotationComposer
   GeneratedColumn<int> get pages =>
       $composableBuilder(column: $table.pages, builder: (column) => column);
 
+  GeneratedColumn<int> get lookups =>
+      $composableBuilder(column: $table.lookups, builder: (column) => column);
+
   GeneratedColumn<int> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
 
@@ -128247,6 +128318,7 @@ class $$StudySegmentsTableTableManager
                 Value<int> durationMs = const Value.absent(),
                 Value<int> chars = const Value.absent(),
                 Value<int> pages = const Value.absent(),
+                Value<int> lookups = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int> profileId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -128264,6 +128336,7 @@ class $$StudySegmentsTableTableManager
                 durationMs: durationMs,
                 chars: chars,
                 pages: pages,
+                lookups: lookups,
                 updatedAt: updatedAt,
                 profileId: profileId,
                 rowid: rowid,
@@ -128283,6 +128356,7 @@ class $$StudySegmentsTableTableManager
                 Value<int> durationMs = const Value.absent(),
                 Value<int> chars = const Value.absent(),
                 Value<int> pages = const Value.absent(),
+                Value<int> lookups = const Value.absent(),
                 required int updatedAt,
                 Value<int> profileId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -128300,6 +128374,7 @@ class $$StudySegmentsTableTableManager
                 durationMs: durationMs,
                 chars: chars,
                 pages: pages,
+                lookups: lookups,
                 updatedAt: updatedAt,
                 profileId: profileId,
                 rowid: rowid,

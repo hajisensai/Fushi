@@ -1542,12 +1542,19 @@ class BackupMergeEngine {
       'duration_ms',
       'chars',
       'pages',
+      'lookups',
       'updated_at',
       'profile_id',
     ];
+    // v172 前的备份没有 lookups 列：按 0 并入（那时查词全在按天计数表里）。
+    final bool srcHasLookups = await _srcColumnExists(
+      'study_segments',
+      'lookups',
+    );
     String srcCol(String c) => switch (c) {
       'media_key' => '$key AS media_key',
       'profile_id' => '$profileId AS profile_id',
+      'lookups' when !srcHasLookups => '0 AS lookups',
       _ => 's.$c',
     };
     final String colList = cols.join(', ');

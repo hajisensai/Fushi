@@ -809,6 +809,7 @@ class StudySegmentRecord {
     required this.pages,
     required this.updatedAt,
     this.profileName = '',
+    this.lookups = 0,
   });
 
   final String uid;
@@ -832,6 +833,11 @@ class StudySegmentRecord {
   /// 找本机同名 Profile；找不到 / 为空落进当前激活 Profile。
   final String profileName;
 
+  /// v172：段内查词次数（`study_segments.lookups`，拍板台 4KOWK3c2mn）。additive
+  /// 字段：旧端不发 = 0，0 也不发（无查词的段 JSON 逐字节不变）。随段 uid LWW 走，
+  /// 所以会话编辑把段挪到别的日期时，查词跟着传到对端。
+  final int lookups;
+
   /// 墓碑键（与 [StudyTombstoneRecord.key] 同公式）：v105 起带 Profile 名，A
   /// Profile 的碑只压 A 的段。
   String get mediaIdentity => '$profileName|$mediaKind|$mediaKey';
@@ -852,6 +858,7 @@ class StudySegmentRecord {
     'pages': pages,
     'updatedAt': updatedAt,
     if (profileName.isNotEmpty) 'profileName': profileName,
+    if (lookups != 0) 'lookups': lookups,
   };
 
   static StudySegmentRecord? fromJson(Map<String, Object?> json) {
@@ -884,6 +891,7 @@ class StudySegmentRecord {
       profileName: json['profileName'] is String
           ? json['profileName']! as String
           : '',
+      lookups: _asInt(json['lookups']),
     );
   }
 }

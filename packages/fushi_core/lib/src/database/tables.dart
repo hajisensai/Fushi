@@ -3509,6 +3509,17 @@ class StudySegments extends Table {
   /// 页数（漫画 / PDF；EPUB 恒 0）。
   IntColumn get pages => integer().withDefault(const Constant(0))();
 
+  /// v172（拍板台 4KOWK3c2mn 方案 b）：本段时间里**在这个媒体上**的查词次数。
+  ///
+  /// 查词发生时本媒体的 [StudySegments] 时钟在跑，就记进当前段（与字数同一行、同一
+  /// uid、同一次绝对值写）；这样查词与字数 / 时长同一小时粒度，编辑会话改日期时随段
+  /// 一起平移，删会话 / 按天删时随段写零，同步走段的 uid LWW（可传播「挪动」，
+  /// `lookup_mining_counters` 的 MAX-union 做不到）。时钟没在跑（手动暂停 / 别的进程 /
+  /// 无书查词）的查词仍记按天的 `lookup_mining_counters`，存量按天数据不动。
+  /// 读取面经 `FushiDatabase.getStudySegmentLookupCounters` 聚合成与计数表同形的行，
+  /// 两份相加（两处互斥写入，不双计）。0 = 这段没有查词（存量段一律 0）。
+  IntColumn get lookups => integer().withDefault(const Constant(0))();
+
   /// 最后写入毫秒戳：同步 v2 同 uid 取大者（LWW），墓碑仲裁用它与 deletedAt 比。
   IntColumn get updatedAt => integer()();
 

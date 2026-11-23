@@ -775,6 +775,7 @@ mixin _FushiDbContentMisc
             durationMs: const Value(0),
             chars: const Value(0),
             pages: const Value(0),
+            lookups: const Value(0),
             updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
           ),
         );
@@ -791,6 +792,7 @@ mixin _FushiDbContentMisc
         durationMs: const Value(0),
         chars: const Value(0),
         pages: const Value(0),
+        lookups: const Value(0),
         updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
       ),
     );

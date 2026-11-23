@@ -3680,6 +3680,15 @@ class FushiDatabase extends _$FushiDatabase
           await m.createTable(mediaLockCredentials);
         }
       }
+      if (from < 172) {
+        // v172：study_segments.lookups——段内查词次数（拍板台 4KOWK3c2mn，查词随会话
+        // 编辑平移）。存量段 0；存量按天的 lookup_mining_counters 不动。按列存在性
+        // 守卫加列，重跑幂等。
+        if (await _tableExists('study_segments') &&
+            !await _columnExists('study_segments', 'lookups')) {
+          await m.addColumn(studySegments, studySegments.lookups);
+        }
+      }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();
