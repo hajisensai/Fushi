@@ -21,6 +21,10 @@ void main() {
   const Map<String, String> notMpv = <String, String>{
     // package:dbus 的 DBusRemoteObject.getProperty（异步 D-Bus 调用），与 libmpv 无关。
     'lib/src/shortcuts/global_shortcuts_portal.dart': 'D-Bus property read',
+    // package:dbus 的 DBusRemoteObject.getProperty：读 AT-SPI Text 接口的
+    // CharacterCount（Linux 应用外查词取整句），与 libmpv 无关；该文件只 import
+    // dart:* 与 package:dbus。
+    'lib/src/lookup/linux_atspi_context.dart': 'AT-SPI D-Bus property read',
   };
 
   test('fushi/lib never calls libmpv synchronously', () {

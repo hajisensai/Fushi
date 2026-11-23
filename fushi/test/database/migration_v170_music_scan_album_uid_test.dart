@@ -40,7 +40,7 @@ void main() {
     raw.dispose();
 
     FushiDatabase migrated = FushiDatabase.atFile(path, isMainProcess: false);
-    expect(migrated.schemaVersion, 171);
+    expect(migrated.schemaVersion, kFushiDbSchemaVersion);
     Future<void> expectGrouped(FushiDatabase db) async {
       final MusicTrackRow h1 = (await db.getMusicTrack('h1'))!;
       final MusicTrackRow h2 = (await db.getMusicTrack('h2'))!;

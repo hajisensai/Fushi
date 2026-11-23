@@ -1521,25 +1521,31 @@ void main() {
         inlineSelectionJs: '',
         pageAnimation: animation,
       );
+      // 只看 #manga-root 那张过渡样式表：浮层按钮等别的规则也有自己的 transition。
+      String rootCss(String doc) => RegExp(
+        r'<style id="manga-anim-css">(.*?)</style>',
+      ).firstMatch(doc)!.group(1)!;
       // 默认速度 normal（FushiMotion token），缓动统一 cubic-bezier(.2,.7,.2,1)。
       final int normalMs = PageTurnAnimationSpeed.normal.durationMs;
       expect(
-        docFor(MangaPageAnimation.slide).contains(
+        rootCss(docFor(MangaPageAnimation.slide)).contains(
           'transition:transform ${normalMs}ms cubic-bezier(.2,.7,.2,1);',
         ),
         isTrue,
       );
       // none = 完全不声明过渡（要极限响应的用户）。
       final String none = docFor(MangaPageAnimation.none);
-      expect(none.contains('transition:transform '), isFalse);
-      expect(none.contains('transition:opacity '), isFalse);
+      expect(rootCss(none).contains('transition:transform '), isFalse);
+      expect(rootCss(none).contains('transition:opacity '), isFalse);
       // fade 只过渡 opacity（淡出 / 淡入各半程），位移在淡出后瞬时完成。
       final String fade = docFor(MangaPageAnimation.fade);
       expect(
-        fade.contains('transition:opacity ${(normalMs / 2).round()}ms '),
+        rootCss(
+          fade,
+        ).contains('transition:opacity ${(normalMs / 2).round()}ms '),
         isTrue,
       );
-      expect(fade.contains('transition:transform '), isFalse);
+      expect(rootCss(fade).contains('transition:transform '), isFalse);
       // 被拖动跟手过的翻页按平移收尾（BUG-3624），淡入淡出只给点按 / 按键翻页。
       expect(
         fade.contains(
@@ -1550,8 +1556,8 @@ void main() {
       // cover：strip 本身瞬时定位（root 不声明过渡），动的是克隆覆盖层。
       final String cover = docFor(MangaPageAnimation.cover);
       expect(cover.contains("var PAGE_ANIM = 'cover';"), isTrue);
-      expect(cover.contains('transition:transform '), isFalse);
-      expect(cover.contains('transition:opacity '), isFalse);
+      expect(rootCss(cover).contains('transition:transform '), isFalse);
+      expect(rootCss(cover).contains('transition:opacity '), isFalse);
       expect(cover.contains('.manga-cover-layer{position:absolute;'), isTrue);
       expect(cover.contains('function _coverBegin(from, to){'), isTrue);
     });

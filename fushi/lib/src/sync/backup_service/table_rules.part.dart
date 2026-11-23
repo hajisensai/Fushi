@@ -403,6 +403,11 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'ai_agent_actions': BackupTableRule.deviceLocal(),
   // v128：内置浏览器标签页会话 / 最近关闭 / 下载记录，设备本地。
   'web_browser_session_tabs': BackupTableRule.deviceLocal(),
+  // v175：服务器曲目的离线副本（本机文件路径）。
+  'music_server_downloads': BackupTableRule.deviceLocal(),
+  // v176：服务器曲目的离线补发队列与客户端状态（设备本地）。
+  'music_server_pending_actions': BackupTableRule.deviceLocal(),
+  'music_server_track_states': BackupTableRule.deviceLocal(),
   'web_browser_closed_tabs': BackupTableRule.deviceLocal(),
   'web_browser_downloads': BackupTableRule.deviceLocal(),
   // v130 音乐曲库目录：设备本地（本机重扫产物 + 绝对路径，见 _deviceLocalTables）。
@@ -417,6 +422,9 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'media_link_ai_verdicts': BackupTableRule.deviceLocal(),
   // v165：视频内容指纹缓存，设备本地（见 _deviceLocalTables）。
   'video_content_fingerprints': BackupTableRule.deviceLocal(),
+  // v172：本地 MV 自动匹配缓存，设备本地（见 _deviceLocalTables）。
+  'music_video_prints': BackupTableRule.deviceLocal(),
+  'music_video_match_checks': BackupTableRule.deviceLocal(),
   // v135：游戏 VNDB 配音表缓存，设备本地（见 _deviceLocalTables）。
   'game_voice_casts': BackupTableRule.deviceLocal(),
   // v133：音乐刮削三表（识别结论 / 原始快照 / 字段锁），键含本机路径派生的 track_uid、

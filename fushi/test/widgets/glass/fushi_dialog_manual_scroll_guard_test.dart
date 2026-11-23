@@ -22,6 +22,11 @@ const Map<String, (int, String)> _allowed = <String, (int, String)>{
     1,
     '下载错误原文，长度无上限',
   ),
+  // 批量下载失败清单（BUG-5212）：条数随批量大小、每条带后端错误原文，同上。
+  'lib/src/media/downloads/download_batch_failures_dialog.dart': (
+    1,
+    '批量失败清单 + 错误原文，长度无上限',
+  ),
   // 刮削运行详情：ConstrainedBox(maxHeight) 显式限高的滚动区。
   'lib/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart': (
     2,

@@ -28,6 +28,7 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
         MusicServerBrowser,
         MusicServerKind,
         MusicServerTrack,
+        musicServerAlbumUid,
         musicServerTrackUid;
 import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
     show
@@ -43,7 +44,11 @@ import 'package:fushi/src/media/music/plugin/music_plugins.dart'
         musicPluginTrackUid,
         parseMusicPluginTrackPath;
 import 'package:fushi/src/media/music/server/music_server_play_item.dart'
-    show musicServerPlayItem;
+    show
+        MusicServerLocalCopy,
+        musicServerLocalCopyLookup,
+        musicServerLocalPlayItem,
+        musicServerPlayItem;
 import 'package:fushi/src/models/store_compliance.dart';
 
 /// 远程曲目的来源种类（落进 `music_remote_tracks.kind`，wire 值冻结）。
@@ -278,11 +283,20 @@ MusicRemoteIdentity? musicRemoteIdentityOfRow(MusicRemoteTrackRow row) {
 bool _boundTo(MusicRemoteTrackRow row, MusicServerBinding? server) =>
     server != null && server.browser.serverId == row.sourceKey;
 
+/// 这一行服务器曲目在本机的离线副本（[musicServerLocalCopyLookup]）；不是服务器曲目或没有
+/// 副本回 null。
+MusicServerLocalCopy? musicRemoteLocalCopyOf(MusicRemoteTrackRow row) =>
+    row.kind == MusicRemoteTrackKind.server.wire
+    ? musicServerLocalCopyLookup?.call(row.trackUid)
+    : null;
+
 /// 远程曲目行 → 播放项（与从搜索结果 / 服务器页点开时同一个 uid）。种类不认识回 null；
-/// 服务器曲目在 [server] 缺席（这台设备没配这台服务器）或对不上时回 null（不可用）。
+/// 服务器曲目在 [server] 缺席（这台设备没配这台服务器）或对不上、又没有离线副本时回 null
+/// （不可用）。
 ///
-/// 服务器曲目的流地址与封面地址此时由 [server] 的客户端按当前配置现算（带凭据，只在内存
-/// 里）；YouTube / 插件是占位路径，起播时才取流。
+/// 服务器曲目有离线副本（v175）时放本机文件，不需要 [server]；否则流地址与封面地址此时由
+/// [server] 的客户端按当前配置现算（带凭据，只在内存里）；YouTube / 插件是占位路径，起播时
+/// 才取流。
 MusicPlayItem? musicPlayItemOfRemote(
   MusicRemoteTrackRow row, {
   MusicServerBinding? server,
@@ -292,18 +306,35 @@ MusicPlayItem? musicPlayItemOfRemote(
   final String? albumId = row.albumId;
   switch (id.kind) {
     case MusicRemoteTrackKind.server:
-      if (server == null || !_boundTo(row, server)) return null;
+      final MusicServerTrack track = MusicServerTrack(
+        id: id.itemId,
+        title: row.title,
+        artist: row.artist,
+        album: row.album,
+        albumId: albumId,
+        durationMs: row.durationMs,
+        coverRef: row.coverRef,
+      );
+      final bool bound = server != null && _boundTo(row, server);
+      final MusicServerLocalCopy? local = musicRemoteLocalCopyOf(row);
+      if (local != null) {
+        return musicServerLocalPlayItem(
+          row.trackUid,
+          local,
+          track,
+          albumUid: albumId == null
+              ? null
+              : musicServerAlbumUid(row.sourceKey, albumId),
+          fallbackCoverPath: bound
+              ? server.browser.coverUri(row.coverRef)?.toString()
+              : null,
+          kind: bound ? server.browser.kind : null,
+        );
+      }
+      if (!bound) return null;
       return musicServerPlayItem(
         server.browser,
-        MusicServerTrack(
-          id: id.itemId,
-          title: row.title,
-          artist: row.artist,
-          album: row.album,
-          albumId: albumId,
-          durationMs: row.durationMs,
-          coverRef: row.coverRef,
-        ),
+        track,
         maxBitrateKbps: server.maxBitrateKbps,
       );
     case MusicRemoteTrackKind.youtube:
@@ -326,15 +357,17 @@ MusicPlayItem? musicPlayItemOfRemote(
   }
 }
 
-/// 远程曲目行的封面地址：YouTube / 插件是落库的 http(s) 缩略图；服务器曲目由 [server] 的
-/// 客户端按服务器侧引用现算（没配这台服务器时没有封面）。
+/// 远程曲目行的封面地址：YouTube / 插件是落库的 http(s) 缩略图；服务器曲目优先用离线副本
+/// 旁下好的那张（本机文件），否则由 [server] 的客户端按服务器侧引用现算（没配这台服务器时
+/// 没有封面）。
 String? musicRemoteCoverUrlOf(
   MusicRemoteTrackRow row, {
   MusicServerBinding? server,
 }) => switch (MusicRemoteTrackKind.fromWire(row.kind)) {
   MusicRemoteTrackKind.server =>
-    _boundTo(row, server)
-        ? server!.browser.coverUri(row.coverRef)?.toString()
-        : null,
+    musicRemoteLocalCopyOf(row)?.coverPath ??
+        (_boundTo(row, server)
+            ? server!.browser.coverUri(row.coverRef)?.toString()
+            : null),
   _ => row.coverUrl,
 };

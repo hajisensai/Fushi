@@ -44,8 +44,14 @@ enum ShortcutScope {
   // 肌肉记忆（新建 / 关闭标签页、地址栏、页内查找、缩放…），与任何其它页面都不
   // 同时激活，故自成 co-active 组。
   webBrowser,
-  // 音乐播放（播放 / 上下曲 / ±5 s）。音乐页自成 co-active 组，与视频 / 阅读器不同时激活。
+  // 音乐播放（播放 / 上下曲 / ±5 s）。曲库页与播放页（歌词页）都解析，与视频 / 阅读器
+  // 不同时激活。
   music,
+  // 音乐全屏播放页 / 歌词页**独有**的键（拍板台 vo1KPp0_Rh：裸 ←/→ ±5 秒，与视频页
+  // 习惯一致）。曲库页的裸方向键是网格焦点移动，不能被播放控制夺走，所以这组绑定单独
+  // 成 scope、只在播放页解析：播放页先解析本 scope、未命中再解析 [music]；曲库页只解析
+  // [music]。两者在播放页同时激活，故与 music 同一 co-active 组。
+  musicPlayer,
   // SRS 复习页（翻面 / 四个评分 / 重播音频 / 撤销 / 卡面缩放，反馈 itlb0djDq6 要求可改键）。
   // 复习页只解析自己这一组绑定，未命中的键（Esc / Alt+← / 手柄 B）冒泡到根上由
   // universal 的「返回上一级」兜底，故自成 co-active 组。
@@ -119,9 +125,12 @@ enum ShortcutScope {
       // 只扫 webBrowser（与 video / manga 同理）。
       case webBrowser:
         return const <ShortcutScope>[webBrowser];
-      // 音乐库页只解析自己的绑定（与 video / manga 同理），自成 co-active 组。
+      // 音乐：播放页（歌词页）先解析 musicPlayer、再解析 music，曲库页只解析 music
+      // （见 music_shortcuts.dart 的 MusicShortcutSurface）。两者在播放页同时激活，
+      // 冲突检测要扫整组；与 video / manga 等其它页面不同时激活。
       case music:
-        return const <ShortcutScope>[music];
+      case musicPlayer:
+        return const <ShortcutScope>[musicPlayer, music];
       // SRS 复习页只解析自己的绑定（与 music / video 同理），自成 co-active 组。
       case srsReview:
         return const <ShortcutScope>[srsReview];
@@ -279,7 +288,9 @@ enum ShortcutScope {
       // 音乐：只有键盘有解析入口（曲库页 / 歌词页的键事件节点 →
       // music_shortcuts.dart 的 `resolveKeyboard(scope: music)`）；手柄 / 鼠标还没有
       // 派发点，不开通道（歌词行中键跳转复用 audiobook 的点句绑定，不走 music scope）。
+      // musicPlayer 同理：只有播放页的键事件节点解析它（`MusicShortcutSurface.player`）。
       case music:
+      case musicPlayer:
         return const <ShortcutChannel>{ShortcutChannel.keyboard};
       // SRS 复习页：键盘 + 手柄。
       //   · 键盘：srs_review_page.dart 的 `_onKey` → `resolveKeyboard(scope: srsReview)`；
@@ -801,6 +812,16 @@ enum ShortcutAction {
   musicPreviousTrack(ShortcutScope.music, 'music_previous_track'),
   musicSeekForward(ShortcutScope.music, 'music_seek_forward'),
   musicSeekBackward(ShortcutScope.music, 'music_seek_backward'),
+  // ShortcutScope.musicPlayer：只在全屏播放页 / 歌词页解析（拍板台 vo1KPp0_Rh），
+  // 默认裸 ←/→ ±5 秒；曲库页的裸方向键仍是焦点移动。执行体同 music_shortcuts.dart。
+  musicPlayerSeekForward(
+    ShortcutScope.musicPlayer,
+    'music_player_seek_forward',
+  ),
+  musicPlayerSeekBackward(
+    ShortcutScope.musicPlayer,
+    'music_player_seek_backward',
+  ),
 
   // SRS 复习页（[ShortcutScope.srsReview]，反馈 itlb0djDq6）。执行体在
   // srs_review_page.dart 的 `_executeShortcut`；键盘 / WebView 键盘桥 / 手柄三条入口

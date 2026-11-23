@@ -258,6 +258,7 @@ class MangaScriptLine {
     this.pitchOffset,
     this.volumeOffset,
     this.seed,
+    this.tone,
     Map<int, String>? textFixes,
     this.source = TtsCastSource.llm,
     this.confidence,
@@ -295,6 +296,11 @@ class MangaScriptLine {
 
   /// 种子；null = 用作品默认种子（单句重生成时写入）。
   final int? seed;
+
+  /// 自由文本语气说明（如「おずおずと」「必死に食い下がる」）：情绪词表装不下的
+  /// 演法差别；进合成时能收自然语言的引擎当演技指令，其余引擎忽略（见
+  /// `TtsDirection.tone`）。
+  final String? tone;
 
   /// OCR 错字修正：块下标 → 修正后的文字（只用于改错字，不是注音）。
   final Map<int, String> textFixes;
@@ -336,6 +342,7 @@ class MangaScriptLine {
     pitchOffset: pitchOffset,
     volumeOffset: volumeOffset,
     seed: seed,
+    tone: tone,
   );
 
   MangaScriptLine copyWith({
@@ -346,6 +353,7 @@ class MangaScriptLine {
     CastEmotion? emotion,
     int? intensity,
     int? seed,
+    String? tone,
     Map<int, String>? textFixes,
     TtsCastSource? source,
     MangaLineAudioSource? audio,
@@ -356,6 +364,7 @@ class MangaScriptLine {
     bool clearVoice = false,
     bool clearSay = false,
     bool clearSeed = false,
+    bool clearTone = false,
   }) {
     // 强度只跟着情绪有意义：没有情绪时一并清掉（与 [CastLineDirection.fromJson] 同口径）。
     final CastEmotion? nextEmotion = clearEmotion
@@ -378,6 +387,7 @@ class MangaScriptLine {
       pitchOffset: pitchOffset,
       volumeOffset: volumeOffset,
       seed: clearSeed ? null : seed ?? this.seed,
+      tone: clearTone ? null : castToneOf(tone) ?? this.tone,
       textFixes: textFixes ?? this.textFixes,
       source: source ?? this.source,
       confidence: confidence,
@@ -463,6 +473,7 @@ MangaScriptLine mangaLineFromFields(
     pitchOffset: d.pitchOffset,
     volumeOffset: d.volumeOffset,
     seed: d.seed,
+    tone: d.tone,
     textFixes: _parseFixes(raw['fix'], blocks),
     source:
         source ??

@@ -163,4 +163,41 @@ class TtsServices {
     if (descriptor == null || !descriptor.isAvailable) return null;
     return (preset: preset, descriptor: descriptor);
   }
+
+  /// [scope] 这部作品朗读用的声音：本书指定 → 系列 + 语言 → 全局「使用中」声音
+  /// （[TtsMediaVoices]）。作品表里的声音已被删、或引擎在本机不可用时跳过它往下
+  /// 回落，不报错——作品表是设备本地的，换台设备 / 删了声音都不该让朗读起不来。
+  /// 参数不全的声音照样返回（与 [activeVoice] 同口径，由调用方提示去补）。
+  TtsMediaVoice? voiceForMedia(TtsMediaVoiceScope scope) {
+    final List<({String presetId, TtsVoiceSource source})> candidates = store
+        .loadMediaVoices()
+        .candidatesFor(scope);
+    if (candidates.isNotEmpty) {
+      final Map<String, TtsVoicePreset> presets = <String, TtsVoicePreset>{
+        for (final TtsVoicePreset p in store.loadPresets()) p.id: p,
+      };
+      for (final ({String presetId, TtsVoiceSource source}) c in candidates) {
+        final TtsVoicePreset? preset = presets[c.presetId];
+        if (preset == null) continue;
+        final TtsProviderDescriptor? descriptor = registry[preset.providerId];
+        if (descriptor == null || !descriptor.isAvailable) continue;
+        return (preset: preset, descriptor: descriptor, source: c.source);
+      }
+    }
+    final ({TtsVoicePreset preset, TtsProviderDescriptor descriptor})? active =
+        activeVoice();
+    if (active == null) return null;
+    return (
+      preset: active.preset,
+      descriptor: active.descriptor,
+      source: TtsVoiceSource.defaultVoice,
+    );
+  }
 }
+
+/// 一部作品实际用的声音及其来源层。
+typedef TtsMediaVoice = ({
+  TtsVoicePreset preset,
+  TtsProviderDescriptor descriptor,
+  TtsVoiceSource source,
+});

@@ -205,6 +205,42 @@ void main() {
       0,
       reason: '没有响度信息时不施加预放大',
     );
+    // 没有峰值（Jellyfin NormalizationGain）：正增益封顶，负增益不受影响；有峰值时按峰值钳制、
+    // 不受这个上限约束。
+    expect(
+      musicReplayGainDb(
+        albumMode: false,
+        trackGain: 20,
+        trackPeak: null,
+        albumGain: null,
+        albumPeak: null,
+        preampDb: 0,
+      ),
+      kMusicReplayGainNoPeakMaxDb,
+    );
+    expect(
+      musicReplayGainDb(
+        albumMode: false,
+        trackGain: -8,
+        trackPeak: null,
+        albumGain: null,
+        albumPeak: null,
+        preampDb: 0,
+      ),
+      -8,
+    );
+    expect(
+      musicReplayGainDb(
+        albumMode: false,
+        trackGain: 14.3,
+        trackPeak: 0.1,
+        albumGain: null,
+        albumPeak: null,
+        preampDb: 0,
+      ),
+      closeTo(14.3, 1e-9),
+      reason: '峰值 0.1 允许 +20 dB，按增益本身 +14.3 施加',
+    );
   });
 
   test('「自动测量」关掉时曲库扫描触发的请求不跑，「立即测量」(force) 照跑', () async {

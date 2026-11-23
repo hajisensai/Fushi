@@ -4,6 +4,9 @@
 /// - `POST /v1/audio/voices`（multipart `file` + `voice_id`）上传参考音频建声音，
 ///   `DELETE /v1/audio/voices/{id}` 删除上传过的声音（[IrodoriServerVoiceApi]）。
 ///
+/// 逐句语气（[TtsDirectedSynthesis]）：情绪 + 语气说明拼进 `irodori.caption`，标注的
+/// 语速偏移走顶层 `speed`（见 [irodoriServerSpeechRequest]）。
+///
 /// 与 [IrodoriTtsDescriptor]（所有者自己的有声书工作台，`/api/quick/*`、端口 7870）是
 /// 两个引擎：接口、端口、声音来源都不同，两者并存。
 library;
@@ -15,6 +18,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/tts/providers/tts_http.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -110,7 +114,25 @@ Map<String, String> _authHeaders(String apiKey) => <String, String>{
     HttpHeaders.authorizationHeader: 'Bearer ${apiKey.trim()}',
 };
 
-class IrodoriServerTtsProvider extends TtsProvider {
+/// 官方服务能逐句表达的演出字段（纯函数，测试直接调）：
+/// - 情绪 + 语气说明：`irodori.caption`（Voice Design 描述）。上游 v4 系列（服务端
+///   钉的 v4.1-Small / -MF、v4-Large）的 caption 与参考音频可以同时用，模型卡原话
+///   「use the caption to guide emotion, style, or environment while keeping the base
+///   voice characteristics aligned with the reference audio」；不带 caption 条件的旧
+///   checkpoint 由运行时忽略 caption（`inference_runtime.py` 的 `has_caption_text`）。
+/// - 语速：顶层 `speed`（OpenAI 字段，服务端 `SpeechRequest.speed`，0.25..4.0，按
+///   `duration_scale / speed` 缩放预测时长，即真实的语速）。
+/// - 音高 / 音量：接口没有，不声明（也就不会把情绪折成这两项）。
+/// - 种子：接口有 `irodori.seed`，但这个引擎此前不收种子，声明它会让已有缓存全部
+///   作废，不在这次范围内。
+const TtsDirectionSupport kIrodoriServerDirectionSupport = TtsDirectionSupport(
+  emotion: true,
+  tone: true,
+  rate: true,
+);
+
+class IrodoriServerTtsProvider extends TtsProvider
+    implements TtsDirectedSynthesis {
   IrodoriServerTtsProvider({
     required String endpoint,
     required this.voice,
@@ -131,10 +153,26 @@ class IrodoriServerTtsProvider extends TtsProvider {
       const IrodoriServerTtsDescriptor().capabilities;
 
   @override
+  TtsDirectionSupport get directionSupport => kIrodoriServerDirectionSupport;
+
+  @override
   Future<TtsResult> synthesize(
     String text, {
     required String outputPath,
     required TtsCancelToken cancel,
+  }) => synthesizeDirected(
+    text,
+    outputPath: outputPath,
+    cancel: cancel,
+    direction: TtsDirection.none,
+  );
+
+  @override
+  Future<TtsResult> synthesizeDirected(
+    String text, {
+    required String outputPath,
+    required TtsCancelToken cancel,
+    required TtsDirection direction,
   }) async {
     final Uri? base = _base;
     if (base == null || voice.trim().isEmpty) {
@@ -152,6 +190,7 @@ class IrodoriServerTtsProvider extends TtsProvider {
             text: text,
             voice: voice,
             caption: caption,
+            direction: direction,
           ),
         ),
       ),
@@ -184,20 +223,61 @@ class IrodoriServerTtsProvider extends TtsProvider {
   Future<void> dispose() async => _client.close(force: true);
 }
 
-/// `POST /v1/audio/speech` 的请求体（纯函数，测试直接调）。服务端倍速恒 1.0，播放
-/// 倍速由本地播放器控制；整句已由调用方切好，服务端的长文本分块照默认。
+/// `POST /v1/audio/speech` 的请求体（纯函数，测试直接调）。整句已由调用方切好，服务端
+/// 的长文本分块照默认；播放倍速由本地播放器控制。
+///
+/// [direction]（已按 [kIrodoriServerDirectionSupport] 过滤）：
+/// - 情绪 / 语气说明 → [ttsDeliveryInstruction] 接在预设 caption 后面
+///   （[irodoriCaptionWithDelivery]）；
+/// - 语速偏移 → `speed = 1 + rateOffset`（夹到服务端的 0.25..4.0）。
+/// 没有演出参数时请求体与以前逐字节相同（不发 `speed`，caption 只是预设的）。
 Map<String, Object?> irodoriServerSpeechRequest({
   required String text,
   required String voice,
   String caption = '',
-}) => <String, Object?>{
-  'model': IrodoriServerTtsDescriptor.modelName,
-  'input': text,
-  'voice': voice.trim(),
-  'response_format': 'wav',
-  if (caption.trim().isNotEmpty)
-    'irodori': <String, Object?>{'caption': caption.trim()},
-};
+  TtsDirection direction = TtsDirection.none,
+}) {
+  final String fullCaption = irodoriCaptionWithDelivery(
+    caption,
+    ttsDeliveryInstruction(direction),
+  );
+  final double? speed = irodoriServerSpeed(direction.rateOffset);
+  return <String, Object?>{
+    'model': IrodoriServerTtsDescriptor.modelName,
+    'input': text,
+    'voice': voice.trim(),
+    'response_format': 'wav',
+    if (speed != null) 'speed': speed,
+    if (fullCaption.isNotEmpty)
+      'irodori': <String, Object?>{'caption': fullCaption},
+  };
+}
+
+/// 服务端 `speed` 的合法范围（`SpeechRequest.speed: Field(ge=0.25, le=4.0)`）。
+const double kIrodoriServerMinSpeed = 0.25;
+const double kIrodoriServerMaxSpeed = 4.0;
+
+/// 语速偏移（倍率增量）→ 服务端 `speed`（倍率，保留三位小数）；没给 / 为 0 返回 null
+/// （不发这个字段，服务端按 1.0）。
+double? irodoriServerSpeed(double? rateOffset) {
+  if (rateOffset == null || rateOffset.abs() < 1e-9) return null;
+  final double speed = (1 + rateOffset)
+      .clamp(kIrodoriServerMinSpeed, kIrodoriServerMaxSpeed)
+      .toDouble();
+  return (speed * 1000).round() / 1000;
+}
+
+/// 预设 caption（声音设定）后面接上这一句的演技指令（[ttsDeliveryInstruction]）。
+/// 指令为空返回去掉首尾空白的 caption；caption 为空只用指令；caption 没以句末标点
+/// 结尾时补一个「。」再接，免得两段粘成一句。声音包批处理与官方服务共用。
+String irodoriCaptionWithDelivery(String caption, String? instruction) {
+  final String base = caption.trim();
+  final String extra = instruction?.trim() ?? '';
+  if (extra.isEmpty) return base;
+  if (base.isEmpty) return extra;
+  final bool closed = RegExp(r'[。．.！!？?」』）)]$').hasMatch(base);
+  return closed ? '$base$extra' : '$base。$extra';
+}
 
 /// 服务上的一个声音。
 class IrodoriServerVoice {

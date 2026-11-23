@@ -10,31 +10,6 @@ part of 'music_track_list.dart';
 
 int _selectionNow() => DateTime.now().millisecondsSinceEpoch;
 
-/// 完成提示 + 「撤销」：有 [messenger] 时走 SnackBar（带撤销钮），没有（独立弹窗等）退回
-/// 普通 toast（撤销不可达，本地曲目仍可在「已移除的曲目」页恢复）。
-void musicShowUndoableNotice(
-  ScaffoldMessengerState? messenger,
-  String message,
-  Future<void> Function() undo,
-) {
-  if (messenger == null) {
-    FushiToast.show(msg: message, severity: ToastSeverity.success);
-    return;
-  }
-  messenger
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      FushiSnackBar(
-        content: Text(message),
-        action: SnackBarAction(
-          key: const ValueKey<String>('music-undo-action'),
-          label: t.undo,
-          onPressed: () => unawaited(undo()),
-        ),
-      ),
-    );
-}
-
 /// [entries] 里能「从音乐库移除」的：本地曲目，以及在库、种类认得的远程曲目（只在歌单里
 /// 的远程条目不在库，跳过）。
 ({List<String> local, List<MusicRemoteTrackRow> remote}) musicLibraryRemovable(
@@ -74,9 +49,9 @@ Future<int> musicRemoveEntriesFromLibrary(
   if (count == 0) return 0;
   final int at = _selectionNow();
   await db.hideMusicTracks(targets.local, at: at);
-  for (final MusicRemoteTrackRow r in targets.remote) {
-    await db.removeMusicRemoteTrackFromLibrary(r.trackUid, at: at);
-  }
+  // 远程曲目走共用写路径：同时取消它们在跑的下载；离线副本等撤销窗口过去再删。
+  final MusicRemoteLibraryRemoval removal =
+      await musicRemoveRemoteTracksFromLibrary(db, targets.remote, at: at);
   musicShowUndoableNotice(
     messenger,
     notice ??
@@ -85,15 +60,9 @@ Future<int> musicRemoveEntriesFromLibrary(
             : t.music_selection_removed_from_library(n: count)),
     () async {
       await db.unhideMusicTracks(targets.local);
-      for (final MusicRemoteTrackRow r in targets.remote) {
-        await db.upsertMusicRemoteTrack(
-          musicRemoteTrackCompanionOfRow(
-            r,
-          ).copyWith(libraryAddedAt: Value<int?>(r.libraryAddedAt)),
-          at: _selectionNow(),
-        );
-      }
+      await removal.undo();
     },
+    onCommitted: targets.remote.isEmpty ? null : removal.commit,
   );
   return count;
 }

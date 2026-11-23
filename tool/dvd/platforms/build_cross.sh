@@ -47,7 +47,7 @@ android_cross() {
   esac
   local bin
   bin="$(echo "${ANDROID_NDK_ROOT}"/toolchains/llvm/prebuilt/*/bin)"
-  # API 24 = the app's minSdk; 16 KB pages for Android 15+ (Google Play).
+  # API 24 = native floor (<= the app minSdk 26, BUG-5273); 16 KB pages for Android 15+ (Google Play).
   cat > "${CROSS}" <<EOF
 [binaries]
 c = '${bin}/clang'

@@ -68,7 +68,7 @@ Future<TtsResult> ttsSynthesizeSplittingOnReject(
     );
   } on TtsFailure catch (original) {
     if (original.code != TtsFailureCode.rejected) rethrow;
-    final TtsDirection pieceDirection = TtsDirection(seed: direction.seed);
+    final TtsDirection pieceDirection = direction.withoutDuration();
     final _TtsPieceAudio? merged;
     try {
       merged = await _synthesizeSplit(

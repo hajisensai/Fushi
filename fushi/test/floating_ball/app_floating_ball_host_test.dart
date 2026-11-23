@@ -1693,7 +1693,7 @@ void main() {
             await askDart(tester, 'switchProfileTo', <String, Object?>{
               'id': 99,
             }),
-            t.floating_ball_profile_switch_failed,
+            t.profile_switch_failed,
             reason: '菜单给出后配置被删掉了',
           );
           expect(profileVm.switched, <int>[2]);
