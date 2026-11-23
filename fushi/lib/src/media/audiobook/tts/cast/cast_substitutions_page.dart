@@ -8,11 +8,17 @@
 /// （拍板 TW9ete_FHX）只作用于念的文字，不进任何显示层（见 `cast_text_substitution.dart`）。
 /// 原文、手动填写的念法都不经过它。念的文字变了的句子缓存键随之变，下次生成自然重做；
 /// 漫画制作台另列出「读法变了的台词」供批量重生成。
+///
+/// 「查找人名读法」（[CastSubstitutionsPage.findReadings]，漫画制作台提供）：给待复核的
+/// 人名条目（含角色表里还没进表的名字）找有出处的读法，出处并进条目后只显示为建议，
+/// 逐条点「采用」才填进读法生效（拍板 TW9ete_FHX 第三期）。
 library;
 
 import 'dart:async';
 
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_name_readings.dart'
+    show MangaNameReadingResult;
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -40,6 +46,20 @@ String castSubstitutionsSummary(List<CastTextSubstitution> table) =>
     ? t.tts_substitutions_none
     : t.tts_substitutions_summary(n: table.length);
 
+/// 一条出处的说明（「《卷》第 N 页注音」/「官方资料 example.com」；AI 抄录的标 AI）。
+String castNameEvidenceText(CastNameEvidence e) {
+  final String text = switch (e.origin) {
+    CastNameEvidenceOrigin.ruby => t.tts_substitutions_evidence_ruby(
+      page: e.page ?? 0,
+      volume: e.volume ?? '',
+    ),
+    CastNameEvidenceOrigin.official => t.tts_substitutions_evidence_official(
+      host: Uri.tryParse(e.url ?? '')?.host ?? e.url ?? '',
+    ),
+  };
+  return e.byAi ? '$text (AI)' : text;
+}
+
 /// 一条的问题文案。
 String castSubstitutionProblemText(CastSubstitutionProblem problem) =>
     switch (problem) {
@@ -56,6 +76,7 @@ class CastSubstitutionsPage extends StatefulWidget {
     required this.initial,
     required this.save,
     this.roster = const <TtsCastCharacter>[],
+    this.findReadings,
     super.key,
   });
 
@@ -71,6 +92,12 @@ class CastSubstitutionsPage extends StatefulWidget {
   )
   save;
 
+  /// 给 [names] 里待复核的人名条目找有出处的读法（null = 不提供「查找人名读法」）。
+  final Future<MangaNameReadingResult> Function(
+    List<CastTextSubstitution> names,
+  )?
+  findReadings;
+
   @override
   State<CastSubstitutionsPage> createState() => _CastSubstitutionsPageState();
 }
@@ -80,6 +107,9 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
     widget.initial,
   );
   bool _saving = false;
+  bool _finding = false;
+
+  bool get _busy => _saving || _finding;
 
   Future<void> _commit(List<CastTextSubstitution> next) async {
     if (_saving) return;
@@ -124,7 +154,11 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
       context: context,
       title: label,
       message: source,
-      initialValue: current?.replacement ?? '',
+      initialValue: current == null
+          ? ''
+          : current.replacement.isNotEmpty
+          ? current.replacement
+          : current.suggestedReading ?? '',
       labelText: label,
       icon: name ? FushiIcons.voice : FushiIcons.edit,
       allowEmpty: true,
@@ -158,6 +192,60 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
     await _commit(<CastTextSubstitution>[..._table, ...added]);
     FushiToast.show(
       msg: t.tts_substitutions_import_roster_done(n: added.length),
+    );
+  }
+
+  /// 查找人名读法：表里待复核的人名 + 角色表里还没进表的名字一起查；找到出处的并进
+  /// 条目（角色表里的名字只有找到出处才补进表），读法不动，等用户逐条采用。
+  Future<void> _findReadings() async {
+    final Future<MangaNameReadingResult> Function(List<CastTextSubstitution>)?
+    find = widget.findReadings;
+    if (find == null || _busy) return;
+    final List<CastTextSubstitution> names = <CastTextSubstitution>[
+      for (final CastTextSubstitution e in _table)
+        if (e.isPendingName) e,
+      ...pendingCastNameEntries(table: _table, roster: widget.roster),
+    ];
+    if (names.isEmpty) {
+      FushiToast.show(msg: t.tts_substitutions_find_readings_no_names);
+      return;
+    }
+    setState(() => _finding = true);
+    final MangaNameReadingResult result;
+    try {
+      result = await find(names);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('CastSubstitutions.findReadings', e, stack);
+      FushiToast.show(msg: t.audiobook_studio_failure_internal);
+      return;
+    } finally {
+      if (mounted) setState(() => _finding = false);
+    }
+    if (!mounted) return;
+    final ({List<CastTextSubstitution> table, int suggested}) merged =
+        mergeCastNameEvidence(
+          table: _table,
+          found: result.evidence,
+          addFrom: widget.roster,
+        );
+    if (result.evidence.isNotEmpty) await _commit(merged.table);
+    final String? failure = result.failure;
+    FushiToast.show(
+      msg: failure != null
+          ? t.tts_substitutions_find_readings_ai_failed(code: failure)
+          : merged.suggested > 0
+          ? t.tts_substitutions_find_readings_done(n: merged.suggested)
+          : t.tts_substitutions_find_readings_none,
+    );
+  }
+
+  /// 采用出处给的建议读法。
+  Future<void> _acceptSuggestion(int index) {
+    final String? reading = _table[index].suggestedReading;
+    if (reading == null) return Future<void>.value();
+    return _commit(
+      List<CastTextSubstitution>.of(_table)
+        ..[index] = _table[index].copyWith(replacement: reading),
     );
   }
 
@@ -203,14 +291,14 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
         icon: FushiIcons.add,
         showIcon: true,
         title: t.tts_substitutions_add,
-        onTap: _saving ? null : () => unawaited(_add(name: false)),
+        onTap: _busy ? null : () => unawaited(_add(name: false)),
       ),
       AdaptiveSettingsRow(
         key: const ValueKey<String>('tts-substitutions-add-name'),
         icon: FushiIcons.person,
         showIcon: true,
         title: t.tts_substitutions_add_name,
-        onTap: _saving ? null : () => unawaited(_add(name: true)),
+        onTap: _busy ? null : () => unawaited(_add(name: true)),
       ),
       if (widget.roster.isNotEmpty)
         AdaptiveSettingsRow(
@@ -218,16 +306,47 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
           icon: FushiIcons.playlist,
           showIcon: true,
           title: t.tts_substitutions_import_roster,
-          onTap: _saving ? null : () => unawaited(_importRoster()),
+          onTap: _busy ? null : () => unawaited(_importRoster()),
+        ),
+      if (widget.findReadings != null)
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('tts-substitutions-find-readings'),
+          icon: FushiIcons.search,
+          showIcon: true,
+          title: t.tts_substitutions_find_readings,
+          subtitle: _finding
+              ? t.tts_substitutions_find_readings_running
+              : t.tts_substitutions_find_readings_hint,
+          subtitleMaxLines: 4,
+          onTap: _busy ? null : () => unawaited(_findReadings()),
         ),
     ],
   );
 
-  /// 一条的副标题：问题 > 人名待填读法 > 人名所属角色。
+  /// 一条的副标题：问题 > 人名待填读法（有建议 / 出处冲突 / 无）> 出处 > 人名所属角色。
   String? _subtitle(CastTextSubstitution e, CastSubstitutionProblem? problem) {
     if (problem != null) return castSubstitutionProblemText(problem);
     if (!e.isName) return null;
-    if (e.isPendingName) return t.tts_substitutions_name_pending;
+    if (e.isPendingName) {
+      final String? suggestion = e.suggestedReading;
+      if (suggestion != null) {
+        return t.tts_substitutions_name_suggestion(
+          reading: suggestion,
+          source: castNameEvidenceText(e.evidence.first),
+        );
+      }
+      if (e.hasConflictingEvidence) {
+        return t.tts_substitutions_name_conflict(
+          readings: e.evidenceReadings.join(' / '),
+        );
+      }
+      return t.tts_substitutions_name_pending;
+    }
+    if (e.evidence.isNotEmpty) {
+      return t.tts_substitutions_name_evidence(
+        source: castNameEvidenceText(e.evidence.first),
+      );
+    }
     final String? who = e.character;
     return who == null || who == e.source
         ? t.tts_substitutions_name_reading
@@ -240,8 +359,9 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
         ? (e.isName ? '?' : '∅')
         : e.replacement;
     final String? subtitle = _subtitle(e, problem);
+    final bool canAccept = e.isPendingName && e.suggestedReading != null;
     return FushiPressScale(
-      enabled: !_saving,
+      enabled: !_busy,
       child: FushiListItem(
         key: ValueKey<String>('tts-substitution-$index'),
         leading: FushiIcon(
@@ -253,16 +373,25 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
         ),
         title: Text('${e.source}  →  $replacement'),
         subtitle: subtitle == null ? null : Text(subtitle),
-        onTap: _saving ? null : () => unawaited(_edit(index)),
+        onTap: _busy ? null : () => unawaited(_edit(index)),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
+            if (canAccept)
+              FushiIconButtonControl(
+                key: ValueKey<String>('tts-substitution-$index-accept'),
+                tooltip: t.tts_substitutions_accept_suggestion,
+                icon: const FushiIcon(FushiIcons.check),
+                onPressed: _busy
+                    ? null
+                    : () => unawaited(_acceptSuggestion(index)),
+              ),
             Semantics(
               label: t.tts_substitutions_enabled,
               child: FushiSwitch(
                 key: ValueKey<String>('tts-substitution-$index-enabled'),
                 value: e.enabled,
-                onChanged: _saving
+                onChanged: _busy
                     ? null
                     : (bool v) => unawaited(_toggle(index, v)),
               ),
@@ -271,7 +400,7 @@ class _CastSubstitutionsPageState extends State<CastSubstitutionsPage> {
               key: ValueKey<String>('tts-substitution-$index-delete'),
               tooltip: t.tts_substitutions_delete,
               icon: const FushiIcon(FushiIcons.delete),
-              onPressed: _saving ? null : () => unawaited(_delete(index)),
+              onPressed: _busy ? null : () => unawaited(_delete(index)),
             ),
           ],
         ),
