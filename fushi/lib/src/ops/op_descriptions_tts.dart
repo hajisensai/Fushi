@@ -196,11 +196,13 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
       method: 'PUT',
       pattern: '$item/lines/:line',
       summary:
-          'Edit one script line: speaker, kind, extra pause after it, tone '
-          '(emotion + intensity), its position on the page, manual text, or '
-          'OCR typo fixes. The line is marked as user-edited (kept on '
-          're-annotation). Tone is a script note only: current voices do not '
-          'read it, so changing it needs no regeneration.',
+          'Edit one script line: speaker, kind, extra pause after it, '
+          'emotion + intensity, a free-text acting note (tone), its position '
+          'on the page, manual text, or OCR typo fixes. The line is marked as '
+          'user-edited (kept on re-annotation). Emotion, intensity and tone '
+          'are used when the line is synthesized (voices without an emotion '
+          'control fold the emotion into speed / pitch / volume); the next '
+          'full render regenerates lines whose effective direction changed.',
       risk: OpRisk.write,
       availability: manga,
       params: const <OpParam>[
@@ -242,6 +244,13 @@ List<OpDescription> describeTtsOps(OpDescribeKit kit) {
           description:
               'Tone intensity 0-100 (needs an emotion on the line or in this '
               'call); -1 clears it.',
+        ),
+        OpParam.string(
+          'tone',
+          description:
+              'Short Japanese acting note for how the line is delivered '
+              '(e.g. おずおずと / 必死に食い下がる / 声を落として; at most 40 '
+              'characters); empty string clears it.',
         ),
         OpParam.integer(
           'position',
