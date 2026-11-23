@@ -191,6 +191,20 @@ bool isAiChatStopTruncated(String? stopReason) => switch (stopReason) {
   _ => false,
 };
 
+/// 输出额度用尽的失败短码：回复正文为空、停止原因却是截断——推理模型（o 系列 /
+/// gpt-5 / Gemini thinking / Claude extended thinking）把 `max_tokens` 全花在看不见
+/// 的思考上，一个字的正文都没写（BUG-5369）。不是「模型什么也没回」
+/// （`empty_response`），也不是临时性失败：原样重发只会在同一处再截一次，调用方要
+/// 缩小这次要的输出（把输入拆小），或请用户调低推理强度。
+const String kAiOutputLimitCode = 'output_limit';
+
+/// 正文为空的应答 → 失败：停止原因是截断时为 [kAiOutputLimitCode]，否则
+/// `empty_response`。三种协议与互联主机转发同一口径。
+AiChatFailure aiChatEmptyReplyFailure(String? stopReason) =>
+    isAiChatStopTruncated(stopReason)
+    ? const AiChatFailure(kAiOutputLimitCode)
+    : const AiChatFailure('empty_response');
+
 /// 一个给模型调用的工具。[parameters] 是 JSON Schema（object 类型）。
 ///
 /// 三家协议共用这一份描述：OpenAI 包成 `{type: function, function: {...}}`、
@@ -556,6 +570,8 @@ class AiChatClient {
   ///
   /// 三种协议同一口径：回复为空或只有空白一律抛 `empty_response`——空串对每个
   /// 调用方都是「AI 什么也没给」，当成功返回只会把失败推迟成下游的解析错误。
+  /// 例外：停止原因是截断（[isAiChatStopTruncated]）时抛 [kAiOutputLimitCode]——
+  /// 推理模型把输出额度全花在了看不见的思考上，不是「模型没回」，原样重发也一样。
   ///
   /// 临时性失败（网络 / 超时、429、5xx）最多试 [kAiChatMaxAttempts] 轮，等待取指数
   /// 退避与 key 冷却到期中更晚者；退避写进限频器（[AiRateLimiter.backOff]），这家
@@ -576,7 +592,8 @@ class AiChatClient {
 
   /// 同 [complete]，另外带回这次应答报告的 token 用量（[AiChatCompletion.usage]）。
   ///
-  /// 失败语义与 [complete] 完全一致（空正文同样抛 `empty_response`）。应答里没有
+  /// 失败语义与 [complete] 完全一致（空正文同样抛 `empty_response` /
+  /// [kAiOutputLimitCode]）。应答里没有
   /// 用量字段时 `usage` 为 null——**不是 0**：费用统计要把它当「未知」单独计数。
   Future<AiChatCompletion> completeWithUsage({
     required AiProviderConfig provider,
@@ -594,7 +611,7 @@ class AiChatClient {
         maxTokens: maxTokens,
       );
       if (turn.text.trim().isEmpty) {
-        throw const AiChatFailure('empty_response');
+        throw aiChatEmptyReplyFailure(turn.stopReason);
       }
       return AiChatCompletion(
         text: turn.text,
@@ -611,13 +628,14 @@ class AiChatClient {
       AiWireProtocol.anthropicMessages => _anthropicText(body),
       AiWireProtocol.geminiGenerateContent => _geminiText(body),
     };
+    final String? stop = _stopReason(provider.protocol, body);
     if (text == null || text.trim().isEmpty) {
-      throw const AiChatFailure('empty_response');
+      throw aiChatEmptyReplyFailure(stop);
     }
     return AiChatCompletion(
       text: text,
       usage: parseAiChatUsage(provider.protocol, body),
-      stopReason: _stopReason(provider.protocol, body),
+      stopReason: stop,
     );
   }
 
@@ -629,7 +647,7 @@ class AiChatClient {
   /// 调不调工具。
   ///
   /// 只调工具、没有正文是合法的一轮；正文为空（或只有空白）**且**没有工具调用时抛
-  /// `empty_response`。是否该给这家发 [tools] 由调用方问
+  /// `empty_response`（停止原因是截断时抛 [kAiOutputLimitCode]，同 [complete]）。是否该给这家发 [tools] 由调用方问
   /// [AiProviderConfig.supportsToolCalling]，这里不拦。
   Future<AiChatTurn> chat({
     required AiProviderConfig provider,
@@ -649,7 +667,7 @@ class AiChatClient {
         maxTokens: maxTokens,
       );
       if (turn.text.trim().isEmpty && turn.toolCalls.isEmpty) {
-        throw const AiChatFailure('empty_response');
+        throw aiChatEmptyReplyFailure(turn.stopReason);
       }
       return turn;
     }
@@ -680,7 +698,7 @@ class AiChatClient {
     };
     final String content = text ?? '';
     if (content.trim().isEmpty && calls.isEmpty) {
-      throw const AiChatFailure('empty_response');
+      throw aiChatEmptyReplyFailure(stop);
     }
     return AiChatTurn(
       text: content,

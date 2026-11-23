@@ -145,6 +145,9 @@ String? ttsCastAnnotateFailureText(TtsCastAnnotateFailure failure) =>
       'bad_output' => t.audiobook_studio_cast_failure_bad_output_reason(
         reason: failure.detail ?? t.audiobook_studio_failure_internal,
       ),
+      // 块拆到最小仍被截断：思考把输出额度用光（BUG-5369）。
+      kTtsCastFailureOutputLimit =>
+        t.audiobook_studio_cast_failure_output_limit,
       'ai_failed' => t.audiobook_studio_cast_failed(
         reason: failure.detail == null
             ? t.audiobook_studio_failure_internal

@@ -2035,6 +2035,7 @@ void main() {
         'network_error',
         'bad_response',
         'empty_response',
+        'output_limit',
         'provider_not_configured',
         'http_503',
       ]) {
