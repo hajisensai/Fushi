@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/media/manga/manga_bubble_focus_js.dart';
 import 'package:fushi/src/media/manga/manga_bubble_zoom_js.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
@@ -802,6 +803,7 @@ String mangaWindowDocument(
   MangaPageAnimation pageAnimation = MangaPageAnimation.slide,
   PageTurnAnimationSpeed pageAnimationSpeed = PageTurnAnimationSpeed.normal,
   bool followDrag = kMangaPageTurnFollowDragDefault,
+  double swipeSensitivity = kMangaSwipePageTurnSensitivityDefault,
   bool tapZonePaging = true,
   MangaTapZoneLayout tapZoneLayout = MangaTapZoneLayout.leftRight,
   String backgroundCss = '#000',
@@ -1195,7 +1197,7 @@ String mangaWindowDocument(
       '<script>$inlineSelectionJs</script>'
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
-      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx, bookRtl: spreadDirection == 'rtl', bubbleZoomOpenMs: bubbleZoomOpenMs, bubbleZoomCloseMs: bubbleZoomCloseMs, textStripLayout: textStripLayout, bubbleFocusLabel: bubbleFocusLabel, bubbleFocusResume: bubbleFocusResume, textStripEmptyLabel: textStripEmptyLabel, bubbleZoomCloseLabel: bubbleZoomCloseLabel)}'
+      '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, swipeSensitivity: swipeSensitivity, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx, bookRtl: spreadDirection == 'rtl', bubbleZoomOpenMs: bubbleZoomOpenMs, bubbleZoomCloseMs: bubbleZoomCloseMs, textStripLayout: textStripLayout, bubbleFocusLabel: bubbleFocusLabel, bubbleFocusResume: bubbleFocusResume, textStripEmptyLabel: textStripEmptyLabel, bubbleZoomCloseLabel: bubbleZoomCloseLabel)}'
       '</script>'
       '</body></html>';
 }
@@ -1275,6 +1277,7 @@ String _mangaGestureJs({
   required MangaPageAnimation pageAnimation,
   PageTurnAnimationSpeed pageAnimationSpeed = PageTurnAnimationSpeed.normal,
   bool followDrag = kMangaPageTurnFollowDragDefault,
+  double swipeSensitivity = kMangaSwipePageTurnSensitivityDefault,
   required bool tapZonePaging,
   required MangaTapZoneLayout tapZoneLayout,
   bool disableZoomOut = false,
@@ -1926,8 +1929,6 @@ String _mangaGestureJs({
   var PAGE_ANIM_MS = ${pageAnimationSpeed.durationMs};
   var FOLLOW_DRAG = $followDrag;
   var MAX_ANIM_DIST = $kPageTurnAnimationMaxAnimatedDistance;
-  var FOLLOW_COMMIT = $kPageTurnFollowCommitFraction;
-  var FOLLOW_FLING = $kPageTurnFollowFlingVelocity;
   var FOLLOW_EDGE_DAMPING = 0.3;
   var PAGE_EASE = '$kMangaPageTurnEasing';
   // 纯投影（无动画语义）：把 target 跨页的 offsetLeft 现场重测并换算成 root 的
@@ -3197,14 +3198,15 @@ String _mangaGestureJs({
     var flingBack = rvx * ux < 0 && Math.abs(rvx) >= 900;
     // 跟手态：拖过 FOLLOW_COMMIT 个视口宽，或往翻页方向甩得够快（px/ms）才提交，
     // 否则回弹。没跟手（动画关 / 淡入淡出 / 设置关）沿用固定像素阈值。
+    // 两组阈值都随「滑动翻页灵敏度」缩放（R721ZgWVSB），见下方 __mangaSetSwipeThresholds。
     var followed = !!(swipe && swipe.follow && swipe.base !== null);
     var commit;
     if (followed) {
       var flingVel = Math.max(vel, (ux > 0 ? rvx : -rvx)) / 1000;
       commit = aux > FOLLOW_COMMIT * (window.innerWidth || 1) ||
-          (aux >= 24 && flingVel > FOLLOW_FLING);
+          (aux >= FOLLOW_FLING_MIN_PX && flingVel > FOLLOW_FLING);
     } else {
-      commit = aux >= 72 || (aux >= 36 && vel >= 900);
+      commit = aux >= SWIPE_DIST || (aux >= SWIPE_FAST_DIST && vel >= SWIPE_FAST_VEL);
     }
     if (!IS_WEBTOON && ax > ay && (ux > 0) === (dx > 0) && !flingBack &&
         commit && !_zoomedEdgeTurnBlocked()) {
@@ -3227,9 +3229,31 @@ String _mangaGestureJs({
       }
     } else {
       _swipeRelease(false);
-      if (ax < 20 && ay < 20 && el < 500) _onTap(x, y);
+      if (ax < TAP_BOX && ay < TAP_BOX && el < 500) _onTap(x, y);
     }
   }
+  // ── 滑动翻页提交阈值 ──
+  // 漫画单独的「滑动翻页灵敏度」（偏好 manga_swipe_page_turn_sensitivity，值越大越灵敏）
+  // 缩放后的阈值，由 Dart 的 mangaSwipeThresholds 算好注入——JS 不自己算，避免两边各写
+  // 一份公式。跟手：拖过 FOLLOW_COMMIT 个视口宽，或位移 ≥ FOLLOW_FLING_MIN_PX 且往翻页方向
+  // 甩速 > FOLLOW_FLING（px/ms）；不跟手：≥ SWIPE_DIST，或 ≥ SWIPE_FAST_DIST 且平均速度
+  // ≥ SWIPE_FAST_VEL（px/s）。像素阈值下界恒为 TAP_BOX（Dart 侧夹好），不吃掉单击。
+  // 运行中改设置经 __mangaSetSwipeThresholds 换值，不重建文档。
+  var TAP_BOX = $kMangaSwipeTapBoxPx;
+  var FOLLOW_COMMIT, FOLLOW_FLING, FOLLOW_FLING_MIN_PX;
+  var SWIPE_DIST, SWIPE_FAST_DIST, SWIPE_FAST_VEL;
+  window.__mangaSetSwipeThresholds = function(t){
+    if (!t) return;
+    function num(v, lo){ v = Number(v); return isFinite(v) && v >= lo ? v : null; }
+    var c = num(t.followCommit, 0.01), f = num(t.followFling, 0.01),
+        m = num(t.followFlingMinPx, TAP_BOX), d = num(t.dist, TAP_BOX),
+        fd = num(t.fastDist, TAP_BOX), fv = num(t.fastVel, 1);
+    if (c === null || f === null || m === null || d === null || fd === null ||
+        fv === null) return;
+    FOLLOW_COMMIT = c; FOLLOW_FLING = f; FOLLOW_FLING_MIN_PX = m;
+    SWIPE_DIST = d; SWIPE_FAST_DIST = fd; SWIPE_FAST_VEL = fv;
+  };
+  window.__mangaSetSwipeThresholds(${mangaSwipeThresholdsJs(mangaSwipeThresholds(swipeSensitivity))});
   // 触屏长按页图 → Dart 弹全局图片动作面板（保存 / 分享，image_actions_sheet.dart），
   // 作用于**被按住的那一页**（条漫 / 双页模式下命中的那页，不是当前跨页）。
   // 漫画页的触屏手势里长按原本是空的：单击 = OCR 查词 / 热区翻页 / 空白切栏，
