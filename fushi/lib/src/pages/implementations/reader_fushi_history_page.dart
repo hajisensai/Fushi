@@ -66,6 +66,7 @@ import 'package:fushi/src/media/collections/collection_member_view.dart'
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_import_flow.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart';
 import 'package:fushi/src/media/manga/book_format_convert.dart';
 import 'package:fushi/src/media/manga/book_format_rebuild.dart';
@@ -242,6 +243,7 @@ part 'reader_history/video.part.dart';
 part 'reader_history/books.part.dart';
 part 'reader_history/dialogs.part.dart';
 part 'reader_history/companion.part.dart';
+part 'reader_history/book_card_audio_actions.part.dart';
 
 /// Stable gamepad/keyboard focus ids for the shelf chrome, used both to place
 /// [FushiFocusTarget]s and to wire directional anchors (see
@@ -4758,6 +4760,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     final bool canOpenAudiobookStudio =
         ReaderFushiSource.mediaItemSupportsAudiobookStudio(item) &&
         modules.isEnabled(ModuleId.listening);
+    final bool canOpenMangaWorkbench =
+        isManga &&
+        modules.isEnabled(ModuleId.manga) &&
+        MangaAudioWorkbenchEntry.isAvailable;
     return <DialogAction>[
       DialogDangerAction(
         label: t.dialog_delete,
@@ -4770,38 +4776,35 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         group: DialogActionGroup.content,
         onPressed: () => _openIllustrations(item, bookKey),
       ),
-      // 有声漫画工作台（#4，设计稿 #i4）：此前菜单顶部 5 个无文字图标里的 OCR、
-      // 演出稿、导入成品、生成音频 4 个是同一条有声流程，现在都收进工作台的步骤
-      // （识别台词 → 角色与配音 → 演出稿 → 试听与导出），菜单只留这一个入口，
-      // 副行显示进度。受漫画模块门控（步骤内各自再判听书模块）。
-      if (isManga &&
-          modules.isEnabled(ModuleId.manga) &&
-          MangaAudioWorkbenchEntry.isAvailable)
-        DialogWorkbenchAction(
-          label: t.manga_audio_workbench_title,
-          icon: Icons.headphones_outlined,
-          subtitle: t.manga_audio_workbench_not_started,
-          loadStatus: () =>
-              MangaAudioWorkbenchEntry.statusLine(context, bookKey),
-          onPressed: () {
-            Navigator.pop(context);
-            unawaited(MangaAudioWorkbenchEntry.open(context, bookKey: bookKey));
-          },
-        ),
-      if (canAttachAudiobook)
-        DialogListAction(
-          label: t.audiobook_import,
-          icon: Icons.headphones_outlined,
-          group: DialogActionGroup.content,
-          onPressed: () => _openAudiobookImport(item, bookKey),
-        ),
-      // 小说的工作台入口「制作有声书」（#4b）。
-      if (canOpenAudiobookStudio)
-        DialogWorkbenchAction(
-          label: t.audiobook_studio_title,
-          icon: FushiIcons.voice,
-          onPressed: () => _openAudiobookStudio(bookKey),
-        ),
+      // 有声入口（拍板 Ew0AxAgycu 方案 a，见 [bookCardAudioWorkbenchActions]）：
+      // 「导入」在上、「制作」紧随，同为工作台级、都不进「更多」。
+      // 小说：导入有声书（canAttachAudiobook）→ 制作有声书（canOpenAudiobookStudio）。
+      // 漫画：导入漫画有声 → 有声漫画工作台（#4，设计稿 #i4：OCR / 演出稿 / 生成等
+      // 有声流程都在工作台步骤里，副行显示进度）。工作台受漫画模块门控（步骤内各自
+      // 再判听书模块）；直达的「导入漫画有声」与工作台里的导入步骤同一个函数
+      // （[pickAndImportMangaAudio]），工作台只在听书模块开着时露这一步，这里同门。
+      ...bookCardAudioWorkbenchActions(
+        importAudiobook: canAttachAudiobook
+            ? () => _openAudiobookImport(item, bookKey)
+            : null,
+        makeAudiobook: canOpenAudiobookStudio
+            ? () => _openAudiobookStudio(bookKey)
+            : null,
+        importMangaAudio:
+            canOpenMangaWorkbench && modules.isEnabled(ModuleId.listening)
+            ? () => _importMangaAudio(bookKey)
+            : null,
+        openMangaWorkbench: canOpenMangaWorkbench
+            ? () {
+                Navigator.pop(context);
+                unawaited(
+                  MangaAudioWorkbenchEntry.open(context, bookKey: bookKey),
+                );
+              }
+            : null,
+        mangaWorkbenchStatus: () =>
+            MangaAudioWorkbenchEntry.statusLine(context, bookKey),
+      ),
       // BUG-2505：本地已有这本书、还没有它的有声书、而对端有配套有声书 → 给一个
       // 显式的补拉入口。远端卡按「本端已有」被整条藏掉后，这里是唯一能到达对端
       // 有声书的地方（候选表由 _loadRemoteBooks 随远端清单一起算，见

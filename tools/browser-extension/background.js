@@ -574,7 +574,8 @@ let studyBackoffUntil = 0;
 // 查词 / 制卡请求带上它（请求体 `study`），app 把这次查词 / 制卡记到该视频名下，统计中心
 // 的观看页才有网页视频的查词 / 制卡数。按标签页而不是按「最近一条样本」认：两个标签页同时
 // 开着视频时，在哪页查的就记哪页；页内查词弹窗 / 嵌套弹窗是扩展 iframe，sender.tab 仍是
-// 这一页。ended 样本（换视频 / 关字幕 / 关页）与标签页关闭即删。标题在该视频第一条样本时
+// 这一页；独立打开的侧边栏没有 sender.tab，见 sidePanelStudyTabFor。ended 样本（换视频 /
+// 关字幕 / 关页）与标签页关闭即删。标题在该视频第一条样本时
 // 冻结（app 侧统计段的标题同样取第一条），document.title 中途变了不让计数分叉成两行。
 // 只放内存：会话进行中样本每 1～5 秒一条，SW 不会被回收；万一重启，下一条样本即补回。
 const studyTabSessions = new Map();
@@ -605,15 +606,56 @@ function noteStudySample(sender, sample) {
  * 消息的标签页此刻正在统计的视频；都没有 = null（不带字段，app 不归属）。
  * @param {object|undefined} sender
  * @param {object|undefined} explicit
- * @returns {{mediaKey: string, title: string}|null}
+ * @returns {Promise<{mediaKey: string, title: string}|null>}
  */
-function studyIdentityFor(sender, explicit) {
+async function studyIdentityFor(sender, explicit) {
   if (explicit && typeof explicit.mediaKey === 'string' && explicit.mediaKey) {
     return { mediaKey: explicit.mediaKey, title: typeof explicit.title === 'string' ? explicit.title : '' };
   }
-  const tabId = sender && sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id : null;
+  const tabId = sender && sender.tab && Number.isInteger(sender.tab.id)
+    ? sender.tab.id
+    : await sidePanelStudyTabFor(sender);
   if (tabId == null) return null;
   return studyTabSessions.get(tabId) || null;
+}
+
+/**
+ * 独立侧边栏（浏览器侧栏里的 side-panel.html，没有 sender.tab）发来的查词归属到哪个标签页
+ * （拍板 PtsjrnVmH9-sidepanel）。侧边栏**仍不许自报 tabId**（side-panel.js 顶部 #1295 /
+ * BUG-2426 的约束），身份全由浏览器背书：
+ *   ① 发件人必须是本扩展的 side-panel.html 文档（sender.id / sender.url 由浏览器填，网页伪造
+ *      不了；被网页嵌进 iframe 的侧边栏有 sender.tab，根本走不到这里）；
+ *   ② 用 sender.documentId 在 runtime.getContexts 里找到这份 SIDE_PANEL 上下文，取浏览器给的
+ *      tabId（按标签页打开的侧栏）或 windowId（全窗口侧栏）；
+ *   ③ 全窗口侧栏取**该窗口此刻**的活动标签页——请求到达时现查浏览器，切页即以浏览器的活动
+ *      标签页为准，不缓存会滞后的副本。
+ * 是否真有在统计的视频仍由调用方查 studyTabSessions：活动页没在统计视频就不归属。任何一环
+ * 拿不到（旧浏览器无 getContexts、上下文已销毁）一律 null，不猜。
+ * @param {object|undefined} sender chrome.runtime 消息的 sender
+ * @returns {Promise<number|null>}
+ */
+async function sidePanelStudyTabFor(sender) {
+  try {
+    if (!sender || sender.tab || sender.id !== chrome.runtime.id) return null;
+    if (typeof sender.url !== 'string' || typeof sender.documentId !== 'string' || !sender.documentId) return null;
+    if (sender.url.split(/[?#]/)[0] !== chrome.runtime.getURL('side-panel.html')) return null;
+    if (typeof chrome.runtime.getContexts !== 'function') return null;
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ['SIDE_PANEL'],
+      documentIds: [sender.documentId],
+    });
+    const ctx = Array.isArray(contexts)
+      ? contexts.find((c) => c && c.documentId === sender.documentId && c.contextType === 'SIDE_PANEL')
+      : null;
+    if (!ctx) return null;
+    if (Number.isInteger(ctx.tabId) && ctx.tabId >= 0) return ctx.tabId;
+    if (!Number.isInteger(ctx.windowId) || ctx.windowId < 0) return null;
+    const tabs = await chrome.tabs.query({ active: true, windowId: ctx.windowId });
+    const tab = Array.isArray(tabs) ? tabs[0] : null;
+    return tab && Number.isInteger(tab.id) ? tab.id : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 try {
@@ -1625,7 +1667,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const lookupId = lookupTrace.id;
         const maximumTerms = lookupTrace.maximumTerms;
         const colorScheme = await extensionColorScheme();
-        const study = studyIdentityFor(_sender, null);
+        const study = await studyIdentityFor(_sender, null);
         lookupTrace.phase = 'fetch-headers';
         const fetchStartedAt = performance.now();
         // 查词 fetch 必须有上限：app 侧一旦长阻塞（词典重载/磁盘 stall），无超时的 await 会让
@@ -1906,7 +1948,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const clipSourceKind = (msg.clipSourceKind === 'bilibili-pgc' && !pgcPlayurlBody)
           ? null
           : msg.clipSourceKind;
-        const mineStudy = studyIdentityFor(_sender, msg.study);
+        const mineStudy = await studyIdentityFor(_sender, msg.study);
         const r = await fushiRequest(({ base, token, profileId }) => fetch(base + '/api/mine', {
           method: 'POST',
           headers: profileHeaders({ 'Content-Type': 'application/json', Authorization: authHeader(token) }, profileId),
@@ -2030,7 +2072,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'mineClip') {
-        const clipStudy = studyIdentityFor(_sender, msg.study);
+        const clipStudy = await studyIdentityFor(_sender, msg.study);
         // Netflix 回放录到的整段 webm → 服务端整段裁 [0,时长] 转 GIF+音频（无偏移运算）。
         // BUG-676（TODO-1361 ③）：带上剧名 documentTitle（服务端映射到 Anki {document-title} 视频名
         // 字段）；不发时服务端回落字面「Netflix」。空串不发（保持旧行为 → 回落 Netflix）。

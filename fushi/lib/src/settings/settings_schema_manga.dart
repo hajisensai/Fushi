@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_settings.dart';
@@ -201,6 +202,23 @@ SettingsSection _mangaPagingSection() {
         onChanged: (SettingsContext c, bool value) =>
             c.appModel.setMangaPageTurnFollowDrag(value),
         defaultValue: kMangaPageTurnFollowDragDefault,
+      ),
+      // 滑动翻页灵敏度（R721ZgWVSB 选 b：漫画单独一个偏好）：值越大越灵敏，缩放跟手与
+      // 不跟手两组提交阈值（manga_swipe_thresholds.dart），值域 / 语义照小说同名设置。
+      SettingsSliderItem(
+        id: 'manga.swipe_page_turn_sensitivity',
+        titleReadout: true,
+        title: t.swipe_page_turn_sensitivity,
+        icon: FushiIcons.swipe,
+        min: kMangaSwipePageTurnSensitivityMin,
+        max: kMangaSwipePageTurnSensitivityMax,
+        divisions: 25,
+        commitOnRelease: true,
+        value: (SettingsContext c) => c.appModel.mangaSwipePageTurnSensitivity,
+        label: (double value) => value.toStringAsFixed(1),
+        onChanged: (SettingsContext c, double value) =>
+            c.appModel.setMangaSwipePageTurnSensitivity(value),
+        defaultValue: kMangaSwipePageTurnSensitivityDefault,
       ),
       SettingsSwitchItem(
         id: 'manga.tap_zone_paging',

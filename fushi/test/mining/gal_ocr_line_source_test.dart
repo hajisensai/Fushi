@@ -236,6 +236,49 @@ void main() {
     expect(lines, <String>['同じ台詞', '同じ台詞']);
   });
 
+  test('二值化（BUG-5141 ③）：开着时交给识别器的是纯黑白图，会话中可关', () async {
+    final List<bool> pureBlackWhite = <bool>[];
+    final Completer<void> twice = Completer<void>();
+    late final GalOcrLineSource source;
+    // 灰底黑字：不二值化时底是 200 灰，二值化后只剩 0 / 255。
+    final img.Image image = img.Image(width: 400, height: 200)
+      ..clear(img.ColorRgb8(200, 200, 200));
+    for (int b = 0; b < 6; b++) {
+      img.fillRect(
+        image,
+        x1: 20 + b * 8,
+        y1: 140,
+        x2: 23 + b * 8,
+        y2: 170,
+        color: img.ColorRgb8(0, 0, 0),
+      );
+    }
+    final Uint8List gray = img.encodePng(image);
+    source = GalOcrLineSource(
+      hwnd: 7,
+      region: bottom,
+      binarize: true,
+      interval: Duration.zero,
+      capture: (int hwnd) async => WindowCaptureResult(pngBytes: gray),
+      recognize: (Uint8List rgba, int w, int h) async {
+        pureBlackWhite.add(rgba.every((int v) => v == 0 || v == 255));
+        if (pureBlackWhite.length == 1) {
+          source.setBinarize(false);
+        } else if (!twice.isCompleted) {
+          twice.complete();
+        }
+        return '灰色の台詞';
+      },
+      onLine: (_) {},
+    )..start();
+    await twice.future.timeout(const Duration(seconds: 10));
+    await source.stop();
+    expect(pureBlackWhite.take(2), <bool>[
+      true,
+      false,
+    ], reason: '关掉二值化后同一画面按新选项再识别一次');
+  });
+
   group('GalOcrRegion', () {
     test('fromCorners 任意顺序、夹到 0～1', () {
       final GalOcrRegion r = GalOcrRegion.fromCorners(0.9, 1.2, -0.1, 0.4);

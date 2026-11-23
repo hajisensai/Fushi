@@ -378,19 +378,35 @@ Offset pageCurlFollowPoint({
   return Offset(math.max(x, -w), y);
 }
 
+/// 卷页松手的提交阈值：拖过视口宽的 [commitFraction]，或往翻页方向甩速超过
+/// [flingVelocity]（px/ms）。
+typedef PageCurlCommitThresholds = ({
+  double commitFraction,
+  double flingVelocity,
+});
+
+/// 默认阈值（与平移 / 覆盖的拖动跟手同一组常量）。小说阅读器用它；漫画按自己的
+/// 「滑动翻页灵敏度」缩放后传入（R721ZgWVSB）。
+PageCurlCommitThresholds defaultPageCurlCommitThresholds() => (
+  commitFraction: kPageTurnFollowCommitFraction,
+  flingVelocity: kPageTurnFollowFlingVelocity,
+);
+
 /// 由松手时的位移 / 速度判断是否提交（与平移 / 覆盖的拖动跟手同一阈值）。
 ///
 /// [progressPx] = 沿翻页方向已经拖过的距离（向反方向拖为负），[velocity] = 沿翻页
-/// 方向的末段速度（px/ms，反向为负）。
+/// 方向的末段速度（px/ms，反向为负）。往回甩的取消门恒用基准甩速：它判的是「反悔」
+/// 意图，不随灵敏度变（与漫画 JS 的 flingBack 同口径）。
 bool pageCurlShouldCommit({
   required double progressPx,
   required double velocity,
   required double width,
+  double commitFraction = kPageTurnFollowCommitFraction,
+  double flingVelocity = kPageTurnFollowFlingVelocity,
 }) {
   if (progressPx <= 0) return false;
   if (velocity < -kPageTurnFollowFlingVelocity) return false;
-  return progressPx > kPageTurnFollowCommitFraction * width ||
-      velocity > kPageTurnFollowFlingVelocity;
+  return progressPx > commitFraction * width || velocity > flingVelocity;
 }
 
 enum _CurlPhase { idle, preparing, dragging, settling }
@@ -466,22 +482,32 @@ class PageCurlDrag {
     final Offset p = _unmirror(position);
     final double progress = forward ? s.dx - p.dx : p.dx - s.dx;
     final double v = mirror ? -velocityX : velocityX;
+    final PageCurlCommitThresholds t = _owner.commitThresholds();
     return pageCurlShouldCommit(
       progressPx: progress,
       velocity: forward ? -v : v,
       width: size.width,
+      commitFraction: t.commitFraction,
+      flingVelocity: t.flingVelocity,
     );
   }
 }
 
 /// 一次卷页会话的可视状态，覆盖层只读它。
 class PageCurlController extends ChangeNotifier {
-  PageCurlController({required this.host, required this.duration});
+  PageCurlController({
+    required this.host,
+    required this.duration,
+    this.commitThresholds = defaultPageCurlCommitThresholds,
+  });
 
   final PageCurlHost host;
 
   /// 一次完整翻页的时长（每次取用，跟随设置实时变化）。
   final Duration Function() duration;
+
+  /// 松手提交阈值（每次松手取用，跟随设置实时变化）。
+  final PageCurlCommitThresholds Function() commitThresholds;
 
   _CurlPhase _phase = _CurlPhase.idle;
   int _generation = 0;
@@ -978,10 +1004,13 @@ class PageCurlController extends ChangeNotifier {
 
   void _release(double velocityX) {
     final double v = _mirror ? -velocityX : velocityX;
+    final PageCurlCommitThresholds t = commitThresholds();
     final bool commit = pageCurlShouldCommit(
       progressPx: _progressPx,
       velocity: _forward ? -v : v,
       width: _size.width,
+      commitFraction: t.commitFraction,
+      flingVelocity: t.flingVelocity,
     );
     unawaited(_settle(commit: commit));
   }

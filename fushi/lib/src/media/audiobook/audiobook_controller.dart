@@ -5,6 +5,7 @@ import 'dart:ui' show AppLifecycleState;
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/media/audiobook/audiobook_follow_style.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
 import 'package:fushi/src/media/audiobook/linear_shuffle_order.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
@@ -1007,6 +1008,73 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 同步用它换算全书真实秒数。
   ({int fileIndex, int positionMs}) get currentFilePosition =>
       _effectiveFilePosition;
+
+  /// cue 时间域的此刻位置（音频文件下标 + 文件内毫秒，已扣音画延迟 [delayMs]），与
+  /// [AudioCue.startMs] / [AudioCue.endMs] 同一量纲——播放 tick 查当前句用的就是它。
+  ({int fileIndex, int cueMs}) get cueClock {
+    final ({int fileIndex, int positionMs}) at = _effectiveFilePosition;
+    return (
+      fileIndex: at.fileIndex,
+      cueMs: (at.positionMs - delayMs.value).clamp(0, 1 << 30),
+    );
+  }
+
+  /// 句内时刻观察（分页「读到页边就翻」，反馈 tUJsiLpL9d）：[cue] 正在播、cue 时钟
+  /// 走到 [atMs] 时在播放 tick 里调一次 [onReached]；退回 [rewindBelowMs] 之前时调一次
+  /// [onRewound]。触发任一路后自动撤掉。同时只挂一枚，新设覆盖旧的；换句后旧观察不再
+  /// 触发（判据见 [cueEdgeWatchEvent]）。
+  void setCueEdgeWatch({
+    required AudioCue cue,
+    int? atMs,
+    int? rewindBelowMs,
+    required void Function() onReached,
+    void Function()? onRewound,
+  }) {
+    _cueEdgeWatch = CueEdgeWatch(
+      cue: cue,
+      atMs: atMs,
+      rewindBelowMs: rewindBelowMs,
+      onReached: onReached,
+      onRewound: onRewound,
+    );
+  }
+
+  void clearCueEdgeWatch() {
+    _cueEdgeWatch = null;
+  }
+
+  CueEdgeWatch? _cueEdgeWatch;
+
+  @visibleForTesting
+  CueEdgeWatch? get cueEdgeWatchForTesting => _cueEdgeWatch;
+
+  void _maybeFireCueEdgeWatch({
+    required AudioCue? hitCue,
+    required int audioFileIndex,
+    required int effectiveMs,
+  }) {
+    final CueEdgeWatch? watch = _cueEdgeWatch;
+    if (watch == null) return;
+    final CueEdgeWatchEvent event = cueEdgeWatchEvent(
+      watch: watch,
+      currentCue: _currentCue,
+      hitCue: hitCue,
+      audioFileIndex: audioFileIndex,
+      effectiveMs: effectiveMs,
+      playing: _player.playing,
+      isSameCue: _isSameCue,
+    );
+    switch (event) {
+      case CueEdgeWatchEvent.none:
+        return;
+      case CueEdgeWatchEvent.reached:
+        _cueEdgeWatch = null;
+        watch.onReached();
+      case CueEdgeWatchEvent.rewound:
+        _cueEdgeWatch = null;
+        watch.onRewound?.call();
+    }
+  }
 
   /// 当前全局播放位置。
   Duration get position =>
@@ -2490,6 +2558,12 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 已经是下一句（novel-15）。命中句区间时显示句就是当前句：当前句换了就随下面
     // 的 notifyListeners 一起被显示面读到；当前句没变（从 gap 落回 hold 的那一句）
     // 则只发显示面信号。
+    // 分页「读到页边就翻」：句内到点就翻页（在换句判断之前看，命中别的句子时不触发）。
+    _maybeFireCueEdgeWatch(
+      hitCue: idx >= 0 ? fileCues[idx] : null,
+      audioFileIndex: audioFileIndex,
+      effectiveMs: effectiveMs,
+    );
     final AudioCue? display = idx >= 0
         ? fileCues[idx]
         : _displayCueFor(cues: fileCues, effectiveMs: effectiveMs);
@@ -3607,6 +3681,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   void dispose() {
     _pageStopTimer?.cancel();
     _pageStopTimer = null;
+    _cueEdgeWatch = null;
     _teardownForDispose();
     // 同步 dispose 无法 await stop（会与 just_audio 异步平台切换竞争），止声职责
     // 交给停止路径（[AudiobookSession.stop] → [stopPlayback]）在 dispose 前完成；

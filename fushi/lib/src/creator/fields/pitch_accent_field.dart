@@ -34,6 +34,11 @@ class PitchAccentField extends Field {
   /// Extra value key for pitch-position HTML.
   static const String pitchPositionsExtraKey = 'pitchPositions';
 
+  /// `{pitch-accent-positions-inline}` 的同名字段（反馈 iTMx1pCb2V）：弹窗制卡里它是
+  /// `{pitch-accent-positions}` 去掉 `<ul>` 外壳的单行变体；无头这边的音调位 HTML
+  /// 本来就是并排的 SVG、没有列表外壳，所以两个字段同值。
+  static const String pitchPositionsInlineExtraKey = 'pitchPositionsInline';
+
   /// Extra value key for pitch-category HTML.
   static const String pitchCategoriesExtraKey = 'pitchCategories';
 
@@ -45,11 +50,13 @@ class PitchAccentField extends Field {
     final reading = entry.reading.isNotEmpty ? entry.reading : entry.word;
     final positions = _readPitchPositions(entry);
     final patterns = _readPitchPatterns(entry);
+    final String positionsHtml = getAllHtmlPitch(
+      reading: reading,
+      positions: positions,
+    );
     return {
-      pitchPositionsExtraKey: getAllHtmlPitch(
-        reading: reading,
-        positions: positions,
-      ),
+      pitchPositionsExtraKey: positionsHtml,
+      pitchPositionsInlineExtraKey: positionsHtml,
       pitchCategoriesExtraKey: _getAllCategories(
         reading,
         positions,

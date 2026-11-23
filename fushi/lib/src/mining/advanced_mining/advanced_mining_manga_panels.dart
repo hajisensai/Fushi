@@ -434,53 +434,73 @@ class MangaCropThumbnail extends StatelessWidget {
 ///
 /// 直接操作同一个控制器：「完成」即保留，「×」按进页时的快照还原——窄屏摘要行的
 /// 取景说明与确认产出都只认控制器这一份状态。
+///
+/// 截屏识字「制卡时框选」（拍板 EuOLprw_dV 选 b）也直接推这一页，不经对话框：
+/// [confirmLabel] 把「完成」换成「制卡」，[open] 的结果区分「完成」与「×」。
 class MangaCropFullscreenPage extends StatefulWidget {
-  const MangaCropFullscreenPage({super.key, required this.controller});
+  const MangaCropFullscreenPage({
+    super.key,
+    required this.controller,
+    this.confirmLabel,
+  });
 
   final AdvancedMiningController controller;
 
+  /// 顶栏主按钮文案；null = 「完成」。
+  final String? confirmLabel;
+
   /// 以从下往上的滑入转场推出全屏页（共享轴语义：它是对话框的下一层）。
-  static Future<void> open(
+  /// 返回 true = 点了主按钮（保留），false = 「×」/ 系统返回（已还原）。
+  static Future<bool> open(
     BuildContext context,
-    AdvancedMiningController controller,
-  ) {
+    AdvancedMiningController controller, {
+    String? confirmLabel,
+  }) async {
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
-    return Navigator.of(context, rootNavigator: true).push<void>(
-      PageRouteBuilder<void>(
-        fullscreenDialog: true,
-        transitionDuration: duration,
-        reverseTransitionDuration: fushiMotionDuration(
-          context,
-          FushiMotion.longReverse,
-        ),
-        pageBuilder:
-            (BuildContext context, Animation<double> a, Animation<double> b) =>
-                MangaCropFullscreenPage(controller: controller),
-        transitionsBuilder:
-            (
-              BuildContext context,
-              Animation<double> animation,
-              Animation<double> secondary,
-              Widget child,
-            ) {
-              final Animation<double> curved = CurvedAnimation(
-                parent: animation,
-                curve: FushiMotion.enter,
-                reverseCurve: FushiMotion.exit,
-              );
-              return FadeTransition(
-                opacity: curved,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.06),
-                    end: Offset.zero,
-                  ).animate(curved),
-                  child: child,
+    final bool? kept = await Navigator.of(context, rootNavigator: true)
+        .push<bool>(
+          PageRouteBuilder<bool>(
+            fullscreenDialog: true,
+            transitionDuration: duration,
+            reverseTransitionDuration: fushiMotionDuration(
+              context,
+              FushiMotion.longReverse,
+            ),
+            pageBuilder:
+                (
+                  BuildContext context,
+                  Animation<double> a,
+                  Animation<double> b,
+                ) => MangaCropFullscreenPage(
+                  controller: controller,
+                  confirmLabel: confirmLabel,
                 ),
-              );
-            },
-      ),
-    );
+            transitionsBuilder:
+                (
+                  BuildContext context,
+                  Animation<double> animation,
+                  Animation<double> secondary,
+                  Widget child,
+                ) {
+                  final Animation<double> curved = CurvedAnimation(
+                    parent: animation,
+                    curve: FushiMotion.enter,
+                    reverseCurve: FushiMotion.exit,
+                  );
+                  return FadeTransition(
+                    opacity: curved,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, 0.06),
+                        end: Offset.zero,
+                      ).animate(curved),
+                      child: child,
+                    ),
+                  );
+                },
+          ),
+        );
+    return kept ?? false;
   }
 
   @override
@@ -497,7 +517,7 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
   void _close({required bool keep}) {
     _done = true;
     if (!keep) widget.controller.restoreCrop(_snapshot);
-    Navigator.of(context).pop();
+    Navigator.of(context).pop(keep);
   }
 
   /// 底部分段的第二段：有所在分镜就是它，否则退到文字周围（交互稿 ④ 无模型回退态）。
@@ -540,7 +560,9 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
             actions: <Widget>[
               FushiFilledButton(
                 onPressed: () => _close(keep: true),
-                child: Text(t.popup_advanced_mining_crop_done),
+                child: Text(
+                  widget.confirmLabel ?? t.popup_advanced_mining_crop_done,
+                ),
               ),
             ],
           ),

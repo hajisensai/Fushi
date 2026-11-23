@@ -177,6 +177,9 @@ enum VideoControlItem implements ControlItemSpec<VideoControlSlot> {
   previousChapter('previousChapter'),
   nextChapter('nextChapter'),
   chapterList('chapterList'),
+  // YouTube 直播回放的聊天回放栏开关（拍板台 zTedU_pOQF，方案 b）：只在当前视频有聊天
+  // 回放时渲染（同选集 / 章节「有才出现」）；出厂与老布局都落在右下、紧跟字幕轨。
+  liveChat('liveChat'),
   // 弹幕开关（2026-10-06 用户请求）：切换「显示弹幕」偏好（`video_danmaku_enabled`，
   // 与设置面板「显示弹幕」开关同一状态源，不另立平行状态）。**默认不在播放器上**——
   // 出厂布局 / 老布局回填一律落 removed，且不进「⋯」溢出菜单；只有用户在控件布局
@@ -466,6 +469,7 @@ class VideoControlLayout {
       VideoControlItem.volume: VideoControlSlot.bottomRight,
       VideoControlItem.speed: VideoControlSlot.bottomRight,
       VideoControlItem.subtitleTrack: VideoControlSlot.bottomRight,
+      VideoControlItem.liveChat: VideoControlSlot.bottomRight,
       VideoControlItem.audioTrack: VideoControlSlot.bottomRight,
       VideoControlItem.screenshot: VideoControlSlot.bottomRight,
       VideoControlItem.clipExport: VideoControlSlot.bottomRight,
@@ -515,6 +519,7 @@ class VideoControlLayout {
         VideoControlItem.volume,
         VideoControlItem.speed,
         VideoControlItem.subtitleTrack,
+        VideoControlItem.liveChat,
         VideoControlItem.audioTrack,
         VideoControlItem.screenshot,
         VideoControlItem.clipExport,
@@ -562,6 +567,7 @@ class VideoControlLayout {
           // -- 右下 --
           VideoControlItem.volume: VideoControlSlot.bottomRight,
           VideoControlItem.subtitleTrack: VideoControlSlot.bottomRight,
+          VideoControlItem.liveChat: VideoControlSlot.bottomRight,
           VideoControlItem.speed: VideoControlSlot.bottomRight,
           VideoControlItem.fullscreen: VideoControlSlot.bottomRight,
           // -- 学习侧栏 --
@@ -614,6 +620,7 @@ class VideoControlLayout {
           VideoControlSlot.bottomRight: <VideoControlItem>[
             VideoControlItem.volume,
             VideoControlItem.subtitleTrack,
+            VideoControlItem.liveChat,
             VideoControlItem.speed,
             VideoControlItem.fullscreen,
           ],
@@ -831,6 +838,8 @@ class VideoControlLayout {
         // 新增的观看统计 / 计时开关：老布局同样落 removed（进「⋯」），不挤已定制的栏。
         VideoControlItem.statistics: VideoControlSlot.hidden,
         VideoControlItem.studyTimer: VideoControlSlot.hidden,
+        // 聊天回放开关：老布局也补在右下（只在有聊天回放的视频上出现，不挤别的视频）。
+        VideoControlItem.liveChat: VideoControlSlot.bottomRight,
       };
 
   static Map<VideoControlItem, VideoControlSlot> _currentChromeAssignments() =>

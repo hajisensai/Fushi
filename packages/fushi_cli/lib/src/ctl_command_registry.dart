@@ -1,9 +1,11 @@
+import 'commands/anime_commands.dart';
 import 'commands/book_metadata_commands.dart';
 import 'commands/data_commands.dart';
 import 'commands/disc_commands.dart';
 import 'commands/feedback_commands.dart';
 import 'commands/dictionary_commands.dart';
 import 'commands/game_commands.dart';
+import 'commands/leaderboard_commands.dart';
 import 'commands/library_commands.dart';
 import 'commands/media_links_commands.dart';
 import 'commands/music_commands.dart';
@@ -36,4 +38,6 @@ const List<CtlCommandGroup> kCtlCommandGroups = <CtlCommandGroup>[
   ...urlImportCommandGroups,
   ...webCommandGroups,
   ...feedbackCommandGroups,
+  ...leaderboardCommandGroups,
+  ...animeCommandGroups,
 ];

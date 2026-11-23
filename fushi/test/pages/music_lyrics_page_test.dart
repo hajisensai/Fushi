@@ -169,8 +169,14 @@ class _LyricsAppModel extends AppModel {
   final _Backend backend;
   final List<String> searches = <String>[];
 
+  // 与真 AppModel 同口径从偏好读音量（制卡句子音频跟随播放音量要读到它）。
   late final MusicPlayerEngine _engine = MusicPlayerEngine(
     backendFactory: () => backend,
+    baseSettings: () => MusicOutputSettings(
+      gapless: true,
+      replayGain: MusicReplayGainMode.off,
+      volume: prefsRepo.musicVolume,
+    ),
   );
 
   late final MusicSession _session = MusicSession(
@@ -366,6 +372,16 @@ void main() {
 
   final bool Function() asrGate = musicSubtitleAsrSupported;
 
+  /// 卸载歌词页。页里的 MV 背景控制器（#4249）盯着 drift `.watch()` 的绑定流，卸载时退订
+  /// 会让 drift `StreamQueryStore.markAsClosed` 排一个零延时 timer；不补一帧它就留到
+  /// 用例结束的 pending-timer 校验，必红并把后面的用例全挂到超时（同
+  /// home_dashboard_page_test 的说明）。
+  Future<void> unmountPage(WidgetTester tester) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    // 必须带时长：不带时长的 pump() 不推进假时钟，零延时 timer 不会跑。
+    await tester.pump(Duration.zero);
+  }
+
   Future<void> settle(WidgetTester tester, {int rounds = 10}) async {
     for (int i = 0; i < rounds; i++) {
       await tester.runAsync(
@@ -407,7 +423,7 @@ void main() {
             as MusicLyricRow;
     expect(row.offsetMs, 100);
 
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   // 拍板台 left3645（方案 B）：QRC 自带注音轨和正文对不上时整首不挂，歌词页说一句「已隐藏」；
@@ -429,7 +445,7 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('夜に駆け')), findsWidgets);
     expect(find.byKey(rubyDroppedNotice), findsOneWidget);
     expect(find.text(t.music_lyrics_ruby_dropped_notice), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   testWidgets('QRC 注音轨对得上：不提示注音已隐藏', (WidgetTester tester) async {
@@ -437,7 +453,7 @@ void main() {
     await pumpPage(tester);
     expect(find.bySemanticsLabel(RegExp('夜に駆け')), findsWidgets);
     expect(find.byKey(rubyDroppedNotice), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   // GitHub #3354：设置 › 音乐 › 「模糊非当前行」接到歌词视图，改了即时生效。
@@ -459,7 +475,7 @@ void main() {
     await tester.pump();
     expect(viewBlurs(), isTrue);
 
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   // BUG-4084 追加（用户 2026-11-05）：音乐播放页也是「播放页」，盖住浏览器时浏览页要让
@@ -470,7 +486,7 @@ void main() {
       tester.element(find.byType(MusicLyricsPage)),
     )!;
     expect(playbackRouteMarks.isPlayback(route), isTrue);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
     expect(playbackRouteMarks.isPlayback(route), isFalse);
   });
 
@@ -518,7 +534,7 @@ void main() {
     MusicDiscArtIndex.instance.publish(const <String, String>{});
     await tester.pump();
     expect(find.byKey(realDisc), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   testWidgets('分栏布局：有盘面扫描图才把唱片压在封面上，没有只摆封面', (WidgetTester tester) async {
@@ -600,7 +616,7 @@ void main() {
       find.byKey(const ValueKey<String>('music-player-real-disc')),
       findsNothing,
     );
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   testWidgets('宽屏歌词页有返回键（窄屏顶栏有关闭键，宽屏原本没有退出口）', (WidgetTester tester) async {
@@ -612,7 +628,7 @@ void main() {
       find.byKey(const ValueKey<String>('music_lyrics_back')),
       findsOneWidget,
     );
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   testWidgets('宽屏：「队列」图标打开右下角浮层卡片（不挤压播放页），点外面收起', (WidgetTester tester) async {
@@ -637,7 +653,7 @@ void main() {
     await tester.tapAt(const Offset(40, 40));
     await settle(tester, rounds: 30);
     expect(find.byType(MusicQueuePanel), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   testWidgets('窄屏：「队列」图标弹出底部弹层', (WidgetTester tester) async {
@@ -651,7 +667,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('music_lyrics_queue')));
     await settle(tester, rounds: 30);
     expect(find.byType(MusicQueuePanel), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   testWidgets('AB 循环：当前行 → 再加一行 → 关；循环点是曲目时间', (WidgetTester tester) async {
@@ -689,7 +705,7 @@ void main() {
     expect(backend.log.last, 'ab:null-null');
     expect(app.musicSession.engine.abLoop, isNull);
 
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   testWidgets('与有声书同一套交互：空格播放暂停、点字外 / 中键跳到该行、点字查词', (
@@ -743,12 +759,12 @@ void main() {
       reason: '点字查词不跳转',
     );
 
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   testWidgets('长按查词：查行内起点文本、按设置暂停；制卡带音乐出处与行时间窗', (WidgetTester tester) async {
-    final List<({String input, int startMs, int endMs})> clips =
-        <({String input, int startMs, int endMs})>[];
+    final List<({String input, int startMs, int endMs, double? gainDb})> clips =
+        <({String input, int startMs, int endMs, double? gainDb})>[];
     musicLyricsClipExtractor =
         ({
           required String inputPath,
@@ -758,14 +774,22 @@ void main() {
           required String outputPath,
           required int audioChannels,
           required String audioBitrate,
+          required double? gainDb,
           required void Function(String summary) onFailure,
         }) async {
-          clips.add((input: inputPath, startMs: startMs, endMs: endMs));
+          clips.add((
+            input: inputPath,
+            startMs: startMs,
+            endMs: endMs,
+            gainDb: gainDb,
+          ));
           expect(httpHeaders, isEmpty, reason: '本机文件不带请求头');
           File(outputPath).writeAsBytesSync(<int>[1, 2, 3]);
           return outputPath;
         };
     await pumpPage(tester);
+    // 反馈 d7mXlstcv9：句子音频跟随播放音量（默认开）——播放器音量调到 50。
+    await tester.runAsync(() => app.setMusicVolume(50));
     await app.musicSession.engine.play();
     backend.controller.add(
       const MusicBackendPosition(Duration(milliseconds: 4200), null),
@@ -797,6 +821,13 @@ void main() {
     expect(clips.single.input, item().path, reason: '本机文件原样交给 ffmpeg');
     expect(clips.single.startMs, 3500, reason: '行 [4 s, 8 s) 前后各扩 0.5 s');
     expect(clips.single.endMs, 8500);
+    expect(
+      clips.single.gainDb,
+      closeTo(-18.06, 0.01),
+      reason:
+          '默认跟随播放音量：mpv 音量 50 是立方曲线 (0.5)³ ≈ -18.06 dB；曲目没有 '
+          'ReplayGain 数据，与播放端一样不加响度增益',
+    );
     final AnkiMiningContext ctx = anki.mined.single;
     expect(ctx.sentence, '沈むように');
     expect(ctx.sentenceAudioPath, isNotNull);
@@ -817,6 +848,10 @@ void main() {
     expect(mined.single.sentence, '沈むように');
     expect(mined.single.noteId, 77);
 
+    // 关掉「跟随播放音量」→ 片段按原始电平裁（gainDb = null，参数与现状逐字节相同）。
+    app.toggleMiningAudioFollowPlaybackVolume();
+    expect(app.miningAudioFollowPlaybackVolume, isFalse);
+
     // BUG-4933：点 ✓ 选「覆盖这张」真的按 id 覆写那张卡（此前落到基类空实现，静默
     // 不写），上下文与新制同一口径（句子 / 句子音频 / 出处）；覆写不新建卡、不进制卡历史。
     final Object? overwrite = await tester.runAsync<Object?>(
@@ -831,6 +866,8 @@ void main() {
     final MinePopupResult overwriteResult = overwrite! as MinePopupResult;
     expect(overwriteResult.ankiConnect, isTrue);
     expect(overwriteResult.noteId, 41);
+    expect(clips, hasLength(2), reason: '覆写同样重截句子音频');
+    expect(clips.last.gainDb, isNull, reason: '开关关：不跟随播放音量');
     expect(anki.mined, hasLength(1), reason: '覆写不走 mineEntry 新建卡');
     final ({int noteId, AnkiMiningContext context}) update =
         anki.updated.single;
@@ -849,7 +886,7 @@ void main() {
             as List<MinedSentenceRow>;
     expect(afterOverwrite, hasLength(1), reason: '覆写不计入制卡历史');
 
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   // 反馈 l8XrV_IfXH：音乐高级制卡能选前后文行，句子与音频片段跟着合并；起止微调与
@@ -869,6 +906,7 @@ void main() {
           required String outputPath,
           required int audioChannels,
           required String audioBitrate,
+          required double? gainDb,
           required void Function(String summary) onFailure,
         }) async {
           clips.add((startMs: startMs, endMs: endMs));
@@ -969,7 +1007,7 @@ void main() {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
     );
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   // 双屏副屏：查词显示在副屏「查词」页时，「查词时暂停」仍按设置生效（与页内弹窗同一入口），
@@ -1024,7 +1062,7 @@ void main() {
       companionContexts.lookupClosed(resume: true);
       await tester.pump();
       expect(backend.log, <String>['pause', 'play']);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await unmountPage(tester);
     });
 
     testWidgets('setting off: a routed lookup neither pauses nor resumes', (
@@ -1036,7 +1074,7 @@ void main() {
       companionContexts.lookupClosed(resume: true);
       await tester.pump();
       expect(backend.log, isEmpty);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await unmountPage(tester);
     });
 
     testWidgets('a lookup started on the panel (its lyrics) pauses too; the '
@@ -1051,7 +1089,7 @@ void main() {
       companionContexts.lookupClosed(resume: false);
       await tester.pump();
       expect(backend.log, <String>['pause'], reason: '无人操作时不自己播起来');
-      await tester.pumpWidget(const SizedBox.shrink());
+      await unmountPage(tester);
     });
 
     testWidgets('"Lookups open on: Top screen": the in-page popup path pauses '
@@ -1061,7 +1099,7 @@ void main() {
       expect(routed, isEmpty);
       expect(app.searches, isNotEmpty);
       expect(backend.log, <String>['pause']);
-      await tester.pumpWidget(const SizedBox.shrink());
+      await unmountPage(tester);
     });
   });
 
@@ -1083,7 +1121,7 @@ void main() {
         find.byKey(const ValueKey<String>('music_lyrics_generate')),
         supported ? findsOneWidget : findsNothing,
       );
-      await tester.pumpWidget(const SizedBox.shrink());
+      await unmountPage(tester);
     });
   }
 
@@ -1105,7 +1143,7 @@ void main() {
     );
     await settle(tester);
     expect(find.bySemanticsLabel('ドラマの台詞'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   // 拍板台 D48CgzHUok：「搜索在线歌词」先弹关键词框（默认填曲目元数据），按用户改过的
@@ -1132,7 +1170,7 @@ void main() {
     expect(search.queryParameters['track_name'], '夜に駆ける');
     expect(search.queryParameters['artist_name'], isNull);
     expect(find.text(t.music_lyrics_no_candidates), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   // 搜索要串行走 LRCLIB + 各歌词插件，可能好几秒：进行中要有进度，且不能再触发第二次搜索
@@ -1173,7 +1211,7 @@ void main() {
       findsNothing,
     );
     expect(find.text(t.music_lyrics_no_candidates), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   testWidgets('曲内搜索：搜到的行点一下跳到那一行的时间', (WidgetTester tester) async {
@@ -1201,7 +1239,7 @@ void main() {
     await tester.tap(hit);
     await settle(tester, rounds: 3);
     expect(backend.log, contains('seek:4000'));
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   // #358s4Ae_fn（Android 荣耀 369x820@3.25）：「进度条只能拖、点按不跳转」。窄屏播放页
@@ -1248,7 +1286,7 @@ void main() {
     expect(seeks(), hasLength(2));
     expect(seeks().last, closeTo(45000, 1500));
 
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 
   testWidgets('窄屏播放页：带手指抖动（越过 8dp 横向 slop）的点按也提交 seek', (
@@ -1265,6 +1303,6 @@ void main() {
     expect(seeks(), hasLength(1));
     expect(seeks().single, closeTo(15000 + 10 / bar.width * 60000, 1500));
 
-    await tester.pumpWidget(const SizedBox.shrink());
+    await unmountPage(tester);
   });
 }

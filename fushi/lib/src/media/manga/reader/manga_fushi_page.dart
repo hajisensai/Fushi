@@ -47,6 +47,7 @@ import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi/src/media/manga/manga_reading_stats.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_panel_detector.dart';
@@ -1507,6 +1508,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   MangaPageAnimation _pageAnimation = kMangaPageAnimationDefault;
   PageTurnAnimationSpeed _pageAnimationSpeed = PageTurnAnimationSpeed.normal;
   bool _pageTurnFollowDrag = kMangaPageTurnFollowDragDefault;
+
+  /// 漫画「滑动翻页灵敏度」（全局 `manga_swipe_page_turn_sensitivity`，R721ZgWVSB）：
+  /// 缩放手势 JS 与卷页控制器的提交阈值，见 [mangaSwipeThresholds]。
+  double _swipeSensitivity = kMangaSwipePageTurnSensitivityDefault;
 
   // 卷页翻页（manga_fushi/page_curl.part.dart）：首次用到时创建，覆盖层按这个
   // key 量视口尺寸。
@@ -3718,6 +3723,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       pageAnimation: _effectivePageAnimation,
       pageAnimationSpeed: _pageAnimationSpeed,
       followDrag: _pageTurnFollowDrag,
+      swipeSensitivity: _swipeSensitivity,
       tapZonePaging: _tapZonePaging,
       tapZoneLayout: _tapZoneLayout,
       backgroundCss: _backgroundCssValue,
@@ -6871,10 +6877,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       appModel.mangaPageAnimationSpeed,
     );
     _pageTurnFollowDrag = appModel.mangaPageTurnFollowDrag;
+    _swipeSensitivity = appModel.mangaSwipePageTurnSensitivity;
   }
 
-  /// 把当前生效的翻页动画推给已加载的文档（不重建 WebView 文档）。窗口重载时
-  /// 文档生成器直接读同一组字段，两条路径同源。
+  /// 把当前生效的翻页动画与滑动翻页阈值推给已加载的文档（不重建 WebView 文档）。
+  /// 窗口重载时文档生成器直接读同一组字段，两条路径同源。
   Future<void> _pushPageAnimationToJs() async {
     final InAppWebViewController? controller = _controller;
     if (controller == null) return;
@@ -6884,7 +6891,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         source:
             'window.__mangaSetPageAnimation && '
             "window.__mangaSetPageAnimation('${effective.key}', "
-            '${_pageAnimationSpeed.durationMs}, $_pageTurnFollowDrag);',
+            '${_pageAnimationSpeed.durationMs}, $_pageTurnFollowDrag);'
+            'window.__mangaSetSwipeThresholds && '
+            'window.__mangaSetSwipeThresholds('
+            '${mangaSwipeThresholdsJs(mangaSwipeThresholds(_swipeSensitivity))});',
       );
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
@@ -6895,16 +6905,20 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
-  /// 阅读器面板改了翻页动画三项：写全局偏好，立即推给当前文档。
+  /// 阅读器面板改了翻页设置（动画三项 + 滑动灵敏度）：写全局偏好，立即推给当前文档。
   Future<void> _setPageTurnSettings(MangaPageTurnSettings value) async {
     await appModel.setMangaPageAnimation(value.animation.key);
     await appModel.setMangaPageAnimationSpeed(value.speed.key);
     await appModel.setMangaPageTurnFollowDrag(value.followDrag);
+    await appModel.setMangaSwipePageTurnSensitivity(value.swipeSensitivity);
     if (!mounted) return;
     setState(() {
       _pageAnimation = value.animation;
       _pageAnimationSpeed = value.speed;
       _pageTurnFollowDrag = value.followDrag;
+      _swipeSensitivity = normalizeMangaSwipePageTurnSensitivity(
+        value.swipeSensitivity,
+      );
     });
     await _pushPageAnimationToJs();
   }
@@ -7071,6 +7085,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           animation: _pageAnimation,
           speed: _pageAnimationSpeed,
           followDrag: _pageTurnFollowDrag,
+          swipeSensitivity: _swipeSensitivity,
         ),
         onPageTurnChanged: _setPageTurnSettings,
         onEditToolbarLayout: () => unawaited(_showControlLayoutEditor()),

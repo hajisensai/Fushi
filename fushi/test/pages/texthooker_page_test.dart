@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -8,6 +9,7 @@ import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
 import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
@@ -15,13 +17,17 @@ import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/pages/implementations/shared_lookup_popup_host.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/fake_inappwebview_platform.dart';
+import '../helpers/inert_profile_repository.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 健康卡 Anki 行接真实配置状态（BUG-1007）后，页面 watch AnkiViewModel →
@@ -64,6 +70,76 @@ Future<void> _selectFirstLine(WidgetTester tester) async {
   expect(card, findsWidgets, reason: '台词列表里应至少有一句');
   await tester.tapAt(tester.getTopLeft(card.first) + const Offset(24, 20));
   await tester.pumpAndSettle();
+}
+
+/// 「新句自动查词」测试用：查词弹窗要读的显示设置给定值，查词本身只记下查询串
+/// （测试环境没有词典库）。其余 getter 照旧走真 [AppModel]。
+class _AutoLookupAppModel extends AppModel {
+  _AutoLookupAppModel() : super(testPlatformServices(isWindows: true));
+
+  final List<String> searches = <String>[];
+
+  @override
+  Future<DictionarySearchResult> searchDictionaryWithRuby({
+    required String searchTerm,
+    required List<FushiRubySpan> rubySpans,
+    bool searchWithWildcards = false,
+    int? overrideMaximumTerms,
+  }) {
+    searches.add(searchTerm);
+    // 永不完成：浮层停在「查询中」，不往下渲染要连 Anki / 数据库的结果卡——本组
+    // 只验证「新句到达时发起了哪次查词」。
+    return Completer<DictionarySearchResult>().future;
+  }
+
+  @override
+  int get maximumTerms => 10;
+  @override
+  double get popupMaxWidth => 360;
+  @override
+  double get popupMaxHeight => 360;
+  @override
+  bool get popupBottomDocked => false;
+  @override
+  double get appUiScale => 1.0;
+  @override
+  bool get lowMemoryMode => false;
+  @override
+  List<String> get enabledAudioSources => const <String>[];
+  @override
+  List<AudioSourceConfig> get audioSourceConfigs => const <AudioSourceConfig>[];
+  @override
+  double get dictionaryFontSize => 16;
+  @override
+  double get popupWheelSpeed => 1.0;
+  @override
+  bool get popupInstantScroll => false;
+  @override
+  double get popupInstantScrollWheelStep => 0.5;
+  @override
+  double get popupInstantScrollTouchStep => 0.25;
+  @override
+  bool get compactGlossaries => false;
+  @override
+  bool get dictionaryUnifiedStyle => true;
+  @override
+  int get popupDictionaryColumns => 1;
+  @override
+  int get popupAutoExpandDictionaries => 0;
+  @override
+  bool get deduplicatePitchAccents => false;
+  @override
+  bool get harmonicFrequency => false;
+  @override
+  bool get showExpressionTags => false;
+  @override
+  bool get collapseDictionaries => false;
+  @override
+  List<Dictionary> get dictionaries => const <Dictionary>[];
+  @override
+  Map<String, String> get customDictCSS => const <String, String>{};
+  @override
+  String get globalDictCSS => '';
 }
 
 void main() {
@@ -1070,6 +1146,128 @@ void main() {
     await tester.pump();
     final dynamic standalone = tester.state(find.byType(TexthookerPage));
     expect(identical(standalone.debugPopupHost, shared), isFalse);
+  });
+
+  group('反馈 q9Jcu_Zr2_：新句自动查词', () {
+    late _AutoLookupAppModel app;
+
+    // 查词浮层会真的建出来：WebView 走假平台，制卡目标菜单读的配置仓库给惰性实现。
+    setUpAll(installFakeInAppWebViewPlatform);
+
+    Future<SharedLookupPopupHost> pumpWithSharedHost(
+      WidgetTester tester,
+    ) async {
+      app = _AutoLookupAppModel();
+      final SharedLookupPopupHost shared = SharedLookupPopupHost();
+      addTearDown(shared.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            platformServicesProvider.overrideWithValue(
+              testPlatformServices(isWindows: true),
+            ),
+            appProvider.overrideWith((ref) => app),
+            profileRepositoryProvider.overrideWith(
+              (ref) => InertProfileRepository(),
+            ),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              home: SharedLookupPopupScope(
+                host: shared,
+                child: const Scaffold(body: TexthookerPage()),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      return shared;
+    }
+
+    /// 实际发起过的查词：查询串进了查词数据源，且对应的顶层浮层登记在共用宿主上。
+    Iterable<String> lookedUp(SharedLookupPopupHost shared) =>
+        app.searches.where(
+          (String term) => shared.controller.entries.any(
+            (DictionaryPopupEntry e) => e.searchTerm == term,
+          ),
+        );
+
+    Future<void> pumpFrames(WidgetTester tester) async {
+      for (int i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+    }
+
+    testWidgets('默认关：新句到达只显示，不弹查词', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      final FushiSelectableChip chip = tester.widget<FushiSelectableChip>(
+        find.byKey(const ValueKey<String>('game-auto-lookup')),
+      );
+      expect(chip.selected, isFalse, reason: '自动弹窗挡画面，默认必须关');
+
+      TexthookerService.instance.appendLine('「今日は晴れ」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
+
+    testWidgets('打开后新句到达自动从第一个可查字起查词', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+
+      TexthookerService.instance.appendLine('「今日は晴れ」');
+      await pumpFrames(tester);
+      expect(
+        lookedUp(shared),
+        contains('今日は晴れ」'),
+        reason: '跳过开引号，从「今」起把到行尾的一段交给最长匹配，与手点「今」同一查询串',
+      );
+      final String lineId = TexthookerService.instance.entries.last.id;
+      final FushiCard card = tester.widget<FushiCard>(
+        find.byKey(ValueKey<String>('game-line-$lineId')),
+      );
+      expect(card.selected, isTrue, reason: '自动查词与手点一样选中该句，制卡取这句');
+
+      // 每来一句都跟着查最新那句。
+      TexthookerService.instance.appendLine('明日は雨');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), contains('明日は雨'));
+    });
+
+    testWidgets('关掉跟随实时（在回看历史）时不自动查词', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey<String>('game-follow-live')));
+      await tester.pump();
+
+      TexthookerService.instance.appendLine('「今日は晴れ」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
+
+    testWidgets('整句没有可查字时不弹卡', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+
+      TexthookerService.instance.appendLine('「……」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
+
+    testWidgets('上一句还没弹出就来了不可查的新句：旧目标作废，不弹旧句', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+
+      // 同一帧内连到两句：前一句可查、后一句整句没有可查字。只查最新那句 = 都不弹。
+      TexthookerService.instance.appendLine('今日は晴れ');
+      TexthookerService.instance.appendLine('「……」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
   });
 
   testWidgets('制卡热键只作用于本页在屏上的会话：tab 藏起或栈归查词 tab 时不武装', (

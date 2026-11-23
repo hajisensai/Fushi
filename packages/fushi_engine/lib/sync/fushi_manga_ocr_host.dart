@@ -40,6 +40,7 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName, kMangaOcrOutputFileName;
 import 'package:fushi_engine/ocr/manga_ocr_selected_service.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
 import 'package:fushi_engine/sync/manga_ocr_content_cache.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart'
     show readBoundedBodyString;
@@ -1155,3 +1156,35 @@ shelf.Response _ocrError(int status, String code) => shelf.Response(
   body: jsonEncode(<String, String>{'error': code}),
   headers: <String, String>{'Content-Type': 'application/json; charset=utf-8'},
 );
+
+/// 漫画 P3 代跑 OCR 的互联模块（`/api/ocr/job*` + 能力位 `mangaOcr`）。[manager] 为 null = 未接线：
+/// 能力位不带该字段、端点 404（老 client / 老 host 双向兼容）。
+class MangaOcrInterconnectModule extends InterconnectHostModule {
+  MangaOcrInterconnectModule(this.manager);
+
+  final MangaOcrHostJobManager? manager;
+
+  @override
+  String get capabilityKey => 'mangaOcr';
+
+  @override
+  Future<Object?> capability() async => manager?.capability();
+
+  @override
+  List<String> get routePrefixes => const <String>['/api/ocr/job'];
+
+  @override
+  Future<shelf.Response> handle(InterconnectRequest request) async {
+    final MangaOcrHostJobManager? m = manager;
+    if (m == null) return shelf.Response.notFound('Manga OCR off');
+    return handleMangaOcrRequest(
+      m,
+      request.raw,
+      request.method.toUpperCase(),
+      request.path,
+    );
+  }
+
+  @override
+  Future<void> dispose() async => manager?.disposeAll();
+}

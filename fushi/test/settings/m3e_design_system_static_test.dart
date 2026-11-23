@@ -1044,6 +1044,16 @@ class AnotherPopupPart {
           'fontSize: is rendered media content sized in video pixels, '
           'never app UI — same reviewed exception class as '
           'audiobook_clip_text_render.',
+      'lib/src/media/video/video_live_chat_panel.dart':
+          'YouTube live chat replay side panel (decision zTedU_pOQF): message '
+          'rows, author names and the panel title are sized from the chat '
+          'font size the video page hands in (14 x _videoUiScale), the same '
+          'video-subsystem content class as the sibling subtitle jump panel; '
+          'controls use shared Fushi* buttons.',
+      'lib/src/pages/implementations/video_fushi/live_chat.part.dart':
+          'Live chat panel wiring: the only fontSize: is the chat content size '
+          '(14 x _videoUiScale) handed to the allowlisted live chat panel -- '
+          'same pattern as portrait.part.dart.',
       'lib/src/media/video/video_subtitle_jump_panel.dart':
           'Subtitle jump list (asbplayer-style transcript panel) renders cue '
           'text + timestamp rows as video-subsystem content; row/timestamp '

@@ -27,7 +27,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart'
-    show MusicServerKind, MusicServerLyrics;
+    show MusicHostLyrics, MusicServerKind, MusicServerLyrics;
 import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
     show MusicServerLoudness;
 import 'package:path/path.dart' as p;
@@ -47,6 +47,17 @@ typedef MusicServerDownloadLyricsSaver =
 /// 进程级装配点：`AppModel` 建音乐会话时装上（`MusicLyricsService.storeServerLyrics`）；
 /// 未装配（测试 / 无头入口）时下载不顺带存歌词。
 MusicServerDownloadLyricsSaver? musicServerDownloadLyricsSaver;
+
+/// 把互联 host 上生效的歌词存进歌词缓存（[lyrics] 为 null = host 上这首没有歌词）。
+typedef MusicServerDownloadHostLyricsSaver =
+    Future<void> Function({
+      required String trackUid,
+      required int? durationMs,
+      required MusicHostLyrics? lyrics,
+    });
+
+/// 进程级装配点（`MusicLyricsService.storeHostLyrics`）；未装配时下载 host 曲目不顺带存歌词。
+MusicServerDownloadHostLyricsSaver? musicServerDownloadHostLyricsSaver;
 
 /// 判断一个本机路径是不是文件（测试注入）。
 typedef MusicServerDownloadFileExists = Future<bool> Function(String path);

@@ -387,3 +387,38 @@ Uint8List? _readWithRetry(WindowsAudioCdDrive drive, int lba, int count) {
   }
   return null;
 }
+
+/// 把 Windows 光驱 [drivePath]（`E:`）上整盘时间轴的 [startMs, endMs) 读成一个 WAV（[wavPath]）。
+///
+/// 时间轴与曲库里 `cdda://<设备>` 曲目同一约定：从第一条音频轨起点算 0，毫秒按扇区（1/75 s）
+/// 四舍五入回扇区。[endMs] 为 null = 读到最后一条音频轨结束。互联共享音乐库（design-imusic-q5）
+/// 用它把 host 光驱里的 CD 曲目截成文件给已配对设备。读不出抛 [AudioCdException]；取消返回 false。
+Future<bool> extractAudioCdRange({
+  required String drivePath,
+  required int startMs,
+  int? endMs,
+  required String wavPath,
+  AudioCdRipCancellation? cancellation,
+}) async {
+  final _Disc disc = await Isolate.run(() => _readWindowsDisc(drivePath));
+  final List<AudioCdTrack> audio = <AudioCdTrack>[
+    for (final _DiscTrack t in disc.tracks) ?t.cdda,
+  ];
+  if (audio.isEmpty) {
+    throw const AudioCdException('The disc has no audio tracks');
+  }
+  final int origin = audio.first.startLba;
+  final int last = audio.last.endLba;
+  int sectorOf(int ms) => origin + (ms * 75 / 1000).round();
+  final int start = math.max(origin, sectorOf(startMs));
+  final int end = endMs == null ? last : math.min(last, sectorOf(endMs));
+  if (end <= start) throw const AudioCdException('Empty CD range');
+  final int? bad = await _ripTrack(
+    drivePath: drivePath,
+    track: AudioCdTrack(number: 0, startLba: start, endLba: end),
+    wavPath: wavPath,
+    onSectors: (_) {},
+    cancellation: cancellation,
+  );
+  return bad != null;
+}

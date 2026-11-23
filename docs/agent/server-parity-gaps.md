@@ -48,7 +48,7 @@ here, and `_purgeRoot` in `packages/fushi_server/lib/src/admin/admin_api.dart` t
 `SourceLibraryKind.music`. Do not "quick fix" this by letting music roots through. Without
 the host routes below, a client cannot see a scanned music library at all.
 
-The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
+Design (pending decisions): `docs/specs/2026-11-23-interconnect-music-library-design.md`. Size: L/XL.
 
 1. Move the scanner stack from `fushi/lib/src/media/music/` into `packages/fushi_engine`:
    `music_library_scanner.dart`, `disc/music_disc_import.dart` and

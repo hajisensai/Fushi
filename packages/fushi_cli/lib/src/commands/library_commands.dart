@@ -183,6 +183,14 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
         render: _renderCuratePending,
       ),
       CtlCommandSpec(
+        name: 'curate-retry',
+        summary: '对待确认队列里一个书 / 游戏刮削单元让 AI 重试刮削（记一趟，可 curate-undo 整趟撤销）',
+        usage: '<books|games> <ref>',
+        configure: _configureCurateRetry,
+        build: _buildCurateRetry,
+        render: _renderCurateRetry,
+      ),
+      CtlCommandSpec(
         name: 'source-add',
         summary: '把本机目录登记成来源库并扫描',
         usage: '<目录>',
@@ -1123,6 +1131,33 @@ String _renderCuratePending(Object? data) {
   }
   return out.toString().trimRight();
 }
+
+void _configureCurateRetry(ArgParser parser) {
+  parser.addFlag(
+    'yes',
+    negatable: false,
+    help: '同意把标题、作者或品牌、年份、卷数发给 AI 提供商（首次需要）',
+  );
+}
+
+CtlRequestSpec _buildCurateRetry(CtlCommandContext context) {
+  final String stage = context.positional(0, '阶段（books / games）');
+  if (stage != 'books' && stage != 'games') {
+    throw CtlUsageError('阶段只能是 books / games：$stage');
+  }
+  final String ref = context.positional(1, '刮削单元 ref');
+  return CtlRequestSpec.post(
+    '$_curateRoot/scrape/retry',
+    body: <String, Object?>{
+      'stage': stage,
+      'ref': ref,
+      if (context.flag('yes')) 'yes': true,
+    },
+  );
+}
+
+String _renderCurateRetry(Object? data) =>
+    data is Map ? _renderCurateRun(data) : '$data';
 
 CtlRequestSpec _buildCurateStatus(CtlCommandContext context) =>
     CtlRequestSpec.get('$_curateRoot/status');

@@ -17,6 +17,7 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/music_cover_source.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/ai/ai_media_acquisition_assistant.dart'
@@ -200,10 +201,7 @@ Future<void> openMediaLinkEntry({
         ))
           if (tr.deletedAt == null) tr,
       ]);
-      final String? coverTrack = album.coverTrackUid;
-      final String? embedded = coverTrack == null
-          ? null
-          : (await db.getMusicTrack(coverTrack))?.path;
+      final String? embedded = await musicAlbumEmbeddedCoverPath(db, album);
       if (!navigator.mounted) return;
       unawaited(
         navigator.push<void>(

@@ -849,13 +849,19 @@ class _PopoverButtonState extends State<_PopoverButton> {
                           child: child,
                         ),
                       ),
+                  // 按内容定高（BUG：倍速面板撑满屏高）：浮层里的约束是放松后的
+                  // 0～整屏高，Material Slider 是 sizedByParent、高度有界就直接取
+                  // maxHeight，面板会从按钮上方一路撑到屏顶。IntrinsicHeight 让
+                  // 面板高度收回到内容的固有高度。
                   child: SizedBox(
                     width: 320,
-                    child: MangaChromeSurface(
-                      radius: 20,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
-                        child: widget.panel,
+                    child: IntrinsicHeight(
+                      child: MangaChromeSurface(
+                        radius: 20,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
+                          child: widget.panel,
+                        ),
                       ),
                     ),
                   ),

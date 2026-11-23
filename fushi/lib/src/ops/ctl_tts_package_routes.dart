@@ -13,7 +13,6 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_package.dart'
     show kMangaAudioPackageExtension;
-import 'package:fushi_engine/tts/render/tts_render_queue.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart'
@@ -24,6 +23,7 @@ import 'package:fushi/src/media/manga/audio/manga_audio_package_io.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_package_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart'
     show isLocalMangaVolume;
+import 'package:fushi/src/media/manga/audio/manga_audio_volume_busy.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart'
     show mangaHasAudio;
 import 'package:fushi/src/ops/ctl_tts_support.dart';
@@ -31,23 +31,31 @@ import 'package:fushi/src/ops/ctl_tts_support.dart';
 /// 路由根：`/api/admin/tts/manga-packages/...`。
 const String kTtsMangaPackageCtlRoot = '/api/admin/tts/manga-packages';
 
-/// 这一卷现在不能导出 / 被导入替换的原因（标注 / 生成任务在跑）；null = 可以。
-String? ttsMangaBusyReason(TtsCtlDeps deps, String bookKey) {
-  if (deps.annotateTasks().isRunning(bookKey)) {
-    return '正在标注，等它结束或先取消（tts annotate-cancel）';
-  }
-  final TtsRenderJob? job = deps.renderQueue().latestFor(bookKey);
-  if (job != null && !job.isTerminal) {
-    return '正在生成，等它结束或先取消（tts render-cancel）';
-  }
-  return null;
-}
+/// 这一卷现在不能导出 / 被导入替换 / 撤销导入的原因（标注 / 生成在跑，或别的导入占着
+/// 它，判据见 [mangaVolumeBusy]）；null = 可以。[except] = 导入任务落库时复查用，不把
+/// 它自己算进去。
+String? ttsMangaBusyReason(
+  TtsCtlDeps deps,
+  String bookKey, {
+  MangaAudioPackageTask? except,
+}) => switch (mangaVolumeBusy(
+  bookKey,
+  annotate: deps.annotateTasks(),
+  renderQueue: deps.renderQueue(),
+  packages: deps.packageTasks(),
+  except: except,
+)) {
+  null => null,
+  MangaVolumeBusy.annotating => '正在标注，等它结束或先取消（tts annotate-cancel）',
+  MangaVolumeBusy.rendering => '正在生成，等它结束或先取消（tts render-cancel）',
+  MangaVolumeBusy.importing => '正在导入有声漫画包，等它结束（tts package-task）',
+};
 
 /// 导出 / 导入的业务错误 → 控制通道错误（码 `manga_package_<code>`）。
 CtlFailure ttsMangaPackageFailure(MangaAudioPackageException e) {
   final int status = switch (e.code) {
     'not_found' => 404,
-    'busy' || 'export_running' => 409,
+    'busy' || 'export_running' || 'import_running' || 'plan_stale' => 409,
     _ => 422,
   };
   final String details = e.details.isEmpty
@@ -257,7 +265,7 @@ class _PackageHandlers {
       throw CtlFailure(
         409,
         'manga_package_busy',
-        '本机这些卷正在标注 / 生成：'
+        '本机这些卷正在标注 / 生成 / 导入：'
             '${busy.map((MangaPackageImportVolumePlan v) => v.localTitle ?? v.volume.title).join('、')}',
       );
     }
@@ -282,22 +290,30 @@ class _PackageHandlers {
         '包里的卷都与本机同名卷冲突（页数 / OCR 不一致）：要作为新卷导入带 asNew=true',
       );
     }
-    final MangaAudioPackageTask task = _tasks.start(
-      kind: MangaAudioPackageTaskKind.import,
-      path: file,
-      run: (MangaAudioPackageTask task) async {
-        final Map<String, Object?> result = await runMangaAudioPackageImport(
-          _deps.appModel,
-          plan,
-          runId: task.id,
-          busy: _busy,
-          onProgress: task.report,
-          onCommit: task.markCommitting,
-          cancel: task.cancelToken,
-        );
-        return _wireExportResult(result);
-      },
-    );
+    final MangaAudioPackageTask task;
+    try {
+      task = _tasks.start(
+        kind: MangaAudioPackageTaskKind.import,
+        path: file,
+        claims: mangaPackageImportClaims(plan),
+        run: (MangaAudioPackageTask task) async {
+          final Map<String, Object?> result = await runMangaAudioPackageImport(
+            _deps.appModel,
+            plan,
+            runId: task.id,
+            busy: (String bookKey) =>
+                ttsMangaBusyReason(_deps, bookKey, except: task),
+            onProgress: task.report,
+            onCommit: task.markCommitting,
+            onCreated: task.claimVolume,
+            cancel: task.cancelToken,
+          );
+          return _wireExportResult(result);
+        },
+      );
+    } on MangaAudioPackageException catch (e) {
+      throw ttsMangaPackageFailure(e);
+    }
     if (call.optBool('wait') == true) await task.whenDone;
     return task.toJson();
   }

@@ -80,6 +80,7 @@ import 'package:fushi/src/epub/epub_spread_map.dart';
 import 'package:fushi/src/utils/adaptive/fushi_fold_posture.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
+import 'package:fushi/src/media/audiobook/audiobook_follow_style.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
@@ -131,6 +132,7 @@ import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi/src/mining/mining_playback_volume_gain.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_export.dart';
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_text_render.dart';
@@ -2464,6 +2466,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   /// 听书跟随 reveal 落定后的进度补刷（见 `_scheduleReanchorSettleProgressRefresh`）。
   Timer? _revealProgressRefreshTimer;
+
+  /// 分页「读到页边就翻」（反馈 tUJsiLpL9d）：已翻到后半截的那句与翻页时刻（cue 时间域）。
+  /// 音频仍在这句、且没回到翻页时刻之前，再次揭示就停在后半截所在页。
+  ({AudioCue cue, int fromMs})? _audioCueTail;
+
+  /// 句内翻页观察的代际：每次 cue 通知 / 每次到点翻页 +1，迟到的异步分界结果代际
+  /// 不符就丢掉，不覆盖更新的观察。
+  int _audioCueEdgeGen = 0;
 
   /// 统计诊断流水上次记过的单元（`_traceArrive` 去重用）。
   (int, int)? _lastTracedUnit;
