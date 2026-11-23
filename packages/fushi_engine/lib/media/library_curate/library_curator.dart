@@ -2471,7 +2471,7 @@ class DatabaseLibraryCurateFacts implements LibraryCurateFacts {
         isbn: book.isbn,
         missingCover: (book.coverPath ?? '').trim().isEmpty,
         fileNameTitle: looksLikeFileNameTitle(book.title),
-        manga: book.format == 'manga',
+        manga: BookFormat.parseOrEpub(book.format) == BookFormat.manga,
       );
       if (!v.missing) continue;
       missing[book.uid] = (v, book.bookKey, book.localAddedAt);

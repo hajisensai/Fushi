@@ -23,6 +23,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
@@ -33,6 +34,7 @@ import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_ledger.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_name_readings.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:path/path.dart' as p;
 
@@ -440,9 +442,45 @@ class MangaAudioAnnotateSession {
       client.close();
       final List<TtsCastCharacter> found = runner.workingRoster.values.toList();
       _editSeries((SeriesCastProfile p) => p.learnRoster(found));
+      _collectNameRuby(found);
       await save();
       await _saveSeries();
     }
+  }
+
+  /// 角色表认出之后的「人名读法」一步（拍板 TW9ete_FHX）：本卷页面上注音恰好注在
+  /// 角色名 / 别名上的，记成系列用词替换表里人名条目的出处（没有条目的补成待复核
+  /// 条目）。只给建议读法、读法仍留空不生效，用户在用词替换页采用后才进合成。
+  void _collectNameRuby(List<TtsCastCharacter> roster) {
+    final Map<String, List<CastNameEvidence>> ruby =
+        collectMangaNameRubyEvidence(
+          volumes: <MangaNameReadingVolume>[
+            (
+              label: mangaNameReadingVolumeLabel(volume.row),
+              pages: <List<MokuroBlock>>[
+                for (final MokuroImage image in volume.payload.images)
+                  image.blocks,
+              ],
+            ),
+          ],
+          written: <String>[
+            for (final TtsCastCharacter c in roster) ...<String>[
+              c.name,
+              ...c.aliases,
+            ],
+          ],
+        );
+    if (ruby.isEmpty) return;
+    _editSeries((SeriesCastProfile p) {
+      final List<CastTextSubstitution> next = mergeCastNameEvidence(
+        table: p.substitutions,
+        found: ruby,
+        addFrom: roster,
+      ).table;
+      p.substitutions
+        ..clear()
+        ..addAll(next);
+    });
   }
 
   /// 用户手工标某页（AI 标不出来时）：每个还没归属的块一句（OCR 顺序、说话人不明、
@@ -546,3 +584,93 @@ Future<List<EpubBookRow>> mangaSeriesVolumes(
         when BookFormat.tryParse(row.format) == BookFormat.manga)
       row,
 ];
+
+/// 出处里显示的卷名（书名，没有时用书键）。
+String mangaNameReadingVolumeLabel(EpubBookRow row) =>
+    row.title.isEmpty ? row.bookKey : row.title;
+
+/// 用词替换页「查人名读法」（拍板 TW9ete_FHX 第三期）：给 [names] 里待复核的人名条目
+/// 找有出处的读法。页面注音扫系列各卷（[seriesKey] 为空只扫本卷）；AI 看本卷
+/// [bookKey] 名字首次出现的页图，配了联网搜索且同意过时另带搜索结果摘要。没配 AI 只
+/// 做页面注音。结果只是出处 / 建议，由调用方并进表（[mergeCastNameEvidence]）。
+Future<MangaNameReadingResult> findMangaNameReadings(
+  AudioProductionHost appModel, {
+  required String bookKey,
+  required String? seriesKey,
+  required String workTitle,
+  required List<CastTextSubstitution> names,
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+}) async {
+  final List<MangaNameToRead> toRead = pendingMangaNamesToRead(names);
+  if (toRead.isEmpty) {
+    return const MangaNameReadingResult(
+      evidence: <String, List<CastNameEvidence>>{},
+    );
+  }
+  final List<String> keys = <String>[
+    bookKey,
+    if (seriesKey != null)
+      for (final EpubBookRow row in await mangaSeriesVolumes(
+        appModel,
+        seriesKey,
+      ))
+        if (row.bookKey != bookKey) row.bookKey,
+  ];
+  final List<MangaAnnotateVolume> loaded = <MangaAnnotateVolume>[];
+  for (final String key in keys) {
+    try {
+      loaded.add(await loadMangaAnnotateVolume(appModel, key));
+    } on MangaAudioAnnotateError {
+      // 在线卷 / 没识别过的卷没有页面可扫，跳过。
+    }
+  }
+  final int current = loaded.indexWhere(
+    (MangaAnnotateVolume v) => v.bookKey == bookKey,
+  );
+  final AiProviderConfig? provider = resolveMangaAudioProvider(appModel);
+  final WebSearchConfig? searchConfig = appModel.isPreferencesReady
+      ? appModel.prefsRepo.aiWebSearch
+      : null;
+  final AiChatClient? client = provider == null ? null : AiChatClient();
+  final WebSearchClient? searcher = provider == null || searchConfig == null
+      ? null
+      : WebSearchClient(config: searchConfig);
+  try {
+    return await MangaNameReadingFinder(
+      workTitle: workTitle,
+      names: toRead,
+      volumes: <MangaNameReadingVolume>[
+        for (final MangaAnnotateVolume v in loaded)
+          (
+            label: mangaNameReadingVolumeLabel(v.row),
+            pages: <List<MokuroBlock>>[
+              for (final MokuroImage image in v.payload.images) image.blocks,
+            ],
+          ),
+      ],
+      currentVolume: current,
+      substitutions: substitutions,
+      ask: client == null || provider == null
+          ? null
+          : (List<AiChatMessage> messages) => client.complete(
+              provider: provider,
+              messages: messages,
+              maxTokens: _kAnnotateMaxTokens,
+            ),
+      imageFor: current < 0
+          ? null
+          : (int page) => loadMangaAnnotatePageImage(
+              loaded[current],
+              page,
+              substitutions: substitutions,
+            ),
+      search: searcher == null
+          ? null
+          : (String query) =>
+                searcher.search(query, limit: kMangaNameReadingHitsPerName),
+    ).run();
+  } finally {
+    client?.close();
+    searcher?.close();
+  }
+}

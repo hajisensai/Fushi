@@ -212,6 +212,54 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     }
   }
 
+  /// 在线源条目清单跨设备端点（`online_library_sync.dart`）。
+  ///
+  /// GET — `{"manifests": [...]}`：host 自己的清单（app 当 host）+ 信箱里各设备的；
+  /// PUT / POST — 一台设备的清单（`deviceId` 必填），host 存进信箱、app 当 host 时
+  /// 并进自己的库，回 204。host 不实现 [OnlineLibrarySyncHost] → 404。
+  Future<shelf.Response> _handleLibraryOnlineItems(
+    shelf.Request request,
+    String method,
+  ) async {
+    final Object? svc = _libraryService;
+    if (svc is! OnlineLibrarySyncHost) {
+      return shelf.Response.notFound('Online library sync off');
+    }
+    final OnlineLibrarySyncHost host = svc;
+    switch (method) {
+      case 'GET':
+        final List<OnlineLibraryManifest> manifests = await host
+            .getOnlineLibraryManifests();
+        return shelf.Response.ok(
+          jsonEncode(<String, Object?>{
+            'manifests': <Map<String, dynamic>>[
+              for (final OnlineLibraryManifest m in manifests) m.toJson(),
+            ],
+          }),
+          headers: const <String, String>{
+            'Content-Type': 'application/json; charset=utf-8',
+          },
+        );
+      case 'PUT':
+      case 'POST':
+        final Map<String, dynamic>? json = await readJsonObjectBody(request);
+        if (json == null) return shelf.Response(400, body: 'Invalid JSON');
+        final OnlineLibraryManifest incoming;
+        try {
+          incoming = OnlineLibraryManifest.fromJson(json);
+        } on FormatException catch (e) {
+          return shelf.Response(400, body: 'Invalid manifest: $e');
+        }
+        if (incoming.deviceId.isEmpty) {
+          return shelf.Response(400, body: 'Missing deviceId');
+        }
+        await host.putOnlineLibraryManifest(incoming);
+        return shelf.Response(204);
+      default:
+        return shelf.Response(405);
+    }
+  }
+
   /// Host → paired child service configuration.
   ///
   /// This endpoint carries API keys and connection credentials, so its security

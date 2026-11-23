@@ -810,6 +810,51 @@ mixin _FushiDbStatistics
     };
   }
 
+  /// v178：段内查词（`study_segments.lookups`）按（媒体种类, 媒体, 统计日）聚合成与
+  /// `lookup_mining_counters` **同形**的行（拍板台 4KOWK3c2mn）。
+  ///
+  /// 查词有两处互斥的写入：媒体时钟在跑时记进当前段（随会话编辑平移、随段写零、
+  /// 走段的 uid LWW 同步），其余仍记按天计数表。统计读取面把这里的行与计数表的行
+  /// **相加**即得全部查词，消费方（按日分桶、按书 tile、来源切片）不必知道两处来源。
+  ///
+  /// 行形：`id` = 0（合成行，没有库内 id）、`bookKey` = `media_key`、`title` =
+  /// 该组任一段的标题快照、`sourceType` = `media_kind`（两个值域逐字节同值：
+  /// book / video / game / music）、`mineCount` = 0（制卡不进段，仍只在计数表）。
+  ///
+  /// 只看 [profileId] 的段（null = 当前激活 Profile，与段的其余读取面同一分区）。
+  /// [mediaKey] 非空时只取这个媒体（单媒体统计侧栏）。
+  Future<List<LookupMiningCounterRow>> getStudySegmentLookupCounters({
+    int? profileId,
+    String? mediaKey,
+  }) async {
+    final int profile = profileId ?? await resolveActiveProfileId();
+    final bool oneMedia = mediaKey != null && mediaKey.isNotEmpty;
+    final List<QueryRow> rows = await customSelect(
+      'SELECT media_kind, media_key, MAX(title) AS title, date_key, '
+      'SUM(lookups) AS lookups FROM study_segments '
+      'WHERE profile_id = ? AND lookups > 0'
+      '${oneMedia ? ' AND media_key = ?' : ''} '
+      'GROUP BY media_kind, media_key, date_key',
+      variables: <Variable<Object>>[
+        Variable<int>(profile),
+        if (oneMedia) Variable<String>(mediaKey),
+      ],
+      readsFrom: {studySegments},
+    ).get();
+    return <LookupMiningCounterRow>[
+      for (final QueryRow row in rows)
+        LookupMiningCounterRow(
+          id: 0,
+          bookKey: row.read<String>('media_key'),
+          title: row.read<String>('title'),
+          sourceType: row.read<String>('media_kind'),
+          dateKey: row.read<String>('date_key'),
+          lookupCount: row.read<int>('lookups'),
+          mineCount: 0,
+        ),
+    ];
+  }
+
   /// galgame_sessions 按 (game_id, date_key) 的时长合计（秒）：喂统一事实面
   /// （日明细按游戏分节、热力图游戏时长）。
   /// v105：只取 [profileId]（null = 当前激活 Profile）的会话。

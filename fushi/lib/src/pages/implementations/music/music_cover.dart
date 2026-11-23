@@ -7,6 +7,8 @@ import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
     show kMusicCoverRequestHeaders;
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart'
+    show fushiHostMusicCoverProvider;
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 
 // 在线封面请求头定义在歌词动画框架的封面工具里（样式不 import 页面文件），这里转出给页面用。
@@ -129,8 +131,21 @@ class MusicCover extends StatelessWidget {
             ),
           );
     final String? file = coverPath;
+    final ImageProvider? hostCover = fushiHostMusicCoverProvider(file);
     Widget child;
-    if (file != null &&
+    if (hostCover != null) {
+      // 互联 host 的封面占位：经钉扎通道取字节（自签证书不能走 AppHttpImage）。
+      child = Image(
+        image: ResizeImage.resizeIfNeeded(
+          size == null ? 512 : (size! * 2).round(),
+          null,
+          hostCover,
+        ),
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => placeholder,
+      );
+    } else if (file != null &&
         (file.startsWith('http://') || file.startsWith('https://'))) {
       // 服务器曲库封面走全应用代理装配（裸 Image.network 会绕过代理）。
       child = Image(
@@ -219,6 +234,8 @@ ImageProvider? musicCoverImageProvider(String? coverPath, {double size = 64}) {
       AppHttpImage(file, headers: kMusicCoverRequestHeaders),
     );
   }
+  final ImageProvider? host = fushiHostMusicCoverProvider(file);
+  if (host != null) return ResizeImage.resizeIfNeeded(width, null, host);
   if (!File(file).existsSync()) return null;
   return ResizeImage.resizeIfNeeded(width, null, FileImage(File(file)));
 }

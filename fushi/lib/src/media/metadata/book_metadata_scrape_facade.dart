@@ -653,9 +653,10 @@ class BookMetadataScrapeFacade {
             itemKey.entryKey,
           );
         } else {
+          // 原样写回（含字段锁）：撤销不该被现有的锁挡住。
           await _itemStore(
             appModel.database,
-          ).writeMeta(itemKey, itemScrapeDetailsFromJson(previous));
+          ).restoreMeta(itemKey, itemScrapeDetailsFromJson(previous));
         }
         if (!snapshot.hadBackdrop) {
           await _itemStore(
@@ -775,7 +776,7 @@ ItemScrapeDetails itemScrapeDetailsOfCandidate(BookScrapeCandidate c) =>
       detailUrl: c.detailUrl,
     );
 
-/// [ItemScrapeDetails] ↔ JSON（撤销快照用；不含写入时刻）。
+/// [ItemScrapeDetails] ↔ JSON（撤销快照 / 控制通道用；不含写入时刻，含 v177 字段锁）。
 Map<String, Object?> itemScrapeDetailsToJson(ItemScrapeDetails d) =>
     <String, Object?>{
       'source': d.source,
@@ -788,6 +789,10 @@ Map<String, Object?> itemScrapeDetailsToJson(ItemScrapeDetails d) =>
       'ratingCount': d.ratingCount,
       'tags': d.tags,
       'detailUrl': d.detailUrl,
+      'lockedFields': <String>[
+        for (final ItemScrapeLockableField f in ItemScrapeLockableField.values)
+          if (d.lockedFields.contains(f)) f.name,
+      ],
     };
 
 ItemScrapeDetails itemScrapeDetailsFromJson(Map<String, Object?> json) =>
@@ -806,4 +811,12 @@ ItemScrapeDetails itemScrapeDetailsFromJson(Map<String, Object?> json) =>
           if (t is String) t,
       ],
       detailUrl: json['detailUrl'] as String?,
+      lockedFields: <ItemScrapeLockableField>{
+        for (final Object? f
+            in (json['lockedFields'] as List<Object?>? ?? const <Object?>[]))
+          if (f is String)
+            if (ItemScrapeLockableField.tryParse(f)
+                case final ItemScrapeLockableField field)
+              field,
+      },
     );

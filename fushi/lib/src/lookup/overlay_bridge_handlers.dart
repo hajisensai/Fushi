@@ -17,6 +17,7 @@ import 'dart:io' show Directory;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/anki/mined_card_tap_policy.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_frame.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
@@ -24,7 +25,7 @@ import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_preview.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/toast_severity.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
@@ -515,6 +516,7 @@ Future<Map<String, Object?>> _mineEntry(
   String? coverPath,
   bool recordStats = true,
   Future<CrossAppAudioSnapshot?>? sentenceAudio,
+  bool toastOutcome = false,
 }) async {
   await writeDictionaryMediaCache(fields['dictionaryMedia'] ?? '');
   final String sentence = resolveMineSentence(fields, sentenceContext);
@@ -548,6 +550,21 @@ Future<Map<String, Object?>> _mineEntry(
   final described = describeMineOutcome(outcome);
   if (recordStats && described.record) {
     unawaited(_recordMinedStats(model, fields, outcome.noteId, sentence));
+  }
+  if (toastOutcome) {
+    // 发起制卡的浮窗已经收起（截屏识字框选页在主窗里，见
+    // [screenOcrOverlayMiningHandler]）：结果只能在主窗里说，说一次。
+    FushiToast.showMine(
+      msg: described.message,
+      status: described.status,
+      detail: described.detail,
+      term: fields['expression'],
+      reading: fields['reading'],
+    );
+    return <String, Object?>{
+      ...overlayMineReply(outcome, described),
+      MineFailureNotice.hostReportedKey: true,
+    };
   }
   return overlayMineReply(outcome, described);
 }
@@ -585,20 +602,42 @@ Map<String, Object?> overlayMineReply(
 /// 文本块（[ScreenOcrCardImage]），按制卡图片质量档裁好走 `coverPath`。偏好「截屏识字
 /// 制卡带图」关着时不带图。统计由桥接层在委托返回成功后统一记（委托路径的约定），
 /// 这里不再记一遍。
+///
+/// 拍板 EuOLprw_dV（选 b）：开了「制卡时框选截图」时，新制卡先经 [pickFrame] 让用户
+/// 框截图范围（宿主负责收起冻结层与浮窗、把主窗拉到前台再推框选页）；返回 null =
+/// 用户放弃，这张卡不制。框过的卡结果在主窗 toast（浮窗已经收起）。覆盖已制卡片
+/// （[updateNoteId]）不弹框选，照旧自动裁。
 OverlayMiningHandler screenOcrOverlayMiningHandler({
   required AppModel model,
   required ScreenOcrCardImage cardImage,
   required String sentenceContext,
   Future<CrossAppAudioSnapshot?>? sentenceAudio,
+  Future<MiningRequestOverrides?> Function(ScreenOcrCardImage source)?
+  pickFrame,
 }) {
   return ({required Map<String, String> fields, int? updateNoteId}) async {
+    final bool cardImageEnabled = model.prefsRepo.screenOcrCardImage;
+    MiningRequestOverrides? frame;
+    if (updateNoteId == null &&
+        pickFrame != null &&
+        screenOcrCardFrameNeeded(
+          cardImageEnabled: cardImageEnabled,
+          frameOnMine: model.prefsRepo.screenOcrCardFrameOnMine,
+          overrides: MiningRequestOverrides.readFrom(fields),
+        )) {
+      frame = await pickFrame(cardImage);
+      if (frame == null) return const MinePopupResult.cancelled().toJson();
+    }
+    final ScreenOcrCardImagePlan plan = resolveScreenOcrCardImagePlan(frame);
     final ({String path, Directory dir})? cover =
-        model.prefsRepo.screenOcrCardImage
-        ? await writeScreenOcrCardImage(
+        !cardImageEnabled || plan.kind == ScreenOcrCardImageKind.omit
+        ? null
+        : await writeScreenOcrCardImage(
             cardImage,
             imageTier: model.miningImageQuality,
-          )
-        : null;
+            crop: plan.crop,
+            mosaic: plan.mosaic,
+          );
     try {
       return updateNoteId == null
           ? await _mineEntry(
@@ -608,6 +647,7 @@ OverlayMiningHandler screenOcrOverlayMiningHandler({
               coverPath: cover?.path,
               recordStats: false,
               sentenceAudio: sentenceAudio,
+              toastOutcome: frame != null,
             )
           : await _updateEntry(
               model,

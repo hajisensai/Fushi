@@ -103,6 +103,9 @@ int? videoControlItemBarPriority(VideoControlItem item) {
     case VideoControlItem.nextChapter:
     case VideoControlItem.chapterList:
       return 40;
+    // 聊天回放栏开关：只在有聊天回放的视频上出现，是那类视频的主要学习入口之一。
+    case VideoControlItem.liveChat:
+      return 50;
     // 弹幕开关：用户主动拖上来的才在栏上，设置面板另有同一开关，放不下时可以先收。
     case VideoControlItem.danmaku:
     case VideoControlItem.ocrFrame:

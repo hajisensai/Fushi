@@ -6,6 +6,8 @@ import 'package:fushi/src/models/preference_keys.dart'
         kSrsDayRolloverPendingPrefKeyPrefix,
         kSrsDayRolloverSeenPrefKeyPrefix;
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/sync/online_library_sync.dart'
+    show OnlineLibraryMailbox;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
     show kPageBackdropProfileParkedPrefKeyPrefixes;
 
@@ -147,6 +149,9 @@ abstract final class PrefRedactionPolicy {
   ///   本机的朗读声音预设，与 live 键 `mining_tts_fallback_voice` 同族，带到别的设备只会指向不存在的预设。
   /// - 各配置停放的页面背景图片路径 / 取色缓存（后缀 = profile uid，同上停放 / 换回）：路径指向本机 app 数据目录
   ///   里的复制件，与 live 键（`kPageBackdropDeviceLocalPrefKeys`）同族。
+  /// - 互联 host 的在线源条目清单信箱（后缀 = 对端设备 id，拍板台 mY5VWg1nD-）：是这台 host 收着的
+  ///   别的设备的清单，带到别的设备会把过期清单当成那台 host 收到的转发出去；进 Profile 快照则切
+  ///   Profile 时被剪掉或换回旧值。
   static final List<String> deviceLocalKeyPrefixes =
       List<String>.unmodifiable(<String>[
         kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
@@ -154,6 +159,7 @@ abstract final class PrefRedactionPolicy {
         kMusicScanParserRevisionPrefKeyPrefix,
         kSrsDayRolloverPendingPrefKeyPrefix,
         kSrsDayRolloverSeenPrefKeyPrefix,
+        OnlineLibraryMailbox.keyPrefix,
       ]);
 
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON

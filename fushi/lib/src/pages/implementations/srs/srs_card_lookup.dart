@@ -35,6 +35,8 @@ import 'package:fushi/src/lookup/source_lookup_sentence.dart'
     show withFallbackMiningSentence;
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart'
     show subtitleTranscriptLookupSpan;
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart'
+    show AdvancedMiningSentenceSection;
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
@@ -392,9 +394,11 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
   OpenAdvancedMiningCallback? advancedMiningOpenerFor(
     GlobalKey<DictionaryPopupRealmState> webViewKey, {
     FavoriteLookupContext? Function()? lookupContext,
+    AdvancedMiningSentenceSection? Function()? sentenceSection,
   }) => super.advancedMiningOpenerFor(
     webViewKey,
     lookupContext: lookupContext ?? () => srsLookupMiningContext(_sentence),
+    sentenceSection: sentenceSection,
   );
 
   int get _visibleDepth =>

@@ -79,12 +79,19 @@ void main() {
             row('详情', slot: ItemMenuSlot.primary),
             row('作品页', slot: ItemMenuSlot.primary),
             row('读完', slot: ItemMenuSlot.primary, selected: true),
+            // 拍板 Ew0AxAgycu：「导入漫画有声」直达入口在上，与工作台同级。
+            DialogWorkbenchAction(
+              label: '导入漫画有声',
+              icon: Icons.file_open_outlined,
+              onPressed: () => fired.add('workbench'),
+            ),
             DialogWorkbenchAction(
               label: '有声漫画工作台',
               icon: Icons.headphones_outlined,
               subtitle: '把漫画做成有声版',
               loadStatus: () async => '已识别 128 句 · 配音 3/12 话',
-              onPressed: () => fired.add('workbench'),
+              emphasized: false,
+              onPressed: () => fired.add('有声漫画工作台'),
             ),
             row('重命名', slot: ItemMenuSlot.edit),
             row('在线刮削封面', slot: ItemMenuSlot.edit),
@@ -114,17 +121,23 @@ void main() {
           listActions: <DialogListAction>[
             row('详情', slot: ItemMenuSlot.primary),
             row('读完', slot: ItemMenuSlot.primary),
+            // 拍板 Ew0AxAgycu 方案 a：导入在上（主色）、制作紧随（同级、中性色）。
+            DialogWorkbenchAction(
+              label: '导入有声书',
+              icon: Icons.headphones_outlined,
+              onPressed: () => fired.add('workbench'),
+            ),
             DialogWorkbenchAction(
               label: '制作有声书',
               icon: Icons.record_voice_over_outlined,
-              onPressed: () => fired.add('workbench'),
+              emphasized: false,
+              onPressed: () => fired.add('制作有声书'),
             ),
             row('重命名', slot: ItemMenuSlot.edit),
             row('编辑信息', slot: ItemMenuSlot.edit),
             row('标签'),
             row('加入合集'),
             ...toggles,
-            row('导入有声书', group: DialogActionGroup.content),
             row('查看插画', group: DialogActionGroup.content),
             row('查看统计', group: DialogActionGroup.progress),
             row('内容语言', group: DialogActionGroup.settings),
@@ -316,7 +329,7 @@ void main() {
         find.byKey(const ValueKey<String>('item_menu_launch')),
       );
       final Rect workbench = tester.getRect(
-        find.byKey(const ValueKey<String>('item_menu_workbench')),
+        find.byKey(const ValueKey<String>('item_menu_workbench')).first,
       );
       final Rect organize = tester.getRect(
         find.text(t.item_actions_group_organize),

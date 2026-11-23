@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
@@ -289,6 +290,42 @@ void main() {
       expect(mangaLineFileName('p3b1.2'), 'p3b1.2.m4a');
       expect(mangaPlaceholderFileName('p3b1.2'), 'p3b1.2.ph.wav');
       expect(mangaCandidateFileName('p3b1.2', 42), 'p3b1.2.s42.m4a');
+    });
+
+    test('外部目录清扫只认按句命名写出的文件（拍板 isATnQZ_eN-external）', () {
+      final Set<String> ids = <String>{'p0b0', 'p3b1.2'};
+      const MangaLocalAudio local = MangaLocalAudio(
+        sig: '0123456789abcdef',
+        ext: '.wav',
+      );
+      for (final String name in <String>[
+        mangaLineFileName('p0b0'),
+        'p0b0.wav',
+        mangaPlaceholderFileName('p0b0'),
+        mangaCandidateFileName('p3b1.2', 42),
+        mangaLocalLineFileName('p0b0', local),
+        mangaStagedFileName(mangaLineFileName('p0b0')),
+        mangaStagedFileName(mangaCandidateFileName('p0b0', 7)),
+        mangaStagedFileName(mangaPlaceholderFileName('p0b0')),
+        'p0b0.prev.m4a',
+        'p0b0.s7.prev.m4a',
+      ]) {
+        expect(isMangaRendererFileName(name, ids), isTrue, reason: name);
+      }
+      for (final String name in <String>[
+        'cover.jpg',
+        'notes.txt',
+        '001.wav',
+        'p0b0.mp3',
+        'p0b0.txt',
+        'p0b0.final.m4a',
+        'p9b9.m4a',
+        'p0b0',
+        'p0b00.m4a',
+        'manifest.json',
+      ]) {
+        expect(isMangaRendererFileName(name, ids), isFalse, reason: name);
+      }
     });
   });
 
@@ -1692,6 +1729,185 @@ void main() {
           <String>['p0b0'],
         );
       });
+    });
+
+    test('目录不归 app 管（外部导入的清单）：清扫只删按句命名写出的文件，用户的其他文件不碰', () async {
+      final Directory ext = Directory(p.join(tmp.path, 'external'))
+        ..createSync();
+      final Directory userLocal = Directory(
+        p.join(ext.path, kMangaLocalAudioDirName),
+      )..createSync();
+      final List<String> userFiles = <String>[
+        'cover.jpg',
+        'notes.txt',
+        '001.wav',
+        'p0b0.mp3',
+      ];
+      for (final String name in userFiles) {
+        File(p.join(ext.path, name)).writeAsStringSync('user-$name');
+      }
+      File(p.join(userLocal.path, 'readme.txt')).writeAsStringSync('user');
+      final MangaAudioRenderer external = MangaAudioRenderer(
+        backend: backend,
+        manifestFile: File(p.join(ext.path, 'manifest.json')),
+        ownsDirectory: false,
+      );
+      final CastVoicingLedger ledger = CastVoicingLedger();
+      final MangaAudioScript script = script0()..voices.byCharacter.clear();
+      final MangaRenderOutcome out = await external.render(
+        script: script,
+        pageBlocks: _pages(),
+        defaultVoice: 'reading',
+        previous: null,
+        ledger: ledger,
+        onProgress: (int done, int total) {},
+        cancel: TtsRenderCancelToken(),
+      );
+      // 一句换种子保留：旧的 p2b0.m4a 不再被引用、名字是本类写的 → 清掉。
+      final MangaRegenerateCandidate candidate = await external.regenerate(
+        script: script,
+        pageBlocks: _pages(),
+        defaultVoice: 'reading',
+        lineId: 'p2b0',
+        seed: 100,
+        cancel: TtsRenderCancelToken(),
+      );
+      expect(
+        await external.keepCandidate(
+          script: script,
+          manifest: out.manifest,
+          ledger: ledger,
+          candidate: candidate,
+        ),
+        isTrue,
+      );
+      expect(out.manifest.lines[2].file, 'p2b0.s100.m4a');
+      expect(File(p.join(ext.path, 'p2b0.s100.m4a')).existsSync(), isTrue);
+      expect(File(p.join(ext.path, 'p2b0.m4a')).existsSync(), isFalse);
+      // 改成「不读」拿掉的句子：它的音频（不再在清单里）也按本类的名字清掉。
+      script.replaceLine(
+        'p0b1',
+        (MangaScriptLine l) => l.copyWith(kind: CastLineKind.skip),
+      );
+      expect(
+        await external.dropUnreadLines(
+          script: script,
+          manifest: out.manifest,
+          ledger: ledger,
+          lineIds: <String>['p0b1'],
+        ),
+        <String>['p0b1'],
+      );
+      expect(File(p.join(ext.path, 'p0b1.m4a')).existsSync(), isFalse);
+      for (final String name in userFiles) {
+        expect(
+          File(p.join(ext.path, name)).readAsStringSync(),
+          'user-$name',
+          reason: name,
+        );
+      }
+      expect(File(p.join(userLocal.path, 'readme.txt')).existsSync(), isTrue);
+      expect(File(p.join(ext.path, 'manifest.json')).existsSync(), isTrue);
+    });
+
+    test('外部清单原地改写保留外部管线写的未知键（拍板 pr4255a）', () async {
+      final Directory ext = Directory(p.join(tmp.path, 'external_keys'))
+        ..createSync();
+      final File manifestFile = File(p.join(ext.path, 'manifest.json'));
+      final MangaAudioRenderer external = MangaAudioRenderer(
+        backend: backend,
+        manifestFile: manifestFile,
+        ownsDirectory: false,
+      );
+      final CastVoicingLedger ledger = CastVoicingLedger();
+      final MangaAudioScript script = script0()..voices.byCharacter.clear();
+      await external.render(
+        script: script,
+        pageBlocks: _pages(),
+        defaultVoice: 'reading',
+        previous: null,
+        ledger: ledger,
+        onProgress: (int done, int total) {},
+        cancel: TtsRenderCancelToken(),
+      );
+      // 模拟外部管线：在清单顶层与每行塞进自己的字段。
+      final Map<String, dynamic> raw =
+          jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>;
+      raw['pipeline'] = <String, Object?>{'name': 'ext', 'rev': 2};
+      for (final dynamic line in raw['lines'] as List<dynamic>) {
+        final Map<String, dynamic> m = line as Map<String, dynamic>;
+        m['extTag'] = 'tag-${m['id']}';
+      }
+      manifestFile.writeAsStringSync(jsonEncode(raw));
+      Map<String, dynamic> onDisk() =>
+          jsonDecode(manifestFile.readAsStringSync()) as Map<String, dynamic>;
+      Map<String, String?> tags() => <String, String?>{
+        for (final Map<String, dynamic> l
+            in (onDisk()['lines'] as List<dynamic>)
+                .cast<Map<String, dynamic>>())
+          l['id'] as String: l['extTag'] as String?,
+      };
+      final Map<String, String?> allTags = tags();
+      expect(allTags, isNotEmpty);
+
+      // 单句换种子重生成：改的这句与其余句都留着自己的字段。
+      final MangaRenderManifest manifest = (await MangaRenderManifest.load(
+        manifestFile,
+      ))!;
+      final MangaRegenerateCandidate candidate = await external.regenerate(
+        script: script,
+        pageBlocks: _pages(),
+        defaultVoice: 'reading',
+        lineId: 'p2b0',
+        seed: 100,
+        cancel: TtsRenderCancelToken(),
+      );
+      expect(
+        await external.keepCandidate(
+          script: script,
+          manifest: manifest,
+          ledger: ledger,
+          candidate: candidate,
+        ),
+        isTrue,
+      );
+      expect(onDisk()['pipeline'], <String, Object?>{'name': 'ext', 'rev': 2});
+      expect(tags(), allTags);
+      final Map<String, dynamic> p2b0 = (onDisk()['lines'] as List<dynamic>)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((Map<String, dynamic> l) => l['id'] == 'p2b0');
+      expect(p2b0['f'], 'p2b0.s100.m4a');
+
+      // 拿掉一句：它的字段随之消失，别的句子不受影响。
+      script.replaceLine(
+        'p0b1',
+        (MangaScriptLine l) => l.copyWith(kind: CastLineKind.skip),
+      );
+      await external.dropUnreadLines(
+        script: script,
+        manifest: manifest,
+        ledger: ledger,
+        lineIds: <String>['p0b1'],
+      );
+      expect(tags(), <String, String?>{...allTags}..remove('p0b1'));
+
+      // 整卷重跑（按角色重生成走这条）：顶层与仍在的句子的字段都带上；拿掉的那句
+      // 改回能读后重新出，不复活旧字段。
+      script.replaceLine(
+        'p0b1',
+        (MangaScriptLine l) => l.copyWith(kind: CastLineKind.spoken),
+      );
+      await external.render(
+        script: script,
+        pageBlocks: _pages(),
+        defaultVoice: 'reading',
+        previous: manifest,
+        ledger: ledger,
+        onProgress: (int done, int total) {},
+        cancel: TtsRenderCancelToken(),
+      );
+      expect(onDisk()['pipeline'], <String, Object?>{'name': 'ext', 'rev': 2});
+      expect(tags(), <String, String?>{...allTags, 'p0b1': null});
     });
   });
 

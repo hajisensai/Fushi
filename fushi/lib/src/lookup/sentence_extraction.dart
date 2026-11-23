@@ -13,7 +13,11 @@
 // BACKWARD from the selection start until a sentence delimiter (that delimiter
 // is NOT included — the sentence begins after it), then FORWARD from the
 // selection end until a delimiter (that delimiter IS included, plus any trailing
-// closing punctuation). The only structural difference is the input model: the
+// closing punctuation). One deliberate refinement over the JS walk: closing
+// punctuation right after the preceding delimiter is skipped at the START too,
+// since the forward rule already gives it to the previous sentence (so 「…。」X
+// yields X…, not 」X…, and neighbouring sentences tile the buffer without
+// overlap). The only structural difference is the input model: the
 // reader walks TEXT nodes bounded by a block element; here the input is already
 // a single flat string, so there is no cross-node / block boundary — the buffer
 // edge itself is the hard boundary. The delimiter tables are kept byte-identical
@@ -66,6 +70,17 @@ String lookupQueryFromIndex(
   return query.trim().isEmpty ? '' : query;
 }
 
+final RegExp _firstLookupChar = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
+/// 一句话里「第一个可查的字」的 UTF-16 下标：跳过句首空白、引号括号（「『（【等）与
+/// 其他标点符号，落在第一个字母 / 数字类字符上（假名、汉字、`々`、`ー` 都属 `\p{L}`）。
+/// 整句没有可查字时返回 null。
+///
+/// 用途：文本钩子「新句自动查词」从这里起交给 [lookupQueryFromIndex]，与手点该字
+/// 走同一条最长匹配路径（反馈 q9Jcu_Zr2_）。
+int? firstLookupCharIndex(String text) =>
+    _firstLookupChar.firstMatch(text)?.start;
+
 /// Sentence-terminating delimiters. Byte-identical to
 /// `fushiSelection.sentenceDelimiters` in reader_selection_scripts.dart
 /// ('。！？.!?\n\r'): the char AFTER one of these starts a new sentence.
@@ -75,6 +90,52 @@ const String kSentenceDelimiters = '。！？.!?\n\r';
 /// delimiter. Byte-identical to `fushiSelection.trailingSentenceChars`
 /// ('。、！？…‥」』）)】〉》〕｝}］]').
 const String kTrailingSentenceChars = '。、！？…‥」』）)】〉》〕｝}］]';
+
+/// Raw (untrimmed) bounds `[start, end)` of the sentence around the clamped
+/// selection `[start, end)` inside [text], using the delimiter tables above:
+/// the sentence begins right AFTER the nearest delimiter before [start] (buffer
+/// start when none) and ends AT the nearest delimiter from [end] on (inclusive,
+/// plus trailing closing punctuation; buffer end when none). The single
+/// splitter behind [extractSentenceAt] and the captured-context sentence list
+/// (`captured_context_sentences.dart`), so both cut the same sentences.
+/// [start] / [end] must already lie within `0..text.length` with start <= end.
+({int start, int end}) sentenceBoundsAt(String text, int start, int end) {
+  final int len = text.length;
+  // Walk BACKWARD from the selection start: the sentence begins right AFTER the
+  // nearest preceding delimiter (or at buffer start when none is found).
+  int sentenceStart = 0;
+  for (int i = start - 1; i >= 0; i--) {
+    if (kSentenceDelimiters.contains(text[i])) {
+      sentenceStart = i + 1;
+      // The closing punctuation right after that delimiter belongs to the
+      // PREVIOUS sentence (the forward walk below swallows it into its end), so
+      // skip it here too — otherwise 「…。」彼は… starts this sentence with a
+      // stray 」 and adjacent sentences overlap (rf--UcsGta neighbour split).
+      // Never past the selection itself.
+      while (sentenceStart < start &&
+          kTrailingSentenceChars.contains(text[sentenceStart])) {
+        sentenceStart++;
+      }
+      break;
+    }
+  }
+
+  // Walk FORWARD from the selection end: the sentence ends AT the nearest
+  // following delimiter (inclusive), then swallows any trailing closing
+  // punctuation. When none is found the sentence runs to the buffer end.
+  int sentenceEnd = len;
+  for (int j = end; j < len; j++) {
+    if (kSentenceDelimiters.contains(text[j])) {
+      int e = j + 1;
+      while (e < len && kTrailingSentenceChars.contains(text[e])) {
+        e++;
+      }
+      sentenceEnd = e;
+      break;
+    }
+  }
+  return (start: sentenceStart, end: sentenceEnd);
+}
 
 /// Extracts the current sentence around the selection [selStart, selStart+selLen)
 /// inside the flat buffer [text]. Mirrors the reader's DOM sentence walk (see
@@ -98,31 +159,9 @@ SentenceExtractionResult extractSentenceAt(
   final int start = selStart < 0 ? 0 : (selStart > len ? len : selStart);
   final int rawEnd = selStart + selLen;
   final int end = rawEnd < start ? start : (rawEnd > len ? len : rawEnd);
-
-  // Walk BACKWARD from the selection start: the sentence begins right AFTER the
-  // nearest preceding delimiter (or at buffer start when none is found).
-  int sentenceStart = 0;
-  for (int i = start - 1; i >= 0; i--) {
-    if (kSentenceDelimiters.contains(text[i])) {
-      sentenceStart = i + 1;
-      break;
-    }
-  }
-
-  // Walk FORWARD from the selection end: the sentence ends AT the nearest
-  // following delimiter (inclusive), then swallows any trailing closing
-  // punctuation. When none is found the sentence runs to the buffer end.
-  int sentenceEnd = len;
-  for (int j = end; j < len; j++) {
-    if (kSentenceDelimiters.contains(text[j])) {
-      int e = j + 1;
-      while (e < len && kTrailingSentenceChars.contains(text[e])) {
-        e++;
-      }
-      sentenceEnd = e;
-      break;
-    }
-  }
+  final ({int start, int end}) bounds = sentenceBoundsAt(text, start, end);
+  final int sentenceStart = bounds.start;
+  final int sentenceEnd = bounds.end;
 
   final String rawSentence = text.substring(sentenceStart, sentenceEnd);
   // Re-base the selection into the raw (un-trimmed) sentence first, then account

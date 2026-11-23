@@ -4,8 +4,11 @@
 /// - **htdemucs**（Meta Research Demucs v4，MIT，https://github.com/facebookresearch/demucs）——鼓 / 人声分轨。
 ///
 /// 两个 ONNX 文件与 folia-major 早期版本下载的是同一份（folia 的模型清单按 sha256 钉死，
-/// `htdemucs.onnx` = sha256 099b5be7…）。下载源是 folia 维护者的 Hugging Face 仓库，**钉到提交**（不是 main），
-/// 下载器自动带上 hf-mirror.com 镜像；落盘后按 sha256 校验，不符即删、下次重下。
+/// `htdemucs.onnx` = sha256 099b5be7…）。托管在本仓预发行 `music-analysis-models-v1`
+/// （拍板 pr4211-model-hosting=b，2026-11-23：两个模型代码与权重均 MIT、许可原文随发行附上；
+/// 文件与 Hugging Face `HUAI4236/folia-models` 提交 f316d615 逐字节相同，发行说明里有出处），
+/// 不再依赖第三方仓库在不在线、改不改名。候选地址 = GitHub 直连 + 用户允许时的 GitHub 加速镜像
+/// （[gitHubMirrorCandidates]）；落盘后按 sha256 校验，不符即删、下次重下。
 ///
 /// 移动端只用 Beat This!（htdemucs 在手机 CPU 上一首要数分钟、发热）。
 library;
@@ -18,11 +21,15 @@ import 'package:fushi_asr_core/asr_core.dart'
 import 'package:fushi_compute/fushi_compute.dart' show ffcSha256File;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/utils/net/github_mirrors.dart'
+    show gitHubMirrorCandidates;
+
 /// 模型清单版本：换文件时改它（也是模型子目录名），旧目录自然不再被读。
 const String kMusicAnalysisModelsVersion = 'v1';
 
-/// 下载源仓库的钉死提交（Hugging Face `HUAI4236/folia-models`）。
-const String _kHfRevision = 'f316d6150e1749ffcf54ce79768641f1dfe58b91';
+/// 本仓托管这批模型的预发行 tag（随 [kMusicAnalysisModelsVersion] 走：换文件 = 发新 tag）。
+const String kMusicAnalysisModelsReleaseTag =
+    'music-analysis-models-$kMusicAnalysisModelsVersion';
 
 /// 一个按需下载的模型文件（sha256 钉死）。
 @immutable
@@ -44,9 +51,16 @@ class MusicAnalysisModelFile implements DownloadableModelFile {
 
   @override
   String get url =>
-      'https://huggingface.co/HUAI4236/folia-models/resolve/'
-      '$_kHfRevision/$fileName';
+      'https://github.com/hajisensai/Fushi/releases/download/'
+      '$kMusicAnalysisModelsReleaseTag/$fileName';
 }
+
+/// [file] 的下载候选：GitHub 直连在首位，其后是用户允许时的 GitHub 加速镜像。
+List<String> musicAnalysisModelUrlCandidates(
+  DownloadableModelFile file,
+) => <String>[
+  for (final Uri u in gitHubMirrorCandidates(Uri.parse(file.url))) u.toString(),
+];
 
 /// Beat This! final0（≈83 MB）。
 const MusicAnalysisModelFile kMusicBeatThisModel = MusicAnalysisModelFile(
@@ -90,7 +104,7 @@ Future<void> downloadMusicAnalysisModels(
 }) async {
   if (!dir.existsSync()) await dir.create(recursive: true);
   final ModelFileDownloader downloader = ModelFileDownloader(
-    urlCandidates: urlCandidates,
+    urlCandidates: urlCandidates ?? musicAnalysisModelUrlCandidates,
     createClient: createClient,
   );
   await downloader

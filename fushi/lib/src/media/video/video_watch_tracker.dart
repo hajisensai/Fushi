@@ -162,6 +162,12 @@ class VideoWatchTracker {
   @visibleForTesting
   int debugSubtitleChars = 0;
 
+  /// 字幕字数照不照计（默认计）。视频进后台只放声音时宿主关掉它（拍板台
+  /// 42UUu_kcwD-media）：与有声书后台听书同一口径（BUG-2558），后台那段只计时长、
+  /// 不计字——没有画面，谈不上「看过」这句字幕。关着期间经过的句不进去重集，回到
+  /// 前台重看时照常计字。
+  bool countSubtitleChars = true;
+
   /// 绑定播放源并开始监听 cue 变化（字幕字数采集）；同时异步加载该视频的覆盖并集。
   void attach(VideoPlaybackSource source) {
     _source = source;
@@ -448,6 +454,7 @@ class VideoWatchTracker {
     )) {
       return;
     }
+    if (!countSubtitleChars) return;
     final int? start = _pendingCueStartMs;
     final int? end = _pendingCueEndMs;
     if (!_countedCues.add(_cueKey(start, end, _pendingCueText))) return;

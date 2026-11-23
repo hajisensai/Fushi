@@ -136,7 +136,8 @@ extension _VideoPortrait on _VideoFushiPageState {
     );
   }
 
-  /// 下半屏页签：字幕列表常驻；有选集（播放列表）才出选集，有内封章节才出章节。
+  /// 下半屏页签：字幕列表常驻；有选集（播放列表）才出选集，有内封章节才出章节，有聊天
+  /// 回放才出聊天回放。
   List<VideoPortraitTabSpec> _portraitTabs(VideoPlayerController controller) {
     return <VideoPortraitTabSpec>[
       VideoPortraitTabSpec(
@@ -193,6 +194,9 @@ extension _VideoPortrait on _VideoFushiPageState {
             ),
           ),
         ),
+      // YouTube 直播回放有聊天回放才出（拍板台 zTedU_pOQF）。
+      if (_liveChat case final VideoLiveChatReplay chat)
+        _portraitLiveChatTab(chat),
     ];
   }
 

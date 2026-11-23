@@ -12,8 +12,10 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
         MusicServerStream,
         MusicServerTrack,
         MusicServerTrackRef,
-        musicServerAlbumUid,
-        musicServerTrackUid;
+        fushiHostMusicCoverPath,
+        fushiHostMusicTrackPath,
+        musicServerPlaybackAlbumUid,
+        musicServerPlaybackUid;
 import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
     show MusicServerLoudness;
 
@@ -61,7 +63,9 @@ MusicPlayItem musicServerPlayItem(
   String? albumTitle,
   String? coverPath,
 }) {
-  final String uid = musicServerTrackUid(browser.serverId, track.id);
+  // 互联 host 的 uid 就是 host 的 track_uid（design-imusic-q1），其余服务器按服务器 + 条目算。
+  final bool host = browser.kind == MusicServerKind.fushiHost;
+  final String uid = musicServerPlaybackUid(browser, track.id);
   final MusicServerLocalCopy? local = musicServerLocalCopyLookup?.call(uid);
   if (local != null) {
     return musicServerLocalPlayItem(
@@ -70,7 +74,7 @@ MusicPlayItem musicServerPlayItem(
       track,
       albumUid: track.albumId == null
           ? null
-          : musicServerAlbumUid(browser.serverId, track.albumId!),
+          : musicServerPlaybackAlbumUid(browser, track.albumId!),
       albumTitle: albumTitle,
       fallbackCoverPath:
           coverPath ?? browser.coverUri(track.coverRef)?.toString(),
@@ -81,20 +85,28 @@ MusicPlayItem musicServerPlayItem(
     track,
     maxBitrateKbps: maxBitrateKbps,
   );
+  // 互联 host：占位串直接拼（不经 Uri 往返，配对身份 / uid 原样保住），uid 就是 host 的
+  // track_uid（design-imusic-q1）。
+  final String? hostCover = host && track.coverRef != null
+      ? fushiHostMusicCoverPath(browser.serverId, track.coverRef!)
+      : null;
   final MusicServerLoudness? loudness = track.loudness;
   return MusicPlayItem(
     trackUid: uid,
-    path: stream.uri.toString(),
+    path: host
+        ? fushiHostMusicTrackPath(browser.serverId, track.id)
+        : stream.uri.toString(),
     title: track.title,
     artist: track.artist,
     album: albumTitle ?? track.album,
     albumUid: track.albumId == null
         ? null
-        : musicServerAlbumUid(browser.serverId, track.albumId!),
+        : musicServerPlaybackAlbumUid(browser, track.albumId!),
     discNo: track.discNo,
     trackNo: track.trackNo,
     durationMs: track.durationMs,
-    coverPath: coverPath ?? browser.coverUri(track.coverRef)?.toString(),
+    coverPath:
+        coverPath ?? hostCover ?? browser.coverUri(track.coverRef)?.toString(),
     codec: stream.transcoded ? stream.codec : (track.codec ?? track.container),
     sampleRate: stream.transcoded ? null : track.sampleRate,
     bitDepth: stream.transcoded ? null : track.bitDepth,
@@ -103,13 +115,17 @@ MusicPlayItem musicServerPlayItem(
     rgTrackPeak: loudness?.trackPeak,
     rgAlbumGain: loudness?.albumGainDb,
     rgAlbumPeak: loudness?.albumPeak,
-    serverTrack: MusicServerTrackRef(
-      kind: browser.kind,
-      serverId: browser.serverId,
-      trackId: track.id,
-      albumId: track.albumId,
-      coverRef: track.coverRef,
-    ),
+    // 互联 host 曲目不带服务器身份：播放上报 / 收藏 / 离线补发是 Jellyfin / Subsonic 的协议，
+    // host 那边没有对应接口，带上会被当成「连不上的服务器」永远排进补发队列。
+    serverTrack: host
+        ? null
+        : MusicServerTrackRef(
+            kind: browser.kind,
+            serverId: browser.serverId,
+            trackId: track.id,
+            albumId: track.albumId,
+            coverRef: track.coverRef,
+          ),
     isPreview: stream.isPreview,
   );
 }
@@ -153,7 +169,8 @@ MusicPlayItem musicServerLocalPlayItem(
     rgTrackPeak: loudness?.trackPeak,
     rgAlbumGain: loudness?.albumGainDb,
     rgAlbumPeak: loudness?.albumPeak,
-    serverTrack: serverKind == null
+    // 互联 host 曲目的副本同样不带服务器身份（见 [musicServerPlayItem]）。
+    serverTrack: serverKind == null || serverKind == MusicServerKind.fushiHost
         ? null
         : MusicServerTrackRef(
             kind: serverKind,

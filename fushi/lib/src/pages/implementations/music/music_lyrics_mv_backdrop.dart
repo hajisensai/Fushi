@@ -9,11 +9,19 @@
 /// 这里只读绑定、不做任何解码：找 MV 是音乐来源扫完后的后台匹配
 /// （`music_video_auto_match.dart`，每个视频只解码一次、每对只对一次）或曲目详情里的
 /// 「找本地 MV」。网络 MV（YouTube）不当背景串流，仍从曲目详情进 MV 页看。
+///
+/// 画面从哪来由解析器（[MusicMvSourceResolver]）按曲目来源给，控制器里没有来源分支
+/// （互联共享音乐库设计 §6.3）：本机曲目读本机绑定（[watchLocalMusicMvBackdrop]）；互联 host 曲目
+/// 问 host 的绑定、按需签画面流票（[watchFushiHostMusicMvBackdrop]，design-imusic-q7），曲目本身是
+/// MV 视频时另签一条原样画面流（两条连接，design-imusic-q8 选 a）。远端画面用完（换歌 / 关页）
+/// 调 [MusicMvBackdropSource.release] 释放票。
 library;
 
 import 'dart:async';
 
 import 'package:fushi/src/media/music/metadata/music_video_service.dart';
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart'
+    show InterconnectMusicBrowser, InterconnectMusicHosts;
 import 'package:fushi/src/media/music/music_local_video.dart'
     show isMusicLocalFilePath;
 import 'package:fushi/src/media/music/music_output_backend.dart'
@@ -27,6 +35,8 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/media_extensions.dart' show isVideoMediaPath;
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerMediaLease, MusicServerVideo, parseFushiHostMusicTrackPath;
 import 'package:material_ui/material_ui.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -37,13 +47,20 @@ const Duration kMusicMvBackdropSeekTolerance = Duration(milliseconds: 300);
 /// 同步检查间隔。
 const Duration kMusicMvBackdropSyncInterval = Duration(milliseconds: 250);
 
-/// 背景要放的 MV：本机视频文件 + 偏移（MV 时刻 = 曲目时刻 + [offsetMs]）。
+/// 背景要放的 MV：本机视频文件或带流票的地址 + 偏移（MV 时刻 = 曲目时刻 + [offsetMs]）。
 @immutable
 class MusicMvBackdropSource {
-  const MusicMvBackdropSource({required this.path, required this.offsetMs});
+  const MusicMvBackdropSource({
+    required this.path,
+    required this.offsetMs,
+    this.release,
+  });
 
   final String path;
   final int offsetMs;
+
+  /// 远端画面：释放流票（幂等）。本机文件为 null。不参与相等比较。
+  final Future<void> Function()? release;
 
   @override
   bool operator ==(Object other) =>
@@ -127,6 +144,71 @@ Future<MusicMvBackdropSource?> resolveMusicMvBackdropSource(
   return null;
 }
 
+/// 按曲目给背景 MV 的解析器：绑定 / 画面变了就再发一个（null = 没有能放的）。
+typedef MusicMvSourceResolver =
+    Stream<MusicMvBackdropSource?> Function(MusicPlayItem item);
+
+/// 本机曲目：曲目本身是本机 MV 视频就用它，否则盯本机绑定（[watchMusicMvBackdropSource]）。
+Stream<MusicMvBackdropSource?> watchLocalMusicMvBackdrop(
+  FushiDatabase db,
+  MusicPlayItem item,
+) {
+  final MusicMvBackdropSource? self = musicMvBackdropSelfSource(item);
+  return self != null
+      ? Stream<MusicMvBackdropSource?>.value(self)
+      : watchMusicMvBackdropSource(db, item.trackUid);
+}
+
+/// 互联 host 曲目的背景 MV（design-imusic-q7 / q8）：host 上解析得到文件的绑定按顺序取第一条，签画面
+/// 流票；YouTube 绑定不当背景（与本机一致，仍从 MV 页看）；没有绑定、而曲目本身是 MV 视频时，另签一条
+/// 原样画面流（音频那条可能转了码）。host 连不上 / 没有为 null。
+Future<MusicMvBackdropSource?> resolveFushiHostMusicMvBackdrop(
+  InterconnectMusicBrowser browser,
+  String trackUid,
+) async {
+  for (final MusicServerVideo v in await browser.videosFor(trackUid)) {
+    if (v.youtubeRef != null) continue;
+    final MusicServerMediaLease lease = await browser.openVideo(v);
+    return MusicMvBackdropSource(
+      path: lease.uri.toString(),
+      offsetMs: v.offsetMs,
+      release: lease.release,
+    );
+  }
+  final ({MusicServerMediaLease lease, int offsetMs})? self = await browser
+      .openTrackPicture(trackUid);
+  if (self == null) return null;
+  return MusicMvBackdropSource(
+    path: self.lease.uri.toString(),
+    offsetMs: self.offsetMs,
+    release: self.lease.release,
+  );
+}
+
+/// [resolveFushiHostMusicMvBackdrop] 的流版本（host 上的绑定不推变更：每首解析一次）。
+Stream<MusicMvBackdropSource?> watchFushiHostMusicMvBackdrop(
+  InterconnectMusicHosts? hosts,
+  MusicPlayItem item,
+) async* {
+  final ({String hostId, String trackUid})? id = parseFushiHostMusicTrackPath(
+    item.path,
+  );
+  final InterconnectMusicBrowser? browser = hosts == null || id == null
+      ? null
+      : await hosts.browserFor(id.hostId);
+  if (browser == null || id == null) {
+    yield null;
+    return;
+  }
+  yield await resolveFushiHostMusicMvBackdrop(browser, id.trackUid);
+}
+
+/// 生产用的解析器：互联 host 曲目问 host，其余读本机绑定。
+MusicMvSourceResolver musicMvBackdropResolver(FushiDatabase db) =>
+    (MusicPlayItem item) => parseFushiHostMusicTrackPath(item.path) != null
+    ? watchFushiHostMusicMvBackdrop(InterconnectMusicHosts.instance, item)
+    : watchLocalMusicMvBackdrop(db, item);
+
 /// 曲目 [trackUid] 当前能当背景放的 MV（[resolveMusicMvBackdropSource]），绑定一变就
 /// 重发：后台匹配绑上、曲目详情里手动找到 / 解绑、MV 页改了偏移，正开着的歌词页都跟着换。
 Stream<MusicMvBackdropSource?> watchMusicMvBackdropSource(
@@ -148,9 +230,10 @@ class MusicMvBackdropController extends ChangeNotifier
     required FushiPlaybackClock clock,
     required FushiDatabase database,
     required bool enabled,
+    MusicMvSourceResolver? resolver,
   }) : _engine = engine,
        _clock = clock,
-       _database = database,
+       _resolver = resolver ?? musicMvBackdropResolver(database),
        _enabled = enabled {
     _engine.addListener(_onEngine);
     WidgetsBinding.instance.addObserver(this);
@@ -159,7 +242,7 @@ class MusicMvBackdropController extends ChangeNotifier
 
   final MusicPlayerEngine _engine;
   final FushiPlaybackClock _clock;
-  final FushiDatabase _database;
+  final MusicMvSourceResolver _resolver;
 
   bool _enabled;
   bool _disposed = false;
@@ -204,16 +287,17 @@ class MusicMvBackdropController extends ChangeNotifier
     final int token = ++_loadToken;
     unawaited(_bindingSub?.cancel());
     _bindingSub = null;
-    final MusicMvBackdropSource? self = item == null
-        ? null
-        : musicMvBackdropSelfSource(item);
-    if (item == null || self != null) {
-      unawaited(_apply(self));
+    if (item == null) {
+      unawaited(_apply(null));
       return;
     }
-    _bindingSub = watchMusicMvBackdropSource(_database, item.trackUid).listen(
+    _bindingSub = _resolver(item).listen(
       (MusicMvBackdropSource? src) {
-        if (_disposed || token != _loadToken) return;
+        if (_disposed || token != _loadToken) {
+          // 换歌 / 关页之后才到的远端画面：没用上，票立刻还。
+          unawaited(src?.release?.call());
+          return;
+        }
         unawaited(_apply(src));
       },
       onError: (Object e, StackTrace st) =>
@@ -222,7 +306,10 @@ class MusicMvBackdropController extends ChangeNotifier
   }
 
   Future<void> _apply(MusicMvBackdropSource? src) async {
-    if (src == _source) return;
+    if (src == _source) {
+      if (!identical(src, _source)) unawaited(src?.release?.call());
+      return;
+    }
     final MusicMvBackdropSource? prev = _source;
     if (src != null && prev != null && src.path == prev.path && _opened) {
       // 只改了偏移（MV 页里调过）：同一个文件不重开，下一次同步按新偏移对齐。
@@ -230,6 +317,8 @@ class MusicMvBackdropController extends ChangeNotifier
       _sync();
       return;
     }
+    // 换了画面：上一条远端画面的票还掉。
+    if (prev != null) unawaited(prev.release?.call());
     _source = src;
     _setVisible(false);
     if (src == null) {
@@ -329,6 +418,8 @@ class MusicMvBackdropController extends ChangeNotifier
     unawaited(_bindingSub?.cancel());
     _bindingSub = null;
     _timer?.cancel();
+    unawaited(_source?.release?.call());
+    _source = null;
     unawaited(_player?.dispose());
     super.dispose();
   }
@@ -362,6 +453,8 @@ class MusicLyricsMvBackdrop extends StatelessWidget {
                       fit: BoxFit.cover,
                       fill: Colors.transparent,
                       wakelock: false,
+                      // 后台由控制器自己停画面（didChangeAppLifecycleState），回前台按音频位置重新对齐。
+                      pauseUponEnteringBackgroundMode: false,
                       subtitleViewConfiguration:
                           const SubtitleViewConfiguration(visible: false),
                     ),

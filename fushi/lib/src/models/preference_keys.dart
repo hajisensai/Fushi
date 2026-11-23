@@ -82,6 +82,13 @@ const String kSrsDayRolloverSeenPrefKeyPrefix = 'srs_day_rollover_seen::';
 const String kMusicScanParserRevisionPrefKeyPrefix =
     'music_scan_parser_revision::';
 
+/// 在线源条目同步的本机账本（JSON：`<种类>:<身份>` → 本机见过的最大 addedAt，拍板台
+/// mY5VWg1nD-，`online_library_items.dart`）：区分「对端新加的」与「本机删掉的」。描述的是
+/// **这台设备的库**见过哪些条目：设备本地（`SyncRepository.deviceLocalPrefKeys`），不进
+/// Profile 快照 / 备份 / 设置同步——切 Profile 时被快照剪掉或换回旧值，本机「仅本机删除」
+/// 过的条目会被对端清单建回来；合并导入接管别的设备的账本，则对端新加的条目永远建不出来。
+const String kOnlineLibraryLedgerPrefKey = 'sync_online_library_known_v1';
+
 /// 库页「手动」排序的顺序（排序模式里拖出来的），后缀 = 库（`book` / `manga` /
 /// `video` / `game`），值是换行分隔的单元 tieKey（`encodeShelfManualOrder`）。
 /// 与页签顺序同族：设备本地，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
@@ -221,6 +228,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
   // media/audiobook/audiobook_material_library.dart。
   'audiobook_material_dirs',
+  // String（'page_edge' | 'next_sentence'，默认 'page_edge'）：分页模式「跟随音频」
+  // 遇到跨页句子时何时翻页（反馈 tUJsiLpL9d）。见 media/audiobook/audiobook_follow_style.dart。
+  'audiobook_page_split_follow',
+  // String（'line_align' | 'margin'，默认 'line_align'）：连续模式「跟随音频」的滚动
+  // 方式（反馈 tUJsiLpL9d）。见 media/audiobook/audiobook_follow_style.dart。
+  'audiobook_scroll_follow',
   // bool（默认 false）：是否把 Audiobookshelf 收听中条目混排进首页「继续」（显式
   // opt-in，与 jellyfin_show_in_library 同原则，同样是普通偏好）。
   'audiobookshelf_show_in_home',
@@ -592,6 +605,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // int（默认 1）：跨页配对的整体偏移，用来把「封面独占一页」这类错位掰回来。
   'manga_spread_offset',
   'manga_spread_preference',
+  // double（默认 1.0，0.5–3.0，越大越灵敏）：漫画滑动翻页灵敏度（R721ZgWVSB），
+  // 缩放跟手与不跟手两组提交阈值，见 manga_swipe_thresholds.dart。
+  'manga_swipe_page_turn_sensitivity',
   // String（`MangaTapZoneLayout.key`，默认 `left_right`）：点击翻页热区布局。
   'manga_tap_zone_layout',
   'manga_tap_zone_paging',
@@ -923,6 +939,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'sandbox_last_support_root',
   'saved_tags',
   'scan_non_japanese_text',
+  // bool：截屏识字制卡前先推出截图框选页（默认 false，拍板 EuOLprw_dV）。
+  'screen_ocr.card_frame_on_mine',
   // bool：截屏识字 / 拍照查词制卡带所点文本块的截图（默认 true）。
   'screen_ocr.card_image',
   // String：桌面截屏识字的 OCR 引擎（'' 跟随全局 / local_onnx / system_ocr /
@@ -1065,6 +1083,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （embedded_reference_subtitle_sync.dart）。
   'subtitle_reference_sync_enabled',
   'sync_backend_type',
+  // bool，默认 false：捕获工作台「新句自动查词」（反馈 q9Jcu_Zr2_，texthooker_page.dart）。
+  'texthooker_auto_lookup_new_lines',
   'texthooker_enabled',
   'texthooker_urls',
   'torrent_upload_intro_shown',
@@ -1180,6 +1200,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）
   // 补新集（video_library_update_probe.dart）；与「番剧新集提醒」开关分开。
   'video_library_auto_update',
+  // bool（拍板台 zTedU_pOQF）：auto_open 默认 false = YouTube 直播回放带聊天回放时，开始
+  // 播放就打开聊天栏；show_author 默认 true = 聊天栏每条消息上方显示发送者。
+  'video_live_chat_auto_open',
+  'video_live_chat_show_author',
   'video_lock_window_aspect_ratio',
   // int（默认 -1 = 自动）：媒体服务器（Jellyfin/Emby）串流画质档在
   // JellyfinVideoClient.kQualityPresets 里的下标；选档 = 向服务器声明码率 / 宽度上限，
@@ -1419,6 +1443,10 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   'page_backdrop_seed_cache::',
   kMusicScanParserRevisionPrefKeyPrefix,
   'src:',
+  // JSON：`sync_online_library_peer:<设备 id>`——互联 host 的在线源条目清单信箱
+  // （`OnlineLibraryMailbox.keyPrefix`，fushi_engine `online_library_sync.dart`，拍板台
+  // mY5VWg1nD-）。设备本地（PrefRedactionPolicy.deviceLocalKeyPrefixes）。
+  'sync_online_library_peer:',
   // string：`sync_remote_account__<通道槽位>`——云后端最近一次取到的账号（规整后的
   // 小写邮箱 / 用户名，BUG-4434），文件箱进度基线按它分槽。设备本地
   // （SyncRepository.deviceLocalPrefKeys），不进备份 / 设置同步。

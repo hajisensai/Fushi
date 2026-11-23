@@ -68,7 +68,7 @@ import 'package:fushi/src/media/music/lyrics/music_lyrics_learning.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart'
     show LyricsScript;
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart'
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart'
     show pickCdgCompanion;
 import 'package:fushi/src/media/music/music_clip_source.dart';
 import 'package:fushi/src/media/music/music_mining_origin.dart';

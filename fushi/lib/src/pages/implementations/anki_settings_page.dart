@@ -2701,6 +2701,8 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_frequency_harmonic_rank;
     case '{pitch-accent-positions}':
       return t.handlebar_pitch_accent_positions;
+    case '{pitch-accent-positions-inline}':
+      return t.handlebar_pitch_accent_positions_inline;
     case '{pitch-accent-categories}':
       return t.handlebar_pitch_accent_categories;
     case '{phonetic-transcriptions}':

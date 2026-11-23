@@ -179,6 +179,14 @@ extension _MangaPageCurl on _MangaFushiPageState {
     return _pageCurl ??= PageCurlController(
       host: _MangaPageCurlHost(this),
       duration: () => _pageAnimationSpeed.curlDuration,
+      // 漫画自己的「滑动翻页灵敏度」（R721ZgWVSB），与手势 JS 同一份阈值。
+      commitThresholds: () {
+        final MangaSwipeThresholds t = mangaSwipeThresholds(_swipeSensitivity);
+        return (
+          commitFraction: t.followCommitFraction,
+          flingVelocity: t.followFlingVelocity,
+        );
+      },
     );
   }
 

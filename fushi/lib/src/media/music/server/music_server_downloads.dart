@@ -38,6 +38,8 @@ import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/music_server_loudness.dart';
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart'
     show redactSubsonicCredentials;
+import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart'
+    show createPinnedHttpClient;
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:path/path.dart' as p;
 
@@ -199,14 +201,20 @@ class MusicServerDownloadService {
     required this.root,
     MusicServerDownloadIndex? index,
     MusicServerDownloadTransfer? transfer,
+    MusicServerDownloadTransfer Function(String fingerprint)? pinnedTransfer,
     MusicServerDownloadBytesFetcher? fetchBytes,
     MusicServerDownloadLyricsSaver? saveLyrics,
+    MusicServerDownloadHostLyricsSaver? saveHostLyrics,
     MusicServerDownloadLoudnessMeasure? measureLoudness,
     int Function()? clock,
   }) : index = index ?? MusicServerDownloadIndex.instance,
        _saveLyrics = saveLyrics,
+       _saveHostLyrics = saveHostLyrics,
        _measureLoudness = measureLoudness ?? measureMusicLoudness,
        _transfer = transfer ?? AnimeEpisodeDownloader().download,
+       _pinnedTransfer =
+           pinnedTransfer ??
+           (transfer == null ? _pinnedDownloader : (String _) => transfer),
        _fetchBytes = fetchBytes ?? _httpBytes,
        _clock = clock ?? _now {
     // 本机「移出音乐库」要能取消这里发起的下载（没建过下载服务就没有下载任务）。
@@ -229,14 +237,37 @@ class MusicServerDownloadService {
   final Future<Directory> Function() root;
   final MusicServerDownloadIndex index;
   final MusicServerDownloadTransfer _transfer;
+
+  /// 自签证书的对端（[MusicServerDownloadSource.pinnedFingerprint]）用的传输：同一个下载器，只是
+  /// HTTP 客户端按指纹钉扎证书。
+  final MusicServerDownloadTransfer Function(String fingerprint)
+  _pinnedTransfer;
+
+  static MusicServerDownloadTransfer _pinnedDownloader(String fingerprint) =>
+      AnimeEpisodeDownloader(
+        httpClientFactory: () => createPinnedHttpClient(
+          expectedFingerprint: fingerprint,
+          connectionTimeout: const Duration(seconds: 15),
+        ),
+      ).download;
+
+  MusicServerDownloadTransfer _transferFor(MusicServerDownloadSource source) {
+    final String? pin = source.pinnedFingerprint;
+    return pin == null || pin.isEmpty ? _transfer : _pinnedTransfer(pin);
+  }
+
   final MusicServerDownloadBytesFetcher _fetchBytes;
   final MusicServerDownloadLyricsSaver? _saveLyrics;
+  final MusicServerDownloadHostLyricsSaver? _saveHostLyrics;
   final MusicServerDownloadLoudnessMeasure _measureLoudness;
   final int Function() _clock;
 
   /// 下完存歌词用哪个（构造时给的优先，否则进程级装配点）。
   MusicServerDownloadLyricsSaver? get _lyricsSaver =>
       _saveLyrics ?? musicServerDownloadLyricsSaver;
+
+  MusicServerDownloadHostLyricsSaver? get _hostLyricsSaver =>
+      _saveHostLyrics ?? musicServerDownloadHostLyricsSaver;
 
   static int _now() => DateTime.now().millisecondsSinceEpoch;
 
@@ -430,12 +461,20 @@ class _ServerTrackDownload {
     Future<void>? cancelSignal,
   }) async {
     _removalMark = service.index.removalMark(_uid);
-    final MusicServerDownloadSource source = browser.downloadSourceFor(track);
     File? audio = await target.existingAudio();
     if (audio == null) {
+      final MusicServerDownloadSource source;
+      try {
+        source = await browser.downloadSourceFor(track);
+      } on RemoteDownloadCancelled {
+        rethrow;
+      } on Object catch (e) {
+        // 互联 host 签票失败（离线 / 拒签）：文本里没有凭据（票还没签出来）。
+        throw MusicServerDownloadFailed(redactSubsonicCredentials('$e'));
+      }
       if (!await staging.exists()) {
         try {
-          await service._transfer(
+          await service._transferFor(source)(
             url: source.uri.toString(),
             headers: source.headers,
             dest: staging,
@@ -526,6 +565,11 @@ class _ServerTrackDownload {
   Future<void> _saveLyrics() async {
     final MusicServerDownloadLyricsSaver? save = service._lyricsSaver;
     final MusicServerBrowser s = server;
+    // 互联 host：host 上生效的那份原文（含来源 / 偏移 / 手动指定）。
+    if (s is MusicServerLyricsSource) {
+      await _saveHostLyrics(s as MusicServerLyricsSource);
+      return;
+    }
     if (save == null || s is! MusicServerLyricsProvider) return;
     final MusicServerLyrics? lyrics;
     try {
@@ -541,6 +585,23 @@ class _ServerTrackDownload {
       await save(trackUid: _uid, durationMs: track.durationMs, lyrics: lyrics);
     } on Object catch (e, st) {
       ErrorLogService.instance.log('MusicServerDownload.lyrics', e, st);
+    }
+  }
+
+  Future<void> _saveHostLyrics(MusicServerLyricsSource host) async {
+    final MusicServerDownloadHostLyricsSaver? save = service._hostLyricsSaver;
+    if (save == null) return;
+    final MusicHostLyrics? lyrics;
+    try {
+      lyrics = await host.lyricsFor(track.id);
+    } on Object catch (e) {
+      debugPrint('[music-download] host lyrics fetch failed: $e');
+      return;
+    }
+    try {
+      await save(trackUid: _uid, durationMs: track.durationMs, lyrics: lyrics);
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('MusicServerDownload.hostLyrics', e, st);
     }
   }
 
@@ -565,13 +626,15 @@ class _ServerTrackDownload {
       final File f = File(p.join(target.dir.path, 'cover.$ext'));
       if (await f.exists()) return f;
     }
-    final Uri? uri = server.coverUri(
-      album?.coverRef ?? track.coverRef,
-      size: kMusicServerDownloadCoverSize,
-    );
-    if (uri == null) return null;
+    final String? ref = album?.coverRef ?? track.coverRef;
+    final MusicServerBrowser s = server;
+    final Uri? uri = server.coverUri(ref, size: kMusicServerDownloadCoverSize);
+    if (uri == null || ref == null) return null;
     try {
-      final Uint8List bytes = await service._fetchBytes(uri);
+      // 互联 host 的封面只能经它自己的钉扎通道取（coverUri 是占位串）。
+      final Uint8List bytes = s is MusicServerCoverBytes
+          ? await (s as MusicServerCoverBytes).coverBytes(ref)
+          : await service._fetchBytes(uri);
       final String? ext = sniffCoverExtension(bytes);
       if (ext == null) {
         throw const FormatException('cover is not jpg/png/webp');

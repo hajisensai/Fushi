@@ -279,6 +279,49 @@ Future<List<String>> findMusicDiscRootsInBackground(
   debugName: 'music-disc-roots',
 );
 
+/// 「添加光盘」选中的一个目录 / 文件对应的盘：它本身是盘（DVD / BD 目录、光驱根、`.iso`）
+/// 就是它，否则是目录树里认得出的全部盘（[findMusicDiscRoots]）。工具栏「添加光盘」与
+/// 控制通道 `music disc-add` 共用。
+Future<List<String>> musicDiscCandidatesAt(String path) async {
+  if (await probeMusicDiscRoot(path) != null) return <String>[path];
+  if (FileSystemEntity.isFileSync(path)) {
+    return p.extension(path).toLowerCase() == '.iso'
+        ? <String>[path]
+        : const <String>[];
+  }
+  return findMusicDiscRootsInBackground(path);
+}
+
+/// 逐张登记的结果：登记上的专辑 uid（按 [registerMusicDiscs] 收到的顺序）与读不出的盘。
+class MusicDiscRegisterReport {
+  const MusicDiscRegisterReport({
+    required this.albumUids,
+    required this.failures,
+  });
+
+  final List<String> albumUids;
+
+  /// 盘路径 → 异常（[MusicDiscUnreadableException] 或别的 [Exception]）。
+  final Map<String, Exception> failures;
+}
+
+/// 逐张登记 [discs]（一张失败不影响其余）。界面「添加光盘 / 光盘镜像」与控制通道共用。
+Future<MusicDiscRegisterReport> registerMusicDiscs(
+  MusicDiscImportService service,
+  Iterable<String> discs,
+) async {
+  final List<String> albums = <String>[];
+  final Map<String, Exception> failures = <String, Exception>{};
+  for (final String disc in discs) {
+    try {
+      albums.add(await service.registerDisc(disc));
+    } on Exception catch (e) {
+      failures[disc] = e;
+    }
+  }
+  return MusicDiscRegisterReport(albumUids: albums, failures: failures);
+}
+
 typedef MusicDiscReader = Future<MusicDiscInfo?> Function(String path);
 
 class MusicDiscImportService {
