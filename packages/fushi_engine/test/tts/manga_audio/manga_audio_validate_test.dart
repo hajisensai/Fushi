@@ -42,6 +42,7 @@ void main() {
             'ei': 150,
             'src': 'user',
             'seed': 3,
+            'tone': '  おずおずと  ',
           },
         ),
         _raw(<int>[2], speaker: kTtsNarrator, kind: 'narration'),
@@ -57,6 +58,8 @@ void main() {
       expect(l.intensity, MangaScriptLimits.maxIntensity);
       expect(l.source, TtsCastSource.llm);
       expect(l.seed, 3);
+      expect(l.tone, 'おずおずと');
+      expect(r.accepted[1].tone, isNull);
       expect(r.unclaimedBlocks, isEmpty);
     });
 

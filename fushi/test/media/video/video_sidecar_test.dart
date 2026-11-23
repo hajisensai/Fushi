@@ -95,4 +95,140 @@ void main() {
       expect(pickSidecar(base, files, langCode: 'ja'), '$base.JA.SRT');
     });
   });
+
+  // 拍板台 review-hbk-audit-220-player-sub-owner：播放器选 / 列字幕、删视频带走字幕、
+  // iOS 收件箱搬入共用「最长文件名主干认领字幕」。
+  group('最长主干认领字幕', () {
+    test('EP01.mkv 与 EP01.ja.mkv 并存：EP01.ja.srt 归 EP01.ja，EP01 不选它', () {
+      final List<String> dir = <String>[
+        'EP01.mkv',
+        'EP01.ja.mkv',
+        'EP01.ja.srt',
+        'EP01.srt',
+      ];
+      expect(pickSidecar('EP01', dir, langCode: 'ja'), 'EP01.srt');
+      expect(listSidecarSubtitles('EP01', dir), <String>['EP01.srt']);
+      expect(pickSidecar('EP01.ja', dir, langCode: 'ja'), 'EP01.ja.srt');
+      expect(listSidecarSubtitles('EP01.ja', dir), <String>['EP01.ja.srt']);
+    });
+
+    test('较短 stem 的视频没有自己的字幕时选不到别人的', () {
+      final List<String> dir = <String>[
+        'EP01.mkv',
+        'EP01.ja.mkv',
+        'EP01.ja.srt',
+      ];
+      expect(pickSidecar('EP01', dir, langCode: 'ja'), isNull);
+      expect(listSidecarSubtitles('EP01', dir), isEmpty);
+    });
+
+    test('没有更长主干的视频时，EP01.ja.srt 仍是 EP01 的日语轨', () {
+      final List<String> dir = <String>['EP01.mkv', 'EP01.ja.srt'];
+      expect(pickSidecar('EP01', dir, langCode: 'ja'), 'EP01.ja.srt');
+    });
+
+    test('认领不分大小写；非视频文件（封面 / nfo / 字幕本身）不认领', () {
+      expect(
+        listSidecarSubtitles('ep01', <String>[
+          'ep01.mkv',
+          'EP01.JA.MKV',
+          'ep01.ja.ass',
+        ]),
+        isEmpty,
+      );
+      expect(
+        listSidecarSubtitles('EP01', <String>[
+          'EP01.mkv',
+          'EP01.ja.jpg',
+          'EP01.ja.nfo',
+          'EP01.ja.srt',
+        ]),
+        <String>['EP01.ja.srt'],
+      );
+    });
+
+    test('ep01.5.mkv 认领 ep01.5.srt，ep01 的其余字幕不受影响', () {
+      final List<String> dir = <String>[
+        'ep01.mkv',
+        'ep01.5.mkv',
+        'ep01.5.srt',
+        'ep01.ja.srt',
+        'ep01.srt',
+      ];
+      expect(listSidecarSubtitles('ep01', dir), <String>[
+        'ep01.ja.srt',
+        'ep01.srt',
+      ]);
+      expect(listSidecarSubtitles('ep01.5', dir), <String>['ep01.5.srt']);
+    });
+
+    test('sidecarSubtitleOwnerStem：取能配上的最长 stem，原样返回，配不上为 null', () {
+      expect(
+        sidecarSubtitleOwnerStem('EP01.ja.srt', <String>['EP01', 'ep01.JA']),
+        'ep01.JA',
+      );
+      expect(
+        sidecarSubtitleOwnerStem('EP01.srt', <String>['EP01', 'EP01.ja']),
+        'EP01',
+      );
+      expect(sidecarSubtitleOwnerStem('EP02.srt', <String>['EP01']), isNull);
+      expect(
+        sidecarSubtitleOwnerStem('EP01.ja.srt', <String>['EP01.ja.x']),
+        isNull,
+      );
+    });
+  });
+
+  group('ownedSidecarSuffix（写入端的最长主干认领）', () {
+    test('名字会被 stem 更长的同目录视频认领时退回无语言标记', () {
+      expect(
+        ownedSidecarSuffix('EP01', '.ja.srt', const <String>[
+          'EP01.mkv',
+          'EP01.ja.mkv',
+        ]),
+        '.srt',
+      );
+      expect(
+        ownedSidecarSuffix('ep01', '.5.ASS', const <String>[
+          'ep01.mkv',
+          'EP01.5.mp4',
+        ]),
+        '.ASS',
+      );
+    });
+
+    test('没人抢 / 邻居不是视频 / 非法后缀：原样', () {
+      expect(
+        ownedSidecarSuffix('EP01', '.ja.srt', const <String>['EP01.mkv']),
+        '.ja.srt',
+      );
+      expect(
+        ownedSidecarSuffix('EP01', '.ja.srt', const <String>[
+          'EP01.mkv',
+          'EP01.ja.txt',
+        ]),
+        '.ja.srt',
+      );
+      expect(
+        ownedSidecarSuffix('EP01', '.ja.srt', const <String>[
+          'EP01.mkv',
+          'EP01.jav.mkv',
+        ]),
+        '.ja.srt',
+      );
+      expect(
+        ownedSidecarSuffix('EP01', '/../x.srt', const <String>['EP01.ja.mkv']),
+        '/../x.srt',
+      );
+    });
+
+    test('退回的无标记名恒归本视频', () {
+      const List<String> dir = <String>['EP01.mkv', 'EP01.ja.mkv'];
+      final String suffix = ownedSidecarSuffix('EP01', '.ja.vtt', dir);
+      expect(
+        listSidecarSubtitles('EP01', <String>[...dir, 'EP01$suffix']),
+        <String>['EP01$suffix'],
+      );
+    });
+  });
 }

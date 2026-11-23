@@ -75,14 +75,18 @@ void main() {
       isNot(contains('_shellFabHostedByBar = isGlassDesign(context);')),
       reason: '按设计系统一刀切收走 FAB 就是本条回归本身',
     );
-    // 右下 FAB 仍由这一位门控，且同步任务也能点亮它（不只补刮）。
-    // 首页另有头像外圈承接（[homeBackgroundTasksOnAvatar]），条件多一项后被格式化
-    // 折行：按「同一个 && 链里先后出现」认，不按单行字面量认。
+    // 右下 FAB 仍由这一位门控，且同步任务也能点亮它（不只补刮）。按「同一个 &&
+    // 链里先后出现」认，不按单行字面量认（格式化可能折行）。
     expect(
       src,
       matches(RegExp(r'_hasBackgroundTasks &&\s+!_shellFabHostedByBar')),
     );
     expect(src, contains('_syncTasksActive ||'));
+    // 跑完但有失败、用户还没看过的同步也点亮它（拍板台
+    // design-avatar-combo-placement：头像只管账户，失败提示回到这颗按钮）。
+    expect(src, contains('_syncFailuresUnseen ||'));
+    // 首页不再由头像外圈承接、不再豁免这颗 FAB。
+    expect(src, isNot(contains('homeBackgroundTasksOnAvatar')));
   });
 
   test('MD3 手机：入口叠在底栏 FAB 上方，不顶替「查词」FAB', () {

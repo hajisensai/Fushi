@@ -5,7 +5,7 @@
   - 漫画有声成品导入：`POST /api/admin/tts/manga/:key/import` + `tts.manga.import` + `fushi_cli tts import <key> <manifest.json> [--yes]`；校验抽成 `checkMangaAudioManifest` 与界面共用；已有成品要 `confirm` 才替换；撤销按登记指纹放回前态。
   - 结构保证：新守卫 `fushi/test/ops/ctl_ui_flow_cli_coverage_guard_test.dart` 扫 `lib/`（`ops/` 以外）所有公开 `Future<…> pickAnd*/import*/export*(`，名字没在 `lib/src/ops/` 出现就必须登记 `covered:` / `ui-only:` / `internal:` / `pending cli-ui-only-ops-gaps:` 之一，新流程不接路由也不登记就红。
 - **剩余（守卫里 `pending cli-ui-only-ops-gaps` 的条目，每接一个删一条）**：
-  - 音乐：`importMusicFiles`（导入音频文件）、碟片 `pickAndAddMusicDiscs` / `pickAndAddMusicDiscImages` / `importChapters` / `importMusicDiscChapters`、`pickAndInstallMusicPlugin`（歌词 / 元数据插件）、`exportBesideAudio`（歌词导出）、`importAudioCdIfPresent`（音频 CD）。另：音乐路由只有读、刮削、来源、播放遥控，**歌单增删改 / 加歌、歌词搜索与编辑**也没有路由（不是 import/export 命名，守卫扫不到，在此登记）。
+  - 音乐：`importMusicFiles`（导入音频文件）、碟片 `pickAndAddMusicDiscs` / `pickAndAddMusicDiscImages` / `importChapters` / `importMusicDiscChapters`、`pickAndInstallMusicPlugin`（歌词 / 元数据插件）、`exportBesideAudio`（歌词导出）、`importAudioCdIfPresent`（音频 CD）、`importFiles`（歌词可视化素材包导入图片，`LyricVisualizerAssetStore`）。另：音乐路由只有读、刮削、来源、播放遥控，**歌单增删改 / 加歌、歌词搜索与编辑**也没有路由（不是 import/export 命名，守卫扫不到，在此登记）。
   - 视频：`importIptvChannels`（IPTV 播放列表）、`pickAndApplyVideoFrameCover`（取帧当封面）、`importNow`（动画下载计划立即导入）。
   - 有声书 / TTS：`exportTranscribedSrt`（转录结果导出 SRT）、`exportTtsAudiobookM4b`（TTS 有声书导出 M4B）。
   - Galgame：`exportTo`（Hook 码配置导出）、`exportWindowRecording`（窗口录制导出）。

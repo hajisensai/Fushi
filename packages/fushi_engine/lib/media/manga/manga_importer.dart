@@ -566,6 +566,7 @@ class MangaImporter {
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
     int? sourceId,
+    MangaPageSource pageSource = MangaPageSource.borrowed,
   }) async {
     final File jsonFile = File(mangaJsonPath);
     if (!jsonFile.existsSync()) {
@@ -594,6 +595,7 @@ class MangaImporter {
       policy: policy,
       onProgress: onProgress,
       sourceId: sourceId,
+      pageSource: pageSource,
     );
   }
 

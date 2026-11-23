@@ -21,6 +21,11 @@ import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
+import 'package:fushi/src/media/music/server/music_server_favorites.dart'
+    show MusicServerTrackFavorites;
+import 'package:fushi/src/media/music/server/music_server_loudness_measurer.dart'
+    show MusicServerLoudnessMeasurer;
+import 'package:fushi/src/media/music/server/music_server_playback_reporter.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
@@ -205,16 +210,38 @@ class MusicSession extends ChangeNotifier {
   /// [AppleMusicFavorites.canFavorite] 为 false。变化时本会话也 [notifyListeners]。
   final AppleMusicFavorites? appleMusicFavorites;
 
-  /// 这一首能不能收藏：声明了 `like` 的插件曲目，或已连接账号时的 Apple Music 整曲；
-  /// 本地 / 其它服务器曲目为 false。
+  /// 服务器曲目的播放上报（Jellyfin / Subsonic 的播放次数 / 最近播放）；app 装配，测试 /
+  /// 无头入口为 null。挂在本会话的曲目生命周期上（开播 / 换下 / 引擎状态）。
+  MusicServerPlaybackReporter? serverReporting;
+
+  /// 服务器没给响度的服务器曲目：播过之后在后台测一次（app 装配，测试 / 无头入口为 null）。
+  MusicServerLoudnessMeasurer? serverLoudnessMeasurer;
+
+  /// 服务器曲目（Jellyfin / Subsonic）的收藏；app 装配，测试 / 无头入口为 null。变化时本会话
+  /// 也 [notifyListeners]。
+  MusicServerTrackFavorites? get serverFavorites => _serverFavorites;
+  MusicServerTrackFavorites? _serverFavorites;
+  set serverFavorites(MusicServerTrackFavorites? value) {
+    _serverFavorites?.removeListener(notifyListeners);
+    _serverFavorites = value;
+    value?.addListener(notifyListeners);
+  }
+
+  /// 这一首能不能收藏：声明了 `like` 的插件曲目、已连接账号时的 Apple Music 整曲，或
+  /// Jellyfin / Subsonic 曲目；本地曲目为 false。
   bool canFavorite(MusicPlayItem item) =>
       (favorites?.canFavorite(item) ?? false) ||
-      (appleMusicFavorites?.canFavorite(item) ?? false);
+      (appleMusicFavorites?.canFavorite(item) ?? false) ||
+      (serverFavorites?.canFavorite(item) ?? false);
 
   /// 这一首是否已在平台上喜欢（同步读内存缓存，首次读时后台拉取）。
   bool isFavorite(MusicPlayItem item) {
     final AppleMusicFavorites? am = appleMusicFavorites;
     if (am != null && am.canFavorite(item)) return am.isFavorite(item);
+    final MusicServerTrackFavorites? server = serverFavorites;
+    if (server != null && server.canFavorite(item)) {
+      return server.isFavorite(item);
+    }
     return favorites?.isFavorite(item) ?? false;
   }
 
@@ -224,6 +251,8 @@ class MusicSession extends ChangeNotifier {
   Future<void> toggleFavorite(MusicPlayItem item) {
     final AppleMusicFavorites? am = appleMusicFavorites;
     if (am != null && am.canFavorite(item)) return am.toggle(item);
+    final MusicServerTrackFavorites? server = serverFavorites;
+    if (server != null && server.canFavorite(item)) return server.toggle(item);
     final MusicPluginFavorites? f = favorites;
     if (f == null) {
       return Future<void>.error(const MusicFavoriteUnsupported());
@@ -347,6 +376,7 @@ class MusicSession extends ChangeNotifier {
 
   void _onTrackStarted(MusicPlayItem item) {
     _startedProgressed = false;
+    serverReporting?.trackStarted(item);
     // 引擎此时已把位置清零给新曲：上一首播到哪要读它清零前存下的值（同步读，免得被后续
     // 位置推送覆盖）。
     unawaited(_rotatePlayEvent(item, listened: engine.listenedBeforeStart));
@@ -404,6 +434,7 @@ class MusicSession extends ChangeNotifier {
   }
 
   void _onEngineChanged() {
+    serverReporting?.engineChanged();
     _publishMediaSession();
     _maybeWriteResumePoint();
     notifyListeners();
@@ -487,6 +518,8 @@ class MusicSession extends ChangeNotifier {
   /// 这次打开还没放过（位置 0）不写（见 [_startedProgressed]）；后端自然推进换下的按
   /// 听完删行（交叉淡入推进时的位置停在淡入起点，见 [MusicTrackLeave.completed]）。
   void _onTrackLeft(MusicTrackLeave leave) {
+    serverReporting?.trackLeft(leave);
+    serverLoudnessMeasurer?.trackLeft(leave);
     final bool progressed = _startedProgressed;
     _startedProgressed = false;
     if (leave.restoring) return;

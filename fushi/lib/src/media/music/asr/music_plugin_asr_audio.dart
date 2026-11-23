@@ -13,11 +13,17 @@
 ///   失败 / 取消时留着，下一次直接用、不重下。
 /// - 只给试听片段（[MusicPluginStream.isTrial]）的曲目由 [resolveMusicPluginStream] 拒掉：
 ///   转写半首没有意义。
+///
+/// 媒体服务器曲目（Jellyfin / Subsonic，`music_server_asr_audio.dart`）走同一个取音频步骤
+/// （[MusicPluginAsrAudioStager.stageStream]）：流地址由服务器客户端现算、凭据在 query 里，
+/// 所以 ffmpeg 的报错文本一律经凭据脱敏再给界面。副本同放这个目录（目录名冻结）。
 library;
 
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_engine/media/music/server/subsonic_music_client.dart'
+    show redactSubsonicCredentials;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
@@ -122,6 +128,29 @@ class MusicPluginAsrAudioStager {
     if (!isMusicPluginPath(item.path)) {
       throw MusicPluginAsrAudioUnavailable('not a plugin track: ${item.path}');
     }
+    return stageStream(
+      item,
+      open: () async {
+        try {
+          return await _resolver(item.path);
+        } on MusicPluginStreamUnavailable catch (e) {
+          throw MusicPluginAsrAudioUnavailable(e.message);
+        }
+      },
+      onProgress: onProgress,
+      cancel: cancel,
+    );
+  }
+
+  /// 通用的取音频步骤：[open] 交出这首此刻可读的流（地址 + 请求头），解码到 [fileFor]。
+  /// 已有完整副本直接返回、不调 [open]。[open] 取不到时抛 [MusicPluginAsrAudioUnavailable]。
+  /// 其余同 [stage]。
+  Future<File> stageStream(
+    MusicPlayItem item, {
+    required Future<MusicPluginStream> Function() open,
+    required void Function(double? fraction) onProgress,
+    required Future<void> cancel,
+  }) async {
     final File out = fileFor(item.trackUid);
     if (await out.exists() && await out.length() > _kWavHeaderBytes) {
       onProgress(1);
@@ -130,11 +159,9 @@ class MusicPluginAsrAudioStager {
     bool cancelled = false;
     unawaited(cancel.then((_) => cancelled = true));
     onProgress(null);
-    final MusicPluginStream stream;
-    try {
-      stream = await _resolver(item.path);
-    } on MusicPluginStreamUnavailable catch (e) {
-      throw MusicPluginAsrAudioUnavailable(e.message);
+    final MusicPluginStream stream = await open();
+    if (stream.isTrial) {
+      throw const MusicPluginAsrAudioUnavailable('only a preview is available');
     }
     if (cancelled) throw const MusicPluginAsrAudioCancelled();
     await root.create(recursive: true);
@@ -170,7 +197,10 @@ class MusicPluginAsrAudioStager {
       if (cancelled) throw const MusicPluginAsrAudioCancelled();
       final List<String> lines = result.output.trim().split('\n');
       throw MusicPluginAsrAudioUnavailable(
-        'audio download failed (exit ${result.returnCode}): ${lines.last}',
+        // 服务器流的凭据在 query 里，ffmpeg 报错会带上地址：脱敏后再给界面。
+        redactSubsonicCredentials(
+          'audio download failed (exit ${result.returnCode}): ${lines.last}',
+        ),
       );
     }
     if (await out.exists()) await out.delete();

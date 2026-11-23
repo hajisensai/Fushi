@@ -44,6 +44,18 @@ finish-args:
   # Keep the screen awake while reading / playing (screen_wakelock.dart).
   - --talk-name=org.freedesktop.ScreenSaver
   - --talk-name=org.kde.StatusNotifierWatcher
+  # Out-of-app lookup reads the sentence around the selection over AT-SPI
+  # (lib/src/lookup/linux_atspi_context.dart). Flatpak gives the sandbox a
+  # filtered proxy of the accessibility bus that only lets the app register
+  # itself, and no finish-arg lifts it (only `flatpak run --no-a11y-bus`;
+  # --socket=session-bus does not). So Fushi reaches the host bus directly:
+  # its address from org.a11y.Bus on the session bus, its socket under
+  # $XDG_RUNTIME_DIR/at-spi (read-only bind is enough to connect; buses on an
+  # abstract socket need only --share=network). This lets Fushi read other
+  # apps' accessibility trees, and adding it made installed users update once
+  # by hand (see the header). Board item design-linux-atspi-flatpak.
+  - --talk-name=org.a11y.Bus
+  - --filesystem=xdg-run/at-spi:ro
   - --system-talk-name=org.freedesktop.Avahi
 modules:
   - name: fushi
