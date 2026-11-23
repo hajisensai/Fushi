@@ -6508,8 +6508,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       slotInputs,
       () => _collectContinueItems(filtered, remoteVideos),
     );
-    // 侧栏速览的「继续」直接用本页这份候选（同一项、同一顺序）。
-    _continueShare.publishCandidates(this, _continueCandidates);
     final List<_HomeSubscriptionItem> updates = _subscriptionUpdatesMemo.of(
       <Object?>[...slotInputs, _subscribedCollectionIds],
       () => _collectSubscriptionUpdates(filtered, remoteVideos),
@@ -6838,7 +6836,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           remote: remoteVideos,
           inputs: _continueInputs,
         );
-    _continueCandidates = candidates;
     return <_HomeContinueItem>[
       for (final VideoContinueCandidate c in candidates)
         _HomeContinueItem(
@@ -6853,10 +6850,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ),
     ];
   }
-
-  /// [_collectContinueItems] 最近一次算出的候选（发布给侧栏速览）。
-  List<VideoContinueCandidate> _continueCandidates =
-      const <VideoContinueCandidate>[];
 
   /// 选集输入：本页的合集归属 / 组内序 / 最近观看 / 片长 / 特典快照。
   VideoContinueInputs get _continueInputs => VideoContinueInputs(

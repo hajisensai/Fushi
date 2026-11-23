@@ -471,21 +471,19 @@ Future<NavPeekFeed> _loadVideos({
     for (final VideoBookRow b in library.books)
       if (!lockVisibility.hidesVideo(b.bookUid) && !hiddenByCollection(b)) b,
   ];
-  // 视频页已经算过就用它那份（同一项、同一顺序）；没开过视频页时按同一个纯函数
-  // 现算，远端清单只用视频页取到的那份（速览本身不发网络请求）。
-  final List<VideoContinueCandidate> candidates =
-      share.candidates ??
-      selectVideoContinueCandidates(
-        local: visible,
-        remote: visibleHomeRemoteVideos(
-          remote: share.remoteVideos ?? const <RemoteVideoInfo>[],
-          local: visible,
-          primaryCollectionByEntry: library.primaryCollectionByEntry,
-          visibility: lockVisibility,
-          showRemoteEntries: appModel.prefsRepo.showRemoteEntries,
-        ),
-        inputs: inputs,
-      );
+  // 与视频首页同一个纯函数、同一批表现算（每次悬停都按此刻的库与上锁口径，不吃
+  // 视频页可能已过期的结果）；远端清单只用视频页取到的那份（速览本身不发网络请求）。
+  final List<VideoContinueCandidate> candidates = selectVideoContinueCandidates(
+    local: visible,
+    remote: visibleHomeRemoteVideos(
+      remote: share.remoteVideos ?? const <RemoteVideoInfo>[],
+      local: visible,
+      primaryCollectionByEntry: library.primaryCollectionByEntry,
+      visibility: lockVisibility,
+      showRemoteEntries: appModel.prefsRepo.showRemoteEntries,
+    ),
+    inputs: inputs,
+  );
   final List<VideoBookRow> recentlyPlayed =
       visible.where((VideoBookRow v) => (v.lastPlayedAt ?? 0) > 0).toList()
         ..sort(

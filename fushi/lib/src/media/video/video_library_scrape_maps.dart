@@ -370,7 +370,7 @@ Set<String> videoLocalExtraBookUids(List<VideoMetadataExtraRow> extras) =>
     };
 
 /// 合集卡 / 继续观看上显示的作品名：刮削作品标题 → 合集刮削元数据标题 → 合集名。
-/// 视频首页与侧栏速览同一条回落链（BUG-5258）。
+/// 视频首页与侧栏速览同一条回落链（BUG-5276）。
 String videoCollectionWorkTitle(
   MediaCollectionRow collection, {
   required Map<int, VideoMetadataWorkRow> metadataWorkByCollection,

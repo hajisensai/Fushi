@@ -42,7 +42,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 /// 上的远端占位，于是首页明明有「☁ 下一集 · 第 1 集」，速览却说没有可继续的。
 /// 现在两处都只调 [selectVideoContinueCandidates]，选出的是同一份候选、同一顺序；
 /// 输入快照（合集归属 / 组内序 / 最近观看时刻 / 片长 / 特典）由 [VideoContinueInputs]
-/// 承载，从库里现读一份走 [loadVideoContinueInputs]。
+/// 承载，从库里现读一份走 [loadVideoContinueLibrary]。
 
 /// 首页横滚行 / 继续观看的统一成员槽：本地视频行 [local] 或「只在 host 上」的远端
 /// 占位 [remote]，二者恰一非空。
@@ -488,15 +488,17 @@ Future<VideoContinueLibrary> loadVideoContinueLibrary(
   );
 }
 
-/// 视频页最近一次的继续观看结果与远端清单，供页外（侧栏速览）复用。
+/// 视频页最近一次取到的远端清单，供页外（侧栏速览）复用。
 ///
 /// 远端清单只由视频页取（取数、收养、去重、断点合并都在页里），这里只是把页里
 /// 已经到手的那份递出去：速览悬停一次不额外打任何网络。字段是普通可变字段、
 /// 不发通知——写入发生在页面 build 里，读方只在速览加载时读一次。
+///
+/// 只共享**输入**、不共享页面算好的候选：候选由速览按现读的库快照 + 此刻的上锁
+/// 口径用同一个 [selectVideoContinueCandidates] 现算。页面只在「首页」分区且库
+/// 非空时才算候选，切到别的分区、库清空、上锁把条目全藏掉时页面不再重算，若共享
+/// 候选就会把旧结果（含刚上锁的条目）留在速览里。
 class VideoContinueShare {
-  /// 视频页（首页分区）按自己的输入算出的继续观看候选；null = 页还没算过。
-  List<VideoContinueCandidate>? candidates;
-
   /// 视频页最近一次取到的远端清单（已与本机去重、合过断点；尚未过显示开关 /
   /// 上锁 / 同集归并，见 [visibleHomeRemoteVideos]）。null = 没有可用清单。
   List<RemoteVideoInfo>? remoteVideos;
@@ -505,13 +507,7 @@ class VideoContinueShare {
   RemoteVideoSource? remoteSource;
 
   /// 发布者身份：页面 dispose 时只清自己写的那份。
-  Object? candidatesOwner;
   Object? remoteOwner;
-
-  void publishCandidates(Object owner, List<VideoContinueCandidate> value) {
-    candidatesOwner = owner;
-    candidates = value;
-  }
 
   void publishRemote(
     Object owner,
@@ -524,10 +520,6 @@ class VideoContinueShare {
   }
 
   void clearOwner(Object owner) {
-    if (identical(candidatesOwner, owner)) {
-      candidatesOwner = null;
-      candidates = null;
-    }
     if (identical(remoteOwner, owner)) {
       remoteOwner = null;
       remoteVideos = null;

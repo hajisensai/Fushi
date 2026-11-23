@@ -19,7 +19,7 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 
-/// BUG-5258：侧栏视频速览说「还没有可继续的」，同屏视频首页首屏却有
+/// BUG-5276：侧栏视频速览说「还没有可继续的」，同屏视频首页首屏却有
 /// 「☁ 下一集 · 第 1 集」（目标集只在互联 host 上）。两处现在都走
 /// [selectVideoContinueCandidates]，速览编排走 [planVideoNavPeek]。
 MediaCollectionRow _collection(int id, String name) => MediaCollectionRow(
@@ -257,13 +257,12 @@ void main() {
     final VideoContinueShare share = VideoContinueShare();
     final Object pageA = Object();
     final Object pageB = Object();
-    share.publishCandidates(pageA, const <VideoContinueCandidate>[]);
-    share.publishRemote(pageB, <RemoteVideoInfo>[_remote('x')], null);
+    share.publishRemote(pageA, <RemoteVideoInfo>[_remote('x')], null);
+    // 别的页面 dispose 不清 A 发布的清单。
     share.clearOwner(pageB);
-    expect(share.candidates, isNotNull);
-    expect(share.remoteVideos, isNull);
+    expect(share.remoteVideos, isNotNull);
     share.clearOwner(pageA);
-    expect(share.candidates, isNull);
+    expect(share.remoteVideos, isNull);
   });
 
   group('作品名：首页 hero 与速览同一条回落链（刮削作品 → 合集刮削 → 合集名）', () {
