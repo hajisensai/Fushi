@@ -391,6 +391,68 @@ final class BookTrackingSite {
   final bool seriesByPosition;
 }
 
+/// One site's series link of a series card and how it counts each volume
+/// (the "Tracking" section of the card's page).
+final class SeriesCardTrackingSite {
+  const SeriesCardTrackingSite({
+    required this.providerId,
+    required this.connected,
+    required this.kindEnabled,
+    required this.isDefaultSite,
+    this.seriesLink,
+    this.coverage = TrackingSeriesCoverage.empty,
+  });
+
+  final String providerId;
+
+  /// Signed in.
+  final bool connected;
+
+  /// The user's switch for the card's kind on this site.
+  final bool kindEnabled;
+
+  /// The site searched by title for this kind.
+  final bool isDefaultSite;
+
+  /// The card's series link here (`book_collection`); null when it has none.
+  final MediaTrackingMappingRow? seriesLink;
+
+  /// Every volume of the card and how [seriesLink] counts it; empty without
+  /// a series link.
+  final TrackingSeriesCoverage coverage;
+}
+
+/// What the "Tracking" section of a series card's page shows.
+final class SeriesCardTracking {
+  const SeriesCardTracking({
+    required this.collectionId,
+    required this.name,
+    required this.kind,
+    required this.firstBookKey,
+    required this.searchQuery,
+    required this.sites,
+    this.ignored = false,
+  });
+
+  final int collectionId;
+  final String name;
+
+  /// The kind the card is linked as (its first volume's).
+  final TrackingKind kind;
+
+  /// The card's first volume: the search for a series link plans from it.
+  final String firstBookKey;
+
+  /// What the series search box starts with (the card's name).
+  final String searchQuery;
+
+  /// Book sites that track [kind], the default site first.
+  final List<SeriesCardTrackingSite> sites;
+
+  /// The whole series is on the do-not-track list.
+  final bool ignored;
+}
+
 /// Everything the Track sheet shows for one item.
 final class BookTrackingOverview {
   const BookTrackingOverview({

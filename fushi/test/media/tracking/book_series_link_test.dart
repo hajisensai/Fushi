@@ -541,16 +541,9 @@ void main() {
       expect(await bookLink(_defaultId, 'Ajin 02'), isNull);
     });
 
-    test('per-volume links of a card to one entry become one series link, '
-        'sending nothing', () async {
-      for (final String t in <String>['Ajin 01', 'Ajin 02', 'Ajin 03']) {
-        await insertBook(t);
-      }
-      final int card = await seriesCard('Ajin', <String>[
-        'Ajin 01',
-        'Ajin 02',
-        'Ajin 03',
-      ]);
+    group('merging per-volume links into a series link', () {
+      late int card;
+
       Future<void> volumeLink(String key, int subject, int volume) =>
           repository.saveMapping(
             mediaType: TrackingMediaType.book,
@@ -564,37 +557,135 @@ void main() {
             provider: _defaultId,
             linkSource: TrackingLinkSource.auto,
           );
-      await volumeLink('Ajin 01', 700, 1);
-      await volumeLink('Ajin 02', 700, 2);
-      // Another number: an override, kept.
-      await volumeLink('Ajin 03', 700, 7);
-      for (final String key in <String>['Ajin 01', 'Ajin 02']) {
-        final MediaTrackingMappingRow row = (await bookLink(_defaultId, key))!;
-        await repository.adoptSentProgress(
-          row.id,
-          progress: row.progressOffset,
-          completed: true,
+
+      setUp(() async {
+        for (final String t in <String>['Ajin 01', 'Ajin 02', 'Ajin 03']) {
+          await insertBook(t);
+        }
+        card = await seriesCard('Ajin', <String>[
+          'Ajin 01',
+          'Ajin 02',
+          'Ajin 03',
+        ]);
+        await volumeLink('Ajin 01', 700, 1);
+        await volumeLink('Ajin 02', 700, 2);
+        // Another number: an override, kept.
+        await volumeLink('Ajin 03', 700, 7);
+        for (final String key in <String>['Ajin 01', 'Ajin 02']) {
+          final MediaTrackingMappingRow row = (await bookLink(
+            _defaultId,
+            key,
+          ))!;
+          await repository.adoptSentProgress(
+            row.id,
+            progress: row.progressOffset,
+            completed: true,
+          );
+          await markFinished(key);
+        }
+        // A site that has synced before (its first catch-up resends all).
+        await preferences.setPref(
+          TrackingProviderPrefKeys.forProvider(_defaultId).bookWatermark,
+          1,
         );
-        await markFinished(key);
-      }
-      // A site that has synced before (its first catch-up resends all).
-      await preferences.setPref(
-        TrackingProviderPrefKeys.forProvider(_defaultId).bookWatermark,
-        1,
-      );
+      });
 
-      await service.syncNow();
+      test('sync never merges them on its own; they are offered', () async {
+        await service.syncNow();
 
-      final MediaTrackingMappingRow? series = await seriesLink(
-        _defaultId,
-        card,
-      );
-      expect(series?.subjectId, 700);
-      expect(series?.sentProgress, 2);
-      expect(await bookLink(_defaultId, 'Ajin 01'), isNull);
-      expect(await bookLink(_defaultId, 'Ajin 02'), isNull);
-      expect((await bookLink(_defaultId, 'Ajin 03'))?.progressOffset, 7);
-      expect(primary.pushed, isEmpty, reason: 'the tidy-up sends nothing');
+        expect(await seriesLink(_defaultId, card), isNull);
+        expect(await bookLink(_defaultId, 'Ajin 01'), isNotNull);
+        final List<TrackingSeriesMergeCandidate> offered = await service
+            .seriesMergeCandidates();
+        expect(offered, hasLength(1));
+        expect(offered.single.collectionId, card);
+        expect(offered.single.subjectId, 700);
+        expect(offered.single.seriesLink, isNull);
+        expect(<String>[
+          for (final MediaTrackingMappingRow row in offered.single.volumeLinks)
+            row.mediaKey,
+        ], unorderedEquals(<String>['Ajin 01', 'Ajin 02']));
+      });
+
+      test('confirming merges them into one series link, sending '
+          'nothing', () async {
+        final TrackingSeriesMergeCandidate candidate =
+            (await service.seriesMergeCandidates()).single;
+
+        expect(await service.mergeSeriesLinks(candidate), isTrue);
+        await service.syncNow();
+
+        final MediaTrackingMappingRow? series = await seriesLink(
+          _defaultId,
+          card,
+        );
+        expect(series?.subjectId, 700);
+        expect(series?.sentProgress, 2);
+        expect(await bookLink(_defaultId, 'Ajin 01'), isNull);
+        expect(await bookLink(_defaultId, 'Ajin 02'), isNull);
+        expect((await bookLink(_defaultId, 'Ajin 03'))?.progressOffset, 7);
+        expect(primary.pushed, isEmpty, reason: 'the merge sends nothing');
+        expect(await service.seriesMergeCandidates(), isEmpty);
+      });
+
+      test('the merge is one transaction: a failure part way leaves every '
+          'link as it was', () async {
+        final TrackingSeriesMergeCandidate candidate =
+            (await service.seriesMergeCandidates()).single;
+        // Fail the second delete, after the series link was written and the
+        // first volume link removed.
+        await db.customStatement(
+          'CREATE TEMP TRIGGER fail_merge BEFORE DELETE ON '
+          "media_tracking_mappings WHEN old.media_key = 'Ajin 02' "
+          "BEGIN SELECT RAISE(ABORT, 'boom'); END",
+        );
+
+        await expectLater(
+          service.mergeSeriesLinks(candidate),
+          throwsA(anything),
+        );
+
+        expect(await seriesLink(_defaultId, card), isNull);
+        expect(await bookLink(_defaultId, 'Ajin 01'), isNotNull);
+        expect(await bookLink(_defaultId, 'Ajin 02'), isNotNull);
+      });
+
+      test("\"Don't merge\" is remembered for that card", () async {
+        final TrackingSeriesMergeCandidate candidate =
+            (await service.seriesMergeCandidates()).single;
+
+        await service.declineSeriesMerge(candidate);
+
+        expect(await service.seriesMergeCandidates(), isEmpty);
+        expect(await service.mergeSeriesLinks(candidate), isFalse);
+        expect(await seriesLink(_defaultId, card), isNull);
+        expect(await bookLink(_defaultId, 'Ajin 01'), isNotNull);
+      });
+
+      test('volume links next to a series link to the same entry are '
+          'offered for folding into it', () async {
+        primary.catalogue.add(_ajin);
+        await repository.saveMapping(
+          mediaType: TrackingMediaType.bookCollection,
+          mediaKey: '$card',
+          mediaTitle: 'Ajin',
+          kind: TrackingKind.manga,
+          subjectId: 700,
+          subjectName: 'Ajin',
+          progressMode: TrackingProgressMode.volume,
+          progressOffset: 0,
+          provider: _defaultId,
+        );
+
+        final TrackingSeriesMergeCandidate candidate =
+            (await service.seriesMergeCandidates()).single;
+        expect(candidate.seriesLink, isNotNull);
+        expect(await service.mergeSeriesLinks(candidate), isTrue);
+
+        expect(await bookLink(_defaultId, 'Ajin 01'), isNull);
+        expect(await bookLink(_defaultId, 'Ajin 02'), isNull);
+        expect((await seriesLink(_defaultId, card))?.sentProgress, 2);
+      });
     });
 
     test(

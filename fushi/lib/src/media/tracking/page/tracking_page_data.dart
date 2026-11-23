@@ -56,6 +56,10 @@ enum TrackingAttentionReason {
   /// A series link (`book_collection`) whose series card was deleted: it
   /// sends nothing until removed.
   seriesCardRemoved,
+
+  /// Volume links of a series card that one series link can replace
+  /// ([TrackingAttentionEntry.merge]): merged only when the user confirms.
+  seriesMerge,
 }
 
 /// Why an unlinked item was not linked by itself, from what the app
@@ -96,6 +100,7 @@ final class TrackingAttentionEntry {
     this.mapping,
     this.detail,
     this.seriesMember,
+    this.merge,
   });
 
   final TrackingAttentionReason reason;
@@ -126,6 +131,9 @@ final class TrackingAttentionEntry {
   /// [TrackingAttentionReason.seriesVolume]: the volume and why it is not
   /// counted.
   final TrackingSeriesMember? seriesMember;
+
+  /// [TrackingAttentionReason.seriesMerge]: the volume links to merge.
+  final TrackingSeriesMergeCandidate? merge;
 }
 
 /// [value] (a persisted `TrackingKind.value`) as the enum; null when unknown.
@@ -180,6 +188,8 @@ final class TrackingPageData {
     Map<int, TrackingSeriesCoverage> seriesCoverage =
         const <int, TrackingSeriesCoverage>{},
     Set<int> orphanSeriesIds = const <int>{},
+    List<TrackingSeriesMergeCandidate> seriesMerges =
+        const <TrackingSeriesMergeCandidate>[],
   }) {
     ({String title, String? raw}) names(String raw, String type, String key) {
       final String title = trackingRowTitle(raw, facts.of(type, key));
@@ -367,6 +377,15 @@ final class TrackingPageData {
               mapping,
               siteId: mapping.provider,
             ),
+        for (final TrackingSeriesMergeCandidate merge in seriesMerges)
+          TrackingAttentionEntry._(
+            reason: TrackingAttentionReason.seriesMerge,
+            title: merge.collectionName,
+            kind: trackingKindOfValue(merge.kind),
+            siteId: merge.providerId,
+            mapping: merge.seriesLink,
+            merge: merge,
+          ),
         if (connectedIds.isNotEmpty)
           for (final MediaTrackingUnlinkedItem item in snapshot.unlinked)
             ofUnlinked(item),
@@ -447,6 +466,7 @@ final class TrackingPageData {
 
   /// The series of an attention row's item or link (sign-in rows: none).
   TrackingSeriesRef? seriesOfEntry(TrackingAttentionEntry entry) {
+    if (entry.merge != null) return null;
     if (entry.seriesMember case final TrackingSeriesMember member) {
       return seriesOf(TrackingMediaType.book.value, member.bookKey);
     }
@@ -689,14 +709,20 @@ final class TrackingLinkGroup {
 
   /// The link that covers the whole series when the group has exactly one
   /// (a collection or media server season link next to its episodes'
-  /// links). A future series-level link is shown here as the group's
-  /// parent. Null otherwise.
+  /// links, or a series link of books). Null otherwise.
   final TrackingLinkedEntry? parent;
 
   /// Stable id of the group (expanded state, widget keys).
   String get key => '$siteId-$subjectId';
 
-  bool get isSingle => members.length == 1;
+  /// The volumes of a series link of books ([parent]) listed when the group
+  /// is open; empty otherwise.
+  List<TrackingSeriesMember> get seriesVolumes =>
+      parent?.series?.members ?? const <TrackingSeriesMember>[];
+
+  /// One link with nothing to open: shown as a plain link row. A series
+  /// link of books always opens onto its volumes.
+  bool get isSingle => members.length == 1 && seriesVolumes.isEmpty;
 }
 
 /// [entries] grouped by site + site entry, in the order of each group's
@@ -725,7 +751,11 @@ List<TrackingLinkGroup> groupTrackingLinks(List<TrackingLinkedEntry> entries) {
         subjectId: first.subjectId,
         subjectName: first.subjectName,
         members: members,
-        parent: members.length > 1 && series.length == 1 ? series.single : null,
+        parent:
+            series.length == 1 &&
+                (members.length > 1 || series.single.isBookSeries)
+            ? series.single
+            : null,
       ),
     );
   }

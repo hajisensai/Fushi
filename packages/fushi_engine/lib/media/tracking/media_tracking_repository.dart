@@ -773,11 +773,9 @@ class MediaTrackingRepository {
     ];
     if (entryKeys.isEmpty) return const <EpubBookRow>[];
     // Members are keyed by the book's uid (v82); older rows by its book key.
-    final List<EpubBookRow> rows =
-        await (_db.select(_db.epubBooks)..where(
-              (t) => t.uid.isIn(entryKeys) | t.bookKey.isIn(entryKeys),
-            ))
-            .get();
+    final List<EpubBookRow> rows = await (_db.select(
+      _db.epubBooks,
+    )..where((t) => t.uid.isIn(entryKeys) | t.bookKey.isIn(entryKeys))).get();
     final Map<String, EpubBookRow> byEntry = <String, EpubBookRow>{
       for (final EpubBookRow book in rows) ...<String, EpubBookRow>{
         book.bookKey: book,
@@ -2833,6 +2831,67 @@ class MediaTrackingRepository {
 
   /// Takes [progress] / [completed] as already sent for link [mappingId]
   /// (a link made before v152 whose progress the old catch-up had covered).
+  /// Replaces the volume links [volumeLinkIds] of series card
+  /// [collectionId] with its series link on [provider], in one transaction:
+  /// makes the series link when missing, removes the volume links and lets
+  /// the series link start from the highest progress sent so far
+  /// ([sentProgress] < 0 = none). Returns false and changes nothing when the
+  /// card's series link points to another site entry.
+  Future<bool> mergeBookSeriesLink({
+    required String provider,
+    required int collectionId,
+    required String collectionName,
+    required TrackingKind kind,
+    required int subjectId,
+    required String subjectName,
+    required String linkSource,
+    required List<int> volumeLinkIds,
+    required int sentProgress,
+    required bool sentCompleted,
+  }) => _db.transaction(() async {
+    final String key = collectionId.toString();
+    MediaTrackingMappingRow? series = await findMapping(
+      mediaType: TrackingMediaType.bookCollection,
+      mediaKey: key,
+      provider: provider,
+    );
+    if (series != null &&
+        (series.subjectId != subjectId || series.kind != kind.value)) {
+      return false;
+    }
+    if (series == null) {
+      await saveMapping(
+        mediaType: TrackingMediaType.bookCollection,
+        mediaKey: key,
+        mediaTitle: collectionName,
+        kind: kind,
+        subjectId: subjectId,
+        subjectName: subjectName,
+        progressMode: TrackingProgressMode.volume,
+        progressOffset: 0,
+        provider: provider,
+        linkSource: linkSource,
+      );
+      series = await findMapping(
+        mediaType: TrackingMediaType.bookCollection,
+        mediaKey: key,
+        provider: provider,
+      );
+    }
+    for (final int id in volumeLinkIds) {
+      await deleteMapping(id);
+    }
+    final int had = series?.sentProgress ?? -1;
+    if (series != null && sentProgress > had) {
+      await adoptSentProgress(
+        series.id,
+        progress: sentProgress,
+        completed: sentCompleted,
+      );
+    }
+    return true;
+  });
+
   Future<void> adoptSentProgress(
     int mappingId, {
     required int progress,

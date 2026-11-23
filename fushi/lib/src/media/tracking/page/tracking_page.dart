@@ -13,12 +13,12 @@ import 'dart:async';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
-import 'package:fushi/src/media/tracking/book_tracking_dialog.dart';
 import 'package:fushi/src/media/tracking/page/tracking_filter_bar.dart';
 import 'package:fushi/src/media/tracking/page/tracking_link_dialog.dart';
 import 'package:fushi/src/media/tracking/page/tracking_local_targets.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page_data.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page_rows.dart';
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
 import 'package:fushi/src/media/tracking/page/tracking_row_facts.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
@@ -72,6 +72,7 @@ class TrackingPage extends StatefulWidget {
     required this.database,
     required this.onOpenSettings,
     this.initialTab,
+    this.openSeriesCard = openTrackingSeriesCard,
     super.key,
   });
 
@@ -79,6 +80,10 @@ class TrackingPage extends StatefulWidget {
   final FushiDatabase database;
   final VoidCallback onOpenSettings;
   final TrackingPageTab? initialTab;
+
+  /// Opens a series card's page, where its series links and volumes are
+  /// managed (tests pass a stand-in).
+  final TrackingSeriesCardOpener openSeriesCard;
 
   @override
   State<TrackingPage> createState() => _TrackingPageState();
@@ -93,8 +98,6 @@ class _TrackingPageState extends State<TrackingPage>
   /// Link groups the user opened (collapsed by default), by group key.
   final Set<String> _expandedGroups = <String>{};
 
-  /// Series links (by link id) whose volumes the user opened.
-  final Set<int> _expandedSeries = <int>{};
   String _query = '';
   bool _syncing = false;
 
@@ -178,6 +181,8 @@ class _TrackingPageState extends State<TrackingPage>
           widget.database,
         );
         final Set<int> orphanSeries = await _service.orphanSeriesLinkIds();
+        final List<TrackingSeriesMergeCandidate> merges = await _service
+            .seriesMergeCandidates();
         final Map<int, TrackingSeriesCoverage> coverage =
             <int, TrackingSeriesCoverage>{
               for (final MediaTrackingMappingRow m in snapshot.mappings)
@@ -207,6 +212,7 @@ class _TrackingPageState extends State<TrackingPage>
               e.key: _visibleVolumes(e.value, visibility),
           },
           orphanSeriesIds: orphanSeries,
+          seriesMerges: merges,
         );
         setState(() {
           _data = data;
@@ -241,10 +247,46 @@ class _TrackingPageState extends State<TrackingPage>
           );
   }
 
-  /// The Track sheet of book [bookKey] (a volume of a series link: why it
-  /// counts or not, its number, its own link).
-  Future<void> _openTrackSheet(String bookKey) async {
-    await showBookTrackingDialog(context, service: _service, bookKey: bookKey);
+  /// The page of the series card of [link] (a series link): its series
+  /// links and the way each volume counts are managed there. [bookKey]: a
+  /// volume of the card (which library it is in); without one, the first.
+  Future<void> _openSeriesCard(
+    MediaTrackingMappingRow link, {
+    String? bookKey,
+  }) async {
+    final int? collectionId = int.tryParse(link.mediaKey);
+    final String? volume =
+        bookKey ?? _data?.seriesCoverage[link.id]?.members.firstOrNull?.bookKey;
+    if (collectionId == null || volume == null) return;
+    await widget.openSeriesCard(context, collectionId, volume);
+  }
+
+  /// "Merge" on a merge card: one series link replaces the volume links,
+  /// after the user confirms (one transaction).
+  Future<void> _mergeSeries(TrackingSeriesMergeCandidate merge) async {
+    final bool confirmed = await showFushiConfirmDialog(
+      context: context,
+      title: t.tracking_series_merge_title,
+      message: t.tracking_series_merge_message(
+        n: '${merge.volumeLinks.length}',
+        series: merge.collectionName,
+        site: _service.siteNameOf(merge.providerId),
+        entry: merge.subjectName,
+      ),
+      confirmLabel: t.tracking_series_merge_action,
+      cancelLabel: t.cancel,
+      icon: FushiIcons.link,
+    );
+    if (!confirmed || !mounted) return;
+    final bool merged = await _service.mergeSeriesLinks(merge);
+    if (!mounted) return;
+    if (!merged) _snack(t.tracking_series_merge_stale);
+    await _reload();
+  }
+
+  /// "Don't merge": the card's volume links stay; not offered again.
+  Future<void> _declineMerge(TrackingSeriesMergeCandidate merge) async {
+    await _service.declineSeriesMerge(merge);
     if (mounted) await _reload();
   }
 
@@ -409,13 +451,10 @@ class _TrackingPageState extends State<TrackingPage>
   );
 
   Future<void> _changeLink(MediaTrackingMappingRow mapping) async {
-    // A series link is changed from a volume's Track sheet (it plans the
-    // volume counting); the link dialog links single items.
+    // A series link is managed on its series card's page (how each volume
+    // counts); the link dialog links single items.
     if (mapping.mediaType == TrackingMediaType.bookCollection.value) {
-      final TrackingSeriesMember? first =
-          _data?.seriesCoverage[mapping.id]?.members.firstOrNull;
-      if (first != null) await _openTrackSheet(first.bookKey);
-      return;
+      return _openSeriesCard(mapping);
     }
     final TrackingMediaType? type = trackingMediaTypeOfValue(mapping.mediaType);
     if (type == null) return;
@@ -482,6 +521,9 @@ class _TrackingPageState extends State<TrackingPage>
   Future<void> _ignoreEntry(TrackingAttentionEntry entry) async {
     // A volume of a series link: "Don't track" leaves that volume out, not
     // the whole series.
+    if (entry.merge case final TrackingSeriesMergeCandidate merge) {
+      return _declineMerge(merge);
+    }
     if (entry.seriesMember case final TrackingSeriesMember member) {
       return _ignore(
         type: TrackingMediaType.book,
@@ -804,8 +846,15 @@ class _TrackingPageState extends State<TrackingPage>
           unawaited(_removeLink(mapping, title: entry.rawName ?? entry.title));
         }
       case TrackingAttentionReason.seriesVolume:
-        if (entry.seriesMember case final TrackingSeriesMember member) {
-          unawaited(_openTrackSheet(member.bookKey));
+        if ((entry.mapping, entry.seriesMember) case (
+          final MediaTrackingMappingRow link,
+          final TrackingSeriesMember member,
+        )) {
+          unawaited(_openSeriesCard(link, bookKey: member.bookKey));
+        }
+      case TrackingAttentionReason.seriesMerge:
+        if (entry.merge case final TrackingSeriesMergeCandidate merge) {
+          unawaited(_mergeSeries(merge));
         }
     }
   }
@@ -836,11 +885,9 @@ class _TrackingPageState extends State<TrackingPage>
     final List<_LinkedLine> lines = <_LinkedLine>[];
     void addLink(TrackingLinkGroup group, TrackingLinkedEntry member) {
       lines.add((group: group, member: member, volume: null));
-      final TrackingSeriesCoverage? series = member.series;
-      if (series == null || !_expandedSeries.contains(member.mapping.id)) {
-        return;
-      }
-      for (final TrackingSeriesMember volume in series.members) {
+      // The volumes of a series link of books, under it in its open group.
+      if (!identical(member, group.parent)) return;
+      for (final TrackingSeriesMember volume in group.seriesVolumes) {
         lines.add((group: group, member: member, volume: volume));
       }
     }
@@ -870,11 +917,11 @@ class _TrackingPageState extends State<TrackingPage>
           byPosition: member.series?.numberedByPosition ?? false,
           index: i,
           count: lines.length,
-          onTap: () => unawaited(_openTrackSheet(volume.bookKey)),
+          onTap: () => unawaited(
+            _openSeriesCard(member.mapping, bookKey: volume.bookKey),
+          ),
         );
-        return TrackingGroupMember(
-          child: group.isSingle ? row : TrackingGroupMember(child: row),
-        );
+        return TrackingGroupMember(child: TrackingGroupMember(child: row));
       }
       if (member == null) {
         final MediaTrackingMappingRow first = group.members.first.mapping;
@@ -925,7 +972,9 @@ class _TrackingPageState extends State<TrackingPage>
     final Uri? url = kind == null
         ? null
         : _service.subjectPageUrl(mapping.provider, mapping.subjectId, kind);
-    if (entry.isBookSeries) return _seriesRow(data, entry, url, index, count);
+    if (entry.isBookSeries) {
+      return _seriesRow(data, entry, url, index: index, count: count);
+    }
     return TrackingLinkedRow(
       key: ValueKey<String>('tracking-linked-${mapping.id}'),
       entry: entry,
@@ -962,26 +1011,25 @@ class _TrackingPageState extends State<TrackingPage>
     );
   }
 
-  /// A series link of books: the card's name, how many volumes it counts,
-  /// and its volumes when opened. "Don't track" ignores the whole series; a
-  /// series link is changed from a volume's Track sheet.
+  /// A series link of books, as the first link of its group (the group
+  /// row lists its volumes): tap opens the series card, where the link and
+  /// the way each volume counts are managed. "Don't track" ignores the whole
+  /// series.
   Widget _seriesRow(
     TrackingPageData data,
     TrackingLinkedEntry entry,
-    Uri? url,
-    int index,
-    int count,
-  ) {
+    Uri? url, {
+    required int index,
+    required int count,
+  }) {
     final MediaTrackingMappingRow mapping = entry.mapping;
     final bool paused = data.isPaused(mapping);
-    final TrackingSeriesCoverage? series = entry.series;
-    final bool hasVolumes = series != null && series.members.isNotEmpty;
     return TrackingLinkedRow(
       key: ValueKey<String>('tracking-linked-${mapping.id}'),
       entry: entry,
       index: index,
       count: count,
-      inGroup: false,
+      inGroup: true,
       siteName: data.siteName(mapping.provider),
       failed: data.failedMappingIds.contains(mapping.id),
       onTap: () => unawaited(_changeLink(mapping)),
@@ -999,14 +1047,6 @@ class _TrackingPageState extends State<TrackingPage>
                 mapping.mediaTitle,
               ),
             )
-          : null,
-      seriesExpanded: _expandedSeries.contains(mapping.id),
-      onToggleSeries: hasVolumes
-          ? () => setState(() {
-              if (!_expandedSeries.remove(mapping.id)) {
-                _expandedSeries.add(mapping.id);
-              }
-            })
           : null,
     );
   }
