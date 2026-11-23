@@ -162,8 +162,8 @@ void main() {
         reason: '只是首次定位不走过渡，翻页动画偏好照旧生效',
       );
       expect(
-        _doc(
-          animation: MangaPageAnimation.none,
+        _rootAnimCss(
+          _doc(animation: MangaPageAnimation.none),
         ).contains('transition:transform '),
         isFalse,
       );
