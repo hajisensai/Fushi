@@ -89,16 +89,25 @@ class ImportInbox {
   /// 里的旧扁平布局目录 `videos`（`AppPaths.fushiOwnedDocumentsEntries`）是**同一个**目录。
   /// 收件箱子目录名与白名单大小写无关地互不相交，由测试钉死。
   ///
-  /// 没有 `Games`（拍板台 kmfCiXlIU_ 问过）：iOS 上游戏模块只是串流接收端
-  /// （`GamesModuleForm.streamClient`，游戏装在配对的 Windows 主机上、远程启动后串流），
-  /// 本机没有任何游戏导入管线，游戏来源也只认 Windows exe；建一个 `Games` 文件夹只会
-  /// 让用户把文件放进一个永远导入不了的地方。音乐也不单列：视频页的 `Video` 收纯音频并
-  /// 交给音乐库（见 [acceptsFile]）。
+  /// 游戏不在这里：iOS 上游戏模块只是串流接收端（`GamesModuleForm.streamClient`，游戏
+  /// 装在配对的 Windows 主机上、远程启动后串流），本机没有任何游戏导入管线，`Games` 只是
+  /// [reservedFolderNames] 里的预留目录，不映射到任何媒体种类。音乐也不单列：视频页的
+  /// `Video` 收纯音频并交给音乐库（见 [acceptsFile]）。
   static const Map<String, String> kindFolderNames = <String, String>{
     'book': 'Books',
     'video': 'Video',
     'manga': 'Manga',
   };
+
+  /// 只建不读的预留子目录（拍板台 kmfCiXlIU_-scope 拍板 c：目录结构与五大模块对齐）。
+  ///
+  /// `Games` 目前**没有任何功能消费**：iOS 本机没有游戏导入管线（见 [kindFolderNames]），
+  /// 所以它不进 [kindFolderNames]，[pendingEntries] / [takeBatch] / [pendingRootFiles]
+  /// 都不会去读它，用户放进去的文件原样留着、不会被收走或删掉。以后 iOS 有了本机游戏
+  /// 导入，把它挪进 [kindFolderNames] 即可接上收件箱管线。
+  ///
+  /// 与 [kindFolderNames] 同样不翻译、与书库白名单大小写无关地互不相交（测试钉死）。
+  static const List<String> reservedFolderNames = <String>['Games'];
 
   /// [mediaKind] 是否要先把文件移进数据根（`inbox_imports/<域>/<批次>/`）再扫描。
   ///
@@ -154,9 +163,15 @@ class ImportInbox {
   /// [mediaKind] 的收件箱子目录名；不支持的种类返回 null。
   static String? folderNameFor(String mediaKind) => kindFolderNames[mediaKind];
 
-  /// 在 [inbox] 下建好所有分类子目录（已存在的不动）。
+  /// [inbox] 下由 Fushi 建的全部子目录名：分类子目录 + 预留子目录。
+  static List<String> get allFolderNames => <String>[
+    ...kindFolderNames.values,
+    ...reservedFolderNames,
+  ];
+
+  /// 在 [inbox] 下建好所有分类子目录与预留子目录（已存在的不动）。
   static Future<void> ensureKindFolders(Directory inbox) async {
-    for (final String name in kindFolderNames.values) {
+    for (final String name in allFolderNames) {
       await Directory(p.join(inbox.path, name)).create(recursive: true);
     }
   }

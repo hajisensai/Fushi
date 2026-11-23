@@ -5469,7 +5469,7 @@ class AppModel
         failure,
       );
     }
-    // iOS 收件箱的分类子目录（「文件」App 里的 Books / Video / Manga）开机即建好，
+    // iOS 收件箱的子目录（「文件」App 里的 Books / Video / Manga 与预留的 Games）开机即建好，
     // 用户第一次打开「我的 iPhone › Fushi」就知道往哪拖。best-effort：建不出来只是
     // 少了引导，导入时会再建。
     if (ImportInbox.isSupported) {
