@@ -14,8 +14,7 @@ import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subti
     show downloadAudiobookshelfSubtitle;
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/utils/own_route_exit.dart';
-import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
-    show ImportProgressCard;
+import 'package:fushi/src/media/import/import_progress_card.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_subtitle_dialog.dart'
     show chooseAudiobookshelfServerSubtitleFile, orderedServerSubtitles;
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart'
