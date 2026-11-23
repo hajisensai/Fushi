@@ -43,7 +43,7 @@
 | `appearance.fonts` | 字体 | 阅读器命名空间里的 `ReaderSettings.fontPersistenceKeys` | 同上 |
 | `appearance.reader_style` | 阅读样式 | 阅读器命名空间 `src:reader_fushi:*`，除字体与应用级键 | 同上 |
 | `appearance.subtitles` | 字幕 / 悬浮歌词样式 | `WorkProfileScope.videoSubtitleStylePrefKeys`、`floating_lyric_*`（窗口位置除外） | 同上 |
-| `dictionary` | 词典启用与顺序 | 整个 `dictionary_meta`、`remote_dictionary_meta` category | 同上 |
+| `dictionary` | 词典启用与顺序（缺行逐行继承，见 §2.2） | 整个 `dictionary_meta`、`remote_dictionary_meta` category | 同上 |
 | `input.shortcuts` | 快捷键等应用级输入映射 | `WorkProfileScope.appLevelReaderPrefKeys` | 媒体类型 / 语言 |
 | `srs.library` | 复习库归属（合成项） | `combo/srs_library` = `shared` \| `own` | 作品 / 媒体类型 / 语言 |
 | `other` | 其他设置（兜底） | 未被认领、又非设备本地的键 | 媒体类型 / 语言 |
@@ -60,6 +60,10 @@
 - 只有一个**默认组合**，所有叶子都有值（合成叶子缺值时按树上的默认补齐）。
 - 其他组合只记录**单独设置的叶子**，每个被拆的叶子带它那组键的完整值；叶子内缺的键 = 在这一层
   「未设置」（代码默认值），与今天 `applyProfile` 删掉「快照里没有的键」同义。
+  例外：一行一个独立对象的叶子（`absentKeysInherit`，目前只有 `dictionary`）缺的行逐行继承下一层——
+  Profile 只拥有词典「怎么排、开不开」，不拥有「装了哪些」（BUG-1994，`applyProfile` 对快照里没有的
+  词典行保持当前值）。迁移比较也只看快照与默认组合都有的行，否则每个在新词典导入前建的 Profile 都会
+  被误判成「单独设置了词典」。
 - 生效顺序：**作品 → 媒体类型 → 语言 → 默认**。每个叶子各自往下找，取第一个单独设置了它、且该
   叶子允许在那层拆的层；越层拆分被忽略并报告（`ResolvedSettings.ignoredSplits`）。
 - 编辑：改一个继承中的值自动拆出所属叶子（复制当前生效值再改）；「恢复继承」撤销拆分；可以对

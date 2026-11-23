@@ -3,7 +3,8 @@
 /// * 默认组合：所有叶子都有值（`Map<SettingKey, String>` 全量）。
 /// * 其他组合（[ComboDocument]）：只记录**单独设置的叶子**，每个被拆的叶子带它那组键的完整
 ///   值；不在其中的键 = 该叶子在这一层「未设置」，按代码默认值（与今天 `applyProfile` 对
-///   「快照里没有的键」删掉活偏好的语义一致）。
+///   「快照里没有的键」删掉活偏好的语义一致）。例外是 [SettingsNode.absentKeysInherit] 的
+///   叶子（一行一个独立对象，如词典）：缺的键逐键继承下一层。
 /// * 解析（[resolveCombos]）：每个叶子按 作品 → 媒体类型 → 语言 → 默认 各自往下找，取第一个
 ///   单独设置了它、且该叶子允许在那层拆分的层。
 ///
@@ -212,9 +213,9 @@ ResolvedSettings resolveCombos({
   final List<IgnoredSplit> ignored = <IgnoredSplit>[];
 
   for (final SettingsNode leaf in tree.leaves) {
-    ComboSource source = const ComboSource.defaults();
-    Map<SettingKey, String>? leafValues = defaultLeaves[leaf.id];
-    bool resolved = false;
+    // 生效的拆分，按优先级从高到低。
+    final List<(ComboLayer, Map<SettingKey, String>)> applied =
+        <(ComboLayer, Map<SettingKey, String>)>[];
     for (final ComboScope scope in ComboScope.bindingLayers) {
       final ComboLayer? layer = byScope[scope];
       if (layer == null) continue;
@@ -226,13 +227,27 @@ ResolvedSettings resolveCombos({
         );
         continue;
       }
-      if (resolved) continue;
-      resolved = true;
-      source = ComboSource(scope, layer.comboRef);
-      leafValues = split;
+      applied.add((layer, split));
     }
-    sources[leaf.id] = source;
-    if (leafValues == null) continue;
+    final Map<SettingKey, String> leafValues;
+    if (applied.isEmpty) {
+      sources[leaf.id] = const ComboSource.defaults();
+      leafValues = defaultLeaves[leaf.id] ?? const <SettingKey, String>{};
+    } else {
+      final ComboLayer top = applied.first.$1;
+      sources[leaf.id] = ComboSource(top.scope, top.comboRef);
+      if (leaf.absentKeysInherit) {
+        // 逐键继承：从默认往上叠，高层的行盖低层的行。
+        leafValues = <SettingKey, String>{
+          ...?defaultLeaves[leaf.id],
+          for (final (ComboLayer, Map<SettingKey, String>) a
+              in applied.reversed)
+            ...a.$2,
+        };
+      } else {
+        leafValues = applied.first.$2;
+      }
+    }
     for (final MapEntry<SettingKey, String> e in leafValues.entries) {
       // 组合里只该有归这个叶子的键；混进来的别家键（坏数据）不让它越界覆盖别的叶子。
       if (tree.leafOf(e.key) == leaf.id) values[e.key] = e.value;
@@ -331,8 +346,9 @@ ComboDocument writeSetting({
 /// 迁移用：把一个存量 Profile 的全量快照 [snapshot] 化成「相对默认组合 [defaults] 的差异」。
 ///
 /// 比较以叶子为单位：叶子那组键（含「快照里没有」= 未设置）与默认组合完全相同就继承，否则
-/// 整个叶子拆出来、带快照里的完整值。合成节点（`diffable: false`）不参与比较，由各自的迁移
-/// 规则决定要不要拆。设备本地键两边都丢弃。
+/// 整个叶子拆出来、带快照里的完整值。[SettingsNode.absentKeysInherit] 的叶子只比较快照与
+/// 默认组合都有的行（快照缺行 = 沿用，默认组合缺行 = 对象已不存在，都不构成差异）。合成
+/// 节点（`diffable: false`）不参与比较，由各自的迁移规则决定要不要拆。设备本地键两边都丢弃。
 ComboDocument diffAgainstDefaults({
   required SettingsTree tree,
   required Map<SettingKey, String> defaults,
@@ -348,9 +364,20 @@ ComboDocument diffAgainstDefaults({
         base[leaf.id] ?? const <SettingKey, String>{};
     final Map<SettingKey, String> b =
         mine[leaf.id] ?? const <SettingKey, String>{};
-    if (!_sameValues(a, b)) splits[leaf.id] = b;
+    final bool differs = leaf.absentKeysInherit
+        ? _sharedRowsDiffer(a, b)
+        : !_sameValues(a, b);
+    if (differs) splits[leaf.id] = b;
   }
   return ComboDocument(splits);
+}
+
+bool _sharedRowsDiffer(Map<SettingKey, String> a, Map<SettingKey, String> b) {
+  for (final MapEntry<SettingKey, String> e in b.entries) {
+    final String? base = a[e.key];
+    if (base != null && base != e.value) return true;
+  }
+  return false;
 }
 
 bool _sameValues(Map<SettingKey, String> a, Map<SettingKey, String> b) {

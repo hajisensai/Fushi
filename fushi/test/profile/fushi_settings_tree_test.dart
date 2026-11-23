@@ -228,6 +228,15 @@ void main() {
         isEmpty,
       );
 
+      // 建 A 之后才导入的词典：A 的快照里没有这一行。
+      await db.upsertDictionaryMeta(
+        const DictionaryMetadataCompanion(
+          name: Value('Daijirin'),
+          formatKey: Value('yomitan'),
+          order: Value(1),
+          type: Value('term'),
+        ),
+      );
       await db.setPref('app_theme_key', 'red');
       await anki.saveSettings(
         const AnkiSettings(selectedDeckName: 'Audio cards', tags: 'fushi'),
@@ -249,6 +258,17 @@ void main() {
         FushiComboNode.appearanceTheme,
         FushiComboNode.miningDeck,
       });
+      // 反过来以较新的 B 为默认：A 缺 Daijirin 那一行 = 沿用，不能把 A 误判成「单独
+      // 设置了词典」（BUG-1994：Profile 不拥有「装了哪些」）。
+      expect(tree.node(FushiComboNode.dictionary).absentKeysInherit, isTrue);
+      expect(
+        diffAgainstDefaults(
+          tree: tree,
+          defaults: snapB,
+          snapshot: snapA,
+        ).splitLeafIds,
+        <String>{FushiComboNode.appearanceTheme, FushiComboNode.miningDeck},
+      );
       final ResolvedSettings resolved = resolveCombos(
         tree: tree,
         defaults: snapA,

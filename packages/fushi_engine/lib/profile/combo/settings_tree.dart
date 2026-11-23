@@ -119,7 +119,8 @@ class SettingsNode {
     : matchers = const <SettingKeyMatcher>[],
       splittableAt = const <ComboScope>{},
       syntheticDefaults = const <String, String>{},
-      diffable = false;
+      diffable = false,
+      absentKeysInherit = false;
 
   const SettingsNode.leaf({
     required this.id,
@@ -131,6 +132,7 @@ class SettingsNode {
     },
     this.syntheticDefaults = const <String, String>{},
     this.diffable = true,
+    this.absentKeysInherit = false,
   }) : children = const <SettingsNode>[];
 
   final String id;
@@ -155,6 +157,17 @@ class SettingsNode {
   /// 从存量快照迁移成差异时是否参与比较。合成节点的拆分由各自的迁移规则决定（复习库按
   /// 「哪些 Profile 有复习数据」），不由快照比较决定。
   final bool diffable;
+
+  /// 被拆的叶子里**缺的键**怎么算：
+  ///
+  /// * `false`（默认）：叶子是原子的，缺 = 在这一层「未设置」（代码默认值）。对应今天
+  ///   `applyProfile` 对 pref 的 prune 语义，也是笔记类型 + 字段映射这类耦合键必须的语义。
+  /// * `true`：缺的键逐键继承下一层（最终落到默认组合）。用于「一行一个独立对象」的叶子，
+  ///   例如词典启用 / 顺序（一行一本词典）：Profile 只拥有「怎么排、开不开」，不拥有「装了
+  ///   哪些」（BUG-1994），快照里没有某本词典的行 = 那本沿用当前值，而不是「没有词典」。
+  ///   迁移比较时也只看快照里有的、默认组合也有的行（默认组合没有的行 = 已不存在的对象，
+  ///   不构成差异），否则每个在新词典导入前建的 Profile 都会被误判成「单独设置了词典」。
+  final bool absentKeysInherit;
 
   bool get isLeaf => children.isEmpty;
 }

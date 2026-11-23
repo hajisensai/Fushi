@@ -533,4 +533,95 @@ void main() {
       expect(r.values, expected);
     });
   });
+
+  group('absentKeysInherit (one row per object, e.g. dictionaries)', () {
+    const SettingKey dictA = SettingKey('dictionary_meta', 'A');
+    const SettingKey dictB = SettingKey('dictionary_meta', 'B');
+    const SettingKey dictC = SettingKey('dictionary_meta', 'C');
+    final SettingsTree rowTree = SettingsTree(
+      roots: const <SettingsNode>[
+        SettingsNode.leaf(
+          id: 'dictionary',
+          absentKeysInherit: true,
+          matchers: <SettingKeyMatcher>[
+            SettingKeyMatcher.category('dictionary_meta'),
+          ],
+        ),
+        SettingsNode.leaf(id: 'other'),
+      ],
+      fallbackLeafId: 'other',
+    );
+    final Map<SettingKey, String> rowDefaults = <SettingKey, String>{
+      dictA: 'on:0',
+      dictB: 'on:1',
+      dictC: 'on:2',
+    };
+
+    test('rows missing from a split inherit per row from lower layers; '
+        'source is the highest split layer', () {
+      final ResolvedSettings r = resolveCombos(
+        tree: rowTree,
+        defaults: rowDefaults,
+        layers: <ComboLayer>[
+          ComboLayer(
+            scope: ComboScope.language,
+            comboRef: 'ja',
+            document: ComboDocument(<String, Map<SettingKey, String>>{
+              'dictionary': <SettingKey, String>{
+                dictA: 'off:0',
+                dictB: 'off:1',
+              },
+            }),
+          ),
+          ComboLayer(
+            scope: ComboScope.mediaType,
+            comboRef: 'video',
+            document: ComboDocument(<String, Map<SettingKey, String>>{
+              'dictionary': <SettingKey, String>{dictA: 'on:5'},
+            }),
+          ),
+        ],
+      );
+      expect(r.values, <SettingKey, String>{
+        dictA: 'on:5',
+        dictB: 'off:1',
+        dictC: 'on:2',
+      });
+      expect(
+        r.sourceOf('dictionary'),
+        const ComboSource(ComboScope.mediaType, 'video'),
+      );
+    });
+
+    test('diff ignores rows the snapshot lacks (installed later) and rows '
+        'the defaults lack (uninstalled); only changed shared rows split', () {
+      const SettingKey stale = SettingKey('dictionary_meta', 'Gone');
+      final ComboDocument same = diffAgainstDefaults(
+        tree: rowTree,
+        defaults: rowDefaults,
+        snapshot: <SettingKey, String>{dictA: 'on:0', stale: 'on:9'},
+      );
+      expect(same.splitLeafIds, isEmpty);
+
+      final Map<SettingKey, String> changedSnapshot = <SettingKey, String>{
+        dictA: 'off:0',
+        stale: 'on:9',
+      };
+      final ComboDocument changed = diffAgainstDefaults(
+        tree: rowTree,
+        defaults: rowDefaults,
+        snapshot: changedSnapshot,
+      );
+      expect(changed.splits['dictionary'], changedSnapshot);
+      final ResolvedSettings r = resolveCombos(
+        tree: rowTree,
+        defaults: rowDefaults,
+        layers: <ComboLayer>[
+          ComboLayer(scope: ComboScope.work, comboRef: 'w', document: changed),
+        ],
+      );
+      expect(r.valueOf(dictA), 'off:0');
+      expect(r.valueOf(dictB), 'on:1');
+    });
+  });
 }

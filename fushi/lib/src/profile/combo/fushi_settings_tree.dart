@@ -209,8 +209,11 @@ SettingsTree _buildFushiSettingsTree() {
           ),
         ],
       ),
+      // 一行一本词典：Profile 只拥有「怎么排、开不开」，不拥有「装了哪些」（BUG-1994，
+      // `applyProfile` 对快照里没有的词典行保持当前值）——缺行逐行继承。
       const SettingsNode.leaf(
         id: FushiComboNode.dictionary,
+        absentKeysInherit: true,
         matchers: <SettingKeyMatcher>[
           SettingKeyMatcher.category(ProfileKeys.categoryDictionaryMeta),
           SettingKeyMatcher.category(ProfileKeys.categoryRemoteDictionaryMeta),
