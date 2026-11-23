@@ -241,11 +241,64 @@ void main() {
       expect(injection, contains('t.popup_advanced_mining_open_in_app'));
     });
 
+    test(
+      'HBK-AUDIT-005：带了读音就不退到「只认表记」（行为测试在 popup_asset_behavior_test.js）',
+      () {
+        final String popup = File(
+          'assets/popup/popup.js',
+        ).readAsStringSync().replaceAll(RegExp(r'\s+'), '');
+        final int start = popup.indexOf(
+          'window.fushiPopupEntryDomIndexFor=function(',
+        );
+        expect(start, greaterThan(0));
+        final int end = popup.indexOf(
+          'window.fushiPopupBuildMinePayloadFor=',
+          start,
+        );
+        expect(end, greaterThan(start));
+        final String body = popup.substring(start, end);
+        expect(
+          body,
+          contains(
+            'if(!wantReading)tiers.push((e)=>e.expression===wantExpression);',
+          ),
+        );
+        expect(
+          body,
+          isNot(
+            contains('===wantReading,(e)=>e.expression===wantExpression,]'),
+          ),
+        );
+      },
+    );
+
+    test('HBK-AUDIT-003：查词代只从一处铸出，铸代即撤销等着的转交', () {
+      // 手动查词 / 清空 / 加载更多都经 _mintSearchGeneration；不许再有绕过它的自增，
+      // 否则旧转交会一直挂着，等在途回包把旧 DOM 下标套到新结果上。
+      expect(
+        home,
+        contains(
+          'int_mintSearchGeneration(){_advancedMiningGate.revoke();return++_searchGeneration;}',
+        ),
+      );
+      expect('++_searchGeneration'.allMatches(home).length, 1);
+      expect(home, isNot(contains('_searchGeneration++')));
+      expect(
+        home,
+        contains('finalintsearchGeneration=_mintSearchGeneration();'),
+      );
+    });
+
     test('主窗查词页画完这次结果后按词条身份定位并打开对话框', () {
-      expect(home, contains('_pendingAdvancedMining=request.advancedMining;'));
+      expect(
+        home,
+        contains(
+          '_advancedMiningGate.arm(request.advancedMining,generation:_searchGeneration,);',
+        ),
+      );
       expect(home, contains('onRendered:_onResultRendered,'));
       expect(home, contains('!webView.hasRenderedResult(result)'));
-      expect(home, contains('webView.entryDomIndexFor('));
+      expect(home, contains('target.view.entryDomIndexFor('));
       expect(
         home,
         contains(
