@@ -108,6 +108,15 @@ bool webVideoSubtitleGenerationOffered({
   required bool miningHost,
 }) => asrSupported && !windowed && !miningHost;
 
+/// 内置网页播放器页里站点换了视频 key（仍是这本书那一集）后，按新 key 重挂的生成字幕要不要
+/// 选中：换 key 前正选着它（[generatedWasActive]，用户亲手选的也算）就接着选；否则只在用户
+/// 这次会话没亲手选过轨（[userChosen]）、没关字幕（[subtitlesOff]）时替他选。
+bool webVideoGeneratedTrackReselectOnVideoChange({
+  required bool generatedWasActive,
+  required bool userChosen,
+  required bool subtitlesOff,
+}) => generatedWasActive || (!userChosen && !subtitlesOff);
+
 /// 点「生成字幕」时按页面最新播放态（[state]）先判的、客观拉不出音频的原因：页面上还没有
 /// 视频、主视频是 EME 加密流。能不能拿到媒体地址要问页面，开拉时再判。null = 可以开拉。
 WebVideoSubtitleMediaBlock? webVideoSubtitleGenerationBlock(

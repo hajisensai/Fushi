@@ -1056,11 +1056,18 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     final bool fullscreenChanged = state.fullscreen != _fullscreen;
     _state = state;
     if (videoChanged) {
+      final bool generatedWasActive =
+          _trackSel.activeKey != null &&
+          _trackSel.activeKey == webVideoGeneratedTrackKey(_trackSel.videoKey);
       _dropSeekTarget(); // 上一个视频的跳转目标对这一个没有意义
       _trackSel.beginVideo(state.videoKey);
       _reselectTrack();
       _installGeneratedTrack(
-        select: !_trackUserChosen && !_trackSel.subtitlesOff,
+        select: webVideoGeneratedTrackReselectOnVideoChange(
+          generatedWasActive: generatedWasActive,
+          userChosen: _trackUserChosen,
+          subtitlesOff: _trackSel.subtitlesOff,
+        ),
       );
     }
     final int? pos = state.positionMs;

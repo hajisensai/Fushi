@@ -101,6 +101,47 @@ void main() {
       expect(src, contains('onPressed: () => unawaited(_generateSubtitle())'));
       expect(src, contains('showVideoSubtitleGenerateSheet('));
       expect(src, contains('unawaited(_restoreGeneratedSubtitle(row))'));
+      expect(src, contains('webVideoGeneratedTrackReselectOnVideoChange('));
+    });
+  });
+
+  group('webVideoGeneratedTrackReselectOnVideoChange', () {
+    test('换 key 前选着生成字幕（哪怕是用户亲手选的）→ 接着选', () {
+      expect(
+        webVideoGeneratedTrackReselectOnVideoChange(
+          generatedWasActive: true,
+          userChosen: true,
+          subtitlesOff: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('没选着：用户没亲手选过、没关字幕才替他选', () {
+      expect(
+        webVideoGeneratedTrackReselectOnVideoChange(
+          generatedWasActive: false,
+          userChosen: false,
+          subtitlesOff: false,
+        ),
+        isTrue,
+      );
+      expect(
+        webVideoGeneratedTrackReselectOnVideoChange(
+          generatedWasActive: false,
+          userChosen: true,
+          subtitlesOff: false,
+        ),
+        isFalse,
+      );
+      expect(
+        webVideoGeneratedTrackReselectOnVideoChange(
+          generatedWasActive: false,
+          userChosen: false,
+          subtitlesOff: true,
+        ),
+        isFalse,
+      );
     });
   });
 
