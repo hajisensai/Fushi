@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:drift/drift.dart';
 
+import '../utils/fushi_debug_print.dart';
+
 /// 后台写库工作被「换库 / 关库」取消（BUG：反馈 hfLuOcL7n0 备份恢复期间媒体库后台任务
 /// 仍在写）。
 ///
@@ -39,6 +41,52 @@ final class DatabaseWorkToken {
 
   /// 开这份工作的库是否已开始关闭。
   bool get isCancelled => _owner.isClosing;
+
+  Completer<void>? _cancelled;
+  void Function()? _unlinkCancelled;
+  bool _ended = false;
+
+  /// 库开始关闭时完成的信号（已取消就是已完成的 future）。这份工作结束
+  /// （[DatabaseBackgroundWork.run] 返回）时自动注销，不在库上留回调；工作结束后才第一次
+  /// 取的信号永不完成。
+  ///
+  /// 只适合「一份工作里挂一两次」的等待。一份工作里会反复挂上去的东西（逐个请求的
+  /// `http` 中止触发器、逐个子进程）不要挂在它上面：挂上的回调要等工作结束才随信号一起
+  /// 释放，长工作里会无界累积——那种场合用 [onCancelled] 按次登记、操作结束即注销
+  /// （`createAppHttpIoClient` 就是这么做的）。
+  Future<void> get cancelled {
+    final Completer<void>? existing = _cancelled;
+    if (existing != null) return existing.future;
+    final Completer<void> created = _cancelled = Completer<void>();
+    if (isCancelled) {
+      created.complete();
+    } else if (!_ended) {
+      _unlinkCancelled = onCancelled(() {
+        if (!created.isCompleted) created.complete();
+      });
+    }
+    return created.future;
+  }
+
+  void _end() {
+    _ended = true;
+    _unlinkCancelled?.call();
+    _unlinkCancelled = null;
+  }
+
+  /// 把一个**不经数据库、能被中途杀掉**的外部操作（FFmpeg 子进程、FFmpegKit 会话……）
+  /// 绑到当前 Zone 的后台工作上：库开始关时调 [abort]（已在关就当场调）。返回注销函数，
+  /// 操作结束后必须调用。当前不在任何后台工作里时什么也不做（返回空操作）。
+  ///
+  /// 这是「换库要等的东西必须能被打断」的统一入口：数据根迁移 / 备份恢复关库时，已登记
+  /// 工作里在跑的子进程被杀掉、文件句柄随之释放，关库不必等它自然跑完。
+  static void Function() abortOnCancel(void Function() abort) {
+    final DatabaseWorkToken? token = current;
+    if (token == null) return _noopUnlink;
+    return token.onCancelled(abort);
+  }
+
+  static void _noopUnlink() {}
 
   /// 库开始关闭时调 [callback]（库已在关闭就当场调）。返回注销函数。
   ///
@@ -87,6 +135,18 @@ final class _CancelListener {
 
 const Symbol _databaseWorkZoneKey = #fushiDatabaseWorkToken;
 
+/// 一份在跑的后台工作：标签、令牌、它的续体排在哪个 Zone 里。
+final class _InFlightWork {
+  _InFlightWork(this.label, this.token, this.zone);
+
+  final String label;
+  final DatabaseWorkToken token;
+
+  /// 工作体所在的 Zone（[DatabaseBackgroundWork.run] 为它开的那个）。工作里每个异步
+  /// 续体都经它（及其父 Zone）排进微任务队列。
+  final Zone zone;
+}
+
 /// 一个库实例上的后台写库工作登记表：「换库」的生命周期边界。
 ///
 /// - [run]：后台工作（扫描、刮削、哈希升级、封面回填、响度测量……）一律经它跑。库已在
@@ -97,12 +157,75 @@ const Symbol _databaseWorkZoneKey = #fushiDatabaseWorkToken;
 ///   导入、数据根迁移、退出）都不会让后台工作打在已关闭的连接上，也不会让旧库读出的
 ///   行身份在换上新库后写进去。
 final class DatabaseBackgroundWork {
+  /// 测试装配点（生产恒为 false）：关库等后台工作前，先放掉「续体排在一个不再推进的
+  /// Zone 里」的工作，不再等它。
+  ///
+  /// 组件测试（`testWidgets`）的用例体跑在 FakeAsync Zone 里：用例体里开的后台工作，
+  /// 真实 I/O 完成后的续体排进那个 Zone 的假微任务队列，用例体一结束就再没人推——工作
+  /// 永远不会退出，tearDown 里的 `db.close()` 就永远等下去。这和「工作慢」是两回事：
+  /// 那份工作已经不可能再跑任何一行，等它没有意义；它也不可能再发 SQL（就算将来被推，
+  /// 库已封口，一样被拦成取消）。
+  ///
+  /// 判据是确定性的、不靠计时：给每份在跑工作的 Zone 排一个探针微任务，再在关库方
+  /// 自己的 Zone 里排一个；能推进的 Zone 与关库方同在根微任务队列（或同一个假队列）里，
+  /// 按 FIFO 探针一定先跑；关库方的微任务跑到时探针还没跑的，就是排在一个没人推的队列
+  /// 里。生产里所有 Zone 都把微任务交给根队列，这条判据永远不会命中——但它只服务测试
+  /// 宿主，所以仍由开关把守，生产语义（关库等每一份登记工作真正退出）不变。
+  ///
+  /// app 测试套件在 `test/flutter_test_config.dart` 里统一打开，一次覆盖所有登记写手，
+  /// 不必给每个写手各配一个「测试里别起」的开关。
+  static bool debugReleaseWorkInStalledZones = false;
+
   bool _closing = false;
-  final Map<Future<void>, String> _inFlight = <Future<void>, String>{};
+  bool _sealed = false;
+  bool _reportedUnregisteredWriter = false;
+  final Map<Future<void>, _InFlightWork> _inFlight =
+      <Future<void>, _InFlightWork>{};
   final Set<_CancelListener> _cancelListeners = <_CancelListener>{};
 
   /// 库是否已开始关闭（关闭后不可逆：一个库实例只关一次）。
   bool get isClosing => _closing;
+
+  /// 库是否已封口：封口后发给本库实例的**任何** SQL（登记过的工作、没登记的写手、关库后
+  /// 才醒来的异步续体）都被 [DatabaseWorkInterceptor] 拦下，抛
+  /// [DatabaseWorkCancelledException]。
+  bool get isSealed => _sealed;
+
+  /// 封口（`FushiDatabase.close()` 第一步调用；幂等，同时开始关闭）。
+  ///
+  /// 封口是「换库不撞已关连接」的结构保证，不靠逐个写手记得登记：没经 [run] 登记的写手
+  /// 关库时不会被等，但它下一条 SQL 也发不进来——拿到的是可识别的取消，而不是 drift 的
+  /// 「connection was closed」；事务里被拦下的那一条让整个事务回滚，不留半截写入。
+  /// 关库方在封口前就该让「必须落库」的收尾（下载流水线 drain、词典写入 drain）写完。
+  ///
+  /// 和 [quiesce] 一样不能在本库自己的后台工作里调用（抛 [StateError]，库保持原状）。
+  void seal() {
+    _throwIfCalledFromOwnWork('seal');
+    _sealed = true;
+    _beginClosing();
+  }
+
+  void _throwIfCalledFromOwnWork(String operation) {
+    final DatabaseWorkToken? caller = DatabaseWorkToken.current;
+    if (caller != null && identical(caller._owner, this)) {
+      throw StateError(
+        '$operation() called from inside background work "${caller.label}" '
+        'of the same database: it would wait for itself forever',
+      );
+    }
+  }
+
+  /// 封口后第一次被没登记的写手撞上时留一条诊断（带调用栈），便于把漏登记的写手找出来
+  /// 接进 [run]；之后不再重复打印。
+  void _noteUnregisteredWriterAfterSeal() {
+    if (_reportedUnregisteredWriter) return;
+    _reportedUnregisteredWriter = true;
+    fushiDebugPrint(
+      '[fushi-db] SQL from a writer not registered via runBackgroundWork '
+      'reached a sealed (closing) database; rejected.\n'
+      '${StackTrace.current}',
+    );
+  }
 
   /// 尚未触发、也未注销的取消回调数（诊断 / 测试用：正常运行时应随工作结束归零）。
   int get pendingCancelListenerCount => _cancelListeners.length;
@@ -132,12 +255,18 @@ final class DatabaseBackgroundWork {
   }
 
   /// 在跑的工作标签（诊断 / 测试用）。
-  List<String> get inFlightLabels => _inFlight.values.toList(growable: false);
+  List<String> get inFlightLabels => <String>[
+    for (final _InFlightWork work in _inFlight.values) work.label,
+  ];
 
   /// 在一个带取消令牌的 Zone 里跑 [body]，登记到关库要等的集合里。
   ///
   /// 库已开始关闭 → 抛 [DatabaseWorkCancelledException]，[body] 不执行。
-  /// [body] 自己抛的异常原样传给调用方（含取消）。
+  /// [body] 自己抛的异常原样传给调用方（含取消）——**库开始关之后**才抛出的异常除外：
+  /// 那时工作里被中断的网络请求（`RequestAbortedException`）、被杀的子进程留下的读写
+  /// 错误等都是关库造成的，一律归一成 [DatabaseWorkCancelledException]。调用方只认这一
+  /// 种取消就能分清「被换库打断」与「真失败」，不会把中断当失败记下（计划标 failed、
+  /// 探针记「已检查」、批处理当单条失败接着跑）。
   Future<T> run<T>(
     String label,
     Future<T> Function(DatabaseWorkToken token) body,
@@ -146,16 +275,32 @@ final class DatabaseBackgroundWork {
       return Future<T>.error(DatabaseWorkCancelledException(label));
     }
     final DatabaseWorkToken token = DatabaseWorkToken._(this, label);
-    final Future<T> result = runZoned<Future<T>>(
-      () => Future<T>.sync(() => body(token)),
-      zoneValues: <Object?, Object?>{_databaseWorkZoneKey: token},
-    );
+    late final Zone workZone;
+    final Future<T> result =
+        runZoned<Future<T>>(() {
+          workZone = Zone.current;
+          return Future<T>.sync(() => body(token));
+        }, zoneValues: <Object?, Object?>{_databaseWorkZoneKey: token}).then<T>(
+          (T value) => value,
+          onError: (Object error, StackTrace stack) {
+            if (error is! DatabaseWorkCancelledException && token.isCancelled) {
+              Error.throwWithStackTrace(
+                DatabaseWorkCancelledException(label),
+                stack,
+              );
+            }
+            Error.throwWithStackTrace(error, stack);
+          },
+        );
     final Future<void> settled = result.then<void>(
       (_) {},
       onError: (Object _, StackTrace _) {},
     );
-    _inFlight[settled] = label;
-    settled.whenComplete(() => _inFlight.remove(settled));
+    _inFlight[settled] = _InFlightWork(label, token, workZone);
+    settled.whenComplete(() {
+      _inFlight.remove(settled);
+      token._end();
+    });
     return result;
   }
 
@@ -170,13 +315,7 @@ final class DatabaseBackgroundWork {
     Duration slowAfter = const Duration(seconds: 10),
     void Function(List<String> stillRunning)? onSlow,
   }) async {
-    final DatabaseWorkToken? caller = DatabaseWorkToken.current;
-    if (caller != null && identical(caller._owner, this)) {
-      throw StateError(
-        'quiesce() called from inside background work "${caller.label}" '
-        'of the same database: it would wait for itself forever',
-      );
-    }
+    _throwIfCalledFromOwnWork('quiesce');
     _beginClosing();
     if (_inFlight.isEmpty) return;
     Timer? slow;
@@ -187,6 +326,10 @@ final class DatabaseBackgroundWork {
     }
     try {
       while (_inFlight.isNotEmpty) {
+        if (debugReleaseWorkInStalledZones) {
+          await _releaseWorkInStalledZones();
+          if (_inFlight.isEmpty) break;
+        }
         await Future.wait(_inFlight.keys.toList(growable: false));
       }
     } finally {
@@ -195,13 +338,66 @@ final class DatabaseBackgroundWork {
   }
 }
 
-/// 拦截器：当前 Zone 属于一份已取消的后台工作时，SQL 不发出去，直接抛
-/// [DatabaseWorkCancelledException]。事务里第一条被拦下的语句会让 drift 回滚整个事务，
-/// 所以半截写入不会落库。
-final class DatabaseWorkInterceptor extends QueryInterceptor {
-  DatabaseWorkInterceptor();
+/// 见 [DatabaseBackgroundWork.debugReleaseWorkInStalledZones]。
+extension on DatabaseBackgroundWork {
+  Future<void> _releaseWorkInStalledZones() async {
+    final List<MapEntry<Future<void>, _InFlightWork>> pending = _inFlight
+        .entries
+        .toList(growable: false);
+    final Set<Future<void>> advanced = <Future<void>>{};
+    for (final MapEntry<Future<void>, _InFlightWork> entry in pending) {
+      entry.value.zone.scheduleMicrotask(() => advanced.add(entry.key));
+    }
+    final Completer<void> ownTurn = Completer<void>();
+    scheduleMicrotask(ownTurn.complete);
+    await ownTurn.future;
+    for (final MapEntry<Future<void>, _InFlightWork> entry in pending) {
+      if (advanced.contains(entry.key)) continue;
+      if (_inFlight.remove(entry.key) == null) continue;
+      entry.value.token._end();
+      fushiDebugPrint(
+        '[fushi-db] close: background work "${entry.value.label}" is parked '
+        'in a zone that no longer runs (test FakeAsync); not waiting for it',
+      );
+    }
+  }
+}
 
-  static void _check() => DatabaseWorkToken.current?.throwIfCancelled();
+/// 拦截器（每个库实例一个，绑在该实例的 [DatabaseBackgroundWork] 上）：
+///
+/// - 本库已封口（[DatabaseBackgroundWork.seal]）→ 任何 SQL 都不发出去；
+/// - 当前 Zone 属于一份已取消的后台工作（哪怕那份工作属于另一个库实例）→ 不发出去。
+///
+/// 两种都直接抛 [DatabaseWorkCancelledException]。事务里第一条被拦下的语句会让 drift
+/// 回滚整个事务，所以半截写入不会落库。
+final class DatabaseWorkInterceptor extends QueryInterceptor {
+  DatabaseWorkInterceptor(this._work);
+
+  final DatabaseBackgroundWork _work;
+
+  /// 封口后被拦下、又不在任何后台工作里的 SQL 用的标签。
+  static const String unregisteredLabel = 'unregistered';
+
+  void _check() {
+    final DatabaseWorkToken? token = DatabaseWorkToken.current;
+    if (_work.isSealed) {
+      if (token == null) _work._noteUnregisteredWriterAfterSeal();
+      throw DatabaseWorkCancelledException(token?.label ?? unregisteredLabel);
+    }
+    token?.throwIfCancelled();
+  }
+
+  @override
+  Future<bool> ensureOpen(QueryExecutor executor, QueryExecutorUser user) {
+    _check();
+    return super.ensureOpen(executor, user);
+  }
+
+  @override
+  QueryExecutor beginExclusive(QueryExecutor parent) {
+    _check();
+    return super.beginExclusive(parent);
+  }
 
   @override
   TransactionExecutor beginTransaction(QueryExecutor parent) {
@@ -268,7 +464,3 @@ final class DatabaseWorkInterceptor extends QueryInterceptor {
     return super.runSelect(executor, statement, args);
   }
 }
-
-/// 全部 [FushiDatabase] 构造路径共用的拦截器实例（无状态）。
-final DatabaseWorkInterceptor databaseWorkInterceptor =
-    DatabaseWorkInterceptor();

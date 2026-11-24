@@ -207,6 +207,42 @@ void main() {
     skip: !(Platform.isWindows || Platform.isMacOS),
   );
 
+  test('BUG-5406：源列表写不进去时扩展行一起回滚，库里不留「行已是新版、源还是旧版」', () async {
+    await _seedInstalled(database, versionCode: 5, signer: 'aabb');
+    await database.trustMangaSigner(
+      MangaTrustedSignersCompanion.insert(
+        fingerprint: 'aabb',
+        label: 'Fixture signer',
+        origin: 'local',
+        trustedAt: 1,
+      ),
+    );
+    final File installed = File(
+      '${root.path}${Platform.pathSeparator}extensions'
+      '${Platform.pathSeparator}org.example.fixture.apk',
+    );
+    await installed.parent.create(recursive: true);
+    await installed.writeAsBytes(<int>[5], flush: true);
+    runtime.inspection = _inspection(versionCode: 6, signer: 'aabb');
+    // 同一扩展报出两个同 id 的源：写源列表撞主键，发生在扩展行 upsert 之后。
+    runtime.duplicateSourceIds = true;
+    final File update = await _fixtureApk(root, 'update.apk', <int>[6]);
+    final MihonInstallProposal proposal = await manager.prepareLocalInstall(
+      update.path,
+    );
+
+    await expectLater(
+      manager.commitInstall(proposal, trustSigner: false),
+      throwsA(anything),
+    );
+
+    expect(await installed.readAsBytes(), <int>[5]);
+    expect(
+      (await database.getMangaExtension('org.example.fixture'))!.versionCode,
+      5,
+    );
+  }, skip: !(Platform.isWindows || Platform.isMacOS));
+
   // BUG-1709：`available` 是索引的内存快照，而快照里的 apkUrl 指向 GitHub release
   // 资产——上游只保留最近 7 个 release，旧 tag 连同资产一起删。进程在后台活几天再点
   // 安装，快照里每一条直链都指向已删除的 tag（`STORE_HTTP_404`）。安装必须以当次
@@ -1046,6 +1082,7 @@ class _InstallRuntime extends Fake implements MihonRuntime {
     signer: 'aabb',
   );
   bool failListSources = false;
+  bool duplicateSourceIds = false;
 
   /// 批量安装要给不同扩展返回不同的 inspection（元数据三全等是逐个校验的），
   /// 单条用例仍用固定的 [inspection]。
@@ -1074,6 +1111,14 @@ class _InstallRuntime extends Fake implements MihonRuntime {
         language: 'en',
         baseUrl: 'https://source.example',
       ),
+      if (duplicateSourceIds)
+        MihonSource(
+          extensionPackage: extension.packageName,
+          id: '9223372036854775807',
+          name: 'Duplicate source',
+          language: 'en',
+          baseUrl: 'https://source.example',
+        ),
     ];
   }
 

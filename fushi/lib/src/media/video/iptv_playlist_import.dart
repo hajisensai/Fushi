@@ -605,6 +605,10 @@ bool isIptvLogoUrlAllowed(String? url, {required bool remoteSource}) {
 ///   落盘 + 写 DB 指针 + provenance 提交在 [VideoCoverMutationGate] 里，并且先过
 ///   [VideoScrapeOperationGate]（维护中不写自动封面）。台标记为「自动」封面：之后
 ///   刮削 / 手动换封面照常可以覆盖它。
+///
+/// 登记成库的后台工作（BUG-5387 审查遗留）：几百个台标逐个下载、逐行写封面，换库时
+/// 关库等它停稳；库开始关就停在下一张之前，在途下载被中止，抛
+/// [DatabaseWorkCancelledException]（已补上的封面保留）。
 Future<int> applyIptvChannelLogos({
   required VideoBookRepository repo,
   required IptvPlaylistSource source,
@@ -613,6 +617,29 @@ Future<int> applyIptvChannelLogos({
   http.Client? httpClient,
   Duration timeout = const Duration(seconds: 10),
   int maxDownloads = kIptvLogoMaxDownloads,
+}) => repo.database.runBackgroundWork<int>(
+  'iptv.channelLogos',
+  (DatabaseWorkToken work) => _applyIptvChannelLogosInWork(
+    work,
+    repo: repo,
+    source: source,
+    channels: channels,
+    cancelToken: cancelToken,
+    httpClient: httpClient,
+    timeout: timeout,
+    maxDownloads: maxDownloads,
+  ),
+);
+
+Future<int> _applyIptvChannelLogosInWork(
+  DatabaseWorkToken work, {
+  required VideoBookRepository repo,
+  required IptvPlaylistSource source,
+  required List<M3uChannel> channels,
+  required IptvLogoCancelToken? cancelToken,
+  required http.Client? httpClient,
+  required Duration timeout,
+  required int maxDownloads,
 }) async {
   final String sourceKey = source.sourceKey;
   // 台标地址 → 用它的频道行（保持首次出现顺序，同一行只记一次）。
@@ -637,6 +664,7 @@ Future<int> applyIptvChannelLogos({
   int downloads = 0;
   try {
     for (final MapEntry<String, List<String>> e in uidsByLogo.entries) {
+      work.throwIfCancelled();
       if (cancelToken?.isCancelled ?? false) break;
       final List<VideoBookRow> needing = <VideoBookRow>[
         for (final String uid in e.value)
@@ -669,6 +697,8 @@ Future<int> applyIptvChannelLogos({
             },
           );
           if (ok) applied++;
+        } on DatabaseWorkCancelledException {
+          rethrow;
         } on Object {
           // 单个台标坏图 / 写盘失败只丢这一张。
         } finally {

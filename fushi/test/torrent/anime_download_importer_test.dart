@@ -10,6 +10,7 @@
 /// 幂等判据只能是 `createdEpisodeUids`（本次真新建的集），不是时间窗、不是去重表。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -108,6 +109,70 @@ void main() {
 
     // AniList 绑定照旧。
     expect(col.anilistId, 42);
+  });
+
+  test('入库登记成库的后台工作：关库等它停稳，关库后的写入被拦成取消（审查遗留 #1）', () async {
+    final FushiDatabase local = FushiDatabase.forTesting(
+      NativeDatabase.memory(),
+    );
+    final Completer<void> posterRequested = Completer<void>();
+    final Completer<void> releasePoster = Completer<void>();
+    final Future<Object?> run =
+        buildAnimeDownloadImporter(
+              local,
+              httpClient: MockClient((http.Request req) async {
+                posterRequested.complete();
+                await releasePoster.future;
+                return http.Response.bytes(
+                  _fakePng,
+                  200,
+                  headers: const <String, String>{'content-type': 'image/png'},
+                );
+              }),
+              collectionCoversDirectory: tmp,
+            )(_plan(coverUrl: 'https://img.anili.st/poster.jpg'), <String>[
+              p.join('D:', 'dl', '某番剧 - 01.mkv'),
+            ])
+            .then<Object?>((Object? v) => v, onError: (Object e) => e);
+
+    await posterRequested.future;
+    expect(local.backgroundWork.inFlightLabels, <String>[
+      'torrent.animeImport',
+    ]);
+    bool closed = false;
+    final Future<void> closing = local.close().then((_) => closed = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(closed, isFalse, reason: '入库还没停稳，关库不能先完成');
+
+    releasePoster.complete();
+    await closing;
+    expect(await run, isA<DatabaseWorkCancelledException>());
+  });
+
+  test('海报请求随关库中止被吞掉时，入库仍按取消上报，不当成已入库（计划留待重放补封面）', () async {
+    final FushiDatabase local = FushiDatabase.forTesting(
+      NativeDatabase.memory(),
+    );
+    final Completer<void> posterRequested = Completer<void>();
+    final Future<Object?> run =
+        buildAnimeDownloadImporter(
+              local,
+              // 模拟可中止请求：关库信号一到就以请求中止失败（海报下载是 best-effort，
+              // 入库内部会吞掉这个错误）。
+              httpClient: MockClient((http.Request req) async {
+                posterRequested.complete();
+                await DatabaseWorkToken.current!.cancelled;
+                throw http.ClientException('request aborted', req.url);
+              }),
+              collectionCoversDirectory: tmp,
+            )(_plan(coverUrl: 'https://img.anili.st/poster.jpg'), <String>[
+              p.join('D:', 'dl', '某番剧 - 01.mkv'),
+            ])
+            .then<Object?>((Object? v) => v, onError: (Object e) => e);
+
+    await posterRequested.future;
+    await local.close();
+    expect(await run, isA<DatabaseWorkCancelledException>());
   });
 
   test('无海报 URL：合集 coverPath 保持空，不误写', () async {

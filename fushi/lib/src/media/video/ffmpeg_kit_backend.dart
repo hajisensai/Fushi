@@ -13,6 +13,7 @@ import 'package:ffmpeg_kit_next_flutter/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_next_flutter/return_code.dart';
 import 'package:ffmpeg_kit_next_flutter/session.dart';
 import 'package:ffmpeg_kit_next_flutter/statistics.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseWorkToken;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 
@@ -154,9 +155,17 @@ Future<FfmpegRunResult> runKitFfmpegSession({
     return _kitTimeoutResult(executable, KitSessionPhase.start);
   }
 
+  // 后台写库工作里：库开始关（换库 / 数据根迁移）就取消这次会话，不让关库等它跑完
+  // （BUG-5387 审查遗留，与桌面 CLI 的 SIGKILL 同口径）。
+  bool cancelledByWork = false;
+  final void Function() unlinkWork = DatabaseWorkToken.abortOnCancel(() {
+    cancelledByWork = true;
+    if (!done.isCompleted) done.complete();
+  });
   try {
     await done.future.timeout(timeout);
   } on TimeoutException {
+    unlinkWork();
     final int? sessionId = session.getSessionId();
     if (sessionId != null) {
       try {
@@ -168,6 +177,23 @@ Future<FfmpegRunResult> runKitFfmpegSession({
       }
     }
     return _kitTimeoutResult(executable, KitSessionPhase.execute);
+  }
+  unlinkWork();
+  if (cancelledByWork) {
+    final int? sessionId = session.getSessionId();
+    if (sessionId != null) {
+      try {
+        await cancelSession(sessionId).timeout(epilogueTimeout);
+      } on TimeoutException {
+        // 取消没回包不改变结论：这次会话已被放弃。
+      }
+    }
+    return FfmpegRunResult(
+      returnCode: null,
+      output: '$kFfmpegCancelledMarker: database is closing',
+      executable: executable,
+      attemptedExecutables: <String>[executable],
+    );
   }
 
   // 会话已完成，读退出码与合并日志。这两步再挂住就只能当结果拿不到——但绝不
@@ -254,11 +280,16 @@ Future<FfmpegRunResult> runKitFfmpegWatchedSession({
       if (!aborted.isCompleted) aborted.complete(kFfmpegCancelledMarker);
     }),
   );
+  // 后台写库工作里：库开始关就取消这次会话（BUG-5387 审查遗留，与桌面 CLI 同口径）。
+  final void Function() unlinkWork = DatabaseWorkToken.abortOnCancel(() {
+    if (!aborted.isCompleted) aborted.complete(kFfmpegCancelledMarker);
+  });
   final String? reason = await Future.any(<Future<String?>>[
     done.future.then((_) => null),
     aborted.future,
   ]);
   watchdog.cancel();
+  unlinkWork();
   if (reason != null) {
     final int? sessionId = session.getSessionId();
     if (sessionId != null) {

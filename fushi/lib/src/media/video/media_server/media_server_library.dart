@@ -195,10 +195,23 @@ class MediaServerVideoLibrary {
 
   /// [addToLibrary] 的本体：返回这次新加的条目（探针据此投递新集提醒）。探针是
   /// 被动刷新，[userIntent] 保持 false——用户删掉的合集不被它复活。
+  ///
+  /// 登记成库的后台工作（BUG-5387 审查遗留）：入库要逐页联网取集、逐集写行、下海报，
+  /// 后台新集探针也走这里——换库时关库等它停稳，它的 SQL 与服务器请求随关库中断。
   Future<List<RemoteVideoInfo>> addMissing(
     MediaServerBrowser browser,
     MediaServerItem work, {
     bool userIntent = false,
+  }) => database.runBackgroundWork<List<RemoteVideoInfo>>(
+    'mediaServer.addToLibrary',
+    (DatabaseWorkToken _) =>
+        _addMissingInWork(browser, work, userIntent: userIntent),
+  );
+
+  Future<List<RemoteVideoInfo>> _addMissingInWork(
+    MediaServerBrowser browser,
+    MediaServerItem work, {
+    required bool userIntent,
   }) async {
     final List<MediaServerItem> leaves = await _playableLeavesOf(browser, work);
     final RemoteCollectionAdoptionService adoption =

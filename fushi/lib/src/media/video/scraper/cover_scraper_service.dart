@@ -19,7 +19,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_cover_extractor.dart'
     show videoCoverFileName;
 import 'package:fushi_engine/media/video/video_storage.dart';
-import 'package:fushi_core/fushi_core.dart' show VideoBookRow;
+import 'package:fushi_core/fushi_core.dart'
+    show DatabaseWorkCancelledException, DatabaseWorkToken, VideoBookRow;
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 
@@ -100,9 +101,14 @@ class CoverScraperService {
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) return const ScrapeFailed('scrape-cleanup-running');
     try {
-      return await _applySidecarCoverUnlocked(
-        book,
-        requireBatchEligibility: requireBatchEligibility,
+      // BUG-5387 审查遗留：复制 sidecar 海报 + 写封面指针登记成库的后台工作——换库
+      // 时关库等它停稳，被中断时抛 [DatabaseWorkCancelledException]。
+      return await _repo.database.runBackgroundWork<ScrapeOutcome>(
+        'video.sidecarCover',
+        (DatabaseWorkToken _) => _applySidecarCoverUnlocked(
+          book,
+          requireBatchEligibility: requireBatchEligibility,
+        ),
       );
     } finally {
       lease.release();
@@ -171,6 +177,9 @@ class CoverScraperService {
               ? await applySidecarCover(book, requireBatchEligibility: true)
               : ScrapeSkippedProtected(origin);
         }
+      } on DatabaseWorkCancelledException {
+        // 换库 / 关库：整批停下，不当成这一本失败接着跑下一本。
+        rethrow;
       } catch (error) {
         outcome = ScrapeFailed(error);
       }

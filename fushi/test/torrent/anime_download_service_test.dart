@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseWorkCancelledException;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
@@ -1011,6 +1012,24 @@ void main() {
       expect(qb.factoryCalls, factoryCallsBefore);
       expect(importCalls, hasLength(1));
     });
+
+    test(
+      '换库 / 关库中断入库（DatabaseWorkCancelledException）→ 不标 failed，留待重放',
+      () async {
+        importerOverride = (AnimeDownloadPlan plan, List<String> videos) async {
+          throw const DatabaseWorkCancelledException('torrent.animeImport');
+        };
+        await store.save(_plan());
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(contentPath: '/dl/movie.mkv', savePath: '/dl'),
+        ];
+        await buildService().tick();
+        final AnimeDownloadPlan saved = (await store.loadAll()).single;
+        expect(saved.status, AnimeDownloadPlan.statusDownloading);
+        expect(saved.importInProgress, isTrue, reason: '下次启动按幂等重放补完');
+        expect(saved.failReason, isNull);
+      },
+    );
 
     test('importer 返回 null → 计划标 failed', () async {
       importerOverride = (AnimeDownloadPlan plan, List<String> videos) async =>
