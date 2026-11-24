@@ -1,12 +1,62 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T07:03:46Z",
+ "generatedAt": "2026-11-24T07:40:39Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "31b0a46cf4b40d0defef3d49938f02338a23294b",
   "seq": 32204
  },
  "builds": [
+  {
+   "seq": 32203,
+   "version": "3.4.0",
+   "sha": "f8f2847179eda309f6667a38bc235426b82440c4",
+   "unknown": false,
+   "publishedAt": "2026-11-24T07:40:26Z",
+   "testflight": false,
+   "baseSeq": 32193,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "f8f2847179eda309f6667a38bc235426b82440c4",
+     "subject": "chore(bugs): reindex after merging #4336 #4321 #4353"
+    },
+    {
+     "sha": "1068b7c8235a0247b5f61106bc28f8ed158dd3ed",
+     "subject": "Merge #4353 (claude/dart-heartbeat-watchdog) into develop"
+    },
+    {
+     "sha": "a1d4c55db43601ebc1f23c01e8f0a333951ae2ef",
+     "subject": "Merge #4321 (fix/book-progress-label-consistency) into develop"
+    },
+    {
+     "sha": "77fc4149917c1dbdea87589ec3f99b370775e8c5",
+     "subject": "Merge #4336 (claude/fix-volume-cover-pop) into develop"
+    },
+    {
+     "sha": "d3f6e882208c1dcc10902c971fccecd78d028404",
+     "subject": "chore(bugs): settle BUG number collisions on fe7110dbb"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
+    },
+    "ios": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
+    }
+   }
+  },
   {
    "seq": 32193,
    "version": "3.4.0",
@@ -45,7 +95,7 @@
    "unknown": false,
    "publishedAt": "2026-11-24T04:35:29Z",
    "testflight": true,
-   "baseSeq": 32168,
+   "baseSeq": 32155,
    "prs": [],
    "direct": [
     {
@@ -75,34 +125,7 @@
     {
      "sha": "d01929362d9286bce6b7d74a69c9fc1fbdeac5eb",
      "subject": "Merge #4341 (claude/lyrics-inline-ruby) into develop"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
     },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32168,
-   "version": "3.4.0",
-   "sha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
-   "unknown": false,
-   "publishedAt": "2026-11-24T03:06:35Z",
-   "testflight": false,
-   "baseSeq": 32155,
-   "prs": [],
-   "direct": [
     {
      "sha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
      "subject": "Merge #4196 (samutw/feat/tracking-series-links) into develop"
@@ -122,16 +145,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
+     "state": "ok"
     },
     "macos": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
+     "state": "ok"
     },
     "ios": {
-     "state": "superseded",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
+     "state": "ok"
     }
    }
   },
@@ -180,45 +200,21 @@
    {
     "sha": "31b0a46cf4b40d0defef3d49938f02338a23294b",
     "subject": "chore(bugs): settle BUG number collisions on f8f284717"
-   },
-   {
-    "sha": "f8f2847179eda309f6667a38bc235426b82440c4",
-    "subject": "chore(bugs): reindex after merging #4336 #4321 #4353"
-   },
-   {
-    "sha": "1068b7c8235a0247b5f61106bc28f8ed158dd3ed",
-    "subject": "Merge #4353 (claude/dart-heartbeat-watchdog) into develop"
-   },
-   {
-    "sha": "a1d4c55db43601ebc1f23c01e8f0a333951ae2ef",
-    "subject": "Merge #4321 (fix/book-progress-label-consistency) into develop"
-   },
-   {
-    "sha": "77fc4149917c1dbdea87589ec3f99b370775e8c5",
-    "subject": "Merge #4336 (claude/fix-volume-cover-pop) into develop"
-   },
-   {
-    "sha": "d3f6e882208c1dcc10902c971fccecd78d028404",
-    "subject": "chore(bugs): settle BUG number collisions on fe7110dbb"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45344045070"
+    "state": "none"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
+    "state": "none"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
+    "state": "none"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
+    "state": "none"
    }
   }
  },
