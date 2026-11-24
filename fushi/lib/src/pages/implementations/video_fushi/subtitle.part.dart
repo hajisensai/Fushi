@@ -2043,7 +2043,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final RemoteVideoClient? client = _effectiveRemoteClient;
     final RemoteVideoInfo? info = _effectiveRemoteInfo;
     if (client is! InterconnectSyncBackend || info == null) return null;
-    return (client, info.id, _isRemoteCollection ? 0 : _currentEpisode);
+    return (
+      client,
+      info.id,
+      _isRemoteCollection || _streamBookEpisodes ? 0 : _currentEpisode,
+    );
   }
 
   /// 远端原盘会话（盘在互联 host 上，本机没有文件）里当前 title 在 host 上的定位
@@ -4073,7 +4077,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     List<String> audioLanguages = const <String>[],
   }) {
     final _PlaylistEpisodeRef? ref =
-        !_isRemoteCollection && _isPlaylist && episode < _episodes.length
+        !_isRemoteCollection &&
+            !_streamBookEpisodes &&
+            _isPlaylist &&
+            episode < _episodes.length
         ? _episodes[episode]
         : null;
     final String title =
@@ -4293,7 +4300,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
       key: videoStreamSubtitleAudioKey(
         sourceId: client.remoteLibrarySourceId,
         videoId: info.id,
-        episode: _isRemoteCollection ? 0 : _currentEpisode,
+        episode: _isRemoteCollection || _streamBookEpisodes
+            ? 0
+            : _currentEpisode,
         audioTrack:
             '${audio.audioOnly ? 'ext' : 'a'}:'
             '${controller.currentAudioStreamIndex ?? '-'}',

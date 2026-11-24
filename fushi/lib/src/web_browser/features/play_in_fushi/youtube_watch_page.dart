@@ -4,6 +4,9 @@
 /// （`/playlist?list=`）都不是观看页，动作不出现。
 library;
 
+import 'package:fushi_engine/media/video/youtube_playlist.dart'
+    show isYoutubePlaylistId;
+
 /// YouTube 视频 id 的形状（11 位 `[A-Za-z0-9_-]`）。
 final RegExp _kYoutubeVideoIdShape = RegExp(r'^[A-Za-z0-9_-]{11}$');
 
@@ -77,3 +80,13 @@ String youtubeCanonicalWatchUrl(String videoId) =>
 /// 小说「阅读（小说）」这类按正文 / 图片抽内容的动作在观看页上没有意义，据此不出现。
 /// 目前只认 YouTube（[youtubeWatchVideoIdOf]）；别的视频站有观看页判据时加在这里。
 bool isWebBrowserVideoWatchPage(Uri? uri) => youtubeWatchVideoIdOf(uri) != null;
+
+/// 观看页带着的播放列表 id（`watch?v=…&list=…`，在 YouTube 播放列表里点开的视频）：交给
+/// 播放器后选集面板列出整份播放列表（拍板台 zGXhhMAglH）。不是观看页、没有 `list`、形状
+/// 不对时为 null。
+String? youtubeWatchPlaylistIdOf(Uri? uri) {
+  if (youtubeWatchVideoIdOf(uri) == null) return null;
+  final String? raw = uri!.queryParameters['list']?.trim();
+  if (raw == null || !isYoutubePlaylistId(raw)) return null;
+  return raw;
+}

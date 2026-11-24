@@ -227,7 +227,10 @@ void main() {
         'Future<void> _initRemote(',
       );
       expect(
-        body.contains('_playlistTitle = remoteVideoWorkTitle(info);'),
+        // 流媒体书合集没有远端作品名时回落合集名（拍板台 zGXhhMAglH）。
+        body.contains(
+          '_playlistTitle = remoteVideoWorkTitle(info) ?? _streamBookSeriesTitle;',
+        ),
         isTrue,
         reason: '远端 / 在线视频不填 _playlistTitle，制卡标签与 documentTitle 就没有作品名',
       );
