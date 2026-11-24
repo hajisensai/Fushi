@@ -2,12 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 import 'package:fushi/src/reader/image_actions_sheet.dart';
 
 /// 歌词模式插图的交互（2026-10-07）：横屏封面位换图 / 点掉回封面 / 左右切换 /
@@ -407,6 +409,113 @@ void main() {
     expect(c.cardVisible, isFalse);
     expect(noFile.cardVisible, isFalse);
   });
+  // BUG-5407（反馈 oYQN9hgT9G）：插图卡 / 大图只挂了长按，Windows 右键被吞、
+  // 没有任何反应。现在与阅读器正文看图同一个「保存图片 / 复制图片」右键菜单。
+  testWidgets('Windows 右键插图卡 / 大图：弹保存 / 复制图片菜单', (WidgetTester tester) async {
+    debugHostPlatformOverride = HostPlatform.windows;
+    addTearDown(() => debugHostPlatformOverride = null);
+    final LyricsIllustrationController c = LyricsIllustrationController()
+      ..load(
+        <LyricsIllustration>[
+          LyricsIllustration(
+            key: 'a',
+            position: const LyricsBookPosition(1, 0),
+            image: MemoryImage(_png),
+            file: File('/books/OEBPS/a.png'),
+          ),
+        ],
+        position: const LyricsBookPosition(0, 0),
+        audioPosition: Duration.zero,
+      );
+    c.observe(
+      const LyricsBookPosition(2, 10),
+      audioPosition: const Duration(seconds: 5),
+    );
+    final Finder save = find.text(t.reader_image_save);
+    final Finder copy = find.text(t.reader_copy_image);
+    Future<void> rightClick(Finder target) async {
+      final TestGesture mouse = await tester.startGesture(
+        tester.getCenter(target),
+        kind: PointerDeviceKind.mouse,
+        buttons: kSecondaryMouseButton,
+      );
+      await tester.pump();
+      await mouse.up();
+      await mouse.removePointer();
+      await tester.pumpAndSettle();
+    }
+
+    late BuildContext hostContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) {
+              hostContext = context;
+              return Center(
+                child: LyricsIllustrationArtworkSlot(
+                  controller: c,
+                  side: 300,
+                  borderRadius: BorderRadius.circular(28),
+                  cover: const SizedBox.square(key: _coverKey, dimension: 300),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 插图卡：右键出菜单（不是长按面板）。
+    await rightClick(find.byKey(_cardKey));
+    expect(save, findsOneWidget);
+    expect(copy, findsOneWidget);
+    expect(find.byType(ImageActionsSheet), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(copy, findsNothing);
+
+    // 大图浏览：已解锁的那页右键同样出菜单。
+    unawaited(
+      showLyricsIllustrationViewer(hostContext, controller: c, index: 0),
+    );
+    await tester.pumpAndSettle();
+    await rightClick(
+      find.byKey(const ValueKey<String>('lyrics_illustration_viewer_pages')),
+    );
+    expect(save, findsOneWidget);
+    expect(copy, findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(copy, findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+
+    // 非 Windows：不挂右键菜单（复制走 Windows 原生剪贴板通道），长按照旧。
+    debugHostPlatformOverride = HostPlatform.android;
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: LyricsIllustrationArtworkSlot(
+              controller: c,
+              side: 300,
+              borderRadius: BorderRadius.circular(28),
+              cover: const SizedBox.square(key: _coverKey, dimension: 300),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await rightClick(find.byKey(_cardKey));
+    expect(copy, findsNothing);
+    c.dismiss();
+    await tester.pump(lyricsIllustrationCardDisplayDuration(0));
+  });
+
   testWidgets('插图卡没进停留时按「图片暂停」秒数自动收起', (WidgetTester tester) async {
     final ValueNotifier<int> pause = ValueNotifier<int>(9);
     addTearDown(pause.dispose);

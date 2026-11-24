@@ -1,0 +1,6 @@
+## BUG-5407 · lyrics-illustration-viewer-right-click
+- **报告**：2026-11-24（用户：应用内反馈 oYQN9hgT9G「这里的右键给吞了」，Windows，歌词模式插图大图浏览）
+- **真实性**：✅ 真 bug。`fushi/lib/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart` 的 `_LyricsIllustrationViewerState._buildUnlockedPage`（大图浏览已解锁页）与 `_IllustrationCardState.build`（封面位插图卡）的 `GestureDetector` 只挂了 `onLongPress: _longPressFor(...)`，没有任何右键入口；阅读器正文看图（`reader_fushi/chrome.part.dart` `_openImageViewer`）与书架插图册（`illustrations_viewer_page.dart` `_openZoom`）都有 `ContextMenuTrigger` 的「保存 / 复制图片」菜单，歌词模式这两处漏接，Windows 右键无反应。
+- **[x] ① 已修复** — 新增 `_ImageContextMenu`，插图卡与大图已解锁页都包一层 `ContextMenuTrigger`，Windows 下右键（按绑定表，默认右键）弹与阅读器同一个 `showImageCopyContextMenu`（保存走 `runImageAction(ImageAction.save)`，复制走 `copyImageFileToClipboard`）；无磁盘文件 / 非 Windows 不挂，与阅读器口径一致。解析阶梯用阅读器那条 `kReaderMouseLadder`：为让 `media/` 下的组件也能引用，把它从 `reader_fushi/caret.part.dart` 挪到共享库 `shortcuts/context_menu_trigger.dart`（阅读器页面库本就整份 import 它，引用点不变）。长按面板保持不变。
+- **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/lyrics_illustration_view_test.dart`「Windows 右键插图卡 / 大图：弹保存 / 复制图片菜单」：覆写宿主平台为 Windows，鼠标次键按插图卡与大图页，断言出现保存 / 复制菜单项；切回 Android 断言不弹。
+- **备注**：macOS / Linux 右键与阅读器正文一样不挂菜单（复制走 Windows 原生剪贴板通道），如需桌面统一另议。
