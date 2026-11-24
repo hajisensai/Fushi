@@ -10,6 +10,10 @@
 /// 转录分流不变）、拆出双语字幕中的日语、按每句语音逐句对轴（模型重定时）、按内嵌
 /// 字幕对齐。
 ///
+/// 音乐歌词也进这一页（[VideoSubtitleStudioToolset.music]，拍板台 niQk_Ns4OV）：参考区是
+/// 歌词逐行表格，工具是生成字幕与纯文本歌词自动对时，对时结果可在表格里逐行把起点设成
+/// 播放头（[VideoSubtitleStudioActions.setCueStart]）。
+///
 /// 面板只渲染与分派：每个工具都是视频页注入的回调（编排、落盘、换轨、OSD 都在视频
 /// 页既有路径里），点了先关面板再跑，跑的过程照旧由视频页提示。ASR / 重定时算法在
 /// 上游 `fushi-subtitles`，双语拆分是 `fushi_engine` 的纯函数。
@@ -130,15 +134,32 @@ class VideoSubtitleStudioAiReference {
   final VideoSubtitleStudioFramesProblem? Function() framesProblem;
 }
 
+/// 工作台给哪一类媒体用：决定工具区列哪些工具。
+enum VideoSubtitleStudioToolset {
+  /// 视频：生成、拆分双语、逐句对轴、按内嵌字幕对齐。
+  video,
+
+  /// 音乐歌词（拍板台 niQk_Ns4OV：歌词走通用字幕工作台，不另立编辑界面）：生成字幕、
+  /// 纯文本歌词自动对时；视频专属的拆分 / 对轴 / 内嵌对齐不列。
+  music,
+}
+
 /// 工具区的动作。null = 当前视频用不了这一项（面板显示原因、按钮置灰）。
 class VideoSubtitleStudioActions {
   const VideoSubtitleStudioActions({
+    this.toolset = VideoSubtitleStudioToolset.video,
     this.generate,
     this.generatePanel,
     this.splitBilingual,
     this.retime,
     this.alignEmbedded,
+    this.syncPlainText,
+    this.canSyncPlainText,
+    this.setCueStart,
+    this.canSetCueStart,
   });
+
+  final VideoSubtitleStudioToolset toolset;
 
   /// 「生成字幕」的选项面板，直接嵌在工具栏里（对象、语言、识别模型、分段方式、
   /// AI 校对、任务进度、开始 / 取消 / 继续都在原地）：本机管线与互联 host 管线各有
@@ -157,6 +178,30 @@ class VideoSubtitleStudioActions {
 
   /// 按视频内嵌文本字幕轨对齐。
   final Future<void> Function()? alignEmbedded;
+
+  /// 纯文本（没有时间轴）的正文按本机转录逐行对时（[VideoSubtitleStudioToolset.music]
+  /// 才列）。null = 当前正文已有时间轴或没有正文。
+  final Future<void> Function()? syncPlainText;
+
+  /// [syncPlainText] 此刻可不可用（工作台开着时会换曲、对完时间）；null = 只看
+  /// [syncPlainText] 是否为 null。
+  final bool Function()? canSyncPlainText;
+
+  /// 纯文本对时此刻可用。
+  bool get plainTextSyncable =>
+      syncPlainText != null && (canSyncPlainText?.call() ?? true);
+
+  /// 逐句表格的逐行微调：把这一句的起点设成 `startMs`（[VideoSubtitleStudioReference.
+  /// primaryPositionMs] 的当前值，即播放头）。null = 这条轨不能逐行改（每行不出按钮）。
+  final Future<void> Function(AudioCue cue, int startMs)? setCueStart;
+
+  /// [setCueStart] 此刻可不可用（工具跑完可能变，例如刚对完时）；null = 只看
+  /// [setCueStart] 是否为 null。
+  final bool Function()? canSetCueStart;
+
+  /// 逐行微调此刻可用。
+  bool get cueStartEditable =>
+      setCueStart != null && (canSetCueStart?.call() ?? true);
 }
 
 /// 逐句表格的一行：主字幕一句 + 同一时刻的其它语言字幕。
@@ -554,6 +599,15 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
   bool get _bilingual =>
       _ref.primaryLanguage() == SubtitleContentLanguage.bilingualJaZh;
 
+  /// 逐行微调：这一句的起点设成播放头（[VideoSubtitleStudioActions.setCueStart]）。
+  /// 跑的期间工具区照样显示忙；跑完按新轨重排表格。
+  Future<void> _setCueStart(AudioCue cue) async {
+    final Future<void> Function(AudioCue cue, int startMs)? set =
+        widget.actions.setCueStart;
+    if (set == null) return;
+    await _run('set-start', () => set(cue, _ref.primaryPositionMs()));
+  }
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -949,6 +1003,18 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
               ],
             ),
           ),
+          if (widget.actions.cueStartEditable)
+            KeyedSubtree(
+              key: ValueKey<String>(
+                'video-subtitle-studio-set-start-${cue.startMs}',
+              ),
+              child: FushiIconButton(
+                icon: FushiIcons.flag,
+                tooltip: t.video_subtitle_studio_set_start_tooltip,
+                enabled: _busyTool == null,
+                onTap: () => unawaited(_setCueStart(cue)),
+              ),
+            ),
         ],
       ),
     );
@@ -1108,33 +1174,53 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
                   : t.video_subtitle_generate_entry_hint,
               action: a.generate,
             ),
-          (
-            key: 'split',
-            icon: FushiIcons.language,
-            title: t.video_subtitle_studio_split_action,
-            hint: _bilingual && a.splitBilingual != null
-                ? t.video_subtitle_studio_split_hint
-                : t.video_subtitle_studio_split_not_bilingual,
-            action: _bilingual ? a.splitBilingual : null,
-          ),
-          (
-            key: 'retime',
-            icon: FushiIcons.modelTraining,
-            title: t.video_subtitle_retime_action,
-            hint: a.retime == null
-                ? t.video_subtitle_studio_needs_audio
-                : t.video_subtitle_studio_retime_hint,
-            action: a.retime,
-          ),
-          (
-            key: 'align',
-            icon: FushiIcons.sync,
-            title: t.video_subtitle_reference_sync_action,
-            hint: a.alignEmbedded == null
-                ? t.video_subtitle_studio_needs_local_file
-                : t.video_subtitle_studio_align_hint,
-            action: a.alignEmbedded,
-          ),
+          if (a.toolset == VideoSubtitleStudioToolset.music)
+            (
+              key: 'sync-plain',
+              icon: FushiIcons.timer,
+              title: t.music_lyrics_auto_sync_action,
+              hint: a.plainTextSyncable
+                  ? t.music_lyrics_auto_sync_hint
+                  : t.music_lyrics_auto_sync_not_plain,
+              action: a.plainTextSyncable ? a.syncPlainText : null,
+            ),
+          if (a.toolset == VideoSubtitleStudioToolset.video) ...<
+            ({
+              String key,
+              IconData icon,
+              String title,
+              String hint,
+              Future<void> Function()? action,
+            })
+          >[
+            (
+              key: 'split',
+              icon: FushiIcons.language,
+              title: t.video_subtitle_studio_split_action,
+              hint: _bilingual && a.splitBilingual != null
+                  ? t.video_subtitle_studio_split_hint
+                  : t.video_subtitle_studio_split_not_bilingual,
+              action: _bilingual ? a.splitBilingual : null,
+            ),
+            (
+              key: 'retime',
+              icon: FushiIcons.modelTraining,
+              title: t.video_subtitle_retime_action,
+              hint: a.retime == null
+                  ? t.video_subtitle_studio_needs_audio
+                  : t.video_subtitle_studio_retime_hint,
+              action: a.retime,
+            ),
+            (
+              key: 'align',
+              icon: FushiIcons.sync,
+              title: t.video_subtitle_reference_sync_action,
+              hint: a.alignEmbedded == null
+                  ? t.video_subtitle_studio_needs_local_file
+                  : t.video_subtitle_studio_align_hint,
+              action: a.alignEmbedded,
+            ),
+          ],
         ];
     return <Widget>[
       for (int i = 0; i < tools.length; i++)

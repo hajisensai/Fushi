@@ -34,7 +34,9 @@ import 'package:fushi_core/fushi_core.dart'
     show FushiDatabase, TagHostKind, kStatSourceMusic;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
-import 'package:fushi_audio/fushi_audio.dart' show AudioPlaybackRange;
+import 'package:fushi_audio/fushi_audio.dart' show AudioCue, AudioPlaybackRange;
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart'
+    show detectSubtitleContentLanguage, SubtitleContentLanguage;
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/anki/mined_card_undo.dart';
@@ -67,9 +69,11 @@ import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
 import 'package:fushi/src/media/music/lyrics/music_lyrics_learning.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart'
     show LyricsScript;
+import 'package:fushi/src/media/music/lyrics/music_lyrics_auto_sync.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart';
 import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart'
-    show pickCdgCompanion;
+    show MusicLyricsSource, pickCdgCompanion;
 import 'package:fushi/src/media/music/music_clip_source.dart';
 import 'package:fushi/src/media/music/music_mining_origin.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -536,6 +540,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// 生成字幕写进当前这首（任务常在页面打开期间或之后才结束）：重新解析显示它。
   StreamSubscription<String>? _generatedSub;
 
+  /// 等转录的纯文本歌词自动对时跑完（[MusicLyricsService.autoSyncResults]）：提示结果。
+  StreamSubscription<MusicLyricsAutoSyncEvent>? _autoSyncSub;
+
+  /// 纯文本歌词自动对时进行中（对齐在后台 isolate，长歌要一两秒）：入口置灰防重复点。
+  bool _autoSyncing = false;
+
   @override
   void initState() {
     super.initState();
@@ -545,6 +555,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       if (!mounted || item == null || uid != item.trackUid) return;
       unawaited(_load(item));
     });
+    _autoSyncSub = _service.autoSyncResults.listen(
+      (MusicLyricsAutoSyncEvent e) => _showAutoSyncOutcome(e.outcome),
+    );
     _companion.startSnapshots(_companionSnapshot);
     ControllerLookupMode.instance.attach(_controllerLookupTarget);
     WidgetsBinding.instance.addPostFrameCallback((_) => _onEngine());
@@ -581,6 +594,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     _playbackRouteMark.dispose();
     _engine.removeListener(_onEngine);
     unawaited(_generatedSub?.cancel());
+    unawaited(_autoSyncSub?.cancel());
     _releaseAnalysis();
     _aiTheme.dispose();
     _mvBackdrop
@@ -834,6 +848,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       _loading = true;
       _error = null;
       _lyrics = null;
+      _lyricsAutoSynced = false;
       _cdgPath = null;
       _lookupLine = null;
       _lookupCharIndex = null;
@@ -852,12 +867,19 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       error = e;
     }
     if (!mounted || _loadedUid != item.trackUid) return;
+    // 生效的是不是自动对时存下的 LRC（字幕工作台据此给逐行微调）：与时间轴同一次载入，
+    // 换曲 / 换来源 / 对时 / 微调后都跟着这份时间轴走，不另存一份会过期的标记。
+    final bool autoSynced =
+        r?.source == MusicLyricsSource.user &&
+        await _service.hasAutoSynced(item.trackUid);
+    if (!mounted || _loadedUid != item.trackUid) return;
     // 同目录列一遍找 .cdg：大目录同步 listSync 会卡开页，放后台。
     final String? cdg = await musicCdgCompanionInBackground(item);
     if (!mounted || _loadedUid != item.trackUid) return;
     setState(() {
       _loading = false;
       _lyrics = r;
+      _lyricsAutoSynced = autoSynced;
       _cdgPath = cdg;
       _error = error;
       _offsetMs = r?.timeline.offsetMs ?? 0;
@@ -1700,6 +1722,173 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       appModel: appModelNoUpdate,
       resolve: (t) => t.forTrack(item.trackUid),
     );
+  }
+
+  /// 纯文本歌词自动对时（拍板台 niQk_Ns4OV）：拿这首的生成字幕当时间参照逐行对时间，存成
+  /// 本地 LRC。还没有生成字幕时先开生成面板，转录落库后服务接着对（结果经
+  /// [MusicLyricsService.autoSyncResults] 回来提示）。
+  Future<void> _autoSyncLyrics() async {
+    final MusicPlayItem? item = _engine.current;
+    final LyricTimeline? plain = _lyrics?.timeline;
+    if (item == null || _autoSyncing || !musicLyricsCanAutoSync(plain)) return;
+    final MusicLyricsTrackRef ref = musicLyricsTrackRefOf(item);
+    setState(() => _autoSyncing = true);
+    final MusicLyricsAutoSyncOutcome outcome;
+    try {
+      outcome = await _service.autoSyncPlainLyrics(ref, plain!);
+    } on Object catch (e) {
+      FushiToast.show(
+        msg: t.music_lyrics_auto_sync_failed(error: e.toString()),
+        severity: ToastSeverity.error,
+      );
+      return;
+    } finally {
+      if (mounted) setState(() => _autoSyncing = false);
+    }
+    if (outcome.status == MusicLyricsAutoSyncStatus.needsTranscript) {
+      if (!_canGenerateSubtitles) {
+        _showAutoSyncOutcome(outcome);
+        return;
+      }
+      _service.autoSyncWhenGenerated(ref, plain);
+      FushiToast.show(
+        msg: t.music_lyrics_auto_sync_waiting,
+        severity: ToastSeverity.info,
+      );
+      if (mounted) await _generateSubtitles();
+      return;
+    }
+    _showAutoSyncOutcome(outcome);
+    if (outcome.status == MusicLyricsAutoSyncStatus.synced) {
+      await _afterSourceChanged(item);
+    }
+  }
+
+  void _showAutoSyncOutcome(MusicLyricsAutoSyncOutcome outcome) {
+    final (String msg, ToastSeverity severity) = switch (outcome.status) {
+      MusicLyricsAutoSyncStatus.synced => (
+        t.music_lyrics_auto_sync_done(lines: outcome.lines),
+        ToastSeverity.success,
+      ),
+      MusicLyricsAutoSyncStatus.unreliable => (
+        t.music_lyrics_auto_sync_unreliable,
+        ToastSeverity.warning,
+      ),
+      MusicLyricsAutoSyncStatus.noPlainLyrics => (
+        t.music_lyrics_auto_sync_no_lines,
+        ToastSeverity.warning,
+      ),
+      MusicLyricsAutoSyncStatus.needsTranscript => (
+        t.music_lyrics_auto_sync_needs_transcript,
+        ToastSeverity.warning,
+      ),
+      MusicLyricsAutoSyncStatus.failed => (
+        t.music_lyrics_auto_sync_failed(error: outcome.error ?? ''),
+        ToastSeverity.error,
+      ),
+    };
+    FushiToast.show(msg: msg, severity: severity);
+  }
+
+  /// 字幕工作台里逐句表格的 cue（按时间轴身份缓存：表格每次位置推送都要读）。
+  LyricTimeline? _studioCuesOf;
+  List<AudioCue> _studioPrimary = const <AudioCue>[];
+  List<AudioCue> _studioSecondary = const <AudioCue>[];
+  SubtitleContentLanguage _studioLanguage = SubtitleContentLanguage.unknown;
+
+  /// 当前显示的歌词是自动对时存下的 LRC（工作台据此给逐行微调）。随 [_load] 与 [_lyrics]
+  /// 一起更新。
+  bool _lyricsAutoSynced = false;
+
+  void _refreshStudioCues() {
+    final LyricTimeline? timeline = _lyrics?.timeline;
+    if (identical(timeline, _studioCuesOf)) return;
+    _studioCuesOf = timeline;
+    final List<LyricLine> lines = timeline == null || !timeline.isSynced
+        ? const <LyricLine>[]
+        : timeline.lines;
+    AudioCue cue(int i, int startMs, int endMs, String text) => AudioCue()
+      ..bookKey = _loadedUid ?? ''
+      ..chapterHref = ''
+      ..sentenceIndex = i
+      ..textFragmentId = ''
+      ..text = text
+      ..startMs = startMs
+      ..endMs = endMs
+      ..audioFileIndex = 0;
+    _studioPrimary = <AudioCue>[
+      for (final (int i, LyricLine l) in lines.indexed)
+        cue(i, l.startMs, l.endMs, l.text),
+    ];
+    _studioSecondary = <AudioCue>[
+      for (final (int i, LyricLine l) in lines.indexed)
+        if (l.primaryTranslation case final String tr when tr.trim().isNotEmpty)
+          cue(i, l.startMs, l.endMs, tr),
+    ];
+    _studioLanguage = detectSubtitleContentLanguage(
+      lines.map((LyricLine l) => l.text).join('\n'),
+    );
+  }
+
+  /// 打开通用字幕工作台（音乐工具集）：参考区是歌词逐行表格（跟随播放、点句跳转），工具是
+  /// 生成字幕与纯文本歌词自动对时；自动对时的结果可逐行把起点设成播放头。
+  Future<void> _openSubtitleStudio() async {
+    final MusicPlayItem? item = _engine.current;
+    if (item == null) return;
+    await openVideoSubtitleStudioPage(
+      context: _themedContext,
+      reference: VideoSubtitleStudioReference(
+        listenable: _engine,
+        primaryCues: () {
+          _refreshStudioCues();
+          return _studioPrimary;
+        },
+        secondaryCues: () {
+          _refreshStudioCues();
+          return _studioSecondary;
+        },
+        // 表格里是时间轴时间：显示时间 = 播放位置 + 整首偏移（正 = 歌词提前）。
+        primaryPositionMs: () => _engine.position.inMilliseconds + _offsetMs,
+        secondaryPositionMs: () => _engine.position.inMilliseconds + _offsetMs,
+        primaryLanguage: () {
+          _refreshStudioCues();
+          return _studioLanguage;
+        },
+        jumpToCue: (AudioCue cue) => unawaited(
+          _engine.seek(
+            Duration(milliseconds: math.max(0, cue.startMs - _offsetMs)),
+          ),
+        ),
+      ),
+      actions: VideoSubtitleStudioActions(
+        toolset: VideoSubtitleStudioToolset.music,
+        generate: _canGenerateSubtitles ? _generateSubtitles : null,
+        syncPlainText: _autoSyncLyrics,
+        // 工作台开着时会换曲、对完时间：可用与否按当前这份歌词现算。
+        canSyncPlainText: () => musicLyricsCanAutoSync(_lyrics?.timeline),
+        setCueStart: _studioSetCueStart,
+        canSetCueStart: () => _lyricsAutoSynced,
+      ),
+    );
+  }
+
+  Future<void> _studioSetCueStart(AudioCue cue, int startMs) async {
+    final MusicPlayItem? item = _engine.current;
+    // 表格里的句子属于载入时那首（[AudioCue.bookKey]）：换曲后旧表格的点按不落到新曲上。
+    if (item == null ||
+        !_lyricsAutoSynced ||
+        cue.bookKey != item.trackUid ||
+        _loadedUid != item.trackUid) {
+      return;
+    }
+    final bool changed = await _service.setAutoSyncedLineStart(
+      musicLyricsTrackRefOf(item),
+      cue.sentenceIndex,
+      startMs,
+    );
+    if (!changed || !mounted) return;
+    unawaited(appModel.musicLyricsLive.reload());
+    await _load(item);
   }
 
   /// 曲内搜索：在当前歌词 / 字幕行里找，点结果跳到那一行。
@@ -2870,6 +3059,22 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             label: t.music_subtitle_generate,
             icon: FushiIcons.subtitles,
           ),
+        // 纯文本歌词（没有时间轴）：按这首的本机转录逐行对时（拍板台 niQk_Ns4OV）。
+        if (musicLyricsCanAutoSync(_lyrics?.timeline))
+          FushiChoiceOption<int>(
+            value: 7,
+            label: t.music_lyrics_auto_sync_action,
+            subtitle: t.music_lyrics_auto_sync_hint,
+            icon: FushiIcons.timer,
+            enabled: !_autoSyncing,
+          ),
+        // 通用字幕工作台（歌词逐行表格 + 生成 / 对时工具 + 对时结果逐行微调）。
+        if (_lyrics != null || _canGenerateSubtitles)
+          FushiChoiceOption<int>(
+            value: 8,
+            label: t.video_subtitle_studio_title,
+            icon: FushiIcons.modelTraining,
+          ),
       ],
     );
     switch (choice) {
@@ -2889,6 +3094,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         if (mounted) await _generateSubtitles();
       case 6:
         if (mounted) await _openEffects();
+      case 7:
+        if (mounted) await _autoSyncLyrics();
+      case 8:
+        if (mounted) await _openSubtitleStudio();
       default:
     }
   }
