@@ -26,8 +26,16 @@ import 'package:fushi_engine/media/identity/pending_identity.dart'
         PendingIdentityAiOutcome,
         PendingIdentityIgnoreDomain,
         loadPendingIdentityIgnored;
+import 'package:fushi_engine/epub/epub_series.dart'
+    show EpubSeries, decodeEpubSeriesMetadata;
 import 'package:fushi_engine/media/collections/book_series_grouper.dart'
     show isOnlineMangaSourceMetadata;
+import 'package:fushi_engine/media/collections/book_series_key.dart'
+    show
+        BookSeriesKey,
+        compareBookSeriesPosition,
+        declaredBookSeriesKey,
+        parseBookSeriesKey;
 import 'package:fushi_engine/media/collections/library_organize/library_organize_facts.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart'
     show LibraryOrganizeFacts;
@@ -45,6 +53,8 @@ import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart'
 import 'package:fushi_engine/media/video/organize/video_placement_ai.dart';
 import 'package:fushi_engine/media/video/organize/video_placement_audit.dart'
     show kVideoEpisodeOccupiedCode;
+import 'package:fushi_engine/sync/override_title_lookup.dart'
+    show OverrideTitleEntry, readOverrideTitlesByBookKey;
 
 export 'package:fushi_engine/media/library_curate/library_curate_run.dart';
 
@@ -1254,10 +1264,14 @@ class LibraryCurator {
         ctx,
         decide,
       );
-      if (candidates.length == 1 &&
-          (exact || _strongBookMatch(unit.title, candidates[0]))) {
+      if (exact && candidates.length == 1) {
         pick = candidates[0];
-      } else if (candidates.length > 1 && decide != null) {
+      } else {
+        pick = _uniqueStrongBookMatch(unit, candidates);
+      }
+      // 规则认不了、又有候选（含唯一一条但标题对不上：资料源条目名常带出版社 /
+      // 副标题，本地是系列名）→ 交 AI 在候选里选。
+      if (pick == null && candidates.isNotEmpty && decide != null) {
         if (!ctx.spend(1)) {
           incomplete = true;
           break;
@@ -1310,7 +1324,20 @@ class LibraryCurator {
         final List<(Map<String, Object?>, List<String>)> writes =
             <(Map<String, Object?>, List<String>)>[];
         if (!unit.isSeries) {
-          writes.add((pick, _bookFields(volume, pick, title: true)));
+          // 搜索词是去掉卷号的系列名时，选中的多半是系列条目而不是这一卷：只有
+          // 候选标题与本卷书名本身一致才写书名和封面，否则只补作者（系列条目的
+          // 封面 / 书名会把第 N 卷写成第 1 卷的样子）。
+          final bool sameVolume =
+              unit.query == unit.title || _strongBookMatch(unit.title, pick);
+          writes.add((
+            pick,
+            sameVolume
+                ? _bookFields(volume, pick, title: true)
+                : <String>[
+                    if (volume.missingAuthor && _hasText(pick['author']))
+                      'author',
+                  ],
+          ));
         } else {
           Map<String, Object?>? own;
           if (volume.missingCover) {
@@ -1422,15 +1449,15 @@ class LibraryCurator {
   static String _bookDoneKey(LibraryCurateBookVolume v) =>
       'scrape.books.done:${v.shelfKey}';
 
-  /// 还没问 AI 时，这一条若留在待确认，AI 一栏该写什么：候选不到两个时 AI 本来就
-  /// 不参与（`not_asked`）；两个以上却没问，是没指派（`unassigned`）或指派了但宿主
-  /// 没装配决策器（`unavailable`）。问过之后由调用方改成 `declined`。
+  /// 还没问 AI 时，这一条若留在待确认，AI 一栏该写什么：没有候选时 AI 本来就不
+  /// 参与（`not_asked`）；有候选却没问，是没指派（`unassigned`）或指派了但宿主没
+  /// 装配决策器（`unavailable`）。问过之后由调用方改成 `declined`。
   static PendingIdentityAiOutcome _aiNotAskedOutcome(
     int candidateCount,
     _RunContext ctx,
     AiMediaIdentityDecider? decide,
   ) {
-    if (candidateCount < 2) return PendingIdentityAiOutcome.notAsked;
+    if (candidateCount < 1) return PendingIdentityAiOutcome.notAsked;
     if (decide != null) return PendingIdentityAiOutcome.notAsked;
     return ctx.ai.videoIdentify
         ? PendingIdentityAiOutcome.unavailable
@@ -1465,6 +1492,26 @@ class LibraryCurator {
 
   static String _bookCandidateKey(Map<String, Object?> c) =>
       '${c['source']}:${c['id']}';
+
+  /// 规则认领：候选里**恰好一条**标题（规范化后）与本地书名或搜索词（系列名）一致
+  /// → 认它；没有或有两条以上（同名的小说 / 漫画版等）→ null，交 AI。资料源按关键词
+  /// 模糊搜，常把目标连同一串近似标题一起返回，「只有唯一候选才认」会把这些
+  /// 本来一眼能认的都推给待确认。
+  static Map<String, Object?>? _uniqueStrongBookMatch(
+    LibraryCurateBookUnit unit,
+    List<Map<String, Object?>> candidates,
+  ) {
+    Map<String, Object?>? found;
+    for (final Map<String, Object?> c in candidates) {
+      if (!_strongBookMatch(unit.title, c) &&
+          !_strongBookMatch(unit.query, c)) {
+        continue;
+      }
+      if (found != null) return null;
+      found = c;
+    }
+    return found;
+  }
 
   static bool _strongBookMatch(String local, Map<String, Object?> c) {
     final String l = foldMediaTitle(local);
@@ -1574,7 +1621,7 @@ class LibraryCurator {
         ctx,
         decide,
       );
-      if (pick == null && candidates.length > 1 && decide != null) {
+      if (pick == null && candidates.isNotEmpty && decide != null) {
         if (!ctx.spend(1)) {
           incomplete = true;
           break;
@@ -2121,7 +2168,7 @@ class LibraryCurateBookVolume {
   String get shelfKey => 'book:$bookKey';
 }
 
-/// 一个刮削单元：一套系列（同一合集里两本以上缺资料的书，按合集查一次）或一本单书。
+/// 一个刮削单元：一套系列（同一系列两本以上缺资料的书，按系列名查一次）或一本单书。
 class LibraryCurateBookUnit {
   const LibraryCurateBookUnit({
     required this.id,
@@ -2129,16 +2176,25 @@ class LibraryCurateBookUnit {
     required this.volumes,
     this.author,
     this.isSeries = false,
-  });
+    String? query,
+  }) : _query = query;
 
-  /// `collection:<id>` / `book:<bookKey>`（进度 / 待确认的键）。
+  /// `series:<书架>|<系列键>` / `book:<bookKey>`（进度 / 待确认的键）。
   final String id;
 
-  /// 查询用的标题：系列 = 合集名，单书 = 书名。
+  /// 显示用的标题：系列 = 系列名，单书 = 书名。
   final String title;
   final String? author;
   final List<LibraryCurateBookVolume> volumes;
   final bool isSeries;
+
+  final String? _query;
+
+  /// 资料源搜索词：书名去掉卷号 / 话号 / 出版标签 / 副标题 / CRC 后的系列名
+  /// （[parseBookSeriesKey]，与系列归组同一判据）——资料源收录的是作品，不是
+  /// 「バカに告白 1【電子限定特典付き】」这种带卷号和店铺标签的单卷名。解析不出时
+  /// 就是 [title]。
+  String get query => _query ?? title;
 
   /// 只留满足 [keep] 的卷；一卷不剩为 null。
   LibraryCurateBookUnit? only(bool Function(LibraryCurateBookVolume v) keep) {
@@ -2151,6 +2207,7 @@ class LibraryCurateBookUnit {
       author: author,
       volumes: left,
       isSeries: isSeries,
+      query: _query,
     );
   }
 }
@@ -2193,7 +2250,7 @@ final RegExp _kLeadingTag = RegExp(r'^\s*[\[【［][^\]】］]+[\]】］]');
   }
   final DlsiteWorkId? dlsite = DlsiteWorkId.findIn(unit.title);
   if (dlsite != null) return ('dlsite', dlsite.value, true);
-  return (null, unit.title, false);
+  return (null, unit.query, false);
 }
 
 /// 单条重试（[LibraryCurator.retryScrape]）要刮的书单元：[target] 是单元 id 就整个
@@ -2454,16 +2511,26 @@ class DatabaseLibraryCurateFacts implements LibraryCurateFacts {
   }
 
   /// 「缺元数据」的书（[LibraryCurateBookVolume.missing]：没有封面 / 没有作者 / 书名是
-  /// 文件名），按合集归成系列单元：同一个 `collection` 型合集里有两本以上缺资料的书
-  /// → 一个系列单元（按合集名查）；其余每本一个单元。在线漫画源的书不算（资料归源站）。
-  /// [sinceMs] 非 null 时只要含新入库（`local_added_at` 晚于它）书的单元。
+  /// 文件名），按**系列身份**归成单元：同一书架（漫画 / 书）、同一系列键的两本以上
+  /// 缺资料的书 → 一个系列单元（按系列名查一次）；其余每本一个单元（按去掉卷号 /
+  /// 标签后的系列名查）。在线漫画源的书不算（资料归源站）。[sinceMs] 非 null 时只要
+  /// 含新入库（`local_added_at` 晚于它）书的单元。
+  ///
+  /// 系列身份与系列归组（`book_series_grouper.dart`）同一判据：包里声明的系列优先，
+  /// 否则 [parseBookSeriesKey] 按书名（改名覆盖优先）解析——不看合集。合集类型与
+  /// 系列无关（BUG-5366：这里原先只认 `collection` 型合集，而归组 / 库整理 / AI 助手
+  /// 建的系列都是 `playlist` 型，于是每卷都被当单本、拿「十歳の最強魔導師 第10話 前編」
+  /// 这种单卷名去查，标题永远对不上）；用户自建的混合歌单也不该被当成一套系列去查。
   @override
   Future<List<LibraryCurateBookUnit>> bookScrapeUnits(int? sinceMs) async {
-    final Map<String, (LibraryCurateBookVolume, String, int?)> missing =
-        <String, (LibraryCurateBookVolume, String, int?)>{};
+    final Map<String, OverrideTitleEntry> overrides =
+        await readOverrideTitlesByBookKey(db);
+    final List<_MissingBook> missing = <_MissingBook>[];
     for (final EpubBookRow book in await db.getAllEpubBooks()) {
       if (book.uid.isEmpty || book.bookKey.isEmpty) continue;
       if (isOnlineMangaSourceMetadata(book.sourceMetadata)) continue;
+      final bool manga =
+          BookFormat.parseOrEpub(book.format) == BookFormat.manga;
       final LibraryCurateBookVolume v = LibraryCurateBookVolume(
         bookKey: book.bookKey,
         title: book.title,
@@ -2471,86 +2538,93 @@ class DatabaseLibraryCurateFacts implements LibraryCurateFacts {
         isbn: book.isbn,
         missingCover: (book.coverPath ?? '').trim().isEmpty,
         fileNameTitle: looksLikeFileNameTitle(book.title),
-        manga: BookFormat.parseOrEpub(book.format) == BookFormat.manga,
+        manga: manga,
       );
       if (!v.missing) continue;
-      missing[book.uid] = (v, book.bookKey, book.localAddedAt);
+      final String display = overrides[book.bookKey]?.title ?? book.title;
+      final EpubSeries? declared = decodeEpubSeriesMetadata(
+        book.sourceMetadata,
+      );
+      final BookSeriesKey? series = declared != null
+          ? declaredBookSeriesKey(
+              name: declared.name,
+              index: declared.index,
+              title: display,
+            )
+          : parseBookSeriesKey(display);
+      missing.add(
+        _MissingBook(
+          volume: v,
+          series: series,
+          seriesId: series == null || series.key.isEmpty
+              ? null
+              : '${manga ? 'manga' : 'book'}|${series.key}',
+          addedAt: book.localAddedAt,
+        ),
+      );
     }
     if (missing.isEmpty) return const <LibraryCurateBookUnit>[];
-    final String epub = MediaKind.epub.dbValue;
-    final Map<int, String> names = <int, String>{};
-    final Map<int, List<String>> members = <int, List<String>>{};
-    final Map<String, String> uidByKey = <String, String>{
-      for (final MapEntry<String, (LibraryCurateBookVolume, String, int?)> e
-          in missing.entries)
-        e.value.$2: e.key,
-    };
-    for (final QueryRow row
-        in await db
-            .customSelect(
-              'SELECT c.id AS id, c.name AS name, i.entry_key AS k '
-              'FROM media_collections c '
-              'JOIN media_collection_items i ON i.collection_id = c.id '
-              "WHERE c.collection_type = 'collection' AND i.media_type = ?1 "
-              'ORDER BY c.id, i.sort_index',
-              variables: <Variable<Object>>[Variable<String>(epub)],
-            )
-            .get()) {
-      final String key = '${row.data['k']}';
-      final String? uid = missing.containsKey(key) ? key : uidByKey[key];
-      if (uid == null) continue;
-      final int id = row.read<int>('id');
-      names[id] = '${row.data['name']}';
-      final List<String> list = members.putIfAbsent(id, () => <String>[]);
-      if (!list.contains(uid)) list.add(uid);
+    bool fresh(Iterable<_MissingBook> books) =>
+        sinceMs == null ||
+        books.any((_MissingBook b) => (b.addedAt ?? 0) > sinceMs);
+    final Map<String, List<_MissingBook>> bySeries =
+        <String, List<_MissingBook>>{};
+    for (final _MissingBook b in missing) {
+      final String? id = b.seriesId;
+      if (id != null) bySeries.putIfAbsent(id, () => <_MissingBook>[]).add(b);
     }
     final List<LibraryCurateBookUnit> out = <LibraryCurateBookUnit>[];
     final Set<String> placed = <String>{};
-    bool fresh(Iterable<String> uids) =>
-        sinceMs == null ||
-        uids.any((String u) => (missing[u]!.$3 ?? 0) > sinceMs);
-    for (final int id in members.keys.toList()..sort()) {
-      final List<String> uids = <String>[
-        for (final String u in members[id]!)
-          if (!placed.contains(u)) u,
-      ];
-      if (uids.length < 2) continue;
-      placed.addAll(uids);
-      if (!fresh(uids)) continue;
-      final List<LibraryCurateBookVolume> volumes = <LibraryCurateBookVolume>[
-        for (final String u in uids) missing[u]!.$1,
-      ];
+    for (final String id in bySeries.keys.toList()..sort()) {
+      final List<_MissingBook> books = bySeries[id]!;
+      if (books.length < 2) continue;
+      for (final _MissingBook b in books) {
+        placed.add(b.volume.bookKey);
+      }
+      if (!fresh(books)) continue;
+      books.sort((_MissingBook a, _MissingBook b) {
+        final int c = compareBookSeriesPosition(a.series!, b.series!);
+        return c != 0 ? c : a.volume.bookKey.compareTo(b.volume.bookKey);
+      });
+      final String seriesTitle = books.first.series!.seriesTitle;
       out.add(
         LibraryCurateBookUnit(
-          id: 'collection:$id',
-          title: names[id]!,
-          author: volumes
-              .map((LibraryCurateBookVolume v) => v.author)
+          id: 'series:$id',
+          title: seriesTitle,
+          author: books
+              .map((_MissingBook b) => b.volume.author)
               .firstWhere(
                 (String? a) => a != null && a.trim().isNotEmpty,
                 orElse: () => null,
               ),
-          volumes: volumes,
+          volumes: <LibraryCurateBookVolume>[
+            for (final _MissingBook b in books) b.volume,
+          ],
           isSeries: true,
         ),
       );
     }
-    final List<String> singles =
-        <String>[
-          for (final String u in missing.keys)
-            if (!placed.contains(u) && fresh(<String>[u])) u,
+    final List<_MissingBook> singles =
+        <_MissingBook>[
+          for (final _MissingBook b in missing)
+            if (!placed.contains(b.volume.bookKey) && fresh(<_MissingBook>[b]))
+              b,
         ]..sort(
-          (String a, String b) =>
-              missing[a]!.$1.bookKey.compareTo(missing[b]!.$1.bookKey),
+          (_MissingBook a, _MissingBook b) =>
+              a.volume.bookKey.compareTo(b.volume.bookKey),
         );
-    for (final String u in singles) {
-      final LibraryCurateBookVolume v = missing[u]!.$1;
+    for (final _MissingBook b in singles) {
+      final LibraryCurateBookVolume v = b.volume;
+      final String? seriesTitle = b.series?.seriesTitle.trim();
       out.add(
         LibraryCurateBookUnit(
           id: v.shelfKey,
           title: v.title,
           author: v.missingAuthor ? null : v.author,
           volumes: <LibraryCurateBookVolume>[v],
+          query: seriesTitle == null || seriesTitle.isEmpty
+              ? null
+              : seriesTitle,
         ),
       );
     }
@@ -2583,4 +2657,23 @@ class DatabaseLibraryCurateFacts implements LibraryCurateFacts {
     }
     return out;
   }
+}
+
+/// [DatabaseLibraryCurateFacts.bookScrapeUnits] 里一本缺资料的书与它的系列身份。
+class _MissingBook {
+  const _MissingBook({
+    required this.volume,
+    required this.series,
+    required this.seriesId,
+    required this.addedAt,
+  });
+
+  final LibraryCurateBookVolume volume;
+
+  /// 系列身份（解析不出为 null）。
+  final BookSeriesKey? series;
+
+  /// `<书架>|<系列键>`：同书架同系列键才算一套。
+  final String? seriesId;
+  final int? addedAt;
 }

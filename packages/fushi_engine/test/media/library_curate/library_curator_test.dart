@@ -1030,6 +1030,63 @@ void main() {
     expect(LibraryCurateState.decode('not json').runs, isEmpty);
   });
 
+  // BUG-5366：补刮换了判据，v1 状态里「查过没认出来」的书作废，下一趟全量重看。
+  test('状态 v1 → v2：书补刮的水位 / 进度 / seen / 待确认项作废，写回事实与抑制保留', () {
+    final String v1 = jsonEncode(<String, Object?>{
+      'v': 1,
+      'runs': <Object?>[
+        <String, Object?>{
+          'id': 5,
+          'trigger': 'auto',
+          'startedAt': 5,
+          'status': 'done',
+          'pendingItems': <Object?>[
+            <String, Object?>{
+              'stage': 'scrape.books',
+              'kind': 'book_scrape_pending',
+              'title': 'Saga 01',
+              'ref': 'book:s1',
+              'reason': 'ambiguous',
+            },
+            <String, Object?>{
+              'stage': 'scrape.games',
+              'kind': 'game_scrape_pending',
+              'title': 'G',
+              'ref': 'game:g1',
+            },
+          ],
+        },
+      ],
+      'watermarks': <String, Object?>{'scrape.books': 10, 'scrape.games': 10},
+      'progress': <String, Object?>{
+        'scrape.books': <String>['book:s1'],
+        'links': <String>['x'],
+      },
+      'suppressed': <String>['scrape.books:book:u1'],
+      'seen': <String>[
+        'scrape.books:book:s1',
+        'scrape.books.done:book:d1',
+        'scrape.games:g1',
+      ],
+    });
+    final LibraryCurateState s = LibraryCurateState.decode(v1);
+    expect(s.watermarks, <String, int>{'scrape.games': 10});
+    expect(s.progress.keys, <String>['links']);
+    expect(s.seen, <String>{'scrape.books.done:book:d1', 'scrape.games:g1'});
+    expect(s.suppressed, <String>{'scrape.books:book:u1'});
+    expect(
+      s.runs.single.pendingItems.map((LibraryCuratePendingItem p) => p.kind),
+      <String>['game_scrape_pending'],
+    );
+    // 写回去是 v2；v2 再读不再清。
+    expect(jsonDecode(s.encode())['v'], kLibraryCurateStateVersion);
+    s.seen.add('scrape.books:book:s2');
+    expect(
+      LibraryCurateState.decode(s.encode()).seen,
+      contains('scrape.books:book:s2'),
+    );
+  });
+
   group('书 / 游戏刮削阶段', () {
     /// 书的候选（按查询词）与游戏的候选（按游戏 id）。
     late Map<String, List<Map<String, Object?>>> bookFound;
@@ -1205,8 +1262,9 @@ void main() {
       ai = kLibraryCurateNoAi;
       facts.bookUnits = <LibraryCurateBookUnit>[single(vol('k1', 'Gamma'))];
       bookFound['Gamma'] = <Map<String, Object?>>[
-        book('1', 'Gamma'),
-        book('2', 'Gamma 2'),
+        // 都与本地书名不一致：规则认不了（唯一同名候选会被直接认）。
+        book('1', 'Gamma One'),
+        book('2', 'Gamma Two'),
       ];
       facts.gameUnits = const <LibraryCurateGameUnit>[
         LibraryCurateGameUnit(id: 'g1', title: 'Delta'),
@@ -1295,10 +1353,10 @@ void main() {
       expect(s.changes, 0);
     });
 
-    test('系列按合集名只查一次、只问一次 AI；各卷按卷名各自取封面', () async {
+    test('系列按系列名只查一次、只问一次 AI；各卷按卷名各自取封面', () async {
       facts.bookUnits = <LibraryCurateBookUnit>[
         LibraryCurateBookUnit(
-          id: 'collection:7',
+          id: 'series:book|kappa',
           title: 'Kappa',
           isSeries: true,
           volumes: <LibraryCurateBookVolume>[
@@ -1308,7 +1366,7 @@ void main() {
         ),
       ];
       bookFound['Kappa'] = <Map<String, Object?>>[
-        book('10', 'Kappa', author: 'Series Author'),
+        book('10', 'Kappa Saga', author: 'Series Author'),
         book('11', 'Kappa Gaiden'),
       ];
       bookFound['Kappa 1'] = <Map<String, Object?>>[
@@ -1324,6 +1382,67 @@ void main() {
       expect(bookWrites, <String, Map<String, String>>{
         'book:v1': <String, String>{'cover': '21'},
         'book:v2': <String, String>{'author': '10'},
+      });
+    });
+
+    // BUG-5366：资料源按关键词模糊搜，目标常连同一串近似标题一起返回。
+    test('多候选里恰好一条与系列名一致：规则直接认，不问 AI', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        LibraryCurateBookUnit(
+          id: 'series:manga|saga',
+          title: 'Saga',
+          isSeries: true,
+          volumes: <LibraryCurateBookVolume>[
+            vol('v1', 'Saga 01', missingCover: false),
+            vol('v2', 'Saga 02', missingCover: false),
+          ],
+        ),
+      ];
+      bookFound['Saga'] = <Map<String, Object?>>[
+        book('1', 'Saga', author: 'Real Author'),
+        book('2', 'Saga of Others'),
+        book('3', 'Sagami'),
+      ];
+      await curator().run(trigger: LibraryCurateTrigger.manual);
+      expect(mediaAsked, isEmpty);
+      expect(bookWrites, <String, Map<String, String>>{
+        'book:v1': <String, String>{'author': '1'},
+        'book:v2': <String, String>{'author': '1'},
+      });
+    });
+
+    test('唯一候选但标题对不上：交 AI 判，不再直接留待确认', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[single(vol('k1', 'Rho'))];
+      bookFound['Rho'] = <Map<String, Object?>>[
+        book('1', 'Rho Chronicle', author: 'Rho Author'),
+      ];
+      mediaAnswer = (_) =>
+          const AiVideoIdentityDecision(key: 'bangumi:1', confidence: 0.95);
+      await curator().run(trigger: LibraryCurateTrigger.manual);
+      expect(mediaAsked, hasLength(1));
+      expect(bookWrites.keys, <String>['book:k1']);
+    });
+
+    test('单卷按系列名查、认到的是系列条目：只补作者，不拿系列的封面 / 书名写这一卷', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        LibraryCurateBookUnit(
+          id: 'book:k1',
+          title: '[Scan] Sigma 3【電子限定特典付き】.epub',
+          query: 'Sigma',
+          volumes: <LibraryCurateBookVolume>[
+            vol('k1', '[Scan] Sigma 3【電子限定特典付き】.epub'),
+          ],
+        ),
+      ];
+      bookFound['Sigma'] = <Map<String, Object?>>[
+        book('1', 'Sigma', author: 'Sigma Author'),
+        book('2', 'Sigma Prime'),
+      ];
+      await curator().run(trigger: LibraryCurateTrigger.manual);
+      expect(mediaAsked, isEmpty);
+      expect(applyArgs.single['fields'], <String>['author']);
+      expect(bookWrites, <String, Map<String, String>>{
+        'book:k1': <String, String>{'author': '1'},
       });
     });
 
@@ -1443,14 +1562,15 @@ void main() {
     });
 
     // BUG-5283：待确认项要带候选数与 AI 结论，待确认身份队列才说得清「为什么」。
-    test('待确认项记下候选数与 AI 结论（没指派 / 问过没采用 / 不到两个候选）', () async {
+    test('待确认项记下候选数与 AI 结论（没指派 / 问过没采用）', () async {
       facts.bookUnits = <LibraryCurateBookUnit>[
         single(vol('k1', 'Gamma')),
         single(vol('k2', 'Lone')),
       ];
       bookFound['Gamma'] = <Map<String, Object?>>[
-        book('1', 'Gamma'),
-        book('2', 'Gamma 2'),
+        // 都与本地书名不一致：规则认不了（唯一同名候选会被直接认）。
+        book('1', 'Gamma One'),
+        book('2', 'Gamma Two'),
       ];
       bookFound['Lone'] = <Map<String, Object?>>[book('3', 'Different')];
       facts.gameUnits = const <LibraryCurateGameUnit>[
@@ -1471,7 +1591,7 @@ void main() {
       ].join(',');
       expect(
         summary(none),
-        'book:k1|ambiguous|2|unassigned,book:k2|ambiguous|1|not_asked,'
+        'book:k1|ambiguous|2|unassigned,book:k2|ambiguous|1|unassigned,'
         'game:g1|ambiguous|2|unassigned',
       );
       // JSON 往返不丢。
@@ -1501,8 +1621,9 @@ void main() {
         single(vol('k2', 'Other')),
       ];
       bookFound['Gamma'] = <Map<String, Object?>>[
-        book('1', 'Gamma'),
-        book('2', 'Gamma 2'),
+        // 都与本地书名不一致：规则认不了（唯一同名候选会被直接认）。
+        book('1', 'Gamma One'),
+        book('2', 'Gamma Two'),
       ];
       mediaAnswer = (_) =>
           const AiVideoIdentityDecision(key: 'bangumi:9', confidence: 0.5);

@@ -236,6 +236,7 @@ import 'package:fushi/src/media/links/media_links_section.dart'
     show showMediaLinksDialog;
 import 'package:fushi/src/media/links/work_kinds_badge.dart';
 import 'package:fushi/src/media/tracking/book_tracking_dialog.dart';
+import 'package:fushi/src/media/tracking/series_card_tracking_section.dart';
 
 part 'reader_history/card_widgets.part.dart';
 part 'reader_history/remote.part.dart';
@@ -3959,6 +3960,13 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
                 appModel.moduleVisibility.isEnabled(ModuleId.services),
             migrationReadonly: () => appModel.isMigrationReadonly,
           ),
+          // 系列关联（一个关联计入每一卷）在系列卡的「追踪」区管理。
+          trackingSection: isMediaTrackingEnabled(appModel.moduleVisibility)
+              ? SeriesCardTrackingSection(
+                  service: appModel.mediaTrackingService,
+                  collectionId: collection.id,
+                )
+              : null,
         ),
       ),
     );

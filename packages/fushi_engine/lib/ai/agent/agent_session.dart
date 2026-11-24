@@ -12,8 +12,9 @@
 /// [AgentLimits.longTaskMaxToolCalls]）；同一工具同一参数连错
 /// [AgentLimits.maxRepeatedFailures] 次就停下报告。历史超过
 /// [AgentLimits.historyCharBudget] 时较早的工具结果换成占位（[compactAgentHistory]）；
-/// 多步工作的计划清单由元工具 `plan.update` 维护（[AgentSession.plan]）。会话 token 不设上限，只累计用量
-/// 与费用（[AgentSession.usage] / [AgentSession.cost]）给界面显示。
+/// 多步工作的计划清单由元工具 `plan.update` 维护（[AgentSession.plan]）。有人看着的会话 token 不设
+/// 上限，只累计用量与费用（[AgentSession.usage] / [AgentSession.cost]）给界面显示；无人值守的
+/// 会话（AI 管库自动复查）经 [AgentLimits.maxSessionTokens] 设上限，用满就停（BUG-5365）。
 library;
 
 import 'dart:async';
@@ -67,6 +68,7 @@ class AgentLimits {
     this.longTaskMaxToolCalls = 400,
     this.historyCharBudget = 240000,
     this.keepRecentToolResults = 8,
+    this.maxSessionTokens,
   });
 
   final int maxToolCallsPerTurn;
@@ -82,6 +84,11 @@ class AgentLimits {
 
   /// 压缩时最近这么多条工具结果原样保留。
   final int keepRecentToolResults;
+
+  /// 本会话累计 token（[AgentSession.totalTokens]）的上限：每次请求模型前用满了就停下，
+  /// 记 [AgentStopCode.tokenBudget]。null = 不设上限（有人看着的对话，用户自己停）。
+  /// 只给无人值守的会话用：没人能按「停止」，一场对话不能无界地烧下去（BUG-5365）。
+  final int? maxSessionTokens;
 }
 
 /// 界面上下文（spec §6.2）：「这个视频」「这本书」= 当前页面 / 条目。
@@ -298,7 +305,7 @@ abstract final class AgentStopCode {
   static const String toolLimit = 'tool_limit';
   static const String repeatedFailure = 'repeated_failure';
 
-  /// 旧版有单会话 token 上限，停下时记这个码；上限已删除，只为渲染旧存档保留。
+  /// 会话 token 用满了 [AgentLimits.maxSessionTokens]（只有无人值守的会话设）。
   static const String tokenBudget = 'token_budget';
   static const String llmError = 'llm_error';
   static const String cancelled = 'cancelled';
@@ -964,6 +971,11 @@ class AgentSession {
     final Map<String, int> failures = <String, int>{};
     while (true) {
       if (_cancelled) return _stop(AgentStopCode.cancelled);
+      // 在请求之前查：此刻历史里每个 tool_use 都已有结果，停下后存档仍能续接。
+      final int? tokenCap = limits.maxSessionTokens;
+      if (tokenCap != null && totalTokens >= tokenCap) {
+        return _stop(AgentStopCode.tokenBudget);
+      }
       compactAgentHistory(
         _history,
         charBudget: limits.historyCharBudget,
