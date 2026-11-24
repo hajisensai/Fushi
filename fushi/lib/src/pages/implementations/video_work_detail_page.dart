@@ -796,7 +796,13 @@ class _StandaloneVideoWorkDetailState
           ),
         ),
       );
-    } on Object {
+    } on Object catch (error) {
+      // 在线预告片 / 花絮解析失败（视频已下架、网络到不了 YouTube…）是预期内的失败，
+      // 但原先吞掉异常、只弹「无法加载该视频」，反馈里查不到原因（aBGenWuGns）。
+      ErrorLogService.instance.logDiagnostic(
+        'VideoWorkDetailPage.playExtra',
+        '${extra.remoteUrl}: $error',
+      );
       if (mounted) FushiToast.show(msg: t.video_load_failed_generic);
     }
   }
