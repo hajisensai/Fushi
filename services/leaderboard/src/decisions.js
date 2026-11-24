@@ -232,6 +232,16 @@ export const DECISION_SHARE_TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
 const INSERT_SHARE_SQL = `INSERT OR IGNORE INTO decision_file_shares (token, decision_id, file_key, created_by, created_at)
   VALUES (?1, ?2, ?3, ?4, ?5)`;
 const ACTIVE_SHARE_SQL = `SELECT token FROM decision_file_shares WHERE decision_id = ?1 AND file_key = ?2 AND revoked_at IS NULL`;
+/** 「有效」分享 = 未撤销且签发人仍是开发者（与公开路由同一口径）；处理台据此显示按钮。 */
+const LIVE_SHARES_SQL = `SELECT s.decision_id, s.file_key, s.token FROM decision_file_shares s
+  JOIN accounts a ON a.id = s.created_by AND a.role = 'dev' WHERE s.revoked_at IS NULL`;
+/**
+ * 签发前先撤掉该附件上签发人已不是开发者的那条：它对外已经 404，但还占着部分唯一索引，
+ * 不撤的话「分享」会把这条死链接原样回给新的签发人。
+ */
+const REVOKE_ORPHAN_SHARE_SQL = `UPDATE decision_file_shares SET revoked_at = ?3
+  WHERE decision_id = ?1 AND file_key = ?2 AND revoked_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.id = decision_file_shares.created_by AND a.role = 'dev')`;
 const REVOKE_SHARE_SQL = `UPDATE decision_file_shares SET revoked_at = ?3 WHERE decision_id = ?1 AND file_key = ?2 AND revoked_at IS NULL`;
 /** 分享 / 撤销也刷新 updated_at：卡片版本变了，别的开着的处理台页面会同步到按钮状态。 */
 const TOUCH_DECISION_SQL = 'UPDATE decisions SET updated_at = ?2 WHERE id = ?1';
@@ -263,6 +273,7 @@ async function decisionFileAt(env, id, n) {
 export async function shareDecisionFile(env, dev, id, n, now) {
   const f = await decisionFileAt(env, id, n);
   const token = b64urlEncode(crypto.getRandomValues(new Uint8Array(24)));
+  await env.DB.prepare(REVOKE_ORPHAN_SHARE_SQL).bind(id, f.key, now).run();
   const r = await env.DB.prepare(INSERT_SHARE_SQL).bind(token, id, f.key, dev.id, now).run();
   const created = !!(r.meta && r.meta.changes === 1);
   const cur = created ? { token } : await env.DB.prepare(ACTIVE_SHARE_SQL).bind(id, f.key).first();
@@ -302,15 +313,15 @@ export async function sharedFileResponse(env, token) {
 }
 
 /**
- * 这些事项里未撤销的分享：decision_id → (file_key → token)。
+ * 这些事项里有效的分享（未撤销且签发人仍是开发者）：decision_id → (file_key → token)。
  * @param {object} env
  * @param {string|null} [id] 只取一条；省略取全部
  * @returns {Promise<Map<string, Map<string, string>>>}
  */
 export async function activeDecisionShares(env, id = null) {
   const q = id
-    ? env.DB.prepare('SELECT decision_id, file_key, token FROM decision_file_shares WHERE revoked_at IS NULL AND decision_id = ?1').bind(id)
-    : env.DB.prepare('SELECT decision_id, file_key, token FROM decision_file_shares WHERE revoked_at IS NULL');
+    ? env.DB.prepare(`${LIVE_SHARES_SQL} AND s.decision_id = ?1`).bind(id)
+    : env.DB.prepare(LIVE_SHARES_SQL);
   const out = new Map();
   for (const r of (await q.all()).results || []) {
     if (!out.has(r.decision_id)) out.set(r.decision_id, new Map());

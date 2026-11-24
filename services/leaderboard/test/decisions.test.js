@@ -632,4 +632,28 @@ describe('附件公开分享（迁移 0025）', () => {
     env.DB.raw.prepare('UPDATE decisions SET files = ? WHERE id = ?').run(JSON.stringify(files), 'design-s');
     expect((await pub(env, path)).status).toBe(404);
   });
+
+  it('签发人被撤开发者后：处理台不再显示那条死链接；别的开发者重新分享拿到新的可用链接，旧的永久作废', async () => {
+    const { env, s } = await setup();
+    const other = await devSession(env);
+    const dead = (await post(env, s, '/dev/d/design-s/f/0/share')).data.path;
+    expect((await call(env, 'POST', `/admin/api/accounts/${s.dev.id}/role`, { headers: basic, body: { role: 'user' }, now: NOW })).status).toBe(200);
+    expect((await pub(env, dead)).status).toBe(404);
+    const p = (await page(env, other, 'all')).data;
+    expect(p).not.toContain(dead);
+    expect(p).toContain('action="/dev/d/design-s/f/0/share"');
+
+    const fresh = await post(env, other, '/dev/d/design-s/f/0/share', { now: NOW + 1 });
+    expect(fresh.status).toBe(200);
+    expect(fresh.data.path).not.toBe(dead);
+    expect(fresh.data.item.html).toContain(`href="${fresh.data.path}"`);
+    expect((await pub(env, fresh.data.path)).status).toBe(200);
+    const rows = shares(env);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.created_by === s.dev.id).revoked_at).toBe(NOW + 1);
+    // 原签发人恢复开发者也不会让死链接复活（已撤销），只有新链接有效。
+    expect((await call(env, 'POST', `/admin/api/accounts/${s.dev.id}/role`, { headers: basic, body: { role: 'dev' }, now: NOW })).status).toBe(200);
+    expect((await pub(env, dead)).status).toBe(404);
+    expect((await pub(env, fresh.data.path)).status).toBe(200);
+  });
 });
