@@ -22,7 +22,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 
 // 库页网格「缩放调每行个数」（2026-11-24 用户拍板：Cupertino 库页取方案 C 的
 // 双指缩放）。触屏双指捏合 / 触控板捏合、⌘+ ⌘−（Windows / Linux 是 Ctrl）逐档
-// 改每行个数，macOS 档工具栏另有一条滑杆。值写回既有的「每行数量」偏好
+// 改每行个数，macOS 档工具栏另有「每行数量」钮（点开弹出滑杆）。值写回既有的「每行数量」偏好
 // （`library_grid_columns`，按库 × 窗口尺寸档存，见 library_grid_columns.dart）
 // ——与「显示」菜单里的「每行数量」是同一份真相，不另立偏好键。
 //
@@ -369,8 +369,9 @@ class _LibraryGridZoomState extends State<LibraryGridZoom>
   }
 }
 
-/// macOS 档工具栏的缩放滑杆（Photos 式）：左端小图标 = 更多列（封面更小），
-/// 右端大图标 = 更少列。滑到哪一档即时写回。只在 Apple 外壳里出现。
+/// 缩放滑杆（Photos 式）：左端小图标 = 更多列（封面更小），右端大图标 = 更少列。
+/// 滑到哪一档即时写回。只在 Apple 外壳里、macOS 档「每行数量」钮弹出的面板里
+/// 出现（`AppleLibraryZoomButton`），不裸挂在工具栏上。
 class LibraryGridZoomSlider extends StatelessWidget {
   const LibraryGridZoomSlider({required this.port, super.key});
 

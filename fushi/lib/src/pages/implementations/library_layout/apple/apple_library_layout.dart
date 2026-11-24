@@ -6,6 +6,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_import_button.dart';
 import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_scope_bar.dart';
 import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_title_menu.dart';
+import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_zoom_button.dart';
 import 'package:fushi/src/pages/implementations/library_layout/apple/apple_sidebar_library_section.dart';
 import 'package:fushi/src/pages/implementations/library_layout/library_chrome_spec.dart';
 import 'package:fushi/src/pages/implementations/library_layout/library_grid_zoom.dart';
@@ -38,7 +39,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 ///   子项（[AppleSidebarLibrarySection] 登记进 [AppleSidebarLibraryHost]），内容区
 ///   不再重复画胶囊行，标题换成当前分区名。
 /// - 网格每行个数：视图经 [LibraryGridZoom] 接双指捏合 / ⌘+ ⌘−，macOS 档在
-///   工具栏右端多一条缩放滑杆（[LibraryGridZoomSlider]）。
+///   工具栏右端多一枚「每行数量」钮（[AppleLibraryZoomButton]，点开弹出缩放滑杆）。
 ///
 /// 只在 `isGlassDesign` 为真时由 [LibraryLayout] 选用；M3E 不经过这里。
 class AppleLibraryLayout<T extends Object> extends StatefulWidget {
@@ -256,7 +257,8 @@ class _AppleLibraryLayoutState<T extends Object>
     );
   }
 
-  /// 工具栏右端：macOS 档的缩放滑杆（当前视图登记了网格缩放时）+「导入」。
+  /// 工具栏右端：macOS 档的「每行数量」钮（当前视图登记了网格缩放时，点开弹出
+  /// 缩放滑杆）+「导入」。
   Widget? _trailing(LibraryChromeImport? import, {required bool macMetrics}) {
     final Widget? importButton = import == null
         ? null
@@ -274,7 +276,7 @@ class _AppleLibraryLayoutState<T extends Object>
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            LibraryGridZoomSlider(port: port),
+            AppleLibraryZoomButton(port: port),
             if (importButton != null) ...<Widget>[
               const SizedBox(width: 8),
               importButton,

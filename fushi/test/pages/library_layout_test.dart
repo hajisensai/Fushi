@@ -820,11 +820,23 @@ void main() {
       // 7 搜索并入侧栏顶部搜索框：内容区搜索框零尺寸，绑定交给侧栏。
       expect(host.search?.controller, same(search));
       expect(host.search?.hint, 'Search books');
-      // 11 macOS 工具栏缩放滑杆。
-      expect(
-        find.byKey(const ValueKey<String>('library-grid-zoom-slider')),
-        findsOneWidget,
+      // 11 macOS 工具栏：缩放滑杆不裸露，「每行数量」钮（命中 ≥36、有 tooltip）
+      // 点开才弹出滑杆，Esc 关闭。
+      final Finder slider = find.byKey(
+        const ValueKey<String>('library-grid-zoom-slider'),
       );
+      final Finder zoomButton = find.byKey(
+        const ValueKey<String>('library-grid-zoom-button'),
+      );
+      expect(slider, findsNothing);
+      expect(zoomButton, findsOneWidget);
+      expect(find.byTooltip('Items per row'), findsOneWidget);
+      await tester.tap(zoomButton);
+      await tester.pumpAndSettle();
+      expect(slider, findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(slider, findsNothing);
       // 标签行点一下 = 切换筛选（不抛）。
       host.rows
           .firstWhere((AppleSidebarLibraryRow r) => r.id == 'tag-7')
