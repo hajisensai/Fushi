@@ -152,10 +152,18 @@ double? imageAspectRatioFromHeader(Uint8List bytes) {
 /// JPEG：从 SOI 后逐段走 marker，直到 SOFn（C0~CF，去掉 C4 / C8 / CC 三个非帧
 /// 段）；帧头第 3 字节起是高、宽各 2 字节大端。字节在走到之前用完返回 null，
 /// 调用方据此决定要不要整文件重读。
+///
+/// 段与段之间夹着的非 0xFF 字节（段长写错的 APP 段之后常见）跳过去找下一个
+/// marker，与 libjpeg 的 `next_marker` 一致——解码器对这类文件只报
+/// 「extraneous bytes」警告照常解码，探针不能比解码器更挑剔：歌词模式按探针结果
+/// 决定一张图能不能当插图（BUG-5408），探针误报 null 就会把好图筛掉。
 ({int width, int height})? _jpegSize(Uint8List bytes, ByteData data) {
   int offset = 2;
   while (offset + 4 <= bytes.length) {
-    if (bytes[offset] != 0xFF) return null;
+    if (bytes[offset] != 0xFF) {
+      offset += 1;
+      continue;
+    }
     final int marker = bytes[offset + 1];
     if (marker == 0xFF) {
       // 填充字节。

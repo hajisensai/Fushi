@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,7 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
     show AudiobookPlayerController;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:image/image.dart' as img;
 
 /// 歌词模式插图（2026-10-07）：小图屏蔽判据、播放位置 → 插图映射、换图 / 回封面 /
 /// 前后切换状态机。
@@ -713,5 +715,42 @@ void main() {
       selection.verdicts['bookwalker.png'],
       LyricsIllustrationVerdict.undecodable,
     );
+  });
+
+  testWidgets('BUG-5408：探针不比解码器挑剔——段间夹杂字节的 JPEG 解码器能解，探针也要认出尺寸', (
+    WidgetTester tester,
+  ) async {
+    final Uint8List clean = img.encodeJpg(img.Image(width: 320, height: 480));
+    // SOI 之后第一个段（APP0 / JFIF）结束处插入杂字节：段长写错的文件就是这个形状。
+    final int app0End = 4 + ((clean[4] << 8) | clean[5]);
+    final Uint8List junk = Uint8List.fromList(<int>[
+      ...clean.sublist(0, app0End),
+      0x00, 0x12, 0x34, 0x56, //
+      ...clean.sublist(app0End),
+    ]);
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'lyrics_jpeg_junk_',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final String path = '${dir.path}${Platform.pathSeparator}k002.jpg';
+    File(path).writeAsBytesSync(junk);
+
+    final ({int width, int height})? decoded = await tester.runAsync(() async {
+      final ui.Codec codec = await ui.instantiateImageCodec(junk);
+      final ui.FrameInfo frame = await codec.getNextFrame();
+      final ({int width, int height}) size = (
+        width: frame.image.width,
+        height: frame.image.height,
+      );
+      frame.image.dispose();
+      codec.dispose();
+      return size;
+    });
+    expect(decoded, (width: 320, height: 480));
+
+    final Map<String, LyricsIllustrationFileProbe> probes =
+        probeLyricsIllustrationFiles(<String>[path]);
+    expect(probes[path]?.width, 320);
+    expect(probes[path]?.height, 480);
   });
 }

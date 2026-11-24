@@ -4,3 +4,4 @@
 - **[x] ① 已修复** — 新增判定 `LyricsIllustrationVerdict.undecodable`：`size == null` 一律不当插图（不再看排版）。探针认的格式正是 Flutter 位图解码器能解的格式，所以「探针认不出」就等于「歌词页画不出」，筛选与渲染同一把尺。
 - **[x] ② 已加自动化测试** — `fushi/test/media/audiobook/lyrics_illustrations_test.dart`：`classifyLyricsIllustration` 的 `size: null`（行内 / 块级）都判 `undecodable`；新增真实文件端到端用例：临时目录写一张合法 PNG 头和一张整段 XOR 加扰的同图，经 `probeLyricsIllustrationFiles` + `selectLyricsIllustrations`，断言加扰图不进 items、判定为 `undecodable`。
 - **备注**：插图册（`fushi/lib/src/reader/reader_gallery_page.dart`）对探针认不出的图仍照常列出（errorBuilder 画坏图占位），那是「全书图片清单」的语义，未改；阅读器正文里这张图同样显示不出来，是书本身的问题。
+- **审查补充（PR #4386）**：探针结果从「只影响插图册布局」变成「决定能否当歌词插图」后，探针误报 null 会把好图筛掉。`illustration_aspect_probe.dart` `_jpegSize` 原先遇到段间非 0xFF 字节就返回 null，而解码器（libjpeg `next_marker`）只报 extraneous bytes 警告照常解码——改为跳过杂字节找下一个 marker。测试：`illustration_aspect_probe_test.dart` 合成头用例 + `lyrics_illustrations_test.dart` 真 JPEG 插杂字节后 `ui.instantiateImageCodec` 能解、探针也认出尺寸。已知未覆盖：文件头完好但后段残缺的图仍会过探针、渲染成坏图（阅读器正文同样坏，属书本身的问题）。
