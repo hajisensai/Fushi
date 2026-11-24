@@ -1,12 +1,94 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T12:43:32Z",
+ "generatedAt": "2026-11-24T13:29:42Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "43322ec35d7ccb75434980460cfa9582dcdf89b0",
-  "seq": 32267
+  "sha": "2f7a39313315812c5780de138ddcef295a9bef54",
+  "seq": 32272
  },
  "builds": [
+  {
+   "seq": 32267,
+   "version": "3.4.0",
+   "sha": "43322ec35d7ccb75434980460cfa9582dcdf89b0",
+   "unknown": false,
+   "publishedAt": "2026-11-24T13:29:27Z",
+   "testflight": false,
+   "baseSeq": 32216,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "43322ec35d7ccb75434980460cfa9582dcdf89b0",
+     "subject": "chore(bugs): settle 撞号并重建索引（合并 #4364 #4362 #4356 #4365 #4358 #4349 #4352 #4350 #4351 #4345 #4355 #4354 #4370 #4372）"
+    },
+    {
+     "sha": "88f505b2aa26ffad9078c20152ee48157b61e089",
+     "subject": "Merge #4372 (claude/fix-backup-merge-fk-remap) into develop"
+    },
+    {
+     "sha": "03b1f265be94cc41b56f4d942f8a8f9399500c5b",
+     "subject": "Merge #4370 (claude/srs-deck-row-tap-review) into develop"
+    },
+    {
+     "sha": "222ea9a6d1d6baec5e4588dd979a2a35d3edd1fd",
+     "subject": "Merge #4355-4354 (claude/integrate-favorites-samutw) into develop"
+    },
+    {
+     "sha": "273cbe6394abedd0393ad708ca7ab603f7157c59",
+     "subject": "Merge #4349-4352-4350-4351-4345 (claude/integrate-books-samutw) into develop"
+    },
+    {
+     "sha": "5c0ed00cf2691bc04e294ba825e1b99e85350983",
+     "subject": "Merge #4358 (claude/reverent-jennings-2fd608) into develop"
+    },
+    {
+     "sha": "149f50f63d517cb4c5bd839696d8e3e4a67f0821",
+     "subject": "Merge #4365 (pr/music-lyrics-display-toggles) into develop"
+    },
+    {
+     "sha": "068aefacc01aab8dc6055993717b26d51b16a29b",
+     "subject": "Merge #4356 (claude/rcv76ppoi-fundamental-fix-e7dd4b) into develop"
+    },
+    {
+     "sha": "168a3ef457cd344ae7928dc6b501caa181d883f1",
+     "subject": "Merge #4362 (claude/distracted-bohr-94c80c) into develop"
+    },
+    {
+     "sha": "53a1eee53287a9ef68a52afefe3ae1a345ffa804",
+     "subject": "Merge #4364 (claude/sad-satoshi-52d205) into develop"
+    },
+    {
+     "sha": "b43da33f9e6dd64ca8f7df87c926d3aaedf4a494",
+     "subject": "fix(ci): 修 develop 三条基线红：bug.dart 索引原子写（并行 new 读到截断文件）、封面派生点登记随 #4360 挪到 video_cover_meta_loader、manga_page_identity_test 改用 package:test"
+    },
+    {
+     "sha": "07de68e36ad3f3c58bf39ec726a2b66a4ab11a0d",
+     "subject": "docs(agent): 开 PR 前不跑全量 analyze，只由合并任务在合并结果上跑一次（反馈 SBuUIb9dYT）"
+    },
+    {
+     "sha": "fb8ddd06dd5cc99920ece20b74d9c06fbff8d2d8",
+     "subject": "docs(release): 3.4.0 公告补本轮合入项（选集面板剧照、进度口径、插图浏览、制卡提示位置与四项修复）"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
+    }
+   }
+  },
   {
    "seq": 32216,
    "version": "3.4.0",
@@ -114,7 +196,7 @@
    "version": "3.4.0",
    "sha": "fe7110dbb7f877160e412699165bf897fddf49a4",
    "unknown": false,
-   "publishedAt": "2026-11-24T05:13:06Z",
+   "publishedAt": "2026-11-24T04:57:05Z",
    "testflight": true,
    "baseSeq": 32189,
    "prs": [],
@@ -127,7 +209,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45318894341"
     },
     "windows": {
      "state": "ok"
@@ -142,80 +225,40 @@
   }
  ],
  "pending": {
-  "headSha": "43322ec35d7ccb75434980460cfa9582dcdf89b0",
-  "headSeq": 32267,
+  "headSha": "2f7a39313315812c5780de138ddcef295a9bef54",
+  "headSeq": 32272,
   "prs": [],
   "direct": [
    {
-    "sha": "43322ec35d7ccb75434980460cfa9582dcdf89b0",
-    "subject": "chore(bugs): settle 撞号并重建索引（合并 #4364 #4362 #4356 #4365 #4358 #4349 #4352 #4350 #4351 #4345 #4355 #4354 #4370 #4372）"
+    "sha": "2f7a39313315812c5780de138ddcef295a9bef54",
+    "subject": "chore(bugs): reindex after merging #4373 #4375"
    },
    {
-    "sha": "88f505b2aa26ffad9078c20152ee48157b61e089",
-    "subject": "Merge #4372 (claude/fix-backup-merge-fk-remap) into develop"
+    "sha": "d3c030cd418777a7d1db89939629c1f8b4861021",
+    "subject": "Merge #4375 (claude/fix-srs-close-anr) into develop"
    },
    {
-    "sha": "03b1f265be94cc41b56f4d942f8a8f9399500c5b",
-    "subject": "Merge #4370 (claude/srs-deck-row-tap-review) into develop"
-   },
-   {
-    "sha": "222ea9a6d1d6baec5e4588dd979a2a35d3edd1fd",
-    "subject": "Merge #4355-4354 (claude/integrate-favorites-samutw) into develop"
-   },
-   {
-    "sha": "273cbe6394abedd0393ad708ca7ab603f7157c59",
-    "subject": "Merge #4349-4352-4350-4351-4345 (claude/integrate-books-samutw) into develop"
-   },
-   {
-    "sha": "5c0ed00cf2691bc04e294ba825e1b99e85350983",
-    "subject": "Merge #4358 (claude/reverent-jennings-2fd608) into develop"
-   },
-   {
-    "sha": "149f50f63d517cb4c5bd839696d8e3e4a67f0821",
-    "subject": "Merge #4365 (pr/music-lyrics-display-toggles) into develop"
-   },
-   {
-    "sha": "068aefacc01aab8dc6055993717b26d51b16a29b",
-    "subject": "Merge #4356 (claude/rcv76ppoi-fundamental-fix-e7dd4b) into develop"
-   },
-   {
-    "sha": "168a3ef457cd344ae7928dc6b501caa181d883f1",
-    "subject": "Merge #4362 (claude/distracted-bohr-94c80c) into develop"
-   },
-   {
-    "sha": "53a1eee53287a9ef68a52afefe3ae1a345ffa804",
-    "subject": "Merge #4364 (claude/sad-satoshi-52d205) into develop"
-   },
-   {
-    "sha": "b43da33f9e6dd64ca8f7df87c926d3aaedf4a494",
-    "subject": "fix(ci): 修 develop 三条基线红：bug.dart 索引原子写（并行 new 读到截断文件）、封面派生点登记随 #4360 挪到 video_cover_meta_loader、manga_page_identity_test 改用 package:test"
-   },
-   {
-    "sha": "07de68e36ad3f3c58bf39ec726a2b66a4ab11a0d",
-    "subject": "docs(agent): 开 PR 前不跑全量 analyze，只由合并任务在合并结果上跑一次（反馈 SBuUIb9dYT）"
-   },
-   {
-    "sha": "fb8ddd06dd5cc99920ece20b74d9c06fbff8d2d8",
-    "subject": "docs(release): 3.4.0 公告补本轮合入项（选集面板剧照、进度口径、插图浏览、制卡提示位置与四项修复）"
+    "sha": "b0e0a8364b6969d67df4fcf3964ccca40d065445",
+    "subject": "Merge #4373 (claude/fix-srs4-migration-failed) into develop"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456150"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45397292097"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45397291809"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45397291809"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45397291809"
    }
   }
  },
