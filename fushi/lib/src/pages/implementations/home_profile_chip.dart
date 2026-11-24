@@ -5,22 +5,24 @@
 /// 全部配置（当前项打勾）、一行「已绑定配置的作品仍用各自的配置」说明和「配置管理」。
 /// 只有一份配置时整颗不出现——绝大多数用户只有一份，常驻一颗只有一项的切换钮是噪音。
 ///
-/// 切换走设置页 / 悬浮球同一条 [ProfileViewModel.switchProfile]。它切的是**默认层**：
+/// 切换走设置页 / 悬浮球同一条 `ProfileViewModel.switchProfile`（由首页经
+/// [HomeProfileChip.onSwitchProfile] 注入）。它切的是**默认层**：
 /// 作品 / 媒体类型 / 语言命中绑定时打开作品仍按绑定用对应配置，所以菜单里写明这一点。
 ///
 /// 显示用的配置列表与激活 id 直接听库（`profiles` / `preferences` 表的写入通知，与头像
-/// 同一做法，BUG-3249），不在首页一挂载就建 [ProfileViewModel]：它装载时会「应用默认
+/// 同一做法，BUG-3249），不在首页一挂载就建 `ProfileViewModel`：它装载时会「应用默认
 /// 配置」，首页不该有这种副作用；只有用户真的点了切换才经它走。
+///
+/// 数据库与两个动作（配置管理、切换）都由首页注入，本文件不 import AppModel /
+/// `profile_view_model`：否则这颗胶囊经首页被接进 lib/ 的 import 大环
+/// （import_cycle_guard_test，2026-11-24 develop 627）。
 library;
 
 import 'dart:async';
 
 import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdate, TableUpdateQuery;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -46,21 +48,33 @@ bool homeProfileChipVisible(int profileCount) => profileCount >= 2;
 
 /// 首页头像右边的默认配置胶囊。[extent] 与同排头像的边长一致（胶囊高 = 头像高）；
 /// [floating] = 旧浮动工具栏形态（外面套一层与头像同款的浮动胶囊底）。
-class HomeProfileChip extends ConsumerStatefulWidget {
+class HomeProfileChip extends StatefulWidget {
   const HomeProfileChip({
     super.key,
     required this.extent,
     required this.floating,
+    required this.database,
+    required this.onManageProfiles,
+    required this.onSwitchProfile,
   });
 
   final double extent;
   final bool floating;
 
+  /// 读配置列表 / 激活 id、听写入通知的库。
+  final FushiDatabase database;
+
+  /// 菜单里「配置管理」：打开配置管理页。
+  final Future<void> Function() onManageProfiles;
+
+  /// 切换默认配置；抛错时胶囊提示切换失败。
+  final Future<void> Function(int profileId) onSwitchProfile;
+
   @override
-  ConsumerState<HomeProfileChip> createState() => _HomeProfileChipState();
+  State<HomeProfileChip> createState() => _HomeProfileChipState();
 }
 
-class _HomeProfileChipState extends ConsumerState<HomeProfileChip> {
+class _HomeProfileChipState extends State<HomeProfileChip> {
   List<ProfileRow> _profiles = const <ProfileRow>[];
   int _activeId = -1;
   StreamSubscription<Set<TableUpdate>>? _changes;
@@ -71,7 +85,20 @@ class _HomeProfileChipState extends ConsumerState<HomeProfileChip> {
   @override
   void initState() {
     super.initState();
-    final FushiDatabase db = ref.read(appProvider).database;
+    _listen();
+  }
+
+  @override
+  void didUpdateWidget(HomeProfileChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.database, widget.database)) {
+      unawaited(_changes?.cancel());
+      _listen();
+    }
+  }
+
+  void _listen() {
+    final FushiDatabase db = widget.database;
     _changes = db
         .tableUpdates(
           TableUpdateQuery.onAllTables(
@@ -94,7 +121,7 @@ class _HomeProfileChipState extends ConsumerState<HomeProfileChip> {
   Future<void> _load() async {
     final int generation = ++_generation;
     try {
-      final FushiDatabase db = ref.read(appProvider).database;
+      final FushiDatabase db = widget.database;
       final List<ProfileRow> profiles = await db.getAllProfiles();
       final int activeId = await db.resolveActiveProfileId();
       if (!mounted || generation != _generation) return;
@@ -264,11 +291,11 @@ class _HomeProfileChipState extends ConsumerState<HomeProfileChip> {
     );
     if (!mounted || picked == null || picked == activeId) return;
     if (picked == _kManageProfiles) {
-      await ref.read(appProvider).showProfilesMenu();
+      await widget.onManageProfiles();
       return;
     }
     try {
-      await ref.read(profileViewModelProvider.notifier).switchProfile(picked);
+      await widget.onSwitchProfile(picked);
     } catch (error, stack) {
       ErrorLogService.instance.log('HomeProfileChip.switch', error, stack);
       if (!anchor.mounted) return;

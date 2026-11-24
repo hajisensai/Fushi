@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/reader/image_actions_sheet.dart';
@@ -71,7 +73,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(_cardKey), findsOneWidget);
     expect(find.byKey(_coverKey), findsNothing);
-    expect(find.text('1 / 2'), findsOneWidget);
+    // 计数是全书插图数（反馈 wV1kvoLjI3），不是已听到的张数。
+    expect(find.text('1 / 3'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey<String>('lyrics_illustration_close')),
@@ -87,7 +90,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(c.shown, 1);
-    expect(find.text('2 / 2'), findsOneWidget);
+    expect(find.text('2 / 3'), findsOneWidget);
   });
 
   testWidgets('横屏：点插图左 / 右三分之一切换，点中间看大图', (WidgetTester tester) async {
@@ -139,8 +142,13 @@ void main() {
       ),
     );
     const Key entry = ValueKey<String>('lyrics_compact_artwork');
-    expect(find.byKey(entry), findsNothing, reason: '没听到插图时只是封面');
+    // 反馈 wV1kvoLjI3：没听到插图时也能打开浏览（全部插图，未听到的遮着）；
+    // 小方块本身仍画封面。
+    expect(find.byKey(entry), findsOneWidget);
     expect(drawn.last, isNull);
+    await tester.tap(find.byKey(entry));
+    expect(opened, <int>[0]);
+    opened.clear();
 
     _playPastTwo(c);
     await tester.pumpAndSettle();
@@ -206,7 +214,7 @@ void main() {
       find.byKey(const ValueKey<String>('lyrics_compact_artwork')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('1 / 2'), findsOneWidget);
+    expect(find.text('1 / 3'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey<String>('lyrics_illustration_viewer_close')),
     );
@@ -224,8 +232,12 @@ void main() {
     expect(find.byKey(dot), findsOneWidget, reason: '换上新插图：提示点再出现');
   });
 
-  testWidgets('大图浏览：只翻已听到的插图，翻页同步封面位，关掉回封面', (WidgetTester tester) async {
-    final LyricsIllustrationController c = _controller();
+  // 反馈 wV1kvoLjI3（维护者 2026-11-24）：大图浏览列出全书插图，还没听到的默认
+  // 遮罩、点一下揭开；揭开写回宿主（与阅读器共用揭开状态）。
+  testWidgets('大图浏览：列出全部插图，未听到的遮着、点一下揭开，翻页同步封面位', (WidgetTester tester) async {
+    final List<String> revealedKeys = <String>[];
+    final LyricsIllustrationController c = _controller()
+      ..onReveal = revealedKeys.add;
     _playPastTwo(c);
     late BuildContext hostContext;
     await tester.pumpWidget(
@@ -245,23 +257,35 @@ void main() {
       returnToCover: true,
     );
     await tester.pumpAndSettle();
-    expect(find.text('1 / 2'), findsOneWidget);
+    expect(find.text('1 / 3'), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('lyrics_illustration_viewer_prev')),
       findsNothing,
     );
+    const Key next = ValueKey<String>('lyrics_illustration_viewer_next');
+    const Key reveal = ValueKey<String>('lyrics_illustration_viewer_reveal');
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('lyrics_illustration_viewer_next')),
-    );
+    await tester.tap(find.byKey(next));
     await tester.pumpAndSettle();
-    expect(find.text('2 / 2'), findsOneWidget);
+    expect(find.text('2 / 3'), findsOneWidget);
     expect(c.shown, 1);
-    expect(
-      find.byKey(const ValueKey<String>('lyrics_illustration_viewer_next')),
-      findsNothing,
-      reason: '第三张还没听到，不给翻（不剧透）',
-    );
+    expect(find.byKey(reveal), findsNothing, reason: '听到过的不遮');
+
+    // 第三张还没听到：照样能翻到，但盖着遮罩；插图位不换成它（缩略图不画遮罩）。
+    await tester.tap(find.byKey(next));
+    await tester.pumpAndSettle();
+    expect(find.text('3 / 3'), findsOneWidget);
+    expect(find.byKey(reveal), findsOneWidget);
+    expect(find.text(t.lyrics_illustration_locked_hint), findsOneWidget);
+    expect(c.shown, 1);
+    expect(c.isLocked(2), isTrue);
+
+    await tester.tap(find.byKey(reveal));
+    await tester.pumpAndSettle();
+    expect(find.byKey(reveal), findsNothing, reason: '点一下揭开');
+    expect(c.isLocked(2), isFalse);
+    expect(c.shown, 2, reason: '揭开后插图位同步到这张');
+    expect(revealedKeys, <String>['c'], reason: '揭开写回宿主的揭开状态');
 
     await tester.tap(
       find.byKey(const ValueKey<String>('lyrics_illustration_viewer_close')),
@@ -269,6 +293,74 @@ void main() {
     await tester.pumpAndSettle();
     await done;
     expect(c.shown, isNull, reason: '竖屏入口看完就回封面');
+  });
+
+  // 反馈 wV1kvoLjI3「后面的图片有一张新出现，但是这里竟然没有」：浏览期间音频照常
+  // 播放，旧实现建页时读一次已听到范围、之后不刷新，浏览中新走过的插图（插图位已
+  // 换上它、缩略图已更新）在浏览里看不到。现在浏览监听状态机，新走过的那页当场解锁。
+  testWidgets('大图浏览打开期间播放走过新插图：那一页当场解锁', (WidgetTester tester) async {
+    final LyricsIllustrationController c = _controller()..autoOpenCard = false;
+    _playPastTwo(c);
+    late BuildContext hostContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) {
+            hostContext = context;
+            return const SizedBox.expand();
+          },
+        ),
+      ),
+    );
+    unawaited(
+      showLyricsIllustrationViewer(hostContext, controller: c, index: 1),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('2 / 3'), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('lyrics_illustration_viewer_next')),
+    );
+    await tester.pumpAndSettle();
+    const Key reveal = ValueKey<String>('lyrics_illustration_viewer_reveal');
+    expect(find.byKey(reveal), findsOneWidget);
+
+    c.observe(
+      const LyricsBookPosition(3, 10),
+      audioPosition: const Duration(seconds: 10),
+    );
+    await tester.pumpAndSettle();
+    expect(c.reached, 2);
+    expect(find.byKey(reveal), findsNothing, reason: '新走过的插图不再遮着');
+    expect(find.text('3 / 3'), findsOneWidget);
+  });
+
+  testWidgets('大图浏览：遮着的页按 Enter 揭开（键盘 / 手柄可达）', (WidgetTester tester) async {
+    final LyricsIllustrationController c = _controller();
+    late BuildContext hostContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) {
+            hostContext = context;
+            return const SizedBox.expand();
+          },
+        ),
+      ),
+    );
+    // 一张都没听到也能打开：从第一张（遮着）看起。
+    expect(c.browseStart, 0);
+    unawaited(
+      showLyricsIllustrationViewer(hostContext, controller: c, index: 0),
+    );
+    await tester.pumpAndSettle();
+    const Key reveal = ValueKey<String>('lyrics_illustration_viewer_reveal');
+    expect(find.text('1 / 3'), findsOneWidget);
+    expect(find.byKey(reveal), findsOneWidget);
+    expect(c.shown, isNull);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.byKey(reveal), findsNothing);
+    expect(c.shown, 0);
   });
 
   testWidgets('长按插图卡 / 大图：弹全局图片动作面板（有磁盘文件才挂）', (WidgetTester tester) async {

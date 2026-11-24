@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/media/manga/manga_page_identity.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
+    show MangaOcrPageFile;
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 
@@ -57,34 +60,49 @@ abstract class MangaOcrService {
 /// 翻到的页永远还没轮到，体感就是「要等整卷识别完」。阅读器每翻一页 [request]
 /// 一次，执行器每处理一页前 [take] 一次，把处理游标挪到读者当前页
 /// （[MangaOcrPageScheduler.focus]）。
+///
+/// 请求带的是**页身份**（`mangaPageId`，相对图片目录的页图路径），不是页号：执行器
+/// 的页表按 `enumerateMangaPages` 枚举目录，阅读器的页表是书的 `manga.json`，目录里
+/// 多一张不在页表里的图两边页号就错开，按阅读器页号改道会让任务去识别邻页（反馈
+/// -5BJ11GqOk）。执行器在自己的页表里按身份找下标（[mangaOcrFocusIndex]）。
 class MangaOcrPageFocus {
-  int? _pending;
-  final List<void Function(int pageIndex)> _listeners =
-      <void Function(int pageIndex)>[];
+  String? _pending;
+  final List<void Function(String pageId)> _listeners =
+      <void Function(String pageId)>[];
 
-  /// 读者翻到了 [pageIndex]（按 `enumerateMangaPages` 自然序的页号）。
-  void request(int pageIndex) {
-    if (pageIndex < 0) return;
-    _pending = pageIndex;
-    for (final void Function(int pageIndex) listener
-        in List<void Function(int pageIndex)>.of(_listeners)) {
-      listener(pageIndex);
+  /// 读者翻到了身份为 [pageId] 的页（`mangaPageId`）。
+  void request(String pageId) {
+    if (pageId.isEmpty) return;
+    _pending = pageId;
+    for (final void Function(String pageId) listener
+        in List<void Function(String pageId)>.of(_listeners)) {
+      listener(pageId);
     }
   }
 
   /// 取走最近一次还没被消费的请求；没有新请求时为 null。
-  int? take() {
-    final int? pending = _pending;
+  String? take() {
+    final String? pending = _pending;
     _pending = null;
     return pending;
   }
 
   /// 执行器不在本 isolate 时（本地 ONNX 的整卷 isolate）用监听把请求转发过去。
-  void addListener(void Function(int pageIndex) listener) =>
+  void addListener(void Function(String pageId) listener) =>
       _listeners.add(listener);
 
-  void removeListener(void Function(int pageIndex) listener) =>
+  void removeListener(void Function(String pageId) listener) =>
       _listeners.remove(listener);
+}
+
+/// 改道请求 [pageId] 在执行器页表 [pages] 里的下标；没有请求或不在表里为 null
+/// （不在表里 = 读者那页不在这次任务的目录里，不改道）。
+int? mangaOcrFocusIndex(List<MangaOcrPageFile> pages, String? pageId) {
+  if (pageId == null) return null;
+  return mangaPageIndexOf(
+    pages.map((MangaOcrPageFile page) => page.relativeUrl),
+    pageId,
+  );
 }
 
 /// 运行中能跟随 [MangaOcrPageFocus] 改道的整卷服务（本地 ONNX）。

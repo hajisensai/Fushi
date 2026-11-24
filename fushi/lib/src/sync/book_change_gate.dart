@@ -40,20 +40,6 @@ String? bookManifestDeviceOf(String name) {
   return id.isEmpty ? null : id;
 }
 
-/// 聚合快照资产名 → 设备 id（旧版客户端检测用，见 [BookChangeGate.prepare] 的
-/// `legacyWriters`）。后缀与 `aggregate_sync_service.dart` 的新旧两种一致。
-String? aggregateSnapshotDeviceOf(String name) {
-  for (final String suffix in const <String>[
-    '.fushiaggregate',
-    '.hibikiaggregate',
-  ]) {
-    if (name.endsWith(suffix) && name.length > suffix.length) {
-      return name.substring(0, name.length - suffix.length);
-    }
-  }
-  return null;
-}
-
 /// 一台设备的书级变更清单：assetKey → 该设备在这个远端上的进度基线。
 ///
 /// 基线随本机对这本书的每一次进度写入 / 导入推进（`SyncManager._handleExport` /

@@ -1,0 +1,12 @@
+## BUG-5383 · develop import 环守卫红：最大环 627 > 上限 623
+- **报告**：2026-11-24（release.yml run 45318894341，fe7110dbb7；f8f2847179 / 31b0a46cf4 同样红）
+- **真实性**：✅ 真红。与上限最后一次下调的提交 c5de9316a7（623）逐文件对比最大强连通分量：新进环 5 个、出环 1 个（`home_background_tasks_scope`）。
+- **根因**：
+  - #4196 系列追踪（69dcfcadef）：`fushi/lib/src/media/tracking/tracking_series_card_open.dart:3` import AppModel（`openTrackingSeriesCard` 读 `appProvider` 取 `database` / `moduleVisibility`），又被 `book_tracking_dialog.dart:42,58`、`page/tracking_page.dart:75` 当默认参数值 import。追踪对话框、追踪页、系列卡追踪区（`series_card_tracking_section`）与该文件一起被拖进大环（+4）。
+  - #4250 首页默认配置胶囊（c7a9b3fa02）：`fushi/lib/src/pages/implementations/home_profile_chip.dart:22-23` import AppModel 与 `profile_view_model`，只为取库、打开配置管理、切换配置（+1）。
+- **[x] ① 已修复** — 不调上限，反转依赖：
+  - 签名 `TrackingSeriesCardOpener` 挪到叶子 `tracking_series_card_opener.dart`；`BookTrackingDialog` / `showBookTrackingDialog` / `TrackingPage` / `openTrackingPage` 的 `openSeriesCard` 改必填，由已持有 AppModel 的调用方（漫画系列页、书架菜单、main 自动关联提示、追踪设置、首页）传 `trackingSeriesCardOpener(appModel)`；实现改读窄接口 `TrackingSeriesCardHost`（AppModel 实现，getter 原本就有）。四个文件全出环。
+  - `HomeProfileChip` 改为普通 StatefulWidget，库与「配置管理 / 切换」两个回调由首页注入。
+  - 最大环 627 → 622，`kMaxCycleFiles` 下调到 622。
+- **[x] ② 已加自动化测试** — `fushi/test/build/import_cycle_guard_test.dart`：上限 622；`kLeafEntries` 钉住 `tracking_series_card_open` / `book_tracking_dialog` / `tracking_page` / `home_profile_chip` 的闭包不碰 AppModel。
+- **备注**：同 PR 修 BUG-5382（旧代号守卫）。

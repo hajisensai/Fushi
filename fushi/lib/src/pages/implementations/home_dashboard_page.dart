@@ -75,10 +75,12 @@ import 'package:fushi/src/media/panorama/panorama_library.dart'
 import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
 import 'package:fushi/src/pages/implementations/home_tracking_panel.dart';
 import 'package:fushi/src/pages/implementations/home_profile_chip.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
     show FushiPageTitleMetrics;
 import 'package:fushi/src/pages/implementations/home_collage_widgets.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page.dart';
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page_data.dart'
     show TrackingPageTab;
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
@@ -513,7 +515,15 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         button,
-        HomeProfileChip(extent: chipExtent, floating: !masthead && !apple),
+        HomeProfileChip(
+          extent: chipExtent,
+          floating: !masthead && !apple,
+          database: ref.read(appProvider).database,
+          onManageProfiles: () => ref.read(appProvider).showProfilesMenu(),
+          onSwitchProfile: (int profileId) => ref
+              .read(profileViewModelProvider.notifier)
+              .switchProfile(profileId),
+        ),
       ],
     );
   }
@@ -4907,6 +4917,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         service: appModel.mediaTrackingService,
         database: appModel.database,
         onOpenSettings: _openTrackingSettings,
+        openSeriesCard: trackingSeriesCardOpener(appModel),
         initialTab: summary.needsAttention ? TrackingPageTab.attention : null,
       ),
     );

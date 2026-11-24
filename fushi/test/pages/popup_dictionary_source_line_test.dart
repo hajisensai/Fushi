@@ -784,7 +784,10 @@ void main() {
       final SourceLookupTextPanel panel = tester.widget(
         find.byType(SourceLookupTextPanel),
       );
-      expect(panel.text, line, reason: '源文本条仍是被点的那一行');
+      // 反馈 8Su1XoCjtl：源文本条也是跨行拼回的整句，被点的「良」在条上第 3 个字。
+      expect(panel.text, '今日は良い天気ですね。');
+      expect(panel.initialCharIndex, 3);
+      expect(appModel.searched.first, '良い天気ですね。散歩に行こう。');
       expect(
         await _mineSentence(tester, repo),
         '今日は良い天気ですね。',
@@ -822,6 +825,47 @@ void main() {
   );
 
   testWidgets(
+    'feedback 8Su1XoCjtl: the source strip shows the whole sentence across '
+    'OCR line breaks, not only the tapped line',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      // 「スタンプ」被折成「…スタン」/「プが…」两行，句首还在上一行。点的是「ス」。
+      const String block = 'さっき\n新しいコラボLINEスタン\nプが映りました。次は';
+      const String line = '新しいコラボLINEスタン';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: repo,
+          text: line,
+          charIndex: line.indexOf('ス'),
+          sourceBlock: block,
+          sourceBlockOffset: block.indexOf(line),
+        ),
+      );
+      await _settle(tester);
+
+      final SourceLookupTextPanel panel = tester.widget(
+        find.byType(SourceLookupTextPanel),
+      );
+      expect(panel.text, 'さっき新しいコラボLINEスタンプが映りました。');
+      expect(
+        panel.initialCharIndex,
+        'さっき新しいコラボLINE'.length,
+        reason: '被点的「ス」换算到整句里的位置',
+      );
+      expect(appModel.searched.first, 'スタンプが映りました。次は');
+      expect(await _mineSentence(tester, repo), 'さっき新しいコラボLINEスタンプが映りました。');
+
+      // 下一行折过来的字也在条上，能直接点。
+      await tester.tap(_sourceGlyph('映'));
+      await _settle(tester);
+      expect(appModel.searched.last, '映りました。次は');
+      expect(await _mineSentence(tester, repo), 'さっき新しいコラボLINEスタンプが映りました。');
+    },
+  );
+
+  testWidgets(
     'BUG-4707: a word wrapped onto the next OCR line is looked up across the '
     'line break, from the host and from the strip',
     (WidgetTester tester) async {
@@ -850,7 +894,9 @@ void main() {
       final SourceLookupTextPanel panel = tester.widget(
         find.byType(SourceLookupTextPanel),
       );
-      expect(panel.text, line, reason: '源文本条仍是被点的那一行');
+      // 反馈 8Su1XoCjtl：条上是跨行拼回的整句，被点的「天」在条上第 5 个字。
+      expect(panel.text, '今日は良い天気ですね。');
+      expect(panel.initialCharIndex, 5);
       expect(await _mineSentence(tester, repo), '今日は良い天気ですね。');
 
       // 条上再点「良」：后缀同样接上下一行。

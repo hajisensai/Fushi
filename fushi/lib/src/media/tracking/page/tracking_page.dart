@@ -18,7 +18,7 @@ import 'package:fushi/src/media/tracking/page/tracking_link_dialog.dart';
 import 'package:fushi/src/media/tracking/page/tracking_local_targets.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page_data.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page_rows.dart';
-import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
+import 'package:fushi/src/media/tracking/tracking_series_card_opener.dart';
 import 'package:fushi/src/media/tracking/page/tracking_row_facts.dart';
 import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
@@ -53,6 +53,7 @@ Future<void> openTrackingPage(
   required MediaTrackingService service,
   required FushiDatabase database,
   required VoidCallback onOpenSettings,
+  required TrackingSeriesCardOpener openSeriesCard,
   TrackingPageTab? initialTab,
 }) => Navigator.of(context).push(
   adaptivePageRoute<void>(
@@ -61,6 +62,7 @@ Future<void> openTrackingPage(
       service: service,
       database: database,
       onOpenSettings: onOpenSettings,
+      openSeriesCard: openSeriesCard,
       initialTab: initialTab,
     ),
   ),
@@ -72,7 +74,7 @@ class TrackingPage extends StatefulWidget {
     required this.database,
     required this.onOpenSettings,
     this.initialTab,
-    this.openSeriesCard = openTrackingSeriesCard,
+    required this.openSeriesCard,
     super.key,
   });
 
@@ -82,7 +84,8 @@ class TrackingPage extends StatefulWidget {
   final TrackingPageTab? initialTab;
 
   /// Opens a series card's page, where its series links and volumes are
-  /// managed (tests pass a stand-in).
+  /// managed (the app passes `trackingSeriesCardOpener(appModel)`; tests a
+  /// stand-in).
   final TrackingSeriesCardOpener openSeriesCard;
 
   @override

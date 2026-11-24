@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
-import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
+import 'package:fushi/src/media/tracking/tracking_series_card_opener.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveSegmentedButton;
@@ -39,7 +39,7 @@ Future<void> showBookTrackingDialog(
   required MediaTrackingService service,
   required String bookKey,
   String? separateOn,
-  TrackingSeriesCardOpener openSeriesCard = openTrackingSeriesCard,
+  required TrackingSeriesCardOpener openSeriesCard,
 }) => showAppDialog<void>(
   context: context,
   builder: (BuildContext context) => BookTrackingDialog(
@@ -55,7 +55,7 @@ class BookTrackingDialog extends StatefulWidget {
     required this.service,
     required this.bookKey,
     this.separateOn,
-    this.openSeriesCard = openTrackingSeriesCard,
+    required this.openSeriesCard,
     super.key,
   });
 

@@ -278,8 +278,12 @@ void main() {
     provider: provider,
   );
 
-  TrackingPage page() =>
-      TrackingPage(service: service, database: db, onOpenSettings: () {});
+  TrackingPage page() => TrackingPage(
+    service: service,
+    database: db,
+    onOpenSettings: () {},
+    openSeriesCard: (BuildContext _, int _, String _) async {},
+  );
 
   for (final bool apple in <bool>[false, true]) {
     testWidgets('three groups: sign-in, failed send, item to link; a game is '
@@ -382,6 +386,7 @@ void main() {
         service: service,
         database: db,
         onOpenSettings: () => opened++,
+        openSeriesCard: (BuildContext _, int _, String _) async {},
       ),
     );
     expect(
@@ -420,6 +425,7 @@ void main() {
         service: service,
         database: db,
         onOpenSettings: () {},
+        openSeriesCard: (BuildContext _, int _, String _) async {},
         initialTab: TrackingPageTab.linked,
       ),
     );
@@ -482,6 +488,7 @@ void main() {
         service: service,
         database: db,
         onOpenSettings: () {},
+        openSeriesCard: (BuildContext _, int _, String _) async {},
         initialTab: TrackingPageTab.linked,
       ),
     );
@@ -1130,7 +1137,11 @@ void main() {
     await pumpApp(
       tester,
       Scaffold(
-        body: BookTrackingDialog(service: service, bookKey: 'Ajin 01.pdf'),
+        body: BookTrackingDialog(
+          service: service,
+          bookKey: 'Ajin 01.pdf',
+          openSeriesCard: (BuildContext _, int _, String _) async {},
+        ),
       ),
     );
     expect(
@@ -1175,7 +1186,11 @@ void main() {
       await pumpApp(
         tester,
         Scaffold(
-          body: BookTrackingDialog(service: service, bookKey: 'Ajin 01'),
+          body: BookTrackingDialog(
+            service: service,
+            bookKey: 'Ajin 01',
+            openSeriesCard: (BuildContext _, int _, String _) async {},
+          ),
         ),
         apple: apple,
       );
@@ -1254,6 +1269,7 @@ void main() {
           service: service,
           database: db,
           onOpenSettings: () {},
+          openSeriesCard: (BuildContext _, int _, String _) async {},
           initialTab: TrackingPageTab.activity,
         ),
         apple: apple,
@@ -1382,6 +1398,7 @@ void main() {
             service: service,
             database: db,
             onOpenSettings: () {},
+            openSeriesCard: (BuildContext _, int _, String _) async {},
             initialTab: TrackingPageTab.linked,
           ),
           apple: apple,
@@ -1423,6 +1440,7 @@ void main() {
           service: service,
           database: db,
           onOpenSettings: () {},
+          openSeriesCard: (BuildContext _, int _, String _) async {},
           initialTab: TrackingPageTab.linked,
         ),
         apple: apple,
@@ -1710,6 +1728,7 @@ void main() {
           service: service,
           database: db,
           onOpenSettings: () {},
+          openSeriesCard: (BuildContext _, int _, String _) async {},
           initialTab: TrackingPageTab.linked,
         ),
         apple: apple,
@@ -1779,6 +1798,7 @@ void main() {
             service: service,
             database: db,
             onOpenSettings: () {},
+            openSeriesCard: (BuildContext _, int _, String _) async {},
             initialTab: TrackingPageTab.linked,
           ),
           apple: apple,

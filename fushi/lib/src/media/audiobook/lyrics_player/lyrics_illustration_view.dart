@@ -10,6 +10,8 @@ import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
     show illustrationZoomRoute;
 import 'package:fushi/src/reader/image_actions_sheet.dart'
     show showImageActionsSheet;
+import 'package:fushi/src/reader/masked_illustration_cover.dart'
+    show maskedIllustrationCover;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -36,21 +38,24 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// 插图卡上左右「翻页热区」各占的宽度比例；中间那段是「看大图」。
 const double _kNavZoneFraction = 0.3;
 
-/// 打开插图大图浏览：[controller] 已听到的插图（`0..reached`），从 [index] 看起。
-/// 翻页会同步到 [controller]（宽屏左栏跟着换）。[returnToCover] = 关掉后插图位回
-/// 封面（竖屏入口：看完就算确认过了）。
+/// 打开插图大图浏览：列出 [controller] 的**全部**插图，从 [index] 看起；还没听到
+/// 又没揭开过的盖模糊遮罩，点一下揭开（反馈 wV1kvoLjI3）。翻到已解锁的页会同步到
+/// [controller]（宽屏左栏跟着换）。[returnToCover] = 关掉后插图位回封面（竖屏入口：
+/// 看完就算确认过了）。
 Future<void> showLyricsIllustrationViewer(
   BuildContext context, {
   required LyricsIllustrationController controller,
   required int index,
   bool returnToCover = false,
 }) async {
-  if (!controller.hasReached) return;
-  final int start = index.clamp(0, controller.reached);
-  controller
-    ..showAt(start)
-    // 打开大图即算看过：缩略图的「新插图」提示点随之消失。
-    ..markSeen(start);
+  if (controller.items.isEmpty) return;
+  final int start = index.clamp(0, controller.items.length - 1);
+  if (!controller.isLocked(start)) {
+    controller
+      ..showAt(start)
+      // 打开大图即算看过：缩略图的「新插图」提示点随之消失。
+      ..markSeen(start);
+  }
   await Navigator.of(context).push(
     illustrationZoomRoute(
       context,
@@ -203,8 +208,9 @@ class _CoverWithIllustrationBadge extends StatelessWidget {
                             color: _illustrationControlFg(context),
                           ),
                           const SizedBox(width: 4),
+                          // 全书插图数（大图浏览列出全部，未听到的遮着）。
                           Text(
-                            '${controller.reached + 1}',
+                            '${controller.items.length}',
                             style: Theme.of(context).textTheme.labelMedium
                                 ?.copyWith(
                                   color: _illustrationControlFg(context),
@@ -467,7 +473,7 @@ class _IllustrationCardState extends State<_IllustrationCard> {
                       ),
                     ),
                   ),
-                if (c.reached > 0)
+                if (c.items.length > 1)
                   Positioned(
                     left: 0,
                     right: 0,
@@ -485,7 +491,7 @@ class _IllustrationCardState extends State<_IllustrationCard> {
                               vertical: 4,
                             ),
                             child: Text(
-                              '${widget.index + 1} / ${c.reached + 1}',
+                              '${widget.index + 1} / ${c.items.length}',
                               style: Theme.of(context).textTheme.labelMedium
                                   ?.copyWith(color: controlFg),
                             ),
@@ -753,8 +759,16 @@ class LyricsIllustrationCompactArtwork extends StatelessWidget {
 // 大图浏览
 // ---------------------------------------------------------------------------
 
-/// 插图大图浏览：已听到的插图左右翻页，每页可双指 / 滚轮 / 双击缩放（看清印在
-/// 插图上的文字）。放大时停用翻页手势，免得拖动看细节时翻走。← / → 翻页，Esc 关闭。
+/// 插图大图浏览：全书插图左右翻页，每页可双指 / 滚轮 / 双击缩放（看清印在插图上
+/// 的文字）。放大时停用翻页手势，免得拖动看细节时翻走。← / → 翻页，Esc 关闭。
+///
+/// 还没听到又没揭开过的插图（[LyricsIllustrationController.isLocked]）盖模糊遮罩
+/// （[maskedIllustrationCover]，与阅读器插图册同一套），点一下 / Enter 揭开；遮着的
+/// 页不缩放、不挂长按保存（存出去等于绕过防剧透）。
+///
+/// 浏览期间音频照常播放：监听 [controller]，播放走过新插图时那一页当场解锁（反馈
+/// wV1kvoLjI3：旧实现建页时读一次已听到范围、之后不再刷新，浏览中新弹出的插图在
+/// 这里看不到）。
 class LyricsIllustrationViewer extends StatefulWidget {
   const LyricsIllustrationViewer({
     super.key,
@@ -779,13 +793,42 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
       <int, TransformationController>{};
   bool _zoomed = false;
 
-  int get _count => widget.controller.reached + 1;
+  int get _count => widget.controller.items.length;
 
   TransformationController _zoomFor(int index) =>
       _zoom.putIfAbsent(index, TransformationController.new);
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_onControllerChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant LyricsIllustrationViewer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+    }
+  }
+
+  /// 已听到范围 / 揭开状态变了：重画遮罩与计数。
+  void _onControllerChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// 揭开第 [index] 张，并把它放上插图位（与翻到已解锁页同一套同步）。
+  void _reveal(int index) {
+    widget.controller
+      ..reveal(index)
+      ..showAt(index)
+      ..markSeen(index);
+  }
+
+  @override
   void dispose() {
+    widget.controller.removeListener(_onControllerChanged);
     _pages.dispose();
     for (final TransformationController z in _zoom.values) {
       z.dispose();
@@ -809,6 +852,8 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
       _index = index;
       _zoomed = false;
     });
+    // 遮着的页不放上插图位（缩略图 / 插图卡不画遮罩），揭开时再同步。
+    if (widget.controller.isLocked(index)) return;
     widget.controller
       ..showAt(index)
       ..markSeen(index);
@@ -858,7 +903,53 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
       Navigator.of(context).maybePop();
       return KeyEventResult.handled;
     }
+    if ((key == LogicalKeyboardKey.enter ||
+            key == LogicalKeyboardKey.numpadEnter ||
+            key == LogicalKeyboardKey.space) &&
+        widget.controller.isLocked(_index)) {
+      _reveal(_index);
+      return KeyEventResult.handled;
+    }
     return KeyEventResult.ignored;
+  }
+
+  /// 已解锁的一页：可缩放、长按出图片动作面板。
+  Widget _buildUnlockedPage(
+    BuildContext context,
+    LyricsIllustration item,
+    int index,
+    ColorScheme cs,
+  ) {
+    Offset focal = Offset.zero;
+    return GestureDetector(
+      onDoubleTapDown: (TapDownDetails d) => focal = d.localPosition,
+      onDoubleTap: () => _toggleZoom(index, focal),
+      onLongPress: _longPressFor(context, item),
+      child: InteractiveViewer(
+        transformationController: _zoomFor(index),
+        minScale: 1,
+        maxScale: 10,
+        onInteractionEnd: (_) => _onInteractionEnd(index),
+        child: Center(
+          child: Image(
+            image: item.image,
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.medium,
+            errorBuilder: (_, Object error, StackTrace? stack) {
+              ErrorLogService.instance.logDiagnostic(
+                'LyricsIllustrationViewer.decode',
+                '${item.key}: $error',
+              );
+              return FushiIcon(
+                FushiIcons.brokenImage,
+                size: 64,
+                color: cs.onSurfaceVariant,
+              );
+            },
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -889,36 +980,33 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
               onPageChanged: _onPageChanged,
               itemBuilder: (BuildContext context, int index) {
                 final LyricsIllustration item = items[index];
-                Offset focal = Offset.zero;
-                return GestureDetector(
-                  onDoubleTapDown: (TapDownDetails d) =>
-                      focal = d.localPosition,
-                  onDoubleTap: () => _toggleZoom(index, focal),
-                  onLongPress: _longPressFor(context, item),
-                  child: InteractiveViewer(
-                    transformationController: _zoomFor(index),
-                    minScale: 1,
-                    maxScale: 10,
-                    onInteractionEnd: (_) => _onInteractionEnd(index),
-                    child: Center(
-                      child: Image(
-                        image: item.image,
-                        fit: BoxFit.contain,
-                        filterQuality: FilterQuality.medium,
-                        errorBuilder: (_, Object error, StackTrace? stack) {
-                          ErrorLogService.instance.logDiagnostic(
-                            'LyricsIllustrationViewer.decode',
-                            '${item.key}: $error',
-                          );
-                          return FushiIcon(
-                            FushiIcons.brokenImage,
-                            size: 64,
-                            color: cs.onSurfaceVariant,
-                          );
-                        },
-                      ),
-                    ),
-                  ),
+                final bool locked = widget.controller.isLocked(index);
+                final FushiMotionScheme motion = context.fushiMotion;
+                // 揭开：遮罩淡出、清晰图淡入（与插图卡换图同一套 effects 弹簧）。
+                return AnimatedSwitcher(
+                  duration: motion.effectsDefault.duration,
+                  switchInCurve: motion.effectsDefault.curve,
+                  switchOutCurve: motion.effectsDefault.curve,
+                  transitionBuilder:
+                      (Widget child, Animation<double> animation) =>
+                          FadeTransition(
+                            opacity: fushiUnitClamped(animation),
+                            child: child,
+                          ),
+                  child: locked
+                      ? _LockedIllustrationPage(
+                          key: ValueKey<String>(
+                            'lyrics_illustration_viewer_locked_${item.key}',
+                          ),
+                          item: item,
+                          onReveal: () => _reveal(index),
+                        )
+                      : KeyedSubtree(
+                          key: ValueKey<String>(
+                            'lyrics_illustration_viewer_page_${item.key}',
+                          ),
+                          child: _buildUnlockedPage(context, item, index, cs),
+                        ),
                 );
               },
             ),
@@ -1017,6 +1105,80 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 大图浏览里一张还没听到、也没揭开过的插图：整页盖模糊遮罩
+/// （[maskedIllustrationCover]，与阅读器插图册 / 书架插图库同一套；墨水屏是实心
+/// 遮板）+ 一行「还没听到 · 点一下揭开」，点任意处揭开。
+class _LockedIllustrationPage extends StatelessWidget {
+  const _LockedIllustrationPage({
+    super.key,
+    required this.item,
+    required this.onReveal,
+  });
+
+  final LyricsIllustration item;
+  final VoidCallback onReveal;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color controlBg = _illustrationControlBg(context);
+    final Color controlFg = _illustrationControlFg(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: t.lyrics_illustration_locked_hint,
+      child: GestureDetector(
+        key: const ValueKey<String>('lyrics_illustration_viewer_reveal'),
+        behavior: HitTestBehavior.opaque,
+        onTap: onReveal,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              maskedIllustrationCover(
+                context,
+                Image(
+                  image: item.image,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.low,
+                  errorBuilder: (_, Object e, StackTrace? s) =>
+                      ColoredBox(color: cs.surfaceContainerHigh),
+                ),
+                // 整页尺寸随窗口变：按短边比例会糊过头，钉死一个足够遮住内容的半径。
+                sigma: 40,
+                iconSize: 56,
+              ),
+              Align(
+                alignment: const Alignment(0, 0.25),
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: ShapeDecoration(
+                      color: controlBg,
+                      shape: const StadiumBorder(),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      child: Text(
+                        t.lyrics_illustration_locked_hint,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.labelLarge?.copyWith(color: controlFg),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
