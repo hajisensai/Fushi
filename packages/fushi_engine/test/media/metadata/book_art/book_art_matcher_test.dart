@@ -104,20 +104,6 @@ void main() {
       );
     });
 
-    test('双语书名拆成日文段 / 拉丁段；单语或夹数字的不拆', () {
-      expect(bilingualBookTitleParts('Horimiya ホリミヤ'), <String>[
-        'ホリミヤ',
-        'Horimiya',
-      ]);
-      expect(bilingualBookTitleParts('Spy Family スパイファミリー'), <String>[
-        'スパイファミリー',
-        'Spy Family',
-      ]);
-      expect(bilingualBookTitleParts('ホリミヤ'), isEmpty);
-      expect(bilingualBookTitleParts('One Piece'), isEmpty);
-      expect(bilingualBookTitleParts('ホリミヤ 2'), isEmpty);
-    });
-
     // 只有日文原名的候选（Bangumi）对双语书名原来是 none、连候选都进不了。
     test('双语书名任一段对得上：最多 localExtends（待确认），不抬成自动采用', () {
       expect(

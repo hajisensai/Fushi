@@ -259,9 +259,6 @@ class BookMetadataScrapeFacade {
   bool isSourceAvailable(BookScrapeSource source) =>
       !source.needsCredentials || _scraper.rakutenAvailable;
 
-  /// [item] 的 ISBN-13（EPUB 导入时从 OPF `dc:identifier` 规范化写进
-  /// `epub_books.isbn`；字幕书 / 漫画 / 没有 ISBN 的书返回 null）。openBD 等按 ISBN
-  /// 查的源用它预填。
   /// 书的版本语言（EPUB / 漫画 `dc:language`，主子标签；认不出 / 不是书为空串）：
   /// MangaBaka 卷封面按它挑（中文版用中文版封面）。
   static Future<String> languageForItem(
@@ -275,6 +272,9 @@ class BookMetadataScrapeFacade {
     return contentLanguageKey((await db.getEpubBook(bookKey))?.language);
   }
 
+  /// [item] 的 ISBN-13（EPUB 导入时从 OPF `dc:identifier` 规范化写进
+  /// `epub_books.isbn`；字幕书 / 漫画 / 没有 ISBN 的书返回 null）。openBD 等按 ISBN
+  /// 查的源用它预填。
   static Future<String?> isbnForItem(FushiDatabase db, MediaItem item) async {
     final String? bookKey = ReaderFushiSource.parseBookKey(
       item.mediaIdentifier,

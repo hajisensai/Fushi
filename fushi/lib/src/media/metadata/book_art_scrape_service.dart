@@ -30,6 +30,8 @@ import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart';
+import 'package:fushi_engine/media/metadata/books/book_search_query.dart'
+    show splitBookTitleScripts;
 import 'package:fushi_engine/media/metadata/image_download.dart'
     show looksLikeImageBytes;
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_client.dart';
@@ -1161,19 +1163,19 @@ class BookArtScrapeService {
   @visibleForTesting
   static List<String> queriesFor(String seriesTitle) => _queries(seriesTitle);
 
-  /// 搜索用的查询序列：全名 → 双语书名的日文段（`Horimiya ホリミヤ` → `ホリミヤ`，
-  /// [bilingualBookTitleParts]；Bangumi 是关键词精确搜索，全名与罗马字都搜不到）→
+  /// 搜索用的查询序列：全名 → 混写书名的中日韩部分（`Horimiya ホリミヤ` → `ホリミヤ`，
+  /// [splitBookTitleScripts]；Bangumi 是关键词精确搜索，全名与罗马字都搜不到）→
   /// 去掉副标题。
   static List<String> _queries(String seriesTitle) {
     final String full = seriesTitle.trim();
-    final List<String> bilingual = bilingualBookTitleParts(full);
+    final String? cjkPart = splitBookTitleScripts(full)?.cjk;
     final RegExpMatch? cut = RegExp(
       r'^(.+?)\s*[\s\-‐―—~〜～:：(（「『〈]',
     ).firstMatch(full);
     final String? head = cut?.group(1)?.trim();
     return <String>{
       full,
-      if (bilingual.isNotEmpty) bilingual.first,
+      ?cjkPart,
       if (head != null && head.length >= 2) head,
     }.toList();
   }

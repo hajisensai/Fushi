@@ -16,6 +16,9 @@
 /// 单卷最多到待确认。
 library;
 
+import 'package:fushi_engine/media/metadata/books/book_search_query.dart'
+    show splitBookTitleScripts;
+
 /// 本地书的种类提示（来自 `epub_books.format`）。
 enum BookArtLocalKind {
   /// `format = manga`：确定是漫画。
@@ -354,30 +357,16 @@ BookArtTitleTier bestTitleTier(String local, Iterable<String> remotes) {
   return best;
 }
 
-/// 双语书名（罗马字 / 英文名 + 日文名，如 `Horimiya ホリミヤ`）拆成的两段：
-/// `[日文段, 拉丁段]`。按空白分词，含假名 / 汉字的词归日文段、其余归拉丁段；
-/// 两段都非空才算双语，否则返回空列表。
-List<String> bilingualBookTitleParts(String title) {
-  final List<String> words = title.trim().split(RegExp(r'\s+'));
-  final String japanese = words.where(_cjk.hasMatch).join(' ');
-  final String latin = words
-      .where((String w) => !_cjk.hasMatch(w) && _latin.hasMatch(w))
-      .join(' ');
-  if (japanese.isEmpty || latin.isEmpty) return const <String>[];
-  if (words.any((String w) => !_cjk.hasMatch(w) && !_latin.hasMatch(w))) {
-    // 夹着既非日文也非拉丁字母的词（数字、符号）：不是单纯的双语书名，不拆。
-    return const <String>[];
-  }
-  return <String>[japanese, latin];
-}
-
-/// [local] 对候选全部写法的档位；整名对不上而本地是双语书名时，任一段对得上也只
-/// 给 [BookArtTitleTier.localExtends]（最多待确认，不自动采用）：只有日文原名的
-/// 候选（Bangumi）对 `Horimiya ホリミヤ` 原来是 none，连候选都进不了。
+/// [local] 对候选全部写法的档位；整名对不上而本地是混写书名（`Horimiya ホリミヤ`，
+/// 拆法与搜索词改写同一份 [splitBookTitleScripts]）时，任一半对得上也只给
+/// [BookArtTitleTier.localExtends]（最多待确认，不自动采用）：只有日文原名的候选
+/// （Bangumi）对混写书名原来是 none，连候选都进不了。
 BookArtTitleTier localBookTitleTier(String local, Iterable<String> remotes) {
   final BookArtTitleTier whole = bestTitleTier(local, remotes);
   if (whole != BookArtTitleTier.none) return whole;
-  for (final String part in bilingualBookTitleParts(local)) {
+  final ({String cjk, String latin})? split = splitBookTitleScripts(local);
+  if (split == null) return BookArtTitleTier.none;
+  for (final String part in <String>[split.cjk, split.latin]) {
     if (bestTitleTier(part, remotes) != BookArtTitleTier.none) {
       return BookArtTitleTier.localExtends;
     }

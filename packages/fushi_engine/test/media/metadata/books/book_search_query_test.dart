@@ -102,6 +102,15 @@ void main() {
       expect(splitBookTitleScripts('ホリミヤ'), isNull);
       expect(splitBookTitleScripts('Horimiya'), isNull);
       expect(splitBookTitleScripts('86 エイティシックス'), isNull);
+      expect(splitBookTitleScripts('ホリミヤ 2'), isNull);
+    });
+
+    // 书图批量刮削的候选判档（localBookTitleTier）与 Bangumi 查询序列共用这一份拆法。
+    test('多词拉丁名整段归拉丁部分', () {
+      expect(splitBookTitleScripts('Spy Family スパイファミリー'), (
+        cjk: 'スパイファミリー',
+        latin: 'Spy Family',
+      ));
     });
   });
 }
