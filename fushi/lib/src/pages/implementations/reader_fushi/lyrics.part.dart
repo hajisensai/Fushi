@@ -793,8 +793,6 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       jumpActions: _jumpHistoryToolbarItems(),
       // 同一份跳转记录在全书音频时间轴上的刻度（与迷你播放条 / 有声书面板同源）。
       jumpMarks: _audioJumpMarks(),
-      // 制卡结果小卡按正文行流选上角（竖排落左上，不压首列）。
-      verticalText: ReaderFushiSource.instance.lyricsVerticalWriting,
       // 章名跟当前句走（正文停在进歌词时的章，不代表音频所在章）。
       chapterLabel: _book == null ? null : _currentChapterLabel(),
       statsTimerPaused: _studyClockManualPause,
@@ -1499,10 +1497,13 @@ extension _ReaderLyrics on _ReaderFushiPageState {
               src.lyricsIllustrationCue == LyricsIllustrationCue.popup
           // 没进停留的卡按「图片暂停」秒数展示后收起。
           ..imagePauseSec = ctrl?.imagePauseSec
+          // 未听到插图的揭开状态与阅读器同一份（插图册 / 正文打码）。
+          ..onReveal = _markReaderImageRevealed
           ..load(
             items,
             position: cue == null ? null : _lyricsBookPositionOfCue(cue),
             audioPosition: ctrl?.globalPosition,
+            revealed: _revealedImageKeys,
           );
     _rebuild(() => _lyricsIllustrations = illustrations);
   }

@@ -176,4 +176,64 @@ void main() {
     FushiToast.debugReset();
     await tester.pump(const Duration(seconds: 1));
   });
+
+  // 反馈 RZpvO4Dl3y：制卡结果卡改落起始侧下角，避让通道跟着落点走——只有横在
+  // 起始侧那条通道上的底部 chrome（如贴左的浮动工具栏）才把卡顶上去，只占右半边的
+  // 栏不该让左下角的卡白白抬高。
+  for (final bool barOnStart in <bool>[true, false]) {
+    testWidgets('起始侧下角的结果卡：底部 chrome 在${barOnStart ? '起始侧' : '另一侧'}时'
+        '${barOnStart ? '让到栏上方' : '不抬'}', (WidgetTester tester) async {
+      final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
+      FushiToast.navigatorKey = navKey;
+      addTearDown(FushiToast.debugReset);
+      await tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navKey,
+          home: Scaffold(
+            body: Stack(
+              children: <Widget>[
+                Positioned(
+                  left: barOnStart ? 0 : null,
+                  right: barOnStart ? null : 0,
+                  bottom: 0,
+                  width: 200,
+                  child: const FushiChromeReveal(
+                    visible: true,
+                    from: AxisDirection.down,
+                    child: SizedBox(
+                      key: ValueKey<String>('side-bar'),
+                      height: 180,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      FushiToast.showMine(msg: '卡片已导出', status: MineToastStatus.failed);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
+      final Rect bar = tester.getRect(
+        find.byKey(const ValueKey<String>('side-bar')),
+      );
+      final Rect card = tester.getRect(find.byType(FushiMineNoticeCard));
+      expect(card.left, moreOrLessEquals(16, epsilon: 2), reason: '落左下角');
+      if (barOnStart) {
+        expect(card.overlaps(bar), isFalse, reason: '结果卡不许压在栏上');
+        expect(card.bottom, lessThanOrEqualTo(bar.top - 12 + 0.5));
+      } else {
+        expect(
+          card.bottom,
+          greaterThan(bar.top),
+          reason: '栏不在卡片那条通道上，卡片留在默认底距',
+        );
+      }
+      FushiToast.debugReset();
+      await tester.pump(const Duration(seconds: 1));
+    });
+  }
 }

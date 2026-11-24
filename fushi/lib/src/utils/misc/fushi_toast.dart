@@ -154,24 +154,17 @@ abstract final class FushiToast {
   }
 
   /// 登记一块正文区域：登记期间（最后登记的那块生效）制卡结果卡改成小号
-  /// （[FushiMineNoticeCard.compact]），放在 [region] 的**上角**——正文行流的收尾
-  /// 那一侧（见 [mineToastOffsetInRegion]），而不是屏幕底部正中的大卡。给正文铺满
-  /// 全屏的页面用（歌词模式）：底部正中的大卡正好压在正文上；贴区域底角会压住竖排
-  /// 正文末几行，挪到区域下方又会盖住时间读数与进度条（反馈 OOZ-lrCsU0）。
+  /// （[FushiMineNoticeCard.compact]），放在 [region] 的**起始侧下角**（LTR 左下，
+  /// RTL 右下；见 [mineToastOffsetInRegion]），而不是屏幕左下的大卡。给正文铺满
+  /// 全屏的页面用（歌词模式）：大卡正好压在正文上；区域下方是时间读数与进度条，
+  /// 不能挪出区域（反馈 OOZ-lrCsU0）。2026-11-24 维护者要求制卡提示统一放左下角
+  /// （反馈 RZpvO4Dl3y），取代此前的「行流收尾一侧的上角」。
   ///
   /// [region] 返回全局坐标矩形，调用方给的就是正文区域（已避开顶栏 / 安全区 /
   /// 底部控件）；返回 null（页面还没布局 / 已不可见）时退回默认位置与尺寸。
-  /// [textFlow] 是正文行在区域里横向推进的方向：横排跟书写方向（LTR 从左往右），
-  /// 竖排右起左排（vertical-rl）是 [TextDirection.rtl]；缺省取 toast 所在的
-  /// [Directionality]。返回的句柄在页面销毁时 [FushiToastCornerAnchor.release]。
-  static FushiToastCornerAnchor anchorMineToCorner(
-    ValueGetter<Rect?> region, {
-    ValueGetter<TextDirection?>? textFlow,
-  }) {
-    final FushiToastCornerAnchor anchor = FushiToastCornerAnchor._(
-      region,
-      textFlow,
-    );
+  /// 返回的句柄在页面销毁时 [FushiToastCornerAnchor.release]。
+  static FushiToastCornerAnchor anchorMineToCorner(ValueGetter<Rect?> region) {
+    final FushiToastCornerAnchor anchor = FushiToastCornerAnchor._(region);
     _cornerAnchors.add(anchor);
     return anchor;
   }
@@ -190,12 +183,6 @@ abstract final class FushiToast {
     final Rect? rect = _cornerAnchors.last._region();
     if (rect == null || rect.isEmpty) return null;
     return rect;
-  }
-
-  /// 此刻生效的锚点登记的正文行流方向（null = 跟 toast 的 [Directionality]）。
-  static TextDirection? _activeCornerTextFlow() {
-    if (_cornerAnchors.isEmpty) return null;
-    return _cornerAnchors.last._textFlow?.call();
   }
 
   /// 锚点集合变了（页面销毁撤销登记）：让正在显示的 toast 下一帧按新的锚点重新
@@ -229,7 +216,7 @@ abstract final class FushiToast {
     required OverlayState overlay,
     required MineNotice notice,
   }) {
-    // 制卡结果与普通提示共用底部这一个位置：结果来了，普通提示让位。
+    // 制卡结果与普通提示都在底部：结果来了，普通提示让位。
     _removeGenericEntry();
     _mineNotices.show(notice);
     final _FushiToastHandle? handle = _mineHandle;
@@ -248,16 +235,16 @@ abstract final class FushiToast {
           icon: null,
           severity: ToastSeverity.neutral,
           interactive: true,
+          // 制卡提示落起始侧下角（左下，RTL 右下；反馈 RZpvO4Dl3y），普通提示
+          // 仍是底部正中。
+          startAligned: true,
           cornerRegion: _activeCornerRect,
-          cornerTextFlow: _activeCornerTextFlow,
           bodyBuilder: (bool compact) => FushiMineNoticeStack(
             controller: _mineNotices,
             compact: compact,
-            maxWidth: compact ? 300 : 440,
-            // 贴角小卡在正文区域上角，旧卡朝下露边；默认位置在底部，朝上露边。
-            anchor: compact
-                ? MineNoticeStackAnchor.top
-                : MineNoticeStackAnchor.bottom,
+            maxWidth: compact ? 300 : _kMineCardMaxWidth,
+            // 默认位置与贴角小卡都在下角，旧卡朝上露边。
+            anchor: MineNoticeStackAnchor.bottom,
           ),
         ),
       ),
@@ -357,10 +344,9 @@ abstract final class FushiToast {
 
 /// [FushiToast.anchorMineToCorner] 的登记句柄。
 final class FushiToastCornerAnchor {
-  FushiToastCornerAnchor._(this._region, this._textFlow);
+  FushiToastCornerAnchor._(this._region);
 
   final ValueGetter<Rect?> _region;
-  final ValueGetter<TextDirection?>? _textFlow;
 
   /// 撤销登记（可重复调用）。正在显示的 toast 随后按剩下的锚点重新定尺寸与位置。
   void release() {
@@ -472,34 +458,39 @@ const Curve _kToastSpatialCurve = Cubic(0.42, 1.67, 0.21, 0.90);
 /// - Apple：iOS 26 HUD 胶囊——深色 #2C2C2E / 浅色白 @92% + 背景模糊，15 号字，
 ///   单色 SF 图标，与 Apple 版 SnackBar 同一视觉。
 ///
-/// 位置恒为底部居中（全部调用点都是 BOTTOM），淡入 + 轻微上浮。
+/// 普通提示底部居中；制卡结果落起始侧下角（[_FushiToastView.startAligned]）。
+/// 淡入 + 轻微上浮。
 /// 制卡结果小卡与正文区域 / 屏幕边缘的间距。
 const double kMineToastClearInset = 12;
 
+/// 默认位置（屏幕下角）制卡结果大卡的最大宽度。
+const double _kMineCardMaxWidth = 440;
+
+/// 默认位置的制卡结果卡离屏幕起始边多远（与普通提示两侧留白同一档）。
+const double _kToastSideInset = 16;
+
 /// 制卡结果小卡相对 overlay 的左上角：正文区域 [region]（overlay 本地坐标）的
-/// **上角**，取正文行流 [textFlow] 收尾的那一侧（反馈 OOZ-lrCsU0）。
+/// **起始侧下角**——[direction] 为 LTR 时左下、RTL 时右下（反馈 RZpvO4Dl3y：维护者
+/// 要求制卡提示放左下角）。
 ///
-/// - 横排 LTR：行从左起、居中或左对齐，右上角最空；
-/// - 竖排右起左排（[TextDirection.rtl]）：首列在右，左上角是还没读到的一侧，不压
-///   正在读的首列；横排 RTL 同理落左上。
-///
-/// 纵向贴区域上沿内缩 [inset]——区域由登记方给成正文区域（已在顶栏 / 安全区之下、
-/// 底部控件之上），所以既不进顶栏也不压底部进度条。横纵都夹在屏幕内。
+/// 纵向贴区域下沿内缩 [inset]——区域由登记方给成正文区域（已在顶栏 / 安全区之下、
+/// 底部控件之上），所以既不进顶栏也不压底部进度条（反馈 OOZ-lrCsU0）。横纵都夹在
+/// 屏幕内。
 Offset mineToastOffsetInRegion({
   required Size overlay,
   required Rect region,
   required Size card,
-  required TextDirection textFlow,
+  required TextDirection direction,
   double inset = kMineToastClearInset,
 }) {
-  final double endX = textFlow == TextDirection.rtl
-      ? region.left + inset
-      : region.right - inset - card.width;
-  final double x = endX.clamp(
+  final double startX = direction == TextDirection.rtl
+      ? region.right - inset - card.width
+      : region.left + inset;
+  final double x = startX.clamp(
     inset,
     math.max(inset, overlay.width - inset - card.width),
   );
-  final double y = (region.top + inset).clamp(
+  final double y = (region.bottom - inset - card.height).clamp(
     0.0,
     math.max(0.0, overlay.height - inset - card.height),
   );
@@ -509,10 +500,10 @@ Offset mineToastOffsetInRegion({
 /// 按 [mineToastOffsetInRegion] 摆放制卡结果小卡：铺满 overlay，只摆一个孩子；
 /// 宽度不超过正文区域（内缩后）。自身不命中，卡片以外的地方照样点穿到下面。
 class _RegionCornerLayout extends SingleChildLayoutDelegate {
-  const _RegionCornerLayout({required this.region, required this.textFlow});
+  const _RegionCornerLayout({required this.region, required this.direction});
 
   final Rect region;
-  final TextDirection textFlow;
+  final TextDirection direction;
 
   @override
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
@@ -529,12 +520,37 @@ class _RegionCornerLayout extends SingleChildLayoutDelegate {
         overlay: size,
         region: region,
         card: childSize,
-        textFlow: textFlow,
+        direction: direction,
       );
 
   @override
   bool shouldRelayout(_RegionCornerLayout oldDelegate) =>
-      oldDelegate.region != region || oldDelegate.textFlow != textFlow;
+      oldDelegate.region != region || oldDelegate.direction != direction;
+}
+
+/// 默认位置的 toast 占用的竖向通道（overlay 本地横坐标）：卡片宽至多
+/// [_kMineCardMaxWidth]、两侧各留 [_kToastSideInset]。居中的普通提示取中间那条；
+/// [startAligned]（制卡结果）取起始边那条——LTR 贴左、RTL 贴右。
+({double left, double right}) _toastLane({
+  required double overlayWidth,
+  required bool startAligned,
+  required TextDirection direction,
+}) {
+  final double width = math.max(
+    0,
+    math.min(_kMineCardMaxWidth, overlayWidth - 2 * _kToastSideInset),
+  );
+  if (!startAligned) {
+    return (
+      left: overlayWidth / 2 - width / 2,
+      right: overlayWidth / 2 + width / 2,
+    );
+  }
+  if (direction == TextDirection.rtl) {
+    final double right = overlayWidth - _kToastSideInset;
+    return (left: right - width, right: right);
+  }
+  return (left: _kToastSideInset, right: _kToastSideInset + width);
 }
 
 class _FushiToastView extends StatefulWidget {
@@ -547,7 +563,7 @@ class _FushiToastView extends StatefulWidget {
     this.bodyBuilder,
     this.interactive = false,
     this.cornerRegion,
-    this.cornerTextFlow,
+    this.startAligned = false,
   });
 
   /// 非空时代替默认浮条（制卡结果卡）；进退场不变。参数 `compact`：这次重建贴角
@@ -560,12 +576,13 @@ class _FushiToastView extends StatefulWidget {
   final bool interactive;
 
   /// 每次重建解析一次：非空且能换算到 overlay 坐标时，画小卡并放在这块正文区域
-  /// （全局坐标）的上角（[mineToastOffsetInRegion]），否则默认位置画大卡（见
+  /// （全局坐标）的起始侧下角（[mineToastOffsetInRegion]），否则默认位置画大卡（见
   /// [FushiToast.anchorMineToCorner]）。
   final ValueGetter<Rect?>? cornerRegion;
 
-  /// 正文行流方向（null = 跟 [Directionality]），决定落哪个上角。
-  final ValueGetter<TextDirection?>? cornerTextFlow;
+  /// 默认位置落屏幕起始侧下角（LTR 左下，RTL 右下）而不是底部正中：制卡结果卡
+  /// （反馈 RZpvO4Dl3y）。避让底部 chrome 的竖向通道随之取起始侧那一条。
+  final bool startAligned;
 
   final String msg;
   final IconData? icon;
@@ -670,6 +687,12 @@ class _FushiToastViewState extends State<_FushiToastView>
       child: SlideTransition(
         position: _slide,
         child: ScaleTransition(
+          // 制卡结果从所在的下角弹出（贴角小卡 / 默认位置同一口径）。
+          alignment: widget.startAligned || region != null
+              ? AlignmentDirectional.bottomStart.resolve(
+                  Directionality.of(context),
+                )
+              : Alignment.center,
           scale: _scale,
           child: Material(type: MaterialType.transparency, child: body),
         ),
@@ -682,8 +705,7 @@ class _FushiToastViewState extends State<_FushiToastView>
           child: CustomSingleChildLayout(
             delegate: _RegionCornerLayout(
               region: region,
-              textFlow:
-                  widget.cornerTextFlow?.call() ?? Directionality.of(context),
+              direction: Directionality.of(context),
             ),
             child: animated,
           ),
@@ -692,18 +714,24 @@ class _FushiToastViewState extends State<_FushiToastView>
     }
     return Positioned(
       bottom: _bottomOffset(context),
-      left: 16,
-      right: 16,
+      left: _kToastSideInset,
+      right: _kToastSideInset,
       child: IgnorePointer(
         ignoring: !widget.interactive,
-        child: Center(child: animated),
+        child: Align(
+          alignment: widget.startAligned
+              ? AlignmentDirectional.bottomStart
+              : Alignment.bottomCenter,
+          child: animated,
+        ),
       ),
     );
   }
 
-  /// 底部居中位置离底边多远：基线 [_toastBottomOffset]，页面底部 chrome（漫画 /
-  /// 阅读器底栏、有声播放条…，经 [FushiNoticeObstacle] 登记）横在卡片竖向通道上时
-  /// 抬到它上方（[noticeBottomOffset]）。
+  /// 默认位置离底边多远：基线 [_toastBottomOffset]，页面底部 chrome（漫画 /
+  /// 阅读器底栏、有声播放条、底部浮动工具栏…，经 [FushiNoticeObstacle] 登记）横在
+  /// 卡片竖向通道上时抬到它上方（[noticeBottomOffset]）。通道跟着落点走：居中的
+  /// 普通提示取中间那条，起始侧的制卡结果取起始边那条（[_toastLane]）。
   double _bottomOffset(BuildContext context) {
     final double fallback = _toastBottomOffset(context);
     final RenderObject? overlayBox = Overlay.maybeOf(
@@ -711,14 +739,17 @@ class _FushiToastViewState extends State<_FushiToastView>
     )?.context.findRenderObject();
     if (overlayBox is! RenderBox || !overlayBox.hasSize) return fallback;
     final Size size = overlayBox.size;
-    // 卡片宽至多 440、两侧各留 16：通道取中间那一条。
-    final double half = math.min(220, (size.width - 32) / 2);
+    final ({double left, double right}) lane = _toastLane(
+      overlayWidth: size.width,
+      startAligned: widget.startAligned,
+      direction: Directionality.of(context),
+    );
     return noticeBottomOffset(
       overlayHeight: size.height,
       fallback: fallback,
       obstacles: FushiNoticeObstacles.instance.inOverlay(overlayBox),
-      laneLeft: size.width / 2 - half,
-      laneRight: size.width / 2 + half,
+      laneLeft: lane.left,
+      laneRight: lane.right,
     );
   }
 
