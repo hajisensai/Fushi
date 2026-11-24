@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 会话音轨面板（共享内容组件）：轨列表 + 逐轨试听 + 设为语音轨 + 排除 BGM/恢复。
 ///
@@ -180,9 +181,7 @@ class GalTrackTile extends StatelessWidget {
               // BUG-1027：逐轨试听——抓该轨最近整句 PCM 播放，帮用户判断这条轨
               // 是语音还是 BGM，再决定选轨/排除。播放中变停止按钮。
               FushiIconButton(
-                icon: previewing
-                    ? Icons.stop_circle_outlined
-                    : Icons.play_circle_outline,
+                icon: previewing ? FushiIcons.stop : FushiIcons.playCircle,
                 tooltip: previewing
                     ? t.game_track_preview_stop
                     : t.game_track_preview,
@@ -240,9 +239,7 @@ class GalTrackTile extends StatelessWidget {
               child: Row(
                 children: <Widget>[
                   FushiIconButton(
-                    icon: previewing
-                        ? Icons.stop_circle_outlined
-                        : Icons.play_circle_outline,
+                    icon: previewing ? FushiIcons.stop : FushiIcons.playCircle,
                     tooltip: previewing
                         ? t.game_track_preview_stop
                         : t.game_track_preview,

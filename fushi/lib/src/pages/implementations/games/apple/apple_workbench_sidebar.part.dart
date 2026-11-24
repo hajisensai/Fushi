@@ -328,7 +328,7 @@ extension _AppleWorkbenchSidebar on _TexthookerPageState {
       child: FushiFilledButton.tonalIcon(
         key: const ValueKey<String>('game-action-stop'),
         onPressed: () => unawaited(_session.stopCapture()),
-        icon: const FushiIcon(Icons.stop_circle_outlined, size: 18),
+        icon: const FushiIcon(FushiIcons.stop, size: 18),
         label: Text(t.game_stop_listening),
       ),
     );

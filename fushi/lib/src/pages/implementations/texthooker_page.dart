@@ -1665,13 +1665,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               ),
               if (bound != null)
                 FushiIconButton(
-                  icon: Icons.link_off,
+                  icon: FushiIcons.linkOff,
                   size: 18,
                   tooltip: t.external_window_unbind,
                   onTap: () => unawaited(_session.bindWindow(null)),
                 ),
               FushiIconButton(
-                icon: Icons.refresh,
+                icon: FushiIcons.refresh,
                 size: 18,
                 tooltip: t.external_window_refresh,
                 onTap: _pickExternalWindow,
@@ -1725,12 +1725,12 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                 ),
                 if (bound != null)
                   FushiIconButton(
-                    icon: Icons.link_off,
+                    icon: FushiIcons.linkOff,
                     tooltip: t.external_window_unbind,
                     onTap: () => unawaited(_session.bindWindow(null)),
                   ),
                 FushiIconButton(
-                  icon: Icons.refresh,
+                  icon: FushiIcons.refresh,
                   tooltip: t.external_window_refresh,
                   onTap: _pickExternalWindow,
                 ),
@@ -4633,7 +4633,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                 ),
               ),
               FushiIconButton(
-                icon: Icons.refresh,
+                icon: FushiIcons.refresh,
                 tooltip: t.game_refresh_tracks,
                 size: 18,
                 focusId: const FushiFocusId('game-line-tracks-refresh'),
@@ -4642,7 +4642,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
               if (widget.onClose != null)
                 FushiIconButton(
                   key: const ValueKey<String>('game-line-tracks-close'),
-                  icon: Icons.close,
+                  icon: FushiIcons.close,
                   tooltip: t.game_workbench_detail_close,
                   size: 18,
                   focusId: const FushiFocusId('game-line-tracks-close'),
@@ -4791,7 +4791,7 @@ extension on _LineTracksCardState {
                 ),
               ),
               FushiIconButton(
-                icon: Icons.refresh,
+                icon: FushiIcons.refresh,
                 tooltip: t.game_refresh_tracks,
                 focusId: const FushiFocusId('game-line-tracks-refresh'),
                 onTap: () => unawaited(_syncTracks(force: true)),
@@ -4799,7 +4799,7 @@ extension on _LineTracksCardState {
               if (widget.onClose != null)
                 FushiIconButton(
                   key: const ValueKey<String>('game-line-tracks-close'),
-                  icon: Icons.close,
+                  icon: FushiIcons.close,
                   tooltip: t.game_workbench_detail_close,
                   focusId: const FushiFocusId('game-line-tracks-close'),
                   onTap: widget.onClose,
@@ -5035,7 +5035,7 @@ class _SelectedLineBar extends StatelessWidget {
               label: Text(t.game_workbench_detail_open),
             ),
             FushiIconButton(
-              icon: Icons.close,
+              icon: FushiIcons.close,
               tooltip: t.game_workbench_detail_close,
               size: 18,
               focusId: const FushiFocusId('game-selected-line-close'),

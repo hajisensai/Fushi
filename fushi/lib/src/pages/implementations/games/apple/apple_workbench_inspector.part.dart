@@ -37,8 +37,8 @@ extension _AppleWorkbenchInspector on _TexthookerPageState {
             if (line.hasAudio)
               FushiIconButton(
                 icon: row.previewingAudio
-                    ? Icons.stop_circle_outlined
-                    : Icons.play_circle_outline,
+                    ? FushiIcons.stop
+                    : FushiIcons.playCircle,
                 tooltip: row.previewingAudio
                     ? t.game_track_preview_stop
                     : t.game_line_preview_tooltip,
@@ -47,15 +47,13 @@ extension _AppleWorkbenchInspector on _TexthookerPageState {
               ),
             if (row.canPickTrack)
               FushiIconButton(
-                icon: Icons.multitrack_audio_outlined,
+                icon: FushiIcons.audio,
                 tooltip: t.game_line_track_tooltip,
                 onTap: () => unawaited(_pickLineTrack(line)),
               ),
             if (row.canRecapture)
               FushiIconButton(
-                icon: row.recapturing
-                    ? Icons.stop_circle_outlined
-                    : Icons.mic_none_outlined,
+                icon: row.recapturing ? FushiIcons.stop : FushiIcons.mic,
                 tooltip: row.recapturing
                     ? t.game_line_recapture_stop
                     : t.game_line_recapture,
@@ -63,12 +61,14 @@ extension _AppleWorkbenchInspector on _TexthookerPageState {
                 onTap: () => unawaited(_toggleLineRecapture(line)),
               ),
             FushiIconButton(
-              icon: Icons.copy_all_outlined,
+              icon: FushiIcons.copyAll,
               tooltip: t.game_line_copy_tooltip,
               onTap: () => _appModel.copyToClipboard(row.displayText),
             ),
             FushiIconButton(
-              icon: line.favorited ? Icons.star : Icons.star_border,
+              icon: line.favorited
+                  ? FushiIcons.filled(FushiIcons.star)
+                  : FushiIcons.star,
               tooltip: line.favorited
                   ? t.game_line_unfavorite_tooltip
                   : t.game_line_favorite_tooltip,

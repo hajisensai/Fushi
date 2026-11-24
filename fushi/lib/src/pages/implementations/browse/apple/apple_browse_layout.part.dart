@@ -35,14 +35,14 @@ extension _AppleBrowseLayout on _BrowsePageState {
       actions: FushiShellHeaderActions(
         actions: <Widget>[
           FushiIconButton(
-            icon: Icons.add,
+            icon: FushiIcons.add,
             tooltip: t.download_task_add,
             label: mac ? t.download_task_add : null,
             onTap: _openManualTaskDialog,
           ),
           FushiIconButton(
             key: const ValueKey<String>('browse-download-settings'),
-            icon: Icons.settings_outlined,
+            icon: FushiIcons.settings,
             tooltip: t.download_settings,
             onTap: _openDownloadSettings,
           ),

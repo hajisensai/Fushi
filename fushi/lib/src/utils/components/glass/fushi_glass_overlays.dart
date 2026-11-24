@@ -2988,7 +2988,9 @@ class FushiMenuLabelTrigger extends StatelessWidget
           ),
           SizedBox(width: glass ? 4 : 2),
           FushiIcon(
-            glass ? CupertinoIcons.chevron_up_chevron_down : Icons.expand_more,
+            glass
+                ? CupertinoIcons.chevron_up_chevron_down
+                : FushiIcons.expandMore,
             size: glass ? 13 : 20,
             color: foreground,
           ),

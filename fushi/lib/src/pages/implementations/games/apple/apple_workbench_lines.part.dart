@@ -173,7 +173,7 @@ extension _AppleWorkbenchLines on _TexthookerPageState {
         ? <Widget>[
             FushiIconButton(
               key: const ValueKey<String>('game-follow-live'),
-              icon: Icons.vertical_align_bottom_rounded,
+              icon: FushiIcons.alignBottom,
               tooltip: t.game_follow_live,
               selected: _followLive,
               focusId: const FushiFocusId('game-follow-live'),
@@ -181,7 +181,7 @@ extension _AppleWorkbenchLines on _TexthookerPageState {
             ),
             FushiIconButton(
               key: const ValueKey<String>('game-auto-lookup'),
-              icon: Icons.manage_search_rounded,
+              icon: FushiIcons.manageSearch,
               tooltip: t.game_auto_lookup_new_lines_tooltip,
               selected: _autoLookupNewLines,
               focusId: const FushiFocusId('game-auto-lookup'),
@@ -243,16 +243,12 @@ extension _AppleWorkbenchLines on _TexthookerPageState {
         in <(_HookCodeAction, IconData, String)>[
           (
             _HookCodeAction.paste,
-            Icons.content_paste_go_outlined,
+            FushiIcons.paste,
             t.game_hook_code_paste_title,
           ),
-          (_HookCodeAction.save, Icons.bookmark_add_outlined, t.dialog_save),
-          (
-            _HookCodeAction.import,
-            Icons.file_download_outlined,
-            t.dialog_import,
-          ),
-          (_HookCodeAction.export, Icons.file_upload_outlined, t.dialog_export),
+          (_HookCodeAction.save, FushiIcons.bookmarkAdd, t.dialog_save),
+          (_HookCodeAction.import, FushiIcons.download, t.dialog_import),
+          (_HookCodeAction.export, FushiIcons.upload, t.dialog_export),
         ])
       MenuItemButton(
         key: ValueKey<String>('game-hook-code-${item.$1.name}'),
@@ -495,9 +491,7 @@ class _AppleLineRowState extends ConsumerState<_AppleLineRow>
       if (line.hasAudio)
         (
           id: 'game-line-preview-${line.id}',
-          icon: row.previewingAudio
-              ? Icons.stop_circle_outlined
-              : Icons.play_circle_outline,
+          icon: row.previewingAudio ? FushiIcons.stop : FushiIcons.playCircle,
           label: row.previewingAudio
               ? t.game_track_preview_stop
               : t.game_line_preview_tooltip,
@@ -507,7 +501,7 @@ class _AppleLineRowState extends ConsumerState<_AppleLineRow>
       if (row.canPickTrack)
         (
           id: 'game-line-track-${line.id}',
-          icon: Icons.multitrack_audio_outlined,
+          icon: FushiIcons.audio,
           label: t.game_line_track_tooltip,
           onTap: () => widget.onPickTrack(line),
           color: null,
@@ -515,9 +509,7 @@ class _AppleLineRowState extends ConsumerState<_AppleLineRow>
       if (row.canRecapture)
         (
           id: 'game-line-recapture-${line.id}',
-          icon: row.recapturing
-              ? Icons.stop_circle_outlined
-              : Icons.mic_none_outlined,
+          icon: row.recapturing ? FushiIcons.stop : FushiIcons.mic,
           label: row.recapturing
               ? t.game_line_recapture_stop
               : t.game_line_recapture,
@@ -526,14 +518,16 @@ class _AppleLineRowState extends ConsumerState<_AppleLineRow>
         ),
       (
         id: 'game-line-copy-${line.id}',
-        icon: Icons.copy_all_outlined,
+        icon: FushiIcons.copyAll,
         label: t.game_line_copy_tooltip,
         onTap: () => widget.onCopy(line),
         color: null,
       ),
       (
         id: 'game-line-favorite-${line.id}',
-        icon: line.favorited ? Icons.star : Icons.star_border,
+        icon: line.favorited
+            ? FushiIcons.filled(FushiIcons.star)
+            : FushiIcons.star,
         label: line.favorited
             ? t.game_line_unfavorite_tooltip
             : t.game_line_favorite_tooltip,
@@ -583,7 +577,7 @@ class _AppleLineRowState extends ConsumerState<_AppleLineRow>
         if (line.favorited) ...<Widget>[
           const SizedBox(height: 4),
           FushiIcon(
-            Icons.star,
+            FushiIcons.star,
             size: metrics.chevronSize + 2,
             color: apple.warning,
           ),

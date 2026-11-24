@@ -48,7 +48,7 @@ List<DialogWorkbenchAction> bookCardAudioWorkbenchActions({
 
   // 导入在上（主入口）。
   if (importAudiobook != null) {
-    add(t.audiobook_import, Icons.headphones_outlined, importAudiobook);
+    add(t.audiobook_import, FushiIcons.audiobook, importAudiobook);
   }
   if (importMangaAudio != null) {
     add(t.manga_audio_import, FushiIcons.importFile, importMangaAudio);
@@ -60,7 +60,7 @@ List<DialogWorkbenchAction> bookCardAudioWorkbenchActions({
   if (openMangaWorkbench != null) {
     add(
       t.manga_audio_workbench_title,
-      Icons.headphones_outlined,
+      FushiIcons.audiobook,
       openMangaWorkbench,
       subtitle: t.manga_audio_workbench_not_started,
       loadStatus: mangaWorkbenchStatus,

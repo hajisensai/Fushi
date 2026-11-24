@@ -181,7 +181,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                             ),
                         ],
                     child: GalWorkbenchCapabilityFace(
-                      icon: Icons.tune_outlined,
+                      icon: FushiIcons.filter,
                       label: t.game_lookup_attached_mode,
                       value: Text(_modeLabel(mode)),
                       trailingIcon: FushiIcons.expandMore,
@@ -422,7 +422,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
               row(
                 key: const ValueKey<String>('game-attached-lookup-mode'),
                 index: 0,
-                icon: Icons.tune_outlined,
+                icon: FushiIcons.filter,
                 label: t.game_lookup_attached_mode,
                 value: Text(_modeLabel(mode)),
                 focusId: const FushiFocusId('game-attached-lookup-mode'),
