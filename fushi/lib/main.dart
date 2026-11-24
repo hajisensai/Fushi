@@ -20,6 +20,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:media_kit/native_wakeup.dart';
+import 'package:fushi_compute/fushi_compute.dart' show fushiComputePortWakeup;
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -589,6 +591,11 @@ void main([List<String> args = const <String>[]]) {
       JustAudioMediaKit.pitch = false;
       JustAudioMediaKit.ensureInitialized();
       MediaKit.ensureInitialized();
+      // BUG-5413：libmpv 的唤醒回调改走 Dart 端口（fushi_compute 的 `ffc_port_wakeup`），不再给 libmpv
+      // 一个随 isolate 销毁的 NativeCallable。Android 上 audio_service 会在 Activity 走后销毁引擎、进程
+      // 留在后台，libmpv 核心线程再唤醒已删的 callable，VM 就 abort 整个进程（反馈 Wgbo462Sfc）。
+      // 必须在建任何播放器之前。
+      useNativePortWakeup(fushiComputePortWakeup());
       // 液态玻璃材质的着色器预热：只把 FragmentProgram 读进内存，免得第一次打开
       // 弹层时闪一帧占位。纯 IO、与启动无依赖，后台跑不挡首帧；没开 liquid 档的
       // 用户也只是多读几个着色器文件。

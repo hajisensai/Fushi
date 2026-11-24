@@ -20,7 +20,7 @@ Fushi 的 Rust 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配 
 
 | 符号 | 作用 |
 |---|---|
-| `ffc_abi_version() -> i32` | ABI 版本（当前 3）；Dart 侧不一致即抛加载异常 |
+| `ffc_abi_version() -> i32` | ABI 版本（当前 4）；Dart 侧不一致即抛加载异常 |
 | `ffc_free_bytes(u8*, usize)` | 释放本库分配并交给调用方的缓冲区 |
 | `ffc_hash_ed2k_new() -> ctx*` | 新建 AniDB ED2K 上下文（panic 时 NULL） |
 | `ffc_hash_ed2k_update(ctx*, const u8*, usize) -> i32` | 追加字节 |
@@ -289,11 +289,11 @@ flutter_tester 有 94 个差 1 ULP，旧实现自己在两个宿主上也不一�
 低中高频段 / 起音 / 人声，按 folia 播放器 `AnalyserNode` 的同一套公式）、拍点 / 强拍 / BPM、每拍重音
 （folia `beatAccents`：impact、低中高占比、有无节奏、听感拍、整曲动感系数，`accents.rs`）、鼓点、人声起音，
 结果写成 `.fma` 文件（布局见 `format.rs` 头注，Dart 读取方 `fushi/lib/src/media/music/analysis/`）。
-进程级单例引擎（一个工作线程 + FIFO 队列），事件回调 `(kind, token, value)`。
+进程级单例引擎（一个工作线程 + FIFO 队列），事件经 Dart 原生端口发回，每条 `[kind, token, value]`（见下「原生线程回 Dart」）。
 
 | 符号 | 作用 |
 |---|---|
-| `ffc_mana_start(cb)` | 启动工作线程（幂等，再调换回调） |
+| `ffc_mana_start(post, port)` | 启动工作线程（幂等）；`post` = `NativeApi.postCObject`、`port` = `SendPort.nativePort`。换端口 = 旧 isolate 没了：它排队的任务丢掉、在跑的取消，事件只发提交者的端口 |
 | `ffc_mana_configure(ort, beat_this, htdemucs, threads, backend)` | 配置可选模型；有模型时经 `upscale::runtime` 接上本进程那份 ORT；`backend` 与超分同码（0 CPU / 1 DirectML / 2 CoreML / 3 XNNPACK），失败退 CPU 并发一次 `EVENT_BACKEND_FALLBACK` |
 | `ffc_mana_submit(token, pcm, out, flags)` / `ffc_mana_cancel(token)` | 排队一首（44.1 kHz 立体声 s16le raw）/ 取消 |
 | `ffc_mana_analyze_file(pcm, out, flags)` | 同步分析（无头 / 测试） |
@@ -304,6 +304,18 @@ flutter_tester 有 94 个差 1 ULP，旧实现自己在两个宿主上也不一�
 `.fma` 现为 v2（加重音段），读侧兼容 v1（重音按中性值）；旧管线版本的结果照样读、再补算。
 模型（MIT）按需下载、不随包。真文件手动验证：
 `FUSHI_MANA_PCM=<s16le> [FUSHI_MANA_ORT=… FUSHI_MANA_BEAT_THIS=… FUSHI_MANA_HTDEMUCS=…] cargo test --profile quick --lib real_file_sanity -- --nocapture`。
+
+## 原生线程回 Dart（`src/dart_port.rs`，BUG-5413）
+
+进程级引擎（音乐分析、超分）的工作线程与 libmpv 的核心线程都活得比 isolate 久（Android 上 audio_service 在
+Activity 走后销毁 FlutterEngine、进程留在后台）。`NativeCallable.listener` 随 isolate 删掉、之后再调 VM 会
+abort 整个进程，所以本库一律往 Dart `ReceivePort` 的原生端口发消息（`Dart_PostCObject`，由 Dart 传入
+`NativeApi.postCObject`）：isolate 没了端口就关了，消息丢掉。事件按提交者的端口发，登记端口换了之后旧 isolate
+的任务不会把事件落到新 isolate 上（两边令牌都从头数）。
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_port_wakeup(void* d)` | `void (*)(void*)` 形态的唤醒跳板，`d` 指向 `{ post, port: i64, value: i64 }`，每次被调把 `value` 发到 `port`。media_kit 补丁的 `useNativePortWakeup` 用它当 libmpv 的唤醒回调 |
 
 ## 解析域：EPUB 章节 DOM 派生量（BUG-3433）
 

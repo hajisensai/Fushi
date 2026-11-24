@@ -5,6 +5,7 @@
 /// Use of this source code is governed by MIT license that can be found in the LICENSE file.
 import 'dart:collection';
 import 'dart:ffi';
+import 'dart:isolate';
 
 import 'package:media_kit/ffi/ffi.dart';
 import 'package:media_kit/generated/libmpv/bindings.dart' as generated;
@@ -47,17 +48,35 @@ class InitializerNativeCallable {
       calloc.free(value);
     }
     mpv.mpv_initialize(ctx);
-    final nativeCallable = WakeUpNativeCallable.listener(_callback);
-    final nativeFunction = nativeCallable.nativeFunction;
+    // Fushi overlay (BUG-5413): with a port wakeup installed, libmpv calls a
+    // native trampoline that posts to this isolate's port instead of a
+    // NativeCallable, so a wakeup after this isolate died is dropped instead
+    // of aborting the process.
+    final Pointer<NativeFunction<PortWakeupFunction>>? trampoline = _portWakeup;
+    final _Wakeup wakeup = trampoline == null
+        ? _CallableWakeup(ctx, _callback)
+        : _PortWakeup(ctx, trampoline, _callback);
     _locks[ctx.address] = Lock();
     _eventCallbacks[ctx.address] = callback;
-    _wakeUpNativeCallables[ctx.address] = nativeCallable;
+    _wakeUps[ctx.address] = wakeup;
     // Fushi overlay (H6Vou-6uYX): once the process has started exiting, a new
     // handle must not hand libmpv a callback the engine is about to free.
     if (!_quiescedForProcessExit) {
-      mpv.mpv_set_wakeup_callback(ctx, nativeFunction.cast(), ctx.cast());
+      mpv.mpv_set_wakeup_callback(ctx, wakeup.function, wakeup.data);
     }
     return ctx;
+  }
+
+  /// Fushi overlay (BUG-5413). Native `void (*)(void *)` trampoline that posts
+  /// to a Dart port; see `lib/native_wakeup.dart`. Null = upstream
+  /// NativeCallable wakeups.
+  static Pointer<NativeFunction<PortWakeupFunction>>? _portWakeup;
+
+  /// Fushi overlay (BUG-5413). Handles created afterwards use [trampoline].
+  static void usePortWakeup(
+    Pointer<NativeFunction<PortWakeupFunction>> trampoline,
+  ) {
+    _portWakeup = trampoline;
   }
 
   /// Fushi overlay (H6Vou-6uYX). Set by [quiesceForProcessExit]; never reset,
@@ -69,13 +88,13 @@ class InitializerNativeCallable {
   ///
   /// `mpv_set_wakeup_callback` takes the same lock libmpv holds while invoking
   /// the callback, so when this returns no core thread is inside or can reach
-  /// a [NativeCallable] of this isolate. The callables stay registered here so
-  /// a later [dispose] closes them as usual. See `lib/native_exit.dart`.
+  /// a wakeup of this isolate. The wakeups stay registered here so a later
+  /// [dispose] closes them as usual. See `lib/native_exit.dart`.
   static void quiesceForProcessExit() {
     _quiescedForProcessExit = true;
     final InitializerNativeCallable? instance = _instance;
     if (instance == null) return;
-    for (final int address in instance._wakeUpNativeCallables.keys) {
+    for (final int address in instance._wakeUps.keys) {
       instance.mpv.mpv_set_wakeup_callback(
         Pointer<generated.mpv_handle>.fromAddress(address),
         nullptr,
@@ -93,7 +112,7 @@ class InitializerNativeCallable {
     // to prevent libmpv from invoking a deleted callback
     mpv.mpv_set_wakeup_callback(ctx, nullptr, nullptr);
 
-    _wakeUpNativeCallables.remove(ctx.address)?.close();
+    _wakeUps.remove(ctx.address)?.close();
   }
 
   void _callback(Pointer<generated.mpv_handle> ctx) {
@@ -109,12 +128,95 @@ class InitializerNativeCallable {
 
   final _locks = HashMap<int, Lock>();
   final _eventCallbacks = EventCallbackMap();
-  final _wakeUpNativeCallables = WakeUpNativeCallableMap();
+  final _wakeUps = HashMap<int, _Wakeup>();
 }
 
 typedef WakeUpCallback = Void Function(Pointer<generated.mpv_handle>);
 typedef WakeUpNativeCallable = NativeCallable<WakeUpCallback>;
-typedef WakeUpNativeCallableMap = HashMap<int, WakeUpNativeCallable>;
+
+/// Fushi overlay (BUG-5413). `void (*)(void *)`, libmpv's wakeup signature.
+typedef PortWakeupFunction = Void Function(Pointer<Void>);
+
+/// Fushi overlay (BUG-5413). `Dart_PostCObject`.
+typedef PostCObjectFunction = Int8 Function(Int64, Pointer<Dart_CObject>);
+
+/// Fushi overlay (BUG-5413). The trampoline's `d`: `{ post, port, value }`.
+final class PortWakeupData extends Struct {
+  external Pointer<NativeFunction<PostCObjectFunction>> post;
+
+  @Int64()
+  external int port;
+
+  @Int64()
+  external int value;
+}
+
+/// The callback libmpv holds for one handle, and what releases it.
+sealed class _Wakeup {
+  Pointer<NativeFunction<Void Function(Pointer<Void>)>> get function;
+  Pointer<Void> get data;
+
+  /// Only after `mpv_set_wakeup_callback(ctx, null, null)` returned.
+  void close();
+}
+
+/// Upstream: a listener [NativeCallable] owned by this isolate.
+final class _CallableWakeup implements _Wakeup {
+  _CallableWakeup(
+    Pointer<generated.mpv_handle> ctx,
+    void Function(Pointer<generated.mpv_handle>) callback,
+  ) : _ctx = ctx,
+      _callable = WakeUpNativeCallable.listener(callback);
+
+  final Pointer<generated.mpv_handle> _ctx;
+  final WakeUpNativeCallable _callable;
+
+  @override
+  Pointer<NativeFunction<Void Function(Pointer<Void>)>> get function =>
+      _callable.nativeFunction.cast();
+
+  @override
+  Pointer<Void> get data => _ctx.cast();
+
+  @override
+  void close() => _callable.close();
+}
+
+/// Fushi overlay (BUG-5413): the trampoline posts `ctx` to [_port]. A port
+/// closes with its isolate and a post to a closed port is dropped, so libmpv
+/// may outlive this isolate. [_data] stays allocated until [close]; when the
+/// isolate dies without disposing, it leaks with the libmpv handle it serves.
+final class _PortWakeup implements _Wakeup {
+  _PortWakeup(
+    Pointer<generated.mpv_handle> ctx,
+    this._trampoline,
+    void Function(Pointer<generated.mpv_handle>) callback,
+  ) : _port = ReceivePort('media_kit wakeup'),
+      _data = calloc<PortWakeupData>() {
+    _port.listen((Object? _) => callback(ctx));
+    _data.ref
+      ..post = NativeApi.postCObject
+      ..port = _port.sendPort.nativePort
+      ..value = ctx.address;
+  }
+
+  final Pointer<NativeFunction<PortWakeupFunction>> _trampoline;
+  final ReceivePort _port;
+  final Pointer<PortWakeupData> _data;
+
+  @override
+  Pointer<NativeFunction<Void Function(Pointer<Void>)>> get function =>
+      _trampoline;
+
+  @override
+  Pointer<Void> get data => _data.cast();
+
+  @override
+  void close() {
+    _port.close();
+    calloc.free(_data);
+  }
+}
 
 typedef EventCallback = Future<void> Function(Pointer<generated.mpv_event>);
 typedef EventCallbackMap = HashMap<int, EventCallback>;

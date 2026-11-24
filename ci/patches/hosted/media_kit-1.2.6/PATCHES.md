@@ -159,6 +159,37 @@ isolate killed without dispose after quiescing; exits `-1073740791` with
 `Callback invoked after it has been deleted` without the fix). Remove when
 upstream unregisters its callbacks before the engine can free them.
 
+## BUG-5413: libmpv wakeups go through a Dart port
+
+`lib/src/player/native/core/initializer_native_callable.dart` also adds
+`InitializerNativeCallable.usePortWakeup(trampoline)`, exposed as
+`useNativePortWakeup()` by the new public library `lib/native_wakeup.dart`.
+Handles created afterwards give libmpv a native `void (*)(void *d)` trampoline
+instead of a `NativeCallable.listener`: `d` points at a calloc'ed
+`PortWakeupData { post, port, value }` and the trampoline posts `value` (the
+`mpv_handle` address) to `port` with `post` (`NativeApi.postCObject`). The
+handle's `ReceivePort` runs the unchanged event drain. `dispose` clears the
+libmpv callback first, then closes the port and frees the data; quiescing
+works on both kinds. Without `useNativePortWakeup` the upstream callable is
+used, as before.
+
+A listener callable is deleted with its isolate, and libmpv's core thread
+outlives the isolate whenever it dies without `Player.dispose`. On Android
+audio_service destroys the FlutterEngine (`AudioService.onDestroy` ->
+`AudioServicePlugin.disposeFlutterEngine`) once the Activity is gone while the
+process stays cached, so the next wakeup made the VM abort the process
+(feedback Wgbo462Sfc: SIGABRT "Callback invoked after it has been deleted"
+about a second after `onTrimMemory(BACKGROUND)`). A port closes with its isolate
+and a post to a closed port is dropped. Fushi installs `ffc_port_wakeup` from
+fushi_compute (`native/fushi_compute/src/dart_port.rs`) in `main()` before any
+player exists.
+
+Regression test: the `port` mode of
+`fushi/test/third_party/media_kit_hot_restart_test.dart` (real libmpv: owner
+isolate killed with neither quiesce nor dispose, then wakeup / quit; without the
+port wakeup the probe aborts with `Callback invoked after it has been
+deleted`). Remove when upstream stops handing libmpv isolate-bound callbacks.
+
 ## BUG-5027: a locked screenshot holds the player lock for the capture only
 
 `lib/src/player/native/player/real.dart` splits `NativePlayer.screenshot` in
