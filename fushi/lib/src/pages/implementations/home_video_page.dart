@@ -9807,6 +9807,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// Apple 库页：双指 / 触控板捏合、⌘+ ⌘− 改每行个数（写回「每行数量」偏好，
   /// 与「显示」菜单同一份值）；M3E 原样返回 [child]。列数按当前分区的墙取
   /// （「全部视频」是缩略图墙，其余是海报墙）。
+  ///
+  /// 「全部视频」切到列表布局时没有「每行数量」可调：不登记缩放口，Apple 工具栏
+  /// 的「每行数量」钮（[AppleLibraryZoomButton]，网格图标）随之消失——否则它与
+  /// 「⋯」里平铺出来的「网格视图」切换钮是两枚同样的网格图标、做两件不同的事
+  /// （用户截图里的第 2 / 第 7 枚）。
   Widget _gridZoom(Widget child) => LayoutBuilder(
     builder: (BuildContext context, BoxConstraints constraints) {
       final ({
@@ -9820,6 +9825,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             : wall.cardLayout.columns,
         choices: libraryGridColumnChoices(libraryGridSizeClassOf(context)),
         onColumnsChanged: _setGridColumns,
+        enabled:
+            widget.section != VideoLibrarySection.allVideos ||
+            _allVideosLayout != _AllVideosLayout.list,
         child: child,
       );
     },
@@ -9996,6 +10004,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       clearLabel: t.library_filters_clear,
       clearKey: const ValueKey<String>('video_filter_panel_clear'),
       onClearAll: _clearPanelFilters,
+      canClear: () => _hasActivePanelFilter,
       sections: (BuildContext context, LibraryFilterPanelUpdate update) {
         final List<int> years = _airYearByUid.values.toSet().toList()
           ..sort((int a, int b) => b.compareTo(a));
@@ -10016,6 +10025,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             allValue: ShelfSortMode.values.first,
             allLabel: _sortModeLabel(ShelfSortMode.values.first),
             labelOf: _sortModeLabel,
+            // Apple：Finder / 照片「排序方式」同款弹出菜单（当前项打勾）。
+            appleMenu: true,
             onSelected: (ShelfSortMode mode) =>
                 update(() => _setSortMode(mode)),
           ),
@@ -10031,6 +10042,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               onSelected: (int i) =>
                   update(() => columns.options[i].onSelected()),
             ),
+          // Apple：排序 / 每行数量一组，筛选维度另起一组（M3E 零尺寸）。
+          const LibraryFilterGroupBreak(),
           LibraryFilterChoiceSection<VideoYearFilter>(
             key: const ValueKey<String>('video_filter_panel_year'),
             title: t.video_filter_year,
@@ -10141,21 +10154,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 多选态的页头动作：选中计数 + 退出多选（与返回键 / Esc 同一条
   /// [_exitSelectionMode] 路径）。计数随勾选变化，但两项的 key 不变，悬浮动作组
   /// 不会因为数字变了而重播切换动效。
+  ///
+  /// Apple（iOS 27 照片 / macOS Finder 的选择态）：顶栏只留退出多选的 ✕ 玻璃钮，
+  /// 选中计数只在底部浮动工具栏（批量栏）中央出现一次——顶栏再放一枚计数就是
+  /// 同一信息两处（用户截图），且纯文字不是 bar button，塞进玻璃钮簇里只会
+  /// 变成一枚不可点的空胶囊。
   List<Widget> _selectionHeaderActions() {
     final ThemeData theme = Theme.of(context);
+    final bool apple = isGlassDesign(context);
     return <Widget>[
-      Padding(
-        key: const ValueKey<String>('video-selection-count'),
-        padding: const EdgeInsetsDirectional.only(start: 12, end: 4),
-        child: Text(
-          t.batch_selected_count(
-            n: _selectedUids.length + _selectedCollectionIds.length,
-          ),
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
+      if (!apple)
+        Padding(
+          key: const ValueKey<String>('video-selection-count'),
+          padding: const EdgeInsetsDirectional.only(start: 12, end: 4),
+          child: Text(
+            t.batch_selected_count(
+              n: _selectedUids.length + _selectedCollectionIds.length,
+            ),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
-      ),
       FushiIconButton(
         key: const ValueKey<String>('video-selection-exit'),
         tooltip: t.action_exit,

@@ -138,8 +138,11 @@ class _RenderAppleBarSlot extends RenderShiftedBox {
       size = constraints.constrain(Size.square(_extent));
       return;
     }
+    // 高度只给上限、不给下限：槽自己恒为 extent 高、子节点竖直居中。此前给
+    // minHeight = extent，按钮会自己居中内容，但不居中的子节点（纯文字等）被
+    // 撑到 extent 高后字贴在胶囊顶上（视频库多选态顶栏「已选 N 项」）。
     child.layout(
-      BoxConstraints(minWidth: _extent, minHeight: _extent, maxHeight: _extent),
+      BoxConstraints(minWidth: _extent, maxHeight: _extent),
       parentUsesSize: true,
     );
     if (child.size.width <= _extent * _iconSlack) {
@@ -148,7 +151,7 @@ class _RenderAppleBarSlot extends RenderShiftedBox {
         parentUsesSize: true,
       );
     }
-    size = constraints.constrain(child.size);
+    size = constraints.constrain(Size(child.size.width, _extent));
     final BoxParentData data = child.parentData! as BoxParentData;
     data.offset = Alignment.center.alongOffset(size - child.size as Offset);
   }

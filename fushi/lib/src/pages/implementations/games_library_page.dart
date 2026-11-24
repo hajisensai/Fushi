@@ -126,7 +126,6 @@ import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -1451,6 +1450,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
       title: t.game_filter,
       clearLabel: t.game_filter_reset,
       onClearAll: _clearAllFilters,
+      canClear: () =>
+          _view.hasActiveFilter || ref.read(selectedTagIdsProvider).isNotEmpty,
       sections: (BuildContext ctx, LibraryFilterPanelUpdate update) {
         final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
         void apply(GalgameLibraryView next) => update(() => _setView(next));
@@ -1458,31 +1459,27 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
             ref.read(allTagsProvider).valueOrNull ?? const <BookTagRow>[];
         final Set<int> selectedUserTags = ref.read(selectedTagIdsProvider);
         return <Widget>[
-          // M3E：单选维度用 choice chip、多选维度（标签）用 filter chip；状态
-          // chip 带各自的语义图标（与封面角标同一套）。
-          LibraryFilterSection(
+          // 单选维度 / 多选维度走共享分组（M3E = choice / filter chip，Apple =
+          // 菜单 / 分段 / 对勾行）；状态带各自的语义图标（与封面角标同一套）。
+          LibraryFilterChoiceSection<GalgamePlayStatus?>(
             title: t.game_filter_status,
-            children: <Widget>[
-              FushiChoiceChip(
-                label: Text(t.game_filter_all),
-                selected: _view.status == null,
-                onSelected: (_) => apply(_view.copyWith(clearStatus: true)),
-              ),
-              for (final GalgamePlayStatus status in <GalgamePlayStatus>[
-                ...kGalgamePlayStatusMenuOrder,
-                GalgamePlayStatus.unset,
-              ])
-                FushiChoiceChip(
-                  avatar: FushiIcon(galgamePlayStatusIcon(status), size: 18),
-                  label: Text(galgamePlayStatusLabel(status)),
-                  selected: _view.status == status,
-                  onSelected: (bool selected) => apply(
-                    selected
-                        ? _view.copyWith(status: status)
-                        : _view.copyWith(clearStatus: true),
-                  ),
-                ),
+            values: const <GalgamePlayStatus?>[
+              null,
+              ...kGalgamePlayStatusMenuOrder,
+              GalgamePlayStatus.unset,
             ],
+            selected: _view.status,
+            allValue: null,
+            allLabel: t.game_filter_all,
+            labelOf: (GalgamePlayStatus? status) =>
+                galgamePlayStatusLabel(status!),
+            avatarOf: (GalgamePlayStatus? status) =>
+                status == null ? null : galgamePlayStatusIcon(status),
+            onSelected: (GalgamePlayStatus? status) => apply(
+              status == null
+                  ? _view.copyWith(clearStatus: true)
+                  : _view.copyWith(status: status),
+            ),
           ),
           LibraryFilterChoiceSection<GalgameLocalFilter>(
             title: t.game_filter_source,
@@ -1497,39 +1494,32 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           // 用户标签（共享标签池，原库页标签 chip 行）：多选 = 取交集，与原
           // chip 行同一语义（[filteredGameIdsProvider]）。
           if (userTags.isNotEmpty)
-            LibraryFilterSection(
+            LibraryFilterMultiChoiceSection<int>(
               key: const ValueKey<String>('games_filter_user_tags'),
               title: t.game_user_tags_title,
-              children: <Widget>[
-                for (final BookTagRow tag in userTags)
-                  FushiFilterChip(
-                    key: ValueKey<String>('games_filter_user_tag_${tag.id}'),
-                    label: Text(tag.name),
-                    selected: selectedUserTags.contains(tag.id),
-                    onSelected: (bool _) =>
-                        update(() => _toggleTagFilter(tag.id)),
-                  ),
-              ],
+              values: <int>[for (final BookTagRow tag in userTags) tag.id],
+              selected: selectedUserTags,
+              labelOf: (int id) =>
+                  userTags.firstWhere((BookTagRow tag) => tag.id == id).name,
+              itemKeyOf: (int id) =>
+                  ValueKey<String>('games_filter_user_tag_$id'),
+              onChanged: (Set<int> next) => update(() {
+                for (final int id in next.difference(selectedUserTags)) {
+                  _toggleTagFilter(id);
+                }
+                for (final int id in selectedUserTags.difference(next)) {
+                  _toggleTagFilter(id);
+                }
+              }),
             ),
           if (allTags.isNotEmpty)
-            LibraryFilterSection(
+            LibraryFilterMultiChoiceSection<String>(
               title: t.game_filter_tags,
-              children: <Widget>[
-                for (final String tag in allTags)
-                  FushiFilterChip(
-                    label: Text(tag),
-                    selected: _view.tags.contains(tag),
-                    onSelected: (bool selected) {
-                      final Set<String> next = Set<String>.of(_view.tags);
-                      if (selected) {
-                        next.add(tag);
-                      } else {
-                        next.remove(tag);
-                      }
-                      apply(_view.copyWith(tags: next));
-                    },
-                  ),
-              ],
+              values: allTags,
+              selected: _view.tags,
+              labelOf: (String tag) => tag,
+              onChanged: (Set<String> next) =>
+                  apply(_view.copyWith(tags: Set<String>.of(next))),
             ),
           SizedBox(height: tokens.spacing.gap),
           AdaptiveSettingsSwitchRow(

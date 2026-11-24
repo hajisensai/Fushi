@@ -149,6 +149,7 @@ class LibraryGridZoom extends StatefulWidget {
     required this.choices,
     required this.onColumnsChanged,
     required this.child,
+    this.enabled = true,
     super.key,
   });
 
@@ -156,6 +157,11 @@ class LibraryGridZoom extends StatefulWidget {
   final List<int> choices;
   final ValueChanged<int> onColumnsChanged;
   final Widget child;
+
+  /// false = 当前版面没有「每行数量」（如「全部视频」的列表布局）：不登记缩放口
+  /// （外壳的「每行数量」钮随之消失），捏合 / 快捷键不换档。子树结构不变，切换
+  /// 时内容（滚动位置等）不重挂。
+  final bool enabled;
 
   @override
   State<LibraryGridZoom> createState() => _LibraryGridZoomState();
@@ -219,6 +225,7 @@ class _LibraryGridZoomState extends State<LibraryGridZoom>
   }
 
   void _step({required bool zoomIn}) {
+    if (!widget.enabled) return;
     final int? next = libraryGridZoomStep(
       current: widget.columns,
       choices: widget.choices,
@@ -234,6 +241,7 @@ class _LibraryGridZoomState extends State<LibraryGridZoom>
   }
 
   void _onScaleRatio(double ratio) {
+    if (!widget.enabled) return;
     if (ratio >= kLibraryGridZoomInRatio) {
       _step(zoomIn: true);
       _rebase();
@@ -300,7 +308,7 @@ class _LibraryGridZoomState extends State<LibraryGridZoom>
     if (!isGlassDesign(context)) return widget.child;
     final LibraryGridZoomHub? hub = _hub;
     if (hub != null) {
-      if (SectionVisibility.of(context)) {
+      if (widget.enabled && SectionVisibility.of(context)) {
         hub.register(
           this,
           LibraryGridZoomPort(
