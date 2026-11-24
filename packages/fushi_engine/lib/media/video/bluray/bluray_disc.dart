@@ -596,13 +596,18 @@ List<BlurayTitle> selectBlurayTitles(
           for (final BlurayPlaylist playlist in kept)
             if (episodesBySource.containsKey(playlist.id)) playlist,
         ];
-  final int longestTitled = titled.fold<int>(
-    0,
-    (int longestSoFar, BlurayPlaylist playlist) =>
-        playlist.durationTicks > longestSoFar
-        ? playlist.durationTicks
-        : longestSoFar,
-  );
+  // 「最长标题」沿用第 6 步的锚点（不取 play-all 形状）；降级之后锚点可能已是特典
+  // （vol.3 那条 94 分钟的采访），此时在留下的、被切开的播放列表里重取——它们的
+  // 正片段不被别的标题引用，不会是 play-all 形状。
+  final int longestTitled = episodesBySource.isEmpty
+      ? longest
+      : titled.fold<int>(
+          0,
+          (int longestSoFar, BlurayPlaylist playlist) =>
+              playlist.durationTicks > longestSoFar
+              ? playlist.durationTicks
+              : longestSoFar,
+        );
   final List<({BlurayPlaylist playlist, String? source, bool main})> expanded =
       <({BlurayPlaylist playlist, String? source, bool main})>[];
   for (final BlurayPlaylist playlist in titled) {
