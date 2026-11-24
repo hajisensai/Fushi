@@ -534,6 +534,13 @@ void main() {
     await tester.pump();
     expect(view().appearance.showTranslation, isTrue);
 
+    // 设置页那两项（罗马音 / 注音）写同一组偏好，歌词页即时跟上。
+    await tester.runAsync(() => app.setMusicLyricsShowRomanization(false));
+    await tester.runAsync(() => app.setMusicLyricsShowRuby(false));
+    await tester.pump();
+    expect(view().appearance.showRomanization, isFalse);
+    expect(view().appearance.showRuby, isFalse);
+
     await unmountPage(tester);
   });
 

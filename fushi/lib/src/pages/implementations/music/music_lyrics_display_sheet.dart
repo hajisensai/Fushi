@@ -1,8 +1,9 @@
 /// 歌词显示快切：翻译（双语 / 单语）、罗马音、注音三个副行开关。
 ///
 /// 渲染层（[KaraokeLyricsAppearance]）早就支持三者分开显示，这里补上入口：播放页顶栏
-/// 「歌词显示」打开，设置 › 音乐里也有同样三项。开关是设备本地观感偏好（[AppModel]
-/// `musicLyricsShow*`），改了歌词页 / MV 页即时生效。当前这首歌词没有某一类数据（例如
+/// 「歌词显示」打开，设置 › 音乐里也有同样三项。开关是设备本地观感偏好（[PreferencesRepository]
+/// `musicLyricsShow*`），改了歌词页 / MV 页即时生效。面板只依赖偏好仓库（叶子模块），
+/// 不 import AppModel，免得把这个文件拖进 lib/ 的大 import 环。当前这首歌词没有某一类数据（例如
 /// LRC 没翻译、源没带注音轨）时那一项置灰并说明原因——注音只来自歌词源自带的 ruby
 /// （QRC 注音轨 / ASS / TTML），不在这里现算。
 library;
@@ -14,7 +15,7 @@ import 'package:fushi_music/fushi_music.dart'
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_floating_panel.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -63,40 +64,35 @@ class MusicLyricsExtras {
 /// 打开歌词显示快切。
 Future<void> showMusicLyricsDisplaySheet(
   BuildContext context, {
-  required AppModel appModel,
+  required PreferencesRepository prefs,
   required MusicLyricsExtras extras,
 }) => showMusicFloatingPanel(
   context: context,
   maxWidth: 480,
   builder: (BuildContext _) =>
-      MusicLyricsDisplaySheet(appModel: appModel, extras: extras),
+      MusicLyricsDisplaySheet(prefs: prefs, extras: extras),
 );
 
-class MusicLyricsDisplaySheet extends StatefulWidget {
+/// 面板本体：监听 [prefs]，开关值永远取偏好仓库的当前值（设置页同时改也会跟上），
+/// 不在 State 里另存一份。
+class MusicLyricsDisplaySheet extends StatelessWidget {
   const MusicLyricsDisplaySheet({
-    required this.appModel,
+    required this.prefs,
     required this.extras,
     super.key,
   });
 
-  final AppModel appModel;
+  final PreferencesRepository prefs;
   final MusicLyricsExtras extras;
 
   @override
-  State<MusicLyricsDisplaySheet> createState() =>
-      _MusicLyricsDisplaySheetState();
-}
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: prefs,
+    builder: (BuildContext context, Widget? _) => _buildBody(context),
+  );
 
-class _MusicLyricsDisplaySheetState extends State<MusicLyricsDisplaySheet> {
-  Future<void> _set(Future<void> Function(bool) setter, bool value) async {
-    await setter(value);
-    if (mounted) setState(() {});
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final AppModel app = widget.appModel;
-    final MusicLyricsExtras extras = widget.extras;
+  Widget _buildBody(BuildContext context) {
+    final PreferencesRepository app = prefs;
     final List<Widget> blocks = <Widget>[
       Row(
         children: <Widget>[
@@ -125,8 +121,7 @@ class _MusicLyricsDisplaySheetState extends State<MusicLyricsDisplaySheet> {
             : t.music_lyrics_show_translation_missing,
         available: extras.translation,
         value: app.musicLyricsShowTranslation,
-        onChanged: (bool v) =>
-            unawaited(_set(app.setMusicLyricsShowTranslation, v)),
+        onChanged: (bool v) => unawaited(app.setMusicLyricsShowTranslation(v)),
       ),
       _DisplayToggleRow(
         key: const ValueKey<String>('music_lyrics_display_romanization'),
@@ -137,8 +132,7 @@ class _MusicLyricsDisplaySheetState extends State<MusicLyricsDisplaySheet> {
             : t.music_lyrics_show_romanization_missing,
         available: extras.romanization,
         value: app.musicLyricsShowRomanization,
-        onChanged: (bool v) =>
-            unawaited(_set(app.setMusicLyricsShowRomanization, v)),
+        onChanged: (bool v) => unawaited(app.setMusicLyricsShowRomanization(v)),
       ),
       _DisplayToggleRow(
         key: const ValueKey<String>('music_lyrics_display_ruby'),
@@ -149,7 +143,7 @@ class _MusicLyricsDisplaySheetState extends State<MusicLyricsDisplaySheet> {
             : t.music_lyrics_show_ruby_missing,
         available: extras.ruby,
         value: app.musicLyricsShowRuby,
-        onChanged: (bool v) => unawaited(_set(app.setMusicLyricsShowRuby, v)),
+        onChanged: (bool v) => unawaited(app.setMusicLyricsShowRuby(v)),
       ),
     ];
     return Padding(

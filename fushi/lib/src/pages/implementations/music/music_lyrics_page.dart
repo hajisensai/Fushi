@@ -2262,7 +2262,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               onPressed: () => unawaited(
                 showMusicLyricsDisplaySheet(
                   _themedContext,
-                  appModel: appModelNoUpdate,
+                  prefs: appModelNoUpdate.prefsRepo,
                   extras: MusicLyricsExtras.of(_lyrics?.timeline),
                 ),
               ),
