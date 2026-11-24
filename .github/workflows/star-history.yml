@@ -8,6 +8,10 @@
 # It never creates releases, tags, or touches any release channel. Commits are
 # pushed with GITHUB_TOKEN, which by GitHub design does NOT trigger downstream
 # workflows (no debug/prerelease build is kicked); [skip ci] is added as well.
+#
+# Scheduled runs use the default branch, `develop` since 2026-11-25 (it used to be
+# `main`); the chart is committed there. develop takes merges all day, so the push
+# rebases and retries instead of failing on a non-fast-forward.
 name: Update Star History
 
 on:
@@ -57,4 +61,13 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add docs/assets/star-history.svg
           git commit -m 'chore(readme): refresh star history chart (TODO-1294) [skip ci]'
-          git push
+          branch="$(git rev-parse --abbrev-ref HEAD)"
+          for attempt in 1 2 3; do
+            if git push origin "HEAD:$branch"; then
+              exit 0
+            fi
+            echo "push rejected (attempt $attempt); rebasing onto origin/$branch"
+            git pull --rebase --autostash origin "$branch"
+          done
+          echo "could not push the refreshed chart after 3 attempts" >&2
+          exit 1
