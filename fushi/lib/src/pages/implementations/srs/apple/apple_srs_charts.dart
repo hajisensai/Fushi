@@ -314,7 +314,6 @@ class _AppleSrsBarChartState extends State<AppleSrsBarChart> {
     final FushiAppleColors apple = appleColorsOf(context);
     final TextStyle tick =
         (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
-          fontSize: 10,
           height: 1.1,
           letterSpacing: 0,
           color: apple.secondaryLabel,
@@ -322,7 +321,6 @@ class _AppleSrsBarChartState extends State<AppleSrsBarChart> {
         );
     final TextStyle annotation = tick.copyWith(
       fontWeight: FontWeight.w600,
-      fontSize: 10.5,
       color: apple.label,
     );
     final int? selected = _selected;
@@ -694,7 +692,6 @@ class _AppleSrsHeatmapState extends State<AppleSrsHeatmap> {
     final AppleSrsSystemColors system = AppleSrsSystemColors.of(context);
     final TextStyle caption =
         (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
-          fontSize: 10,
           letterSpacing: 0,
           height: 1.2,
           color: apple.secondaryLabel,

@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'dart:async';
 import 'dart:math' as math;
 

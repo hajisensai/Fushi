@@ -110,13 +110,27 @@ void main() {
     final String nav = File(
       'lib/src/utils/adaptive/adaptive_navigation.dart',
     ).readAsStringSync();
-    final int premium = _glassContainerCalls(nav).where((
-      ({int line, String args}) call,
-    ) {
-      final String? q = _qualityExpr(call.args);
-      return q != null && _mayBePremium(q, nav);
-    }).length;
-    expect(premium, greaterThanOrEqualTo(3));
+    // 导航里已知的 premium 面：底栏胶囊（内联 `prominent: true`）与 iOS 浮动
+    // 标签栏（由 prominent 赋值的局部变量 `quality`）。两种写法都要认出来——
+    // 少认一种就说明对应的解析分支失效了。原先的第三处（侧栏悬浮玻璃面板）已随
+    // macOS 27 贴边侧栏（AppleEdgeSidebarSurface，非 premium）移除。
+    final List<String> premium = <String>[
+      for (final ({int line, String args}) call in _glassContainerCalls(nav))
+        if (_qualityExpr(call.args) case final String q
+            when _mayBePremium(q, nav))
+          q,
+    ];
+    expect(premium.length, greaterThanOrEqualTo(2));
+    expect(
+      premium.where((String q) => q.contains('prominent: true')),
+      isNotEmpty,
+      reason: '内联 prominent 写法',
+    );
+    expect(
+      premium.where((String q) => RegExp(r'^[A-Za-z_]\w*$').hasMatch(q)),
+      isNotEmpty,
+      reason: '局部变量写法',
+    );
   });
 
   test('liquid downgrade is judged by engine capability, not platform', () {

@@ -7,6 +7,7 @@
 /// 路径不经过这里。
 library;
 
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -408,7 +409,9 @@ class AppleDiscoveryHeroBanner extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 13 * k,
+                            fontSize:
+                                (context.fushiType.bodySmall.fontSize ?? 13) *
+                                k,
                             fontWeight: FontWeight.w600,
                             color: Colors.white.withValues(alpha: 0.8),
                           ),
@@ -422,7 +425,9 @@ class AppleDiscoveryHeroBanner extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            fontSize: 13 * k,
+                            fontSize:
+                                (context.fushiType.bodySmall.fontSize ?? 13) *
+                                k,
                             color: Colors.white.withValues(alpha: 0.8),
                           ),
                         ),

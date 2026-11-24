@@ -45,7 +45,10 @@ extension _VideoAppleChrome on _VideoFushiPageState {
   /// 进度条两端时间的字样（AVKit：13pt 等宽数字、白色降一级透明度）。
   TextStyle get _appleTimeLabelStyle => TextStyle(
     height: 1.0,
-    fontSize: 13.0 * _videoUiScale * _controlsDensityScale,
+    fontSize:
+        (context.fushiType.bodySmall.fontSize ?? 13) *
+        _videoUiScale *
+        _controlsDensityScale,
     fontWeight: FontWeight.w500,
     color: videoChromeNeutralForeground.withValues(alpha: 0.85),
     fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],

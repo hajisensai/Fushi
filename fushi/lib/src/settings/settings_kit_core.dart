@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
@@ -1889,7 +1890,7 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
                     : null,
                 centerTitle: false,
                 titleTextStyle: TextStyle(
-                  fontSize: 13,
+                  fontSize: context.fushiType.bodySmall.fontSize,
                   fontWeight: FontWeight.w700,
                   height: 1.2,
                   color: appleColorsOf(context).label,

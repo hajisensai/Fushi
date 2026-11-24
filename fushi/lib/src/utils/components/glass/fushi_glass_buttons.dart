@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
@@ -347,7 +348,7 @@ class FushiAppleButtonMetrics {
               _ => 28,
             } *
             k,
-        fontSize: 13 * k,
+        fontSize: (context.fushiType.bodySmall.fontSize ?? 13) * k,
         iconSize: 14 * k,
         horizontalPadding: (size == FushiButtonSize.xs ? 8 : 10) * k,
         plainHorizontalPadding: 6 * k,

@@ -64,6 +64,12 @@ Widget _transport() => Center(
   ),
 );
 
+/// 两种设计系统对照前先卸掉上一棵树：同一个 [MaterialApp] 原地换主题会走
+/// AnimatedTheme 的 200ms 插值，`glassDesign` 这类布尔扩展在插值前半段仍是旧值，
+/// 断言读到的是上一套设计系统。每次都以新挂载的应用比较两套分支。
+Future<void> _remount(WidgetTester tester) =>
+    tester.pumpWidget(const SizedBox.shrink());
+
 void main() {
   testWidgets('进度条：Apple 是细直线（无波浪画家），M3E 仍是波浪', (WidgetTester tester) async {
     await tester.pumpWidget(_app(_seekBar(), glass: true));
@@ -81,6 +87,7 @@ void main() {
     );
     expect(find.text('0:30'), findsOneWidget);
 
+    await _remount(tester);
     await tester.pumpWidget(_app(_seekBar(), glass: false));
     await tester.pump(const Duration(milliseconds: 50));
     expect(
@@ -112,6 +119,7 @@ void main() {
       findsOneWidget,
     );
 
+    await _remount(tester);
     await tester.pumpWidget(_app(_transport(), glass: false));
     expect(find.byType(FushiButtonGroup), findsOneWidget);
     expect(find.byType(FushiExpressivePlayButton), findsOneWidget);
@@ -127,6 +135,7 @@ void main() {
       find.byKey(const ValueKey<String>('fushi-mesh-backdrop-apple')),
       findsOneWidget,
     );
+    await _remount(tester);
     await tester.pumpWidget(
       _app(const FushiMeshBackdrop(animate: false), glass: false),
     );
@@ -147,6 +156,7 @@ void main() {
       find.byKey(const ValueKey<String>('fushi-thumbnail-play-badge-apple')),
       findsOneWidget,
     );
+    await _remount(tester);
     await tester.pumpWidget(
       _app(const Center(child: FushiThumbnailPlayBadge()), glass: false),
     );
@@ -156,6 +166,7 @@ void main() {
   Future<DateTime?> openDate(WidgetTester tester, {required bool glass}) async {
     DateTime? result;
     bool done = false;
+    await _remount(tester);
     await tester.pumpWidget(
       _app(
         Builder(
@@ -206,6 +217,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(400, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     for (final bool glass in <bool>[true, false]) {
+      await _remount(tester);
       await tester.pumpWidget(
         _app(
           Builder(

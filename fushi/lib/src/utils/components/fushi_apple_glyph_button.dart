@@ -151,29 +151,33 @@ class _FushiAppleGlyphButtonState extends State<FushiAppleGlyphButton> {
         ],
       ),
     );
-    return FushiTooltip(
-      message: widget.tooltip,
-      excludeFromSemantics: true,
-      child: FocusableActionDetector(
-        enabled: _enabled,
-        focusNode: widget.focusNode,
-        autofocus: widget.autofocus,
-        mouseCursor: _enabled ? SystemMouseCursors.click : MouseCursor.defer,
-        actions: <Type, Action<Intent>>{
-          ActivateIntent: CallbackAction<ActivateIntent>(
-            onInvoke: (ActivateIntent intent) {
-              widget.onPressed?.call();
-              return null;
-            },
-          ),
-        },
-        onShowFocusHighlight: (bool value) =>
-            setState(() => _focusHighlight = value),
-        child: Semantics(
-          button: true,
+    // 语义边界放在最外层：按钮自成一个节点（与 Material 按钮同形），内层
+    // Focus 的可聚焦 / 聚焦动作与手势的点按动作都并进这个节点；不设 container
+    // 时这些配置会沿父链漂到相邻控件或路由节点上。
+    return Semantics(
+      container: true,
+      button: true,
+      enabled: _enabled,
+      selected: widget.selected,
+      label: widget.tooltip,
+      child: FushiTooltip(
+        message: widget.tooltip,
+        excludeFromSemantics: true,
+        child: FocusableActionDetector(
           enabled: _enabled,
-          selected: widget.selected,
-          label: widget.tooltip,
+          focusNode: widget.focusNode,
+          autofocus: widget.autofocus,
+          mouseCursor: _enabled ? SystemMouseCursors.click : MouseCursor.defer,
+          actions: <Type, Action<Intent>>{
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (ActivateIntent intent) {
+                widget.onPressed?.call();
+                return null;
+              },
+            ),
+          },
+          onShowFocusHighlight: (bool value) =>
+              setState(() => _focusHighlight = value),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: _enabled ? (_) => _setPressed(true) : null,

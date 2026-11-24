@@ -169,8 +169,7 @@ class FushiAppleSheetHeader extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         textAlign: TextAlign.center,
-                        style: (tt.titleMedium ?? const TextStyle()).copyWith(
-                          fontSize: 17,
+                        style: (tt.titleLarge ?? const TextStyle()).copyWith(
                           fontWeight: FontWeight.w600,
                           letterSpacing: -0.4,
                           height: 1.3,
@@ -192,7 +191,6 @@ class FushiAppleSheetHeader extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
                 style: (tt.bodySmall ?? const TextStyle()).copyWith(
-                  fontSize: 13,
                   height: 1.35,
                   color: apple.secondaryLabel,
                 ),

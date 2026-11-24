@@ -26,6 +26,13 @@ import '../../helpers/fake_just_audio.dart';
 /// iOS 27 / macOS 27 迷你播放器。中性玻璃、方形小圆角封面、全部裸字形；iOS 档只留
 /// 播放 / 下一首（其余进长按菜单 / 全屏页），macOS 档全套平铺。另含有声书播放键的
 /// Apple 裸字形分支。
+/// Apple 分支的提示气泡是 `Tooltip(richMessage: WidgetSpan(玻璃胶囊))`，
+/// `find.byTooltip` 只认纯文本 message / richMessage 的 toPlainText（WidgetSpan
+/// 是占位符），所以按 [FushiTooltip] 的消息找。
+Finder _tip(String message) => find.byWidgetPredicate(
+  (Widget w) => w is FushiTooltip && w.message == message,
+);
+
 class _Clock implements FushiPlaybackClock {
   @override
   Duration get position => const Duration(seconds: 25);
@@ -191,7 +198,12 @@ void main() {
       findsNothing,
     );
     expect(
-      find.descendant(of: root, matching: find.byType(ClipPath)),
+      find.descendant(
+        of: root,
+        matching: find.byWidgetPredicate(
+          (Widget w) => w is ClipPath && w.clipper is ShapeBorderClipper,
+        ),
+      ),
       findsNothing,
       reason: '封面不裁饼干形',
     );
@@ -245,14 +257,14 @@ void main() {
       expect(find.text('Song Title'), findsOneWidget);
       expect(find.text('Singer · Album'), findsOneWidget);
       expect(find.byKey(playKey), findsOneWidget);
-      expect(find.byTooltip('Next'), findsOneWidget);
-      expect(find.byTooltip('Previous'), findsNothing);
+      expect(_tip('Next'), findsOneWidget);
+      expect(_tip('Previous'), findsNothing);
       expect(find.byKey(actionKey), findsNothing);
       // 下一首是 forward.fill 实心字形（Apple Music）。
       final FushiAppleGlyphButton nextButton = tester
           .widget<FushiAppleGlyphButton>(
             find.ancestor(
-              of: find.byTooltip('Next'),
+              of: _tip('Next'),
               matching: find.byType(FushiAppleGlyphButton),
             ),
           );
@@ -264,7 +276,7 @@ void main() {
       );
 
       await tester.tap(find.byKey(playKey));
-      await tester.tap(find.byTooltip('Next'));
+      await tester.tap(_tip('Next'));
       await tester.tap(find.text('Song Title'));
       await tester.pump();
       expect(plays, 1);
@@ -336,12 +348,12 @@ void main() {
       );
       expectAppleLook(tester);
       expect(find.text('Singer · Album'), findsOneWidget);
-      expect(find.byTooltip('Previous'), findsOneWidget);
-      expect(find.byTooltip('Next'), findsOneWidget);
+      expect(_tip('Previous'), findsOneWidget);
+      expect(_tip('Next'), findsOneWidget);
       expect(find.byKey(actionKey), findsOneWidget);
       final FushiAppleGlyphButton prev = tester.widget<FushiAppleGlyphButton>(
         find.ancestor(
-          of: find.byTooltip('Previous'),
+          of: _tip('Previous'),
           matching: find.byType(FushiAppleGlyphButton),
         ),
       );
@@ -354,7 +366,7 @@ void main() {
       );
       expect(line.widthFactor, closeTo(0.25, 1e-9));
 
-      await tester.tap(find.byTooltip('Previous'));
+      await tester.tap(_tip('Previous'));
       await tester.pump();
       expect(prevs, 1);
     });
@@ -405,7 +417,10 @@ void main() {
           .glassColor;
       expect(glass, fushiNowPlayingAppleGlassTint(hue, dark: false));
       final HSLColor hsl = HSLColor.fromColor(glass.withValues(alpha: 1));
-      expect(hsl.saturation, lessThanOrEqualTo(0.32 + 1e-6));
+      // 上限 0.32 在 HSL 空间里施加，之后量化成 8 位 ARGB：亮度 0.90 时色度只有
+      // 0.2 × S，一个 8 位色阶（1/255）就是 S 上约 0.02，回读的饱和度会落在
+      // 0.32 上方一个色阶以内。未封顶的封面主色（这里 S≈0.7）远超这道线。
+      expect(hsl.saturation, lessThanOrEqualTo(0.32 + 0.02));
       expect(hsl.lightness, closeTo(0.90, 0.01), reason: '浅色底保住 label 对比度');
     });
 
@@ -582,7 +597,7 @@ void main() {
         child: music(),
       );
       expect(tester.takeException(), isNull);
-      expect(find.byTooltip('Previous'), findsOneWidget, reason: '仍是 macOS 档');
+      expect(_tip('Previous'), findsOneWidget, reason: '仍是 macOS 档');
       expect(find.byKey(const ValueKey<String>('queue')), findsOneWidget);
       for (final String hidden in <String>['repeat', 'volume', 'close']) {
         expect(find.byKey(ValueKey<String>(hidden)), findsNothing);
@@ -618,8 +633,8 @@ void main() {
         child: music(),
       );
       expect(tester.takeException(), isNull);
-      expect(find.byTooltip('Previous'), findsNothing);
-      expect(find.byTooltip('Next'), findsOneWidget);
+      expect(_tip('Previous'), findsNothing);
+      expect(_tip('Next'), findsOneWidget);
     });
   });
 

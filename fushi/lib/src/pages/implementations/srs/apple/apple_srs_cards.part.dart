@@ -935,10 +935,16 @@ class _AppleSrsSectionHeader extends StatelessWidget {
     final TextStyle style = m.desktop
         ? m
               .footnoteStyle(context)
-              .copyWith(fontWeight: FontWeight.w600, fontSize: 13 * s)
+              .copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: (context.fushiType.bodySmall.fontSize ?? 13) * s,
+              )
         : m
               .titleStyle(context)
-              .copyWith(fontSize: 22, fontWeight: FontWeight.w700);
+              .copyWith(
+                fontSize: context.fushiType.headlineMedium.fontSize,
+                fontWeight: FontWeight.w700,
+              );
     return Padding(
       padding: EdgeInsetsDirectional.fromSTEB(
         m.desktop ? 4 * s : 4,

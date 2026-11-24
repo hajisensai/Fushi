@@ -734,7 +734,7 @@ double fushiAppleLargeTitleOpacity(double progress) =>
 
 /// 见 [fushiAppleLargeTitleOpacity]：栏里的居中小标题。
 double fushiAppleInlineTitleOpacity(double progress) =>
-    Curves.easeOut.transform(((progress - 0.5) / 0.5).clamp(0.0, 1.0));
+    FushiMotion.enter.transform(((progress - 0.5) / 0.5).clamp(0.0, 1.0));
 
 /// [AppBar] 的设计系统分派版。[preferredSize] 与 AppBar 同一对象形态
 /// （Scaffold 经 `AppBar.preferredHeightFor` 读主题 toolbarHeight 依赖它）。
