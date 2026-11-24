@@ -33,22 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4671 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5370](bugs/BUG-5370-page-backdrop-image-lost-after-ios-update.md) | ✅ | ✅ | page-backdrop-image-lost-after-ios-update |
-> 共 4667 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5368](bugs/BUG-5368-sync-peer-offline-sweep-failure.md) | ✅ | ✅ | sync-peer-offline-sweep-failure |
-> 共 4670 条。点号进各自文件。
+> 共 4673 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5371](bugs/BUG-5371-anidb-tag-tree-backtick.md) | ✅ | ✅ | anidb-tag-tree-backtick |
+| [BUG-5370](bugs/BUG-5370-page-backdrop-image-lost-after-ios-update.md) | ✅ | ✅ | page-backdrop-image-lost-after-ios-update |
 | [BUG-5369](bugs/BUG-5369-lyric-visualizer-style-desc-truncated.md) | ✅ | ✅ | lyric-visualizer-style-desc-truncated |
+| [BUG-5368](bugs/BUG-5368-sync-peer-offline-sweep-failure.md) | ✅ | ✅ | sync-peer-offline-sweep-failure |
 | [BUG-5367](bugs/BUG-5367-music-visualizer-tap-exits.md) | ✅ | ✅ | 全屏歌词动画单击任意位置就退出 |
 | [BUG-5366](bugs/BUG-5366-curator-book-scrape-ignores-series-playlists.md) | ✅ | ✅ | 库管家补刮只认 collection 型合集、系列（playlist）各卷按卷名查而认不出 |
 | [BUG-5365](bugs/BUG-5365-library-agent-review-full-loop.md) | ✅ | ✅ | AI 助手自动全库复查把整库灌进一场对话爆上下文、失败不记进度无限重跑 |
