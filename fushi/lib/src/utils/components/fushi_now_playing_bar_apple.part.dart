@@ -4,8 +4,12 @@ part of 'fushi_now_playing_bar.dart';
 // 迷你播放器）。由 [_FushiNowPlayingBarState.build] 按 `isGlassDesign` 分派，
 // M3E 的取色色块 / 出血大字 / 饼干形封面圆环一概不用：
 //
-// - 外壳：中性栏玻璃（[fushiClearGlassSettings] bar 档 + 静止不画高光边的
-//   [fushiGlassButtonRestSettings]），实色档是系统材质实色浮层；不取封面色。
+// - 外壳：栏玻璃（[fushiClearGlassSettings] bar 档 + 静止不画高光边的
+//   [fushiGlassButtonRestSettings]），按封面取色着色（与 M3E 色块同一份
+//   [coverColorSchemeCache] 结果，取主色压成低饱和、亮度钉在系统材质附近的色调，
+//   见 [fushiNowPlayingAppleGlassTint] / [fushiNowPlayingAppleSolidTint]）；实色档
+//   是取色调过的系统材质实色。无封面 / 取色失败回落中性玻璃；切歌时颜色按
+//   [FushiMotion.medium] 平滑过渡。
 // - 封面：连续曲率小圆角方图（[_kAppleCoverRadius]），无圆环、无描边。
 // - 文字：标题 label 半粗、副标题 secondaryLabel，各一行省略。
 // - 控件：一律 [FushiAppleGlyphButton] 裸字形（上一首 / 下一首 = backward.fill /
@@ -36,15 +40,43 @@ const double _kAppleCoverMac = 38;
 /// macOS 档条身圆角（再乘 [fushiAppleMacScale]）。
 const double _kAppleMacRadius = 16;
 
+/// 着色色调的饱和度上限（Apple 着色玻璃是低饱和的氛围色，不是色块）。
+const double _kAppleTintMaxSaturation = 0.32;
+
+/// 玻璃着色：封面主色 [hue] 压成低饱和，亮度钉在系统材质附近（浅 0.90 / 深
+/// 0.20），再按浅 58% / 深 52% 铺不透明度——label / secondaryLabel 对比度与中性
+/// 玻璃同档（浅色底仍是近白、深色底仍是近黑），字形不必换色。
+Color fushiNowPlayingAppleGlassTint(Color hue, {required bool dark}) {
+  final HSLColor hsl = HSLColor.fromColor(hue);
+  return hsl
+      .withSaturation(math.min(hsl.saturation, _kAppleTintMaxSaturation))
+      .withLightness(dark ? 0.20 : 0.90)
+      .toColor()
+      .withValues(alpha: dark ? 0.52 : 0.58);
+}
+
+/// 实色档的取色系统材质：同一色调、不透明，亮度贴系统材质实色（浅 0.94 /
+/// 深 0.14，系统 #F9F9F9 / #1C1C1E 附近）。
+Color fushiNowPlayingAppleSolidTint(Color hue, {required bool dark}) {
+  final HSLColor hsl = HSLColor.fromColor(hue);
+  return hsl
+      .withSaturation(math.min(hsl.saturation, _kAppleTintMaxSaturation))
+      .withLightness(dark ? 0.14 : 0.94)
+      .toColor();
+}
+
 class _AppleNowPlayingBar extends StatelessWidget {
-  const _AppleNowPlayingBar({required this.bar});
+  const _AppleNowPlayingBar({required this.bar, required this.tint});
 
   final FushiNowPlayingBar bar;
 
+  /// 封面取色主色；null = 中性玻璃。
+  final Color? tint;
+
   @override
   Widget build(BuildContext context) => fushiAppleCompact(context)
-      ? _AppleMacBar(bar: bar)
-      : _AppleCapsuleBar(bar: bar);
+      ? _AppleMacBar(bar: bar, tint: tint)
+      : _AppleCapsuleBar(bar: bar, tint: tint);
 }
 
 /// 上一首 / 下一首（Apple Music 的 backward.fill / forward.fill 实心字形）。
@@ -147,12 +179,16 @@ class _AppleBarSurface extends StatefulWidget {
     required this.padding,
     required this.onTap,
     required this.child,
+    required this.tint,
     this.onLongPress,
     this.overlay,
   });
 
   final FushiNowPlayingBar bar;
   final OutlinedBorder shape;
+
+  /// 封面取色主色；null = 中性。
+  final Color? tint;
   final EdgeInsetsGeometry padding;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
@@ -178,25 +214,50 @@ class _AppleBarSurfaceState extends State<_AppleBarSurface> {
         ?overlay,
       ],
     );
-    final Widget surface = glassMaterialOf(context) == FushiGlassMaterial.off
-        ? DecoratedBox(
-            decoration: fushiAppleSolidFloatingDecoration(
-              context,
-              shape: shape,
-            ),
-            child: content,
-          )
-        : GlassContainer(
-            // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
-            useOwnLayer: true,
-            quality: fushiGlassQuality(context, prominent: true),
-            shape: fushiLiquidShapeOf(shape),
-            settings: fushiGlassButtonRestSettings(
-              fushiClearGlassSettings(context, bar: true),
-            ),
-            platformViewBackdrop: fushiGlassOverPlatformView(context),
-            child: content,
+    final bool dark =
+        Theme.of(context).colorScheme.brightness == Brightness.dark;
+    final bool solid = glassMaterialOf(context) == FushiGlassMaterial.off;
+    final Color? hue = widget.tint;
+    final LiquidGlassSettings? glass = solid
+        ? null
+        : fushiGlassButtonRestSettings(
+            fushiClearGlassSettings(context, bar: true),
           );
+    // 目标色恒非空（中性 = 原本的玻璃填充 / 系统材质实色），切歌 / 失去封面时
+    // 两端都是实色，插值不会经过「透明」。
+    final Color target = solid
+        ? (hue == null
+              ? fushiGlassPlatformViewFallback(context)
+              : fushiNowPlayingAppleSolidTint(hue, dark: dark))
+        : (hue == null
+              ? glass!.glassColor
+              : fushiNowPlayingAppleGlassTint(hue, dark: dark));
+    final Widget surface = TweenAnimationBuilder<Color?>(
+      tween: ColorTween(end: target),
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      curve: FushiMotion.standard,
+      child: content,
+      builder: (BuildContext context, Color? color, Widget? child) => solid
+          ? DecoratedBox(
+              key: const ValueKey<String>('now-playing-apple-surface'),
+              decoration: fushiAppleSolidFloatingDecoration(
+                context,
+                shape: shape,
+                tint: color,
+              ),
+              child: child,
+            )
+          : GlassContainer(
+              key: const ValueKey<String>('now-playing-apple-surface'),
+              // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
+              useOwnLayer: true,
+              quality: fushiGlassQuality(context, prominent: true),
+              shape: fushiLiquidShapeOf(shape),
+              settings: glass!.copyWith(glassColor: color),
+              platformViewBackdrop: fushiGlassOverPlatformView(context),
+              child: child,
+            ),
+    );
     final Widget focused = DecoratedBox(
       position: DecorationPosition.foreground,
       decoration: ShapeDecoration(
@@ -233,9 +294,10 @@ class _AppleBarSurfaceState extends State<_AppleBarSurface> {
 
 /// iOS 档：底栏上方的玻璃胶囊（见文件头）。
 class _AppleCapsuleBar extends StatelessWidget {
-  const _AppleCapsuleBar({required this.bar});
+  const _AppleCapsuleBar({required this.bar, required this.tint});
 
   final FushiNowPlayingBar bar;
+  final Color? tint;
 
   @override
   Widget build(BuildContext context) => _CollapsePeek(
@@ -245,6 +307,7 @@ class _AppleCapsuleBar extends StatelessWidget {
       final FushiNowPlayingSkip? next = bar.next;
       final Widget card = _AppleBarSurface(
         bar: bar,
+        tint: tint,
         shape: const StadiumBorder(),
         padding: EdgeInsetsDirectional.fromSTEB(6, 6, collapsed ? 4 : 8, 6),
         // 收起时点一下先展开，展开后再点才是条身动作。
@@ -310,9 +373,10 @@ class _AppleCapsuleBar extends StatelessWidget {
 
 /// macOS 档：底部居中的玻璃条（见文件头）。
 class _AppleMacBar extends StatefulWidget {
-  const _AppleMacBar({required this.bar});
+  const _AppleMacBar({required this.bar, required this.tint});
 
   final FushiNowPlayingBar bar;
+  final Color? tint;
 
   @override
   State<_AppleMacBar> createState() => _AppleMacBarState();
@@ -398,6 +462,7 @@ class _AppleMacBarState extends State<_AppleMacBar> {
               onHold: _hold,
               child: _AppleBarSurface(
                 bar: bar,
+                tint: widget.tint,
                 shape: RoundedSuperellipseBorder(
                   borderRadius: BorderRadius.circular(radius),
                 ),

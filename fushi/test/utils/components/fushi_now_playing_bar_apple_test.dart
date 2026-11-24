@@ -6,6 +6,8 @@ import 'package:fushi/src/media/audiobook/audiobook_play_bar.dart'
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
+import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
+    show coverColorSchemeCache;
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiToolbarFab;
@@ -14,6 +16,8 @@ import 'package:fushi/src/utils/components/fushi_now_playing_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassContainer;
 import 'package:material_ui/material_ui.dart';
 
 import '../../helpers/fake_just_audio.dart';
@@ -53,59 +57,67 @@ void main() {
   });
   tearDown(() => debugShaderFilterSupported = originalShaderSupport);
 
-  Widget bar({bool withMore = true, FushiPlaybackClock? clock}) =>
-      FushiNowPlayingBar(
-        barKey: barKey,
-        playButtonKey: playKey,
-        title: 'Song Title',
-        subtitle: 'Singer · Album',
-        coverBuilder: (BuildContext context, double size) =>
-            const ColoredBox(color: Colors.orange),
-        tintImage: const AssetImage('cover.png'),
-        clock: clock,
-        isPlaying: false,
-        onPlayPause: () => plays++,
-        onTap: () => taps++,
-        previous: FushiNowPlayingSkip(
-          icon: FushiIcons.skipPrevious,
-          tooltip: 'Previous',
-          onPressed: () => prevs++,
-        ),
-        next: FushiNowPlayingSkip(
-          icon: FushiIcons.skipNext,
-          tooltip: 'Next',
-          onPressed: () => nexts++,
-        ),
-        actions: <Widget>[
-          Builder(
-            builder: (BuildContext context) => isGlassDesign(context)
-                ? FushiAppleGlyphButton(
-                    key: actionKey,
-                    icon: FushiIcons.playlist,
-                    tooltip: 'Queue',
-                    secondary: false,
-                    extent: kFushiNowPlayingAppleGlyphExtent,
-                    onPressed: () {},
-                  )
-                : FushiIconButtonControl(
-                    key: actionKey,
-                    tooltip: 'Queue',
-                    onPressed: () {},
-                    icon: const FushiIcon(FushiIcons.playlist),
-                  ),
-          ),
-        ],
-        onMore: withMore ? () => mores++ : null,
-      );
+  Widget bar({
+    bool withMore = true,
+    FushiPlaybackClock? clock,
+    ImageProvider? tintImage,
+  }) => FushiNowPlayingBar(
+    barKey: barKey,
+    playButtonKey: playKey,
+    title: 'Song Title',
+    subtitle: 'Singer · Album',
+    coverBuilder: (BuildContext context, double size) =>
+        const ColoredBox(color: Colors.orange),
+    tintImage: tintImage,
+    clock: clock,
+    isPlaying: false,
+    onPlayPause: () => plays++,
+    onTap: () => taps++,
+    previous: FushiNowPlayingSkip(
+      icon: FushiIcons.skipPrevious,
+      tooltip: 'Previous',
+      onPressed: () => prevs++,
+    ),
+    next: FushiNowPlayingSkip(
+      icon: FushiIcons.skipNext,
+      tooltip: 'Next',
+      onPressed: () => nexts++,
+    ),
+    actions: <Widget>[
+      Builder(
+        builder: (BuildContext context) => isGlassDesign(context)
+            ? FushiAppleGlyphButton(
+                key: actionKey,
+                icon: FushiIcons.playlist,
+                tooltip: 'Queue',
+                secondary: false,
+                extent: kFushiNowPlayingAppleGlyphExtent,
+                onPressed: () {},
+              )
+            : FushiIconButtonControl(
+                key: actionKey,
+                tooltip: 'Queue',
+                onPressed: () {},
+                icon: const FushiIcon(FushiIcons.playlist),
+              ),
+      ),
+    ],
+    onMore: withMore ? () => mores++ : null,
+  );
 
-  ThemeData theme({required bool glass, required TargetPlatform platform}) =>
-      buildFushiThemeData(
-        scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-        textTheme: Typography.material2021().black,
-        glass: glass ? FushiGlassMaterial.minimal : FushiGlassMaterial.off,
-        glassDesign: glass,
-        eink: false,
-      ).copyWith(platform: platform);
+  ThemeData theme({
+    required bool glass,
+    required TargetPlatform platform,
+    bool solid = false,
+  }) => buildFushiThemeData(
+    scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+    textTheme: Typography.material2021().black,
+    glass: glass && !solid
+        ? FushiGlassMaterial.minimal
+        : FushiGlassMaterial.off,
+    glassDesign: glass,
+    eink: false,
+  ).copyWith(platform: platform);
 
   Future<void> pump(
     WidgetTester tester, {
@@ -113,6 +125,7 @@ void main() {
     required Widget child,
     TargetPlatform platform = TargetPlatform.iOS,
     bool glass = true,
+    bool solid = false,
     bool? collapsed,
   }) async {
     tester.view.physicalSize = Size(width, 800);
@@ -120,7 +133,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       MaterialApp(
-        theme: theme(glass: glass, platform: platform),
+        theme: theme(glass: glass, platform: platform, solid: solid),
         builder: (BuildContext context, Widget? child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(disableAnimations: true),
           child: child!,
@@ -357,6 +370,68 @@ void main() {
       await tester.tap(find.text('Singer · Album'));
       await tester.pump();
       expect(taps, 1);
+    });
+  });
+
+  group('cover tint', () {
+    const ImageProvider tinted = AssetImage('apple-tint-test-cover.png');
+    const Color seed = Color(0xFFD04020);
+    setUp(() => coverColorSchemeCache.debugStoreSeed(tinted, seed.toARGB32()));
+    final Finder surface = find.byKey(
+      const ValueKey<String>('now-playing-apple-surface'),
+    );
+
+    testWidgets('glass is tinted with the shared cover colour, low chroma', (
+      WidgetTester tester,
+    ) async {
+      await pump(tester, width: 400, child: bar(tintImage: tinted));
+      expectAppleLook(tester);
+      final Color hue = buildFushiColorScheme(
+        seedColor: seed,
+        brightness: Brightness.light,
+      ).primary;
+      final Color glass = tester
+          .widget<GlassContainer>(surface)
+          .settings!
+          .glassColor;
+      expect(glass, fushiNowPlayingAppleGlassTint(hue, dark: false));
+      final HSLColor hsl = HSLColor.fromColor(glass.withValues(alpha: 1));
+      expect(hsl.saturation, lessThanOrEqualTo(0.32 + 1e-6));
+      expect(hsl.lightness, closeTo(0.90, 0.01), reason: '浅色底保住 label 对比度');
+    });
+
+    testWidgets('no cover falls back to the neutral bar glass', (
+      WidgetTester tester,
+    ) async {
+      await pump(tester, width: 400, child: bar());
+      final Color neutral = fushiGlassButtonRestSettings(
+        fushiClearGlassSettings(tester.element(surface), bar: true),
+      ).glassColor;
+      expect(
+        tester.widget<GlassContainer>(surface).settings!.glassColor,
+        neutral,
+      );
+    });
+
+    testWidgets('solid material tier uses the tinted system material', (
+      WidgetTester tester,
+    ) async {
+      await pump(
+        tester,
+        width: 400,
+        solid: true,
+        child: bar(tintImage: tinted),
+      );
+      final Color hue = buildFushiColorScheme(
+        seedColor: seed,
+        brightness: Brightness.light,
+      ).primary;
+      final DecoratedBox box = tester.widget<DecoratedBox>(surface);
+      expect(
+        (box.decoration as ShapeDecoration).color,
+        fushiNowPlayingAppleSolidTint(hue, dark: false),
+      );
+      expect(find.byType(GlassContainer), findsNothing);
     });
   });
 
