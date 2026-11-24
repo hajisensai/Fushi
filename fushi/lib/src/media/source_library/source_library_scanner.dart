@@ -340,6 +340,8 @@ class _MangaVolumeTally {
         'SourceLibraryScanner skip duplicate manga ${e.title} ($path)',
       );
     } catch (e, stack) {
+      // BUG-5387：库要关（换库）了，整次扫描停下，不当成单个文件失败接着扫。
+      if (e is DatabaseWorkCancelledException) rethrow;
       failedPaths.add(path);
       firstError ??= e;
       debugPrint(
@@ -1476,32 +1478,53 @@ class SourceLibraryScanner {
   }) {
     // 每来源互斥（[sourceScanActivity]）：曲库页重扫、来源页重扫、ctl 路由、自动扫描等
     // 所有入口都经这里，同一来源不会被并发扫；先拿来源锁再拿视频刮削门，不持门等锁。
-    return sourceScanActivity.run(source.id, () async {
-      // 以前的进程在扫描中途被杀留下的东西（「仅此一次」的临时来源行、临时目录）：
-      // 每个库实例清一次。本次扫描已持有 [source] 的锁，清扫按锁跳过它。
-      await sweepSourceScanLeftoversOnce(
-        _db,
-        releaseAccess: _folderAccess.release,
+    // BUG-5387：整次扫描登记成本库的后台工作。关库 / 换库（备份恢复、合并导入等）时被
+    // 取消：取消后的 SQL 一条都发不出去（抛 [DatabaseWorkCancelledException]），关库等
+    // 扫描退出后才真关，扫到一半的来源不会把旧库里的行身份写进换上来的新库。
+    return sourceScanActivity.run(
+      source.id,
+      () => _db.runBackgroundWork<SourceScanSummary>(
+        'source.scan',
+        (DatabaseWorkToken _) => _scanUnderLock(
+          source,
+          fs: fs,
+          restoreDissolvedGroups: restoreDissolvedGroups,
+          oneShot: oneShot,
+        ),
+      ),
+    );
+  }
+
+  Future<SourceScanSummary> _scanUnderLock(
+    SourceLibraryRow source, {
+    SourceFileSystem? fs,
+    required bool restoreDissolvedGroups,
+    required bool oneShot,
+  }) async {
+    // 以前的进程在扫描中途被杀留下的东西（「仅此一次」的临时来源行、临时目录）：
+    // 每个库实例清一次。本次扫描已持有 [source] 的锁，清扫按锁跳过它。
+    await sweepSourceScanLeftoversOnce(
+      _db,
+      releaseAccess: _folderAccess.release,
+    );
+    // 等锁期间这一行可能已被删掉（残留清扫持锁删了这条临时行，或用户删了来源）：
+    // 不在已删的行上扫，否则导入的媒体挂到不存在的来源上（拍板台 design-nmv-fyi-tail ③）。
+    if (await _db.getMediaSourceById(source.id) == null) {
+      return SourceScanSummary(
+        sourceId: source.id,
+        mediaKind: source.mediaKind,
+        discoveredPaths: const <String>[],
+        importedMediaCount: 0,
+        error: t.media_source_scan_blocked_source_removed,
+        blocked: SourceScanBlock.sourceRemoved,
       );
-      // 等锁期间这一行可能已被删掉（残留清扫持锁删了这条临时行，或用户删了来源）：
-      // 不在已删的行上扫，否则导入的媒体挂到不存在的来源上（拍板台 design-nmv-fyi-tail ③）。
-      if (await _db.getMediaSourceById(source.id) == null) {
-        return SourceScanSummary(
-          sourceId: source.id,
-          mediaKind: source.mediaKind,
-          discoveredPaths: const <String>[],
-          importedMediaCount: 0,
-          error: t.media_source_scan_blocked_source_removed,
-          blocked: SourceScanBlock.sourceRemoved,
-        );
-      }
-      return _scanGated(
-        source,
-        fs: fs,
-        restoreDissolvedGroups: restoreDissolvedGroups,
-        oneShot: oneShot,
-      );
-    });
+    }
+    return _scanGated(
+      source,
+      fs: fs,
+      restoreDissolvedGroups: restoreDissolvedGroups,
+      oneShot: oneShot,
+    );
   }
 
   Future<SourceScanSummary> _scanGated(
@@ -1591,6 +1614,8 @@ class SourceLibraryScanner {
       } on FushiMusicUnavailableError {
         rethrow;
       } catch (e, stack) {
+        // BUG-5387：库要关（换库）了，整次扫描停下，不当成单个文件失败接着扫。
+        if (e is DatabaseWorkCancelledException) rethrow;
         // 列目录 / 取字节失败（断网、认证）：整次扫描没跑完，记进来源行，不软删曲目。
         scanError = e.toString();
         debugPrint(
@@ -2026,6 +2051,8 @@ class SourceLibraryScanner {
           throw StateError('game sources are routed to _scanGameSource');
       }
     } catch (e, stack) {
+      // BUG-5387：库要关（换库）了，整次扫描停下，不当成单个文件失败接着扫。
+      if (e is DatabaseWorkCancelledException) rethrow;
       scanError = e.toString();
       debugPrint(
         'SourceLibraryScanner.scan failed for '
@@ -2158,6 +2185,8 @@ class SourceLibraryScanner {
           tally: tally,
         );
       } catch (e, stack) {
+        // BUG-5387：库要关（换库）了，整次扫描停下，不当成单个文件失败接着扫。
+        if (e is DatabaseWorkCancelledException) rethrow;
         tally.fail(item.bookPath, e, stack);
         // 「这一本坏」才逐本隔离；连接断了就整轮结束——否则剩下的每本书都要各自
         // 等一次下载失败，期间来源锁一直占着。
@@ -2196,6 +2225,8 @@ class SourceLibraryScanner {
             tally: tally,
           );
         } catch (e, stack) {
+          // BUG-5387：库要关（换库）了，整次扫描停下，不当成单个文件失败接着扫。
+          if (e is DatabaseWorkCancelledException) rethrow;
           tally.fail(bookPath, e, stack);
           if (!await _sourceStillReachable(fs, source.rootPath)) rethrow;
         }
@@ -3226,6 +3257,8 @@ class SourceLibraryScanner {
           }
           createdPaths.add(item.videoPath);
         } catch (e, stack) {
+          // BUG-5387：库要关（换库）了，整次扫描停下，不当成单个文件失败接着扫。
+          if (e is DatabaseWorkCancelledException) rethrow;
           failedPaths.add(item.videoPath);
           firstError ??= e;
           debugPrint(
@@ -3246,6 +3279,8 @@ class SourceLibraryScanner {
             fingerprintOf: contentOf,
           );
         } catch (e, stack) {
+          // BUG-5387：库要关（换库）了，整次扫描停下，不当成单个文件失败接着扫。
+          if (e is DatabaseWorkCancelledException) rethrow;
           debugPrint(
             'SourceLibraryScanner video fingerprint backfill failed: '
             '$e\n$stack',
