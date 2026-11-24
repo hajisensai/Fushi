@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-23T23:43:41Z",
+ "generatedAt": "2026-11-24T00:11:33Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "10d0d070185cdcef44775d3ad1e445a0218d6325",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "10d0d070185cdcef44775d3ad1e445a0218d6325",
    "unknown": false,
-   "publishedAt": "2026-11-23T23:43:31Z",
-   "testflight": false,
+   "publishedAt": "2026-11-24T00:11:19Z",
+   "testflight": true,
    "baseSeq": 32143,
    "prs": [],
    "direct": [
@@ -28,16 +28,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45285085463"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45285085463"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45285085463"
+     "state": "ok"
     }
    }
   },
@@ -87,40 +84,13 @@
    "unknown": false,
    "publishedAt": "2026-11-23T21:32:27Z",
    "testflight": true,
-   "baseSeq": 32135,
+   "baseSeq": 32125,
    "prs": [],
    "direct": [
     {
      "sha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
      "subject": "Merge #4322 (claude/fix-cover-guard-4312) into develop"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
     },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32135,
-   "version": "3.4.0",
-   "sha": "6996c736bbdfc493cc728c80b8e0fb8ff758f520",
-   "unknown": false,
-   "publishedAt": "2026-11-23T19:11:10Z",
-   "testflight": true,
-   "baseSeq": 32125,
-   "prs": [],
-   "direct": [
     {
      "sha": "6996c736bbdfc493cc728c80b8e0fb8ff758f520",
      "subject": "Merge #4320 (claude/fix-develop-red-video-music) into develop"
@@ -145,8 +115,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45236069961"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
