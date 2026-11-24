@@ -9,6 +9,8 @@
 /// 在 app 的 `fushi/lib/src/profile/combo/fushi_settings_tree.dart`。
 library;
 
+import 'package:fushi_core/fushi_core.dart' show kProfileComboCategory;
+
 /// 组合挂载的层，按**优先级从高到低**声明：作品 → 媒体类型 → 语言 → 默认。
 ///
 /// 每个叶子各自从高往低找，取第一个单独设置了它的层；都没有就取默认组合。
@@ -35,7 +37,7 @@ enum ComboScope {
 
 /// 合成设置项（只存在于组合模型、存量 `profile_settings` 里没有的项，如复习库归属）的
 /// category。新持久化名，进 `profile_settings` 时与存量 category 并列。
-const String kComboSyntheticCategory = 'combo';
+const String kComboSyntheticCategory = kProfileComboCategory;
 
 /// 一个设置项的身份：`profile_settings` 的 (category, key)。
 ///

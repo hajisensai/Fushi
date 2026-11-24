@@ -38,6 +38,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart'
         SrsProfileConflictChoice,
         SrsProfileConflictKeepSeparate,
         showSrsProfileConflictDialog;
+import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_legacy_backup_cleanup.dart';
@@ -118,7 +119,14 @@ srsAppRuntimeProvider = Provider<SrsAppRuntime?>((Ref ref) {
     // 同步前的 profile 关联（铁律 E）：采用目录里已有的 uid 后按新身份重开 store。
     profileLinker: SrsDbProfileLinker(
       db: app.database,
+      // 关联的是此刻打开的那份复习库所挂的配置（组合阶段 4：共享库可能挂在激活配置以外的配置上，
+      // `srs_library_resolver.dart`）；找不到时按旧语义取激活配置。
       activeProfileId: () async {
+        final SrsDbStore? store = await ref.read(srsStoreProvider.future);
+        final int? owner = store == null
+            ? null
+            : await profileIdOfSrsLibrary(app.database, store.profileUid);
+        if (owner != null) return owner;
         final int id = ref.read(profileViewModelProvider).activeProfileId;
         return id > 0 ? id : app.database.resolveActiveProfileId();
       },

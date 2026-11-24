@@ -788,6 +788,10 @@ Future<Object?> _deleteProfile(OpContext context, CtlCall call) async {
   final ProfileDeletionOutcome? outcome;
   try {
     outcome = await viewModel.deleteProfile(target.id);
+  } on ProfileHostsSharedSrsLibraryException {
+    throw CtlFailure.rejected(
+      '「${target.name}」承载着共享复习库（没拆出独立复习库的组合都用它），删了这份复习就没了，未删除',
+    );
   } on ProfileDeletionSrsUnavailableException catch (e) {
     throw CtlFailure.rejected(
       '复习库打不开（先到复习页完成升级或查看原因），没法先备份复习数据，未删除「${target.name}」：${e.cause}',

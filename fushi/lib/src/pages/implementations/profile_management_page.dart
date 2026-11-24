@@ -430,12 +430,15 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     // 不能让异常逃出按钮回调（那样确认框不弹、什么提示都没有，BUG-5275）：复习库打不开时确认框照弹、写明原因、
     // 删除按钮不可点；其余失败给提示。
     ProfileDeletionImpact impact = const ProfileDeletionImpact.none();
-    bool srsUnavailable = false;
+    String? blockedReason;
     try {
       impact = await vm.deletionImpact(id);
+    } on ProfileHostsSharedSrsLibraryException {
+      // 承载共享复习库（组合阶段 4）：不是错误，确认框写明为什么不能删。
+      blockedReason = t.profile_delete_hosts_shared_srs_library;
     } on ProfileDeletionSrsUnavailableException catch (e, stack) {
       ErrorLogService.instance.log('ProfileManagement.deleteImpact', e, stack);
-      srsUnavailable = true;
+      blockedReason = t.profile_delete_srs_unavailable;
     } catch (e, stack) {
       ErrorLogService.instance.log('ProfileManagement.deleteImpact', e, stack);
       FushiToast.show(
@@ -450,7 +453,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
       builder: (ctx) => ProfileDeleteDialog(
         profileName: name,
         impact: impact,
-        blockedReason: srsUnavailable ? t.profile_delete_srs_unavailable : null,
+        blockedReason: blockedReason,
         onConfirm: () => Navigator.pop(ctx, true),
       ),
     );
@@ -458,6 +461,13 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     final ProfileDeletionOutcome? outcome;
     try {
       outcome = await vm.deleteProfile(id);
+    } on ProfileHostsSharedSrsLibraryException {
+      FushiToast.show(
+        msg: t.profile_delete_hosts_shared_srs_library,
+        toastLength: Toast.LENGTH_LONG,
+        severity: ToastSeverity.error,
+      );
+      return;
     } on ProfileDeletionSrsUnavailableException catch (e, stack) {
       // 确认之后复习库才变得打不开（例如别的窗口开始升级）：删除已中止，Profile 原样保留。
       ErrorLogService.instance.log('ProfileManagement.delete', e, stack);

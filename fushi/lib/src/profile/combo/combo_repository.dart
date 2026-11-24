@@ -29,6 +29,7 @@ export 'package:fushi_engine/profile/combo/combo_migration.dart';
 export 'package:fushi_engine/profile/combo/combo_resolver.dart';
 export 'package:fushi_engine/profile/combo/combo_rows.dart';
 export 'package:fushi_engine/profile/combo/settings_tree.dart';
+export 'package:fushi_engine/profile/combo/combo_srs_library.dart';
 
 /// 读激活配置（默认组合）此刻的全量设置；[categories] 非 null 时只读这些 category。
 typedef ComboLiveSettingsReader =

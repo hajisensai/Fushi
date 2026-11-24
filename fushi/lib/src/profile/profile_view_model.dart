@@ -414,8 +414,12 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     state = state.copyWith(profiles: await _repo.getAllProfiles());
   }
 
-  /// 删掉 [id] 会连带删掉的数据规模（确认框用）。
+  /// 删掉 [id] 会连带删掉的数据规模（确认框用）。[id] 承载共享复习库时抛
+  /// [ProfileHostsSharedSrsLibraryException]（确认框写明原因、删除键不可点）。
   Future<ProfileDeletionImpact> deletionImpact(int id) async {
+    if (await _repo.hostsSharedSrsLibrary(id)) {
+      throw ProfileHostsSharedSrsLibraryException(id);
+    }
     final ProfileDeletionCascade? cascade = _deletionCascade;
     if (cascade == null) return const ProfileDeletionImpact.none();
     final ProfileRow? target = _profileById(await _repo.getAllProfiles(), id);
@@ -425,6 +429,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   /// 删 Profile，连带它在 srs.db 里的复习数据与媒体目录（反馈 8TaOy2i-lL）：先备份（失败抛
   /// [ProfileDeletionBackupException]，什么都不删），再删 `profiles` 行（主库外键级联其余），最后清复习数据。
+  /// 承载共享复习库的那份不删，抛 [ProfileHostsSharedSrsLibraryException]。
   /// 只剩一个 Profile 或 [id] 不存在时不删，返回 null。
   Future<ProfileDeletionOutcome?> deleteProfile(int id) =>
       _profileDraftCoordinator._runProfileMutation((
@@ -433,6 +438,10 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         final List<ProfileRow> before = await _repo.getAllProfiles();
         final ProfileRow? target = _profileById(before, id);
         if (target == null || before.length <= 1) return null;
+        // 承载共享复习库的那份不删（备份 / 清理都不开始）。
+        if (await _repo.hostsSharedSrsLibrary(id)) {
+          throw ProfileHostsSharedSrsLibraryException(id);
+        }
         final ProfileDeletionCleanup? cleanup = await _deletionCascade?.prepare(
           target,
         );

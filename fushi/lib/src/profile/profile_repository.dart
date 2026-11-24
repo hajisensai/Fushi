@@ -22,7 +22,10 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/combo/combo_repository.dart';
 import 'package:fushi/src/profile/combo/fushi_settings_tree.dart'
     show FushiComboNode, normalizeLegacySettingKey;
+import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
 import 'package:fushi/src/profile/language_binding.dart';
+import 'package:fushi/src/profile/profile_deletion_cascade.dart'
+    show ProfileHostsSharedSrsLibraryException;
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi/src/profile/remote_dictionary_profile_meta.dart';
@@ -137,9 +140,18 @@ class ProfileRepository {
   Future<void> renameProfile(int id, String name) =>
       _db.updateProfileName(id, name);
 
+  /// [id] 承载着共享复习库（删了所有没拆独立库的组合的复习就没了，见
+  /// [ProfileHostsSharedSrsLibraryException]）。共享库还没定时 false（迁移待定：照旧按配置删）。
+  Future<bool> hostsSharedSrsLibrary(int id) async =>
+      (await loadComboSrsLibraries(_db)).hostsSharedLibrary(id);
+
+  /// 删一份 Profile。承载共享复习库的那份不删，抛 [ProfileHostsSharedSrsLibraryException]。
   Future<void> deleteProfile(int id) async {
     final count = await _db.countProfiles();
     if (count <= 1) return;
+    if (await hostsSharedSrsLibrary(id)) {
+      throw ProfileHostsSharedSrsLibraryException(id);
+    }
 
     final activeId = await getActiveProfileId();
     final String? deletedUid = await _profileUidOrNull(id);

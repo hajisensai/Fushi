@@ -21,9 +21,13 @@ import 'package:fushi/src/mining/mining_image_mode_target.dart'
     show probeSynchronizedClipSupport;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/profile/combo/combo_repository.dart'
+    show ComboScope;
+import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
 import 'package:fushi/src/profile/work_profile_anki_settings_store.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart' show SrsMiningDestination;
 import 'package:fushi/src/srs/srs_generation_kind.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
@@ -928,44 +932,46 @@ String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
   }
 }
 
-/// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕；库在换代途中原样抛出代际异常）。
-/// [followWorkSession] 见 [_withSrsMining]。
+/// 本机制卡要落的那份复习库的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕；库在换代途中原样抛出
+/// 代际异常）。[followWorkSession] 见 [_withSrsMining]。
 Future<SrsMiner?> _readSrsMiner(
   Ref ref, {
   required bool followWorkSession,
 }) async {
   try {
-    // 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，卡落进**那份配置**的复习副本（牌组 /
-    // 笔记类型 id 带它的 uid）；落点（[AppModel.srsMiningDestination]）读的就是作品会话。
-    // 绑定的就是激活配置时没有会话，走下面的激活副本。
-    // 组合模型下取复习落点（牌组 / 笔记类型叶子）的来源组合（[WorkProfileSession.miningProfileId]）；
-    // 落点都继承默认组合时同样走激活副本。
-    final int? miningProfileId = followWorkSession
-        ? WorkProfileScope.instance.active?.miningProfileId
-        : null;
-    if (miningProfileId != null) {
-      final AppModel app = ref.read(appProvider);
-      return await ref
-          .read(srsProfileStoresProvider)
-          .minerFor(
-            profileUid: await app.database.profileUidOf(miningProfileId),
-            destination: app.srsMiningDestination,
-            fallbackRolloverHour: () => app.statDayResetHour,
-          );
-    }
-    final SrsDbStore? store = await ref.read(srsStoreProvider.future);
-    final SrsMediaStore? media = await ref.read(srsMediaStoreProvider.future);
-    if (store == null || media == null) return null;
-    // 落地位置每次制卡现读：改牌组 / 笔记类型 / 映射不必重建整条装饰链。替对端制卡读激活
-    // 配置的落点（不叠本机作品会话）。
     final AppModel app = ref.read(appProvider);
-    return SrsMiner(
-      store: store,
-      media: media,
-      destination: followWorkSession
-          ? app.srsMiningDestination
-          : app.hostSrsMiningDestination,
+    // 卡落哪份复习库由组合的 `srs.library` 解析（design-srs-shared-library 方案 a，组合阶段 4，
+    // srs_library_resolver.dart）：默认共享库——作品绑了别的组合也照样落共享库，牌组 / 笔记类型 id 在
+    // 同一份库里都认得；作品会话的绑定层或激活配置拆出了独立库时落那一份（反馈 kEFPY4cuKZ 的「落进那份
+    // 配置的复习」由此按库表达）。落点（[AppModel.srsMiningDestination]）读的是作品会话；替对端制卡读
+    // 激活配置的落点、不叠本机作品会话。
+    final WorkProfileSession? session = followWorkSession
+        ? WorkProfileScope.instance.active
+        : null;
+    final String libraryUid = await resolveSrsLibraryUid(
+      app.database,
+      layers: session?.layers ?? const <ComboScope, int>{},
     );
+    if (libraryUid.isEmpty) return null;
+    final SrsMiningDestination destination = followWorkSession
+        ? app.srsMiningDestination
+        : app.hostSrsMiningDestination;
+    // 落点每次制卡现读：改牌组 / 笔记类型 / 映射不必重建整条装饰链。
+    final SrsDbStore? viewed = await ref.read(srsStoreProvider.future);
+    if (viewed == null) return null;
+    if (viewed.profileUid == libraryUid) {
+      final SrsMediaStore? media = await ref.read(srsMediaStoreProvider.future);
+      if (media == null) return null;
+      return SrsMiner(store: viewed, media: media, destination: destination);
+    }
+    // 复习页此刻看的是别的库：制卡照样落解析出的那份（经登记处取它的副本，不抢复习页的激活副本）。
+    return await ref
+        .read(srsProfileStoresProvider)
+        .minerFor(
+          profileUid: libraryUid,
+          destination: destination,
+          fallbackRolloverHour: () => app.statDayResetHour,
+        );
   } catch (e, stack) {
     // 库在换代途中不是「打不开」：原样交给 [SrsMiningAnkiRepository]，制卡失败据它提示去复习页完成升级
     // （BUG-5085，[SrsMinerResolver] 的契约）。
