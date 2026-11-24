@@ -116,8 +116,14 @@ void main() {
           'jellyfin:http://gone:8096|u1',
           () => t.video_favorite_server_signed_out,
         ),
-        // 来源是互联对端（不是媒体服务器）：本机找不回来，笼统提示。
-        ('interconnect', () => t.video_favorite_source_unavailable),
+        // 来源是互联对端、本机没开互联：说清要开互联、配对那台设备。
+        ('interconnect', () => t.video_favorite_peer_unavailable),
+        // 来源是云盘、本机没开云同步：说清要用同一种云盘开云同步。
+        ('cloud:webDav', () => t.video_favorite_cloud_unavailable),
+        // 粘贴的直链：没有可回去的入口。
+        ('url_stream', () => t.video_favorite_not_reopenable),
+        // 在线源但没记重开规格（v180 之前收的）：同样回不去，明说原因。
+        ('anime-source:ext:42', () => t.video_favorite_not_reopenable),
       ]) {
     testWidgets('a favorite that recorded its source (${c.$1}) and cannot be '
         'reopened says why', (WidgetTester tester) async {

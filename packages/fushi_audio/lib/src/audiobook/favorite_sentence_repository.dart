@@ -100,6 +100,10 @@ class FavoriteSentence {
           final String raw when raw.isNotEmpty => raw,
           _ => null,
         },
+        originLocator: switch (json['originLocator']) {
+          final String raw when raw.isNotEmpty => raw,
+          _ => null,
+        },
       );
   FavoriteSentence({
     required this.text,
@@ -118,6 +122,7 @@ class FavoriteSentence {
     this.expression,
     this.reading,
     this.originSourceId,
+    this.originLocator,
   }) : id = id ?? _generateFavoriteId(),
        source = source ?? kFavoriteSentenceSourceBook;
 
@@ -162,6 +167,13 @@ class FavoriteSentence {
   /// 旧版本读到会忽略。
   final String? originSourceId;
 
+  /// 回到收藏时那个远端条目的重开规格（v180）：只有按 [originSourceId] + [bookKey]
+  /// 找不回条目的来源才有——在线视频源的一集记作品与集的 JSON（与入库在线行
+  /// `streamSpecJson` 同形），收藏夹 / 遥控据此重建播放客户端。与 [originSourceId]
+  /// 成对：合并时随来源身份一起取记着的一侧。wire 可选字段 `originLocator`，旧版本
+  /// 读到会忽略。
+  final String? originLocator;
+
   // BUG-494 (TODO-1053 Bug C)：id 生成必须无碰撞。旧 'hl_<microsecondsSinceEpoch>' 在同一
   // 微秒内连续 new 两条（快速连续收藏 / 测试）会撞出相同 id → id 身份键坍缩（add 按 id 去重
   // 误判重复丢第二条、removeById 连坐）。加进程内单调计数器后缀，保证同微秒也唯一。
@@ -190,29 +202,33 @@ class FavoriteSentence {
     if (expression != null) 'expression': expression,
     if (reading != null) 'reading': reading,
     if (originSourceId != null) 'originSourceId': originSourceId,
+    if (originLocator != null) 'originLocator': originLocator,
   };
 
-  /// 只补上来源身份的副本（合并时另一侧记着来源、本侧没有：同一条收藏在旧版本设备
-  /// 上同步过来时不带它）。
-  FavoriteSentence withOriginSourceId(String? originSourceId) =>
-      FavoriteSentence(
-        id: id,
-        text: text,
-        bookTitle: bookTitle,
-        chapterLabel: chapterLabel,
-        createdAt: createdAt,
-        bookKey: bookKey,
-        sectionIndex: sectionIndex,
-        normCharOffset: normCharOffset,
-        normCharLength: normCharLength,
-        color: color,
-        colorUpdatedAt: colorUpdatedAt,
-        source: source,
-        dateKey: dateKey,
-        expression: expression,
-        reading: reading,
-        originSourceId: originSourceId,
-      );
+  /// 只换来源身份与重开规格的副本（合并时另一侧记着来源、本侧没有：同一条收藏在
+  /// 旧版本设备上同步过来时不带它们）。两者成对换，不拼两侧。
+  FavoriteSentence withOrigin({
+    required String? originSourceId,
+    required String? originLocator,
+  }) => FavoriteSentence(
+    id: id,
+    text: text,
+    bookTitle: bookTitle,
+    chapterLabel: chapterLabel,
+    createdAt: createdAt,
+    bookKey: bookKey,
+    sectionIndex: sectionIndex,
+    normCharOffset: normCharOffset,
+    normCharLength: normCharLength,
+    color: color,
+    colorUpdatedAt: colorUpdatedAt,
+    source: source,
+    dateKey: dateKey,
+    expression: expression,
+    reading: reading,
+    originSourceId: originSourceId,
+    originLocator: originLocator,
+  );
 
   /// 只换颜色与颜色时钟的副本（合并取较新颜色、收藏夹改色后更新本地镜像用）。
   FavoriteSentence withColor(String? color, DateTime? colorUpdatedAt) =>
@@ -233,6 +249,7 @@ class FavoriteSentence {
         expression: expression,
         reading: reading,
         originSourceId: originSourceId,
+        originLocator: originLocator,
       );
 }
 
@@ -262,6 +279,7 @@ class FavoriteSentenceRepository {
       null => null,
     },
     originSourceId: r.originSourceId,
+    originLocator: r.originLocator,
   );
 
   /// 模型 → 表行。
@@ -283,6 +301,7 @@ class FavoriteSentenceRepository {
         expression: Value<String?>(s.expression),
         reading: Value<String?>(s.reading),
         originSourceId: Value<String?>(s.originSourceId),
+        originLocator: Value<String?>(s.originLocator),
       );
 
   /// 跨设备稳定的内容身份键（**唯一真源**：aggregate 去重、删除墓碑 itemKey、接收端删除

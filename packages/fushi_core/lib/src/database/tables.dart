@@ -1067,6 +1067,13 @@ class FavoriteSentences extends Table {
   /// 的旧收藏。
   TextColumn get originSourceId => text().nullable()();
 
+  /// 回到收藏时那个远端条目的**重开规格**（v180）：只靠 [originSourceId] +
+  /// [bookKey] 找不回条目的来源才记——在线视频源（Aniyomi 扩展）的一集要知道是哪部
+  /// 作品（作品 URL / 标题 / 封面）才能重建播放客户端，此时是与入库在线行
+  /// `video_books.stream_spec_json` 同形的 JSON（`AnimeSourceBookSpec`）。媒体服务器 /
+  /// 互联对端 / 云盘按条目 id 就能找回，恒 NULL。NULL 也包括 v180 之前的旧收藏。
+  TextColumn get originLocator => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

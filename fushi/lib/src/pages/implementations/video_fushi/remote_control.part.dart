@@ -101,6 +101,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       favoritesChanged: _refreshFavoritedCueCache,
       libraryAnchor: _libraryAnchorAt,
       originSourceId: () => _favoriteOriginSourceId,
+      originLocator: _favoriteOriginLocatorFor,
       // 以下三组与桌面控制通道（[_playbackRemote]）/ 剧集列表同一批执行体。
       setVolume: (int volume) => _applyUserVideoVolume(volume.toDouble()),
       episodes: _remoteEpisodes,
@@ -619,14 +620,19 @@ extension _VideoRemoteControl on _VideoFushiPageState {
   Future<void> _openRemoteVideoFavorite(FavoriteSentence favorite) async {
     final String? uid = favorite.bookKey;
     if (uid == null || uid.isEmpty) {
-      throw const VideoRemoteException(404, 'favorite_source_unavailable');
+      throw favoriteSourceUnavailableException(
+        FavoriteVideoOriginFailure.noLink,
+      );
     }
     if (uid == _activeBookUid &&
         _isRemote &&
         (favorite.sectionIndex ?? 0) != (_favoriteSectionIndex ?? 0)) {
       final int episode = favorite.sectionIndex ?? 0;
       if (episode < 0 || episode >= _episodes.length) {
-        throw const VideoRemoteException(404, 'favorite_source_unavailable');
+        // 收藏落在本视频已经没有的那一集上（剧集列表变短了）。
+        throw favoriteSourceUnavailableException(
+          FavoriteVideoOriginFailure.episodeMissing,
+        );
       }
       await _controller?.pause();
       if (!mounted) throw const VideoRemoteException(409, 'no_video');
@@ -636,7 +642,9 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         initialPositionMsOverride: favorite.normCharOffset,
       );
       if (_controller == null || _failed) {
-        throw const VideoRemoteException(404, 'favorite_source_unavailable');
+        throw favoriteSourceUnavailableException(
+          FavoriteVideoOriginFailure.playbackFailed,
+        );
       }
       await _openRemoteVideoFavorite(favorite);
       return;
@@ -667,11 +675,14 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     }
     final VideoBookRow? row = await widget.repo.getByBookUid(uid);
     final Widget Function(bool initialFullscreen) buildPage;
-    // 换上的新页接管的现建客户端（只有媒体服务器条目有）：推页之前任一步放弃都要关掉。
+    // 换上的新页接管的现建客户端（媒体服务器 / 在线源条目有）：推页之前任一步放弃都要
+    // 关掉。
     RemoteVideoClient? handedOverClient;
     if (row != null) {
       if (await isLocalVideoResourceMissing(row.videoPath)) {
-        throw const VideoRemoteException(404, 'favorite_source_unavailable');
+        throw favoriteSourceUnavailableException(
+          FavoriteVideoOriginFailure.localFileMissing,
+        );
       }
       final Map<String, int> collections = await appModel.database
           .getPrimaryCollectionIdByEntry();
@@ -685,32 +696,15 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         initialFullscreen: initialFullscreen,
       );
     } else {
-      // 没有本机库行：从媒体服务器浏览页直接串流时收藏的条目（bookKey = 服务器条目
-      // id），按收藏时记下的来源身份回到那一台服务器（BUG-5402；旧收藏由解析器挨台
-      // 问并核对标题）。来源不是媒体服务器（互联对端 / 在线源）的找不回来。找不回来
-      // 的原因（没登录 / 条目没了 / 连不上）不进 wire：旧版手机只认这一个错误码。
-      final String? origin = favorite.originSourceId;
-      if (origin != null && !isMediaServerSourceId(origin)) {
-        throw const VideoRemoteException(404, 'favorite_source_unavailable');
-      }
-      final MediaServerItemLaunch? launch = (await resolveMediaServerItemLaunch(
-        itemId: uid,
-        originSourceId: origin,
-        expectedTitle: favorite.bookTitle,
-        loadConfigs: SyncRepository(appModel.database).getMediaServers,
-      )).launch;
-      if (launch == null) {
-        throw const VideoRemoteException(404, 'favorite_source_unavailable');
-      }
-      handedOverClient = launch.client;
-      buildPage = (bool initialFullscreen) => VideoFushiPage.neutralizedRemote(
-        info: launch.info,
+      // 没有本机库行：在远端条目上收藏的，按收藏时记下的来源回去。
+      final RemoteFavoriteVideoPage page = await resolveRemoteFavoriteVideoPage(
+        appModel: appModel,
+        ref: ref,
         repo: widget.repo,
-        client: launch.client,
-        ownsRemoteClient: true,
-        initialRemoteFavorite: favorite,
-        initialFullscreen: initialFullscreen,
+        favorite: favorite,
       );
+      handedOverClient = page.ownedClient;
+      buildPage = page.build;
     }
     if (!context.mounted) {
       if (handedOverClient != null) {
@@ -764,3 +758,63 @@ VideoRemoteException _remoteSubtitleException(VideoRemoteFailure failure) =>
       'not_found' => const VideoRemoteException(404, 'subtitle_track_missing'),
       _ => const VideoRemoteException(409, 'subtitle_track_unavailable'),
     };
+
+/// 手机跳收藏打不开来源：错误码不变（旧版手机只认它），[failure] 作 `reason` 细分。
+VideoRemoteException favoriteSourceUnavailableException(
+  FavoriteVideoOriginFailure failure,
+) => VideoRemoteException(
+  404,
+  videoRemoteFavoriteSourceUnavailable,
+  reason: failure.wireReason,
+);
+
+/// [resolveRemoteFavoriteVideoPage] 的产物：[build] 按「是否接管原生全屏」建远端播放页；
+/// [ownedClient] 非 null = 页面将接管的现建客户端，推页之前放弃要
+/// `closeOwnedRemoteVideoClient`。
+typedef RemoteFavoriteVideoPage = ({
+  Widget Function(bool initialFullscreen) build,
+  RemoteVideoClient? ownedClient,
+});
+
+/// 手机跳收藏、收藏的视频**没有本机库行**（在远端条目上收藏的：媒体服务器直接串流 /
+/// 互联对端 / 云盘 / 在线源，bookKey = 该来源内的条目 id）：按收藏时记下的来源回去
+/// （与收藏夹同一个解析口 [resolveFavoriteVideoOrigin]），建好起播后对到那一句的远端
+/// 播放页。原生播放页与网页播放页的遥控共用。
+///
+/// 回不去抛 [favoriteSourceUnavailableException]：原因随 `favorite_source_unavailable`
+/// 的 `reason` 报给手机，旧版手机只认错误码本身，照旧显示笼统文案。
+Future<RemoteFavoriteVideoPage> resolveRemoteFavoriteVideoPage({
+  required AppModel appModel,
+  required WidgetRef ref,
+  required VideoBookRepository repo,
+  required FavoriteSentence favorite,
+}) async {
+  final FavoriteVideoOriginResult result = await resolveFavoriteVideoOrigin(
+    itemId: favorite.bookKey ?? '',
+    originSourceId: favorite.originSourceId,
+    originLocator: favorite.originLocator,
+    expectedTitle: favorite.bookTitle,
+    sources: FavoriteVideoOriginSources.live(
+      database: appModel.database,
+      animeManager: () => appModel.animeMihonManager,
+      subtitleLanguage: () => resolveSubtitleDownloadLanguage(
+        explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
+        globalDefaultContentLanguage: appModel.defaultContentLanguage,
+      ),
+      cache: ref.read(remoteLibraryCacheProvider),
+    ),
+  );
+  final FavoriteVideoOriginLaunch? launch = result.launch;
+  if (launch == null) throw favoriteSourceUnavailableException(result.failure!);
+  return (
+    build: (bool initialFullscreen) => VideoFushiPage.neutralizedRemote(
+      info: launch.info,
+      repo: repo,
+      client: launch.client,
+      ownsRemoteClient: launch.ownsClient,
+      initialRemoteFavorite: favorite,
+      initialFullscreen: initialFullscreen,
+    ),
+    ownedClient: launch.ownsClient ? launch.client : null,
+  );
+}

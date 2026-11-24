@@ -81,10 +81,17 @@ import 'package:fushi/src/pages/implementations/stat_activity.dart'
     show statTodayKey;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
     show
+        RemoteFavoriteVideoPage,
         VideoFushiPage,
+        favoriteSourceUnavailableException,
         miningClipTimeMs,
+        resolveRemoteFavoriteVideoPage,
         resolveVideoLookupAnchorCue,
         subtitleLookupTerm;
+import 'package:fushi/src/media/favorites/favorite_video_origin_failure.dart';
+import 'package:fushi/src/media/video/remote_client_teardown.dart'
+    show closeOwnedRemoteVideoClient;
+import 'package:fushi/src/sync/remote_video_client.dart' show RemoteVideoClient;
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart'
     show AppSubtitleWorkbenchHost;
 import 'package:fushi/src/media/video/subtitle/remote_online_subtitle_search.dart';
@@ -2945,11 +2952,14 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   }
 
   /// 手机点开收藏：本书的收藏就地跳到那句并播放；别的书交给视频页打开（与原生播放器页
-  /// 同一入口，它按书的片源自己分流到本地 / 远端 / 网页档）。
+  /// 同一入口，它按书的片源自己分流到本地 / 远端 / 网页档）；没有本机库行的（在远端
+  /// 条目上收藏的）按收藏时记下的来源回去（[resolveRemoteFavoriteVideoPage]）。
   Future<void> _openRemoteFavorite(FavoriteSentence favorite) async {
     final String? uid = favorite.bookKey;
     if (uid == null || uid.isEmpty) {
-      throw const VideoRemoteException(404, 'favorite_source_unavailable');
+      throw favoriteSourceUnavailableException(
+        FavoriteVideoOriginFailure.noLink,
+      );
     }
     if (uid == widget.bookUid) {
       _requireRemoteControllable();
@@ -2966,8 +2976,33 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       return;
     }
     final VideoBookRow? row = await widget.repo.getByBookUid(uid);
-    if (row == null || await isLocalVideoResourceMissing(row.videoPath)) {
-      throw const VideoRemoteException(404, 'favorite_source_unavailable');
+    if (row == null) {
+      final RemoteFavoriteVideoPage page = await resolveRemoteFavoriteVideoPage(
+        appModel: _appModel,
+        ref: ref,
+        repo: widget.repo,
+        favorite: favorite,
+      );
+      if (!context.mounted) {
+        final RemoteVideoClient? owned = page.ownedClient;
+        if (owned != null) closeOwnedRemoteVideoClient(owned);
+        throw const VideoRemoteException(409, 'no_video');
+      }
+      _unregisterRemote();
+      unawaited(
+        Navigator.of(context).pushReplacement(
+          adaptivePageRoute<void>(
+            context: context,
+            builder: (_) => page.build(false),
+          ),
+        ),
+      );
+      return;
+    }
+    if (await isLocalVideoResourceMissing(row.videoPath)) {
+      throw favoriteSourceUnavailableException(
+        FavoriteVideoOriginFailure.localFileMissing,
+      );
     }
     if (!context.mounted) throw const VideoRemoteException(409, 'no_video');
     _unregisterRemote();

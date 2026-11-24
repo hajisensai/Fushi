@@ -1728,7 +1728,10 @@ class FushiSyncServer {
     } on VideoRemoteException catch (error) {
       return shelf.Response(
         error.status,
-        body: jsonEncode(<String, String>{'error': error.code}),
+        body: jsonEncode(<String, String>{
+          'error': error.code,
+          if (error.reason != null) 'reason': error.reason!,
+        }),
         headers: <String, String>{'content-type': 'application/json'},
       );
     } catch (error, stack) {

@@ -254,12 +254,23 @@ class AggregateMergeService {
         clockOrder > 0 ||
         (clockOrder == 0 &&
             (other.color ?? '').compareTo(identity.color ?? '') > 0);
-    // The remote-source identity (v179, BUG-5402) is write-once: whichever side
-    // recorded it (an older device syncs the same favorite without it) keeps
-    // it, so the "jump back" on every device finds the right media server.
-    final FavoriteSentence withOrigin =
-        identity.originSourceId == null && other.originSourceId != null
-        ? identity.withOriginSourceId(other.originSourceId)
+    // The remote-source identity (v179, BUG-5402) and its reopen locator (v180)
+    // are write-once: whichever side recorded them (an older device syncs the
+    // same favorite without them) keeps them, so the "jump back" on every
+    // device finds the right source. They travel as a pair: the locator is
+    // only borrowed from a side that names the same source.
+    final bool borrowOrigin =
+        identity.originSourceId == null && other.originSourceId != null;
+    final bool borrowLocator =
+        !borrowOrigin &&
+        identity.originLocator == null &&
+        other.originLocator != null &&
+        identity.originSourceId == other.originSourceId;
+    final FavoriteSentence withOrigin = borrowOrigin || borrowLocator
+        ? identity.withOrigin(
+            originSourceId: other.originSourceId,
+            originLocator: other.originLocator,
+          )
         : identity;
     if (!otherColorWins) return withOrigin;
     return withOrigin.withColor(other.color, other.colorClock);

@@ -8,14 +8,66 @@ abstract interface class VideoRemoteService {
 }
 
 final class VideoRemoteException implements Exception {
-  const VideoRemoteException(this.status, this.code);
+  const VideoRemoteException(this.status, this.code, {this.reason});
 
   final int status;
   final String code;
 
+  /// Optional refinement of [code], sent next to it as `reason` in the error
+  /// body (and as `errorReason` on the snapshot for asynchronous failures).
+  /// The code itself never changes, so phones that predate a reason still
+  /// read the failure they always knew; newer phones word the reason (e.g.
+  /// [videoRemoteFavoriteSourceReasons] for `favorite_source_unavailable`).
+  final String? reason;
+
   @override
-  String toString() => 'VideoRemoteException($status, $code)';
+  String toString() => reason == null
+      ? 'VideoRemoteException($status, $code)'
+      : 'VideoRemoteException($status, $code, $reason)';
 }
+
+/// The failure code of `openFavorite` when the favorite's video cannot be
+/// opened on the computer. Its `reason` says why (one of
+/// [videoRemoteFavoriteSourceReasons]); hosts that predate the reasons send
+/// the bare code.
+const String videoRemoteFavoriteSourceUnavailable =
+    'favorite_source_unavailable';
+
+/// Every `reason` a host may attach to [videoRemoteFavoriteSourceUnavailable].
+/// Phones map unknown reasons (a newer host) to the generic text of the code.
+const Set<String> videoRemoteFavoriteSourceReasons = <String>{
+  // The favorite has no video key.
+  'no_link',
+  // A library row whose local file is gone.
+  'local_file_missing',
+  // The favorite's episode is past the end of the playing video's episodes.
+  'episode_missing',
+  // An old favorite that recorded no source, and no signed-in source has it.
+  'origin_unknown',
+  // Media server: not signed in / item gone / unreachable.
+  'server_signed_out',
+  'server_item_missing',
+  'server_unreachable',
+  // Interconnect peer: interconnect off or not paired / peer offline / the
+  // peer's library no longer has the video.
+  'peer_unavailable',
+  'peer_offline',
+  'peer_item_missing',
+  // Cloud backup: off or switched to another cloud / unreachable / gone /
+  // a cloud that cannot stream (FTP).
+  'cloud_unavailable',
+  'cloud_unreachable',
+  'cloud_item_missing',
+  // Online video source: the extension is not installed or disabled.
+  'online_source_missing',
+  // A source that has no way back (pasted stream URL, music MV, an online
+  // source favorite from before the work was recorded).
+  'not_reopenable',
+  // The video opened on the computer but its stream failed to play.
+  'playback_failed',
+  // The player in front (a web page) can only jump within its own video.
+  'other_video',
+};
 
 /// Error code returned (HTTP 500) when the adapter fails with an unexpected
 /// exception. Expected failures carry their own [VideoRemoteException.code].

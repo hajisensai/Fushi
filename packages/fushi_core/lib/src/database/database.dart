@@ -3835,6 +3835,15 @@ class FushiDatabase extends _$FushiDatabase
           );
         }
       }
+      if (from < 180) {
+        // v180：favorite_sentences.origin_locator——在线视频源收藏的重开规格（哪部
+        // 作品的哪一集），收藏夹 / 手机遥控据此跳回源条目。纯加列、存量 NULL；按列
+        // 存在性守卫，重跑幂等。
+        if (await _tableExists('favorite_sentences') &&
+            !await _columnExists('favorite_sentences', 'origin_locator')) {
+          await m.addColumn(favoriteSentences, favoriteSentences.originLocator);
+        }
+      }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();
