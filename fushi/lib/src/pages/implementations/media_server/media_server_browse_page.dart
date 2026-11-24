@@ -59,8 +59,10 @@ Future<void> pushMediaServerPlayer(
 /// 「缩放闪动」，Apple 下分区整块发白盖住壁纸（反馈 vhFvt3IkHm，BUG-5412）。
 ///
 /// 这里换成不经主题的 [PageRouteBuilder]：页面直接叠在外壳那一页已画好的背景上，
-/// 背景作用域沿用外壳页的；无进场过渡（初始路由本就不该有进场动画）。往后推进来的
-/// 网格 / 详情要盖住下面那页，照旧用 [adaptivePageRoute]。
+/// 背景作用域沿用外壳页的；无进场过渡（初始路由本就不该有进场动画）。服务器首页 /
+/// 网格 / 搜索 / 详情都是 push 到根 Navigator 的二级页面（`_openServer`、
+/// `openMediaServerAggregateSearch`、`openMediaServerDetail`），照旧走
+/// [adaptivePageRoute] 垫整窗背景，不进这条嵌套栈。
 Route<void> mediaServerNestedRootRoute({
   required RouteSettings settings,
   required WidgetBuilder builder,
@@ -268,8 +270,8 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
                       child: Navigator(
                         key: _navigatorKey,
                         // 根页（服务器列表）是分区本身的内容，不是推进来的一页：
-                        // 透明、无进场过渡（[mediaServerNestedRootRoute]）。往后
-                        // 推的网格 / 详情才用自适应路由（media_server_routes.dart）。
+                        // 透明、无进场过渡（[mediaServerNestedRootRoute]）。二级页面
+                        // 都 push 到根 Navigator，照旧用自适应路由。
                         onGenerateRoute: (RouteSettings settings) =>
                             mediaServerNestedRootRoute(
                               settings: settings,
