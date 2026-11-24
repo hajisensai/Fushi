@@ -875,8 +875,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
-  /// 多盘：选一张再进它的菜单。所选那张开不了菜单时说明原因，不静默降级。
-  Future<void> _chooseDisc() async {
+  /// 「播放原盘」：单盘直接进菜单；多盘先在选盘弹窗里选一张（预选最近看过的那张）
+  /// 再进——选盘不另占一个按钮。所选那张开不了菜单时说明原因，不静默降级。
+  Future<void> _playDisc() async {
+    if (_discs.length <= 1) {
+      final DiscRef? only = preferredDisc(_discs);
+      if (only != null) _openDisc(only);
+      return;
+    }
     final DiscRef? disc = await showDiscPicker(
       context: context,
       discs: _discs,
@@ -896,11 +902,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     _openDisc(disc);
   }
 
-  /// 主按钮的动作：原盘可开菜单时「播放原盘」（最近看过的那张），否则普通播放。
+  /// 主按钮的动作：原盘可开菜单时「播放原盘」（单盘直接进，多盘先选盘），否则普通播放。
   void _onPrimaryPlay(CollectionEpisodeSlot episode) {
     final DiscRef? disc = preferredDisc(_discs);
     if (_discPrimaryKind == DiscPrimaryKind.playDisc && disc != null) {
-      _openDisc(disc);
+      unawaited(_playDisc());
       return;
     }
     final RemoteDiscMenuSource? remote = _remoteDiscSource;
@@ -912,8 +918,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   }
 
   /// 原盘作品 hero 的次按钮：主按钮是「播放原盘」时给「继续观看 xx:xx」/「直接播放
-  /// 正片」；多盘再给「选盘」。主按钮退回普通播放（设置关 / 开不了菜单）但菜单仍可开
-  /// 时，菜单入口留在次按钮。
+  /// 正片」。多盘的选盘并进「播放原盘」本身（点了先选盘），不另给按钮。主按钮退回
+  /// 普通播放（设置关 / 开不了菜单）但菜单仍可开时，菜单入口留在次按钮。
   List<Widget> _discSecondaryActions(CollectionEpisodeSlot episode) {
     if (!_isDiscEntry) return const <Widget>[];
     final bool discPrimary = _discPrimaryKind == DiscPrimaryKind.playDisc;
@@ -940,7 +946,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           buttonKey: const ValueKey<String>('collection-disc-open-menu'),
           icon: FushiIcons.toc,
           label: t.video_disc_play,
-          onPressed: () => _openDisc(disc),
+          onPressed: () => unawaited(_playDisc()),
         )
       else if (_discUnavailable == null && _remoteDiscSource != null)
         MediaDetailSecondaryButton(
@@ -955,13 +961,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           icon: FushiIcons.cast,
           label: t.video_disc_open_on_host,
           onPressed: () => unawaited(_openRemoteDiscOnHost()),
-        ),
-      if (_discs.length > 1 && _discUnavailable == null)
-        MediaDetailSecondaryButton(
-          buttonKey: const ValueKey<String>('collection-disc-choose'),
-          icon: FushiIcons.swap,
-          label: t.video_disc_choose_disc,
-          onPressed: () => unawaited(_chooseDisc()),
         ),
     ];
   }
@@ -2289,7 +2288,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final DiscMenuUnavailableReason? discUnavailable = _isDiscEntry
         ? _discUnavailable
         : null;
-    final DiscRef? disc = preferredDisc(_discs);
     return CollectionDetailHero(
       backdrop: _heroBackdrop,
       backdropIndex: _heroBackdropIndex,
@@ -2320,12 +2318,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             ]
           : const <CollectionHeroCredit>[],
       summary: useLegacyHeroDetails ? meta?.summary : _canonicalWork?.overview,
-      // 原盘开不了菜单时，这一行写明原因（主按钮退回普通播放）；多盘时写主按钮
-      // 开的是哪一张。
+      // 原盘开不了菜单时，这一行写明原因（主按钮退回普通播放）。多盘不再写「播放
+      // 原盘 · 盘名」：主按钮点了先弹选盘，开哪张由用户在弹窗里定。
       continueLabel: discUnavailable != null
           ? discMenuUnavailableText(discUnavailable)
-          : discPrimary && _discs.length > 1 && disc != null
-          ? '${t.video_disc_play}  ·  ${disc.label}'
           : '${t.collection_continue_progress(n: _continueEpisodeNumber)}  ·  '
                 '${_episodeDisplayTitle(episode)}',
       // 续播行已写明是哪一集，按钮只给动作：有进度「继续观看」、没看过「开始观看」。
@@ -4069,7 +4065,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final DiscMenuUnavailableReason? discUnavailable = _isDiscEntry
         ? _discUnavailable
         : null;
-    final DiscRef? disc = preferredDisc(_discs);
     // 「接着看」卡（附栏）：只在主操作是播剧集时出；光盘入口仍走续播行文案。
     final bool upNext = !discPrimary && discUnavailable == null;
     return VideoPosterDetailHero(
@@ -4088,8 +4083,6 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       // 重复一行「继续看 第 N 集」。
       continueLabel: discUnavailable != null
           ? discMenuUnavailableText(discUnavailable)
-          : discPrimary && _discs.length > 1 && disc != null
-          ? '${t.video_disc_play}  ·  ${disc.label}'
           : null,
       summary: useLegacyHeroDetails ? meta?.summary : work.overview,
       primaryAction: MediaDetailPrimaryButton(
