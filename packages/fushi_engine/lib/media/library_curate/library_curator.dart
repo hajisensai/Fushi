@@ -1290,6 +1290,7 @@ class LibraryCurator {
           for (final Map<String, Object?> c in candidates) {
             if (_bookCandidateKey(c) == decision.key) pick = c;
           }
+          if (pick != null) ai = PendingIdentityAiOutcome.accepted;
         } else if (decision?.key != null) {
           reason = 'low_confidence';
         }
@@ -1423,6 +1424,11 @@ class LibraryCurator {
         progress.add(unit.id);
       }
       if (!unitFailed && nothingToWrite) {
+        // 走到这里作品已认出：AI 选的记 accepted，规则直接认的 AI 没被问到
+        // （不能沿用上面「认不出时」的 AI 结论，否则待确认里会说「AI 没认」）。
+        if (ai != PendingIdentityAiOutcome.accepted) {
+          ai = PendingIdentityAiOutcome.notAsked;
+        }
         pending++;
         ctx.state.seen.add('scrape.books:${unit.id}');
         ctx.run.pendingItems.add(

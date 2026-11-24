@@ -1462,12 +1462,43 @@ void main() {
             .where(
               (LibraryCuratePendingItem p) => p.kind == 'book_scrape_pending',
             )
-            .map((LibraryCuratePendingItem p) => '${p.ref}|${p.reason}'),
-        <String>['book:k1|no_fields'],
+            .map(
+              (LibraryCuratePendingItem p) => '${p.ref}|${p.reason}|${p.ai}',
+            ),
+        <String>['book:k1|no_fields|not_asked'],
       );
       final LibraryCurateState after = await store.load();
       expect(after.seen, contains('scrape.books:book:k1'));
       expect(after.seen, isNot(contains('scrape.books.done:book:k1')));
+    });
+
+    // AI 认出了作品、候选却给不出缺的字段：待确认里如实记「AI 认了」，不沿用认不出
+    // 时的 declined（否则界面会说「AI 没认」）。
+    test('AI 认出但候选给不出缺的字段：no_fields 记 ai=accepted', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        single(vol('k1', 'Upsilon', missingCover: false)),
+      ];
+      bookFound['Upsilon'] = <Map<String, Object?>>[
+        book('1', 'Upsilon Deluxe', author: null),
+        book('2', 'Upsilon Other', author: null),
+      ];
+      mediaAnswer = (_) =>
+          const AiVideoIdentityDecision(key: 'bangumi:1', confidence: 0.99);
+      final LibraryCurateRun run = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      expect(mediaAsked, hasLength(1));
+      expect(applyArgs, isEmpty);
+      expect(
+        run.pendingItems
+            .where(
+              (LibraryCuratePendingItem p) => p.kind == 'book_scrape_pending',
+            )
+            .map(
+              (LibraryCuratePendingItem p) => '${p.ref}|${p.reason}|${p.ai}',
+            ),
+        <String>['book:k1|no_fields|accepted'],
+      );
     });
 
     test('整趟撤销后下一趟（手动全量）不再写回同一本书 / 同一款游戏', () async {
