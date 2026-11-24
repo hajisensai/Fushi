@@ -11,6 +11,7 @@ import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/pages/implementations/gal_lookup_samples_dialog.dart';
 import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
@@ -78,6 +79,19 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                   : t.game_lookup_attached_risk_safe}',
         ].join('\n');
 
+        if (isGlassDesign(context)) {
+          return _buildApple(
+            context,
+            profile: profile,
+            mode: mode,
+            riskRequest: riskRequest,
+            calibrationExposed: calibrationExposed,
+            canOpenCalibration: canOpenCalibration,
+            showThreadRequiredPill: showThreadRequiredPill,
+            profileValue: profileValue,
+            detailsMessage: detailsMessage,
+          );
+        }
         // 2026-11 拼贴改版：「游戏内查词」从一行混杂的灰标签改成一组能力小卡——
         // 分区标题（+ 技术细节信息钮 / 风险确认）下面是等宽小卡：查词模式（点开
         // 模式菜单）、启用状态（语义色状态签）、校准档案（可校准时点卡直接校准）、
@@ -262,6 +276,215 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  /// Cupertino 外观：同一组数据与动作摆成 inset grouped 行——查词模式是 Apple
+  /// 下拉（各模式行首 ✓、校准 / 清除档案），状态是系统色文字，校准档案与对话校准
+  /// 是可点的去往行。不经 Material（无 PopupMenuItem / Material 透明层）。
+  Widget _buildApple(
+    BuildContext context, {
+    required GalLookupSurfaceProfileV1? profile,
+    required GalLookupSurfaceMode mode,
+    required GalAttachedUnsafeRiskAcceptanceRequest? riskRequest,
+    required bool calibrationExposed,
+    required bool canOpenCalibration,
+    required bool showThreadRequiredPill,
+    required String profileValue,
+    required String detailsMessage,
+  }) {
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool samplesEnabled =
+        hasSelectedBodyThread &&
+        controller.executableSha256 != null &&
+        controller.currentClient != null;
+    final bool calibrateEnabled = calibrationExposed && canOpenCalibration;
+    final TextStyle valueStyle = metrics
+        .subtitleStyle(context)
+        .copyWith(color: apple.secondaryLabel);
+    final int count = calibrationExposed ? 4 : 3;
+    Widget row({
+      required int index,
+      required IconData icon,
+      required String label,
+      required Widget value,
+      VoidCallback? onTap,
+      FushiFocusId? focusId,
+      Key? key,
+      bool chevron = false,
+    }) => FushiGroupedListItem(
+      key: key,
+      index: index,
+      count: count,
+      onTap: onTap,
+      focusId: focusId,
+      child: FushiListItem(
+        density: FushiListDensity.compact,
+        leading: FushiIcon(
+          icon,
+          size: metrics.leadingIconSize,
+          color: apple.accent,
+        ),
+        title: Text(label),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 140),
+              child: DefaultTextStyle.merge(
+                style: valueStyle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                child: value,
+              ),
+            ),
+            if (chevron) ...<Widget>[
+              const SizedBox(width: 4),
+              const FushiAppleChevron(),
+            ],
+          ],
+        ),
+      ),
+    );
+    final Color statusColor = switch (galAttachedTextStatusTone(
+      controller.status,
+    )) {
+      FushiTagTone.success => apple.success,
+      FushiTagTone.warning => apple.warning,
+      FushiTagTone.error => apple.destructive,
+      FushiTagTone.accent => apple.accent,
+      _ => apple.secondaryLabel,
+    };
+    return Column(
+      key: const ValueKey<String>('game-attached-lookup-workbench'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: <Widget>[
+            if (riskRequest != null)
+              FushiTextButton.icon(
+                key: const ValueKey<String>('game-attached-lookup-accept-risk'),
+                onPressed: () => _acceptRisk(context, riskRequest),
+                icon: const FushiIcon(FushiIcons.warning, size: 18),
+                label: Text(t.game_lookup_attached_risk_accept),
+              ),
+            FushiTooltip(
+              message: '${t.game_lookup_attached_no_ocr}\n$detailsMessage',
+              child: Padding(
+                key: const ValueKey<String>('game-attached-lookup-details'),
+                padding: const EdgeInsets.all(6),
+                child: FushiIcon(
+                  FushiIcons.info,
+                  size: metrics.leadingIconSize,
+                  color: apple.secondaryLabel,
+                ),
+              ),
+            ),
+          ],
+        ),
+        FushiMenuAnchor(
+          menuChildren: <Widget>[
+            for (final GalLookupSurfaceMode value
+                in GalLookupSurfaceMode.values)
+              RadioMenuButton<GalLookupSurfaceMode>(
+                value: value,
+                groupValue: mode,
+                onChanged: controller.target == null
+                    ? null
+                    : (GalLookupSurfaceMode? picked) {
+                        if (picked != null) {
+                          unawaited(controller.setMode(picked));
+                        }
+                      },
+                child: Text(_modeLabel(value)),
+              ),
+            if (calibrationExposed)
+              MenuItemButton(
+                key: const ValueKey<String>('game-attached-lookup-calibrate'),
+                onPressed: canOpenCalibration
+                    ? () => unawaited(_openCalibration(context))
+                    : null,
+                child: Text(t.game_lookup_attached_calibrate),
+              ),
+            if (profile != null)
+              MenuItemButton(
+                key: const ValueKey<String>(
+                  'game-attached-lookup-clear-profile',
+                ),
+                onPressed: () => unawaited(_clearProfile(context)),
+                child: Text(t.game_lookup_attached_profile_clear),
+              ),
+          ],
+          builder: (BuildContext context, MenuController menu, Widget? child) =>
+              row(
+                key: const ValueKey<String>('game-attached-lookup-mode'),
+                index: 0,
+                icon: Icons.tune_outlined,
+                label: t.game_lookup_attached_mode,
+                value: Text(_modeLabel(mode)),
+                focusId: const FushiFocusId('game-attached-lookup-mode'),
+                onTap: () => menu.isOpen ? menu.close() : menu.open(),
+                chevron: true,
+              ),
+        ),
+        row(
+          index: 1,
+          icon: galAttachedTextStatusIcon(controller.status),
+          label: t.game_lookup_attached_status,
+          value: Text(
+            galAttachedTextStatusLabel(controller.status),
+            key: const ValueKey<String>('game-attached-lookup-status'),
+            style: valueStyle.copyWith(color: statusColor),
+          ),
+        ),
+        row(
+          index: 2,
+          icon: Icons.straighten_outlined,
+          label: t.game_lookup_attached_profile,
+          value: Text(profileValue),
+          focusId: const FushiFocusId('game-attached-lookup-profile-tile'),
+          onTap: calibrateEnabled
+              ? () => unawaited(_openCalibration(context))
+              : null,
+          chevron: calibrateEnabled,
+        ),
+        if (calibrationExposed)
+          row(
+            key: const ValueKey<String>(
+              'game-attached-lookup-dialogue-samples',
+            ),
+            index: 3,
+            icon: FushiIcons.quote,
+            label: t.game_lookup_samples_dialogue,
+            value: Text(t.game_lookup_attached_calibrate),
+            focusId: const FushiFocusId(
+              'game-attached-lookup-dialogue-samples',
+            ),
+            onTap: samplesEnabled
+                ? () => unawaited(
+                    _openSamples(
+                      context,
+                      slot: GalLookupCalibrationSlotV1.dialogue,
+                    ),
+                  )
+                : null,
+            chevron: true,
+          ),
+        if (showThreadRequiredPill)
+          Padding(
+            padding: EdgeInsets.fromLTRB(metrics.rowHorizontal, 6, 8, 0),
+            child: Text(
+              '${t.game_lookup_attached_calibrate}: '
+              '${t.game_lookup_attached_thread_required}',
+              style: metrics
+                  .footnoteStyle(context)
+                  .copyWith(color: apple.warning),
+            ),
+          ),
+      ],
     );
   }
 
