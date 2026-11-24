@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
@@ -25,9 +26,10 @@ import 'package:fushi/src/storage/directory_move.dart'
 ///  - 只碰数据根自有的顶层项（[AppPaths.fushiOwnedDocumentsEntries]，去掉不计证据的
 ///    运行目录），别的一概不碰。
 ///
-/// 顺序（崩溃安全）：先在主库里把落选根前缀的路径改写到书库根，再逐个搬文件。半途崩溃时
-/// 没搬完的文件仍在落选根里，下次启动两边仍都有书 → 再作证一次（尾段计票与路径前缀无关，
-/// 结论不变）→ 再合并一次（改写已是空操作，搬剩下的）。
+/// 顺序（失败不留半成品、崩溃可续）：先把要搬的文件复制成书库根里的暂存件，全部成功
+/// 才改写主库、再提交暂存件并删源；复制失败（空间不够等）就撤掉暂存件，主库与落选根
+/// 原样不动。提交途中崩溃时落选根里还有源 → 下次启动再作证一次（尾段计票与路径前缀
+/// 无关，结论不变）→ 再合并一次（改写已是空操作，补完剩下的）。详见 [run]。
 class AndroidStrayLibraryMerge {
   const AndroidStrayLibraryMerge._();
 
@@ -37,14 +39,20 @@ class AndroidStrayLibraryMerge {
       .difference(AppPaths.libraryEvidenceIgnoredEntries);
 
   /// 规划：只读，不改磁盘。
+  ///
+  /// 同相对路径两边都有的文件先只比长度：任何一对长度不同就已是冲突，整次合并注定
+  /// 放弃，不再逐字节读其余副本（冲突会让落选根一直留着，每次启动都要重新规划一遍；
+  /// 不提前收手的话，每次启动都要把两边的整份副本读一遍）。长度全对上才逐字节比，
+  /// 遇到第一处不同同样立即收手。所以 [AndroidStrayMergePlan.conflicts] 非空时只保证
+  /// 「至少有这些冲突」，[AndroidStrayMergePlan.duplicates] 也可能没比完——反正不执行。
   static Future<AndroidStrayMergePlan> plan({
     required Directory libraryRoot,
     required Directory strayRoot,
   }) async {
     final List<String> moves = <String>[];
-    final List<String> duplicates = <String>[];
     final List<String> partials = <String>[];
     final List<String> conflicts = <String>[];
+    final List<String> sameLength = <String>[];
     for (final String name in mergedTopLevelNames) {
       final Directory dir = Directory(p.join(strayRoot.path, name));
       if (!await dir.exists()) continue;
@@ -65,13 +73,27 @@ class AndroidStrayLibraryMerge {
           case FileSystemEntityType.notFound:
             moves.add(rel);
           case FileSystemEntityType.file:
-            if (await sameContent(e, File(target))) {
-              duplicates.add(rel);
+            if (await e.length() == await File(target).length()) {
+              sameLength.add(rel);
             } else {
               conflicts.add(rel);
             }
           default:
             conflicts.add(rel);
+        }
+      }
+    }
+    final List<String> duplicates = <String>[];
+    if (conflicts.isEmpty) {
+      for (final String rel in sameLength) {
+        if (await sameContent(
+          File(p.join(strayRoot.path, rel)),
+          File(p.join(libraryRoot.path, rel)),
+        )) {
+          duplicates.add(rel);
+        } else {
+          conflicts.add(rel);
+          break;
         }
       }
     }
@@ -84,6 +106,17 @@ class AndroidStrayLibraryMerge {
   }
 
   /// 执行合并。不抛异常：失败 / 放弃都写进返回值，由调用方记诊断。
+  ///
+  /// 顺序保证「失败 = 什么都没变」：
+  ///  ① 规划（后台 isolate：要逐字节比副本，不占 UI isolate）；
+  ///  ② fast-resume 改写（可回滚）；
+  ///  ③ 把要搬的文件**复制**成书库根里的 `*.fushi-part`（Android 内部 filesDir 与外部
+  ///     Android/data 不在同一文件系统，本来就只能复制）。空间不够 / IO 出错 → 删掉已写的
+  ///     暂存件、回滚 fast-resume，库与落选根原样，书仍按原路径可读；
+  ///  ④ 改写主库（一个事务；失败同 ③ 回滚）；
+  ///  ⑤ 暂存件同目录改名成正式名、删落选根的源、删同内容副本与半截文件。
+  /// ④ 之后崩溃：落选根里还有没删的源 → 下次启动再作证（结论不变）→ 再合并（改写是
+  /// 空操作，暂存件被重新复制覆盖），收敛。
   static Future<AndroidStrayMergeOutcome> run({
     required FushiDatabase db,
     required Directory libraryRoot,
@@ -98,10 +131,7 @@ class AndroidStrayLibraryMerge {
           p.isWithin(stray, lib)) {
         return const AndroidStrayMergeOutcome.skipped('两个根重合或互相嵌套');
       }
-      final AndroidStrayMergePlan planned = await plan(
-        libraryRoot: libraryRoot,
-        strayRoot: strayRoot,
-      );
+      final AndroidStrayMergePlan planned = await _planInBackground(lib, stray);
       if (planned.conflicts.isNotEmpty) {
         return AndroidStrayMergeOutcome.conflicted(planned);
       }
@@ -112,24 +142,51 @@ class AndroidStrayLibraryMerge {
         newRoot: libraryRoot.path,
         scopeTopLevelNames: mergedTopLevelNames,
       );
-      // ① 先改写：内置引擎 fast-resume（两个根里的都改，落选根的随后被搬走）+ 主库。
-      for (final Directory root in <Directory>[libraryRoot, strayRoot]) {
-        await DataRootMigrator.rebaseEmbeddedTorrentFastResume(
-          documentsRoot: root.path,
+      // ② 内置引擎 fast-resume：两个根里的都改（落选根的随后被复制过去，复制的是改写后的）。
+      final List<FastResumeRebase> resumeRebases = <FastResumeRebase>[];
+      final List<File> staged = <File>[];
+      try {
+        for (final Directory root in <Directory>[libraryRoot, strayRoot]) {
+          resumeRebases.add(
+            await DataRootMigrator.rebaseEmbeddedTorrentFastResume(
+              documentsRoot: root.path,
+              docs: docs,
+            ),
+          );
+        }
+        // ③ 暂存。
+        for (final String rel in planned.moves) {
+          final File part = _stagedPart(libraryRoot, rel);
+          await part.parent.create(recursive: true);
+          staged.add(part);
+          await File(p.join(strayRoot.path, rel)).copy(part.path);
+        }
+        // ④ 主库。
+        await DataRootMigrator.rebaseOpenDatabasePaths(
+          db: db,
           docs: docs,
+          newSupportRoot: supportRoot,
         );
+      } on Object {
+        for (final File part in staged) {
+          try {
+            if (await part.exists()) await part.delete();
+          } on FileSystemException {
+            // 删不掉的暂存件不是书库证据（`*.fushi-part`），下次合并会被覆盖。
+          }
+        }
+        for (final FastResumeRebase rebase in resumeRebases.reversed) {
+          await rebase.revert();
+        }
+        rethrow;
       }
-      await DataRootMigrator.rebaseOpenDatabasePaths(
-        db: db,
-        docs: docs,
-        newSupportRoot: supportRoot,
-      );
-      // ② 再搬文件。
+      // ⑤ 提交。
       for (final String rel in planned.moves) {
-        await _moveFile(
-          File(p.join(strayRoot.path, rel)),
-          File(p.join(libraryRoot.path, rel)),
-        );
+        await _stagedPart(
+          libraryRoot,
+          rel,
+        ).rename(p.join(libraryRoot.path, rel));
+        await File(p.join(strayRoot.path, rel)).delete();
       }
       for (final String rel in <String>[
         ...planned.duplicates,
@@ -147,21 +204,21 @@ class AndroidStrayLibraryMerge {
     }
   }
 
-  /// 搬一个文件：同卷 rename；跨卷先复制成 `*.fushi-part` 再改名、最后删源，任何时刻
-  /// 目标里的正式名都是完整文件。
-  static Future<void> _moveFile(File source, File target) async {
-    await target.parent.create(recursive: true);
-    try {
-      await source.rename(target.path);
-      return;
-    } on FileSystemException {
-      // 跨卷（内部 filesDir ↔ 外部 Android/data）：走复制。
-    }
-    final File part = File('${target.path}$kDirectoryCopyPartSuffix');
-    await source.copy(part.path);
-    await part.rename(target.path);
-    await source.delete();
-  }
+  /// 在后台 isolate 里跑 [plan]。单独成函数：闭包只捕获两条路径字符串，不会把
+  /// [run] 里握着的主库连接一起带去序列化。
+  static Future<AndroidStrayMergePlan> _planInBackground(
+    String libraryRoot,
+    String strayRoot,
+  ) => Isolate.run<AndroidStrayMergePlan>(
+    () => plan(
+      libraryRoot: Directory(libraryRoot),
+      strayRoot: Directory(strayRoot),
+    ),
+  );
+
+  /// [rel] 在书库根里的暂存件（`<正式名>.fushi-part`，同目录改名即提交）。
+  static File _stagedPart(Directory libraryRoot, String rel) =>
+      File('${p.join(libraryRoot.path, rel)}$kDirectoryCopyPartSuffix');
 
   /// 自底向上删掉 [dir] 里没有任何文件的目录（含 [dir] 本身）；返回删完后它是否为空。
   static Future<bool> _deleteEmptyDirectories(Directory dir) async {
