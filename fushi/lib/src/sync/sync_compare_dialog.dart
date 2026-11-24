@@ -9,6 +9,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/sync/book_change_gate.dart'
+    show publishOwnBookManifestAfterBookSync;
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
@@ -1198,6 +1200,10 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
     }
     // 统计不分方向（按天并集、值取大），与 sweep 的互联聚合阶段同一份实现，只合并
     // 统计这一族。
+    if (backend is! InterconnectSyncBackend && applied > 0) {
+      // wiO0nN8aiG：手动应用改了书文件夹，让对端下一轮按书级清单看见。
+      await publishOwnBookManifestAfterBookSync(db: db, backend: backend);
+    }
     if (backend is InterconnectSyncBackend && syncStats && liveBooksTouched) {
       try {
         await AggregateSyncService(
