@@ -80,6 +80,8 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
         return <String, Object?>{
           'source': source.name,
           'query': query,
+          // 原词零结果时实际命中的改写词（去卷号 / 拆混写名，BUG-5372）。
+          if (found.query != query.trim()) 'matchedQuery': found.query,
           'candidates': <Map<String, Object?>>[
             for (final BookScrapeCandidate c in found.candidates)
               bookScrapeCandidateJson(c),
@@ -120,12 +122,19 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
       final String id = call.params['id'] ?? '';
       final BookMetadataScrapeFacade facade = bookMetadataFacadeFactory();
       try {
-        final List<BookVolumeCover> volumes = await _scrape(
-          () => facade.volumeCovers(id),
+        // language：书的版本语言（zh / ko…）；该语言没有卷封面时回落日文版。
+        final BookVolumeCoverSet set = await _scrape(
+          () => facade.volumeCoverSet(
+            id,
+            language: call.optString('language') ?? '',
+          ),
         );
+        final List<BookVolumeCover> volumes = set.covers;
         return <String, Object?>{
           'source': source.name,
           'id': id,
+          // 实际用的版本语言（与请求的不同 = 回落了日文版）。
+          'language': set.language,
           'volumes': <Map<String, Object?>>[
             for (final BookVolumeCover v in volumes)
               <String, Object?>{
@@ -193,8 +202,15 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
           if (volume == null) {
             cover = await _scrape(() => facade.downloadCover(candidate));
           } else {
+            // 按这本书的版本语言挑卷封面（中文版用中文版封面，没有再回落日文版）。
+            final String language =
+                await BookMetadataScrapeFacade.languageForItem(
+                  app().database,
+                  item,
+                );
             final List<BookVolumeCover> volumes = await _scrape(
-              () => facade.volumeCovers(candidate.subjectId),
+              () =>
+                  facade.volumeCovers(candidate.subjectId, language: language),
             );
             final BookVolumeCover? picked = volumes
                 .where((BookVolumeCover v) => (v.volume - volume).abs() < 0.01)

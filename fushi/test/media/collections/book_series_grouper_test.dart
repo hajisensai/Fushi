@@ -31,6 +31,22 @@ void main() {
       });
     });
 
+    // BUG-5372：中文（简 / 繁、港台「第N集」）与韩文「N권」卷号单位。
+    test('中文 / 韩文卷号单位：卷 / 冊 / 册 / 集 / 권', () {
+      final Map<String, (String, num)> volumes = <String, (String, num)>{
+        '进击的巨人 第1卷': ('进击的巨人', 1),
+        '進擊的巨人 第2冊': ('進擊的巨人', 2),
+        '一人之下 第3册': ('一人之下', 3),
+        '龍珠 第4集': ('龍珠', 4),
+        '나 혼자만 레벨업 5권': ('나 혼자만 레벨업', 5),
+      };
+      volumes.forEach((String title, (String, num) want) {
+        final BookSeriesKey key = parseBookSeriesKey(title)!;
+        expect(key.seriesTitle, want.$1, reason: title);
+        expect(key.volume, want.$2, reason: title);
+      });
+    });
+
     // rT5chqFYOK：按话发布的漫画「X 第N話 前編 [hash]」每话各占一张卡。
     test('漫画按话：第N話（可带前編 / 中編 / 後編）归到同一系列，话号不当卷号', () {
       final Map<String, BookEpisodeNumber> episodes =

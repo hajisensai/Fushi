@@ -6,6 +6,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
+import 'package:fushi_engine/media/metadata/books/book_search_query.dart'
+    show parseBookSearchSeries;
 import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
     show findIsbnIn, normalizeIsbn13;
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
@@ -16,6 +18,10 @@ import 'package:fushi/src/media/metadata/scrape_failure_view.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_dialog.dart'
     show writeMediaNsfw;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/content_language_picker.dart'
+    show contentLanguageLabelOf;
+import 'package:fushi_engine/models/content_language.dart'
+    show contentLanguageKey;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -57,6 +63,7 @@ Future<BookCoverScrapeSelection?> showBookCoverScrapeDialog({
   required BuildContext context,
   required String initialQuery,
   num? volume,
+  String language = '',
   String? isbn,
   RakutenBooksCredentials? rakuten,
   bool includeNsfw = false,
@@ -68,6 +75,7 @@ Future<BookCoverScrapeSelection?> showBookCoverScrapeDialog({
     builder: (BuildContext ctx) => BookCoverScrapeDialog(
       initialQuery: initialQuery,
       volume: volume,
+      language: language,
       isbn: isbn,
       rakuten: rakuten,
       includeNsfw: includeNsfw,
@@ -92,11 +100,16 @@ Future<BookCoverScrapeSelection?> showBookCoverScrapeDialogForItem({
   final BookNsfwHost? host = BookMetadataScrapeFacade.nsfwHostForItem(item);
   final bool nsfw = await BookMetadataScrapeFacade.isNsfwHost(db, host);
   final bool song = await BookMetadataScrapeFacade.isSongForItem(db, item);
+  final String language = await BookMetadataScrapeFacade.languageForItem(
+    db,
+    item,
+  );
   if (!context.mounted) return null;
   return showBookCoverScrapeDialog(
     context: context,
     initialQuery: initialQuery,
     volume: volume,
+    language: language,
     isbn: isbn,
     rakuten: rakuten,
     includeNsfw: nsfw,
@@ -122,6 +135,7 @@ class BookCoverScrapeDialog extends StatefulWidget {
     this.scraperOverride,
     this.downloaderOverride,
     this.volume,
+    this.language = '',
     this.isbn,
     this.rakuten,
     this.includeNsfw = false,
@@ -141,8 +155,12 @@ class BookCoverScrapeDialog extends StatefulWidget {
   /// 宿主，只提示不给按钮。
   final Future<void> Function()? onMarkNsfw;
 
-  /// 本地书的卷号（MangaBaka 卷封面网格预选这一卷）；null = 不预选。
+  /// 本地书的卷号（MangaBaka 卷封面网格预选这一卷）；null = 从预填书名解析。
   final num? volume;
+
+  /// 书的版本语言（`zh` / `ko`…，空 = 不知道，按日文版）：MangaBaka 卷封面先挑这个
+  /// 语言的，没有再回落日文版并提示。
+  final String language;
 
   /// 书本身的 ISBN-13（没有为 null），openBD 预填用。
   final String? isbn;
@@ -183,6 +201,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   late final BookMetadataScrapeFacade _facade;
   late BookScrapeSource _source;
 
+  /// 卷封面网格预选的卷号：[BookCoverScrapeDialog.volume]，没给时从预填书名解析。
+  late final num? _wantedVolume;
+
   List<BookScrapeCandidate> _results = const <BookScrapeCandidate>[];
   bool _searching = false;
   bool _searched = false;
@@ -206,6 +227,10 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   /// 上次搜索因书没标 NSFW 藏起来的候选条数。
   int _hiddenNsfw = 0;
 
+  /// 上次搜索实际命中的词与搜索框里的词不同时（原词零结果、改写后命中，BUG-5372）
+  /// 记下它，结果区顶上写「显示的是 X 的结果」；null = 就是框里的词。
+  String? _matchedQuery;
+
   /// 「标为 NSFW」正在写库。
   bool _markingNsfw = false;
 
@@ -214,6 +239,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   List<BookVolumeCover> _volumes = const <BookVolumeCover>[];
   bool _loadingVolumes = false;
   Object? _volumeFailure;
+
+  /// 卷封面实际用的版本语言（与书的语言不同 = 回落了日文版）。
+  String _volumeLanguage = '';
 
   /// 正在下载的那一卷（转圈）。
   BookVolumeCover? _applyingVolume;
@@ -226,6 +254,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       isSong: widget.isSong,
     );
     _source = source;
+    // 调用方没给卷号（书架卡菜单）时从书名读：「…第01巻」→ 1。
+    _wantedVolume =
+        widget.volume ?? parseBookSearchSeries(widget.initialQuery)?.volume;
     _includeNsfw = widget.includeNsfw;
     _queryCtrl = TextEditingController(text: query);
     _scraper =
@@ -271,6 +302,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     });
     List<BookScrapeCandidate> results = const <BookScrapeCandidate>[];
     int hidden = 0;
+    String? matched;
     Object? failure;
     try {
       final BookScrapeSearchResult found = await _facade.searchDetailed(
@@ -280,6 +312,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       );
       results = found.candidates;
       hidden = found.hiddenNsfw;
+      matched = found.query == keyword ? null : found.query;
     } catch (e, stack) {
       // BUG-1176：失败要有出口。界面出可见失败行，原始原因落错误日志（用户可在
       // 「错误日志」页查看/上传），不静默塌缩成空列表。
@@ -290,6 +323,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     setState(() {
       _results = results;
       _hiddenNsfw = hidden;
+      _matchedQuery = matched;
       _searching = false;
       _searchFailure = failure;
     });
@@ -358,9 +392,15 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       _volumeFailure = null;
     });
     List<BookVolumeCover> volumes = const <BookVolumeCover>[];
+    String language = '';
     Object? failure;
     try {
-      volumes = await _facade.volumeCovers(candidate.subjectId);
+      final BookVolumeCoverSet set = await _facade.volumeCoverSet(
+        candidate.subjectId,
+        language: widget.language,
+      );
+      volumes = set.covers;
+      language = set.language;
     } catch (e, stack) {
       ErrorLogService.instance.log('BookCoverScrapeDialog.volumes', e, stack);
       failure = e;
@@ -368,6 +408,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     if (!mounted) return;
     setState(() {
       _volumes = volumes;
+      _volumeLanguage = language;
       _loadingVolumes = false;
       _volumeFailure = failure;
     });
@@ -556,9 +597,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
         detail: _volumeFailure.toString(),
       );
     } else if (_volumes.isEmpty) {
-      body = Center(child: Text(t.book_scrape_volume_empty));
+      body = Center(child: Text(t.book_scrape_volume_none));
     } else {
-      final num? wanted = widget.volume;
+      final num? wanted = _wantedVolume;
       bool isWanted(BookVolumeCover v) =>
           wanted != null && (v.volume - wanted).abs() < 0.01;
       final List<BookVolumeCover> ordered = <BookVolumeCover>[
@@ -589,8 +630,33 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         header,
+        // 书是别的语言版本、MangaBaka 没有这个语言的卷封面：回落日文版并写明。
+        if (_volumeFallbackNotice() case final String notice)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              notice,
+              key: const ValueKey<String>('book_scrape_volume_fallback'),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
         Flexible(child: body),
       ],
+    );
+  }
+
+  /// 卷封面回落提示（书的语言与实际用的语言不同时）；不需要提示为 null。
+  String? _volumeFallbackNotice() {
+    final String wanted = contentLanguageKey(widget.language);
+    if (_loadingVolumes ||
+        _volumes.isEmpty ||
+        wanted.isEmpty ||
+        wanted == _volumeLanguage) {
+      return null;
+    }
+    return t.book_scrape_volume_fallback(
+      language: contentLanguageLabelOf(wanted),
+      fallback: contentLanguageLabelOf(_volumeLanguage),
     );
   }
 
@@ -679,12 +745,23 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
             itemBuilder: (BuildContext context, int index) =>
                 _buildTile(theme, tokens, _results[index]),
           );
-    if (_hiddenNsfw == 0) return list;
+    final String? matched = _matchedQuery;
+    if (_hiddenNsfw == 0 && matched == null) return list;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        _buildNsfwNotice(theme),
+        // 原词零结果、改写后命中：写明结果是按哪个词搜的（不悄悄换词）。
+        if (matched != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Text(
+              t.book_scrape_matched_query(query: matched),
+              key: const ValueKey<String>('book_scrape_matched_query'),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        if (_hiddenNsfw > 0) _buildNsfwNotice(theme),
         Flexible(child: list),
       ],
     );
