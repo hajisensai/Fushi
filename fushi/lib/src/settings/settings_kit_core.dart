@@ -741,6 +741,7 @@ class SettingsFloatingHeader extends StatefulWidget {
     required this.title,
     super.key,
     this.subtitle,
+    this.pinnedSubtitle,
     this.onBack,
     this.actions = const <Widget>[],
     this.scrollController,
@@ -750,6 +751,10 @@ class SettingsFloatingHeader extends StatefulWidget {
 
   final String title;
   final String? subtitle;
+
+  /// 页名下常驻的一行（宿主给的组件，可交互，如词典管理页的「配置 · 名字」
+  /// 按钮），排在 [subtitle]（当前分组名）之前；不随滚动分组切换。
+  final Widget? pinnedSubtitle;
   final VoidCallback? onBack;
   final List<Widget> actions;
   final ScrollController? scrollController;
@@ -833,6 +838,7 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
       offset: _mastheadOffset,
     );
     final String? subtitle = widget.subtitle;
+    final Widget? pinned = widget.pinnedSubtitle;
     final Widget subtitleLine = AnimatedSwitcher(
       duration: fushiMotionDuration(context, FushiMotion.short),
       switchInCurve: FushiMotion.enter,
@@ -873,7 +879,13 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
       progress: p,
       onBack: widget.onBack,
       actions: widget.actions,
-      subtitle: subtitleLine,
+      subtitle: pinned == null
+          ? subtitleLine
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[pinned, subtitleLine],
+            ),
       badge: icon == null
           ? null
           : (BuildContext context, bool compact, double p) => SettingsShapeIcon(
@@ -991,6 +1003,7 @@ class _SettingsFloatingHeaderState extends State<SettingsFloatingHeader> {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle.lerp(expandedTitle, collapsedTitle, c),
                     ),
+                    ?widget.pinnedSubtitle,
                     AnimatedSwitcher(
                       duration: fushiMotionDuration(context, FushiMotion.short),
                       switchInCurve: FushiMotion.enter,
@@ -1525,9 +1538,13 @@ class SettingsKitScaffold extends StatefulWidget {
     this.sections = const <(String, String)>[],
     this.floatingActionButton,
     this.bodyConsumesTopPadding = false,
+    this.subtitle,
   });
 
   final String title;
+
+  /// 页名下常驻的一行（见 [SettingsFloatingHeader.pinnedSubtitle]）。
+  final Widget? subtitle;
   final IconData? leadingIcon;
   final SettingsIconTone leadingTone;
   final List<Widget> actions;
@@ -1684,6 +1701,7 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
         return SettingsFloatingHeader(
           title: widget.title,
           subtitle: activeTitle,
+          pinnedSubtitle: widget.subtitle,
           leadingIcon: widget.leadingIcon,
           leadingTone: widget.leadingTone,
           scrollController: _controller,
