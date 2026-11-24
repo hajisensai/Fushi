@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Favorites widget C</title>
+<style>
+:root{--bg:#f6f2f8;--surface:#fff;--surface2:#efe9f3;--on:#1d1b20;--muted:#5f5a66;--primary:#6750a4;--onprimary:#fff;--chip:#e8def8;--line:#e2dce8;--heart:#c2185b}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141218;--surface:#211f26;--surface2:#2b2930;--on:#e6e0e9;--muted:#b4adbb;--primary:#d0bcff;--onprimary:#381e72;--chip:#4a4458;--line:#3a3740;--heart:#f48fb1}}
+:root[data-theme="dark"]{--bg:#141218;--surface:#211f26;--surface2:#2b2930;--on:#e6e0e9;--muted:#b4adbb;--primary:#d0bcff;--onprimary:#381e72;--chip:#4a4458;--line:#3a3740;--heart:#f48fb1}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--on);font:15px/1.45 system-ui,"Segoe UI",sans-serif;padding:24px 16px}
+h1{font-size:20px;margin:0 0 4px}p.lead{color:var(--muted);margin:0 0 24px;max-width:760px}
+h2{font-size:14px;color:var(--muted);font-weight:600;margin:28px 0 10px;text-transform:uppercase;letter-spacing:.04em}
+.wrap{display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start}
+.w{background:var(--surface);border-radius:24px;padding:14px;display:flex;flex-direction:column;gap:8px;border:1px solid var(--line);width:300px;max-width:100%}
+.hdr{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px}.hdr .grow{flex:1}.heart{color:var(--heart)}
+.sheet{background:var(--surface);border-radius:28px 28px 0 0;padding:18px;width:340px;max-width:100%;border:1px solid var(--line)}
+.sheet h3{margin:0 0 12px;font-size:16px}
+.seg{display:flex;border:1px solid var(--muted);border-radius:20px;overflow:hidden;margin-bottom:14px}
+.seg span{flex:1;text-align:center;padding:6px;font-size:13px}.seg .on{background:var(--chip);font-weight:600}
+.opt{display:flex;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+.opt .v{color:var(--muted)}
+.sent{font-size:14px}.src{font-size:11px;color:var(--muted)}
+.note{color:var(--muted);font-size:13px;max-width:760px}
+</style>
+</head>
+<body>
+<h1>Option C: Both, picked per widget</h1>
+<p class="lead">One widget type with a setting in its edit sheet: <b>Recent</b> (option A) or <b>Resurface</b> (option B). Like Language goals, it can be added more than once, e.g. one of each.</p>
+
+<h2>Widget edit sheet</h2>
+<div class="wrap">
+  <div class="sheet">
+    <h3>Favorites widget</h3>
+    <div class="seg"><span class="on">Recent</span><span>Resurface</span></div>
+    <div class="opt"><span>Source</span><span class="v">All ▾</span></div>
+    <div class="opt"><span>Show "Create cards"</span><span class="v">On</span></div>
+  </div>
+  <div class="w">
+    <div class="hdr"><span class="heart">♥</span><span class="grow">Favorites · Recent</span></div>
+    <div class="sent">もう二度と会えないなんて、信じたくなかった。</div><div class="src">Frieren · E07</div>
+  </div>
+  <div class="w">
+    <div class="hdr"><span class="heart">♥</span><span class="grow">From your favorites</span></div>
+    <div class="sent">雨の匂いがすると、あの日を思い出す。</div><div class="src">Kafka on the Shore · Ch 3</div>
+  </div>
+</div>
+
+<h2>Cost</h2>
+<ul class="note">
+  <li>Most flexible, but it needs per-widget configuration (a repeatable widget kind with a mode slot, like Language goals) and roughly twice the layouts to build and test.</li>
+  <li>The optional "Source" filter (Books / Video / Manga / …) is only worth adding if the maintainer wants it.</li>
+</ul>
+</body>
+</html>
