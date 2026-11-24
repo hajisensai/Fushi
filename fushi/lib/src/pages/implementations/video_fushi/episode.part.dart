@@ -541,10 +541,20 @@ extension _VideoEpisode on _VideoFushiPageState {
     final Future<Map<String, CoverMeta>> coverMeta = loadVideoCoverMetaByUid(
       'VideoFushiPage._loadPlaylistEpisodeThumbSources',
     );
-    final Map<String, List<VideoFileEpisodeStills>> stills =
-        videoFileEpisodeStillsByBook(
-          await appModel.database.getVideoFileEpisodeRows(uids),
-        );
+    // 本方法以 unawaited 起跑：查库失败只让剧照一环缺席（面板照旧按截图 / 合集段
+    // 取图），记诊断后继续，不让它变成未处理的异步异常。
+    Map<String, List<VideoFileEpisodeStills>> stills =
+        const <String, List<VideoFileEpisodeStills>>{};
+    try {
+      stills = videoFileEpisodeStillsByBook(
+        await appModel.database.getVideoFileEpisodeRows(uids),
+      );
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'VideoFushiPage._loadPlaylistEpisodeThumbSources',
+        error,
+      );
+    }
     final Map<String, CoverMeta> meta = await coverMeta;
     if (!mounted || !identical(_episodes, refs)) return;
     _rebuild(() {
