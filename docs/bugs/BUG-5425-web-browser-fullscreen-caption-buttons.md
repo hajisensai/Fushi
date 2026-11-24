@@ -1,0 +1,6 @@
+## BUG-5425 · 内置浏览器网页全屏时窗口右上角最小化 / 最大化 / 关闭不隐藏
+- **报告**：2026-11-25（用户：开发者应用内反馈 WtYMwfPjpe「顶栏的右上角的缩小放大关闭好像不会隐藏」，Windows，3.4.0-debug.32189）
+- **真实性**：✅ 真 bug。截图里是 YouTube 网页自己的全屏 UI（标题左上、底部点赞 / 点踩 / 评论 / 分享行），即内置浏览器里网站请求全屏、被截成页内伪全屏（`web_browser_page_scripts.dart` 的 `webBrowserFullscreenScript`）。根因 `fushi/lib/src/pages/implementations/fushi_web_browser_page.dart:1196`（`_applyFullscreenDisplay`）：网页全屏只收起浏览器自己的 chrome、在手机上藏系统栏（`_applySystemUi`），桌面自绘顶栏（`FushiDesktopTitleBar`，普通页常显）没有任何人通知，最小化 / 最大化 / 关闭三颗按钮一直压在全屏视频右上角。分诊初判的「Fushi 播放器 `fullscreen.part.dart`」路径核对过：原生播放器进全屏时已经 `setContentFullscreen` 收起整条顶栏，不是这里。
+- **[x] ① 已修复** — 新增 `FushiTitleBarFullscreenScope`（`fushi_desktop_title_bar.dart`）：页面声明「此刻页内全屏」，以 owner 身份认领内容全屏，自绘顶栏整个收起（按钮、拖动区、顶边 resize 把手、macOS 红绿灯），被别的整页盖住 / 离开页面时撤回；内容全屏的 notifier 由祖先顶栏监听，build / 卸载期间的表态推到帧尾。浏览器页按前台标签页的 `fullscreen` 挂它——这是手机「藏系统栏」的桌面对应，不改原生窗口状态。
+- **[x] ② 已加自动化测试** — `fushi/test/desktop/web_browser_fullscreen_caption_test.dart`：真 `FushiDesktopTitleBar` 外壳里页内全屏时关闭键消失、页面顶部不再让位，退出还原；被整页盖住撤回、回前台再收起、卸载归还；源码守卫浏览器页按 `tab?.fullscreen` 声明。
+- **备注**：`web_video_fushi_page.dart` 也有同类问题（`_onState` 用页面上报的 `fs` 直接覆盖 `_fullscreen`：网站自己进全屏只藏 app bar、不藏顶栏；Fushi 全屏键进窗口全屏后 250 ms 内又被轮询改回 false）。PR #4400 正把该页收成制卡重放的后台宿主，为免冲突本次不动，交该 PR 合并后复核。

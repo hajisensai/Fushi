@@ -123,6 +123,9 @@ class FushiDesktopTitleBar extends StatefulWidget {
     reassertMacTrafficLights();
   }
 
+  /// 自绘顶栏此刻是否因内容全屏整个收起（测试与布局读）。
+  static ValueListenable<bool> get contentFullscreen => _contentFullscreen;
+
   /// 沉浸页的标题行此刻是否隐去（悬停才浮出，见 [_ImmersiveCaptionReveal]）。
   /// macOS 的系统红绿灯不在 Flutter 树里、跟不上标题行的淡出，按它同步显隐。
   static bool _immersiveCaptionConcealed = false;
@@ -1935,7 +1938,54 @@ class _FushiTitleBarDragBandScopeState
   Widget get child => widget.child;
 }
 
-/// 浮出 / 拖动条两个 scope 共用的「被别的整页盖住就撤回」骨架：盯本页路由的
+/// 页面声明「本页此刻在页内全屏」：有 owner 时自绘顶栏整个收起（窗口按钮、拖动区、
+/// 顶边 resize 把手都不在，macOS 红绿灯一并隐藏，页面拿到整窗、顶部不再让位），
+/// 与内容全屏同一套 owner 语义（[FushiDesktopTitleBar.setContentFullscreen]）。
+///
+/// 给「页面自己把内容铺满窗口、但不改原生窗口状态」的全屏用：内置浏览器的网页全屏
+/// （网站请求全屏被截成页内伪全屏）是手机上「藏系统栏」的桌面对应——桌面上要藏的
+/// 就是这条标题行，否则最小化 / 最大化 / 关闭三颗按钮一直压在全屏视频右上角（反馈
+/// WtYMwfPjpe，BUG-5425）。被别的整页盖住 / dispose 时撤回，语义同
+/// [FushiTitleBarRevealScope]。
+class FushiTitleBarFullscreenScope extends StatefulWidget {
+  const FushiTitleBarFullscreenScope({
+    required this.fullscreen,
+    required this.child,
+    super.key,
+  });
+
+  final bool fullscreen;
+  final Widget child;
+
+  @override
+  State<FushiTitleBarFullscreenScope> createState() =>
+      _FushiTitleBarFullscreenScopeState();
+}
+
+class _FushiTitleBarFullscreenScopeState
+    extends _CoverAwareTitleBarScopeState<FushiTitleBarFullscreenScope> {
+  @override
+  void publish({required bool covered}) {
+    final bool enabled = widget.fullscreen && !covered;
+    void apply() => FushiDesktopTitleBar.setContentFullscreen(
+      owner: this,
+      enabled: enabled,
+    );
+    // 内容全屏的 notifier 由顶栏（本 scope 的祖先）监听：build / 卸载期间改它
+    // 等于在构建中标脏祖先，推到帧尾。帧尾回调按登记先后执行，最后一次表态胜出。
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => apply());
+    } else {
+      apply();
+    }
+  }
+
+  @override
+  Widget get child => widget.child;
+}
+
+/// 浮出 / 拖动条 / 页内全屏三个 scope 共用的「被别的整页盖住就撤回」骨架：盯本页路由的
 /// `secondaryAnimation`（PopupRoute 不推动它，弹窗不撤回），build 里上报，
 /// dispose 撤回（[publish] 传 `covered: true`）。
 abstract class _CoverAwareTitleBarScopeState<T extends StatefulWidget>

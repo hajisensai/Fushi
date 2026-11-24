@@ -2945,92 +2945,99 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       _buildShell(context, layout, size),
     );
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    // 网页全屏（网站请求全屏被截成页内伪全屏）：桌面自绘顶栏整个收起，与手机上
+    // 藏系统栏（[_applySystemUi]）同一回事——否则最小化 / 最大化 / 关闭一直压在
+    // 全屏视频右上角（反馈 WtYMwfPjpe，BUG-5425）。
+    //
     // 标签栏画进了标题行：让标题栏把那一段命中让给标签栏。标签网格盖满整页时
     // 收回，空白标题行照旧能拖窗。
-    return FushiTitleBarPassthroughScope(
-      enabled: !_gridOpen && _tabStripInCaption(context, layout, size),
-      child: PopScope(
-        // 系统返回 / 侧滑 / Esc：先关查词弹窗与临时层，再退网页历史，都退到头
-        // 才离开浏览页。
-        canPop: _backStep == WebBrowserBackStep.leavePage,
-        onPopInvokedWithResult: (bool didPop, Object? _) {
-          if (!didPop) _onBackBlocked();
-        },
-        // 快捷键的承接点必须是**能持焦的 scope**：Flutter 侧按键从 primaryFocus 往上
-        // 冒泡，曾经这里是 `canRequestFocus: false` 的裸 Focus，地址栏回车 / Esc 后
-        // `unfocus()` 把焦点交给路由 scope（在本节点之外），此后 Ctrl+F / Ctrl+T 等一律
-        // 收不到。FocusScope 自己 autofocus，页内任何 unfocus 都落回它身上。
-        // WebView 持 OS 焦点期间的按键仍走 DOM 键盘桥（[_ShortcutKeyBridge]）。
-        //
-        // 手柄：GamepadService 从 primaryFocus 往上派发 GamepadButtonIntent，这层
-        // 只认绑到 webBrowser scope 的按钮，其余显式转发给祖先（裸 CallbackAction
-        // 会让上溯停在本层，焦点导航 / B 返回上一级全失灵，见
-        // [GamepadButtonForwardingAction]）。
-        child: Actions(
-          actions: <Type, Action<Intent>>{
-            GamepadButtonIntent: GamepadButtonForwardingAction(
-              ancestorContext: context,
-              handle: handleGamepadButton,
-            ),
+    return FushiTitleBarFullscreenScope(
+      fullscreen: tab?.fullscreen ?? false,
+      child: FushiTitleBarPassthroughScope(
+        enabled: !_gridOpen && _tabStripInCaption(context, layout, size),
+        child: PopScope(
+          // 系统返回 / 侧滑 / Esc：先关查词弹窗与临时层，再退网页历史，都退到头
+          // 才离开浏览页。
+          canPop: _backStep == WebBrowserBackStep.leavePage,
+          onPopInvokedWithResult: (bool didPop, Object? _) {
+            if (!didPop) _onBackBlocked();
           },
-          child: FocusScope(
-            debugLabel: 'web-browser-shortcuts',
-            autofocus: true,
-            skipTraversal: true,
-            onKeyEvent: _onKeyEvent,
-            child: SrsCardLookupHost(
-              controller: _lookup,
-              // 制卡来源：调用时现读前台标签页（无痕页返回 null，卡片不带来源）。
-              cardSource: () {
-                final WebBrowserTab? active = _tabs.activeTab;
-                final WebBrowserCardSource? source = active == null
-                    ? null
-                    : webBrowserCardSourceOf(active);
-                return source == null
-                    ? null
-                    : (title: source.title, url: source.url);
-              },
-              child: Material(
-                color: bg,
-                child: Semantics(
-                  label: tab == null || tab.displayTitle.isEmpty
-                      ? t.web_browser_title
-                      : tab.displayTitle,
-                  container: true,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: <Widget>[
-                      body,
-                      IgnorePointer(
-                        ignoring: !_gridOpen,
-                        child: AnimatedSwitcher(
-                          duration: duration,
-                          switchInCurve: FushiMotion.enter,
-                          switchOutCurve: FushiMotion.exit,
-                          transitionBuilder:
-                              (Widget child, Animation<double> animation) =>
-                                  FadeTransition(
-                                    opacity: fushiUnitClamped(animation),
-                                    child: ScaleTransition(
-                                      scale: Tween<double>(
-                                        begin: 0.96,
-                                        end: 1,
-                                      ).animate(animation),
-                                      child: child,
+          // 快捷键的承接点必须是**能持焦的 scope**：Flutter 侧按键从 primaryFocus 往上
+          // 冒泡，曾经这里是 `canRequestFocus: false` 的裸 Focus，地址栏回车 / Esc 后
+          // `unfocus()` 把焦点交给路由 scope（在本节点之外），此后 Ctrl+F / Ctrl+T 等一律
+          // 收不到。FocusScope 自己 autofocus，页内任何 unfocus 都落回它身上。
+          // WebView 持 OS 焦点期间的按键仍走 DOM 键盘桥（[_ShortcutKeyBridge]）。
+          //
+          // 手柄：GamepadService 从 primaryFocus 往上派发 GamepadButtonIntent，这层
+          // 只认绑到 webBrowser scope 的按钮，其余显式转发给祖先（裸 CallbackAction
+          // 会让上溯停在本层，焦点导航 / B 返回上一级全失灵，见
+          // [GamepadButtonForwardingAction]）。
+          child: Actions(
+            actions: <Type, Action<Intent>>{
+              GamepadButtonIntent: GamepadButtonForwardingAction(
+                ancestorContext: context,
+                handle: handleGamepadButton,
+              ),
+            },
+            child: FocusScope(
+              debugLabel: 'web-browser-shortcuts',
+              autofocus: true,
+              skipTraversal: true,
+              onKeyEvent: _onKeyEvent,
+              child: SrsCardLookupHost(
+                controller: _lookup,
+                // 制卡来源：调用时现读前台标签页（无痕页返回 null，卡片不带来源）。
+                cardSource: () {
+                  final WebBrowserTab? active = _tabs.activeTab;
+                  final WebBrowserCardSource? source = active == null
+                      ? null
+                      : webBrowserCardSourceOf(active);
+                  return source == null
+                      ? null
+                      : (title: source.title, url: source.url);
+                },
+                child: Material(
+                  color: bg,
+                  child: Semantics(
+                    label: tab == null || tab.displayTitle.isEmpty
+                        ? t.web_browser_title
+                        : tab.displayTitle,
+                    container: true,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: <Widget>[
+                        body,
+                        IgnorePointer(
+                          ignoring: !_gridOpen,
+                          child: AnimatedSwitcher(
+                            duration: duration,
+                            switchInCurve: FushiMotion.enter,
+                            switchOutCurve: FushiMotion.exit,
+                            transitionBuilder:
+                                (Widget child, Animation<double> animation) =>
+                                    FadeTransition(
+                                      opacity: fushiUnitClamped(animation),
+                                      child: ScaleTransition(
+                                        scale: Tween<double>(
+                                          begin: 0.96,
+                                          end: 1,
+                                        ).animate(animation),
+                                        child: child,
+                                      ),
                                     ),
-                                  ),
-                          child: _gridOpen
-                              ? WebBrowserTabGrid(
-                                  tabs: _tabs.tabs,
-                                  callbacks: _tabCallbacks,
-                                  thumbnails: _thumbnails,
-                                  onDone: () =>
-                                      setState(() => _gridOpen = false),
-                                )
-                              : const SizedBox.shrink(),
+                            child: _gridOpen
+                                ? WebBrowserTabGrid(
+                                    tabs: _tabs.tabs,
+                                    callbacks: _tabCallbacks,
+                                    thumbnails: _thumbnails,
+                                    onDone: () =>
+                                        setState(() => _gridOpen = false),
+                                  )
+                                : const SizedBox.shrink(),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
