@@ -13675,6 +13675,7 @@
   "video_external_settings_section": "مزوّدو الموارد والترجمات الخارجية",
   "video_external_username_optional": "اسم المستخدم (اختياري)",
   "video_favorite_count": "$count مفضّلة",
+  "video_favorite_source_unavailable": "This video is no longer in your library. If it was streamed from a media server, sign in to that server and try again.",
   "video_file_error_content": "تعذّر تحميل ملف الفيديو. تأكد من وجود الملف في دليل يمكن للتطبيق الوصول إليه.",
   "video_file_not_found": "ملف الفيديو غير موجود",
   "video_filename_organize_action": "Organize file names",

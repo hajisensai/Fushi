@@ -35,6 +35,8 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
+import 'package:fushi/src/media/video/remote_client_teardown.dart'
+    show closeOwnedRemoteVideoClient;
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart'
     show mediaServerItemKey;
@@ -523,6 +525,53 @@ buildMediaServerLaunch({
     members: List<RemoteVideoInfo>.unmodifiable(members),
     startIndex: startIndex,
   );
+}
+
+/// 没有本机库行的媒体服务器条目（从服务器浏览页直接串流、没「加入媒体库」）的起播：
+/// 收藏 / 制卡记下的 bookKey 就是服务器条目 id（[VideoFushiPage.remote] 的
+/// `bookUid = info.id`），行里不存服务器身份，所以挨台问 [loadConfigs] 里已登录的
+/// 服务器，第一台给出**可播放**详情的就是它（Jellyfin 家族的 id 是 GUID，Plex 的
+/// ratingKey 只在本服务器内有意义，撞号概率可忽略）。BUG-5379。
+///
+/// 返回的 [client] 是现建的、**归调用方**（交给播放页时带 `ownsRemoteClient: true`，
+/// 退页收尾后由播放页关）；没命中的几台的客户端这里就关掉。详情按 `forLaunch: true`
+/// 取：命中的那一次结果留给随后的取流（`LaunchItemDetailMemo`），不重取。
+///
+/// 哪台都没有（含一台都没登录）返回 null，调用方必须给用户明确提示。单台服务器的
+/// 失败（连不上 / 404）只记日志、接着问下一台——不认得这个 id 的服务器回 404 是常态；
+/// [loadConfigs] 自己抛出则原样传给调用方。
+Future<({RemoteVideoClient client, RemoteVideoInfo info})?>
+resolveMediaServerItemLaunch({
+  required String itemId,
+  required Future<List<MediaServerConfig>> Function() loadConfigs,
+}) async {
+  if (itemId.isEmpty) return null;
+  for (final MediaServerConfig config in await loadConfigs()) {
+    final MediaServerBrowser browser = config.buildBrowser();
+    try {
+      final MediaServerItem detail = await browser.itemDetail(
+        itemId,
+        forLaunch: true,
+      );
+      if (detail.isPlayable) {
+        return (
+          client: browser.playbackClient,
+          info: browser.toRemoteVideoInfo(detail),
+        );
+      }
+      debugPrint(
+        '[media-server-library] item $itemId on ${config.sourceId} '
+        'is not playable (${detail.type})',
+      );
+    } on Object catch (error) {
+      debugPrint(
+        '[media-server-library] item $itemId on ${config.sourceId} '
+        'failed: $error',
+      );
+    }
+    closeOwnedRemoteVideoClient(browser.playbackClient);
+  }
+  return null;
 }
 
 /// The media tracking identity of library row [row] added from a media

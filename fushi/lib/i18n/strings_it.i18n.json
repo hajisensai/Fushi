@@ -13675,6 +13675,7 @@
   "video_external_settings_section": "Provider di risorse e sottotitoli esterni",
   "video_external_username_optional": "Username (opzionale)",
   "video_favorite_count": "$count preferiti",
+  "video_favorite_source_unavailable": "This video is no longer in your library. If it was streamed from a media server, sign in to that server and try again.",
   "video_file_error_content": "Impossibile caricare il file video. Assicurati che il file esista e si trovi in una cartella accessibile dall'applicazione.",
   "video_file_not_found": "File video non trovato",
   "video_filename_organize_action": "Organize file names",

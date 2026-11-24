@@ -50,6 +50,14 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/mining/mined_origin_navigation.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show resolveMediaServerItemLaunch;
+import 'package:fushi/src/media/video/remote_client_teardown.dart'
+    show closeOwnedRemoteVideoClient;
+import 'package:fushi/src/sync/remote_video_client.dart' show RemoteVideoClient;
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteVideoInfo;
+import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
@@ -834,11 +842,19 @@ class _CollectionsPageState extends BasePageState<CollectionsPage>
 
   Future<void> _openVideoSentence(_CollectionItem item) async {
     final String? bookUid = item.bookKey;
-    if (bookUid == null || bookUid.isEmpty) return;
+    if (bookUid == null || bookUid.isEmpty) {
+      _showVideoSourceUnavailable();
+      return;
+    }
 
     final VideoBookRepository repo = VideoBookRepository(appModel.database);
     final VideoBookRow? row = await repo.getByBookUid(bookUid);
-    if (row == null) return;
+    if (row == null) {
+      // 没有本机库行：从媒体服务器浏览页直接串流（没「加入媒体库」）时收藏的句子，
+      // bookKey 是服务器条目 id，到已登录的服务器上找回来（BUG-5379）。
+      await _openMediaServerVideoSentence(repo, bookUid, item);
+      return;
+    }
 
     final int? startMs = await _resolveVideoFavoriteStartMs(repo, row, item);
     final target = resolveVideoFavoriteOpenTarget(
@@ -868,6 +884,72 @@ class _CollectionsPageState extends BasePageState<CollectionsPage>
           initialSubtitleListVisible: true,
         ),
       ),
+    );
+  }
+
+  /// 媒体服务器串流条目的收藏句：按条目 id 在已登录的服务器上解析出播放客户端，
+  /// 以远端播放页打开，起播后按收藏的起点 + 原文对到那一句（与手机遥控跳收藏同一
+  /// 条 `initialRemoteFavorite` 路径）。哪台服务器都没有 / 出错一律给提示，不静默。
+  Future<void> _openMediaServerVideoSentence(
+    VideoBookRepository repo,
+    String itemId,
+    _CollectionItem item,
+  ) async {
+    final ({RemoteVideoClient client, RemoteVideoInfo info})? launch;
+    try {
+      launch = await resolveMediaServerItemLaunch(
+        itemId: itemId,
+        loadConfigs: SyncRepository(appModel.database).getMediaServers,
+      );
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'Collections.openMediaServerVideo',
+        error,
+        stack,
+      );
+      _showVideoSourceUnavailable();
+      return;
+    }
+    if (launch == null) {
+      _showVideoSourceUnavailable();
+      return;
+    }
+    if (!mounted) {
+      closeOwnedRemoteVideoClient(launch.client);
+      return;
+    }
+    final FavoriteSentence favorite = FavoriteSentence(
+      text: item.anchorText ?? item.text ?? '',
+      bookTitle: item.bookTitle ?? itemId,
+      createdAt: item.createdAt,
+      bookKey: itemId,
+      sectionIndex: item.sectionIndex,
+      normCharOffset: item.normCharOffset,
+      normCharLength: item.normCharLength,
+      source: kFavoriteSentenceSourceVideo,
+    );
+    final RemoteVideoInfo info = launch.info;
+    final RemoteVideoClient client = launch.client;
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => VideoFushiPage.neutralizedRemote(
+          info: info,
+          repo: repo,
+          client: client,
+          ownsRemoteClient: true,
+          initialRemoteFavorite: favorite,
+          initialSubtitleListVisible: true,
+        ),
+      ),
+    );
+  }
+
+  void _showVideoSourceUnavailable() {
+    FushiToast.show(
+      msg: t.video_favorite_source_unavailable,
+      severity: ToastSeverity.error,
     );
   }
 

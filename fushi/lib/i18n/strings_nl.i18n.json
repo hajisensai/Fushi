@@ -13675,6 +13675,7 @@
   "video_external_settings_section": "Externe resource- en ondertitelproviders",
   "video_external_username_optional": "Gebruikersnaam (optioneel)",
   "video_favorite_count": "$count favorieten",
+  "video_favorite_source_unavailable": "This video is no longer in your library. If it was streamed from a media server, sign in to that server and try again.",
   "video_file_error_content": "Kan het videobestand niet laden. Zorg ervoor dat dit bestand bestaat en zich bevindt in een map die toegankelijk is voor de applicatie.",
   "video_file_not_found": "Videobestand niet gevonden",
   "video_filename_organize_action": "Organize file names",

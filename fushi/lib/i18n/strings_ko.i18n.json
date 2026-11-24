@@ -13675,6 +13675,7 @@
   "video_external_settings_section": "외부 리소스 및 자막 제공자",
   "video_external_username_optional": "사용자 이름 (선택사항)",
   "video_favorite_count": "즐겨찾기 $count개",
+  "video_favorite_source_unavailable": "This video is no longer in your library. If it was streamed from a media server, sign in to that server and try again.",
   "video_file_error_content": "동영상 파일을 로드할 수 없습니다. 파일이 존재하고 앱에서 접근 가능한 디렉토리에 있는지 확인하세요.",
   "video_file_not_found": "동영상 파일을 찾을 수 없음",
   "video_filename_organize_action": "Organize file names",

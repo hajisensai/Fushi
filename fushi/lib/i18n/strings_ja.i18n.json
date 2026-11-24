@@ -13675,6 +13675,7 @@
   "video_external_settings_section": "外部リソースと字幕プロバイダ",
   "video_external_username_optional": "ユーザー名（任意）",
   "video_favorite_count": "お気に入り $count 句",
+  "video_favorite_source_unavailable": "This video is no longer in your library. If it was streamed from a media server, sign in to that server and try again.",
   "video_file_error_content": "動画ファイルを読み込めませんでした。ファイルが存在し、アプリがアクセス可能なディレクトリにあることを確認してください。",
   "video_file_not_found": "動画ファイルが見つかりません",
   "video_filename_organize_action": "Organize file names",
