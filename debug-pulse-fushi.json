@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T01:13:45Z",
+ "generatedAt": "2026-11-24T02:10:58Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "de89983a2e8ff573e550d9d814b6d9483d91a115",
-  "seq": 32147
+  "sha": "04c7ec241876aab812fef4fb535095f479a72c65",
+  "seq": 32163
  },
  "builds": [
   {
@@ -109,6 +109,47 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "04c7ec241876aab812fef4fb535095f479a72c65",
+  "headSeq": 32163,
+  "prs": [],
+  "direct": [
+   {
+    "sha": "04c7ec241876aab812fef4fb535095f479a72c65",
+    "subject": "Merge #4338 (claude/fix-lyric-style-desc-clip) into develop"
+   },
+   {
+    "sha": "729f7f9061c3554f076413a5e9270ab52352a46d",
+    "subject": "Merge #4337 (claude/fix-visualizer-tap-exit) into develop"
+   },
+   {
+    "sha": "c273a64817e19f62ed2a678f98306fe65c0b2f70",
+    "subject": "Merge #4339 (claude/ai-assistant-investigation-657808) into develop"
+   },
+   {
+    "sha": "d73eeaeef70c25278bb561f9407216be8488ef8f",
+    "subject": "Merge #4307 (claude/update-announcement-283910) into develop"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45309723979"
+   },
+   "windows": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45309724072"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45309724072"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45309724072"
+   }
+  }
+ },
  "prs": {}
 }
