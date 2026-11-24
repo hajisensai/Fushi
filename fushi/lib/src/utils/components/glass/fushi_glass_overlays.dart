@@ -3574,12 +3574,18 @@ bool _isCheckableMenuItem(Widget child) {
   return false;
 }
 
-/// [RadioMenuButton] 的 Apple 行（泛型要从实例上取，单独成函数）。
-Widget _appleRadioMenuItem<T>(
-  RadioMenuButton<T> child,
+/// [RadioMenuButton] 的 Apple 行。
+///
+/// 调用点只能把它当 `RadioMenuButton<dynamic>` 拿到（`is RadioMenuButton` 不带
+/// 泛型），按静态类型读 `onChanged` 会触发协变检查：实例上是
+/// `(GalLookupSurfaceMode?) => void`，不是 `(dynamic) => void` 的子类型，一读就抛
+/// TypeError（Apple 菜单里放带类型的单选项即崩）。所以回调按 [Function] 取出、
+/// 用实例自己的 value 调回去，类型由实例保证。
+Widget _appleRadioMenuItem(
+  RadioMenuButton<Object?> child,
   Widget Function(bool checked) checkSlot,
 ) {
-  final ValueChanged<T?>? onChanged = child.onChanged;
+  final Function? onChanged = (child as dynamic).onChanged as Function?;
   final bool checked = child.value == child.groupValue;
   return Semantics(
     checked: checked,
@@ -3588,7 +3594,9 @@ Widget _appleRadioMenuItem<T>(
       key: child.key,
       onPressed: onChanged == null
           ? null
-          : () => onChanged(checked && child.toggleable ? null : child.value),
+          : () => Function.apply(onChanged, <Object?>[
+              checked && child.toggleable ? null : child.value,
+            ]),
       onHover: child.onHover,
       onFocusChange: child.onFocusChange,
       focusNode: child.focusNode,

@@ -1,7 +1,8 @@
 part of '../../texthooker_page.dart';
 
 // Cupertino 工作台推出去的页面与弹层：iOS 档的「会话」「本句」整页；健康状态 /
-// 音频降级档位在 macOS 档是窗口 sheet，iOS 档是整页。内容都随会话实时刷新。
+// 音频降级档位（以及捕获设置、校准，见 showAdaptiveDialogSurface）在 macOS 档是
+// 窗口 sheet，iOS 档是整页。内容都随会话实时刷新。
 
 extension _AppleWorkbenchPages on _TexthookerPageState {
   /// 推一张 Apple 整页（iOS 档）。正文自己处理顶部页头让位（masthead 把页头高度
@@ -37,34 +38,31 @@ extension _AppleWorkbenchPages on _TexthookerPageState {
     );
   }
 
-  /// macOS 档窗口 sheet / iOS 档整页（健康状态、音频降级档位）。
+  /// macOS 档窗口 sheet / iOS 档整页（健康状态、音频降级档位），形态分派走公共的
+  /// [showFushiAppleSurface]。整页返回即关，所以「关闭」只在 sheet 底部给。
   Future<void> _presentAppleSurface({
     required String title,
     required WidgetBuilder content,
   }) {
-    if (fushiAppleUsesMacMetrics(context)) {
-      return adaptiveModalSheet<void>(
-        context: context,
-        builder: (BuildContext sheetContext) => FushiModalSheetFrame(
-          title: title,
-          scrollable: true,
-          body: ListenableBuilder(
-            listenable: _session,
-            builder: (BuildContext context, Widget? child) => content(context),
-          ),
-          footer: FushiTextButton(
-            onPressed: () => Navigator.of(sheetContext).maybePop(),
-            child: Text(t.dialog_close),
-          ),
+    return showFushiAppleSurface<void>(
+      context: context,
+      builder: (BuildContext surfaceContext) => FushiAppleSurfaceFrame(
+        title: title,
+        actions: <Widget>[
+          if (FushiAppleSurfaceScope.maybeFormOf(surfaceContext) ==
+              FushiAppleSurfaceForm.sheet)
+            FushiTextButton(
+              onPressed: () => Navigator.of(surfaceContext).maybePop(),
+              child: Text(t.dialog_close),
+            ),
+        ],
+        body: ListenableBuilder(
+          listenable: Listenable.merge(<Listenable>[
+            _session,
+            TexthookerService.instance,
+          ]),
+          builder: (BuildContext context, Widget? child) => content(context),
         ),
-      );
-    }
-    return _pushApplePage(
-      title: title,
-      body: (BuildContext context, EdgeInsets padding) => ListView(
-        primary: false,
-        padding: padding,
-        children: <Widget>[content(context)],
       ),
     );
   }
