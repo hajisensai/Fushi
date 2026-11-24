@@ -1050,10 +1050,40 @@ void main() {
       'テスト漫画：ブルー',
       'テスト漫画',
     ]);
-    expect(BookArtScrapeService.queriesFor('One Piece'), <String>[
-      'One Piece',
-      'One',
+    // 拉丁书名词间本来就有空格，不再切出「One」这种必然搜偏的词。
+    expect(BookArtScrapeService.queriesFor('One Piece'), <String>['One Piece']);
+  });
+
+  // review-book-scrape-query-unify：批量与手动搜索弹窗同一份 bookSearchQueries。
+  test('查询序列与手动搜索统一：剥打头标签、拆混写名、最后试主标题', () {
+    expect(BookArtScrapeService.queriesFor('[川原礫] ソードアート・オンライン'), <String>[
+      'ソードアート・オンライン',
     ]);
+    expect(BookArtScrapeService.queriesFor('ソードアート・オンライン プログレッシブ'), <String>[
+      'ソードアート・オンライン プログレッシブ',
+      'ソードアート・オンライン',
+    ]);
+    expect(BookArtScrapeService.queriesFor('Re:ゼロから始める異世界生活'), <String>[
+      'Re:ゼロから始める異世界生活',
+    ]);
+  });
+
+  test('书名带打头作者标签：搜索与判档都用去掉标签的系列名，照常采用', () async {
+    await seed('k1', '[Taro] テスト漫画 1');
+    await seed('k2', '[Taro] テスト漫画 2');
+    final List<String> queries = <String>[];
+    final BookArtScrapeService svc = service((http.Request req) async {
+      if (req.url.path == '/v1/series/search') {
+        queries.add(req.url.queryParameters['q'] ?? '');
+      }
+      return mangaBakaOk(req);
+    });
+    final BookArtRunResult result = await svc.run(<String>['k1', 'k2']);
+    svc.close();
+
+    expect(queries, <String>['テスト漫画']);
+    expect(result.series.single.decision, BookArtDecision.accepted);
+    expect(result.count(BookArtBookOutcome.written), 2);
   });
 
   // Bangumi 是关键词精确搜索：「Horimiya ホリミヤ」零结果，只有「ホリミヤ」搜得到。

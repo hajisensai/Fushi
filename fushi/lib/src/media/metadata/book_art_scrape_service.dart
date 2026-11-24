@@ -31,7 +31,7 @@ import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart';
 import 'package:fushi_engine/media/metadata/books/book_search_query.dart'
-    show splitBookTitleScripts;
+    show BookSearchGranularity, bookSearchQueries, bookSearchSeriesTitle;
 import 'package:fushi_engine/media/metadata/image_download.dart'
     show looksLikeImageBytes;
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_client.dart';
@@ -501,7 +501,9 @@ class BookArtScrapeService {
             r.bookKey: parseBookSeriesKey(r.title)?.volume,
         });
     final BookArtLocalSeries local = BookArtLocalSeries(
-      seriesTitle: seriesTitle,
+      // 判档与搜索用去掉打头标签 / 卷号的系列名（`[川原礫] ソードアート・オンライン`
+      // → `ソードアート・オンライン`），与手动搜索弹窗同一份规则；结果里仍显示原名。
+      seriesTitle: bookSearchSeriesTitle(seriesTitle),
       kind: _localKind(rows),
       volumes: resolved.volumes.values.toList(),
       author: rows
@@ -1102,8 +1104,9 @@ class BookArtScrapeService {
         final MangaBakaSeries? live = s.isMerged ? await _followMerged(s) : s;
         if (live != null) byId.putIfAbsent('${live.id}', () => live);
       }
-      // MangaBaka 是模糊搜索，全名几乎总有结果：只有出现标题 / 种类 / 作者都说得过去
-      // 的候选才不再试去掉副标题的查询。
+      // 这一个词没有可用结果才试下一个：MangaBaka 是模糊搜索，系列名几乎总有结果，
+      // 「有结果」得是标题 / 种类 / 作者都说得过去的候选（判不过的候选决策时也会被
+      // 拒），否则带副标题的系列永远走不到主标题那个词。
       if (byId.values.any(
         (MangaBakaSeries s) => assessBookArtCandidate(
           local,
@@ -1159,26 +1162,16 @@ class BookArtScrapeService {
     );
   }
 
-  /// 查询词：系列名；带副标题时再去掉副标题搜一次（最多 2 次）。
   @visibleForTesting
-  static List<String> queriesFor(String seriesTitle) => _queries(seriesTitle);
+  static List<String> queriesFor(String seriesTitle) =>
+      _queries(bookSearchSeriesTitle(seriesTitle));
 
-  /// 搜索用的查询序列：全名 → 混写书名的中日韩部分（`Horimiya ホリミヤ` → `ホリミヤ`，
-  /// [splitBookTitleScripts]；Bangumi 是关键词精确搜索，全名与罗马字都搜不到）→
-  /// 去掉副标题。
-  static List<String> _queries(String seriesTitle) {
-    final String full = seriesTitle.trim();
-    final String? cjkPart = splitBookTitleScripts(full)?.cjk;
-    final RegExpMatch? cut = RegExp(
-      r'^(.+?)\s*[\s\-‐―—~〜～:：(（「『〈]',
-    ).firstMatch(full);
-    final String? head = cut?.group(1)?.trim();
-    return <String>{
-      full,
-      ?cjkPart,
-      if (head != null && head.length >= 2) head,
-    }.toList();
-  }
+  /// 搜索用的查询序列：与手动搜索弹窗同一份 [bookSearchQueries]（去打头标签 / 卷号 →
+  /// 混写书名拆中日韩 / 拉丁部分 → 主标题，至多 4 个）。两个源在这里都按**系列**
+  /// 粒度搜：MangaBaka 条目本就是系列，Bangumi 这里只认系列条目、各卷封面走它的
+  /// 单行本关联（手动弹窗里 Bangumi 是按单卷搜的，粒度不同）。
+  static List<String> _queries(String seriesTitle) =>
+      bookSearchQueries(seriesTitle, granularity: BookSearchGranularity.series);
 
   /// Bangumi 匹配。[assistKind] 非 null = MangaBaka 已认定系列（种类为它），这里只补
   /// 缺的卷：候选种类必须与它**一致**（轻小说不补漫画版单行本封面）。
@@ -1187,7 +1180,7 @@ class BookArtScrapeService {
     BookArtCandidateKind? assistKind,
   }) async {
     // 与 MangaBaka 同一查询序列（[_queries]）：Bangumi 按关键词精确搜，双语书名的
-    // 全名常常零结果；出现说得过去的候选就不再往下试。
+    // 全名常常零结果；这个词没有说得过去的候选才往下试。
     final Map<String, BangumiBookSubject> byId = <String, BangumiBookSubject>{};
     bool answered = false;
     for (final String q in _queries(local.seriesTitle)) {
