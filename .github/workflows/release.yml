@@ -1879,11 +1879,11 @@ jobs:
     # 正式版发布成功后自动把 main 同步成 develop（2026-09-08 用户要求）。
     #
     # main 只有两种来源的提交：从 develop 合过来的（历史上是人工 `Merge develop into main
-    # for X.Y.Z`），以及两条图表 workflow 的机器人提交（dev-activity.yml / star-history.yml
-    # 是 scheduled，只能跑在默认分支 main 上，SVG 因此只落在 main）。所以 main 永远不是
-    # develop 的祖先、纯快进永远失败，这里沿用人工时代的合并：`git merge --no-ff -X theirs`——
-    # 图表 SVG 两边都改过就取 develop 的（第二天定时任务会重新生成），除此之外 main 不该有
-    # develop 没有的东西。-X theirs 解不了的冲突（modify/delete）直接红，让人来看，绝不
+    # for X.Y.Z`），以及 2026-11-25 之前两条图表 workflow 的机器人提交（dev-activity.yml /
+    # star-history.yml 是 scheduled，当时默认分支是 main，SVG 落在 main；之后默认分支改成
+    # develop，SVG 改落 develop）。main 上的合并提交让它永远不是 develop 的祖先、纯快进永远
+    # 失败，这里沿用人工时代的合并：`git merge --no-ff -X theirs`——图表 SVG 两边都改过就取
+    # develop 的，除此之外 main 不该有 develop 没有的东西。-X theirs 解不了的冲突（modify/delete）直接红，让人来看，绝不
     # force-push。GITHUB_TOKEN 的 push 不级联触发 main 的 push 构建，也不会因此多发一版。
     #
     # 只在本 workflow 做（release-desktop.yml 不做）：两条正式版 workflow 现在并行，各推一次
@@ -2199,9 +2199,9 @@ jobs:
         fi
 
   # 设置项目录推到 update-manifest 分支（官网 fushi.moe/settings.md、/settings.json 按通道代理）。
-  # 不用独立的 workflow_run workflow：workflow_run 只认**默认分支 main** 上的定义，main 落后
-  # develop 一个发布周期，合进 develop 后整条链路要等下一个正式版才第一次触发（与上面
-  # build.md 放弃 pull_request_target 是同一个坑）。放在本 workflow 里，develop push 当轮就发。
+  # 不用独立的 workflow_run workflow：放在本 workflow 里，develop push 当轮就发，链路最短。
+  # （当初还因为 workflow_run 只认默认分支上的定义、而默认分支曾是落后一个发布周期的 main；
+  # 2026-11-25 起默认分支是 develop，这条理由已不成立，但同 run 发布仍更简单。）
   # - 写权限只给这个 job（tests 仍只读）；artifact 取本 run 的，不需要跨 run 的 actions: read。
   # - needs tests 但用 always()：tests 是矩阵，任一单测分片红都会让裸 needs 跳过本 job，而导出
   #   那一步是 continue-on-error、与分片红不红无关。只有 run 被取消才不发；没有 artifact
