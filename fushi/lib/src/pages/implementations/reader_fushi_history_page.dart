@@ -140,6 +140,7 @@ import 'package:fushi/src/media/collections/collection_grouping.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show sortNewCollectionMembersNaturally;
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
+import 'package:fushi/src/media/collections/book_read_progress.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/collections/collection_drag.dart';
 import 'package:fushi/src/media/collections/collection_shelf_row.dart'
@@ -2395,9 +2396,9 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     List<MediaItem> others, {
     required BoxConstraints constraints,
   }) {
-    double fractionOf(MediaItem item) => item.duration > 0
-        ? (item.position / item.duration).clamp(0.0, 1.0)
-        : 0.0;
+    // 进度条与百分比与书架卡同一口径（[_itemReadFraction] / [_readProgressLabel]）：
+    // 同一本书在这里和网格卡上不会一处 3% 一处 4%。
+    double fractionOf(MediaItem item) => _itemReadFraction(item);
     Widget coverOf(MediaItem item) {
       final String? bookKey = _parseBookKey(item.mediaIdentifier);
       // NSFW 书的「继续」封面同书架卡一样按「模糊 NSFW 封面」打模糊。
@@ -2451,9 +2452,10 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
           // 封面色块的署名行（与库墙色块同一份：导入时读出的作者）。
           byline: item.author,
           progress: fractionOf(item),
-          progressLabel: t.book_read_progress(
-            percent: (fractionOf(item) * 100).round(),
-          ),
+          progressLabel: switch (shelfReadPercent(fractionOf(item))) {
+            final int percent => t.book_read_progress(percent: percent),
+            null => _readProgressLabel(fractionOf(item)),
+          },
           onOpen: openerOf(item),
           // 长按 / 右键 = 与书架网格书卡同一个书条目菜单（BUG-5173）；伴屏高亮主卡
           // 认主卡的固定 id，其余卡认书卡 id（都能解析回这本书）。

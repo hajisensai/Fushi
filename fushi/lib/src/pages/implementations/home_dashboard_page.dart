@@ -45,6 +45,9 @@ import 'package:fushi/src/models/shelf_collection_open_request.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/book_continue.dart';
+import 'package:fushi/src/media/collections/book_read_progress.dart';
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show shelfReadFraction;
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
@@ -3206,9 +3209,13 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 还没开读时 0% 没有信息量），进度条照画。
   _ContinueEntry _bookContinueEntry(HomeContinueBookUnit unit) {
     final MediaItem item = unit.item;
-    final int percent = item.duration > 0
-        ? ((item.position / item.duration) * 100).clamp(0, 100).round()
-        : 0;
+    // 进度与书架卡同一口径（[shelfReadFraction] / [bookReadProgressLabel]），
+    // 同一本书在首页和书架上的百分比一致（都向下取整）。
+    final double fraction = shelfReadFraction(
+      completed: false,
+      position: item.position,
+      duration: item.duration,
+    );
     // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后首页
     // 「继续」区同步显示新名），不直接读 DB 原名。
     final String title = unit.title;
@@ -3229,10 +3236,10 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       kind: unit.kind,
       title: title,
       recentMs: unit.recentMs,
-      progress: percent / 100,
+      progress: fraction,
       badgeLabel: volume != null
           ? t.home_continue_volume(n: volume)
-          : '$percent%',
+          : bookReadProgressLabel(fraction),
       collectionName: unit.collectionName,
       book: item,
     );
