@@ -15,6 +15,9 @@ import 'package:fushi/src/profile/combo/combo_repository.dart'
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
+import 'package:fushi/src/profile/combo/fushi_settings_tree.dart'
+    show FushiComboNode;
+import 'package:fushi/src/srs/srs_library_merge.dart';
 import 'package:fushi/src/srs/srs_profile_cleanup.dart';
 
 /// Serializes Profile application with temporary draft persistence.
@@ -170,8 +173,10 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     this._onProfileApplied,
     this._profileDraftCoordinator, {
     ProfileDeletionCascade? deletionCascade,
+    SrsLibraryMerger? libraryMerger,
     Future<void> Function()? onWorkScopeSettled,
   }) : _deletionCascade = deletionCascade,
+       _libraryMerger = libraryMerger,
        _onWorkScopeSettled = onWorkScopeSettled ?? _noWorkScopeReload,
        super(
          ProfileUiState(
@@ -227,6 +232,9 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   /// 删 Profile 时连带清理的、主库外键级联管不到的数据（复习数据在 srs.db）；null = 不清（测试）。
   final ProfileDeletionCascade? _deletionCascade;
+
+  /// 手动把组合拆出的独立复习库并进共享库（组合阶段 5）；null = 不支持（测试）。
+  final SrsLibraryMerger? _libraryMerger;
 
   Future<T> _whileInvalidatingProfileDrafts<T>(Future<T> Function() action) =>
       _profileDraftCoordinator.runProfileChange(action);
@@ -481,6 +489,43 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     );
   }
 
+  /// 组合 [id] 拆出的独立复习库并进共享库的预览（冲突表）；它没有独立库时 null。复习库打不开抛
+  /// [SrsLibraryMergeUnavailableException]。
+  Future<SrsLibraryMergePlan?> srsLibraryMergePlan(int id) async =>
+      _libraryMerger?.plan(id);
+
+  /// 按 [plan] 把独立复习库并进共享库（[resolutions]：冲突笔记保留哪一边，没列的保留共享库），之后组合 [plan] 的
+  /// `srs.library` 恢复继承。在配置变更锁里做：快照写回不会把撤掉的拆分写回来。
+  Future<SrsMergeResult> mergeSrsLibraryIntoShared(
+    SrsLibraryMergePlan plan,
+    Map<String, SrsMergeChoice> resolutions,
+  ) {
+    final SrsLibraryMerger? merger = _libraryMerger;
+    if (merger == null) {
+      throw StateError('merging review libraries is not wired');
+    }
+    return _profileDraftCoordinator._runProfileMutation(
+      (_ProfileDraftMutation _) => merger.merge(
+        plan,
+        resolutions,
+        restoreInheritance: () => _restoreSrsLibrary(plan.profileId),
+      ),
+    );
+  }
+
+  /// 补做内核已并完、组合还没恢复继承的合并（进 Profile 管理时与存量扫描一起调）。返回收尾了几条。
+  Future<int> finishPendingSrsLibraryMerges() async {
+    final SrsLibraryMerger? merger = _libraryMerger;
+    if (merger == null) return 0;
+    return _profileDraftCoordinator._runProfileMutation(
+      (_ProfileDraftMutation _) =>
+          merger.finishPending(restoreInheritance: _restoreSrsLibrary),
+    );
+  }
+
+  Future<void> _restoreSrsLibrary(int profileId) =>
+      _repo.combos.restoreInheritanceOf(profileId, FushiComboNode.srsLibrary);
+
   static ProfileRow? _profileById(List<ProfileRow> profiles, int id) {
     for (final ProfileRow p in profiles) {
       if (p.id == id) return p;
@@ -637,6 +682,7 @@ final profileViewModelProvider =
         onApplied,
         profileDraftCoordinator,
         deletionCascade: srsProfileCleanupFor(ref),
+        libraryMerger: srsLibraryMergerFor(ref),
         onWorkScopeSettled: () =>
             container.read(appProvider).workProfileScopeSettled,
       );

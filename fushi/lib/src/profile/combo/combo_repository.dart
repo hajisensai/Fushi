@@ -282,6 +282,26 @@ class ComboRepository {
     });
   }
 
+  /// 撤掉非默认组合 [profileId] 在节点 [nodeId]（叶子或子组）上的拆分（「恢复继承」），事务内整份落库。
+  /// 返回真的撤掉了拆分；不是组合格式的差异文档（默认组合 / 存量快照）或那里本来就在继承时什么都不改、返回 false。
+  /// 组合阶段 5 「合并进共享库」之后撤 `srs.library` 走这里；阶段 6 编辑页的「恢复继承」同一个口。
+  Future<bool> restoreInheritanceOf(int profileId, String nodeId) =>
+      _db.transaction(() async {
+        final DecodedComboRows decoded = decodeComboRows(
+          tree,
+          await rowsOf(profileId),
+        );
+        if (!isSplitDocument(decoded)) return false;
+        final ComboDocument next = restoreInheritance(
+          tree: tree,
+          document: decoded.document,
+          nodeId: nodeId,
+        );
+        if (next.splits.length == decoded.document.splits.length) return false;
+        await saveDocument(profileId, next, role: decoded.role!);
+        return true;
+      });
+
   /// 行是「只存被拆叶子」的差异文档（非默认角色的组合格式）。存量快照与默认组合存全量值，
   /// 改行即可。
   static bool isSplitDocument(DecodedComboRows decoded) =>

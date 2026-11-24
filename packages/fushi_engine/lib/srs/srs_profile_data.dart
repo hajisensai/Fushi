@@ -67,6 +67,13 @@ class SrsProfileFootprint {
 /// srs.db 里出现过数据的 uid，与一次性存量扫描的完成时刻（毫秒；null = 还没扫过）。
 typedef SrsStoredProfiles = ({List<String> uids, int? orphanSweptAt});
 
+/// 库级内核命令（不针对单个副本），在后台 isolate 里跑。同库的别的库级命令（`srs_collection_merge.dart`）也经它。
+Future<Map<String, Object?>> srsRunLibraryCommand(
+  SrsCore core,
+  Map<String, Object?> request, {
+  List<Uint8List> blobs = const <Uint8List>[],
+}) => _run(core, request, blobs: blobs);
+
 Future<Map<String, Object?>> _run(
   SrsCore core,
   Map<String, Object?> request, {

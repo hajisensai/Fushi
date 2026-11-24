@@ -30,6 +30,9 @@ import 'package:fushi/src/profile/combo/combo_repository.dart'
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_library_merge_dialog.dart';
+import 'package:fushi/src/srs/srs_library.dart';
+import 'package:fushi/src/srs/srs_library_merge.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show SettingsSectionFooter;
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
@@ -82,6 +85,15 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     final ProfileViewModel vm = ref.read(profileViewModelProvider.notifier);
     vm.sweepOrphanProfileData().catchError((Object e, StackTrace stack) {
       ErrorLogService.instance.log('ProfileManagement.sweepOrphans', e, stack);
+      return 0;
+    });
+    // 「合并进共享复习库」内核已并完、组合还没恢复继承的（进程在两步之间被杀）：补做。
+    vm.finishPendingSrsLibraryMerges().catchError((Object e, StackTrace stack) {
+      ErrorLogService.instance.log(
+        'ProfileManagement.finishSrsLibraryMerges',
+        e,
+        stack,
+      );
       return 0;
     });
     // 组合迁移报告（拍板台 design-combo-node-split）：迁移改写过存量配置时可在这里重看。
@@ -233,6 +245,13 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
 
   List<Widget> _buildProfileRows(ProfileUiState uiState, ProfileViewModel vm) {
     final isOnly = uiState.profiles.length <= 1;
+    // 拆出了独立复习库的组合（组合阶段 5）：行上多一个「合并进共享复习库」。
+    final Set<String> ownLibraries = <String>{
+      for (final SrsLibraryEntry e
+          in ref.watch(srsLibrariesProvider).valueOrNull?.entries ??
+              const <SrsLibraryEntry>[])
+        if (!e.shared) e.uid,
+    };
     final bool cupertino = isCupertinoPlatform(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return [
@@ -268,6 +287,16 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
                 tooltip: t.profile_copy,
                 onPressed: () => _showCopyDialog(vm, profile.id, profile.name),
               ),
+              if (ownLibraries.contains(profile.uid)) ...[
+                SizedBox(width: tokens.spacing.gap / 2),
+                _ProfileActionButton(
+                  key: ValueKey<String>('profile_merge_srs_${profile.id}'),
+                  materialIcon: Icons.merge_type,
+                  cupertinoIcon: CupertinoIcons.arrow_merge,
+                  tooltip: t.srs_library_merge_action,
+                  onPressed: () => _mergeSrsLibrary(vm, profile.id),
+                ),
+              ],
               SizedBox(width: tokens.spacing.gap / 2),
               _ProfileActionButton(
                 materialIcon: FushiIcons.rename,
@@ -370,6 +399,40 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   // ---------------------------------------------------------------------------
   // Dialogs
   // ---------------------------------------------------------------------------
+
+  /// 「合并进共享复习库」（组合阶段 5）：先读预览（冲突表），再弹确认框；合并在框里跑。
+  Future<void> _mergeSrsLibrary(ProfileViewModel vm, int id) async {
+    final SrsLibraryMergePlan? plan;
+    try {
+      plan = await vm.srsLibraryMergePlan(id);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ProfileManagement.mergePlan', e, stack);
+      FushiToast.show(
+        msg: _srsMergeErrorText(e),
+        toastLength: Toast.LENGTH_LONG,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (plan == null || !mounted) return;
+    final SrsMergeResult? result = await showSrsLibraryMergeDialog(
+      context,
+      plan: plan,
+      run: (Map<String, SrsMergeChoice> r) =>
+          vm.mergeSrsLibraryIntoShared(plan!, r),
+      errorText: (Object e) {
+        ErrorLogService.instance.log('ProfileManagement.mergeSrsLibrary', e);
+        return _srsMergeErrorText(e);
+      },
+    );
+    if (result != null) FushiToast.show(msg: t.srs_library_merge_done);
+  }
+
+  static String _srsMergeErrorText(Object e) => switch (e) {
+    SrsLibraryMergeStaleException() => t.srs_library_merge_stale,
+    SrsLibraryMergeUnavailableException() => t.srs_library_merge_unavailable,
+    _ => t.srs_library_merge_failed,
+  };
 
   Future<void> _showCreateDialog(ProfileViewModel vm) async {
     final name = await showAppDialog<String>(
@@ -577,6 +640,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
 
 class _ProfileActionButton extends StatelessWidget {
   const _ProfileActionButton({
+    super.key,
     required this.materialIcon,
     required this.cupertinoIcon,
     required this.tooltip,

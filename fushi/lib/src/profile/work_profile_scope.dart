@@ -17,7 +17,7 @@ import 'package:fushi/src/models/theme_notifier.dart' show ThemeNotifier;
 import 'package:fushi/src/profile/combo/combo_repository.dart'
     show ComboScope, SettingKey;
 import 'package:fushi/src/profile/combo/fushi_settings_tree.dart'
-    show FushiComboNode, fushiSettingsTree;
+    show fushiSettingsTree;
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_settings_view.dart';
