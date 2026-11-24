@@ -33,6 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
+> 共 4685 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5393](bugs/BUG-5393-merged-user-collection-resurrected-by-sync.md) | ✅ | ✅ | 用户合集被合并掉后，下一次合集同步按对端旧副本原样重建 |
 > 共 4699 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

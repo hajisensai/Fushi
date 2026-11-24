@@ -62,8 +62,13 @@ Future<int> mergeMediaCollectionsInto(
       db,
       sourceId,
       deletedAt: deletedAt,
-      // 删除记下「并掉」：收到这条删除的设备知道它不是用户拒绝。
-      organizeMerged: true,
+      // 删除记下「并掉」：收到这条删除的设备知道它不是用户拒绝。只对整理器合集
+      // 记（BUG：并用户合集也记 true 时，同步的「对端用户接手胜过整理器并掉」规则
+      // 会把对端那份本来就归用户的旧副本当成「接手」，按原样重建被并掉的合集）。
+      // 用户合集被并（用户批量合并、AI 库管家经 library.changes.apply 合并）是对
+      // 用户合集的明确删除，走普通删除墓碑的新闻裁决；它的分组键已被目标吸收进别名，
+      // 不会被当成拒绝。
+      organizeMerged: CollectionOrigin.parse(source.origin).isOrganizerManaged,
     );
     merged++;
   }
