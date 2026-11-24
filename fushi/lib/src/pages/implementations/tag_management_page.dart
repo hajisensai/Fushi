@@ -756,6 +756,28 @@ class TagDeleteConfirmationDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Apple 设计系统（isGlassDesign）：纯文字确认 = iOS / macOS alert（标题与
+    // 正文居中、底部两枚等宽填充胶囊，取消中性灰、删除红字），走
+    // [FushiAlertDialog] 的 alert 形态；M3E 保持原来的表单式对话框不变。
+    if (isGlassDesign(context)) {
+      return FushiAlertDialog(
+        title: Text(t.dialog_delete),
+        content: Text(t.tag_delete_confirm(name: tagName)),
+        actions: <Widget>[
+          adaptiveDialogAction(
+            context: context,
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(t.dialog_cancel),
+          ),
+          adaptiveDialogAction(
+            context: context,
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(t.dialog_delete),
+          ),
+        ],
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     return FushiDialogFrame(

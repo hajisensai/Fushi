@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -21,7 +22,7 @@ void main() {
   ThemeData theme({required bool glass}) => buildFushiThemeData(
     scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
     textTheme: Typography.material2021().black,
-    glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: glass ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
     glassDesign: glass,
   );
 
@@ -76,6 +77,52 @@ void main() {
       ],
     );
 
+    testWidgets('glass alert: primary is a flat accent capsule, no rim', (
+      WidgetTester tester,
+    ) async {
+      await pumpOpener(
+        tester,
+        glass: true,
+        onOpen: (BuildContext c) => showDialog<void>(
+          context: c,
+          builder: (_) => dialog(onOk: () {}),
+        ),
+      );
+      final Finder okButton = find.ancestor(
+        of: find.text('OK'),
+        matching: find.byType(FushiPlainButton),
+      );
+      final BuildContext ctx = tester.element(okButton);
+      expect(
+        tester.widget<FushiPlainButton>(okButton).fill,
+        appleColorsOf(ctx).accent,
+      );
+      expect(find.byType(GlassButton), findsNothing);
+    });
+
+    test('glass button rest settings drop the highlight rim', () {
+      final LiquidGlassSettings rest = fushiGlassButtonRestSettings(
+        LiquidGlassSettings.ios27Dark.copyWith(
+          lightIntensity: 0.4,
+          ambientRim: 0.2,
+          fresnelStrength: 0.5,
+        ),
+      );
+      expect(rest.rimLight, 0);
+      expect(rest.rimShade, 0);
+      expect(rest.lightIntensity, 0);
+      expect(rest.ambientRim, 0);
+      expect(rest.fresnelStrength, 0);
+      // 填充 / 折射不动。
+      expect(rest.glassColor, LiquidGlassSettings.ios27Dark.glassColor);
+      expect(rest.thickness, LiquidGlassSettings.ios27Dark.thickness);
+      final LiquidGlassSettings half = fushiGlassButtonRestSettings(
+        LiquidGlassSettings.ios27Dark,
+        rim: 0.5,
+      );
+      expect(half.rimLight, LiquidGlassSettings.ios27Dark.rimLight * 0.5);
+    });
+
     testWidgets('MD3 renders the Material AlertDialog', (
       WidgetTester tester,
     ) async {
@@ -112,31 +159,26 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Title'), findsOneWidget);
-      // iOS 26 alert：两个动作并排、等宽、48 高胶囊；取消是中性玻璃胶囊
-      // （主操作在这里 onPressed 为空，是禁用的灰胶囊）。
-      final Rect cancel = tester.getRect(
-        find.ancestor(
-          of: find.text('Cancel'),
-          matching: find.byType(GlassButton),
-        ),
+      // iOS 26 alert：两个动作并排、等宽、48 高胶囊；是 UIAlertController
+      // 的平填充胶囊（不是玻璃、静止无高光边）：取消是中性洗色底（主操作在
+      // 这里 onPressed 为空，是禁用的同色灰胶囊）。
+      final Finder cancelButton = find.ancestor(
+        of: find.text('Cancel'),
+        matching: find.byType(FushiPlainButton),
       );
-      final Rect ok = tester.getRect(
-        find.ancestor(of: find.text('OK'), matching: find.byType(GlassButton)),
+      final Finder okButton = find.ancestor(
+        of: find.text('OK'),
+        matching: find.byType(FushiPlainButton),
       );
+      final Rect cancel = tester.getRect(cancelButton);
+      final Rect ok = tester.getRect(okButton);
       expect(cancel.top, ok.top);
       expect(cancel.width, moreOrLessEquals(ok.width, epsilon: 0.5));
       expect(ok.height, 48);
-      expect(
-        tester
-            .widget<GlassButton>(
-              find.ancestor(
-                of: find.text('Cancel'),
-                matching: find.byType(GlassButton),
-              ),
-            )
-            .style,
-        GlassButtonStyle.filled,
-      );
+      expect(find.byType(GlassButton), findsNothing);
+      final Color wash = fushiAppleActionWash(tester.element(cancelButton));
+      expect(tester.widget<FushiPlainButton>(cancelButton).fill, wash);
+      expect(tester.widget<FushiPlainButton>(okButton).fill, wash);
       // 纯文字 alert 宽度收在 iOS 的 270–320。
       final double width = tester
           .getSize(
@@ -473,7 +515,7 @@ void main() {
                   brightness: brightness,
                 ),
                 textTheme: Typography.material2021().black,
-                glass: FushiGlassMaterial.liquid,
+                glass: FushiGlassMaterial.premium,
                 glassDesign: true,
               ),
               builder: (BuildContext context, Widget? child) =>
