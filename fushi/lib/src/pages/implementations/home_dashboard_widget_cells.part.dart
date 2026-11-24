@@ -580,6 +580,59 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     );
     final List<_ContinueEntry> shown = entries.take(rows * columns).toList();
     final double width = (area.width - _kMiniGap * (columns - 1)) / columns;
+    if (isGlassDesign(context) && !_posterPanels) {
+      // Apple：inset grouped 列表口径——行与行之间一条 hairline，从文字起始处
+      // 缩进（封面列不画线），最后一行下面不画。分隔线占原行距那一段，不改行高。
+      final int lastRow = (shown.length - 1) ~/ columns;
+      return Wrap(
+        key: key,
+        spacing: _kMiniGap,
+        children: <Widget>[
+          for (int i = 0; i < shown.length; i++)
+            SizedBox(
+              width: width,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _widgetMiniTile(
+                    tokens: tokens,
+                    appModel: appModel,
+                    key: ValueKey<String>('$keyPrefix/${i + indexOffset}'),
+                    entry: shown[i],
+                    height: rowHeight,
+                    subtitle: subtitleOf(shown[i]),
+                  ),
+                  if (i ~/ columns < lastRow)
+                    SizedBox(
+                      height: _kMiniGap,
+                      child: Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: Padding(
+                          padding: EdgeInsetsDirectional.only(
+                            start:
+                                rowHeight *
+                                    homeContinuePortraitAspect(
+                                      _continueMaterial(shown[i]),
+                                    ) +
+                                10,
+                          ),
+                          child: SizedBox(
+                            height: 1 / MediaQuery.devicePixelRatioOf(context),
+                            width: double.infinity,
+                            child: ColoredBox(
+                              color: appleColorsOf(context).separator,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
     return Wrap(
       key: key,
       spacing: _kMiniGap,
@@ -631,10 +684,10 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
             ].join(' · '),
             onTap: open,
             excludeSemantics: true,
-            child: InkWell(
+            child: _miniTapTarget(
+              context,
               key: key,
               onTap: open,
-              borderRadius: FushiBorderRadius.card,
               child: SizedBox(
                 height: height,
                 child: Row(
@@ -654,10 +707,30 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                     Expanded(
                       child: LayoutBuilder(
                         builder: (BuildContext context, BoxConstraints box) {
-                          final TextStyle titleStyle = tokens.type.listTitle
-                              .copyWith(color: fg);
-                          final TextStyle metaStyle = tokens.type.metadata
-                              .copyWith(color: muted);
+                          final FushiAppleMetrics? am =
+                              isGlassDesign(context) &&
+                                  !(style?.poster ?? false)
+                              ? FushiAppleMetrics.of(context)
+                              : null;
+                          final TextStyle titleStyle = am != null
+                              ? am
+                                    .titleStyle(context)
+                                    .copyWith(
+                                      fontSize:
+                                          (am.desktop ? 13 : 15) * am.scale,
+                                      fontWeight: FontWeight.w600,
+                                      color: fg,
+                                    )
+                              : tokens.type.listTitle.copyWith(color: fg);
+                          final TextStyle metaStyle = am != null
+                              ? am
+                                    .subtitleStyle(context)
+                                    .copyWith(
+                                      fontSize:
+                                          (am.desktop ? 11 : 13) * am.scale,
+                                      color: muted,
+                                    )
+                              : tokens.type.metadata.copyWith(color: muted);
                           final TextStyle browStyle = context
                               .fushiType
                               .labelSmall
@@ -714,6 +787,31 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
           ),
         );
       },
+    );
+  }
+
+  /// 条目小行的点按面：Apple 是 [FushiPlainButton]（按下变淡、悬停 tertiaryFill、
+  /// 焦点强调色描边），M3E 是 [InkWell]。
+  Widget _miniTapTarget(
+    BuildContext context, {
+    required Key key,
+    required VoidCallback onTap,
+    required Widget child,
+  }) {
+    if (isGlassDesign(context) &&
+        HomeWidgetStyle.maybeOf(context)?.poster != true) {
+      return FushiPlainButton(
+        key: key,
+        onPressed: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: child,
+      );
+    }
+    return InkWell(
+      key: key,
+      onTap: onTap,
+      borderRadius: FushiBorderRadius.card,
+      child: child,
     );
   }
 
@@ -913,7 +1011,9 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
       builder: (BuildContext context) {
         final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
         final Color strong =
-            style?.colors?.onContainer ?? tokens.surfaces.onSurface;
+            style?.colors?.onContainer ??
+            style?.foreground ??
+            tokens.surfaces.onSurface;
         return HomeTodayGoalPager(
           key: const ValueKey<String>('home-today-goal-pager'),
           count: goals.length,
@@ -962,7 +1062,10 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
         final FushiCoverBlockColors? colors = style?.colors;
         final Color muted = style?.muted ?? tokens.surfaces.onVariant;
-        final Color strong = colors?.onContainer ?? tokens.surfaces.onSurface;
+        final Color strong =
+            colors?.onContainer ??
+            style?.foreground ??
+            tokens.surfaces.onSurface;
         final TextStyle caption = tokens.type.metadata.copyWith(color: muted);
         final double ringSize = dense
             ? 40
@@ -1192,7 +1295,10 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
         final FushiCoverBlockColors? colors = style?.colors;
         final Color muted = style?.muted ?? tokens.surfaces.onVariant;
-        final Color strong = colors?.onContainer ?? tokens.surfaces.onSurface;
+        final Color strong =
+            colors?.onContainer ??
+            style?.foreground ??
+            tokens.surfaces.onSurface;
         final StudyGoalColors goalColors = studyGoalColorsOf(
           context,
           language: g.goal.language,
@@ -1637,7 +1743,10 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
         final FushiCoverBlockColors? colors = style?.colors;
         final Color muted = style?.muted ?? tokens.surfaces.onVariant;
-        final Color strong = colors?.onContainer ?? tokens.surfaces.onSurface;
+        final Color strong =
+            colors?.onContainer ??
+            style?.foreground ??
+            tokens.surfaces.onSurface;
         final TextStyle caption = tokens.type.metadata.copyWith(color: muted);
         // 环色跟各自目标的语言（挑的目标可以混语言），带完成状态（[StudyGoalRing]）；
         // 环够大时环心写百分数。

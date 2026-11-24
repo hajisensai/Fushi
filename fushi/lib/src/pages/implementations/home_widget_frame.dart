@@ -14,12 +14,15 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/models/home_widget_layout.dart'
+    show HomeWidgetCategory, HomeWidgetKind;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_poster_block.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -192,28 +195,52 @@ class HomeWidgetFrame extends StatelessWidget {
             hue ?? fushiPosterHue('home-widget/$hueKey'),
           )
         : null;
-    final Color foreground = colors?.onContainer ?? tokens.surfaces.onSurface;
+    // Apple 分区卡（iOS Health / Fitness「摘要」卡与 iOS 小组件口径）：文字与配色
+    // 一律取 [FushiAppleColors]——正文 label、次要 secondaryLabel、强调 accent；
+    // 小标题是 footnote semibold 的类别色（[homeWidgetAppleTint]）。海报色块 /
+    // M3E 不走这里。
+    final FushiAppleColors? apple = colors == null && isGlassDesign(context)
+        ? appleColorsOf(context)
+        : null;
+    final Color foreground =
+        colors?.onContainer ?? apple?.label ?? tokens.surfaces.onSurface;
     final Color muted =
         colors?.onContainer.withValues(alpha: 0.8) ??
+        apple?.secondaryLabel ??
         tokens.type.metadata.color ??
         tokens.surfaces.onVariant;
-    final Color accent = colors?.accent ?? tokens.surfaces.primary;
-    final Color headerColor = attention
+    final Color accent =
+        colors?.accent ?? apple?.accent ?? tokens.surfaces.primary;
+    final Color headerColor = apple != null
+        ? homeWidgetAppleTint(apple, hueKey, attention: attention)
+        : attention
         ? scheme.error
         : colors != null
         ? muted
         : (tokens.type.sectionLabel.color ?? muted);
     // 海报色块的小标题与拼贴统计块（`HomeStatTile`）同一套：w700、次要色；分区卡
-    // 外观走排版角色（不写裸字号）。
+    // 外观走排版角色（不写裸字号）；Apple 是 footnote semibold（iOS 13，macOS 档按
+    // [FushiAppleMetrics.scale] 放大）。
     final TextStyle headerStyle = colors != null
         ? FushiPosterText.meta
               .on(Theme.of(context).textTheme.bodyMedium ?? const TextStyle())
               .copyWith(color: headerColor, height: 1.2)
+        : apple != null
+        ? FushiAppleMetrics.of(context)
+              .footnoteStyle(context)
+              .copyWith(
+                color: headerColor,
+                height: 1.2,
+                fontWeight: FontWeight.w600,
+              )
         : context.fushiType.labelMedium.copyWith(
             color: headerColor,
             height: 1.2,
             fontWeight: FontWeight.w600,
           );
+    final double headerIconSize = apple != null
+        ? (headerStyle.fontSize ?? 13)
+        : 14;
     final Widget body = HomeWidgetStyle(
       poster: poster,
       colors: colors,
@@ -231,7 +258,7 @@ class HomeWidgetFrame extends StatelessWidget {
                 children: <Widget>[
                   // 无外框时标题行与下面色块里的文字对齐，往里收一点。
                   if (bare) const SizedBox(width: 12),
-                  FushiIcon(icon, size: 14, color: headerColor),
+                  FushiIcon(icon, size: headerIconSize, color: headerColor),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
@@ -291,17 +318,30 @@ class HomeWidgetFrame extends StatelessWidget {
       );
     }
 
-    // 分区卡：与原 `_sectionCard` 同口径（Apple 实色 inset grouped、墨水屏描边）。
+    if (apple != null) {
+      // Apple：secondarySystemGroupedBackground 实色、连续曲率圆角，按压是系统高亮
+      // （不画墨水），整块随 [FushiPressScale] 轻压、桌面悬停 [FushiHoverLift]。
+      final Widget card = HomeAppleWidgetCard(
+        tapKey: tapKey,
+        onTap: tap,
+        semanticLabel: semanticLabel,
+        padding: EdgeInsets.all(pad),
+        child: body,
+      );
+      if (tap == null) return card;
+      return FushiHoverLift(
+        scale: 1.01,
+        builder: (BuildContext context, bool hovering) =>
+            FushiPressScale(child: card),
+      );
+    }
+
+    // 分区卡：与原 `_sectionCard` 同口径（墨水屏描边）。
     final bool eink = isEinkTheme(context);
-    final bool apple = isGlassDesign(context);
     final Widget card = Material(
-      color: apple
-          ? appleColorsOf(context).secondaryGroupedBackground
-          : tokens.surfaces.group,
+      color: tokens.surfaces.group,
       shape: RoundedRectangleBorder(
-        borderRadius: apple
-            ? FushiAppleMetrics.of(context).groupBorderRadius
-            : FushiBorderRadius.card,
+        borderRadius: FushiBorderRadius.card,
         side: eink
             ? BorderSide(color: tokens.surfaces.outline)
             : BorderSide.none,
@@ -375,6 +415,47 @@ class HomeWidgetFigure extends StatelessWidget {
         : (style?.foreground ?? tokens.surfaces.onSurface);
     final Color muted = style?.muted ?? tokens.surfaces.onVariant;
     final String? u = unit;
+    if (!poster && isGlassDesign(context)) {
+      // Apple（Health 摘要卡）：大数字 label 粗体、单位 secondaryLabel semibold。
+      final FushiAppleColors a = appleColorsOf(context);
+      final FushiAppleMetrics m = FushiAppleMetrics.of(context);
+      final TextStyle base =
+          Theme.of(context).textTheme.bodyLarge ?? const TextStyle();
+      final double valueSize =
+          (m.desktop ? (large ? 28 : 22) : (large ? 34 : 28)) * m.scale;
+      return FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: AlignmentDirectional.centerStart,
+        child: Text.rich(
+          TextSpan(
+            children: <InlineSpan>[
+              TextSpan(
+                text: value,
+                style: base.copyWith(
+                  fontSize: valueSize,
+                  fontWeight: FontWeight.w700,
+                  height: 1.1,
+                  letterSpacing: 0,
+                  color: a.label,
+                ),
+              ),
+              if (u != null)
+                TextSpan(
+                  text: ' $u',
+                  style: base.copyWith(
+                    fontSize: m.subtitleSize,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0,
+                    color: a.secondaryLabel,
+                  ),
+                ),
+            ],
+          ),
+          maxLines: 1,
+          softWrap: false,
+        ),
+      );
+    }
     final FushiTypography type = context.fushiType;
     final TextStyle role = large ? type.displaySmall : type.headlineMedium;
     final double size = role.fontSize ?? kDefaultFontSize;
@@ -405,6 +486,117 @@ class HomeWidgetFigure extends StatelessWidget {
         ),
         maxLines: 1,
         softWrap: false,
+      ),
+    );
+  }
+}
+
+/// Apple 分区卡小标题的类别色（iOS Health 摘要卡：每类一种系统色）：学习类
+/// （今日 / 近 7 天 / 复习 / 语言目标）= 系统橙（Fitness 活动色）、其余（继续 /
+/// 最近添加 / 工具）= 强调色；[attention]（追踪有要处理的事）= destructive。
+Color homeWidgetAppleTint(
+  FushiAppleColors colors,
+  String hueKey, {
+  bool attention = false,
+}) {
+  if (attention) return colors.destructive;
+  return switch (HomeWidgetKind.fromId(hueKey)?.category) {
+    HomeWidgetCategory.study => colors.warning,
+    _ => colors.accent,
+  };
+}
+
+/// Apple 分区卡的外壳：secondarySystemGroupedBackground 实色、连续曲率圆角
+/// （[FushiAppleMetrics.groupBorderRadius]），无描边无投影。[onTap] 非空时整块
+/// 是一个焦点停靠点：按下叠一层 tertiaryFill 高亮（UIKit 单元格按下的灰），键盘
+/// 焦点是 2pt 强调色描边——不画 Material 墨水 / 悬停状态层。[tapKey] 落在点按
+/// 目标上（沿用旧分区的测试 key）。
+class HomeAppleWidgetCard extends StatefulWidget {
+  const HomeAppleWidgetCard({
+    super.key,
+    required this.padding,
+    required this.child,
+    this.onTap,
+    this.tapKey,
+    this.semanticLabel,
+  });
+
+  final EdgeInsetsGeometry padding;
+  final Widget child;
+  final VoidCallback? onTap;
+  final Key? tapKey;
+  final String? semanticLabel;
+
+  @override
+  State<HomeAppleWidgetCard> createState() => _HomeAppleWidgetCardState();
+}
+
+class _HomeAppleWidgetCardState extends State<HomeAppleWidgetCard> {
+  bool _pressed = false;
+  bool _focused = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value || !mounted) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors a = appleColorsOf(context);
+    final BorderRadius radius = FushiAppleMetrics.of(context).groupBorderRadius;
+    final VoidCallback? tap = widget.onTap;
+    final Color fill = _pressed
+        ? Color.alphaBlend(a.tertiaryFill, a.secondaryGroupedBackground)
+        : a.secondaryGroupedBackground;
+    final Widget surface = AnimatedContainer(
+      duration: _pressed
+          ? Duration.zero
+          : fushiMotionDuration(context, FushiMotion.short),
+      decoration: ShapeDecoration(
+        color: fill,
+        shape: RoundedSuperellipseBorder(
+          borderRadius: radius,
+          side: _focused
+              ? BorderSide(color: a.accent, width: 2)
+              : BorderSide.none,
+        ),
+      ),
+      child: ClipRSuperellipse(
+        borderRadius: radius,
+        // 透明 Material：内容里的 Material 系控件（按钮等）有墨水宿主，不画到
+        // 页面底上。
+        child: Material(
+          type: MaterialType.transparency,
+          child: Padding(padding: widget.padding, child: widget.child),
+        ),
+      ),
+    );
+    if (tap == null) return surface;
+    return FocusableActionDetector(
+      key: widget.tapKey,
+      mouseCursor: SystemMouseCursors.click,
+      actions: <Type, Action<Intent>>{
+        ActivateIntent: CallbackAction<ActivateIntent>(
+          onInvoke: (ActivateIntent intent) {
+            tap();
+            return null;
+          },
+        ),
+      },
+      onShowFocusHighlight: (bool value) {
+        if (_focused != value) setState(() => _focused = value);
+      },
+      child: Semantics(
+        label: widget.semanticLabel,
+        button: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (_) => _setPressed(true),
+          onTapUp: (_) => _setPressed(false),
+          onTapCancel: () => _setPressed(false),
+          onTap: tap,
+          child: surface,
+        ),
       ),
     );
   }

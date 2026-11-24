@@ -388,13 +388,12 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
     // 与库页「导入」同一位置、同一形状），两套设计系统都一样。
     final bool masthead =
         fushiMastheadRoleOf(context) == FushiMastheadRole.primary;
-    final FushiAppleColors? appleColors = apple && !masthead
-        ? appleColorsOf(context)
-        : null;
-    final Color onContainer =
-        appleColors?.label ?? Theme.of(context).colorScheme.onPrimaryContainer;
+    final FushiAppleColors? appleColors = apple ? appleColorsOf(context) : null;
+    final Color onContainer = appleColors != null
+        ? appleDarkColorsOf(context).label
+        : Theme.of(context).colorScheme.onPrimaryContainer;
     final double size = masthead
-        ? 40
+        ? (apple ? FushiPageTitleMetrics.of(context).primaryExtent : 40)
         : apple
         ? fushiAppleFloatingExtent(context)
         : 40;
@@ -406,6 +405,18 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: appleColors?.fill ?? tokens.surfaces.primaryContainer,
+                // Apple：通讯录 / Apple 账户式字母头像——secondaryLabel →
+                // tertiaryLabel 的竖向灰渐变（叠在 systemFill 上），字母白色。
+                gradient: appleColors == null
+                    ? null
+                    : LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: <Color>[
+                          appleColors.tertiaryLabel,
+                          appleColors.secondaryLabel,
+                        ],
+                      ),
               ),
               child: Center(
                 child: name.isEmpty
@@ -420,6 +431,8 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
                             ?.copyWith(
                               color: onContainer,
                               fontWeight: FontWeight.w700,
+                              fontSize: apple ? size * 0.45 : null,
+                              letterSpacing: apple ? 0 : null,
                             ),
                       ),
               ),
@@ -447,19 +460,28 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
                   OutlinedBorder shape,
                   FushiMastheadPalette palette,
                   double extent,
-                ) => Material(
-                  shape: shape,
-                  color: palette.indicator,
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    customBorder: shape,
-                    onTap: onTap,
+                ) => apple
+                ? FushiPlainButton(
+                    onPressed: onTap,
+                    borderRadius: BorderRadius.circular(extent / 2),
                     child: SizedBox.square(
                       dimension: extent,
                       child: Center(child: avatar),
                     ),
+                  )
+                : Material(
+                    shape: shape,
+                    color: palette.indicator,
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      customBorder: shape,
+                      onTap: onTap,
+                      child: SizedBox.square(
+                        dimension: extent,
+                        child: Center(child: avatar),
+                      ),
+                    ),
                   ),
-                ),
           ),
         ),
       );
@@ -3426,12 +3448,22 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     WidgetGoalsInput? input,
   }) {
     final _WeekBarsData data = _weekBarsData(goal: goal, input: input);
+    // Apple（Swift Charts 口径）柱下挂星期首字母；M3E 不画。
+    final List<String>? axis = isGlassDesign(context)
+        ? <String>[
+            for (final String key in _statWindow.lastDayKeys(7))
+              MaterialLocalizations.of(
+                context,
+              ).narrowWeekdays[FushiDatabase.statDateKeyToDay(key).weekday % 7],
+          ]
+        : null;
     return HomeWeekBars(
       values: data.values,
       labels: data.labels,
       height: height,
       reference: data.reference,
       semanticLabel: data.semantic,
+      axisLabels: axis,
       color: goal == null
           ? null
           : studyGoalColorsOf(

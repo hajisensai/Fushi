@@ -954,9 +954,12 @@ class FushiContinueStillCard extends StatelessWidget {
     // （Apple 取系统强调色，墨水屏纯白），与 [FushiContinueHero] 同一套分派。
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
+    // Apple（TV app「接着看」卡）：压在暗渐变上的眉标是深色档 secondaryLabel、
+    // 进度是白（深色档 label）配 systemFill 轨道——不在照片上铺强调色。
+    final FushiAppleColors? onImage = apple ? appleDarkColorsOf(context) : null;
     final Color accent = eink
         ? Colors.white
-        : (apple ? appleColorsOf(context).accent : cs.primaryFixedDim);
+        : (onImage?.secondaryLabel ?? cs.primaryFixedDim);
     final double? v = entry.progress?.clamp(0.0, 1.0);
     final String eyebrow = entry.eyebrow ?? '';
     final BorderRadius? radius = eink || apple
@@ -1057,8 +1060,10 @@ class FushiContinueStillCard extends StatelessWidget {
                         borderRadius: const BorderRadius.all(
                           Radius.circular(2),
                         ),
-                        color: accent,
-                        backgroundColor: Colors.white.withValues(alpha: 0.24),
+                        color: onImage?.label ?? accent,
+                        backgroundColor:
+                            onImage?.fill ??
+                            Colors.white.withValues(alpha: 0.24),
                       ),
                     ],
                   ],
