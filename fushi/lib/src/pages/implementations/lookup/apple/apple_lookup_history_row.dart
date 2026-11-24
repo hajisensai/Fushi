@@ -12,18 +12,13 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// Apple 颜色标签圆点的直径（「提醒事项」/ 访达标签的小色点口径）。
-const double kAppleLookupHistoryTagDot = 10;
-
-/// 色点与文字之间的间距。
-const double _kTagGap = 12;
-
 /// 查词历史 Apple 行（iOS 27「词典」/ 聚焦搜索结果、macOS 27 侧栏搜索结果列表口径）。
 ///
 /// 放在 inset grouped 分组里的一格（[FushiGroupedListItem]，与上方「最近搜索」同一
 /// 种外壳：行间 separator 细线左端对齐文字、悬停 tertiaryFill / 按下 fill 的 Apple
 /// 行高亮、键盘焦点环 + Enter 打开）。行内：
-/// - 行首一枚按词取色的小圆点表达颜色标签（不是 M3E 的满高色条）；
+/// - 不画颜色标签（用户 2026-11-24「那个颜色去掉」）：M3E 色条行照旧用
+///   [LookupHistoryRowData.hue]，Apple 行只留文字；
 /// - 标题 label 色正文字号、最多两行省略；副标题 secondaryLabel 一行；
 /// - 行尾命中词典数是 secondaryLabel 的「字形 + 数字」纯文字，不铺 tonal 胶囊；
 /// - 行尾「⋯」是裸字形按钮（悬停 / 焦点时露出，触屏长按、桌面右键同样弹这张
@@ -48,11 +43,9 @@ class AppleLookupHistoryRow extends StatefulWidget {
   /// 分组外边距（左右页边距）。
   final EdgeInsetsGeometry margin;
 
-  /// 分隔线左端：行内边距 + 色点 + 色点与文字间距，对齐文字左缘。
+  /// 分隔线左端：行内边距，对齐文字左缘。
   static double separatorIndent(BuildContext context) =>
-      FushiAppleMetrics.of(context).rowHorizontal +
-      kAppleLookupHistoryTagDot +
-      _kTagGap;
+      FushiAppleMetrics.of(context).rowHorizontal;
 
   @override
   State<AppleLookupHistoryRow> createState() => _AppleLookupHistoryRowState();
@@ -126,21 +119,11 @@ class _AppleLookupHistoryRowState extends State<AppleLookupHistoryRow> {
     final LookupHistoryRowData data = widget.data;
     final FushiAppleColors apple = appleColorsOf(context);
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
-    final bool dark = Theme.of(context).brightness == Brightness.dark;
     final TextStyle titleStyle = metrics.titleStyle(context);
     final TextStyle subtitleStyle = metrics.subtitleStyle(context);
     final String? subtitle = data.subtitle('・');
     final bool reveal = _hovered || _focused || _menuOpen;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-
-    final Widget dot = DecoratedBox(
-      key: const ValueKey<String>('lookup_history_apple_tag_dot'),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: appleLookupTagColor(data.hue, dark: dark),
-      ),
-      child: const SizedBox.square(dimension: kAppleLookupHistoryTagDot),
-    );
 
     final Widget count = Semantics(
       label: t.lookup_history_dictionary_count(count: data.dictionaryCount),
@@ -189,8 +172,6 @@ class _AppleLookupHistoryRowState extends State<AppleLookupHistoryRow> {
         ),
         child: Row(
           children: <Widget>[
-            dot,
-            const SizedBox(width: _kTagGap),
             Expanded(
               child: Padding(
                 padding: EdgeInsets.symmetric(vertical: metrics.rowVertical),
@@ -265,8 +246,3 @@ class _AppleLookupHistoryRowState extends State<AppleLookupHistoryRow> {
     );
   }
 }
-
-/// 颜色标签色：按词的色相取 Apple 系统色饱和度 / 亮度的一枚小色点（浅色 52%、
-/// 深色 62% 亮度），在分组底上两套主题都清晰可辨。
-Color appleLookupTagColor(double hue, {required bool dark}) =>
-    HSLColor.fromAHSL(1, hue % 360, 0.72, dark ? 0.62 : 0.52).toColor();

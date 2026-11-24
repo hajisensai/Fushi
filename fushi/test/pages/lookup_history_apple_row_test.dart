@@ -1,8 +1,10 @@
 // 查词页「查词历史」的 Cupertino 版（用户 2026-11-24「查词的组件这块也换 cupertino」）：
-// Apple 下历史行坐在 inset grouped 分组里（与「最近搜索」同一种外壳），颜色标签是行首
-// 小圆点（不是 M3E 的满高色条），命中词典数是 secondaryLabel 纯文字（不是 tonal 胶囊），
+// Apple 下历史行坐在共享圆角 token（连续曲率）的分组里（与「最近搜索」同一种外壳），不画颜色
+// 标签（M3E 照旧有色条），命中词典数是 secondaryLabel 纯文字（不是 tonal 胶囊），
 // 标题最多两行省略；「⋯」/ 右键 / 长按弹同一张 Apple 菜单（收藏 / 移出历史）；焦点 +
 // Enter 打开条目、方向键在行间移动。M3E 色条行不变。
+
+import 'dart:io';
 
 import 'package:flutter/gestures.dart'
     show PointerDeviceKind, kSecondaryMouseButton;
@@ -77,7 +79,7 @@ Future<void> _pumpApple(
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
-  testWidgets('Apple 行：分组外壳 + 小色点，无满高色条、无 tonal 胶囊', (
+  testWidgets('Apple 行：共享圆角的连续曲率分组外壳，无颜色标签、无 tonal 胶囊', (
     WidgetTester tester,
   ) async {
     final _Log log = _Log();
@@ -95,26 +97,59 @@ void main() {
     expect(find.byType(FushiGroupedListItem), findsNWidgets(2));
     expect(find.byType(FushiAppleGroupSurface), findsNWidgets(2));
 
-    // 颜色标签 = 10×10 圆点。
-    final Finder dots = find.byKey(
-      const ValueKey<String>('lookup_history_apple_tag_dot'),
+    final BuildContext ctx = tester.element(find.byType(Scaffold));
+    // 不画颜色标签（用户「那个颜色去掉」）：没有色点、没有 M3E 的 8×28 满高色条，
+    // 行内没有任何彩色填充块。
+    expect(
+      find.byKey(const ValueKey<String>('lookup_history_apple_tag_dot')),
+      findsNothing,
     );
-    expect(dots, findsNWidgets(2));
-    for (final Element dot in dots.evaluate()) {
+    final Iterable<DecoratedBox> boxes = tester.widgetList<DecoratedBox>(
+      find.descendant(
+        of: find.byType(AppleLookupHistoryRow),
+        matching: find.byType(DecoratedBox),
+      ),
+    );
+    for (final DecoratedBox box in boxes) {
+      final Decoration d = box.decoration;
+      if (d is! BoxDecoration) continue;
+      // 「⋯」字形按钮的按下圆是中性灰，不算标记；只要求没有彩色填充。
+      final Color? c = d.color;
+      if (c == null || c.a == 0) continue;
       expect(
-        (dot.renderObject! as RenderBox).size,
-        const Size.square(kAppleLookupHistoryTagDot),
+        HSLColor.fromColor(c).saturation,
+        lessThan(0.2),
+        reason: '行内不得有彩色标记块：$c',
       );
-      final BoxDecoration deco =
-          (dot.widget as DecoratedBox).decoration as BoxDecoration;
-      expect(deco.shape, BoxShape.circle);
     }
-    // 没有 M3E 的 8×28 满高色条。
     final Iterable<Size> boxSizes = find
         .byType(DecoratedBox)
         .evaluate()
         .map((Element e) => (e.renderObject! as RenderBox).size);
     expect(boxSizes, isNot(contains(const Size(8, 28))));
+
+    // 分组外形 = 全 app 分组容器的共享圆角 token（FushiAppleMetrics.groupRadius），
+    // 连续曲率（组首两上角 / 组尾两下角）。
+    final Radius token = Radius.circular(FushiAppleMetrics.of(ctx).groupRadius);
+    final List<FushiAppleGroupSurface> surfaces = tester
+        .widgetList<FushiAppleGroupSurface>(find.byType(FushiAppleGroupSurface))
+        .toList();
+    expect(surfaces.first.borderRadius!.topLeft, token);
+    expect(surfaces.first.borderRadius!.bottomLeft, Radius.zero);
+    expect(surfaces.last.borderRadius!.bottomRight, token);
+    final Material surface = tester.widget<Material>(
+      find
+          .descendant(
+            of: find.byType(FushiAppleGroupSurface).first,
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    expect(surface.shape, isA<RoundedSuperellipseBorder>());
+    expect(
+      (surface.shape! as RoundedSuperellipseBorder).borderRadius,
+      BorderRadius.vertical(top: token),
+    );
 
     // 计数是纯文字：不是 FushiTag，祖先里也没有胶囊底。
     expect(find.byType(FushiTag), findsNothing);
@@ -153,7 +188,6 @@ void main() {
     );
     expect(title.maxLines, 2);
     expect(title.overflow, TextOverflow.ellipsis);
-    final BuildContext ctx = tester.element(find.byType(Scaffold));
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(ctx);
     expect(title.style?.fontSize, metrics.titleSize);
     expect(title.style?.fontWeight, FontWeight.w400);
@@ -252,5 +286,21 @@ void main() {
     );
     expect((pill.decoration! as ShapeDecoration).shape, isA<StadiumBorder>());
     expect(find.byType(AppleLookupHistoryRow), findsNothing);
+  });
+
+  test('查词页 Apple 内容面（最近搜索 / 查词历史 / 结果卡 / 空态卡）不另立圆角', () {
+    final String src = File(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    ).readAsStringSync();
+    // 结果卡 / 空态卡走 FushiCard 的共享圆角（Apple = FushiAppleMetrics
+    // .groupBorderRadius，面是 FushiAppleGroupSurface 的连续曲率）。
+    expect(src, contains('? fushiCardBorderRadius(context)'));
+    // 最近搜索 / 历史分组不覆盖分组圆角。
+    expect(src, isNot(contains('appleRadius')));
+    final String row = File(
+      'lib/src/pages/implementations/lookup/apple/apple_lookup_history_row.dart',
+    ).readAsStringSync();
+    expect(row, isNot(contains('Radius.circular(')));
+    expect(row, isNot(contains('borderRadius:')));
   });
 }

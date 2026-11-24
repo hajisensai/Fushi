@@ -2247,6 +2247,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   /// 结果卡（及宽屏右栏空态卡）的圆角：MD3 Expressive 大面板 28；Apple 走 inset
   /// grouped 分组圆角（iOS ≈ 24 / 桌面 12），与同屏历史分组同形。
+  // Apple：与全 app 分组容器同一圆角 token（FushiAppleMetrics.groupRadius，经
+  // fushiCardBorderRadius）；FushiCard 的 Apple 面是 FushiAppleGroupSurface 的
+  // RoundedSuperellipseBorder（连续曲率）。
   BorderRadius _resultCardRadius() => isGlassDesign(context)
       ? fushiCardBorderRadius(context)
       : const BorderRadius.all(Radius.circular(_kResultCardRadiusMd3));
