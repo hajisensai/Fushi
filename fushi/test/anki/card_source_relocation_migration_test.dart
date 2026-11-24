@@ -65,7 +65,8 @@ void main() {
         '${_link(sourceId: _otherSourceId).toHtml()}';
     final String next = replaceCardSourceLinkHref(
       field,
-      cardSourceLinkWithSpan(_link(), offset: 2, length: 9),
+      from: _link(),
+      to: cardSourceLinkWithSpan(_link(), offset: 2, length: 9),
     );
     final List<CardSourceLink> links = CardSourceLink.fromHtml(next).toList();
     expect(links.map((CardSourceLink l) => l.charOffset), <int>[2, 4]);
@@ -340,6 +341,70 @@ void main() {
       expect(view.source?.data['title'], '冬期限定');
 
       expect(await run(), const CardSourceRelocationReport(verified: 1));
+    });
+
+    // 同一字段里两条书籍出处：先改写的那条让字段变了，后一条仍要按自己的链接判、照样改写，
+    // 不能因为「字段和扫描时不一样」被判成并发改动、永远留着旧坐标。
+    test('every book link in one field is rewritten', () async {
+      final String deck = await store.createDeck('JP');
+      final String note = await store.createNote(
+        noteTypeId: store.lapisNoteTypeId,
+        deckId: deck,
+        fieldsById: <String, String>{
+          fid('Expression'): '鼻白む',
+          fid('Sentence'): 'もとから<b>鼻白む</b>話だ。',
+          fid('MiscInfo'):
+              '${_link().toHtml(label: 'a')} '
+              '${_link(sourceId: _otherSourceId).toHtml(label: 'b')} '
+              '${_link().toHtml(label: 'a2')}',
+        },
+      );
+      final CardSourceRelocationReport? report =
+          await runCardSourceRelocationScope(
+            scope: cardSourceRelocationSrsScope(store.profileUid),
+            stateFile: _stateFile(),
+            loadItems: () => loadSrsNoteRelocationItems(
+              store,
+              extractDirOf: (CardSourceLink link) async => '/book',
+            ),
+            relocate: _relocate,
+          );
+      // 重复的同一条链接只算一项、一次全换掉。
+      expect(report, const CardSourceRelocationReport(relocated: 2));
+      final SrsNoteView view = (await store.notes(<String>[note]))[note]!;
+      final List<CardSourceLink> links = CardSourceLink.fromHtml(
+        view.field(fid('MiscInfo')),
+      ).toList();
+      expect(links.map((CardSourceLink l) => l.charOffset), <int>[2, 2, 2]);
+      expect(links.map((CardSourceLink l) => l.sourceId), <String>[
+        _sourceId,
+        _otherSourceId,
+        _sourceId,
+      ]);
+    });
+
+    test('a link edited after the scan is not overwritten', () async {
+      final String deck = await store.createDeck('JP');
+      final String note = await store.createNote(
+        noteTypeId: store.lapisNoteTypeId,
+        deckId: deck,
+        fieldsById: <String, String>{
+          fid('Sentence'): 'もとから<b>鼻白む</b>話だ。',
+          fid('MiscInfo'): _link().toHtml(label: 'a'),
+        },
+      );
+      final List<CardSourceRelocationItem> items =
+          await loadSrsNoteRelocationItems(
+            store,
+            extractDirOf: (CardSourceLink link) async => '/book',
+          );
+      final String edited = _link(offset: 7).toHtml(label: 'a');
+      await store.editFields(SrsEntityKind.note, note, <String, Object?>{
+        SrsFieldKeys.noteField(fid('MiscInfo')): edited,
+      });
+      expect(await items.single.write(2, 9), isFalse);
+      final SrsNoteView view = (await store.notes(<String>[note]))[note]!;
+      expect(view.field(fid('MiscInfo')), edited);
     });
   });
 }

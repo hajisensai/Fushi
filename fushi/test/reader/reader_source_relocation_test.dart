@@ -1,5 +1,5 @@
-// 拍板 hSZjfrcejt：BUG-4914 之前制的小说卡，出处存的是音频匹配坐标（拉丁 / 全角字母逐字母
-// 计），回看按学习单位落位就错位。按卡上句子在原章里核对 / 重定位。
+// 拍板 hSZjfrcejt：BUG-5049 修复（6463f4cf00）之前制的小说卡，出处存的是音频匹配坐标
+// （拉丁 / 全角字母逐字母计），回看按学习单位落位就错位。按卡上句子在原章里核对 / 重定位。
 import 'package:fushi/src/reader/reader_audio_position.dart';
 import 'package:fushi/src/reader/reader_source_relocation.dart';
 import 'package:fushi_engine/epub/epub_book.dart';

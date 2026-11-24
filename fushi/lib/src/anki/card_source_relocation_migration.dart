@@ -1,7 +1,7 @@
 /// 存量小说卡片「回到出处」坐标的一次性后台迁移（拍板 hSZjfrcejt）。
 ///
-/// BUG-4914 修复前制的小说卡，出处链接（`fushi://source?kind=book…`）与制卡历史里存的是
-/// 音频匹配坐标，回看高亮错位。这里把它们逐条交给 [relocateReaderSourceSpan] 按卡上的句子
+/// BUG-5049 修复（6463f4cf00）前制的小说卡，出处链接（`fushi://source?kind=book…`）
+/// 与制卡历史里存的是音频匹配坐标，回看高亮错位。这里把它们逐条交给 [relocateReaderSourceSpan] 按卡上的句子
 /// 在原书里核对 / 重定位，改写成学习单位坐标；定位不到的保留原值。
 ///
 /// 覆盖两处本机数据：
@@ -372,18 +372,30 @@ CardSourceLink cardSourceLinkWithSpan(
   bookKey: link.bookKey,
 );
 
-/// 把 [html] 里 sourceId 与 [next] 相同的出处 href 换成 [next]；其余内容逐字节不动。
-String replaceCardSourceLinkHref(String html, CardSourceLink next) =>
-    html.replaceAllMapped(_sourceHref, (Match m) {
-      final CardSourceLink? link = CardSourceLink.tryParse(
-        m.group(2)!.replaceAll('&amp;', '&'),
-      );
-      if (link == null || link.sourceId != next.sourceId) return m.group(0)!;
-      final String href = const HtmlEscape(
-        HtmlEscapeMode.attribute,
-      ).convert(next.toUri().toString());
-      return '${m.group(1)}$href${m.group(3)}';
-    });
+/// [a] 与 [b] 是不是同一条出处、同一个区间（sourceId、书、章、起点、长度都相同）。
+bool _sameSourceSpan(CardSourceLink a, CardSourceLink b) =>
+    a.sourceId == b.sourceId &&
+    a.uid == b.uid &&
+    a.chapterIndex == b.chapterIndex &&
+    a.charOffset == b.charOffset &&
+    a.charLength == b.charLength;
+
+/// 把 [html] 里与 [from] 是同一条出处、同一个区间的 href 换成 [to]；其余内容（包括同一字段里
+/// 别的出处链接）逐字节不动。
+String replaceCardSourceLinkHref(
+  String html, {
+  required CardSourceLink from,
+  required CardSourceLink to,
+}) => html.replaceAllMapped(_sourceHref, (Match m) {
+  final CardSourceLink? link = CardSourceLink.tryParse(
+    m.group(2)!.replaceAll('&amp;', '&'),
+  );
+  if (link == null || !_sameSourceSpan(link, from)) return m.group(0)!;
+  final String href = const HtmlEscape(
+    HtmlEscapeMode.attribute,
+  ).convert(to.toUri().toString());
+  return '${m.group(1)}$href${m.group(3)}';
+});
 
 /// 一条字段里可以重定位的书籍出处链接（有章、有起点）。
 Iterable<CardSourceLink> _bookLinks(String field) =>
@@ -421,7 +433,14 @@ Future<List<CardSourceRelocationItem>> loadSrsNoteRelocationItems(
           if (!value.contains('fushi://source')) srsWordAudioQueryText(value),
       ];
       for (final MapEntry<String, String> field in note.fields.entries) {
+        // 同一字段里重复的同一条链接只算一项：写回时一次全换掉。
+        final List<CardSourceLink> links = <CardSourceLink>[];
         for (final CardSourceLink link in _bookLinks(field.value)) {
+          if (!links.any((CardSourceLink l) => _sameSourceSpan(l, link))) {
+            links.add(link);
+          }
+        }
+        for (final CardSourceLink link in links) {
           final String dirKey = '${link.uid}\u0000${link.bookKey ?? ''}';
           if (!dirs.containsKey(dirKey)) {
             dirs[dirKey] = await extractDirOf(link);
@@ -439,7 +458,6 @@ Future<List<CardSourceRelocationItem>> loadSrsNoteRelocationItems(
                 store,
                 noteId: noteId,
                 fieldId: field.key,
-                original: field.value,
                 link: link,
                 offset: offset,
                 length: length,
@@ -453,25 +471,31 @@ Future<List<CardSourceRelocationItem>> loadSrsNoteRelocationItems(
   return out;
 }
 
-/// 写回一条笔记的出处链接（乐观并发：字段在扫描之后被改过就不写）。结构化出处
-/// （`SrsSourceRef.book`）指的是同一处时同一笔改掉。
+/// 写回一条笔记的出处链接（乐观并发按链接判：扫描之后这条链接在字段里被改掉 / 删掉就不写；
+/// 同一字段里别的链接先被改写过不影响这一条）。结构化出处（`SrsSourceRef.book`）指的是
+/// 同一处时同一笔改掉。
 Future<bool> _writeSrsLink(
   SrsDbStore store, {
   required String noteId,
   required String fieldId,
-  required String original,
   required CardSourceLink link,
   required int offset,
   required int length,
 }) async {
   final SrsNoteView? note = (await store.notes(<String>[noteId]))[noteId];
   if (note == null || note.deletedAt != null) return false;
-  if (note.field(fieldId) != original) return false;
+  final String current = note.field(fieldId);
+  if (!_bookLinks(
+    current,
+  ).any((CardSourceLink l) => _sameSourceSpan(l, link))) {
+    return false;
+  }
   final String next = replaceCardSourceLinkHref(
-    original,
-    cardSourceLinkWithSpan(link, offset: offset, length: length),
+    current,
+    from: link,
+    to: cardSourceLinkWithSpan(link, offset: offset, length: length),
   );
-  if (next == original) return false;
+  if (next == current) return false;
   final SrsSourceRef? source = note.source;
   final bool sameSource =
       source != null &&

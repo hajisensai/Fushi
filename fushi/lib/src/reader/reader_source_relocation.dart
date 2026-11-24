@@ -1,6 +1,6 @@
-/// 存量小说卡片「回到出处」坐标的重定位（拍板 hSZjfrcejt，BUG-4914 的存量修复）。
+/// 存量小说卡片「回到出处」坐标的重定位（拍板 hSZjfrcejt，BUG-5049 的存量修复）。
 ///
-/// BUG-4914 修复（6463f4cf00）之前，制卡把**音频匹配坐标**（JS `getMatchableOffset`：
+/// BUG-5049 修复（6463f4cf00）之前，制卡把**音频匹配坐标**（JS `getMatchableOffset`：
 /// 白名单 UTF-16 码元数，拉丁 / 数字逐字母计）写进了 `CardSourceLink.charOffset /
 /// charLength` 与制卡历史 `mined_sentences.norm_char_offset / length`；回看按**学习
 /// 单位坐标**（`getNormalizedOffset`）落位，句前有拉丁串 / 数字的卡高亮整体错位。
@@ -125,7 +125,7 @@ ReaderSourceRelocation relocateReaderSourceSpan(
   if (length > 0 && onCard(chapter.matchableTextForStudySpan(offset, length))) {
     return const ReaderSourceRelocation.verified();
   }
-  // 2. 匹配坐标口径（BUG-4914 之前的旧值）：精确换算。
+  // 2. 匹配坐标口径（BUG-5049 之前的旧值）：精确换算。
   final String text = chapter.matchableText;
   if (length > 0 &&
       offset >= 0 &&
