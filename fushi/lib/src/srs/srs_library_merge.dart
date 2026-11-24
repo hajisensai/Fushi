@@ -13,8 +13,10 @@
 ///    `srs.library` 拆分），之后它制卡 / 复习都落共享库。
 /// 5. **删墓碑**，再删独立库的媒体目录与 RWKV 快照。
 ///
-/// 3 与 4 之间被杀：墓碑留着，下次进配置管理页 [SrsLibraryMerger.finishPending] 补做 4、5（数据早就在共享库里）。
-/// 4 之后、5 之前被杀同理（恢复继承是幂等的）。复习页正看着共享库时合并经那份副本发（`sync2Command`）：回包的
+/// 3 与 4 之间被杀：墓碑留着，主进程下次装载配置列表（`ProfileViewModel` 装载完成后）与进配置管理页时
+/// [SrsLibraryMerger.finishPending] 补做 4、5（数据早就在共享库里）。补做之前墓碑让内核拒绝给独立库的 uid 另建空集合
+/// （`identity` 报错），经它的打开 / 制卡明确失败，不会把新卡写进收尾后看不见的孤儿集合。4 之后、5 之前被杀同理
+/// （恢复继承是幂等的）。只读的辅助进程（查词弹窗等）不补做。复习页正看着共享库时合并经那份副本发（`sync2Command`）：回包的
 /// `bindingChanged` 让它的缓存整份作废、重取身份；浏览器扩展为两边开着的副本一律作废，下次用时按新库重开。
 library;
 
@@ -33,6 +35,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
+import 'package:fushi/src/srs/srs_gen4_migration_controller.dart'
+    show srsGen4IsMainProcessProvider;
 import 'package:fushi/src/srs/srs_providers.dart';
 
 export 'package:fushi_engine/srs/srs_collection_merge.dart'
@@ -88,6 +92,7 @@ class SrsLibraryMergeDeps {
     required this.supportRoot,
     required this.libraries,
     required this.profiles,
+    required this.isMainProcess,
     this.clock = DateTime.now,
   });
 
@@ -108,6 +113,9 @@ class SrsLibraryMergeDeps {
 
   /// 此刻的全部配置。
   final Future<List<ProfileRow>> Function() profiles;
+
+  /// 本进程是主进程（srs.db 可写）。辅助进程不补做收尾（[SrsLibraryMerger.finishPending]）。
+  final bool Function() isMainProcess;
 
   final DateTime Function() clock;
 }
@@ -236,10 +244,11 @@ class SrsLibraryMerger {
   }
 
   /// 补做内核已并完、组合还没恢复继承的合并（墓碑）。[restoreInheritance]：撤掉组合 id 的 `srs.library` 拆分（调用方在
-  /// 配置变更锁里给）。复习库打不开时什么都不做。返回收尾了几条。
+  /// 配置变更锁里给）。复习库打不开、或不是主进程时什么都不做。返回收尾了几条。
   Future<int> finishPending({
     required Future<void> Function(int profileId) restoreInheritance,
   }) async {
+    if (!_deps.isMainProcess()) return 0;
     final SrsStorage? storage = await _deps.storage();
     if (storage == null) return 0;
     final List<SrsPendingCollectionMerge> pending =
@@ -300,6 +309,7 @@ SrsLibraryMerger srsLibraryMergerFor(Ref ref) => SrsLibraryMerger(
     supportRoot: () => ref.read(srsSupportRootProvider)(),
     libraries: () => loadComboSrsLibraries(_database(ref)),
     profiles: () => _database(ref).getAllProfiles(),
+    isMainProcess: () => ref.read(srsGen4IsMainProcessProvider),
   ),
 );
 

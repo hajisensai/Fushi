@@ -46,8 +46,11 @@
 //!
 //! 内核提交之后，app 还要在主库里把这个组合的 `srs.library` 恢复继承（组合行在 Drift 里，不在这个事务里）。两步之间
 //! 进程被杀时，主库还说「这个组合有独立库」，打开它会按 `identity` 给它的 uid 建一个空集合——数据没丢（都在共享库里），
-//! 但看上去独立库空了。墓碑把「内核这一半已经做完」留在库里：app 每次进配置管理页（与无主数据扫描同一处）读
-//! `collection_merges`，对还记着的组合补做恢复继承，再 `collection_merge_done` 删墓碑。墓碑只记 uid，没有引用任何集合
+//! 但看上去独立库空了——之后在它上面制的卡、存的媒体落进这个新集合，收尾时恢复继承、删媒体目录，它们就成了看不见的
+//! 孤儿。所以墓碑在的时候 `identity`（[pending_merge_of]，`cmd/identity.rs` [identity_ensure]）**拒绝**给这个 uid 新建
+//! 集合：经它的打开 / 制卡明确失败，不会悄悄长出空库。墓碑把「内核这一半已经做完」留在库里：app 主进程每次装载配置
+//! 列表（`ProfileViewModel` 装载完成后）读 `collection_merges`，对还记着的组合补做恢复继承，再 `collection_merge_done`
+//! 删墓碑。墓碑只记 uid，没有引用任何集合
 //! 数据；`from` 的 profile 之后被删也只是多一行，下次收尾时删掉。
 //!
 //! # 查询
@@ -557,6 +560,24 @@ pub fn collection_merges(t: &Truth<'_>) -> Result<Value, String> {
         }
         Ok(json!({"merges": out}))
     })
+}
+
+/// [uid] 的独立库已并进别的库、app 还没收尾（墓碑 `collection_merged/<uid>` 还在）：并进了哪个 uid（值读不懂为空串）；
+/// 没有墓碑 = None。`identity` 据此拒绝给它新建集合（模块文件头「墓碑」）。
+pub(crate) fn pending_merge_of(t: &Truth<'_>, uid: &str) -> Result<Option<String>, String> {
+    let value: Option<String> = t
+        .conn()
+        .prepare_cached("SELECT value FROM srs_meta WHERE key = ?1")
+        .map_err(sql)?
+        .query_row([format!("{MERGED_PREFIX}{uid}")], |r| r.get(0))
+        .optional()
+        .map_err(sql)?;
+    Ok(value.map(|v| {
+        serde_json::from_str::<Value>(&v)
+            .ok()
+            .and_then(|v| v.get("into").and_then(Value::as_str).map(str::to_owned))
+            .unwrap_or_default()
+    }))
 }
 
 /// `collection_merge_done {from}` → `{cleared}`：删墓碑（app 已把组合恢复继承）。没有也不报错。

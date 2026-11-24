@@ -353,6 +353,25 @@ fn merging_keeps_the_shared_value_by_default_and_keeps_every_review() {
     assert_eq!(value_after(l, &note, &field).as_deref(), Some("\"鳥\""));
 }
 
+/// 内核并完、app 还没恢复继承（墓碑在）时，经被并入库的 uid 打开（`identity`）明确失败、不会悄悄给它另建一个空集合
+/// （否则之后在上面制的卡收尾时成了看不见的孤儿）；收尾删了墓碑之后照常能建。
+#[test]
+fn an_unfinished_merge_refuses_to_recreate_the_merged_library() {
+    let l = lib("cm-tombstone", false);
+    let v = merge(&l, json!({}));
+    assert_eq!(v["merged"], json!(true), "{v}");
+    let e = try_run(l.h, A, "identity", T1 + 10, json!({}), &[]).unwrap_err();
+    assert!(e.contains("was merged into") && e.contains(B), "{e}");
+    assert_eq!(
+        run(l.h, B, "profile_uids", T1, json!({}), &[])["uids"],
+        json!([B]),
+        "被拒的 identity 什么都没建"
+    );
+    run(l.h, B, "collection_merge_done", T1, json!({"from": A}), &[]);
+    let info = run(l.h, A, "identity", T1 + 20, json!({}), &[]);
+    assert!(info["collection"].is_string(), "{info}");
+}
+
 #[test]
 fn choosing_the_merged_library_writes_its_value_back() {
     // B 的值较新：并集里 B 胜，选了 A 要写回 A 的值。

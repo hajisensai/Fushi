@@ -163,7 +163,16 @@ pub fn identity_ensure(t: &Truth<'_>, profile: &str, now: i64) -> Result<Emittin
         let before = t.binding_of(profile)?;
         let col = match &before {
             Some(b) => b.col,
-            None => t.bind(profile, &collection_of(profile), profile)?,
+            None => {
+                // 这个 uid 的独立库刚并进共享库、app 还没把组合恢复继承（`collection_merge.rs` 文件头「墓碑」）：
+                // 不给它另建一个空集合，否则在上面制的卡收尾之后就成了看不见的孤儿。
+                if let Some(into) = super::collection_merge::pending_merge_of(t, profile)? {
+                    return Err(format!(
+                        "identity: library {profile} was merged into {into};                          the merge is not finished yet (collection_merge_done)"
+                    ));
+                }
+                t.bind(profile, &collection_of(profile), profile)?
+            }
         };
         ensure_self(t, col, profile, now, None)?;
         let after = binding_of(t, col)?;

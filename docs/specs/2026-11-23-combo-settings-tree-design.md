@@ -267,7 +267,9 @@
   默认保留共享库；选了独立库那份的，事务里以本机新写（`chg`）重新写回，随同步发布。「哪边改得更晚」只作提示。
 - 没有进度事件：整个合并是一个写事务（失败全部回滚），UI 显示不定进度条。
 - 墓碑：内核在同一事务里写 `srs_meta` 的 `collection_merged/<from>`；app 把该组合 `srs.library` 恢复继承后
-  `collection_merge_done` 删掉。中途中断时，进配置管理页会补做（`SrsLibraryMerger.finishPending`）。
+  `collection_merge_done` 删掉。中途中断时，主进程的配置视图模型装载完（以及进配置管理页）会补做
+  （`SrsLibraryMerger.finishPending`）；补做之前墓碑让内核 `identity` 拒绝给被并掉的独立库 uid 另建空集合，
+  经它的打开 / 制卡明确失败，不会把新卡写进收尾后看不见的孤儿集合。
   独立库的媒体目录合并前拷进共享库（不覆盖同名），收尾后删掉原目录与 RWKV 快照。
 - 入口暂放在配置管理页的配置行（「合并进共享复习库」按钮，只对拆了独立库的组合显示）；组合编辑页属阶段 6，
   届时挪到 `srs.library` 叶子。

@@ -16,15 +16,20 @@ import 'package:fushi/src/profile/combo/combo_repository.dart';
 import 'package:fushi/src/profile/combo/fushi_settings_tree.dart'
     show FushiComboNode;
 import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
+import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_library_merge.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_collection_merge.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_profile_data.dart'
+    show srsRunLibraryCommand;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../helpers/fake_anki_repository.dart';
 import 'srs_test_support.dart';
 
 void main() {
@@ -67,7 +72,10 @@ void main() {
         guid: guid,
       );
 
-  SrsLibraryMerger merger({required SrsDbStore? active}) => SrsLibraryMerger(
+  SrsLibraryMerger merger({
+    required SrsDbStore? active,
+    bool mainProcess = true,
+  }) => SrsLibraryMerger(
     SrsLibraryMergeDeps(
       storage: () async => storage,
       activeStore: () async => active,
@@ -75,6 +83,7 @@ void main() {
       supportRoot: () async => support,
       libraries: () => loadComboSrsLibraries(db),
       profiles: db.getAllProfiles,
+      isMainProcess: () => mainProcess,
     ),
   );
 
@@ -210,12 +219,30 @@ void main() {
     expect(await shared.note(shared.kernelIds.note('g-own')), isNull);
   });
 
-  test('内核并完、组合还没恢复继承就中断：进配置管理页时补做', () async {
+  test('内核并完、组合还没恢复继承就中断：收尾前独立库打不开，主进程补做', () async {
     await srsCollectionMerge(
       storage.core,
       from: ownUid,
       into: sharedUid,
       nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    expect(await srsPendingCollectionMerges(storage.core), hasLength(1));
+    // 收尾之前：组合仍指向独立库，经它的 uid 打开被内核拒绝，不会悄悄另建一个空集合。
+    await expectLater(
+      srsRunLibraryCommand(storage.core, <String, Object?>{
+        'op': 'identity',
+        'profile': ownUid,
+        'now': DateTime.now().millisecondsSinceEpoch,
+      }),
+      throwsA(anything),
+    );
+    // 只读的辅助进程不补做：墓碑原样留着。
+    expect(
+      await merger(active: shared, mainProcess: false).finishPending(
+        restoreInheritance: (int id) async =>
+            fail('secondary must not restore'),
+      ),
+      0,
     );
     expect(await srsPendingCollectionMerges(storage.core), hasLength(1));
     final List<int> restored = <int>[];
@@ -232,6 +259,30 @@ void main() {
       SrsLibraryMerger.endpointsOf(await loadComboSrsLibraries(db), mangaId),
       isNull,
     );
+    expect(await resolveSrsLibraryUid(db, baseProfileId: mangaId), sharedUid);
+  });
+
+  test('主进程的配置视图模型装载完就补做收尾，不等进配置管理页', () async {
+    await srsCollectionMerge(
+      storage.core,
+      from: ownUid,
+      into: sharedUid,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    expect(await srsPendingCollectionMerges(storage.core), hasLength(1));
+    final ProfileViewModel vm = ProfileViewModel(
+      ProfileRepository(db, FakeAnkiRepository()),
+      () async {},
+      ProfileDraftCoordinator(),
+      libraryMerger: merger(active: shared),
+    );
+    addTearDown(vm.dispose);
+    await vm.loaded;
+    for (int i = 0; i < 200; i++) {
+      if ((await srsPendingCollectionMerges(storage.core)).isEmpty) break;
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(await srsPendingCollectionMerges(storage.core), isEmpty);
     expect(await resolveSrsLibraryUid(db, baseProfileId: mangaId), sharedUid);
   });
 

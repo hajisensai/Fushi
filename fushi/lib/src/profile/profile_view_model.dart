@@ -19,6 +19,7 @@ import 'package:fushi/src/profile/combo/fushi_settings_tree.dart'
     show FushiComboNode;
 import 'package:fushi/src/srs/srs_library_merge.dart';
 import 'package:fushi/src/srs/srs_profile_cleanup.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// Serializes Profile application with temporary draft persistence.
 ///
@@ -272,6 +273,17 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       _loaded.complete();
     }
     await _restoreLegacyBindingFallback();
+    // 「合并进共享复习库」内核已并完、组合还没恢复继承（进程在两步之间被杀）：装载完就补做，不等用户进配置管理页——
+    // 补做之前那个组合的复习库打不开（内核拒绝给被并掉的独立库另建空集合）。失败记日志，进配置管理页时再试。
+    try {
+      await finishPendingSrsLibraryMerges();
+    } on Object catch (e, stack) {
+      ErrorLogService.instance.log(
+        'ProfileViewModel.finishSrsLibraryMerges',
+        e,
+        stack,
+      );
+    }
   }
 
   /// 反馈 kEFPY4cuKZ：进入一部作品（阅读器 / 视频 / 漫画开页、gal hook 会话开始）。
