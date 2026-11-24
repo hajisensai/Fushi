@@ -218,12 +218,18 @@ String _foldWidth(String s) => String.fromCharCodes(<int>[
         : c,
 ]);
 
-/// 结尾成对的副标题：`～ふたりの時間、言い訳の五千円～`、`─エイティシックス─`、
-/// ` -虚実-`。只在全角已折半角的串上匹配（`～` 已折成 `~`）。ASCII 连字符必须前有
-/// 空白，免得把 slug（`a-b-`）当副标题；副标题里不含同种定界符。
+/// 结尾成对的副标题：`～ふたりの時間、言い訳の五千円～`、`─虚実─`、` -虚実-`。
+/// 前面只剩数字时不当副标题（`86─エイティシックス─` 整个是书名，见
+/// [_namesSeriesAlone]）。只在全角已折半角的串上匹配（`～` 已折成 `~`）。ASCII
+/// 连字符必须前有空白，免得把 slug（`a-b-`）当副标题；副标题里不含同种定界符。
 final RegExp _trailingSubtitle = RegExp(
   r'(?:\s+-[^\-]+-|\s*([~〜─―—])[^~〜─―—]+\1)\s*$',
 );
+
+/// 剥掉成对副标题后剩下的 [head] 能不能单独当系列名：至少要有一个不是数字的字。
+/// 只剩数字时成对的那段就是书名本身（「86―エイティシックス―」），剥了合集名只剩
+/// 「86」、拿去在线源搜也搜不到（BUG-5376）。
+bool _namesSeriesAlone(String head) => RegExp(r'[^\d\s.]').hasMatch(head);
 
 /// 卷号夹在系列名与自由副标题之间：`ソードアート・オンライン3 フェアリィ・ダンス`、
 /// `魔法科高校の劣等生(3) 九校戦編`、`Overlord 3 The Bloody Valkyrie`。只在结尾认不出
@@ -272,7 +278,7 @@ final RegExp _midVolume = RegExp(
     if (!deep) break;
     final RegExpMatch? subtitle = _trailingSubtitle.firstMatch(head);
     if (subtitle != null &&
-        head.substring(0, subtitle.start).trim().isNotEmpty) {
+        _namesSeriesAlone(head.substring(0, subtitle.start))) {
       end = subtitle.start;
       continue;
     }

@@ -253,6 +253,17 @@ void main() {
       expect(fullWidth.key, parseBookSeriesKey('Re:ゼロ! 2')!.key);
       expect(parseBookSeriesKey('86')!.volume, isNull);
       expect(parseBookSeriesKey('86─エイティシックス─')!.volume, isNull);
+      // BUG-5376：前面只剩数字时成对破折号那段是书名本身，不当副标题剥掉。
+      final BookSeriesKey eightySix = parseBookSeriesKey('86―エイティシックス― 3')!;
+      expect(eightySix.seriesTitle, '86―エイティシックス―');
+      expect(eightySix.volume, 3);
+      expect(eightySix.key, parseBookSeriesKey('86―エイティシックス―')!.key);
+      expect(parseBookSeriesKey('86─エイティシックス─')!.seriesTitle, '86─エイティシックス─');
+      // 对照：正文有字时照常剥副标题。
+      expect(
+        parseBookSeriesKey('週に一度クラスメイトを買う話 ～ふたりの時間～ 2')!.seriesTitle,
+        '週に一度クラスメイトを買う話',
+      );
       expect(parseBookSeriesKey('3月のライオン')!.volume, isNull);
       expect(parseBookSeriesKey('Catch22')!.volume, isNull);
       expect(
