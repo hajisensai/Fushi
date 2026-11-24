@@ -245,7 +245,8 @@ class WorkProfileScope extends ChangeNotifier {
   };
 
   /// 挖词目标 = Fushi 复习时的制卡目标：目标本身 + 牌组 / 笔记类型 / 字段映射。牌组与笔记
-  /// 类型 id 带配置 uid，会话期间制卡落进绑定配置自己的复习副本（`_readSrsMiner`）。
+  /// 类型 id 属于某一份复习库；会话期间制卡落进作品绑定层 + 激活配置按 `srs.library` 解析出的那份库
+  /// （默认共享库，`_readSrsMiner` / `srs_library_resolver.dart`）。
   static const Set<String> srsMiningPrefKeys = <String>{
     PreferencesRepository.srsMiningTargetKey,
     'srs_mining_deck_id',

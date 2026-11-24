@@ -945,6 +945,9 @@ Future<SrsMiner?> _readSrsMiner(
     // 同一份库里都认得；作品会话的绑定层或激活配置拆出了独立库时落那一份（反馈 kEFPY4cuKZ 的「落进那份
     // 配置的复习」由此按库表达）。落点（[AppModel.srsMiningDestination]）读的是作品会话；替对端制卡读
     // 激活配置的落点、不叠本机作品会话。
+    // 先看复习副本本身：srs.db 打不开 / 在换代途中对每份库都一样，不必先解析落哪份（换代异常原样抛出）。
+    final SrsDbStore? viewed = await ref.read(srsStoreProvider.future);
+    if (viewed == null) return null;
     final WorkProfileSession? session = followWorkSession
         ? WorkProfileScope.instance.active
         : null;
@@ -953,12 +956,10 @@ Future<SrsMiner?> _readSrsMiner(
       layers: session?.layers ?? const <ComboScope, int>{},
     );
     if (libraryUid.isEmpty) return null;
+    // 落点每次制卡现读：改牌组 / 笔记类型 / 映射不必重建整条装饰链。
     final SrsMiningDestination destination = followWorkSession
         ? app.srsMiningDestination
         : app.hostSrsMiningDestination;
-    // 落点每次制卡现读：改牌组 / 笔记类型 / 映射不必重建整条装饰链。
-    final SrsDbStore? viewed = await ref.read(srsStoreProvider.future);
-    if (viewed == null) return null;
     if (viewed.profileUid == libraryUid) {
       final SrsMediaStore? media = await ref.read(srsMediaStoreProvider.future);
       if (media == null) return null;

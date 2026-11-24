@@ -1,16 +1,23 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_library_switcher.dart';
 import 'package:fushi/src/profile/combo/combo_repository.dart';
 import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_library.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
+
+import '../helpers/inert_profile_repository.dart';
+import '../helpers/test_platform_services.dart';
 
 class _FixedLibraries extends SrsLibrariesNotifier {
   _FixedLibraries(this._value);
@@ -28,6 +35,32 @@ class _FixedLibraries extends SrsLibrariesNotifier {
       viewedUid: valid ? choice : _value.activeUid,
       entries: _value.entries,
     );
+  }
+}
+
+class _AppModel extends AppModel {
+  _AppModel(this._db) : super(testPlatformServices());
+
+  final FushiDatabase _db;
+
+  @override
+  FushiDatabase get database => _db;
+}
+
+/// 下一次现算卡在 [gate] 上的真实解析（其余照常读表）。
+class _GatedLibraries extends SrsLibrariesNotifier {
+  Completer<void>? gate;
+
+  @override
+  Future<SrsLibraries> compute(
+    FushiDatabase db,
+    int activeProfileId,
+    String? choice,
+  ) async {
+    final Completer<void>? held = gate;
+    gate = null;
+    if (held != null) await held.future;
+    return super.compute(db, activeProfileId, choice);
   }
 }
 
@@ -179,6 +212,53 @@ void main() {
       ).switchable,
       isFalse,
     );
+  });
+
+  test('写入触发的现算晚于切库重建回来：旧结果不覆盖新选择（复习页不回到旧库）', () async {
+    await splitOwn(mangaId);
+    final String manga = await db.profileUidOf(mangaId);
+    final String shared = await db.profileUidOf(defaultId);
+    final InertProfileRepository repo = InertProfileRepository(
+      activeProfileId: defaultId,
+    );
+    final _GatedLibraries notifier = _GatedLibraries();
+    final ProviderContainer c = ProviderContainer(
+      overrides: <Override>[
+        appProvider.overrideWith((Ref ref) => _AppModel(db)),
+        profileRepositoryProvider.overrideWithValue(repo),
+        profileViewModelProvider.overrideWith(
+          (Ref ref) =>
+              ProfileViewModel(repo, () async {}, ProfileDraftCoordinator()),
+        ),
+        srsLibrariesProvider.overrideWith(() => notifier),
+      ],
+    );
+    addTearDown(c.dispose);
+    c.listen<AsyncValue<SrsLibraries>>(
+      srsLibrariesProvider,
+      (AsyncValue<SrsLibraries>? previous, AsyncValue<SrsLibraries> next) {},
+    );
+    expect((await c.read(srsLibrariesProvider.future)).viewedUid, shared);
+
+    // 一次 profile_settings 写入触发按「未切库」现算，卡住不返回。
+    final Completer<void> held = Completer<void>();
+    notifier.gate = held;
+    await put(jaId, 'probe', '1');
+    await pumpEventQueue();
+
+    // 期间用户切到独立库：重建按新选择算完。
+    c.read(srsLibraryChoiceProvider.notifier).state = manga;
+    expect((await c.read(srsLibrariesProvider.future)).viewedUid, manga);
+
+    // 卡住的旧现算这时才回来：结果已过时，不能把复习页拉回共享库。
+    held.complete();
+    await pumpEventQueue();
+    expect(c.read(srsLibrariesProvider).requireValue.viewedUid, manga);
+
+    // 之后的写入照常现算，仍按当前选择。
+    await put(jaId, 'probe', '2');
+    await pumpEventQueue();
+    expect(c.read(srsLibrariesProvider).requireValue.viewedUid, manga);
   });
 
   for (final bool apple in <bool>[false, true]) {

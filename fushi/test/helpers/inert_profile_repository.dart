@@ -59,6 +59,9 @@ class InertProfileRepository implements ProfileRepository {
   Future<void> renameProfile(int id, String name) async {}
 
   @override
+  Future<bool> hostsSharedSrsLibrary(int id) async => false;
+
+  @override
   Future<void> deleteProfile(int id) async {}
 
   @override
