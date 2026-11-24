@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T08:06:39Z",
+ "generatedAt": "2026-11-24T08:15:08Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "31b0a46cf4b40d0defef3d49938f02338a23294b",
-  "seq": 32204
+  "sha": "fb8ddd06dd5cc99920ece20b74d9c06fbff8d2d8",
+  "seq": 32217
  },
  "builds": [
   {
@@ -154,10 +154,38 @@
   }
  ],
  "pending": {
-  "headSha": "31b0a46cf4b40d0defef3d49938f02338a23294b",
-  "headSeq": 32204,
+  "headSha": "fb8ddd06dd5cc99920ece20b74d9c06fbff8d2d8",
+  "headSeq": 32217,
   "prs": [],
   "direct": [
+   {
+    "sha": "fb8ddd06dd5cc99920ece20b74d9c06fbff8d2d8",
+    "subject": "docs(release): 3.4.0 公告补本轮合入项（选集面板剧照、进度口径、插图浏览、制卡提示位置与四项修复）"
+   },
+   {
+    "sha": "58b4601e536e05ee724872e8e37574956fa3af8c",
+    "subject": "chore(bugs): reindex after merging #4363 #4357 #4359 #4361 #4360"
+   },
+   {
+    "sha": "d8237eb7091001876eb303f367d59e40bc9e82de",
+    "subject": "Merge #4360 (claude/mine-toast-start-illustrations) into develop"
+   },
+   {
+    "sha": "af2ec3ca0de65eb93c74d0e12cf1321cc6c4de70",
+    "subject": "Merge #4361 (claude/fix-manga-ocr-page-identity) into develop"
+   },
+   {
+    "sha": "792114808fbabf7065b34e8ab7009156892857b0",
+    "subject": "Merge #4359 (claude/fix-popup-sentence-today-card) into develop"
+   },
+   {
+    "sha": "ad9e10089fddcdef955910ff03a3bd26367a8f9d",
+    "subject": "Merge #4357 (claude/player-episode-rail-stills) into develop"
+   },
+   {
+    "sha": "072d5c20f055acb039efb621ed4304fb133653f5",
+    "subject": "Merge #4363 (claude/fix-develop-guards) into develop"
+   },
    {
     "sha": "31b0a46cf4b40d0defef3d49938f02338a23294b",
     "subject": "chore(bugs): settle BUG number collisions on f8f284717"
@@ -166,16 +194,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855449"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
    },
    "macos": {
-    "state": "none"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
    },
    "ios": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
    }
   }
  },
