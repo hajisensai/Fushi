@@ -125,7 +125,8 @@ class GlassSettingsRenderer implements SettingsRenderer {
   }
 
   /// iOS「设置」首页的分组分类列表（不含滚动容器）：每组一张 inset grouped
-  /// 卡，行 = 强调色单色图标 + 标题 + chevron，点进去 push 详情页。设置主页的
+  /// 卡，行 = 标题 + chevron（不带行首图标，用户 2026-11-24「这排图标好丑」），
+  /// 点进去 push 详情页。设置主页的
   /// 窄屏布局把它和大标题、搜索框放进同一个滚动视图。
   Widget buildDestinationGroups({
     required SettingsContext settingsContext,
@@ -148,7 +149,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
                   key: ValueKey<SettingsDestinationId>(destination.id),
                   title: destination.title,
                   icon: destination.icon,
-                  showIcon: true,
+                  showIcon: false,
                   onTap: () {
                     onDestinationSelected(destination.id);
                     Navigator.of(context).push(
@@ -415,37 +416,9 @@ class GlassSettingsRenderer implements SettingsRenderer {
   }
 }
 
-/// macOS 27「系统设置」侧栏的分类图标：20×20、圆角 5 的彩色方块（分类自己的
-/// 色调色），白色字形。只用于宽屏侧栏；详情页与 iOS 列表的图标仍按
-/// [SettingsShapeIcon]（不垫底色）。
-class _SidebarBadge extends StatelessWidget {
-  const _SidebarBadge({required this.icon, required this.tone});
-
-  final IconData icon;
-  final SettingsIconTone tone;
-
-  @override
-  Widget build(BuildContext context) {
-    final (Color fill, Color _) = settingsToneColors(
-      context,
-      tone,
-      style: SettingsKitStyle.apple,
-    );
-    return SizedBox.square(
-      dimension: 20,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: fill,
-          borderRadius: BorderRadius.circular(5),
-        ),
-        child: Center(child: FushiIcon(icon, size: 13, color: Colors.white)),
-      ),
-    );
-  }
-}
-
 /// macOS「系统设置」侧栏的分类列表（不含滚动容器）：分组之间留 14 的空隙，
-/// 组首一行克制的 11 号 semibold 灰字；行 = 单色强调色图标 + 单行标题。
+/// 组首一行克制的 11 号 semibold 灰字；行 = 单行标题，不带行首图标（用户
+/// 2026-11-24 截图「这排图标好丑，要么直接去掉吧」），标题与组标题同一左缘。
 class GlassSettingsSidebarList extends StatelessWidget {
   const GlassSettingsSidebarList({
     required this.destinations,
@@ -492,8 +465,6 @@ class GlassSettingsSidebarList extends StatelessWidget {
                     in groups[g].destinations)
                   GlassSettingsSidebarRow(
                     key: ValueKey<SettingsDestinationId>(destination.id),
-                    icon: destination.icon,
-                    tone: settingsIconToneFor(destination.id),
                     title: destination.title,
                     selected: destination.id == selectedDestinationId,
                     onTap: () => onDestinationSelected(destination.id),
@@ -508,7 +479,7 @@ class GlassSettingsSidebarList extends StatelessWidget {
 
 /// macOS 27 源列表行（与主侧栏 `apple_sidebar_tabs.part.dart` 同规格）：行高
 /// 28、圆角 8、13 号常规字重标题；选中 = 中性色 secondaryFill 圆角底（不着强调
-/// 色），图标保持分类彩色 / 强调色；窗口失焦时选中底淡到一半、强调色图标退成
+/// 色），可选行首图标为强调色；窗口失焦时选中底淡到一半、强调色图标退成
 /// secondaryLabel（macOS 非激活窗口的源列表）。悬停 = tertiaryFill，按下 =
 /// systemFill。可选 [subtitle] 给搜索结果的面包屑用（行随之长高）。
 ///
@@ -517,19 +488,16 @@ class GlassSettingsSidebarList extends StatelessWidget {
 /// 焦点根时行自己可 Tab、Enter 激活。
 class GlassSettingsSidebarRow extends StatefulWidget {
   const GlassSettingsSidebarRow({
-    required this.icon,
     required this.title,
     required this.onTap,
     super.key,
+    this.icon,
     this.subtitle,
     this.selected = false,
-    this.tone,
   });
 
-  final IconData icon;
-
-  /// 分类色调（iOS 系统色着色字形）；null = 强调色（搜索结果等）。
-  final SettingsIconTone? tone;
+  /// 行首强调色单色图标；null = 纯文字行（设置分类列表），标题从行内边距起。
+  final IconData? icon;
   final String title;
   final String? subtitle;
   final bool selected;
@@ -600,11 +568,10 @@ class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow>
           ),
           child: Row(
             children: <Widget>[
-              if (widget.tone == null)
-                FushiIcon(widget.icon, size: 16, color: accentIcon)
-              else
-                _SidebarBadge(icon: widget.icon, tone: widget.tone!),
-              const SizedBox(width: 8),
+              if (widget.icon case final IconData icon) ...<Widget>[
+                FushiIcon(icon, size: 16, color: accentIcon),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
