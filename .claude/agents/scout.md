@@ -81,7 +81,7 @@ tools: Read, Grep, Glob, Bash, PowerShell
 
 - 文档改动：`git diff --cached --check` 即可。
 - **本机重活一律走租约**：在 `fushi/` 下写成 `dart tool/heavy.dart -- <原命令>`（`flutter test` / `analyze` / `build` / `gradlew` / `run_windows_itest.ps1`）；test 与 analyze 自动外包给 dist 机器，只验能编过的构建加 `--check-only`。（[heavy-lease.md](docs/agent/heavy-lease.md)）
-- **推送前唯一本地门**：`fushi/` 下全量 `dart tool/heavy.dart -- flutter analyze --no-pub`，一个分支只在 push 前跑一次。analyze 过了 ≠ CI 绿，但开发会话不为 PR CI 留守（见下一条）。（[细则](docs/agent/rules-detail.md#推送前只跑-analyze)）
+- **开 PR 不跑全量，合并时跑一次**（2026-11-24 用户拍板）：开发分支 push / 开 PR 前本机**不跑**全量 `flutter analyze`，`dart format` + 定向测试做完就推（要早看静态错用 `dart analyze <改动文件>`），PR 上的 analyze 由 CI 快门跑。全量 `dart tool/heavy.dart -- flutter analyze --no-pub` 只由**合并任务**在审查完、合并结果提交后、推 `develop` 前跑一次（批量合并只在集成结果上跑一次）；不经 PR 直推 `develop` 的改动推前同样跑这一次。开发会话不为 PR CI 留守（见下一条）。（[细则](docs/agent/rules-detail.md#全量-analyze-只在合并时跑)）
 - **等待不烧缓存**（2026-11-20，实测与依据见 [fast-workflow.md](docs/agent/fast-workflow.md#等待与缓存)）：① 开发会话 push + 开 PR 后就结束，不挂 `wait-ci` / `gh run watch` / `gh pr checks --watch`，不开 Auto-fix 与 PR 监视；PR CI 的红由**合并任务**在合并前读一次、按根因修。② 主会话里预计 <2 分钟且期间没别的事可推进的命令前台跑；要后台跑的几条合成一条命令、一个日志，只被唤醒一次。③ 子代理的缓存只保 5 分钟：前台 `timeout` 不超过 270000，等待切成不超过 4 分钟一片；子代理的 `heavy.dart` 自动带 `--wait-max-min=10`，排队预测等不完就立刻退出 75（`gives up now`），命令交回委托方汇总跑（写在 `.claude/agents/*.md`，`tool/claude_hooks/subagent_wait_slice.mjs` 兜底）。
 - **PR CI 默认只跑快门**（analyze + 守卫 + 直接受影响的测试），全量在合并后的 `develop` 上跑；改了原生 / Android / pubspec / `fushi/tool/` 等才在 PR 上自动跑全量。**不为全量空等**：快门绿就算 PR CI 过；要在分支上跑全量用 `gh workflow run main.yml --ref <分支>` 或 `full-ci` 标签。（[build.md](docs/agent/build.md#pr-主门分层快门每推必跑全量按需--合并后跑2026-11-18)）
 - Dart 改动：`dart format` 改动文件；测试只定向跑新增 / 改动的文件并合成一次 `flutter test a_test.dart b_test.dart --no-pub`，本地不跑全量（全量走 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`）。**判绿只认退出码 + 实际执行数**，零执行的红不算红，也不许拿伪红跳过真红。（[细则](docs/agent/rules-detail.md#dartflutter-改动的测试纪律)）
@@ -96,7 +96,7 @@ tools: Read, Grep, Glob, Bash, PowerShell
 
 - **2026-11-01 仓库历史已用 filter-repo 重写**：旧 clone / 分支与新历史无共同祖先，报 `unrelated histories` 时禁止 `--allow-unrelated-histories`，用 `git rebase --onto origin/develop <旧分叉点> <分支>` 只搬自己的提交（或从新 `origin/develop` 重开 worktree）；带旧历史的 PR / push 会被 `.github/workflows/history-guard.yml` 判红。
 - 提交前 `git status --short`，**只 stage 本轮相关文件（禁止 `git add -A`）**，再 `git diff --cached --check`；提交信息简洁写真实改动；提交后回复里给出哈希和仍存在的无关未提交改动。
-- 过了推送门就直接 push + 开 PR，**不问**；只有方案取舍、范围扩大、风险判断才问。
+- 改完（`dart format` + 定向测试）就直接 push + 开 PR，**不问**；只有方案取舍、范围扩大、风险判断才问。
 - 合并 PR 看作者：只有 `hajisensai` 与 `W1ght` 的 PR 可审查后直接合，其他人一律先问用户（许可形态是 `merge-approved` 标签）。合并任务合并前对每条 PR 读一次 CI 的现成结论（`gh pr checks <N>`，不 `--watch`）：红了就在合并任务里按根因修，还没跑完的不等；批量合并不逐条等 PR CI，合完看 `develop` 尖端整体 CI，红了按根因修，不回滚、不跳过。（[细则](docs/agent/rules-detail.md#合并-pr-看作者)）
 - 版本号、发布通道（push 只进 debug / prerelease，正式版只能手动触发）、跨 workflow release 序列：见 [build.md](docs/agent/build.md)。
 - **TestFlight 不用人管**：`develop` 每次 push 的 `release-desktop.yml` 都自动传 debug 包（用户 2026-11-02 拍板），合并后不查序列、不补发；`main` 的 push 不传。（[细则](docs/agent/rules-detail.md#testflight-每次-push-自动传)）

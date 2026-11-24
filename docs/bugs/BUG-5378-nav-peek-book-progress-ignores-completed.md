@@ -1,0 +1,8 @@
+## BUG-5378 · 导航速览里已读完的书写成 0%，同一本书各卡百分比不一致
+- **报告**：2026-11-23（用户：书库页悬停「书」导航的速览卡，「最近」里一本已标读完的书显示 0% 进度；另一本书速览写 4%、书架「继续阅读」色块写 3%。）
+- **真实性**：✅ 真 bug，两个根因都是「卡面进度」没有唯一口径，各消费方自己算：
+  - 读完写 0%：速览书条目 `fushi/lib/src/pages/implementations/home_nav_peek.dart` `_loadBooks` → `entryOf` 直接按 `position / duration` 画进度、写副行百分比，完全不看读完标记（`completedEpubBookKeysProvider` 已读出来，但只喂给续读候选筛选）。手动标读完、位置仍停在开头的书就写成 0%、空进度条；书架卡（`reader_history/card_widgets.part.dart` `_itemReadFraction`）则是读完恒满格、写「已读完」。
+  - 3% / 4%：书架卡 `_readProgressLabel` 向下取整（`floor`），速览、首页「继续」卡（`home_dashboard_page.dart` `_bookContinueEntry`）、库页「继续阅读」并列卡（`reader_fushi_history_page.dart` `_buildContinueReadingHero` 的 `progressLabel`）用四舍五入（`round`），位置在 3.5%–3.99% 之间的书就一处 3% 一处 4%。另外书架的 `floor` 直接取 `fraction * 100`，`29/100` 在浮点下是 28.999…，会少一格。
+- **[x] ① 已修复** — 口径收进 `packages/fushi_engine/lib/media/collections/shelf_sort.dart`（与 `classifyShelfReadStatus` 同处）：`shelfReadFraction`（读完恒 1、超 97% 视同读完、无进度维度为 0）与 `shelfReadPercent`（向下取整夹 1–99，读完 / 未读返回 null，带浮点余量）；文案 `fushi/lib/src/media/collections/book_read_progress.dart` `bookReadProgressLabel`（已读完 / 未读 / N%）。书架卡 `_itemReadFraction` / `_readProgressLabel` 改为转调；速览书条目改走新的纯函数 `bookNavPeekProgress`（`home_nav_peek.dart`，读完标记满格写「已读完」）；首页「继续」卡与库页「继续阅读」并列卡的比例 / 百分比改走同一对函数。
+- **[x] ② 已加自动化测试** — `fushi/test/media/shelf_sort_test.dart`「shelfReadFraction / shelfReadPercent」组（读完位置 0 → 满格、3.7% → 3、29/100 → 29、不足 1% 记 1）；`fushi/test/pages/home_nav_peek_test.dart`「书速览进度与书架卡同口径」（读完 + 位置 0 → 满格 + 已读完、3.7% → 3%、未读、无进度维度不画）。
+- **备注**：BUG-2918 修的是首页「继续」区把读完的书放进候选，这里是条目本身的进度呈现，速览「最近」里列出读过的书（含读完的）是设计如此，只是进度要写对。首页「继续」卡的徽标在进度超过 97% 时会写「已读完」，与书架卡一致。

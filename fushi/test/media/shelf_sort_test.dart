@@ -411,4 +411,45 @@ void main() {
       expect(args, contains('completedBookKeys: _completedBookKeys'));
     });
   });
+
+  group('shelfReadFraction / shelfReadPercent（卡面进度唯一口径）', () {
+    test('标了读完恒为满格，不看阅读位置（手动标完、位置停在 0 的书）', () {
+      expect(
+        shelfReadFraction(completed: true, position: 0, duration: 10000),
+        1,
+      );
+      expect(shelfReadFraction(completed: true, position: 0, duration: 0), 1);
+    });
+
+    test('超过 97% 视同读完；没有进度维度为 0', () {
+      expect(
+        shelfReadFraction(completed: false, position: 9800, duration: 10000),
+        1,
+      );
+      expect(shelfReadFraction(completed: false, position: 5, duration: 0), 0);
+      expect(
+        shelfReadFraction(completed: false, position: 300, duration: 10000),
+        closeTo(0.03, 1e-9),
+      );
+    });
+
+    test('百分比一律向下取整：3.7% 记 3（不会一处 3% 一处 4%）', () {
+      final double f = shelfReadFraction(
+        completed: false,
+        position: 370,
+        duration: 10000,
+      );
+      expect(shelfReadPercent(f), 3);
+      // 浮点误差不吃掉一格：29/100 = 0.29，0.29 * 100 = 28.999…
+      expect(shelfReadPercent(29 / 100), 29);
+      expect(shelfReadPercent(57 / 100), 57);
+    });
+
+    test('不足 1% 记 1%；读完 / 未读返回 null（由调用方写文案）', () {
+      expect(shelfReadPercent(0.001), 1);
+      expect(shelfReadPercent(0.969), 96);
+      expect(shelfReadPercent(1), isNull);
+      expect(shelfReadPercent(0), isNull);
+    });
+  });
 }

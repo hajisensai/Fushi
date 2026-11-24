@@ -45,6 +45,7 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show isMangaOcrRelayoutCandidate, isMangaOcrRelayoutPending;
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi_engine/media/manga/manga_page_identity.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi/src/media/manga/manga_reading_stats.dart';
 import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
@@ -5527,11 +5528,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
+  /// 让在跑的整卷任务（默认是正在观察的那个）改道到阅读器第 [pageIndex] 页。
+  ///
+  /// 交给任务的是这页的页身份（[mangaPageId]），不是页号：任务按自己枚举的目录
+  /// 编页号，与本卷页表不一定一一对应（反馈 -5BJ11GqOk）。
+  void _focusVolumeOcrOn(int pageIndex, {MangaOcrRunningJob? job}) {
+    final MangaOcrRunningJob? target = job ?? _observedOcrJob;
+    final MokuroPayload? payload = _payload;
+    if (target == null ||
+        payload == null ||
+        pageIndex < 0 ||
+        pageIndex >= payload.images.length) {
+      return;
+    }
+    target.focusPage(mangaPageId(payload.images[pageIndex].url));
+  }
+
   /// 读者翻页：在跑的整卷任务改道到这页。起点只在开跑时定一次，而手机上本地
   /// 模型一页几十秒、读者翻得比识别快，不改道的话翻到的页永远还没轮到，体感就是
   /// 「要等整卷识别完才能查词」。
   void _onReaderPageChanged() {
-    _observedOcrJob?.focusPage(_pageNotifier.value);
+    _focusVolumeOcrOn(_pageNotifier.value);
     _streamOcr?.focus(_pageNotifier.value);
     _companion.publishNow();
     _controllerLookupTarget?.onPageChanged();
@@ -5731,7 +5748,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _observedOcrJob = running;
     // 接回的可能是下载钩子 / 作品页从第一页排的任务：先让它从读者眼前这页跑。
-    running.focusPage(_currentPage);
+    _focusVolumeOcrOn(_currentPage, job: running);
     final MangaOcrBackgroundEvent? snapshot = running.lastEvent;
     setState(() {
       _wholeVolumeOcrRunning = true;
@@ -5783,16 +5800,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _wholeVolumeOcrTotal = event.pagesTotal;
       _wholeVolumeOcrUploading = event.uploading;
     });
-    final int? pageIndex = event.pageIndex;
     final MokuroImage? page = event.page;
     final MokuroPayload? current = _payload;
-    if (pageIndex == null ||
-        page == null ||
-        current == null ||
-        pageIndex < 0 ||
-        pageIndex >= current.images.length) {
-      return;
-    }
+    if (page == null || current == null) return;
+    // 按页身份对回本卷的页：event.pageIndex 是任务自己枚举目录得到的页号，目录里
+    // 多一张不在页表里的图时与阅读器页号错开，按它写会把框挂到邻页（反馈
+    // -5BJ11GqOk）。不在页表里的图（任务多识别的那张）没有可挂的页。
+    final int? pageIndex = mangaPageIndexOf(
+      current.images.map((MokuroImage image) => image.url),
+      mangaPageId(page.url),
+    );
+    if (pageIndex == null) return;
     final List<MokuroImage> images = List<MokuroImage>.of(current.images);
     // 逐页进度只带 OCR 块：保留这页的 PDF 文字层（与落盘时同一合并规则）。
     final MokuroImage merged = preservePdfTextLayerPage(

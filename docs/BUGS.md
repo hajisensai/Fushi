@@ -40,6 +40,19 @@
 | [BUG-5377](bugs/BUG-5377-dist-mac-orphan-flutter-tester.md) | 🚧 | 🚧 | dist 在 macOS worker 上跑完测试后留下孤儿 flutter_tester 进程 |
 | [BUG-5376](bugs/BUG-5376-android-shared-prefs-multiprocess-clobber.md) | 🚧 | 🚧 | Android 多进程下 SharedPreferences 会被别的进程的旧副本整份覆盖 |
 | [BUG-5375](bugs/BUG-5375-android-library-anchor-clobbered-links-lost.md) | ✅ | ✅ | Android 更新后书库全部失去链接（书库位置锚点被别的进程冲掉 + 沙箱重基不经磁盘核实） |
+> 共 4684 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5385](bugs/BUG-5385-lyrics-illustration-viewer-stale-reached.md) | ✅ | ✅ | 有声书插图大图浏览打开期间新走过的插图看不到（只列已听到的、且不随播放刷新） |
+| [BUG-5384](bugs/BUG-5384-manga-ocr-page-identity.md) | ✅ | ✅ | manga-ocr-page-identity |
+| [BUG-5383](bugs/BUG-5383-develop-import-cycle-627.md) | ✅ | ✅ | develop import 环守卫红：最大环 627 > 上限 623 |
+| [BUG-5382](bugs/BUG-5382-develop-rename-guard-hibikiaggregate.md) | ✅ | ✅ | develop 旧代号守卫红：书级变更闸门另抄了一份聚合快照后缀表（含 `.hibikiaggregate`） |
+| [BUG-5381](bugs/BUG-5381-home-today-time-line-clipped.md) | ✅ | ✅ | home-today-time-line-clipped |
+| [BUG-5380](bugs/BUG-5380-popup-source-strip-cross-line-sentence.md) | ✅ | ✅ | popup-source-strip-cross-line-sentence |
+| [BUG-5379](bugs/BUG-5379-mangabaka-volume-cover-pop-type.md) | ✅ | ✅ | mangabaka-volume-cover-pop-type |
+| [BUG-5378](bugs/BUG-5378-nav-peek-book-progress-ignores-completed.md) | ✅ | ✅ | 导航速览里已读完的书写成 0%，同一本书各卡百分比不一致 |
+| [BUG-5374](bugs/BUG-5374-windows-dart-silent-black-window.md) | 🚧 | ✅ | Windows 缩窗后主窗口黑屏冻结，平台线程空闲而 Dart 不回应，旧看门狗量不到 |
 | [BUG-5373](bugs/BUG-5373-tracking-series-merge-declined-pref-not-device-local.md) | ✅ | ✅ | 系列「不合并」偏好存本机合集 id 却随备份 / 设置同步出境 |
 | [BUG-5372](bugs/BUG-5372-tracking-series-attention-n-plus-one.md) | ✅ | ✅ | 追踪页加载时系列合并候选 / 系列待处理卷逐条查库（N+1） |
 | [BUG-5371](bugs/BUG-5371-anidb-tag-tree-backtick.md) | ✅ | ✅ | anidb-tag-tree-backtick |

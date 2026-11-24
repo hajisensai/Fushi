@@ -106,4 +106,38 @@ void main() {
     expect(units[1].collectionName, isNull);
     expect(units[2].collectionName, isNull);
   });
+
+  // 速览里标了读完的书写成 0%、同一本书速览 4% 书架 3%（2026-11-23 用户截图）。
+  test('书速览进度与书架卡同口径：读完标记满格写已读完，百分比向下取整', () {
+    final ({double? fraction, String? label}) finished = bookNavPeekProgress(
+      completed: true,
+      position: 0,
+      duration: 10000,
+    );
+    expect(finished.fraction, 1);
+    expect(finished.label, t.shelf_filter_read_status_finished);
+
+    final ({double? fraction, String? label}) reading = bookNavPeekProgress(
+      completed: false,
+      position: 370,
+      duration: 10000,
+    );
+    expect(reading.fraction, closeTo(0.037, 1e-9));
+    expect(reading.label, '3%');
+
+    final ({double? fraction, String? label}) unread = bookNavPeekProgress(
+      completed: false,
+      position: 0,
+      duration: 10000,
+    );
+    expect(unread.label, t.shelf_filter_read_status_unread);
+
+    final ({double? fraction, String? label}) noDimension = bookNavPeekProgress(
+      completed: false,
+      position: 0,
+      duration: 0,
+    );
+    expect(noDimension.fraction, isNull);
+    expect(noDimension.label, isNull);
+  });
 }

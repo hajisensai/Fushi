@@ -617,6 +617,10 @@ bool FlutterWindow::OnCreate() {
           result->Success();
         } else if (call.method_name() == "isFullscreen") {
           result->Success(flutter::EncodableValue(IsFullscreen()));
+        } else if (call.method_name() == "dartHeartbeat") {
+          // Dart 存活心跳（hang_watchdog.h：Dart 失联检测）。每秒一次、无参数。
+          ::fushi::NoteDartHeartbeat();
+          result->Success();
         } else if (call.method_name() == "reportRasterizedFrameSize") {
           // BUG-2462: Dart's rasterised-frame size report, the authoritative
           // "the engine now presents at this size" signal for the child

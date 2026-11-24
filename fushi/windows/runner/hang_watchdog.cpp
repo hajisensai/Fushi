@@ -26,6 +26,8 @@ namespace fushi
     // 主线程应答：先写时刻、再 release 写序号；看门狗 acquire 读序号后再读时刻。
     std::atomic<uint32_t> g_acked_seq{0};
     std::atomic<ULONGLONG> g_ack_ms{0};
+    // Dart 侧最近一次心跳的时刻；0 = 还没收到过（未布防）。
+    std::atomic<ULONGLONG> g_dart_beat_ms{0};
 
     // 不含系统睡眠 / 休眠时间的单调时钟（毫秒）：合盖睡眠期间两条线程都停着，
     // 用 GetTickCount64 会在唤醒那一刻把睡眠时长误算成卡顿。
@@ -104,76 +106,131 @@ namespace fushi
       return out;
     }
 
-    DWORD WINAPI WatchdogMain(LPVOID)
+    // 看门狗线程的全部可变状态（只在看门狗线程上读写）。
+    struct WatchdogState
     {
-      const UINT heartbeat = g_heartbeat_message.load();
+      // 主线程停泵量测：在途的窗口消息心跳。
       uint32_t posted_seq = 0;
       ULONGLONG posted_ms = 0;
       bool in_flight = false;
       bool dumped_this_stall = false;
       int dumps_taken = 0;
+      // Dart 失联量测。
+      bool dart_dumped_this_silence = false;
+      int dart_dumps_taken = 0;
+    };
+
+    // 抓一份 hang dump 并记录：dump 与 hang_watchdog.log 这两样证据只用栈缓冲和
+    // Win32 调用，先落盘；要分配堆内存的（NativeGlog 的 std::string / ofstream、
+    // 清理旧 dump 的 std::wstring）放在后面——主线程若正卡在持有堆锁 / CRT 锁的
+    // 地方，看门狗线程在这些调用里跟着阻塞也不会丢掉已抓到的 dump。
+    // [log_format] 含一个 %llu（毫秒）和一个 %s（dump 路径）。
+    void CaptureHangDump(const wchar_t* log_format, ULONGLONG ms,
+                         const char* glog_prefix)
+    {
+      wchar_t dump_path[MAX_PATH] = L"";
+      WriteProcessMinidump(L"hang", g_main_thread_id, nullptr, dump_path);
+      wchar_t text[MAX_PATH + 128];
+      swprintf_s(text, log_format, ms,
+        dump_path[0] ? dump_path : L"(write failed)");
+      AppendHangLogLine(text);
+      NativeGlog(std::string(glog_prefix) + std::to_string(ms) + " dump=" +
+        (dump_path[0] ? DumpFileName(dump_path) : "(write failed)"));
+      PruneOldHangDumps();
+    }
+
+    // Dart 失联：主线程还在泵消息（窗口消息心跳在途不足 1 s）而 Dart 心跳已静默
+    // 很久。主线程自己卡住的情形留给停泵路径，避免同一次事故抓两份。
+    void CheckDartSilence(WatchdogState& s)
+    {
+      const ULONGLONG dart_beat_ms = g_dart_beat_ms.load();
+      if (dart_beat_ms == 0 || IsDebuggerPresent()) return;
+      const ULONGLONG now_ms = UnbiasedNowMs();
+      const ULONGLONG silent_ms =
+        now_ms > dart_beat_ms ? now_ms - dart_beat_ms : 0;
+      if (s.dart_dumped_this_silence) {
+        if (silent_ms < 2000) {
+          s.dart_dumped_this_silence = false;
+          NativeGlog("dart-silence: resumed");
+          AppendHangLogLine(L"dart heartbeat resumed");
+        }
+        return;
+      }
+      const bool pump_stalled =
+        s.in_flight && now_ms > s.posted_ms && now_ms - s.posted_ms >= 1000;
+      if (pump_stalled || silent_ms < kDartSilenceDumpThresholdMs ||
+          s.dart_dumps_taken >= kMaxDartSilenceDumpsPerProcess) {
+        return;
+      }
+      s.dart_dumped_this_silence = true;
+      s.dart_dumps_taken += 1;
+      CaptureHangDump(
+        L"dart heartbeat silent >=%llu ms while main thread pumps; hang dump=%s",
+        silent_ms, "dart-silence: ms=");
+    }
+
+    // 窗口消息心跳被应答：结算这一轮的停泵时长（主线程侧计时）。
+    void SettleAckedHeartbeat(WatchdogState& s)
+    {
+      if (!s.in_flight ||
+          g_acked_seq.load(std::memory_order_acquire) != s.posted_seq) {
+        return;
+      }
+      const ULONGLONG ack_ms = g_ack_ms.load(std::memory_order_relaxed);
+      const ULONGLONG stall_ms = ack_ms > s.posted_ms ? ack_ms - s.posted_ms : 0;
+      s.in_flight = false;
+      if (stall_ms >= kStallLogThresholdMs && !IsDebuggerPresent()) {
+        NativeGlog("main-thread stall: ms=" + std::to_string(stall_ms) +
+          " dumped=" + (s.dumped_this_stall ? "1" : "0"));
+        if (s.dumped_this_stall) {
+          wchar_t text[96];
+          swprintf_s(text, L"main thread recovered after %llu ms", stall_ms);
+          AppendHangLogLine(text);
+        }
+      }
+      s.dumped_this_stall = false;
+    }
+
+    // 心跳还在途：主线程至少这么久没派发主窗消息，够久就抓 dump。
+    void CheckMainThreadStall(WatchdogState& s)
+    {
+      const ULONGLONG now_ms = UnbiasedNowMs();
+      const ULONGLONG pending_ms =
+        now_ms > s.posted_ms ? now_ms - s.posted_ms : 0;
+      if (pending_ms < kStallDumpThresholdMs || s.dumped_this_stall ||
+          s.dumps_taken >= kMaxHangDumpsPerProcess) {
+        return;
+      }
+      // 调试器断点下主线程当然不泵消息，那不是卡死。
+      if (IsDebuggerPresent()) return;
+      s.dumped_this_stall = true;
+      s.dumps_taken += 1;
+      CaptureHangDump(L"main thread unresponsive >=%llu ms; hang dump=%s",
+        pending_ms, "main-thread stall: ongoing ms=");
+    }
+
+    DWORD WINAPI WatchdogMain(LPVOID)
+    {
+      const UINT heartbeat = g_heartbeat_message.load();
+      WatchdogState s;
 
       for (;;) {
-        if (WaitForSingleObject(g_stop_event, kPollIntervalMs) == WAIT_OBJECT_0) {
+        if (WaitForSingleObject(g_stop_event, kPollIntervalMs) == WAIT_OBJECT_0 ||
+            !IsWindow(g_main_window)) {
           return 0;
         }
-        if (!IsWindow(g_main_window)) {
-          return 0;
-        }
-
-        if (in_flight && g_acked_seq.load(std::memory_order_acquire) == posted_seq) {
-          // 心跳被应答：这一轮的停泵时长 = 应答时刻 - 发出时刻（主线程侧计时）。
-          const ULONGLONG ack_ms = g_ack_ms.load(std::memory_order_relaxed);
-          const ULONGLONG stall_ms = ack_ms > posted_ms ? ack_ms - posted_ms : 0;
-          in_flight = false;
-          if (stall_ms >= kStallLogThresholdMs && !IsDebuggerPresent()) {
-            NativeGlog("main-thread stall: ms=" + std::to_string(stall_ms) +
-              " dumped=" + (dumped_this_stall ? "1" : "0"));
-            if (dumped_this_stall) {
-              wchar_t text[96];
-              swprintf_s(text, L"main thread recovered after %llu ms", stall_ms);
-              AppendHangLogLine(text);
-            }
-          }
-          dumped_this_stall = false;
-        }
-
-        if (!in_flight) {
-          posted_seq += 1;
-          posted_ms = UnbiasedNowMs();
-          if (PostMessageW(g_main_window, heartbeat,
-                static_cast<WPARAM>(posted_seq), 0)) {
-            in_flight = true;
-          }
+        CheckDartSilence(s);
+        SettleAckedHeartbeat(s);
+        if (s.in_flight) {
+          CheckMainThreadStall(s);
           continue;
         }
-
-        // 心跳还在途：主线程至少这么久没派发主窗消息。
-        const ULONGLONG now_ms = UnbiasedNowMs();
-        const ULONGLONG pending_ms = now_ms > posted_ms ? now_ms - posted_ms : 0;
-        if (pending_ms < kStallDumpThresholdMs || dumped_this_stall ||
-            dumps_taken >= kMaxHangDumpsPerProcess) {
-          continue;
+        s.posted_seq += 1;
+        s.posted_ms = UnbiasedNowMs();
+        if (PostMessageW(g_main_window, heartbeat,
+              static_cast<WPARAM>(s.posted_seq), 0)) {
+          s.in_flight = true;
         }
-        // 调试器断点下主线程当然不泵消息，那不是卡死。
-        if (IsDebuggerPresent()) {
-          continue;
-        }
-        dumped_this_stall = true;
-        dumps_taken += 1;
-        // 顺序有讲究：dump 与 hang_watchdog.log 这两样证据只用栈缓冲和 Win32 调用，
-        // 先落盘；要分配堆内存的（NativeGlog 的 std::string / ofstream、清理旧 dump
-        // 的 std::wstring）放在后面——主线程若正卡在持有堆锁 / CRT 锁的地方，
-        // 看门狗线程在这些调用里跟着阻塞也不会丢掉已抓到的 dump。
-        wchar_t dump_path[MAX_PATH] = L"";
-        WriteProcessMinidump(L"hang", g_main_thread_id, nullptr, dump_path);
-        wchar_t text[MAX_PATH + 96];
-        swprintf_s(text, L"main thread unresponsive >=%llu ms; hang dump=%s",
-          pending_ms, dump_path[0] ? dump_path : L"(write failed)");
-        AppendHangLogLine(text);
-        NativeGlog("main-thread stall: ongoing ms=" + std::to_string(pending_ms) +
-          " dump=" + (dump_path[0] ? DumpFileName(dump_path) : "(write failed)"));
-        PruneOldHangDumps();
       }
     }
   }  // namespace
@@ -185,6 +242,11 @@ namespace fushi
     g_ack_ms.store(UnbiasedNowMs(), std::memory_order_relaxed);
     g_acked_seq.store(static_cast<uint32_t>(wparam), std::memory_order_release);
     return true;
+  }
+
+  void NoteDartHeartbeat()
+  {
+    g_dart_beat_ms.store(UnbiasedNowMs());
   }
 
   void StartHangWatchdog(HWND main_window)

@@ -65,14 +65,13 @@ import 'package:fushi/src/media/video/online/anime_source_stream_label.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
     show localVideoFileCandidates, videoBookHasLocalFiles;
 import 'package:fushi/src/media/video/scraper/episode_rename.dart';
+import 'package:fushi/src/media/video/video_cover_meta_loader.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_image_provider.dart'
     show videoEpisodeThumbCandidates, videoFileEpisodeStillImage;
 import 'package:fushi/src/media/video/video_home_layout.dart'
     show VideoFileEpisodeStills;
 import 'package:fushi/src/media/video/video_library_scrape_maps.dart'
     show videoFileEpisodeStillsByBook;
-import 'package:fushi_engine/media/video/video_storage.dart';
-import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
@@ -2169,17 +2168,8 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 封面来源表（`cover_meta.json`）。读不到只影响「手动封面排在剧照前」这一条
   /// 排序（全部按非手动处理，剧照在前），不挡详情页加载。
-  Future<Map<String, CoverMeta>> _loadCoverMeta() async {
-    try {
-      return await CoverMetaStore(await VideoStorage.coversDir()).all();
-    } on Object catch (error) {
-      ErrorLogService.instance.logDiagnostic(
-        'MediaCollectionDetailPage._loadCoverMeta',
-        error,
-      );
-      return const <String, CoverMeta>{};
-    }
-  }
+  Future<Map<String, CoverMeta>> _loadCoverMeta() =>
+      loadVideoCoverMetaByUid('MediaCollectionDetailPage._loadCoverMeta');
 
   /// 集缩略图的候选序（拍板 GLMHiavo0y）：用户手动设置的封面 > 这一集的刮削剧照
   /// （本地文件优先，其次远程 URL）> 自动截图；远端集只有 host 给的封面。渲染端

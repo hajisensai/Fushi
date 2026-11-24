@@ -120,6 +120,7 @@ class BookCoverScrapeDialog extends StatefulWidget {
     super.key,
     required this.initialQuery,
     this.scraperOverride,
+    this.downloaderOverride,
     this.volume,
     this.isbn,
     this.rakuten,
@@ -151,6 +152,9 @@ class BookCoverScrapeDialog extends StatefulWidget {
 
   /// 测试注入的 scraper（注入时弹窗不负责关闭它）。
   final BookMetadataScraper? scraperOverride;
+
+  /// 测试注入的封面下载器（null = 真实下载到临时文件）。
+  final BookCoverDownloader? downloaderOverride;
 
   @override
   State<BookCoverScrapeDialog> createState() => _BookCoverScrapeDialogState();
@@ -226,7 +230,10 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     _queryCtrl = TextEditingController(text: query);
     _scraper =
         widget.scraperOverride ?? BookMetadataScraper(rakuten: widget.rakuten);
-    _facade = BookMetadataScrapeFacade(scraper: _scraper);
+    _facade = BookMetadataScrapeFacade(
+      scraper: _scraper,
+      downloadImage: widget.downloaderOverride,
+    );
     // 首帧后按预填标题自动搜一次。
     WidgetsBinding.instance.addPostFrameCallback((_) => _search());
   }
@@ -388,8 +395,14 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       );
       return;
     }
-    Navigator.of(context).pop(file);
+    _finish((cover: file, candidate: _volumeSeries!.forVolume(cover)));
   }
+
+  /// 弹窗唯一的「选中」出口。BUG-5379：`Navigator.pop(file)` 按实参推断类型，传错
+  /// 类型编译期不报、运行时在 pop 里抛类型错误（弹窗卡在转圈、导航栈半弹出）；所有
+  /// 出口都经这里，结果类型由签名钉死。
+  void _finish(BookCoverScrapeSelection selection) =>
+      Navigator.of(context).pop<BookCoverScrapeSelection>(selection);
 
   Future<void> _use(BookScrapeCandidate candidate) async {
     if (candidate.source == BookScrapeSource.mangabaka &&
@@ -419,9 +432,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
       );
       return;
     }
-    Navigator.of(
-      context,
-    ).pop<BookCoverScrapeSelection>((cover: file, candidate: candidate));
+    _finish((cover: file, candidate: candidate));
   }
 
   @override
@@ -528,34 +539,9 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
         FushiTextButton(
           onPressed: _applyingVolume != null || _applyingCandidate != null
               ? null
-              : () async {
-                  // 系列主封面走普通下载路径（不进卷网格）。
-                  setState(() => _applyingCandidate = series);
-                  File? file;
-                  Object? failure;
-                  try {
-                    file = await _facade.downloadCover(series);
-                  } catch (e, stack) {
-                    ErrorLogService.instance.log(
-                      'BookCoverScrapeDialog.seriesCover',
-                      e,
-                      stack,
-                    );
-                    failure = e;
-                  }
-                  if (!mounted) return;
-                  if (file == null) {
-                    setState(() => _applyingCandidate = null);
-                    FushiToast.show(
-                      msg: failure == null
-                          ? t.book_scrape_failed
-                          : '${t.book_scrape_failed}\n${_failureReason(failure)}',
-                      severity: ToastSeverity.error,
-                    );
-                    return;
-                  }
-                  Navigator.of(context).pop(file);
-                },
+              // 系列主封面走普通下载路径（卷网格打开时 [_use] 不再进网格）。
+              : () => _use(series),
+          key: const ValueKey<String>('book_scrape_series_cover'),
           child: Text(t.book_scrape_series_cover),
         ),
       ],
