@@ -13,6 +13,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/identity/pending_identity_text.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -26,6 +27,7 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -99,6 +101,7 @@ class PendingIdentityBanner extends StatelessWidget {
   }
 
   Widget _buildCard(BuildContext context) {
+    if (isGlassDesign(context)) return _buildAppleCard(context);
     final VoidCallback? open = onOpen;
     return Padding(
       key: ValueKey<String>(keyPrefix),
@@ -132,6 +135,72 @@ class PendingIdentityBanner extends StatelessWidget {
                 icon: const FushiIcon(FushiIcons.close),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Cupertino：iOS 27 提示卡（TipKit 式）——与分组列表同一枚
+  /// secondaryGroupedBackground 实色面、同心圆角，强调色单色图标 + 正文 +
+  /// plain 强调色文字动作 + 灰色 xmark 关闭；不是 M3E 的 tonal 卡 + tonal 按钮。
+  Widget _buildAppleCard(BuildContext context) {
+    final VoidCallback? open = onOpen;
+    final FushiAppleColors apple = appleColorsOf(context);
+    final FushiAppleMetrics m = FushiAppleMetrics.of(context);
+    final TextStyle body =
+        (Theme.of(context).textTheme.bodyLarge ?? const TextStyle()).copyWith(
+          fontSize: m.subtitleSize,
+          color: apple.label,
+        );
+    return Padding(
+      key: ValueKey<String>(keyPrefix),
+      padding: EdgeInsets.only(bottom: m.groupSpacing / 2),
+      child: FushiAppleGroupSurface(
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: m.rowHorizontal,
+            vertical: m.rowVertical,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: m.rowMinHeight - 2 * m.rowVertical,
+            ),
+            child: Row(
+              children: <Widget>[
+                FushiIcon(
+                  FushiIcons.manageSearch,
+                  size: m.leadingIconSize,
+                  color: apple.accent,
+                ),
+                SizedBox(width: m.leadingGap),
+                Expanded(child: Text(message(pendingKeys.length), style: body)),
+                if (open != null)
+                  FushiTextButton(
+                    key: ValueKey<String>('$keyPrefix-open'),
+                    onPressed: open,
+                    child: Text(
+                      actionLabel ??
+                          t.video_library_scrape_pending_banner_action,
+                    ),
+                  ),
+                FushiPlainButton(
+                  key: ValueKey<String>('$keyPrefix-dismiss'),
+                  onPressed: onDismiss,
+                  semanticLabel:
+                      dismissTooltip ?? t.identity_pending_banner_dismiss,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: FushiIcon(
+                      FushiIcons.close,
+                      size: m.chevronSize,
+                      color: apple.tertiaryLabel,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
