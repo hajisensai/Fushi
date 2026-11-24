@@ -72,6 +72,12 @@ impl DartPort {
         post.map(|post| Self { post, port })
     }
 
+    /// 端口号（`SendPort.nativePort`）。VM 内唯一，用来分辨「事件该归哪个 isolate」：进程级引擎换了登记端口
+    /// = 先前登记的 isolate 已经没了（各引擎只给一个 isolate 用），它留下的任务与事件都不能落到新 isolate 上。
+    pub fn port(&self) -> i64 {
+        self.port
+    }
+
     /// 发一条 `List<int>` 消息。端口已关（接收的 isolate 没了）返回 false，此外无副作用。
     pub fn post_ints(&self, values: &[i64]) -> bool {
         let mut items: Vec<DartCObject> = values.iter().map(|&v| DartCObject::int64(v)).collect();

@@ -4,7 +4,7 @@
 //! 拍点 / 强拍 / BPM / 每小节拍数、鼓点（时间 / 强度 / 底鼓·军鼓·镲片）、人声起音。
 //!
 //! 引擎是**进程级单例**（与 [crate::upscale] 同型）：一个后台工作线程 + 一条 FIFO 队列（加急的插队），
-//! Dart 只发粗粒度命令（配置模型 / 提交 / 取消），事件经一个回调回到 Dart（`NativeCallable.listener`），
+//! Dart 只发粗粒度命令（配置模型 / 提交 / 取消），事件经 Dart 原生端口回到 Dart（[crate::dart_port]），
 //! 每一步做完把完整结果原子写到调用方给的路径（Dart 整份读进来按偏移切 TypedData，逐帧取值不跨 FFI）。
 //! 解码不在这里：Dart 经统一 FFmpeg 后端把音轨解成 44.1 kHz 立体声 s16le 临时文件再提交（[pcm]）。
 //!
@@ -74,13 +74,23 @@ struct Job {
     pcm: PathBuf,
     out: PathBuf,
     flags: u32,
+    /// 提交它的 isolate 的端口：这个任务的事件只发到这里（BUG-5413：登记端口换了之后，旧 isolate 的
+    /// 任务不能把事件落到新 isolate 上——两边的令牌各自从 1 数，会被当成新 isolate 自己的任务）。
+    owner: ManaSink,
+}
+
+/// 工作线程正在跑的任务：令牌、所属端口号（[DartPort::port]）、取消标志。
+struct Running {
+    token: u64,
+    owner: i64,
+    cancel: Arc<AtomicBool>,
 }
 
 #[derive(Default)]
 struct State {
     sink: Option<ManaSink>,
     queue: VecDeque<Job>,
-    running: Option<(u64, Arc<AtomicBool>)>,
+    running: Option<Running>,
     models: ModelPaths,
     worker: bool,
     last_error: String,
@@ -103,12 +113,10 @@ fn lock() -> std::sync::MutexGuard<'static, State> {
     engine().state.lock().unwrap_or_else(|p| p.into_inner())
 }
 
-fn emit(kind: i32, token: u64, value: u32) {
-    let sink = lock().sink;
-    if let Some(sink) = sink {
-        // 接收的 isolate 没了（引擎被销毁）时发不出去，消息丢掉即可。
-        sink.post_ints(&[kind as i64, token as i64, value as i64]);
-    }
+/// 把一个事件发给 `owner`（任务所属 isolate 的端口）。那个 isolate 没了（引擎被销毁）时发不出去，
+/// 消息丢掉即可。
+fn emit(owner: ManaSink, kind: i32, token: u64, value: u32) {
+    owner.post_ints(&[kind as i64, token as i64, value as i64]);
 }
 
 fn set_error(message: String) {
@@ -117,6 +125,7 @@ fn set_error(message: String) {
 
 /// 结果写文件 + 发事件的出口。
 struct FileSink {
+    owner: ManaSink,
     token: u64,
     out: PathBuf,
     cancel: Arc<AtomicBool>,
@@ -132,6 +141,7 @@ impl Sink for FileSink {
         }
         self.last_progress = (stage, permille);
         emit(
+            self.owner,
             EVENT_PROGRESS,
             self.token,
             (stage << 16) | permille.min(1000),
@@ -141,7 +151,7 @@ impl Sink for FileSink {
     fn publish(&mut self, analysis: &Analysis) -> Result<(), String> {
         format::write_atomic(&self.out, &analysis.encode())
             .map_err(|e| format!("write {}: {e}", self.out.display()))?;
-        emit(EVENT_UPDATED, self.token, analysis.flags);
+        emit(self.owner, EVENT_UPDATED, self.token, analysis.flags);
         Ok(())
     }
 
@@ -151,12 +161,17 @@ impl Sink for FileSink {
 
     fn warn(&mut self, message: String) {
         set_error(message);
-        emit(EVENT_MODEL_FAILED, self.token, 0);
+        emit(self.owner, EVENT_MODEL_FAILED, self.token, 0);
     }
 
     fn backend_fallback(&mut self, backend: Backend, message: String) {
         set_error(message);
-        emit(EVENT_BACKEND_FALLBACK, self.token, backend as u32);
+        emit(
+            self.owner,
+            EVENT_BACKEND_FALLBACK,
+            self.token,
+            backend as u32,
+        );
     }
 }
 
@@ -166,18 +181,24 @@ fn read_prior(out: &Path) -> Option<Analysis> {
 }
 
 /// 跑一个任务（工作线程与同步入口共用）。
-fn run_job(job: &Job, models: &ModelPaths, sink: &mut dyn Sink) -> Result<Analysis, String> {
-    let pcm =
-        pcm::read_s16le_stereo(&job.pcm).map_err(|e| format!("read {}: {e}", job.pcm.display()))?;
+fn run_job(
+    pcm_path: &Path,
+    out: &Path,
+    flags: u32,
+    models: &ModelPaths,
+    sink: &mut dyn Sink,
+) -> Result<Analysis, String> {
+    let pcm = pcm::read_s16le_stereo(pcm_path)
+        .map_err(|e| format!("read {}: {e}", pcm_path.display()))?;
     if pcm.len() == 0 {
         return Err("empty pcm".into());
     }
-    let models = if job.flags & SUBMIT_DSP_ONLY != 0 {
+    let models = if flags & SUBMIT_DSP_ONLY != 0 {
         ModelPaths::default()
     } else {
         models.clone()
     };
-    pipeline::analyze(&pcm, &models, read_prior(&job.out), sink)
+    pipeline::analyze(&pcm, &models, read_prior(out), sink)
 }
 
 fn worker_loop() {
@@ -187,22 +208,28 @@ fn worker_loop() {
             loop {
                 if let Some(job) = st.queue.pop_front() {
                     let cancel = Arc::new(AtomicBool::new(false));
-                    st.running = Some((job.token, cancel.clone()));
+                    st.running = Some(Running {
+                        token: job.token,
+                        owner: job.owner.port(),
+                        cancel: cancel.clone(),
+                    });
                     let models = st.models.clone();
                     break (job, cancel, models);
                 }
                 st = engine().wake.wait(st).unwrap_or_else(|p| p.into_inner());
             }
         };
-        emit(EVENT_STARTED, job.token, 0);
+        let owner = job.owner;
+        emit(owner, EVENT_STARTED, job.token, 0);
         let mut sink = FileSink {
+            owner,
             token: job.token,
             out: job.out.clone(),
             cancel: cancel.clone(),
             last_progress: (0, 0),
         };
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run_job(&job, &models, &mut sink)
+            run_job(&job.pcm, &job.out, job.flags, &models, &mut sink)
         }))
         .unwrap_or_else(|_| Err("panic".into()));
         if job.flags & SUBMIT_DELETE_INPUT != 0 {
@@ -210,11 +237,11 @@ fn worker_loop() {
         }
         lock().running = None;
         match result {
-            Ok(a) => emit(EVENT_DONE, job.token, a.flags),
-            Err(_) if cancel.load(Ordering::Relaxed) => emit(EVENT_CANCELLED, job.token, 0),
+            Ok(a) => emit(owner, EVENT_DONE, job.token, a.flags),
+            Err(_) if cancel.load(Ordering::Relaxed) => emit(owner, EVENT_CANCELLED, job.token, 0),
             Err(e) => {
                 set_error(e);
-                emit(EVENT_FAILED, job.token, 0);
+                emit(owner, EVENT_FAILED, job.token, 0);
             }
         }
     }
@@ -238,9 +265,13 @@ pub extern "C" fn ffc_mana_pipeline_version() -> u32 {
     format::PIPELINE_VERSION
 }
 
-/// 启动引擎（幂等；再调只换事件端口）。事件发到 Dart 端口 `port`（`SendPort.nativePort`），`post` 是
+/// 启动引擎（幂等）。事件发到 Dart 端口 `port`（`SendPort.nativePort`），`post` 是
 /// `NativeApi.postCObject`。端口而不是 `NativeCallable`：工作线程活得比 isolate 久，isolate 没了之后
 /// 再调它的 callable 会让 VM abort 整个进程（BUG-5413），发往已关端口则只是丢掉。
+///
+/// 同一端口再调什么也不变。换了端口 = 先前登记的 isolate 已经没了（引擎只给一个 isolate 用；Android 上
+/// 引擎被销毁、进程留着，下次打开起的是新 isolate）：它排队的任务丢掉（不发事件，带删除标志的删掉 PCM），
+/// 正在跑的置取消标志（事件仍只发往旧端口）。新 isolate 的令牌从头数，不能和旧任务撞上。
 #[no_mangle]
 pub extern "C" fn ffc_mana_start(post: Option<PostCObjectFn>, port: i64) -> i32 {
     guard(|| {
@@ -248,6 +279,16 @@ pub extern "C" fn ffc_mana_start(post: Option<PostCObjectFn>, port: i64) -> i32 
             return status::NULL_ARGUMENT;
         };
         let mut st = lock();
+        if st.sink.is_some_and(|old| old.port() != sink.port()) {
+            for job in st.queue.drain(..) {
+                if job.flags & SUBMIT_DELETE_INPUT != 0 {
+                    let _ = std::fs::remove_file(&job.pcm);
+                }
+            }
+            if let Some(running) = &st.running {
+                running.cancel.store(true, Ordering::Relaxed);
+            }
+        }
         st.sink = Some(sink);
         if !st.worker {
             let spawned = std::thread::Builder::new()
@@ -317,14 +358,15 @@ pub unsafe extern "C" fn ffc_mana_submit(
             return status::NULL_ARGUMENT;
         };
         let mut st = lock();
-        if !st.worker {
+        let (true, Some(owner)) = (st.worker, st.sink) else {
             return STATUS_NOT_STARTED;
-        }
+        };
         let job = Job {
             token,
             pcm,
             out,
             flags,
+            owner,
         };
         if flags & SUBMIT_URGENT != 0 {
             st.queue.push_front(job);
@@ -337,15 +379,19 @@ pub unsafe extern "C" fn ffc_mana_submit(
 }
 
 /// 取消：在队列里的直接拿掉（立即发 CANCELLED）；正在跑的置取消标志（在下一个检查点停，之后发
-/// CANCELLED，已写出的阶段性结果留着）。不认识的令牌返回 [STATUS_UNKNOWN_TOKEN]。
+/// CANCELLED，已写出的阶段性结果留着）。不认识的令牌返回 [STATUS_UNKNOWN_TOKEN]。令牌只在当前登记的
+/// 端口名下认：先前那个 isolate 留下的、还在收尾的任务即使令牌相同也不算（[ffc_mana_start]）。
 #[no_mangle]
 pub extern "C" fn ffc_mana_cancel(token: u64) -> i32 {
     guard(|| {
-        let removed = {
+        let (removed, owner) = {
             let mut st = lock();
-            if let Some((t, flag)) = &st.running {
-                if *t == token {
-                    flag.store(true, Ordering::Relaxed);
+            let Some(owner) = st.sink else {
+                return STATUS_UNKNOWN_TOKEN;
+            };
+            if let Some(running) = &st.running {
+                if running.token == token && running.owner == owner.port() {
+                    running.cancel.store(true, Ordering::Relaxed);
                     return status::OK;
                 }
             }
@@ -359,10 +405,10 @@ pub extern "C" fn ffc_mana_cancel(token: u64) -> i32 {
             {
                 let _ = std::fs::remove_file(&j.pcm);
             }
-            !dropped.is_empty()
+            (!dropped.is_empty(), owner)
         };
         if removed {
-            emit(EVENT_CANCELLED, token, 0);
+            emit(owner, EVENT_CANCELLED, token, 0);
             status::OK
         } else {
             STATUS_UNKNOWN_TOKEN
@@ -403,13 +449,7 @@ pub unsafe extern "C" fn ffc_mana_analyze_file(
             }
         }
         let models = lock().models.clone();
-        let job = Job {
-            token: 0,
-            pcm,
-            out: out.clone(),
-            flags,
-        };
-        match run_job(&job, &models, &mut Quiet { out }) {
+        match run_job(&pcm, &out.clone(), flags, &models, &mut Quiet { out }) {
             Ok(_) => status::OK,
             Err(e) => {
                 set_error(e);
@@ -441,22 +481,17 @@ mod tests {
     use std::ffi::CString;
     use std::sync::mpsc;
 
-    static EVENTS: Mutex<Option<mpsc::Sender<(i32, u64, u32)>>> = Mutex::new(None);
-
-    /// 测试里的「Dart 端口」：端口号 [OPEN_PORT] 的消息进 [EVENTS]，别的端口当作已关（isolate 没了）。
-    const OPEN_PORT: i64 = 7001;
+    /// 测试里的「Dart 端口」：每条消息连同端口号进 [EVENTS]。
+    static EVENTS: Mutex<Option<mpsc::Sender<(i64, i32, u64)>>> = Mutex::new(None);
 
     unsafe extern "C" fn post_event(
         port: i64,
         message: *mut crate::dart_port::DartCObject,
     ) -> bool {
-        if port != OPEN_PORT {
-            return false;
-        }
         let m = crate::dart_port::testing::decode(message);
         assert_eq!(m.len(), 3, "[kind, token, value]");
         if let Some(tx) = EVENTS.lock().unwrap().as_ref() {
-            let _ = tx.send((m[0] as i32, m[1] as u64, m[2] as u32));
+            let _ = tx.send((port, m[0] as i32, m[1] as u64));
         }
         true
     }
@@ -470,71 +505,113 @@ mod tests {
         std::fs::write(path, bytes).unwrap();
     }
 
+    /// BUG-5413：登记端口的 isolate 没了（Android 引擎被销毁、进程留着），下一个 isolate 换端口重新登记。
+    /// 旧 isolate 的任务不能把事件落到新 isolate 上（两边令牌都从 1 数，这里故意撞成同一个 7），排队的直接
+    /// 丢掉、正在跑的取消；取消也只认当前端口名下的任务。
     #[test]
     fn engine_runs_queue_and_reports_events() {
+        const OLD: i64 = 7001;
+        const NEW: i64 = 7002;
         let (tx, rx) = mpsc::channel();
         *EVENTS.lock().unwrap() = Some(tx);
-        assert_eq!(ffc_mana_start(None, OPEN_PORT), status::NULL_ARGUMENT);
+        let next = || {
+            rx.recv_timeout(std::time::Duration::from_secs(60))
+                .expect("engine event")
+        };
+        assert_eq!(ffc_mana_start(None, OLD), status::NULL_ARGUMENT);
         let dir = std::env::temp_dir().join(format!("ffc_mana_test_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
+        let cstr = |p: &Path| CString::new(p.to_str().unwrap()).unwrap();
+        let old_running = dir.join("old_running.s16le");
+        let old_queued = dir.join("old_queued.s16le");
         let pcm_path = dir.join("song.s16le");
         let out_path = dir.join("song.fma");
+        write_pcm(&old_running, &pipeline::tests::synthetic_song(30.0, 120.0));
+        write_pcm(&old_queued, &pipeline::tests::synthetic_song(2.0, 120.0));
         write_pcm(&pcm_path, &pipeline::tests::synthetic_song(8.0, 120.0));
-        let pcm_c = CString::new(pcm_path.to_str().unwrap()).unwrap();
-        let out_c = CString::new(out_path.to_str().unwrap()).unwrap();
-        // BUG-5413：先登记一个已关的端口（登记它的 isolate 已经没了），工作线程照常跑完、事件丢掉、
-        // 不碰已失效的东西；新 isolate 再登记自己的端口就能收到之后的事件。
-        let dead_pcm = dir.join("dead.s16le");
-        let dead_out = dir.join("dead.fma");
-        write_pcm(&dead_pcm, &pipeline::tests::synthetic_song(2.0, 120.0));
-        let dead_pcm_c = CString::new(dead_pcm.to_str().unwrap()).unwrap();
-        let dead_out_c = CString::new(dead_out.to_str().unwrap()).unwrap();
-        assert_eq!(ffc_mana_start(Some(post_event), OPEN_PORT + 1), status::OK);
+
+        assert_eq!(ffc_mana_start(Some(post_event), OLD), status::OK);
         unsafe {
             assert_eq!(
                 ffc_mana_configure(std::ptr::null(), std::ptr::null(), std::ptr::null(), 1, 0),
                 status::OK
             );
-            assert_eq!(
-                ffc_mana_submit(6, dead_pcm_c.as_ptr(), dead_out_c.as_ptr(), 0),
-                status::OK
-            );
+            for (token, pcm, out) in [
+                (7, &old_running, dir.join("old_running.fma")),
+                (8, &old_queued, dir.join("old_queued.fma")),
+            ] {
+                assert_eq!(
+                    ffc_mana_submit(
+                        token,
+                        cstr(pcm).as_ptr(),
+                        cstr(&out).as_ptr(),
+                        SUBMIT_DELETE_INPUT
+                    ),
+                    status::OK
+                );
+            }
         }
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-        while lock().running.is_some() || !lock().queue.is_empty() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "job on the closed port never finished"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        assert_eq!(ffc_mana_start(Some(post_event), OPEN_PORT), status::OK);
+        assert_eq!(next(), (OLD, EVENT_STARTED, 7));
+
+        // 新 isolate 登记：旧的排队任务丢掉（删 PCM、不发事件），正在跑的置取消标志。
+        assert_eq!(ffc_mana_start(Some(post_event), NEW), status::OK);
+        assert!(
+            !old_queued.exists(),
+            "queued input of the gone isolate deleted"
+        );
+        assert!(lock().queue.is_empty());
+        // 同一端口再登记什么也不变。
+        assert_eq!(ffc_mana_start(Some(post_event), NEW), status::OK);
         unsafe {
             assert_eq!(
-                ffc_mana_submit(7, pcm_c.as_ptr(), out_c.as_ptr(), SUBMIT_DELETE_INPUT),
+                ffc_mana_submit(
+                    7,
+                    cstr(&pcm_path).as_ptr(),
+                    cstr(&out_path).as_ptr(),
+                    SUBMIT_DELETE_INPUT
+                ),
                 status::OK
             );
         }
-        let mut kinds = Vec::new();
-        loop {
-            let (kind, token, _) = rx.recv_timeout(std::time::Duration::from_secs(60)).unwrap();
-            if token == 6 {
-                // 已关端口那一首在换端口前就出队了，它的尾巴事件可能落到新端口上：无害，跳过。
-                continue;
-            }
-            assert_eq!(token, 7);
-            kinds.push(kind);
-            if kind == EVENT_DONE || kind == EVENT_FAILED {
-                break;
+        let mut old_kinds = Vec::new();
+        let mut new_kinds = Vec::new();
+        while new_kinds.last() != Some(&EVENT_DONE) && new_kinds.last() != Some(&EVENT_FAILED) {
+            let (port, kind, token) = next();
+            assert_eq!(token, 7, "the dropped job never reports");
+            match port {
+                OLD => old_kinds.push(kind),
+                NEW => new_kinds.push(kind),
+                other => panic!("event on port {other}"),
             }
         }
-        assert_eq!(kinds.first(), Some(&EVENT_STARTED));
-        assert!(kinds.contains(&EVENT_UPDATED));
-        assert_eq!(kinds.last(), Some(&EVENT_DONE), "{kinds:?}");
+        assert!(
+            matches!(old_kinds.last(), Some(&EVENT_CANCELLED) | Some(&EVENT_DONE)),
+            "the gone isolate's running job ends on its own port: {old_kinds:?}"
+        );
+        assert_eq!(new_kinds.first(), Some(&EVENT_STARTED), "{new_kinds:?}");
+        assert!(new_kinds.contains(&EVENT_UPDATED), "{new_kinds:?}");
+        assert!(!new_kinds.contains(&EVENT_CANCELLED), "{new_kinds:?}");
+        assert_eq!(new_kinds.last(), Some(&EVENT_DONE), "{new_kinds:?}");
         assert!(!pcm_path.exists(), "input deleted");
+        assert!(!old_running.exists(), "the gone isolate's input deleted");
         let a = Analysis::decode(&std::fs::read(&out_path).unwrap()).unwrap();
         assert!(a.beats_ms.len() > 8);
         assert_eq!(ffc_mana_cancel(999), STATUS_UNKNOWN_TOKEN);
+
+        // 取消只认当前端口名下的任务：旧 isolate 还在收尾的同号任务不算。工作线程此刻空闲（队列空、
+        // 没有在跑的），直接摆一个「在跑」的状态来核对。
+        let cancel = Arc::new(AtomicBool::new(false));
+        lock().running = Some(Running {
+            token: 42,
+            owner: OLD,
+            cancel: cancel.clone(),
+        });
+        assert_eq!(ffc_mana_cancel(42), STATUS_UNKNOWN_TOKEN);
+        assert!(!cancel.load(Ordering::Relaxed));
+        lock().running.as_mut().unwrap().owner = NEW;
+        assert_eq!(ffc_mana_cancel(42), status::OK);
+        assert!(cancel.load(Ordering::Relaxed));
+        lock().running = None;
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -656,18 +733,14 @@ mod tests {
                 println!("FALLBACK {backend:?}: {message}");
             }
         }
-        let job = Job {
-            token: 0,
-            pcm: PathBuf::from(pcm),
-            out: std::env::temp_dir().join("ffc_mana_real_file_sanity.fma"),
-            flags: 0,
-        };
-        let _ = std::fs::remove_file(&job.out);
+        let pcm = PathBuf::from(pcm);
+        let out = std::env::temp_dir().join("ffc_mana_real_file_sanity.fma");
+        let _ = std::fs::remove_file(&out);
         let mut sink = Print {
             t0: std::time::Instant::now(),
             stage: 0,
             dsp_beats: Vec::new(),
         };
-        run_job(&job, &models, &mut sink).unwrap();
+        run_job(&pcm, &out, 0, &models, &mut sink).unwrap();
     }
 }

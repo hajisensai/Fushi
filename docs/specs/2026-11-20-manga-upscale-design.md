@@ -177,7 +177,8 @@
 
 - 进程级单例：ORT 运行时、模型会话、任务队列、磁盘 LRU、一个工作线程。Dart 只发粗粒度命令
   （`ffc_upscale_start / configure / submit / query / focus / clear / cached_path / backend_available / tier_supported`），
-  事件经一个 `NativeCallable.listener` 回调（`done / skipped / failed / cancelled / models_failed`），不存镜像状态。
+  事件经 Dart 原生端口发回（`done / skipped / failed / cancelled / models_failed`；BUG-5413 起不用 `NativeCallable.listener`，
+  见 `native/fushi_compute/src/dart_port.rs`），不存镜像状态。
   「正在算 / 判过不做 / 失败过」也由引擎记（`query`），换配置清零；调用方据此决定要不要读原图来提交。
 - **ORT 不另带**：dlopen 本进程已有的那份（Windows = flutter_onnxruntime 插件绑定的那个 `onnxruntime.dll`——下载的
   DirectML core 被选中时是它，否则随包 CPU core；Android = AAR 的 `libonnxruntime.so`；Apple = 静态链进主程序的那份，从
