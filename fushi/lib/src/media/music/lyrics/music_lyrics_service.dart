@@ -1581,6 +1581,9 @@ class MusicLyricsService {
   /// 注音 / 单行偏移），不接受任意改过的时间轴。纯文本歌词的自动对时与它在通用字幕
   /// 工作台里的逐行微调另走 [saveAutoSynced] / [setAutoSyncedLineStart]。
   Future<void> choose(String trackUid, MusicLyricsCandidate candidate) async {
+    // 用户另选了来源：之前登记的「转录落库后自动对时」作废，否则转录一落库就拿旧的纯文本
+    // 盖掉这次的手动指定。
+    _pendingAutoSync.remove(trackUid);
     final FushiDatabase? db = _database();
     if (db == null) return;
     final LyricTimeline t = candidate.timeline.copyWith(
@@ -1651,15 +1654,30 @@ class MusicLyricsService {
     _generated.add(trackUid);
     final ({MusicLyricsTrackRef track, LyricTimeline plain})? pending =
         _pendingAutoSync.remove(trackUid);
+    // 等着这份转录的自动对时另起一条：它的成败只经 [autoSyncResults] 报给界面，不回传
+    // 给生成任务——转录已经落库，对时失败（对齐超限、解析失败）不能把生成任务判成失败、
+    // 也不能挡住同一文件后面曲目（CUE）的转录落库。
     if (pending != null) {
-      final MusicLyricsAutoSyncOutcome outcome = await autoSyncPlainLyrics(
-        pending.track,
-        pending.plain,
+      unawaited(_runPendingAutoSync(pending.track, pending.plain));
+    }
+  }
+
+  Future<void> _runPendingAutoSync(
+    MusicLyricsTrackRef track,
+    LyricTimeline plain,
+  ) async {
+    MusicLyricsAutoSyncOutcome outcome;
+    try {
+      outcome = await autoSyncPlainLyrics(track, plain);
+    } on Object catch (e) {
+      outcome = MusicLyricsAutoSyncOutcome(
+        MusicLyricsAutoSyncStatus.failed,
+        error: e.toString(),
       );
-      _autoSyncResults.add((trackUid: trackUid, outcome: outcome));
-      if (outcome.status == MusicLyricsAutoSyncStatus.synced) {
-        _generated.add(trackUid);
-      }
+    }
+    _autoSyncResults.add((trackUid: track.trackUid, outcome: outcome));
+    if (outcome.status == MusicLyricsAutoSyncStatus.synced) {
+      _generated.add(track.trackUid);
     }
   }
 
@@ -1962,6 +1980,8 @@ class MusicLyricsService {
 
   /// 撤销手动指定，回到自动优先级。
   Future<void> clearUserEdit(String trackUid) async {
+    // 重置来源同样作废等转录的自动对时（见 [choose]）。
+    _pendingAutoSync.remove(trackUid);
     final FushiDatabase? db = _database();
     if (db == null) return;
     await (db.delete(db.musicLyrics)..where(

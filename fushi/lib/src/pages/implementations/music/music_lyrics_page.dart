@@ -73,7 +73,7 @@ import 'package:fushi/src/media/music/lyrics/music_lyrics_auto_sync.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart';
 import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart'
-    show pickCdgCompanion;
+    show MusicLyricsSource, pickCdgCompanion;
 import 'package:fushi/src/media/music/music_clip_source.dart';
 import 'package:fushi/src/media/music/music_mining_origin.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
@@ -834,6 +834,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       _loading = true;
       _error = null;
       _lyrics = null;
+      _lyricsAutoSynced = false;
       _cdgPath = null;
       _lookupLine = null;
       _lookupCharIndex = null;
@@ -852,12 +853,19 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       error = e;
     }
     if (!mounted || _loadedUid != item.trackUid) return;
+    // 生效的是不是自动对时存下的 LRC（字幕工作台据此给逐行微调）：与时间轴同一次载入，
+    // 换曲 / 换来源 / 对时 / 微调后都跟着这份时间轴走，不另存一份会过期的标记。
+    final bool autoSynced =
+        r?.source == MusicLyricsSource.user &&
+        await _service.hasAutoSynced(item.trackUid);
+    if (!mounted || _loadedUid != item.trackUid) return;
     // 同目录列一遍找 .cdg：大目录同步 listSync 会卡开页，放后台。
     final String? cdg = await musicCdgCompanionInBackground(item);
     if (!mounted || _loadedUid != item.trackUid) return;
     setState(() {
       _loading = false;
       _lyrics = r;
+      _lyricsAutoSynced = autoSynced;
       _cdgPath = cdg;
       _error = error;
       _offsetMs = r?.timeline.offsetMs ?? 0;
@@ -1760,6 +1768,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         t.music_lyrics_auto_sync_needs_transcript,
         ToastSeverity.warning,
       ),
+      MusicLyricsAutoSyncStatus.failed => (
+        t.music_lyrics_auto_sync_failed(error: outcome.error ?? ''),
+        ToastSeverity.error,
+      ),
     };
     FushiToast.show(msg: msg, severity: severity);
   }
@@ -1770,8 +1782,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   List<AudioCue> _studioSecondary = const <AudioCue>[];
   SubtitleContentLanguage _studioLanguage = SubtitleContentLanguage.unknown;
 
-  /// 生效的是自动对时存下的 LRC（工作台据此给逐行微调）。开工作台与工具跑完时刷新。
-  bool _studioFineTune = false;
+  /// 当前显示的歌词是自动对时存下的 LRC（工作台据此给逐行微调）。随 [_load] 与 [_lyrics]
+  /// 一起更新。
+  bool _lyricsAutoSynced = false;
 
   void _refreshStudioCues() {
     final LyricTimeline? timeline = _lyrics?.timeline;
@@ -1808,8 +1821,6 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   Future<void> _openSubtitleStudio() async {
     final MusicPlayItem? item = _engine.current;
     if (item == null) return;
-    _studioFineTune = await _service.hasAutoSynced(item.trackUid);
-    if (!mounted) return;
     await openVideoSubtitleStudioPage(
       context: _themedContext,
       reference: VideoSubtitleStudioReference(
@@ -1838,26 +1849,24 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       actions: VideoSubtitleStudioActions(
         toolset: VideoSubtitleStudioToolset.music,
         generate: _canGenerateSubtitles ? _generateSubtitles : null,
-        syncPlainText: musicLyricsCanAutoSync(_lyrics?.timeline)
-            ? _studioAutoSync
-            : null,
+        syncPlainText: _autoSyncLyrics,
+        // 工作台开着时会换曲、对完时间：可用与否按当前这份歌词现算。
+        canSyncPlainText: () => musicLyricsCanAutoSync(_lyrics?.timeline),
         setCueStart: _studioSetCueStart,
-        canSetCueStart: () => _studioFineTune,
+        canSetCueStart: () => _lyricsAutoSynced,
       ),
     );
   }
 
-  Future<void> _studioAutoSync() async {
-    await _autoSyncLyrics();
-    final MusicPlayItem? item = _engine.current;
-    if (item != null) {
-      _studioFineTune = await _service.hasAutoSynced(item.trackUid);
-    }
-  }
-
   Future<void> _studioSetCueStart(AudioCue cue, int startMs) async {
     final MusicPlayItem? item = _engine.current;
-    if (item == null || !_studioFineTune) return;
+    // 表格里的句子属于载入时那首（[AudioCue.bookKey]）：换曲后旧表格的点按不落到新曲上。
+    if (item == null ||
+        !_lyricsAutoSynced ||
+        cue.bookKey != item.trackUid ||
+        _loadedUid != item.trackUid) {
+      return;
+    }
     final bool changed = await _service.setAutoSyncedLineStart(
       musicLyricsTrackRefOf(item),
       cue.sentenceIndex,

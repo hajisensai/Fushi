@@ -37,6 +37,9 @@ enum MusicLyricsAutoSyncStatus {
 
   /// 没有可对的歌词行（当前歌词不是纯文本 / 全是段落标记）。
   noPlainLyrics,
+
+  /// 转录落库后接着跑的对时出错（对齐超限、解析失败等），错误在 [MusicLyricsAutoSyncOutcome.error]。
+  failed,
 }
 
 /// 一次自动对时的结果（界面据此提示）。
@@ -45,6 +48,7 @@ class MusicLyricsAutoSyncOutcome {
     this.status, {
     this.lines = 0,
     this.anchoredLines = 0,
+    this.error,
   });
 
   final MusicLyricsAutoSyncStatus status;
@@ -54,6 +58,9 @@ class MusicLyricsAutoSyncOutcome {
 
   /// 其中逐字对上、可信的行数。
   final int anchoredLines;
+
+  /// [MusicLyricsAutoSyncStatus.failed] 时的错误说明。
+  final String? error;
 }
 
 /// 后台对时（转录完成后才跑）的结果事件。

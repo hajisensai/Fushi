@@ -218,9 +218,11 @@ void main() {
         s.generatedUpdates.listen(updates.add);
         s.autoSyncWhenGenerated(track(), await plain());
         expect(s.autoSyncPending('uid-1'), isTrue);
+        final Future<MusicLyricsAutoSyncEvent> done = s.autoSyncResults.first;
         await saveTranscript(s, _transcriptSrt);
-        await pumpEventQueue();
         expect(s.autoSyncPending('uid-1'), isFalse);
+        await done;
+        await pumpEventQueue();
         expect(events.single.trackUid, 'uid-1');
         expect(events.single.outcome.status, MusicLyricsAutoSyncStatus.synced);
         // 转录落库一次、对时结果再一次：页面两次都重载。
@@ -228,6 +230,61 @@ void main() {
         expect((await s.resolve(track()))?.source, MusicLyricsSource.user);
       },
     );
+
+    test('choosing another source cancels the pending auto-sync', () async {
+      final MusicLyricsService s = service();
+      final List<MusicLyricsAutoSyncEvent> events =
+          <MusicLyricsAutoSyncEvent>[];
+      s.autoSyncResults.listen(events.add);
+      s.autoSyncWhenGenerated(track(), await plain());
+      const String chosen = '[00:01.00]a\n[00:02.00]b\n';
+      await s.choose(
+        'uid-1',
+        MusicLyricsCandidate(
+          source: MusicLyricsSource.lrclib,
+          label: 'x',
+          format: 'lrc',
+          raw: utf8.encode(chosen),
+          timeline: await _parse(utf8.encode(chosen), 'lrc', null),
+        ),
+      );
+      expect(s.autoSyncPending('uid-1'), isFalse);
+      await saveTranscript(s, _transcriptSrt);
+      await pumpEventQueue();
+      expect(events, isEmpty);
+      // 手动指定的那份没被旧的纯文本对时盖掉。
+      expect(
+        (await s.resolve(track()))!.timeline.lines.map((LyricLine l) => l.text),
+        <String>['a', 'b'],
+      );
+    });
+
+    test('a failing pending auto-sync is reported, not thrown into the '
+        'transcript save', () async {
+      final MusicLyricsService s = service();
+      final Future<MusicLyricsAutoSyncEvent> done = s.autoSyncResults.first;
+      // 歌词 × 转录超过上游 DP 上限：对齐抛 FormatException。
+      final String huge = List<String>.filled(7000, 'あいうえお').join('\n');
+      s.autoSyncWhenGenerated(
+        track(),
+        await _parse(utf8.encode(huge), 'txt', 60000),
+      );
+      final String bigSrt = <String>[
+        for (int i = 0; i < 300; i++)
+          '${i + 1}\n00:00:${(i ~/ 10).toString().padLeft(2, '0')},'
+              '${((i % 10) * 100).toString().padLeft(3, '0')} --> '
+              '00:00:${(i ~/ 10).toString().padLeft(2, '0')},'
+              '${((i % 10) * 100 + 90).toString().padLeft(3, '0')}\n'
+              'かきくけこさしすせそたちつてと\n',
+      ].join('\n');
+      // 转录照常落库，生成任务不因对时出错而失败。
+      await saveTranscript(s, bigSrt);
+      final MusicLyricsAutoSyncEvent e = await done;
+      expect(e.outcome.status, MusicLyricsAutoSyncStatus.failed);
+      expect(e.outcome.error, isNotEmpty);
+      expect(await s.hasAutoSynced('uid-1'), isFalse);
+      expect((await s.resolve(track()))?.source, MusicLyricsSource.asr);
+    });
 
     test('workbench fine-tune moves one line and keeps the offset', () async {
       final MusicLyricsService s = service();

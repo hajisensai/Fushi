@@ -21,6 +21,7 @@ void main() {
   Future<List<String>> pump(
     WidgetTester tester, {
     Future<void> Function()? syncPlainText,
+    bool Function()? canSyncPlainText,
     bool fineTune = true,
     bool Function()? canSetCueStart,
   }) async {
@@ -57,6 +58,7 @@ void main() {
                     toolset: VideoSubtitleStudioToolset.music,
                     generate: () async => calls.add('generate'),
                     syncPlainText: syncPlainText,
+                    canSyncPlainText: canSyncPlainText,
                     setCueStart: fineTune
                         ? (AudioCue c, int ms) async =>
                               calls.add('start ${c.sentenceIndex} $ms')
@@ -104,6 +106,25 @@ void main() {
     await tester.pumpAndSettle();
     // 没崩、也没别的动作：工具置灰。
     expect(byKey('video-subtitle-studio-sync-plain'), findsOneWidget);
+  });
+
+  testWidgets('plain-text sync follows the current lyrics, not the ones at '
+      'open time', (WidgetTester tester) async {
+    int runs = 0;
+    bool plain = true;
+    await pump(
+      tester,
+      syncPlainText: () async {
+        runs++;
+        plain = false; // 对完：当前歌词已有时间轴。
+      },
+      canSyncPlainText: () => plain,
+    );
+    await tester.tap(byKey('video-subtitle-studio-sync-plain'));
+    await tester.pumpAndSettle();
+    await tester.tap(byKey('video-subtitle-studio-sync-plain'));
+    await tester.pumpAndSettle();
+    expect(runs, 1);
   });
 
   testWidgets('each line can be started at the playhead', (

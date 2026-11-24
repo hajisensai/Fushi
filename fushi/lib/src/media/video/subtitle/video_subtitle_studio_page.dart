@@ -154,6 +154,7 @@ class VideoSubtitleStudioActions {
     this.retime,
     this.alignEmbedded,
     this.syncPlainText,
+    this.canSyncPlainText,
     this.setCueStart,
     this.canSetCueStart,
   });
@@ -181,6 +182,14 @@ class VideoSubtitleStudioActions {
   /// 纯文本（没有时间轴）的正文按本机转录逐行对时（[VideoSubtitleStudioToolset.music]
   /// 才列）。null = 当前正文已有时间轴或没有正文。
   final Future<void> Function()? syncPlainText;
+
+  /// [syncPlainText] 此刻可不可用（工作台开着时会换曲、对完时间）；null = 只看
+  /// [syncPlainText] 是否为 null。
+  final bool Function()? canSyncPlainText;
+
+  /// 纯文本对时此刻可用。
+  bool get plainTextSyncable =>
+      syncPlainText != null && (canSyncPlainText?.call() ?? true);
 
   /// 逐句表格的逐行微调：把这一句的起点设成 `startMs`（[VideoSubtitleStudioReference.
   /// primaryPositionMs] 的当前值，即播放头）。null = 这条轨不能逐行改（每行不出按钮）。
@@ -1170,10 +1179,10 @@ class _VideoSubtitleStudioPageState extends State<VideoSubtitleStudioPage> {
               key: 'sync-plain',
               icon: FushiIcons.timer,
               title: t.music_lyrics_auto_sync_action,
-              hint: a.syncPlainText == null
-                  ? t.music_lyrics_auto_sync_not_plain
-                  : t.music_lyrics_auto_sync_hint,
-              action: a.syncPlainText,
+              hint: a.plainTextSyncable
+                  ? t.music_lyrics_auto_sync_hint
+                  : t.music_lyrics_auto_sync_not_plain,
+              action: a.plainTextSyncable ? a.syncPlainText : null,
             ),
           if (a.toolset == VideoSubtitleStudioToolset.video) ...<
             ({
