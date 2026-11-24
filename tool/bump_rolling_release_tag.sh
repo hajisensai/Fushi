@@ -15,7 +15,7 @@
 #     没有「删了还没传完」的窗口期，也不会误删 Android / 桌面另一条 workflow
 #     并行传上来的资产（两条 workflow 共用这一个 release，各管各的 prune）。
 #
-# 挪到哪个提交：新造一个提交，tree 与父提交都取**默认分支**（main）尖端，日期是现在。
+# 挪到哪个提交：新造一个提交，tree 与父提交都取**默认分支**（2026-11-25 起是 develop）尖端，日期是现在。
 #   - 不直接指向本次构建的 develop sha：GitHub 拒绝用 GITHUB_TOKEN 更新「解析出的目标
 #     提交相对默认分支改了 .github/workflows/」的 release（同 softprops 步骤的
 #     target_commitish 注释，rolling_publish_and_r8_gate_guard_test.dart 守着），tag 指向

@@ -11,19 +11,13 @@ name: Build and Test Android / macOS / Linux / Windows
 # *app* is no longer built in CI (owner decision 2026-09-30: no Linux app for a
 # long time).
 # On pull_request every platform job is path-gated by the `changes` job (only
-# PRs that touch that platform's native / packaging inputs build it); push (main)
-# and workflow_dispatch run everything; develop gets a nightly full run through
-# the `nightly-develop` dispatcher. See the comments on those two jobs.
+# PRs that touch that platform's native / packaging inputs build it); push (main),
+# workflow_dispatch and the nightly schedule (which runs on the default branch,
+# develop) run everything. See the comments on the `changes` job.
 on:
   workflow_dispatch:
-    inputs:
-      nightly:
-        description: 'Set by the nightly-develop dispatcher; skips the Android appSmoke job (manual-only).'
-        required: false
-        default: false
-        type: boolean
   schedule:
-    # 每天 UTC 18:41（北京时间 02:41）；只派发，不构建（见 nightly-develop job）。
+    # 每天 UTC 18:41（北京时间 02:41）在默认分支 develop 上整轮跑一次（路径门的兜底）。
     - cron: '41 18 * * *'
   push:
     # develop push 上只保留 release.yml（Build Release APK，本仓唯一带 app 全量单测门的
@@ -115,8 +109,16 @@ jobs:
   # 并对账「每个 job 正文里调用到的 native/ packages/ tool/ tools/ ci/ .github/ 路径都被它的
   # 路由覆盖」——job 新读一个目录却忘了进正则，守卫就红。
   #
-  # push（main）与手动 workflow_dispatch 行为不变：整轮全开。schedule 只用来在 develop 上
-  # 派发夜间整轮（见 nightly-develop），本 run 自己什么都不编。
+  # push（main）、手动 workflow_dispatch 与 schedule 都整轮全开。
+  #
+  # schedule = 路径门的兜底：develop 每晚整轮跑一次（Windows / macOS / iOS / 服务端 + 桌面 appSmoke），把 PR
+  # 上被路径门跳过的「只改 Dart 的 PR」在 develop 上补一遍。release-desktop.yml 在每次
+  # develop push 上已做 Windows / macOS / iOS 的 release 构建，编译 / 链接这层兜底本来就在；
+  # 它没有的是 appSmoke（Windows / macOS 真 app 冒烟）、debug 配置构建和 FFI 真调用测试，
+  # 这些只在本 workflow 里。不恢复 develop push
+  # 触发：2026-09-03 正是因为每次合并同时点燃三条长 workflow、runner 排队互相取消才摘掉的。
+  # 定时任务读默认分支上的 workflow 与代码；默认分支 2026-11-25 起是 develop，所以直接就地
+  # 跑（此前默认分支是落后一个发布周期的 main，只能派发一次 `--ref develop` 的 dispatch）。
   #
   # 取改动清单用 PR 的 merge commit 与它的第一个父提交（= 合并时的基线 tip）做 diff：
   # 与平台 job 实际构建的是同一个提交；只要两层提交 + 树，blob:none + sparse 让它几秒完成。
@@ -154,11 +156,8 @@ jobs:
             pull_request)
               git diff --name-only --no-renames HEAD^1 HEAD > "$files"
               ;;
-            schedule)
-              # 夜间派发 run 本身不构建（nightly-develop job 派发 develop 上的整轮）。
-              ;;
             *)
-              # push（main）/ workflow_dispatch：整轮，与加路径门之前一致。
+              # push（main）/ workflow_dispatch / schedule（develop 夜间整轮）：整轮。
               all=true
               ;;
           esac
@@ -186,35 +185,6 @@ jobs:
           route macos app_common smoke macos_only
           route ios app_common ios_only
           route server server_only
-
-  # 路径门的兜底：develop 每晚整轮跑一次 build-multiplatform（Windows / macOS / iOS / 服务端 +
-  # appSmoke），把 PR 上被路径门跳过的「只改 Dart 的 PR」在 develop 上补一遍。
-  #
-  # 为什么需要它、为什么是这种形状：
-  #   * release-desktop.yml 在每次 develop push（fushi/** packages/** native/** …）上都会做
-  #     Windows / macOS / iOS 的 release 构建——编译 / 链接这层兜底本来就在，而且是每次合并。
-  #     它**没有**的是 appSmoke（Windows / macOS 真 app 冒烟）、debug 配置构建和 FFI 真调用
-  #     测试；这些只在本 workflow 里。
-  #   * 不恢复 develop push 触发：2026-09-03 正是因为每次合并同时点燃三条长 workflow、runner
-  #     排队到互相取消才摘掉的，而 release-desktop 已在每次 develop push 上占两台 macOS。
-  #   * 不直接 `schedule` 跑本 workflow：定时任务只在**默认分支 main** 上跑、读 main 上的
-  #     文件与代码，main 只在正式发布时同步——那等于每晚测一份旧代码。所以定时 run 只做一件
-  #     事：`gh workflow run … --ref develop`，被派发的 run 用 develop 上的 workflow 文件与
-  #     代码整轮跑（GITHUB_TOKEN 允许触发 workflow_dispatch）。
-  #   * 生效时点：本文件同步到 main 之后（下一次 develop → main）定时才开始触发；在那之前
-  #     只有 release-desktop 的编译兜底，需要时手动 dispatch 本 workflow。
-  nightly-develop:
-    if: github.event_name == 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      actions: write
-    steps:
-      - name: Dispatch a full build-multiplatform run on develop
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-        run: gh workflow run build-multiplatform.yml --repo "$REPO" --ref develop -f nightly=true
 
   android:
     runs-on: ubuntu-latest
@@ -249,8 +219,8 @@ jobs:
     #   1. 手动 dispatch 连续若干次（>= 10）appSmoke 全绿，证明 KVM 修复真的消掉了
     #      renderer crash 这类红；
     #   2. 决定让它成为硬门（去掉 continue-on-error）——软门放回 PR 上仍是纯开销。
-    # nightly-develop 派发的夜间整轮带 nightly=true，不跑它：仍然只在人手动 dispatch 时跑。
-    if: github.event_name == 'workflow_dispatch' && !inputs.nightly
+    # 夜间 schedule 整轮与 PR 都不跑它：仍然只在人手动 dispatch 时跑。
+    if: github.event_name == 'workflow_dispatch'
     continue-on-error: true
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
