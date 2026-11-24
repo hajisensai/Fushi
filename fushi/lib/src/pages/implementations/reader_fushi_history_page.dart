@@ -2005,9 +2005,15 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       part: FushiTagFilterBarPart.actions,
       tagsInMenu: !wide,
     );
+    // Apple iOS 档：标签胶囊在工具行下面的筛选行里（方案 A 第 8 项），宽屏
+    // 也不再把标签塞进工具行中段；macOS 宽窗档标签在侧栏。
+    final bool appleRow = isGlassDesign(context);
     return LibraryToolbar(
-      wideMiddle: wide && allTags.isNotEmpty
+      wideMiddle: !appleRow && wide && allTags.isNotEmpty
           ? _buildTagBar(allTags, inlineTags: true)
+          : null,
+      appleFilterRow: appleRow
+          ? _buildTagBar(allTags, part: FushiTagFilterBarPart.appleFilterRow)
           : null,
       search: LibrarySearchField(
         fieldKey: const ValueKey<String>('shelf_search_field'),

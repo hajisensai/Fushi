@@ -5919,7 +5919,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   if (widget.section != VideoLibrarySection.home) ...<Widget>[
                     if (isCupertinoPlatform(context)) ...<Widget>[
                       _buildVideoSearchBar(allTags),
-                      _buildTagFilterBar(allTags),
+                      // Apple 下标签胶囊在搜索行下面的筛选行里（iOS 档）或侧栏
+                      // （macOS 档），这里不再另起一行。
+                      if (!isGlassDesign(context)) _buildTagFilterBar(allTags),
                     ] else ...<Widget>[
                       _buildTagFilterBar(
                         allTags,
@@ -10519,6 +10521,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ],
       ],
       trailing: _buildTagFilterBar(tags, part: FushiTagFilterBarPart.actions),
+      appleFilterRow: isGlassDesign(context)
+          ? _buildTagFilterBar(tags, part: FushiTagFilterBarPart.appleFilterRow)
+          : null,
     );
   }
 

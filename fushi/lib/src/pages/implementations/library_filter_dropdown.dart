@@ -348,6 +348,20 @@ class _LibrarySearchFieldState extends State<LibrarySearchField> {
 /// 同一条左缘 / 右缘。Material（M3E）下行尾工具收进一枚与搜索框同高的悬浮
 /// 按钮组胶囊（[FushiFloatingToolbarSurface]），不再是一排裸图标；Apple 下
 /// [FushiToolbar] 自带分组玻璃胶囊，原样放。
+/// 标记「这条库页工具行下面挂着 Apple iOS 档筛选行」：行尾的标签动作
+/// （`FushiTagFilterBar(part: actions)`）据此不再重复出「筛选」与「管理标签」。
+/// 纯数据通道，与设计系统分派无关。
+class LibraryAppleFilterRowScope extends InheritedWidget {
+  const LibraryAppleFilterRowScope({required super.child, super.key});
+
+  static bool activeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<LibraryAppleFilterRowScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(LibraryAppleFilterRowScope oldWidget) => false;
+}
+
 class LibraryToolbar extends StatelessWidget {
   const LibraryToolbar({
     required this.search,
@@ -357,8 +371,14 @@ class LibraryToolbar extends StatelessWidget {
     this.filtersKey,
     this.compactKey,
     this.wideMiddle,
+    this.appleFilterRow,
     super.key,
   });
+
+  /// Apple iOS 档标题下的筛选行（「筛选」pull-down + 标签胶囊，方案 A 第 8
+  /// 项，由调用方给 `FushiTagFilterBar(part: appleFilterRow)`）：只在 Apple
+  /// 外壳、且侧栏不承载标签时排在工具行下面；M3E 不画。
+  final Widget? appleFilterRow;
 
   static const double wideBreakpoint = 640;
   static const double _gap = 8;
@@ -527,9 +547,28 @@ class LibraryToolbar extends StatelessWidget {
             ),
           );
         }
-        return FocusTraversalGroup(
-          policy: OrderedTraversalPolicy(),
-          child: body,
+        final Widget? filterRow = appleFilterRow;
+        if (filterRow == null || !isGlassDesign(context) || searchInSidebar) {
+          return FocusTraversalGroup(
+            policy: OrderedTraversalPolicy(),
+            child: body,
+          );
+        }
+        return LibraryAppleFilterRowScope(
+          child: FocusTraversalGroup(
+            policy: OrderedTraversalPolicy(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                body,
+                FocusTraversalOrder(
+                  order: const NumericFocusOrder(4),
+                  child: filterRow,
+                ),
+              ],
+            ),
+          ),
         );
       },
     );

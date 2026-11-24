@@ -170,6 +170,16 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
 
   /// 此刻看得见的库页交来的搜索绑定（侧栏形态 + macOS 档才接）：有它时侧栏顶部
   /// 搜索框就是该库的搜索框（搜当前库），目的地不再按输入过滤。
+  /// 清空侧栏搜索框：借用库页控制器时走库页自己的清空回调（同时清掉库页的
+  /// 搜索状态），否则清本地目的地过滤词。
+  void _clearSidebarSearch(AppleSidebarLibrarySearch? librarySearch) {
+    if (librarySearch != null) {
+      librarySearch.onClear();
+    } else {
+      _query.clear();
+    }
+  }
+
   AppleSidebarLibrarySearch? get _librarySearch {
     final AppleSidebarLibraryHost? host = widget.libraryHost;
     if (host == null || widget.tabBar || !fushiAppleUsesMacMetrics(context)) {
@@ -539,67 +549,105 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
         width: width,
         height: _kAppleSidebarSearchHeight * k,
         child: fade(
-          DecoratedBox(
-            // macOS 26 侧栏搜索框：胶囊形 tertiaryFill 井。
-            decoration: BoxDecoration(
-              color: apple.tertiaryFill,
-              borderRadius: BorderRadius.circular(
-                _kAppleSidebarSearchHeight * k / 2,
-              ),
-            ),
-            child: Row(
-              children: <Widget>[
-                SizedBox(width: 9 * k),
-                FushiIcon(
-                  FushiIcons.search,
-                  size: 14 * k,
-                  color: apple.secondaryLabel,
+          Focus(
+            // Esc 清空（输入框有焦点时冒泡上来；空了就不吃，让 Esc 继续往外走）。
+            canRequestFocus: false,
+            skipTraversal: true,
+            onKeyEvent: (FocusNode node, KeyEvent event) {
+              if (event is! KeyDownEvent ||
+                  event.logicalKey != LogicalKeyboardKey.escape) {
+                return KeyEventResult.ignored;
+              }
+              final TextEditingController field =
+                  librarySearch?.controller ?? _query;
+              if (field.text.isEmpty) return KeyEventResult.ignored;
+              _clearSidebarSearch(librarySearch);
+              return KeyEventResult.handled;
+            },
+            child: DecoratedBox(
+              // macOS 26 侧栏搜索框：胶囊形 tertiaryFill 井。
+              decoration: BoxDecoration(
+                color: apple.tertiaryFill,
+                borderRadius: BorderRadius.circular(
+                  _kAppleSidebarSearchHeight * k / 2,
                 ),
-                SizedBox(width: 6 * k),
-                Expanded(
-                  // 胶囊（tertiaryFill 圆角 10 + 放大镜）由侧栏自己画，输入框
-                  // 走设计系统分派但不带装饰（decoration: null 在两套设计系统
-                  // 下都不加壳）；占位符随空值显隐，与原 collapsed 样式一致。
-                  child: Stack(
-                    alignment: AlignmentDirectional.centerStart,
-                    children: <Widget>[
-                      ValueListenableBuilder<TextEditingValue>(
-                        valueListenable: librarySearch?.controller ?? _query,
-                        builder:
-                            (
-                              BuildContext context,
-                              TextEditingValue value,
-                              Widget? hint,
-                            ) => value.text.isEmpty ? hint! : const SizedBox(),
-                        child: IgnorePointer(
-                          child: Text(
-                            librarySearch?.hint ?? t.search,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: text.bodyMedium?.copyWith(
-                              fontSize: _kAppleSidebarFontSize * k,
-                              color: apple.secondaryLabel,
+              ),
+              child: Row(
+                children: <Widget>[
+                  SizedBox(width: 9 * k),
+                  FushiIcon(
+                    FushiIcons.search,
+                    size: 14 * k,
+                    color: apple.secondaryLabel,
+                  ),
+                  SizedBox(width: 6 * k),
+                  Expanded(
+                    // 胶囊（tertiaryFill 圆角 10 + 放大镜）由侧栏自己画，输入框
+                    // 走设计系统分派但不带装饰（decoration: null 在两套设计系统
+                    // 下都不加壳）；占位符随空值显隐，与原 collapsed 样式一致。
+                    child: Stack(
+                      alignment: AlignmentDirectional.centerStart,
+                      children: <Widget>[
+                        ValueListenableBuilder<TextEditingValue>(
+                          valueListenable: librarySearch?.controller ?? _query,
+                          builder:
+                              (
+                                BuildContext context,
+                                TextEditingValue value,
+                                Widget? hint,
+                              ) =>
+                                  value.text.isEmpty ? hint! : const SizedBox(),
+                          child: IgnorePointer(
+                            child: Text(
+                              librarySearch?.hint ?? t.search,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: text.bodyMedium?.copyWith(
+                                fontSize: _kAppleSidebarFontSize * k,
+                                color: apple.secondaryLabel,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      FushiTextFieldControl(
-                        // 库页可见时借用库页自己的搜索控制器（搜当前库）。
-                        key: ValueKey<Object>(
-                          librarySearch?.controller ?? _query,
+                        FushiTextFieldControl(
+                          // 库页可见时借用库页自己的搜索控制器（搜当前库）。
+                          key: ValueKey<Object>(
+                            librarySearch?.controller ?? _query,
+                          ),
+                          controller: librarySearch?.controller ?? _query,
+                          onChanged: librarySearch?.onChanged,
+                          style: text.bodyMedium?.copyWith(
+                            fontSize: _kAppleSidebarFontSize * k,
+                            color: apple.label,
+                          ),
+                          decoration: null,
                         ),
-                        controller: librarySearch?.controller ?? _query,
-                        onChanged: librarySearch?.onChanged,
-                        style: text.bodyMedium?.copyWith(
-                          fontSize: _kAppleSidebarFontSize * k,
-                          color: apple.label,
-                        ),
-                        decoration: null,
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  // 清除按钮：有字才出（借用库页控制器时清的是库页搜索词）。
+                  ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: librarySearch?.controller ?? _query,
+                    builder:
+                        (
+                          BuildContext context,
+                          TextEditingValue value,
+                          Widget? _,
+                        ) => value.text.isEmpty
+                        ? SizedBox(width: 9 * k)
+                        : FushiIconButton(
+                            key: const ValueKey<String>(
+                              'apple_sidebar_search_clear',
+                            ),
+                            icon: FushiIcons.cancel,
+                            tooltip: t.clear,
+                            size: 14 * k,
+                            padding: EdgeInsets.symmetric(horizontal: 6 * k),
+                            onTap: () => _clearSidebarSearch(librarySearch),
+                          ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

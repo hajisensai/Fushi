@@ -1276,6 +1276,16 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           _buildCompactOverflowMenu(),
         ],
       ),
+      // Apple iOS 档：标签胶囊 + 「管理标签…」在工具行下面一行（方案 A 第 8 项）。
+      appleFilterRow: isGlassDesign(context)
+          ? FushiTagFilterBar(
+              tags: allTags,
+              part: FushiTagFilterBarPart.appleFilterRow,
+              onToggleFilter: _toggleTagFilter,
+              onReorder: _reorderTags,
+              onTagsChanged: () => ref.invalidate(gameTagMapProvider),
+            )
+          : null,
     );
   }
 

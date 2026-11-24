@@ -24,7 +24,10 @@ import 'package:fushi/src/pages/implementations/library_layout/library_grid_zoom
 import 'package:fushi/src/pages/implementations/library_layout/material/material_library_layout.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
+    show AdaptiveNavItem, AppleSidebarSection, AppleSidebarTabsShell;
 import 'package:fushi/src/utils/adaptive/apple_sidebar_library_host.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot, FushiShellTitleScope;
@@ -593,6 +596,26 @@ void main() {
 
     /// 书架视图的替身：真实的库页工具行（搜索 + 标签 / 排序 / 筛选 / 选择）、
     /// 网格缩放、选择模式底栏与空状态，挂在真实的 [MediaLibraryShell] 下。
+    final List<int> toggledTags = <int>[];
+
+    FushiTagFilterBar tagBar(FushiTagFilterBarPart part, bool selecting) =>
+        FushiTagFilterBar(
+          tags: const <BookTagRow>[tag],
+          part: part,
+          tagsInMenu: true,
+          onToggleFilter: toggledTags.add,
+          onReorder: (_, __) async {},
+          selectionMode: selecting,
+          onToggleSelectionMode: () {},
+          sortMode: ShelfSortMode.recent,
+          sortModeLabel: (ShelfSortMode m) => 'sort-${m.name}',
+          onSortModeChanged: (_) {},
+          filterOptionsTitle: 'Status',
+          filterOptions: <LibraryViewOption>[
+            LibraryViewOption(label: 'All', selected: true, onSelected: () {}),
+          ],
+        );
+
     Widget shelfBody({required bool selecting}) => Column(
       children: <Widget>[
         LibraryToolbar(
@@ -603,25 +626,10 @@ void main() {
             onChanged: (_) {},
             onClear: () {},
           ),
-          trailing: FushiTagFilterBar(
-            tags: const <BookTagRow>[tag],
-            part: FushiTagFilterBarPart.actions,
-            tagsInMenu: true,
-            onToggleFilter: (_) {},
-            onReorder: (_, __) async {},
-            selectionMode: selecting,
-            onToggleSelectionMode: () {},
-            sortMode: ShelfSortMode.recent,
-            sortModeLabel: (ShelfSortMode m) => 'sort-${m.name}',
-            onSortModeChanged: (_) {},
-            filterOptionsTitle: 'Status',
-            filterOptions: <LibraryViewOption>[
-              LibraryViewOption(
-                label: 'All',
-                selected: true,
-                onSelected: () {},
-              ),
-            ],
+          trailing: tagBar(FushiTagFilterBarPart.actions, selecting),
+          appleFilterRow: tagBar(
+            FushiTagFilterBarPart.appleFilterRow,
+            selecting,
           ),
         ),
         Expanded(
@@ -700,22 +708,51 @@ void main() {
         find.byKey(const ValueKey<String>('library_filter_menu_button')),
         findsOneWidget,
       );
-      // 8 标签：iOS 档在「筛选」菜单的标签节里。
+      // 8 标签：iOS 档在标题下筛选行里，「筛选」胶囊后面跟标签胶囊 + 末尾
+      // 「管理标签…」；筛选菜单里不再重复标签节。
+      final Finder filterRow = find.byKey(
+        const ValueKey<String>('library_apple_filter_row'),
+      );
+      expect(filterRow, findsOneWidget);
+      expect(
+        find.descendant(
+          of: filterRow,
+          matching: find.byKey(
+            const ValueKey<String>('library_filter_menu_button'),
+          ),
+        ),
+        findsOneWidget,
+      );
+      final Finder capsule = find.byKey(
+        const ValueKey<String>('library_tag_capsule_7'),
+      );
+      expect(find.descendant(of: filterRow, matching: capsule), findsOneWidget);
+      expect(
+        find.descendant(
+          of: filterRow,
+          matching: find.byKey(const ValueKey<String>('library_tag_settings')),
+        ),
+        findsOneWidget,
+      );
+      // 行尾不再重复「管理标签」齿轮。
+      expect(
+        find.byKey(const ValueKey<String>('library_tag_settings')),
+        findsOneWidget,
+      );
+      toggledTags.clear();
+      await tester.tap(capsule);
+      await tester.pumpAndSettle();
+      expect(toggledTags, <int>[7]);
       await tester.tap(
         find.byKey(const ValueKey<String>('library_filter_menu_button')),
       );
       await tester.pumpAndSettle();
       expect(
         find.byKey(const ValueKey<String>('library_menu_tag_7')),
-        findsOneWidget,
+        findsNothing,
       );
       await tester.tapAt(const Offset(5, 5));
       await tester.pumpAndSettle();
-      // 8 管理标签（iOS 档常驻工具行）。
-      expect(
-        find.byKey(const ValueKey<String>('library_tag_settings')),
-        findsOneWidget,
-      );
       // 11 显示：网格缩放（捏合 / ⌘±）。
       expect(find.byType(LibraryGridZoom), findsOneWidget);
       // 24 空状态：ContentUnavailable 式（图标 + 标题 + 说明）。
@@ -770,6 +807,11 @@ void main() {
       expect(ids, contains('tags'));
       expect(ids, contains('tag-7'));
       expect(ids, contains('tags-manage'));
+      // 8 宽窗档没有 iOS 的标签筛选行（标签都在侧栏）。
+      expect(
+        find.byKey(const ValueKey<String>('library_apple_filter_row')),
+        findsNothing,
+      );
       // 8 宽窗内容区不再画管理标签齿轮；菜单里也不再放标签。
       expect(
         find.byKey(const ValueKey<String>('library_tag_settings')),
@@ -787,6 +829,83 @@ void main() {
       host.rows
           .firstWhere((AppleSidebarLibraryRow r) => r.id == 'tag-7')
           .onTap();
+    });
+  });
+
+  group('侧栏搜索框（macOS 档）', () {
+    testWidgets('借用库页控制器时：清除按钮与 Esc 都走库页的清空', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final AppleSidebarLibraryHost host = AppleSidebarLibraryHost();
+      addTearDown(host.dispose);
+      final TextEditingController controller = TextEditingController(
+        text: 'abc',
+      );
+      addTearDown(controller.dispose);
+      int cleared = 0;
+      final Object owner = Object();
+      host.publishSearch(
+        owner,
+        AppleSidebarLibrarySearch(
+          controller: controller,
+          hint: 'Search books',
+          onChanged: (_) {},
+          onClear: () {
+            cleared++;
+            controller.clear();
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            textTheme: Typography.material2021().black,
+            glassDesign: true,
+          ).copyWith(platform: TargetPlatform.macOS),
+          home: FushiGlassScope(
+            child: AppleSidebarTabsShell(
+              items: const <AdaptiveNavItem>[
+                AdaptiveNavItem(icon: Icons.book, label: 'Books'),
+                AdaptiveNavItem(icon: Icons.settings, label: 'Settings'),
+              ],
+              currentIndex: 0,
+              onTap: (_) {},
+              sections: const <AppleSidebarSection>[
+                AppleSidebarSection(indices: <int>[0]),
+              ],
+              footer: const <int>[1],
+              tabBar: false,
+              onToggle: () {},
+              libraryHost: host,
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final Finder clear = find.byKey(
+        const ValueKey<String>('apple_sidebar_search_clear'),
+      );
+      expect(clear, findsOneWidget);
+      await tester.tap(clear);
+      await tester.pumpAndSettle();
+      expect(cleared, 1);
+      expect(controller.text, isEmpty);
+      expect(clear, findsNothing, reason: '空了就不出清除按钮');
+
+      // Esc：输入框有焦点、有字时清空；空了不吃 Esc。
+      await tester.tap(find.byType(EditableText));
+      controller.text = 'xyz';
+      await tester.pumpAndSettle();
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(cleared, 2);
+      expect(controller.text, isEmpty);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(cleared, 2);
     });
   });
 }

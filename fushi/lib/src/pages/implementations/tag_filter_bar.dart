@@ -6,6 +6,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi/src/media/tags/tag_chip_draggable.dart';
 import 'package:fushi/src/media/tags/tag_chips.dart';
+import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart'
+    show LibraryAppleFilterRowScope;
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/tag_management_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
@@ -20,12 +22,13 @@ import 'package:fushi/src/utils/components/fushi_divider.dart';
 import 'package:fushi/src/utils/components/fushi_header_menu_anchor.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
-    show fushiAppleUsesMacMetrics;
+    show fushiAppleMacScale, fushiAppleUsesMacMetrics;
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -242,6 +245,13 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     }
     final bool actionsOnly = widget.part == FushiTagFilterBarPart.actions;
     final bool sidebarTags = _sidebarHostsTags(context);
+    if (widget.part == FushiTagFilterBarPart.appleFilterRow) {
+      return _appleFilterRow(tokens, selectedIds);
+    }
+    // iOS 档标题下那一行（[FushiTagFilterBarPart.appleFilterRow]）挂着时，
+    // 「筛选」与「管理标签」都在那一行里，行尾不再重复。
+    final bool filterRowShown =
+        actionsOnly && LibraryAppleFilterRowScope.activeOf(context);
     if (actionsOnly && isGlassDesign(context)) {
       _publishSidebarTags(
         context,
@@ -264,6 +274,7 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
     final List<Widget> tagActions = <Widget>[
       if (widget.showTagManagement &&
           !sidebarTags &&
+          !filterRowShown &&
           (actionsOnly || widget.tags.isNotEmpty))
         tagManage,
     ];
@@ -294,7 +305,13 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
         // Apple：排序 / 筛选拆成两个中性灰 pull-down（方案 A 第 9 / 10 项）。
         if (isGlassDesign(context)) ...<Widget>[
           _appleSortPullDown(tokens, selectedIds),
-          ?_appleFilterPullDown(tokens, selectedIds, tagsInMenu: !sidebarTags),
+          if (!filterRowShown)
+            ?_appleFilterPullDown(
+              tokens,
+              selectedIds,
+              // 侧栏承载标签（macOS 档）时菜单里不放标签。
+              tagsInMenu: !sidebarTags,
+            ),
         ] else
           _sortMenuAction(tokens, selectedIds),
       ],
@@ -624,6 +641,59 @@ class _FushiTagFilterBarState extends ConsumerState<FushiTagFilterBar> {
           ..._tagChoiceItems(tokens, selectedIds, menu: _filterMenu),
         ],
       ],
+    );
+  }
+
+  /// iOS 档标题下的筛选行：「筛选」pull-down（只放状态类单选组，标签都在本行
+  /// 胶囊里，不在菜单里重复）+ 标签胶囊 + 末尾「管理标签…」。横向滑动，左右
+  /// 取页边；没有任何筛选维度也没有标签管理时零高度。
+  Widget _appleFilterRow(FushiDesignTokens tokens, Set<int> selectedIds) {
+    final t = Translations.of(context);
+    final Widget? filter = _appleFilterPullDown(
+      tokens,
+      selectedIds,
+      tagsInMenu: false,
+    );
+    final List<Widget> items = <Widget>[
+      ?filter,
+      for (final BookTagRow tag in widget.tags)
+        _AppleTagCapsule(
+          key: ValueKey<String>('library_tag_capsule_${tag.id}'),
+          label: tag.name,
+          color: Color(tag.colorValue),
+          selected: selectedIds.contains(tag.id),
+          onTap: () => widget.onToggleFilter(tag.id),
+          onLongPress: widget.showTagManagement
+              ? () => _openTagManagement(context)
+              : null,
+        ),
+      if (widget.showTagManagement)
+        _AppleTagCapsule(
+          key: const ValueKey<String>('library_tag_settings'),
+          label: '${t.tag_manage}…',
+          icon: FushiIcons.tag,
+          selected: false,
+          onTap: () => _openTagManagement(context),
+        ),
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
+    return SizedBox(
+      height: FushiApplePopUpButtonFace.defaultHeightOf(context) + 8,
+      child: HorizontalDragScrollable(
+        mouseDragController: _tagScrollController,
+        child: ListView.separated(
+          key: const ValueKey<String>('library_apple_filter_row'),
+          controller: _tagScrollController,
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.symmetric(
+            horizontal: tokens.spacing.page,
+            vertical: 4,
+          ),
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (BuildContext context, int i) => Center(child: items[i]),
+        ),
+      ),
     );
   }
 
@@ -1015,6 +1085,12 @@ enum FushiTagFilterBarPart {
   /// （BUG-4715）。按钮由
   /// [libraryHeaderTagActions] 生成。
   sortMenuAnchor,
+
+  /// Apple iOS 档（方案 A 第 8 项）：库页工具行下面一行——「筛选」pull-down
+  /// 后面跟一排可横滑的标签胶囊（按标签颜色、选中反白；长按任一枚或末尾
+  /// 「管理标签…」进标签管理）。由 `LibraryToolbar.appleFilterRow` 挂；挂着
+  /// 它时工具行行尾（[actions]）不再出「筛选」与「管理标签」齿轮。
+  appleFilterRow,
 }
 
 /// 库页单行页头里的「批量选择 / 排序 / 管理标签 / 管理合集」动作（2026-10-14）。
@@ -1157,6 +1233,95 @@ class LibraryFilterBadge extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Apple iOS 档筛选行里的一枚标签胶囊（Finder / 照片标签式）：未选中 = 标签色
+/// 15% 底 + 标签色圆点 + label 色字；选中反白 = 标签色实底 + 白字。只在 Apple
+/// 外壳里出现（M3E 的标签 chip 是 [FushiTagChip]）。
+class _AppleTagCapsule extends StatelessWidget {
+  const _AppleTagCapsule({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.color,
+    this.icon,
+    this.onLongPress,
+    super.key,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  /// 标签颜色；null = 中性（「管理标签…」）。
+  final Color? color;
+  final IconData? icon;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final double height = FushiApplePopUpButtonFace.defaultHeightOf(context);
+    final BorderRadius radius = BorderRadius.circular(height / 2);
+    final Color? tint = color;
+    final Color fill = tint == null
+        ? apple.tertiaryFill
+        : selected
+        ? tint
+        : tint.withValues(alpha: 0.16);
+    final Color foreground = selected && tint != null
+        ? Colors.white
+        : apple.label;
+    final double fontSize = fushiAppleCompact(context)
+        ? 13 * fushiAppleMacScale(context)
+        : 15;
+    return FushiPressScale(
+      child: FushiPlainButton(
+        onPressed: onTap,
+        onLongPress: onLongPress,
+        borderRadius: radius,
+        fill: fill,
+        semanticLabel: label,
+        child: AnimatedContainer(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          height: height,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(color: fill, borderRadius: radius),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (icon != null) ...<Widget>[
+                FushiIcon(icon!, size: fontSize, color: apple.secondaryLabel),
+                const SizedBox(width: 6),
+              ] else if (tint != null && !selected) ...<Widget>[
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: tint,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const SizedBox.square(dimension: 8),
+                ),
+                const SizedBox(width: 6),
+              ],
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    color: foreground,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

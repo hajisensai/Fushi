@@ -73,6 +73,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
         LiquidRoundedSuperellipse,
         SpringBuilder,
         VelocitySpringBuilder;
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show FushiFilledButton, FushiTextButton, fushiClearGlassSettings;
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart'
