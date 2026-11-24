@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -378,37 +379,7 @@ void main() {
   testWidgets('MangaBaka 源：署名可见；「使用」进卷封面网格，本地卷号那一卷排最前', (
     WidgetTester tester,
   ) async {
-    final BookMetadataScraper scraper = BookMetadataScraper(
-      client: MockClient((http.Request req) async {
-        final String body;
-        if (req.url.host == 'api.mangabaka.org' &&
-            req.url.path == '/v1/series/search') {
-          body =
-              '{"data":[{"id":100,"state":"active","title":"Test Manga",'
-              '"native_title":"テスト漫画","authors":["Taro"],"type":"manga",'
-              '"content_rating":"safe","cover":{"raw":{"url":'
-              '"https://images.mangabaka.dev/c","width":1200,"height":1800}}}],'
-              '"pagination":{"next":null}}';
-        } else if (req.url.path == '/v1/series/100/images') {
-          String image(String index) =>
-              '{"id":$index,"index":"$index","index_numeric":$index,'
-              '"type":"volume","language":"ja","note":null,'
-              '"content_rating":"safe","image":{"raw":{"url":'
-              '"https://images.mangabaka.dev/v$index","width":1200,'
-              '"height":1800}}}';
-          body =
-              '{"data":[${image('1')},${image('2')}],'
-              '"pagination":{"next":null}}';
-        } else {
-          body = '{"data":[]}';
-        }
-        return http.Response.bytes(
-          utf8.encode(body),
-          200,
-          headers: const <String, String>{'content-type': 'application/json'},
-        );
-      }),
-    );
+    final BookMetadataScraper scraper = mangaBakaScraper();
     await tester.pumpWidget(
       wrap(
         BookCoverScrapeDialog(
@@ -424,18 +395,8 @@ void main() {
     );
     expect(attribution, findsNothing);
 
-    // 源是下拉（七个源分段放不下）：先展开，再点 MangaBaka 那一项。
-    await tester.tap(
-      find.byKey(const ValueKey<String>('book_scrape_source_picker')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('MangaBaka').last);
-    await tester.pumpAndSettle();
-    expect(find.text('テスト漫画'), findsWidgets);
+    await openMangaBakaVolumes(tester);
     expect(attribution, findsOneWidget);
-
-    await tester.tap(find.text(t.book_scrape_use));
-    await tester.pumpAndSettle();
     final Finder v1 = find.byKey(
       const ValueKey<String>('book_scrape_volume_1'),
     );
@@ -448,4 +409,141 @@ void main() {
     expect(tester.getTopLeft(v2).dx, lessThan(tester.getTopLeft(v1).dx));
     expect(attribution, findsOneWidget);
   });
+
+  /// 经真实路由打开弹窗（与书架同一个 [showBookCoverScrapeDialog] 返回类型），
+  /// 返回「等弹窗关闭后的结果」。下载器换成桩，记下被下载的地址。
+  Future<BookCoverScrapeSelection? Function()> openDialogRoute(
+    WidgetTester tester,
+    List<String> downloaded,
+  ) async {
+    BookCoverScrapeSelection? result;
+    bool closed = false;
+    await tester.pumpWidget(
+      wrap(
+        Builder(
+          builder: (BuildContext context) => TextButton(
+            onPressed: () async {
+              result = await showDialog<BookCoverScrapeSelection>(
+                context: context,
+                builder: (_) => BookCoverScrapeDialog(
+                  initialQuery: 'テスト漫画',
+                  volume: 2,
+                  scraperOverride: mangaBakaScraper(),
+                  downloaderOverride:
+                      (String url, {Map<String, String>? headers}) async {
+                        downloaded.add(url);
+                        return File('fake_cover.jpg');
+                      },
+                ),
+              );
+              closed = true;
+            },
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    return () {
+      expect(closed, isTrue, reason: '弹窗应已关闭');
+      return result;
+    };
+  }
+
+  testWidgets('BUG-5371 点卷封面：弹窗关闭并返回该卷封面 + 系列资料（不卡转圈）', (
+    WidgetTester tester,
+  ) async {
+    final List<String> downloaded = <String>[];
+    final BookCoverScrapeSelection? Function() result = await openDialogRoute(
+      tester,
+      downloaded,
+    );
+    await openMangaBakaVolumes(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_volume_2')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(BookCoverScrapeDialog), findsNothing);
+    final BookCoverScrapeSelection? selection = result();
+    expect(downloaded, <String>['https://images.mangabaka.dev/v2']);
+    expect(selection, isNotNull);
+    expect(selection!.cover.path, 'fake_cover.jpg');
+    expect(selection.candidate.source, BookScrapeSource.mangabaka);
+    expect(selection.candidate.subjectId, '100');
+    expect(selection.candidate.coverUrl, 'https://images.mangabaka.dev/v2');
+    expect(selection.candidate.volume, '2');
+  });
+
+  testWidgets('BUG-5371「使用系列封面」：弹窗关闭并返回系列候选', (WidgetTester tester) async {
+    final List<String> downloaded = <String>[];
+    final BookCoverScrapeSelection? Function() result = await openDialogRoute(
+      tester,
+      downloaded,
+    );
+    await openMangaBakaVolumes(tester);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_series_cover')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(BookCoverScrapeDialog), findsNothing);
+    final BookCoverScrapeSelection? selection = result();
+    expect(downloaded, <String>['https://images.mangabaka.dev/c']);
+    expect(selection, isNotNull);
+    expect(selection!.candidate.subjectId, '100');
+    expect(selection.candidate.coverUrl, 'https://images.mangabaka.dev/c');
+  });
 }
+
+/// 源下拉切到 MangaBaka，点首个候选的「使用」进卷封面网格。
+Future<void> openMangaBakaVolumes(WidgetTester tester) async {
+  // 源是下拉（七个源分段放不下）：先展开，再点 MangaBaka 那一项。
+  await tester.tap(
+    find.byKey(const ValueKey<String>('book_scrape_source_picker')),
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('MangaBaka').last);
+  await tester.pumpAndSettle();
+  expect(find.text('テスト漫画'), findsWidgets);
+  await tester.tap(find.text(t.book_scrape_use));
+  await tester.pumpAndSettle();
+}
+
+/// MangaBaka 桩：一个系列（id 100，封面 /c）+ 两卷日文卷封面（/v1、/v2）。
+BookMetadataScraper mangaBakaScraper() => BookMetadataScraper(
+  client: MockClient((http.Request req) async {
+    final String body;
+    if (req.url.host == 'api.mangabaka.org' &&
+        req.url.path == '/v1/series/search') {
+      body =
+          '{"data":[{"id":100,"state":"active","title":"Test Manga",'
+          '"native_title":"テスト漫画","authors":["Taro"],"type":"manga",'
+          '"content_rating":"safe","cover":{"raw":{"url":'
+          '"https://images.mangabaka.dev/c","width":1200,"height":1800}}}],'
+          '"pagination":{"next":null}}';
+    } else if (req.url.path == '/v1/series/100/images') {
+      String image(String index) =>
+          '{"id":$index,"index":"$index","index_numeric":$index,'
+          '"type":"volume","language":"ja","note":null,'
+          '"content_rating":"safe","image":{"raw":{"url":'
+          '"https://images.mangabaka.dev/v$index","width":1200,'
+          '"height":1800}}}';
+      body =
+          '{"data":[${image('1')},${image('2')}],'
+          '"pagination":{"next":null}}';
+    } else {
+      body = '{"data":[]}';
+    }
+    return http.Response.bytes(
+      utf8.encode(body),
+      200,
+      headers: const <String, String>{'content-type': 'application/json'},
+    );
+  }),
+);
