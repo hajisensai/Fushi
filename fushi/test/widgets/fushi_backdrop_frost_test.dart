@@ -10,6 +10,7 @@ import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:material_ui/material_ui.dart';
 
 const PageBackdropSettings _plain = PageBackdropSettings(
@@ -103,6 +104,32 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(FushiBackdropFrostPlate), findsOneWidget);
+  });
+
+  testWidgets('书架书名：图片背景下垫毛玻璃，footer 内书名位置不动', (WidgetTester tester) async {
+    Widget footer() => const Align(
+      alignment: Alignment.topLeft,
+      child: SizedBox(
+        width: 140,
+        height: ShelfCardFooter.height,
+        child: ShelfCardFooter(title: 'A fairly long book title'),
+      ),
+    );
+    await _usePreset(tester, _plain);
+    await tester.pumpWidget(_app(footer()));
+    await tester.pump();
+    expect(find.byType(FushiBackdropFrostPlate), findsNothing);
+    final Rect plainTitle = tester.getRect(
+      find.text('A fairly long book title'),
+    );
+
+    await _usePreset(tester, _image);
+    expect(find.byType(FushiBackdropFrostPlate), findsOneWidget);
+    expect(tester.getRect(find.text('A fairly long book title')), plainTitle);
+    final Rect plate = tester.getRect(find.byType(FushiBackdropFrostPlate));
+    expect(plate.left, lessThan(plainTitle.left));
+    expect(plate.right, greaterThan(plainTitle.right));
+    expect(plate.top, lessThan(plainTitle.top));
   });
 
   testWidgets('页头底板：图片背景下未滚动也常驻毛玻璃，纯色背景不画', (WidgetTester tester) async {
