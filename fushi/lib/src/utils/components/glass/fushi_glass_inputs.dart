@@ -1591,9 +1591,18 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final BorderRadius shellRadius = BorderRadius.circular(
       capsule ? searchHeight / 2 : (desktop ? 6 * macScale : 10),
     );
-    // 聚焦本身在 iOS 上没有描边；这里只给一圈细的强调色内环（1.5px、画在框内），
-    // 作为键盘 / 手柄导航落到输入框时的焦点指示（macOS 的 focus ring 同理）。
+    // 聚焦本身在 iOS 上没有描边（UISearchTextField / UITextField 触屏聚焦只亮光标）：
+    // iOS 档只在键盘 / 手柄导航（traditional 高亮模式）落到输入框时给一圈细的强调色
+    // 内环（1.5px、50% 透明、画在框内）；macOS 档是 NSSearchField / NSTextField 的
+    // focus ring，成为第一响应者就亮，与指针 / 键盘无关。
     // 错误态 1px destructive；macOS 输入框静止态 0.5px 分隔线描边。
+    final bool focusRing =
+        enabled &&
+        focused &&
+        !hasError &&
+        (desktop ||
+            FocusManager.instance.highlightMode ==
+                FocusHighlightMode.traditional);
     final Border? restingBorder = enabled && hasError
         ? Border.all(color: apple.destructive)
         : (macField ? Border.all(color: apple.separator, width: 0.5) : null);
@@ -1612,7 +1621,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       ),
       foregroundDecoration: BoxDecoration(
         borderRadius: shellRadius,
-        border: enabled && focused && !hasError
+        border: focusRing
             ? Border.all(
                 color: apple.accent.withValues(alpha: dark ? 0.6 : 0.5),
                 width: 1.5,
