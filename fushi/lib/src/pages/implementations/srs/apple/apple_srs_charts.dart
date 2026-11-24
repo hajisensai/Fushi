@@ -381,22 +381,33 @@ class _AppleSrsHeatmapState extends State<AppleSrsHeatmap> {
                             ),
                           ),
                   ),
-                  ExcludeSemantics(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      spacing: 3,
-                      children: <Widget>[
-                        Text(widget.lessLabel, style: caption),
-                        for (int level = 0; level <= 4; level++)
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: shade(level),
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                            child: const SizedBox.square(dimension: 9),
-                          ),
-                        Text(widget.moreLabel, style: caption),
-                      ],
+                  // 图例宽度与格子数无关：格子少 / 窗口窄时整行比网格还宽。它最多占
+                  // 网格宽（有点选说明时让出一半给说明），放不下就等比缩小，不溢出。
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: callout == null ? gridW : gridW / 2,
+                    ),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: ExcludeSemantics(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          spacing: 3,
+                          children: <Widget>[
+                            Text(widget.lessLabel, style: caption),
+                            for (int level = 0; level <= 4; level++)
+                              DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: shade(level),
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                                child: const SizedBox.square(dimension: 9),
+                              ),
+                            Text(widget.moreLabel, style: caption),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ],

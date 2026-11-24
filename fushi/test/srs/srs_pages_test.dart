@@ -50,6 +50,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiAppleRow;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart'
     show FushiIconButton;
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show kFushiHeaderOverflowMenuKey;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
     show appleColorsOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -271,6 +273,30 @@ const int _kTreeSettleRounds = 20;
 /// 让真异步（drift）与帧都推进：DB 读在 runAsync 里跑一小段真实时间。
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
   await srsSettle(tester, minRounds: rounds);
+}
+
+/// 复习首页的牌组树是懒构建的 ListView，树下的统计卡（热力图、未来 7 天 / RWKV 此刻）
+/// 各占一项：Apple 窄屏它们是分开的几张卡，在首屏缓存区以外时还没构建，先滚到 [target]
+/// （[delta] 取负数往回滚）。
+Future<void> _scrollHomeTo(
+  WidgetTester tester,
+  Finder target, {
+  double delta = 200,
+}) async {
+  await tester.scrollUntilVisible(
+    target,
+    delta,
+    scrollable: find
+        .ancestor(
+          of: find.byKey(
+            const ValueKey<String>('srs-home-today'),
+            skipOffstage: false,
+          ),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await _settle(tester);
 }
 
 Future<void> _pumpPage(
@@ -563,6 +589,8 @@ void main() {
         size: const Size(412, 1400),
       );
       expect(tester.takeException(), isNull, reason: '窄屏行不溢出');
+      // Apple 折成两行的名字（行高按两行算，不进下面「单行行高」的检查）。
+      final Set<String> wrapped = <String>{};
       for (final String name in <String>[
         'Default',
         'Lapis',
@@ -576,7 +604,30 @@ void main() {
         expect(title, findsOneWidget, reason: '$name 在列表里');
         // 名字完整排下（不是只剩省略号）：此前真机上二级只剩「JP-…」、三级完全不显示。
         final RenderParagraph p = tester.renderObject<RenderParagraph>(title);
-        expect(p.didExceedMaxLines, isFalse, reason: '$name 没被省略号截断');
+        if (apple) {
+          // Apple（方案 A）行首是 30 的牌组图标 + 36 的展开三角命中区、行尾多一列 44 的 ▶，
+          // 412 宽下名字列逐级约 140 / 118 / 96（测试字体每字 1em，真机 SF 约 0.55em）。
+          // 守「每级名字都有地方排」：最深一级也至少排得下 5 个字；一行排得下的不截断，
+          // 排不下的折成两行（窄屏行 maxLines 2），而不是在一行里只剩省略号。
+          final double fs = p.text.style!.fontSize!;
+          expect(
+            p.constraints.maxWidth,
+            greaterThanOrEqualTo(5 * fs),
+            reason: '$name 那一级的名字列至少排得下 5 个字',
+          );
+          if (name.length * fs <= p.constraints.maxWidth) {
+            expect(p.didExceedMaxLines, isFalse, reason: '$name 没被省略号截断');
+          } else {
+            expect(
+              p.size.height,
+              greaterThanOrEqualTo(2 * fs),
+              reason: '$name 一行排不下时折成两行',
+            );
+            wrapped.add(name);
+          }
+        } else {
+          expect(p.didExceedMaxLines, isFalse, reason: '$name 没被省略号截断');
+        }
         expect(p.size.width, greaterThan(0), reason: '$name 有宽度');
       }
       // 紧凑：单行名的行高不超过 56（改前每行 ~76，一屏只放得下约 8 行）。
@@ -591,8 +642,17 @@ void main() {
       );
       expect(rows, findsNWidgets(7));
       for (final Element e in rows.evaluate()) {
+        final Finder row = find.byWidget(e.widget);
+        if (wrapped.any(
+          (String n) => find
+              .descendant(of: row, matching: find.text(n))
+              .evaluate()
+              .isNotEmpty,
+        )) {
+          continue;
+        }
         expect(
-          tester.getSize(find.byWidget(e.widget)).height,
+          tester.getSize(row).height,
           lessThanOrEqualTo(56),
           reason: '窄屏单行牌组行高',
         );
@@ -886,6 +946,11 @@ void main() {
         );
         await _settle(tester);
         expect(tester.takeException(), isNull);
+        // 先滚到树下最后一张统计卡：不然「未来 7 天」没出现可能只是还没构建。
+        await _scrollHomeTo(
+          tester,
+          find.byKey(const ValueKey<String>('srs-home-rwkv-now')),
+        );
         expect(
           find.byKey(
             const ValueKey<String>('srs-home-forecast'),
@@ -1021,6 +1086,10 @@ void main() {
         // 树下两张统计卡在窄屏一律上下排（用户 2026-11-06：412 宽并排时热力图只剩
         // 三个月、到期图挤掉一半星期）。
         await _settle(tester);
+        final Finder forecastCard = find.byKey(
+          const ValueKey<String>('srs-home-forecast'),
+        );
+        await _scrollHomeTo(tester, forecastCard);
         final Rect heat = tester.getRect(
           find.byKey(
             const ValueKey<String>('srs-home-heatmap'),
@@ -1035,6 +1104,11 @@ void main() {
         );
         expect(forecast.top, greaterThanOrEqualTo(heat.bottom));
         expect(forecast.width, moreOrLessEquals(heat.width));
+        await _scrollHomeTo(
+          tester,
+          find.byKey(const ValueKey<String>('srs-home-today')),
+          delta: -200,
+        );
         // 根层：今日计划 + 整棵牌组树（没有单独的整理模式），没有详情。
         expect(
           find.byKey(const ValueKey<String>('srs-home-today')),
@@ -1469,7 +1543,8 @@ void main() {
         page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'Default'),
       );
       final String lapisLabel = t.srs_card_edit_template(name: 'Lapis');
-      // 菜单项在 MD3 可能平铺、可能收进 ⋯；Apple 平铺为图标按钮（文字进 tooltip）。
+      // 菜单项在 MD3 可能平铺、可能收进顶栏 ⋯；Apple 是页头图标按钮（文字进 tooltip），
+      // iOS 档最多平铺 3 颗（kFushiAppleIosHeaderMaxActions），其余收进页头 ⋯。
       Future<bool> hasItem(String label, {String? itemKey}) async {
         final String key =
             itemKey ??
@@ -1481,7 +1556,9 @@ void main() {
           return true;
         }
         final Finder more = find.byKey(
-          const ValueKey<String>('fushi_floating_toolbar_overflow'),
+          apple
+              ? kFushiHeaderOverflowMenuKey
+              : const ValueKey<String>('fushi_floating_toolbar_overflow'),
         );
         if (more.evaluate().isEmpty) return false;
         await tester.tap(more.first);
@@ -1635,7 +1712,8 @@ void main() {
         expect(rate(r), findsOneWidget, reason: '默认四个按钮：$r');
       }
 
-      // 开关在「复习选项」面板里；面板入口在 MD3 可能平铺、可能收进 ⋯，Apple 平铺为图标按钮。
+      // 开关在「复习选项」面板里；面板入口在 MD3 可能平铺、可能收进顶栏 ⋯；Apple 是页头
+      // 图标按钮，iOS 档超过 3 颗的收进页头 ⋯。
       Future<void> toggle() async {
         final Finder flat = find.byKey(
           const ValueKey<String>('srs_review_layout'),
@@ -1646,7 +1724,11 @@ void main() {
           await tester.tap(
             find
                 .byKey(
-                  const ValueKey<String>('fushi_floating_toolbar_overflow'),
+                  apple
+                      ? kFushiHeaderOverflowMenuKey
+                      : const ValueKey<String>(
+                          'fushi_floating_toolbar_overflow',
+                        ),
                 )
                 .first,
           );
@@ -2084,114 +2166,122 @@ void main() {
 
   for (final bool apple in <bool>[false, true]) {
     final String ds = apple ? 'Apple' : 'MD3';
-    testWidgets('[$ds] 牌组列表（拼贴）：每个顶层牌组一块按牌组取色的色块，子牌组嵌在父色块里，'
-        '键盘收起后子行收成 0 高、色块随之变矮', (WidgetTester tester) async {
-      final SrsDbStore store = await _openStore(tester);
-      final String child = (await tester.runAsync(
-        () => store.ensureDeckPath('Parent::Child'),
-      ))!;
-      final String parent = (await tester.runAsync(
-        () async => (await store.deckTree()).parentOf(child)!,
-      ))!;
-      final String solo = (await tester.runAsync(
-        () => store.createDeck('Solo'),
-      ))!;
-      await _pumpPage(
-        tester,
-        store: store,
-        apple: apple,
-        page: const SrsDeckListPage(),
-        size: const Size(1100, 1600),
-      );
-      Finder band(String id) => find.byKey(ValueKey<String>('srs-band-$id'));
-      Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
+    // 拼贴色块只属于 M3E：Apple（方案 A）牌组行是中性背景的 inset grouped 分组，没有按牌组
+    // 取色的色块（见「复习首页 Apple（方案 A）」组的牌组行用例；键盘 ← 收起子牌组见
+    // 「[Apple] 牌组列表：父牌组箭头收起 / 展开子牌组…」用例）。
+    if (!apple) {
+      testWidgets('[$ds] 牌组列表（拼贴）：每个顶层牌组一块按牌组取色的色块，子牌组嵌在父色块里，'
+          '键盘收起后子行收成 0 高、色块随之变矮', (WidgetTester tester) async {
+        final SrsDbStore store = await _openStore(tester);
+        final String child = (await tester.runAsync(
+          () => store.ensureDeckPath('Parent::Child'),
+        ))!;
+        final String parent = (await tester.runAsync(
+          () async => (await store.deckTree()).parentOf(child)!,
+        ))!;
+        final String solo = (await tester.runAsync(
+          () => store.createDeck('Solo'),
+        ))!;
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: apple,
+          page: const SrsDeckListPage(),
+          size: const Size(1100, 1600),
+        );
+        Finder band(String id) => find.byKey(ValueKey<String>('srs-band-$id'));
+        Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
 
-      expect(band(parent), findsOneWidget, reason: '顶层牌组 Parent 一块色块');
-      expect(band(solo), findsOneWidget, reason: '顶层牌组 Solo 一块色块');
-      expect(band(child), findsNothing, reason: '子牌组不自成色块');
-      expect(
-        find.descendant(of: band(parent), matching: row(child)),
-        findsOneWidget,
-        reason: '子牌组是父色块里的内层行',
-      );
-      expect(
-        find.descendant(of: band(solo), matching: row(child)),
-        findsNothing,
-      );
+        expect(band(parent), findsOneWidget, reason: '顶层牌组 Parent 一块色块');
+        expect(band(solo), findsOneWidget, reason: '顶层牌组 Solo 一块色块');
+        expect(band(child), findsNothing, reason: '子牌组不自成色块');
+        expect(
+          find.descendant(of: band(parent), matching: row(child)),
+          findsOneWidget,
+          reason: '子牌组是父色块里的内层行',
+        );
+        expect(
+          find.descendant(of: band(solo), matching: row(child)),
+          findsNothing,
+        );
 
-      // 色块配色与首页拼贴的牌组海报同一套（色相键 srs-deck:<牌组全名>：已配对设备上的同名
-      // 牌组与本机同色，设计稿 11-20 #17）。
-      Color bandColor(String id) =>
-          (tester
-                      .widget<DecoratedBox>(
-                        find
-                            .descendant(
-                              of: band(id),
-                              matching: find.byType(DecoratedBox),
-                            )
-                            .first,
-                      )
-                      .decoration
-                  as ShapeDecoration)
-              .color!;
-      final BuildContext context = tester.element(band(parent));
-      expect(
-        bandColor(parent),
-        fushiPosterColors(context, fushiPosterHue('srs-deck:Parent')).container,
-      );
+        // 色块配色与首页拼贴的牌组海报同一套（色相键 srs-deck:<牌组全名>：已配对设备上的同名
+        // 牌组与本机同色，设计稿 11-20 #17）。
+        Color bandColor(String id) =>
+            (tester
+                        .widget<DecoratedBox>(
+                          find
+                              .descendant(
+                                of: band(id),
+                                matching: find.byType(DecoratedBox),
+                              )
+                              .first,
+                        )
+                        .decoration
+                    as ShapeDecoration)
+                .color!;
+        final BuildContext context = tester.element(band(parent));
+        expect(
+          bandColor(parent),
+          fushiPosterColors(
+            context,
+            fushiPosterHue('srs-deck:Parent'),
+          ).container,
+        );
 
-      // 计数是带语义色的 chip（每行一组）。
-      expect(
-        find.descendant(
-          of: row(child),
-          matching: find.byType(SrsDeckCountChips),
-        ),
-        findsOneWidget,
-      );
+        // 计数是带语义色的 chip（每行一组）。
+        expect(
+          find.descendant(
+            of: row(child),
+            matching: find.byType(SrsDeckCountChips),
+          ),
+          findsOneWidget,
+        );
 
-      // 键盘：焦点落在父牌组行内，← 收起。子行收成 0 高，父色块变矮。
-      final double expandedBand = tester.getSize(band(parent)).height;
-      expect(tester.getSize(row(child)).height, greaterThan(0));
-      final Element toggleElement = tester.element(
-        find.byKey(ValueKey<String>('srs-deck-toggle-$parent')),
-      );
-      final FocusNode rowFocus = FocusManager.instance.rootScope.descendants
-          .firstWhere((FocusNode n) {
-            bool inside = false;
-            n.context?.visitAncestorElements((Element e) {
-              if (identical(e, toggleElement)) {
-                inside = true;
-                return false;
-              }
-              return true;
+        // 键盘：焦点落在父牌组行内，← 收起。子行收成 0 高，父色块变矮。
+        final double expandedBand = tester.getSize(band(parent)).height;
+        expect(tester.getSize(row(child)).height, greaterThan(0));
+        final Element toggleElement = tester.element(
+          find.byKey(ValueKey<String>('srs-deck-toggle-$parent')),
+        );
+        final FocusNode rowFocus = FocusManager.instance.rootScope.descendants
+            .firstWhere((FocusNode n) {
+              bool inside = false;
+              n.context?.visitAncestorElements((Element e) {
+                if (identical(e, toggleElement)) {
+                  inside = true;
+                  return false;
+                }
+                return true;
+              });
+              return inside && n.canRequestFocus;
             });
-            return inside && n.canRequestFocus;
-          });
-      rowFocus.requestFocus();
-      await tester.pump();
-      await srsUntilStoreWritten(
-        tester,
-        store,
-        () => tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft),
-        settleRounds: _kTreeSettleRounds,
-      );
-      expect(tester.getSize(row(child)).height, 0, reason: '收起后子行消失');
-      expect(
-        tester.getSize(band(parent)).height,
-        lessThan(expandedBand),
-        reason: '色块底在 reveal 外面，随子行一起收矮',
-      );
-      await srsUntilStoreWritten(
-        tester,
-        store,
-        () => tester.sendKeyEvent(LogicalKeyboardKey.arrowRight),
-        settleRounds: _kTreeSettleRounds,
-      );
-      expect(tester.getSize(row(child)).height, greaterThan(0));
-      expect(tester.getSize(band(parent)).height, closeTo(expandedBand, 0.5));
-      expect(tester.takeException(), isNull);
-      await _unmount(tester);
-    });
+        rowFocus.requestFocus();
+        await tester.pump();
+        await srsUntilStoreWritten(
+          tester,
+          store,
+          () => tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft),
+          settleRounds: _kTreeSettleRounds,
+        );
+        expect(tester.getSize(row(child)).height, 0, reason: '收起后子行消失');
+        expect(
+          tester.getSize(band(parent)).height,
+          lessThan(expandedBand),
+          reason: '色块底在 reveal 外面，随子行一起收矮',
+        );
+        await srsUntilStoreWritten(
+          tester,
+          store,
+          () => tester.sendKeyEvent(LogicalKeyboardKey.arrowRight),
+          settleRounds: _kTreeSettleRounds,
+        );
+        expect(tester.getSize(row(child)).height, greaterThan(0));
+        expect(tester.getSize(band(parent)).height, closeTo(expandedBand, 0.5));
+        expect(tester.takeException(), isNull);
+        await _unmount(tester);
+      });
+    }
   }
 
   group('复习页卡面音频', () {
