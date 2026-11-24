@@ -14,6 +14,7 @@ import 'package:fushi_engine/profile/profile_document.dart'
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteDictionaryInfo;
 
+import '../helpers/combo_fixtures.dart';
 import '../helpers/fake_anki_repository.dart';
 
 /// v153：服务器托管词典的顺序 / 开关属于配置（`remote_dictionary_meta` 类别）。
@@ -76,7 +77,7 @@ void main() {
     await setLive('h1', 'Daijirin', 5, true);
     await setLive('h1', 'Meikyo', 0, false);
     await setLive('http://old-host:8765', 'Kojien', 2, true);
-    await repo.snapshotCurrentSettings(profileB);
+    await freezeLiveIntoCombo(repo, profileB);
     final List<ProfileSettingRow> snapshot = await db.getProfileSettings(
       profileB,
     );
@@ -129,6 +130,8 @@ void main() {
   });
 
   test('坏行跳过，不中断整次应用', () async {
+    // B 单独设置了词典（组合格式里只有拆开的叶子的行才算数），坏行混在它那份里。
+    await freezeLiveIntoCombo(repo, profileB);
     await db.upsertProfileSetting(
       ProfileSettingsCompanion.insert(
         profileId: profileB,
@@ -161,7 +164,7 @@ void main() {
 
   test('只读视图合成快照列：过滤、按 host 的选择、缓存指纹都跟着配置走', () async {
     await setLive('h1', 'Daijirin', 5, true);
-    await repo.snapshotCurrentSettings(profileB);
+    await freezeLiveIntoCombo(repo, profileB);
     await setLive('h1', 'Daijirin', 0, false);
 
     final ProfileSettingsView viewB = (await repo.loadSettingsView(profileB))!;
@@ -178,7 +181,7 @@ void main() {
 
     // 同一配置的服务器词典设置变了 → 缓存命名空间跟着变。
     await setLive('h1', 'Daijirin', 0, false);
-    await repo.snapshotCurrentSettings(profileB);
+    await freezeLiveIntoCombo(repo, profileB);
     final ProfileSettingsView viewB2 = (await repo.loadSettingsView(profileB))!;
     expect(viewB2.lookupCacheNamespace, isNot(viewB.lookupCacheNamespace));
   });
@@ -197,7 +200,7 @@ void main() {
 
   test('分享 JSON 带上该类别（地址充当 hostId 的行剔掉），导入原样保留', () async {
     await setLive('h1', 'Daijirin', 4, true);
-    await repo.snapshotCurrentSettings(profileB);
+    await freezeLiveIntoCombo(repo, profileB);
     final String json = await repo.exportProfileToJson(profileB);
     final List<Object?> settings =
         (jsonDecode(json) as Map<String, Object?>)['settings']!
@@ -221,6 +224,9 @@ void main() {
     );
     expect(json.contains('old-host'), isFalse);
 
+    // 导入成新组合 = 相对本机默认组合的差异：本机此刻的服务器词典设置与文件不同，词典
+    // 叶子才会单独设置、带上文件里的行。
+    await setLive('h1', 'Daijirin', 0, false);
     final int imported = await repo.importProfileFromJson(json);
     final List<ProfileSettingRow> importedRows = await db.getProfileSettings(
       imported,
@@ -241,7 +247,7 @@ void main() {
     // 别的设备上的配置：大辞林关、排第 4；明镜开着、排第 0。
     await setLive('h1', 'Daijirin', 4, true);
     await setLive('h1', 'Meikyo', 0, false);
-    await repo.snapshotCurrentSettings(profileB);
+    await freezeLiveIntoCombo(repo, profileB);
     final String json = await repo.exportProfileToJson(profileB);
 
     // 本机还没拉过 h1 的目录（全新设备 / 刚配对）。

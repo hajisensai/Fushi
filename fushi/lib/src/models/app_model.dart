@@ -3820,6 +3820,36 @@ class AppModel
     database,
     platformServices.createAnkiRepository(),
     isDictionaryInstalled: isDictionaryInstalledOnDisk,
+    srsUserData: comboSrsUserData,
+    comboMigrationBackupDirectory: comboMigrationBackupDirectory,
+  );
+
+  /// 组合迁移定复习库归属（拍板台 design-srs-shared-library §4.2）：本机复习库里 [uids] 中哪些
+  /// 有用户数据（[srsProfileHasUserData]，铁律 E 的「有数据」）。本机没有复习库文件 = 都没有
+  /// （不为此建库）；库此刻打不开（换代中 / 别的进程在升级……）= null，归属留到下次再定。
+  Future<Set<String>?> comboSrsUserData(List<String> uids) async {
+    final SrsStorageHost? host = _srsStorageHost;
+    if (host == null) return null;
+    final SrsStorage? storage;
+    try {
+      storage = await host.acquireIfStored(moduleEnabled: false);
+    } on Object catch (e) {
+      debugPrint('[Fushi] combo migration: srs storage unavailable: $e');
+      return null;
+    }
+    if (storage == null) return <String>{};
+    return <String>{
+      for (final String uid in uids)
+        if (await srsProfileHasUserData(storage.core, uid)) uid,
+    };
+  }
+
+  /// 组合迁移前的原快照备份目录（`<support>/combo_migration_backups/`）。
+  static Future<Directory> comboMigrationBackupDirectory() async => Directory(
+    path.join(
+      (await AppPaths.supportRootDirectory()).path,
+      'combo_migration_backups',
+    ),
   );
 
   Directory get dictionaryResourceDirectory => _dictionaryResourceDirectory;
@@ -5752,6 +5782,9 @@ class AppModel
         // BUG-1994：切 profile 时「这本词典装没装」只认磁盘目录。闭包是惰性的，
         // 只在 applyProfile（用户操作）里调，那时 late 的资源目录早已就位。
         isDictionaryInstalled: isDictionaryInstalledOnDisk,
+        // 组合迁移（ensureDefaultProfile 里归一）：复习库归属判据与原快照备份。
+        srsUserData: comboSrsUserData,
+        comboMigrationBackupDirectory: comboMigrationBackupDirectory,
       );
       dictRepo = DictionaryRepository(
         _database,

@@ -23,6 +23,8 @@ import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
 import 'package:fushi/src/models/preference_keys.dart'
     show
         kAnkiSettingsPrefKey,
+        kComboMigrationNoticePendingPrefKey,
+        kComboMigrationReportPrefKey,
         kLibraryManualOrderPrefKeyPrefix,
         kSectionTabOrderPrefKeyPrefix,
         kSrsLapisMigrationReminderPrefKey,
@@ -84,6 +86,10 @@ class ProfileKeys {
     'profile_fallback_id',
     // 主进程此刻打开的作品会话（发给弹窗进程镜像）：与 active_profile_id 同族。
     kWorkProfileSessionPrefKey,
+    // 组合迁移报告与提示标记：描述本库那一次迁移，与 active_profile_id 同族。进快照的话切到
+    // 别的组合会把它剪掉（报告丢失），或把旧报告写回来。
+    kComboMigrationReportPrefKey,
+    kComboMigrationNoticePendingPrefKey,
     // v105 统计按 Profile 隔离：legacy 统计家族归属哪个 Profile 是**本库**的
     // 事实（值是本库自增 id），与 active_profile_id 同族。进快照就会被别的
     // Profile 的 applyProfile 剪掉，legacy 历史随即对所有 Profile 可见。

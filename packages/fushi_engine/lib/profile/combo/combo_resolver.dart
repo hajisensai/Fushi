@@ -346,8 +346,10 @@ ComboDocument writeSetting({
 /// 迁移用：把一个存量 Profile 的全量快照 [snapshot] 化成「相对默认组合 [defaults] 的差异」。
 ///
 /// 比较以叶子为单位：叶子那组键（含「快照里没有」= 未设置）与默认组合完全相同就继承，否则
-/// 整个叶子拆出来、带快照里的完整值。[SettingsNode.absentKeysInherit] 的叶子只比较快照与
-/// 默认组合都有的行（快照缺行 = 沿用，默认组合缺行 = 对象已不存在，都不构成差异）。合成
+/// 整个叶子拆出来、带快照里的完整值。[SettingsNode.absentKeysInherit] 的叶子只看快照里有的
+/// 行：快照缺行 = 沿用（不构成差异）；与默认组合不同、或默认组合此刻没有的行构成差异——后者
+/// 是快照对一个此刻不在的对象的选择（服务器词典目录还没拉到、词典以后会重装），丢掉它就丢了
+/// 那份选择（BUG-4693：目录拉到时按激活配置那份对账）。合成
 /// 节点（`diffable: false`）不参与比较，由各自的迁移规则决定要不要拆。设备本地键两边都丢弃。
 ComboDocument diffAgainstDefaults({
   required SettingsTree tree,
@@ -365,17 +367,52 @@ ComboDocument diffAgainstDefaults({
     final Map<SettingKey, String> b =
         mine[leaf.id] ?? const <SettingKey, String>{};
     final bool differs = leaf.absentKeysInherit
-        ? _sharedRowsDiffer(a, b)
+        ? _snapshotRowsDiffer(a, b)
         : !_sameValues(a, b);
     if (differs) splits[leaf.id] = b;
   }
   return ComboDocument(splits);
 }
 
-bool _sharedRowsDiffer(Map<SettingKey, String> a, Map<SettingKey, String> b) {
+/// 把一个组合重新落到默认组合 [base] 之上，使它的生效值是 [effective]：
+///
+/// * 原来就拆了的叶子（[existing]）保持拆分——「单独设置」是用户的选择，值与默认碰巧相同也不
+///   自动恢复继承（恢复继承要显式操作）；
+/// * [effective] 与 [base] 不同的叶子（[diffAgainstDefaults] 的口径）拆出来；
+/// * 被拆的可比较叶子取 [effective] 里那组键；合成叶子（`diffable: false`，如复习库归属）
+///   沿用 [existing] 的值（[effective] 来自活偏好时没有它们）。
+///
+/// 用途：组合格式的激活配置切走时把活偏好写回它自己（`snapshotCurrentSettings`），以及默认
+/// 组合换人时把其余组合改基到新默认（生效值不变）。
+ComboDocument rebaseComboDocument({
+  required SettingsTree tree,
+  required ComboDocument existing,
+  required Map<SettingKey, String> base,
+  required Map<SettingKey, String> effective,
+}) {
+  final ComboDocument diff = diffAgainstDefaults(
+    tree: tree,
+    defaults: base,
+    snapshot: effective,
+  );
+  final Map<String, Map<SettingKey, String>> grouped = groupByLeaf(
+    tree,
+    effective,
+  );
+  final Map<String, Map<SettingKey, String>> splits =
+      <String, Map<SettingKey, String>>{};
+  for (final SettingsNode leaf in tree.leaves) {
+    if (!existing.isSplit(leaf.id) && !diff.isSplit(leaf.id)) continue;
+    splits[leaf.id] = leaf.diffable
+        ? grouped[leaf.id] ?? const <SettingKey, String>{}
+        : existing.splits[leaf.id]!;
+  }
+  return ComboDocument(splits);
+}
+
+bool _snapshotRowsDiffer(Map<SettingKey, String> a, Map<SettingKey, String> b) {
   for (final MapEntry<SettingKey, String> e in b.entries) {
-    final String? base = a[e.key];
-    if (base != null && base != e.value) return true;
+    if (a[e.key] != e.value) return true;
   }
   return false;
 }

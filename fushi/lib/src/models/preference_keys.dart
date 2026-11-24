@@ -29,6 +29,16 @@ const String kProfileFallbackIdPrefKey = 'profile_fallback_id';
 /// 合并导入；主进程启动时清空（会话只活在主进程内存里）。
 const String kWorkProfileSessionPrefKey = 'work_profile_session';
 
+/// 配置改成「组合」的迁移报告（String，JSON，`ComboMigrationReport`；拍板台
+/// design-combo-node-split 阶段 3）：哪些组合单独设置了哪些项、语言与媒体类型绑定的生效顺序
+/// 变化、被忽略的越层拆分、复习库结论。首次启动提示一次，配置管理页可重看。描述本库这次
+/// 迁移：不进 Profile 快照 / 分享（`ProfileKeys` 排除）。
+const String kComboMigrationReportPrefKey = 'combo_migration_report';
+
+/// bool：上面的报告还没提示过（迁移写报告时置 true，首页提示一次后删掉）。同上不进快照。
+const String kComboMigrationNoticePendingPrefKey =
+    'combo_migration_notice_pending';
+
 /// 「本版新内容」（首页卡片 / 新内容页）：本机最近一次「看过」的 app 版本串与它的
 /// release sequence（String / int，空串 / 0 = 还没定基线），以及首页卡片被关掉时的
 /// 版本串（String）。描述的是**这台设备装过哪个包**：设备本地，不进 Profile 快照 /
@@ -266,6 +276,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'clipboard_panel_block_capture',
   'collapse_dictionaries',
   'collapsed_collection_ids',
+  // String（JSON）/ bool：组合迁移报告与「还没提示」标记（见 kComboMigrationReportPrefKey）。
+  'combo_migration_notice_pending',
+  'combo_migration_report',
   'compress_mining_media',
   // String：手柄查词模式开启方式 `holdL1` / `selectToggle` / `off`；未设 = 副屏伴侣在用时
   // 按住 L1、否则关（ControllerLookupStyle.resolve）。设备本地。

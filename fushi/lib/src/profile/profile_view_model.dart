@@ -10,6 +10,8 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/profile/combo/combo_repository.dart'
+    show ComboMigrationReport;
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
@@ -504,6 +506,10 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     );
   }
 
+  /// 本库最近一次组合迁移的报告（配置管理页「组合迁移报告」行）；没有时 null。
+  Future<ComboMigrationReport?> comboMigrationReport() =>
+      _repo.loadComboMigrationReport();
+
   Future<void> saveCurrentSettingsToActiveProfile() async {
     await _repo.snapshotCurrentSettings(state.activeProfileId);
   }
@@ -568,6 +574,9 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
     ankiRepo,
     // BUG-1994：回插被旧 prune 删掉的词典行时，「装没装」只认磁盘目录。
     isDictionaryInstalled: ref.read(appProvider).isDictionaryInstalledOnDisk,
+    // 组合迁移（ensureDefaultProfile 里归一，旧备份恢复后也在这里收敛）。
+    srsUserData: ref.read(appProvider).comboSrsUserData,
+    comboMigrationBackupDirectory: AppModel.comboMigrationBackupDirectory,
   );
 });
 
