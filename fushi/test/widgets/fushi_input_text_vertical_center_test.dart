@@ -122,11 +122,18 @@ final List<_Case> _cases = <_Case>[
   ),
 ];
 
-ThemeData _theme(_Mode mode) {
+ThemeData _theme(_Mode mode, {bool ideographic = false}) {
   final bool apple = _apple(mode);
   return buildFushiThemeData(
     scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-    textTheme: FushiTypeScale.buildTextTheme(const TextStyle()),
+    // 中日韩 locale 的字阶（Typography.dense）带 textBaseline: ideographic。
+    textTheme: FushiTypeScale.buildTextTheme(
+      TextStyle(
+        textBaseline: ideographic
+            ? TextBaseline.ideographic
+            : TextBaseline.alphabetic,
+      ),
+    ),
     glass: FushiGlassMaterial.off,
     glassDesign: apple,
   ).copyWith(platform: _platform(mode));
@@ -138,15 +145,16 @@ Future<void> _pump(
   WidgetTester tester,
   _Mode mode,
   _Case c,
-  TextEditingController controller,
-) async {
+  TextEditingController controller, {
+  bool ideographic = false,
+}) async {
   // Apple 桌面档要宽窗（窄于 600 回落 iOS 档）。
   tester.view.physicalSize = const Size(900, 400);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     MaterialApp(
-      theme: _theme(mode),
+      theme: _theme(mode, ideographic: ideographic),
       debugShowCheckedModeBanner: false,
       home: FushiGlassScope(
         child: Scaffold(
@@ -330,5 +338,35 @@ void main() {
       expect(hint.box.height, moreOrLessEquals(text.box.height, epsilon: 0.5));
       expect(hint.baseline, moreOrLessEquals(text.baseline, epsilon: 0.5));
     });
+  }
+
+  // 中文界面（主题字阶 textBaseline: ideographic）下占位符不下沉：输入框把
+  // 占位符按基线对齐到编辑区，RenderEditable 按 ideographic 报基线、
+  // RenderParagraph（占位符）只报 alphabetic，差一个 descent（用户 2026-11-24
+  // 「这个字还是没有上下居中」，设置页搜索框占位字低约 3px）。
+  // fushiFieldTextStyle 把对齐基线钉成 alphabetic 后两者行盒重合。
+  for (final _Mode mode in _Mode.values) {
+    for (final _Case c in _cases) {
+      testWidgets(
+        '${mode.name} ${c.name}: placeholder line box sits on the editable '
+        'line box under an ideographic-baseline theme',
+        (WidgetTester tester) async {
+          final TextEditingController controller = TextEditingController();
+          addTearDown(controller.dispose);
+          await _pump(tester, mode, c, controller, ideographic: true);
+          final Rect hint = _line(tester, c.hint, true).box;
+          final Rect editable = tester.getRect(
+            find.byWidgetPredicate(
+              (Widget w) => w.runtimeType.toString() == '_Editable',
+            ),
+          );
+          expect(
+            hint.center.dy,
+            moreOrLessEquals(editable.center.dy, epsilon: 0.5),
+            reason: 'placeholder $hint vs editable $editable',
+          );
+        },
+      );
+    }
   }
 }

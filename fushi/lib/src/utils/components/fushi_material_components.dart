@@ -1115,7 +1115,8 @@ class FushiSearchField extends StatelessWidget {
   /// 尺寸档：[FushiSearchFieldSize.regular] 是工具条 / 行内搜索胶囊（MD3 40、
   /// Apple 36）；[FushiSearchFieldSize.large] 是页面顶部的独立搜索栏——MD3 按
   /// M3 SearchBar（56 高全圆角、24 前置图标、48 触控的尾部动作、bodyLarge），
-  /// Apple 没有 56 的搜索栏，仍是 iOS 搜索胶囊（36），不拉伸。
+  /// Apple iOS 档是大标题下的独立搜索栏（44 高、20 放大镜，
+  /// [kFushiAppleSearchBarHeight]），macOS 档仍是 28 高的 NSSearchField。
   final FushiSearchFieldSize size;
 
   /// 尾部动作（排在清除 / 软键盘按钮之后），例如直达管理页的圆钮。large 档
@@ -1342,9 +1343,9 @@ class FushiSearchField extends StatelessWidget {
           // iOS 27 搜索胶囊（tertiarySystemFill 实色、无描边、高 36）/ macOS 27
           // 宽窗搜索框（高 28）：形态全由 FushiTextFieldControl 认出前缀放大镜
           // 后给出（与设置页 / 库页页头的 CupertinoSearchTextField 同一套参数），
-          // 这里只装配放大镜、灰色 ⊗ 清除钮与输入辅助钮。large 档在 Apple 下
-          // 同为 iOS 搜索胶囊（Apple 没有 56 的搜索栏）。
-          return FushiTextFieldControl(
+          // 这里只装配放大镜、灰色 ⊗ 清除钮与输入辅助钮。large 档在 iOS 档是
+          // 大标题下的独立搜索栏（44 高，[FushiAppleLargeSearchScope]）。
+          final Widget field = FushiTextFieldControl(
             key: fieldKey,
             controller: controller,
             focusNode: focusNode,
@@ -1368,6 +1369,9 @@ class FushiSearchField extends StatelessWidget {
             onChanged: onChanged,
             onSubmitted: onSubmitted,
           );
+          return size == FushiSearchFieldSize.large
+              ? FushiAppleLargeSearchScope(child: field)
+              : field;
         },
       );
     } else if (isMacosPlatform(context)) {
@@ -1683,7 +1687,8 @@ class _RenderFushiTouchTargetBox extends RenderShiftedBox {
 /// [FushiSearchField] 的尺寸档，见 [FushiSearchField.size]。
 enum FushiSearchFieldSize { regular, large }
 
-/// MD3 large 档（M3 SearchBar）的高度；Apple 下 large 仍是 36 的 iOS 搜索胶囊。
+/// MD3 large 档（M3 SearchBar）的高度；Apple iOS 档的 large 见
+/// [kFushiAppleSearchBarHeight]（44）。
 const double kFushiSearchFieldLargeHeight = 56;
 
 /// MD3 large 档的前置 / 尾部图标尺寸（M3 SearchBar 24dp）。

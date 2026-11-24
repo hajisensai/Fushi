@@ -1198,8 +1198,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                 onChanged: _onQueryChanged,
                 onClear: _clearSearch,
                 onSubmitted: _search,
-                // 页面顶部的独立搜索栏：MD3 是 56 高的 M3 SearchBar；Apple 仍是
-                // 36 的 iOS 搜索胶囊（large 在 Apple 下不拉伸）。
+                // 页面顶部的独立搜索栏：MD3 是 56 高的 M3 SearchBar；Apple iOS
+                // 档是 44 高的大标题下搜索栏（kFushiAppleSearchBarHeight）。
                 size: FushiSearchFieldSize.large,
                 // MD3：SearchBar 尾部一枚 tonal 圆钮直达词典管理（导入 / 排序 /
                 // 启用），收进搜索栏的 trailing 槽（48 触控区，按钮本体 40）。

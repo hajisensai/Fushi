@@ -73,12 +73,23 @@ Widget _cupertinoContextMenuBuilder(
 /// 居中」）。均分后行盒中线就是字体 ascent / descent 盒的中线。只改行距在行盒内
 /// 的分配，行盒高度（即框高、内边距）不变，M3E 与 Apple 的外观规格不受影响。
 ///
-/// 调用方给的样式（常是 inherit: false 的主题样式）原样保留，只覆盖行距分配；
-/// [WidgetStateTextStyle] 原样返回（copyWith 会丢掉它的状态解析）。
+/// 同时把对齐基线钉成 [TextBaseline.alphabetic]：中日韩 locale 的主题字阶是
+/// `Typography.dense`，自带 `textBaseline: ideographic`。输入框把占位符按基线
+/// 对齐到编辑区（CupertinoTextField 的 `_RenderBaselineAlignedStack`、Material
+/// InputDecorator 同理），而 [RenderEditable] 按样式要的 ideographic 基线报，
+/// [RenderParagraph]（占位符）不论要哪种都只报 alphabetic（框架 TODO，见
+/// `RenderParagraph.computeDistanceToActualBaseline`）——两者差一个 descent
+/// （约 0.19em，17 号低约 3px），中文界面下占位符整体下沉、看着不居中（用户
+/// 2026-11-24「这个字还是没有上下居中」）。两边都按 alphabetic 对齐就重合了；
+/// 基线种类只影响对齐、不影响字形绘制。
+///
+/// 调用方给的样式（常是 inherit: false 的主题样式）原样保留，只覆盖行距分配与
+/// 对齐基线；[WidgetStateTextStyle] 原样返回（copyWith 会丢掉它的状态解析）。
 TextStyle fushiFieldTextStyle(TextStyle? style) {
   if (style is WidgetStateTextStyle) return style;
   return (style ?? const TextStyle()).copyWith(
     leadingDistribution: TextLeadingDistribution.even,
+    textBaseline: TextBaseline.alphabetic,
   );
 }
 
@@ -89,6 +100,32 @@ InputDecoration? _fushiFieldEvenHint(InputDecoration? decoration) {
   final TextStyle? hint = decoration?.hintStyle;
   if (decoration == null || hint == null) return decoration;
   return decoration.copyWith(hintStyle: fushiFieldTextStyle(hint));
+}
+
+/// iOS 档页面顶部独立搜索栏（[FushiAppleLargeSearchScope]）的度量。参照 iOS 26
+/// 真机大标题页（3x 截图按逻辑宽 393pt 换算）：胶囊高 ≈ 43.7 → 44、放大镜字形
+/// ≈ 16pt → 图标 20、图标离左缘 ≈ 13.5 → 内边距 12（图标自带 2 的留白）、占位字
+/// 左缘离胶囊左缘 ≈ 39.7 → 12 + 20 + 间距 8、占位字 17 号（与正文同字号）。
+/// 行内 / 工具条搜索胶囊仍是 36 高（UISearchTextField 的紧凑形态）。
+const double kFushiAppleSearchBarHeight = 44;
+const double kFushiAppleSearchBarIconSize = 20;
+const double kFushiAppleSearchBarHorizontalPadding = 12;
+const double kFushiAppleSearchBarIconGap = 8;
+
+/// 子树里的 Apple 搜索框按 iOS 档「页面顶部独立搜索栏」排（高 44，见
+/// [kFushiAppleSearchBarHeight]）。由 `FushiSearchField(size: large)` 的 Apple
+/// 分支挂上；macOS 档（[FushiAppleMetrics.desktop]）不受影响，仍是 28 高的
+/// NSSearchField。纯度量作用域，本身不画任何东西。
+class FushiAppleLargeSearchScope extends InheritedWidget {
+  const FushiAppleLargeSearchScope({required super.child, super.key});
+
+  static bool of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<FushiAppleLargeSearchScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(FushiAppleLargeSearchScope oldWidget) => false;
 }
 
 /// 装饰是不是「搜索框」：前缀图标是放大镜。iOS 上搜索框是全胶囊
@@ -1301,6 +1338,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
 
     final bool dense = decoration.isDense ?? false;
     final bool search = _isSearchDecoration(decoration);
+    // iOS 档页面顶部的独立搜索栏（44 高，见 [kFushiAppleSearchBarHeight]）。
+    final bool largeSearch =
+        search && !desktop && FushiAppleLargeSearchScope.of(context);
     final Color iconColor = enabled
         ? apple.secondaryLabel
         : apple.tertiaryLabel;
@@ -1324,7 +1364,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
           color: iconColor,
           size: desktop
               ? (search ? 14 : 15) * macScale
-              : (search ? 17 : (dense ? 18 : 20)),
+              : (largeSearch
+                    ? kFushiAppleSearchBarIconSize
+                    : (search ? 17 : (dense ? 18 : 20))),
         ),
         child: icon,
       );
@@ -1342,7 +1384,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     // 偏离竖直中线（用户 2026-10-04「搜索框文字没有垂直居中」）。布局上只给
     // 尾部图标比胶囊矮 8 的高度，按钮本体照原尺寸居中绘制在上面
     // （OverflowBox），点按区不变小。
-    final double searchHeight = desktop ? 28 * macScale : 36;
+    final double searchHeight = desktop
+        ? 28 * macScale
+        : (largeSearch ? kFushiAppleSearchBarHeight : 36);
     Widget? suffixIcon = iconSlot(decoration.suffixIcon);
     if (search && suffixIcon != null && _c.maxLines == 1) {
       suffixIcon = _CappedHeightBox(
@@ -1370,7 +1414,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
         if (prefixIcon != null) ...<Widget>[
           prefixIcon,
           SizedBox(
-            width: (search ? 6 : (dense ? 8 : 10)) * (desktop ? macScale : 1),
+            width: largeSearch
+                ? kFushiAppleSearchBarIconGap
+                : (search ? 6 : (dense ? 8 : 10)) * (desktop ? macScale : 1),
           ),
         ],
         if (prefix != null) prefix,
@@ -1395,7 +1441,13 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final EdgeInsetsGeometry padding =
         decoration.contentPadding ??
         (search
-            ? EdgeInsets.symmetric(horizontal: desktop ? 8 * macScale : 10)
+            ? EdgeInsets.symmetric(
+                horizontal: desktop
+                    ? 8 * macScale
+                    : (largeSearch
+                          ? kFushiAppleSearchBarHorizontalPadding
+                          : 10),
+              )
             : (desktop
                   ? EdgeInsets.symmetric(
                       horizontal: 8 * macScale,

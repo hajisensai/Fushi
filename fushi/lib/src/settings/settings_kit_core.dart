@@ -486,15 +486,17 @@ class _SettingsSearchBarState extends State<SettingsSearchBar> {
     );
   }
 
-  /// iOS 27 / macOS 27 搜索框：共享 [FushiSearchField] 的 Apple 分支
+  /// iOS 27 / macOS 27 搜索框：共享 [FushiSearchField] 的 Apple 分支 large 档
   /// （tertiarySystemFill 实色胶囊、无描边、灰放大镜 / 占位字、有内容时 ⊗；
-  /// iOS 高 36 / 17pt，macOS 宽窗高 28 / 13pt）。
+  /// iOS 档是大标题下的独立搜索栏，高 44 / 20 放大镜 / 17pt，macOS 宽窗高 28 /
+  /// 13pt）。
   Widget _buildApple(BuildContext context) {
     return FushiSearchField(
       controller: widget.controller,
       focusNode: _focusNode,
       autofocus: widget.autofocus,
       hintText: widget.hintText ?? t.settings_search_hint,
+      size: FushiSearchFieldSize.large,
       onChanged: widget.onChanged,
       onSubmitted: widget.onSubmitted ?? (String _) {},
       onClear: _clear,

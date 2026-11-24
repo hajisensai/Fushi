@@ -31,6 +31,8 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
     show FushiAppleFloatingSurface;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleUsesMacMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
@@ -189,20 +191,12 @@ double _appleActionsBudget(
   return math.max(0, available - leading - floor - 16);
 }
 
-/// 桌面（Windows / macOS / Linux）用 macOS 26 的窗口标题字阶，移动用 iOS 的
-/// 内联导航栏标题。
-bool _isDesktopBar(BuildContext context) {
-  switch (Theme.of(context).platform) {
-    case TargetPlatform.windows:
-    case TargetPlatform.macOS:
-    case TargetPlatform.linux:
-      return true;
-    case TargetPlatform.android:
-    case TargetPlatform.iOS:
-    case TargetPlatform.fuchsia:
-      return false;
-  }
-}
+/// macOS 档用 macOS 26 的窗口标题字阶，iOS 档用 iOS 的内联导航栏标题 / 大标题。
+/// 判据是 Apple 设计系统的唯一档位判据 [fushiAppleUsesMacMetrics]（桌面平台
+/// 且窗宽 ≥ 600）。原来只看主题平台：Windows / Linux 窄窗明明是 iOS 档（栏钮
+/// 44、搜索胶囊、iOS 列表），大标题却按 macOS 排成 26 号 / 行高 44，比参照
+/// iPhone 的 34 号大标题小一大截（用户 2026-11-24「标题栏是不是可以做大」）。
+bool _isDesktopBar(BuildContext context) => fushiAppleUsesMacMetrics(context);
 
 /// 玻璃顶栏的默认标题字阶：iOS 导航栏 17 / macOS 工具栏 15 semibold（label
 /// 色），与 [fushiAppleInlineTitleStyle] 同一字阶。
