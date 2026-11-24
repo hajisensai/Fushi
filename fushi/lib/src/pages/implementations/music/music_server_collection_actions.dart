@@ -616,7 +616,7 @@ class MusicServerTrackDownloadBadge extends ConsumerWidget {
         if (!MusicServerDownloadIndex.instance.isDownloaded(uid)) {
           return const SizedBox.shrink();
         }
-        return Tooltip(
+        return FushiTooltip(
           message: t.music_server_download_state_all,
           child: FushiIcon(
             FushiIcons.downloadDone,

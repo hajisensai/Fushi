@@ -1,6 +1,9 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 
 import 'package:fushi/src/media/video/audio_energy_probe.dart';
 import 'package:fushi/src/media/video/subtitle_delay_input_debounce.dart';
@@ -214,7 +217,7 @@ class _SubtitleWaveformAlignPanelState
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
+    final ColorScheme cs = _alignPanelScheme(context, theme.colorScheme);
     // TODO-1315：入口常驻可见（挂载即显、不预探测波形），点击才懒抽 + 弹放大视图。
     return _buildEntryButton(theme, cs);
   }
@@ -228,12 +231,15 @@ class _SubtitleWaveformAlignPanelState
     final String hint = _probeUnavailable
         ? t.video_subtitle_waveform_unavailable
         : t.video_subtitle_waveform_open_hint;
-    // M3E：入口是一块 tonal 分区卡（面板中性主题下的 surfaceContainer），前置
+    // M3E：入口是一块 tonal 分区卡（Apple 下这些容器角色已由
+    // [_alignPanelScheme] 换成 Apple 填充 / 强调色淡底）（面板中性主题下的 surfaceContainer），前置
     // 波形图标放进 secondaryContainer 圆形色块，与设置侧板里的分组卡同一层级。
     return Material(
       key: const ValueKey<String>('subtitle-waveform-open-button'),
       color: cs.surfaceContainer,
-      borderRadius: FushiM3eShape.cardRadius,
+      borderRadius: isGlassDesign(context)
+          ? FushiAppleMetrics.of(context).groupBorderRadius
+          : FushiM3eShape.cardRadius,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: _probing ? null : _openZoomView,
@@ -870,7 +876,7 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
 
   Widget _buildThemed(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    final ColorScheme cs = theme.colorScheme;
+    final ColorScheme cs = _alignPanelScheme(context, theme.colorScheme);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.gap;
 
@@ -1169,7 +1175,10 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
     final double visibleLeft = viewLeft - _cullMarginPx;
     final double visibleRight = viewLeft + viewportWidth + _cullMarginPx;
     final Duration fade = fushiMotionDuration(themed, FushiMotion.short);
-    final ColorScheme cs = Theme.of(themed).colorScheme;
+    final ColorScheme cs = _alignPanelScheme(
+      themed,
+      Theme.of(themed).colorScheme,
+    );
     final Color veil = fushiSkeletonColor(themed).withValues(alpha: 0.6);
     final TextStyle labelStyle = themed.fushiType.bodySmall.copyWith(
       color: cs.onSurfaceVariant,
@@ -1860,4 +1869,28 @@ List<CueStripSlot?> layoutCueStripChips({
     slots[i] = CueStripSlot(left: left, width: widths[i], lane: lane);
   }
   return slots;
+}
+
+/// 对轴面板（入口卡 + 放大视图）用到的配色角色。MD3 原样返回 [cs]（M3E tonal
+/// 容器色，像素不变）；Apple（[isGlassDesign]）下把本面板用到的那几个容器 /
+/// 前景角色换成 Apple 语义色——分区 / 读数底 = tertiaryFill，波形与句列表底 =
+/// secondaryFill，当前句 / 非零读数 / 句块 = 强调色淡底，前景 = label /
+/// secondaryLabel / accent——面板里不再出现 secondaryContainer / surfaceContainer
+/// 这类 M3E tonal 色块。只作用于本文件的局部配色，不改主题。
+ColorScheme _alignPanelScheme(BuildContext context, ColorScheme cs) {
+  if (!isGlassDesign(context)) return cs;
+  final FushiAppleColors apple = appleColorsOf(context);
+  final Color tint = apple.accent.withValues(alpha: 0.18);
+  return cs.copyWith(
+    primary: apple.accent,
+    onPrimary: apple.onAccent,
+    error: apple.destructive,
+    surfaceContainer: apple.tertiaryFill,
+    surfaceContainerHighest: apple.secondaryFill,
+    secondaryContainer: tint,
+    onSecondaryContainer: apple.label,
+    onSurface: apple.label,
+    onSurfaceVariant: apple.secondaryLabel,
+    outlineVariant: apple.separator,
+  );
 }

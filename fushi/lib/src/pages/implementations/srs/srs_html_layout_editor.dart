@@ -6,6 +6,8 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiDividerControl;
 
 import 'package:fushi/src/srs/srs_html_layout.dart';
 import 'package:fushi/src/srs/srs_html_text_parts.dart';
@@ -240,9 +242,8 @@ class _SrsHtmlLayoutEditorState extends State<SrsHtmlLayoutEditor> {
     ];
     final double gap = tokens.spacing.gap / 4;
     final Widget content = switch (b.kind) {
-      SrsLayoutBlockKind.rule => Divider(
+      SrsLayoutBlockKind.rule => FushiDividerControl(
         height: tokens.spacing.gap,
-        color: scheme.outlineVariant,
       ),
       SrsLayoutBlockKind.tableRow => IntrinsicHeight(
         child: Row(

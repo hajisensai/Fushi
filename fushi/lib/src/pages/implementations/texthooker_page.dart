@@ -3990,7 +3990,7 @@ class _SessionOverviewCard extends StatelessWidget {
               if (dangerous.isNotEmpty && regular.isNotEmpty)
                 const SizedBox(
                   height: 24,
-                  child: VerticalDivider(width: 9, thickness: 1),
+                  child: FushiVerticalDivider(width: 9, thickness: 1),
                 ),
               for (final _SessionTool tool in dangerous) tool.chip(),
             ],

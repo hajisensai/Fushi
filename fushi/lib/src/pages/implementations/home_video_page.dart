@@ -6280,7 +6280,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 // 取决于映射快慢。按「骨架 / 真墙」分代，真墙恒有一次完整进场。
                 return FushiEntranceScope(
                   replayKey: (widget.section, firstPaintPending),
-                  child: RefreshIndicator(
+                  child: FushiRefreshIndicator(
                     onRefresh: _pullToRefresh,
                     // 叠放工具区的高度（恒定，不随显隐变）：转圈从工具区下沿出来。
                     edgeOffset: FushiFloatingChromeInset.of(context),

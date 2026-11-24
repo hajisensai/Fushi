@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -425,7 +427,7 @@ class _ResetButton extends StatelessWidget {
         ),
       );
     } else {
-      button = Tooltip(
+      button = FushiTooltip(
         message: t.av_sync_reset,
         child: FushiFilledButton.tonalIcon(
           key: kLyricsSpeedPanelResetKey,

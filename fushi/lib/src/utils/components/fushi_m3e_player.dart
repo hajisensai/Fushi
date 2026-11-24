@@ -12,10 +12,14 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
     show FushiJumpProgressMarks;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics, fushiAppleUsesMacMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -183,8 +187,10 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
 
   void _syncTicker() {
     // TickerMode 照旧生效（被别的路由盖住时停）：driver 不是 Ticker，要自己读。
+    // Apple 形态是静态渐变（见 [_buildApple]），不起帧驱动。
     final bool motion =
         widget.animate &&
+        !isGlassDesign(context) &&
         fushiExpressiveMotionEnabled(context) &&
         TickerMode.valuesOf(context).enabled;
     if (motion && !_driver.isActive) {
@@ -214,8 +220,77 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
     super.dispose();
   }
 
+  /// Apple（Cupertino）形态：不画 MD3 的四团 tonal 容器色流动 mesh，换成 Apple
+  /// Music「正在播放」式的静态取色渐变——顶部是封面取色主色（[ColorScheme.primary]，
+  /// 歌词 / 遥控页已按封面换过方案）压暗后叠在系统分组底色上，往下渐变回纯
+  /// [FushiAppleColors.groupedBackground]。理由：本组件拿不到封面图本身，只有取色
+  /// 方案；四团 primaryContainer / secondaryContainer 色块是 M3E 的 tonal 语言，
+  /// 在 Apple 下就是混搭，而 Apple 的背景是安静的单向渐变、不漂移。底板换成
+  /// secondaryGroupedBackground 半透明连续曲率圆角面。配色变化（换封面 / 切深浅色）
+  /// 时按 [FushiMeshBackdrop.colorTransition] 交叉过渡，过渡完即停、不出帧。
+  Widget _buildApple(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiAppleColors apple = appleColorsOf(context);
+    final EdgeInsets padding = MediaQuery.paddingOf(context);
+    final bool dark = cs.brightness == Brightness.dark;
+    final Color base = apple.groupedBackground;
+    final Color top = Color.alphaBlend(
+      cs.primary.withValues(alpha: dark ? 0.32 : 0.2),
+      base,
+    );
+    final Duration fade = widget.colorTransition
+        ? fushiMotionDuration(context, FushiMotion.medium)
+        : Duration.zero;
+    final double radius = FushiAppleMetrics.of(context).groupRadius;
+    return RepaintBoundary(
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final Rect? plate = widget.plateRect?.call(
+            constraints.biggest,
+            padding,
+          );
+          final Widget gradient = AnimatedContainer(
+            key: const ValueKey<String>('fushi-mesh-backdrop-apple'),
+            duration: fade,
+            curve: FushiMotion.standard,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[top, base],
+              ),
+            ),
+          );
+          if (plate == null) return gradient;
+          return Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              gradient,
+              Positioned.fromRect(
+                rect: plate,
+                child: AnimatedContainer(
+                  duration: fade,
+                  curve: FushiMotion.standard,
+                  decoration: ShapeDecoration(
+                    color: apple.secondaryGroupedBackground.withValues(
+                      alpha: dark ? 0.55 : 0.6,
+                    ),
+                    shape: RoundedSuperellipseBorder(
+                      borderRadius: BorderRadius.circular(radius),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final EdgeInsets padding = MediaQuery.paddingOf(context);
@@ -562,6 +637,10 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
   DateTime _pendingAt = DateTime.fromMillisecondsSinceEpoch(0);
   bool _focused = false;
 
+  /// Apple（Cupertino）形态：细直线进度条，没有波浪 / thumb / 气泡（见
+  /// [_buildAppleColumn]）。在 [didChangeDependencies] 里按主题刷新。
+  bool _apple = false;
+
   bool get _seekable => widget.onSeek != null;
 
   @override
@@ -582,6 +661,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _tickerModeEnabled = TickerMode.valuesOf(context).enabled;
+    _apple = isGlassDesign(context);
     _syncMotion(animate: false);
   }
 
@@ -604,7 +684,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
 
   /// 播放态 → 振幅目标 + 刷新节奏。波浪只在「播放中且允许动效」时有。
   void _syncMotion({required bool animate}) {
-    final bool wave = widget.isPlaying && _motion;
+    final bool wave = widget.isPlaying && _motion && !_apple;
     _amp.animateTo(wave ? 1 : 0, animate: animate && _motion);
     if (_amp.animation.isAnimating && !_ticker.isActive) _ticker.start();
     _syncSteady();
@@ -625,7 +705,11 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
       return;
     }
     final bool flowing =
-        widget.animateWave && widget.isPlaying && _motion && _tickerModeEnabled;
+        widget.animateWave &&
+        widget.isPlaying &&
+        _motion &&
+        _tickerModeEnabled &&
+        !_apple;
     if (flowing) {
       _stopIdlePoll();
       _flow.start();
@@ -722,8 +806,10 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
   double _fractionAt(double dx, double width) {
     if (width <= 0) return 0;
     final bool rtl = Directionality.of(context) == TextDirection.rtl;
-    final double half = widget.strokeWidth / 2;
-    final double usable = width - widget.strokeWidth;
+    // Apple 细轨两端不缩（胶囊整条就是可用区间）。
+    final double inset = _apple ? 0 : widget.strokeWidth;
+    final double half = inset / 2;
+    final double usable = width - inset;
     final double f = usable <= 0
         ? (dx / width).clamp(0.0, 1.0)
         : ((dx - half) / usable).clamp(0.0, 1.0);
@@ -813,8 +899,137 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
     );
   }
 
+  /// 点按 / 横向拖动 → 拖动比例（两套形态共用同一份手势与提交逻辑）。
+  Widget _seekGestures({
+    required double width,
+    required Widget child,
+  }) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTapDown: (TapDownDetails d) =>
+        _beginDrag(_fractionAt(d.localPosition.dx, width), _SeekGesture.tap),
+    onTapUp: (_) => _endDrag(_SeekGesture.tap, commit: true),
+    onTapCancel: () => _endDrag(_SeekGesture.tap, commit: false),
+    onHorizontalDragStart: (DragStartDetails d) =>
+        _beginDrag(_fractionAt(d.localPosition.dx, width), _SeekGesture.drag),
+    onHorizontalDragUpdate: (DragUpdateDetails d) {
+      if (_dragFraction == null || _dragOwner != _SeekGesture.drag) {
+        return;
+      }
+      setState(() => _dragFraction = _fractionAt(d.localPosition.dx, width));
+    },
+    onHorizontalDragEnd: (_) => _endDrag(_SeekGesture.drag, commit: true),
+    onHorizontalDragCancel: () => _endDrag(_SeekGesture.drag, commit: false),
+    child: MouseRegion(cursor: SystemMouseCursors.click, child: child),
+  );
+
+  /// 外层：自带重绘边界 + 滑块语义 + 键盘焦点（←/→ 跳 5 秒）。
+  Widget _wrapSeekColumn(Widget column) {
+    final bool seekable = _seekable;
+    // 自带重绘边界：时间文字每秒一变也只重录这一小块，不连带外层播放卡
+    // （投影 / 封面）一起重画。
+    return RepaintBoundary(
+      child: Semantics(
+        slider: seekable,
+        value: formatFushiPlaybackTime(_shownPosition),
+        child: seekable
+            ? Focus(
+                focusNode: _focusNode,
+                onKeyEvent: _onKey,
+                onFocusChange: (bool focused) =>
+                    setState(() => _focused = focused),
+                child: column,
+              )
+            : column,
+      ),
+    );
+  }
+
+  /// Apple Music / iOS 27「正在播放」式进度条：一条胶囊细直线（iOS 6pt、macOS
+  /// 4pt），已播段 secondaryLabel、未播段 systemFill；按住 / 拖动时整条弹簧加粗到
+  /// 12pt（macOS 8pt）、已播段与时间提亮到 label——没有 thumb、没有气泡（拖动中的
+  /// 时间直接显示在下方左端）。下方两端是 caption2 等宽数字的「已播 / -剩余」。
+  /// 键盘焦点时外描一圈强调色。
+  Widget _buildAppleColumn(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool mac = fushiAppleUsesMacMetrics(context);
+    final double scale = FushiAppleMetrics.of(context).scale;
+    final double fraction = _shownFraction;
+    final Duration shown = _shownPosition;
+    final Duration remaining = _duration > shown
+        ? _duration - shown
+        : Duration.zero;
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    final double drag = _drag.value.clamp(0.0, 1.0);
+    final double thickness = math.min(
+      widget.barHeight,
+      ui.lerpDouble(mac ? 4 : 6, mac ? 8 : 12, drag)! * scale,
+    );
+    final Color played = Color.lerp(apple.secondaryLabel, apple.label, drag)!;
+    final TextStyle timeStyle =
+        (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
+          fontSize: (mac ? 10 : 11) * scale,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0,
+          height: 1.3,
+          color: played,
+          fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+        );
+    final BorderRadius radius = BorderRadius.circular(thickness / 2);
+    final Widget line = Center(
+      child: SizedBox(
+        key: const ValueKey<String>('fushi-seek-apple-track'),
+        height: thickness,
+        child: DecoratedBox(
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            border: _focused ? Border.all(color: apple.accent, width: 2) : null,
+          ),
+          child: ClipRRect(
+            borderRadius: radius,
+            child: Stack(
+              fit: StackFit.expand,
+              children: <Widget>[
+                ColoredBox(color: apple.fill),
+                FractionallySizedBox(
+                  alignment: rtl ? Alignment.centerRight : Alignment.centerLeft,
+                  widthFactor: fraction,
+                  child: ColoredBox(color: played),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    final Widget bar = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double width = constraints.maxWidth;
+        final Widget track = _withJumpMarks(line, width, 0, rtl);
+        if (!_seekable) return track;
+        return _seekGestures(width: width, child: track);
+      },
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        SizedBox(height: widget.barHeight, child: bar),
+        if (widget.showTimes)
+          Row(
+            children: <Widget>[
+              Text(formatFushiPlaybackTime(shown), style: timeStyle),
+              const Spacer(),
+              Text('-${formatFushiPlaybackTime(remaining)}', style: timeStyle),
+            ],
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_apple) return _wrapSeekColumn(_buildAppleColumn(context));
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
     final double fraction = _shownFraction;
@@ -860,35 +1075,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
         return Stack(
           clipBehavior: Clip.none,
           children: <Widget>[
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (TapDownDetails d) => _beginDrag(
-                _fractionAt(d.localPosition.dx, width),
-                _SeekGesture.tap,
-              ),
-              onTapUp: (_) => _endDrag(_SeekGesture.tap, commit: true),
-              onTapCancel: () => _endDrag(_SeekGesture.tap, commit: false),
-              onHorizontalDragStart: (DragStartDetails d) => _beginDrag(
-                _fractionAt(d.localPosition.dx, width),
-                _SeekGesture.drag,
-              ),
-              onHorizontalDragUpdate: (DragUpdateDetails d) {
-                if (_dragFraction == null || _dragOwner != _SeekGesture.drag) {
-                  return;
-                }
-                setState(
-                  () => _dragFraction = _fractionAt(d.localPosition.dx, width),
-                );
-              },
-              onHorizontalDragEnd: (_) =>
-                  _endDrag(_SeekGesture.drag, commit: true),
-              onHorizontalDragCancel: () =>
-                  _endDrag(_SeekGesture.drag, commit: false),
-              child: MouseRegion(
-                cursor: SystemMouseCursors.click,
-                child: track,
-              ),
-            ),
+            _seekGestures(width: width, child: track),
             // 拖动时的时长气泡（M3 slider value indicator：inverseSurface 胶囊）。
             Positioned(
               left: thumbX - 40,
@@ -949,23 +1136,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
           ),
       ],
     );
-    // 自带重绘边界：时间文字每秒一变也只重录这一小块，不连带外层播放卡
-    // （投影 / 封面）一起重画。
-    return RepaintBoundary(
-      child: Semantics(
-        slider: seekable,
-        value: formatFushiPlaybackTime(shown),
-        child: seekable
-            ? Focus(
-                focusNode: _focusNode,
-                onKeyEvent: _onKey,
-                onFocusChange: (bool focused) =>
-                    setState(() => _focused = focused),
-                child: column,
-              )
-            : column,
-      ),
-    );
+    return _wrapSeekColumn(column);
   }
 }
 
@@ -1132,9 +1303,64 @@ class FushiTransportGroup extends StatelessWidget {
   /// ±10 秒键的 key 前缀（`<prefix>_seek_back_button` / `_forward_button`）。
   final String relativeSeekKeyPrefix;
 
+  /// Apple Music / iOS 27「正在播放」式传输控件：SF 实心字形（backward.fill /
+  /// play.fill / forward.fill）直接上屏，没有 tonal 圆底、没有 M3E 按钮组的挤压
+  /// 变宽；±10 秒是同色的细字形。播放键是更大的实心字形（不画底圈），按下整体
+  /// 缩放（[FushiPressScale]），播放 / 暂停字形交叉缩放切换。命中区 ≥ 44。
+  Widget _buildApple(BuildContext context, ValueChanged<int>? seekBy) {
+    final Color fg = appleColorsOf(context).label;
+    final double sideExtent = math.max(44, playSize * 0.8);
+    final double sideIcon = playSize * 0.5;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: spacing,
+      children: <Widget>[
+        if (seekBy != null)
+          fushiRelativeSeekButton(
+            -10,
+            seekBy,
+            keyPrefix: relativeSeekKeyPrefix,
+          ),
+        FushiIconButtonControl(
+          key: const ValueKey<String>('fushi-transport-previous'),
+          tooltip: t.prev_sentence,
+          onPressed: onPrevious,
+          iconSize: sideIcon,
+          color: fg,
+          constraints: BoxConstraints.tightFor(
+            width: sideExtent,
+            height: sideExtent,
+          ),
+          icon: FushiIcon(FushiIcons.filled(FushiIcons.skipPrevious)),
+        ),
+        _AppleTransportPlayButton(
+          isPlaying: isPlaying,
+          size: playSize,
+          color: fg,
+          onPressed: onPlayPause,
+        ),
+        FushiIconButtonControl(
+          key: const ValueKey<String>('fushi-transport-next'),
+          tooltip: t.next_sentence,
+          onPressed: onNext,
+          iconSize: sideIcon,
+          color: fg,
+          constraints: BoxConstraints.tightFor(
+            width: sideExtent,
+            height: sideExtent,
+          ),
+          icon: FushiIcon(FushiIcons.filled(FushiIcons.skipNext)),
+        ),
+        if (seekBy != null)
+          fushiRelativeSeekButton(10, seekBy, keyPrefix: relativeSeekKeyPrefix),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ValueChanged<int>? seekBy = showRelativeSeek ? onSeekRelative : null;
+    if (isGlassDesign(context)) return _buildApple(context, seekBy);
     return FushiButtonGroup(
       spacing: spacing,
       children: <Widget>[
@@ -1170,24 +1396,105 @@ class FushiTransportGroup extends StatelessWidget {
   }
 }
 
-/// ±10 秒小号 tonal 圆钮（播放键组里或窄屏进度条两侧共用同一颗）。
+/// ±10 秒键（播放键组里或窄屏进度条两侧共用同一颗）：MD3 是小号 tonal 圆钮；
+/// Apple 是无底的 SF 字形（gobackward.10 / goforward.10），不画灰底圈。
 Widget fushiRelativeSeekButton(
   int seconds,
   ValueChanged<int> seekBy, {
   String keyPrefix = 'lyrics',
 }) {
   final bool back = seconds < 0;
-  return FushiIconButtonControl.filledTonal(
+  return _RelativeSeekButton(
     key: ValueKey<String>(
       back
           ? '${keyPrefix}_seek_back_button'
           : '${keyPrefix}_seek_forward_button',
     ),
-    size: ButtonSizeVariant.small,
-    tooltip: back ? '-10s' : '+10s',
-    onPressed: () => seekBy(seconds),
-    icon: FushiIcon(back ? FushiIcons.replay10 : FushiIcons.forward10),
+    seconds: seconds,
+    seekBy: seekBy,
   );
+}
+
+class _RelativeSeekButton extends StatelessWidget {
+  const _RelativeSeekButton({
+    super.key,
+    required this.seconds,
+    required this.seekBy,
+  });
+
+  final int seconds;
+  final ValueChanged<int> seekBy;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool back = seconds < 0;
+    final Widget icon = FushiIcon(
+      back ? FushiIcons.replay10 : FushiIcons.forward10,
+    );
+    if (isGlassDesign(context)) {
+      return FushiIconButtonControl(
+        tooltip: back ? '-10s' : '+10s',
+        onPressed: () => seekBy(seconds),
+        iconSize: 24,
+        color: appleColorsOf(context).label,
+        constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+        icon: icon,
+      );
+    }
+    return FushiIconButtonControl.filledTonal(
+      size: ButtonSizeVariant.small,
+      tooltip: back ? '-10s' : '+10s',
+      onPressed: () => seekBy(seconds),
+      icon: icon,
+    );
+  }
+}
+
+/// [FushiTransportGroup] 的 Apple 播放键：无底圈的大号实心字形，按下缩放，
+/// 播放 / 暂停字形交叉缩放切换（时长走 [fushiMotionDuration]，减弱动态效果 /
+/// 墨水屏时瞬时）。
+class _AppleTransportPlayButton extends StatelessWidget {
+  const _AppleTransportPlayButton({
+    required this.isPlaying,
+    required this.size,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final bool isPlaying;
+  final double size;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiPressScale(
+      child: FushiIconButtonControl(
+        key: const ValueKey<String>('fushi-transport-play-pause'),
+        tooltip: isPlaying ? t.pause : t.play,
+        onPressed: onPressed,
+        iconSize: size * 0.62,
+        color: color,
+        constraints: BoxConstraints.tightFor(width: size, height: size),
+        icon: AnimatedSwitcher(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          switchInCurve: FushiMotion.standard,
+          switchOutCurve: FushiMotion.exit,
+          transitionBuilder: (Widget child, Animation<double> animation) =>
+              ScaleTransition(
+                scale: animation,
+                child: FadeTransition(opacity: animation, child: child),
+              ),
+          child: FushiIcon(
+            FushiIcons.filled(isPlaying ? FushiIcons.pause : FushiIcons.play),
+            key: ValueKey<bool>(isPlaying),
+            size: size * 0.62,
+            color: color,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

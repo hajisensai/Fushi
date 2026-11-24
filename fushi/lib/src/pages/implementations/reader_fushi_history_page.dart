@@ -15,6 +15,8 @@ import 'dart:io';
 
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
+    show FushiRefreshIndicator;
 import 'package:fushi/src/pages/implementations/collection_management_page.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
@@ -2954,7 +2956,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             columns: _shelfCardLayout(constraints).columns,
             choices: libraryGridColumnChoices(libraryGridSizeClassOf(context)),
             onColumnsChanged: _setGridColumns,
-            child: RefreshIndicator(
+            child: FushiRefreshIndicator(
               onRefresh: _pullToRefreshBooks,
               // 叠放工具区的高度（恒定，不随显隐变）：转圈从工具区下沿出来。
               edgeOffset: FushiFloatingChromeInset.of(context),

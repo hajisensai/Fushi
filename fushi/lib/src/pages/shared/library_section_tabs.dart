@@ -1661,7 +1661,7 @@ class _SectionTabMoreButton extends StatelessWidget {
     final Color color = apple
         ? appleColorsOf(context).secondaryLabel
         : Theme.of(context).colorScheme.onSurfaceVariant;
-    return Tooltip(
+    return FushiTooltip(
       message: t.common_more_actions,
       child: Semantics(
         button: true,

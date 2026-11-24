@@ -33,6 +33,8 @@ import 'package:fushi_engine/privacy/media_lock.dart';
 import 'package:fushi_engine/privacy/media_nsfw.dart';
 import 'package:fushi_engine/privacy/media_privacy.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiDividerControl;
 
 /// 作品隐私分级（有序：后者蕴含前者）。
 enum MediaPrivacyLevel {
@@ -444,7 +446,7 @@ class _MediaPrivacyDialogState extends State<MediaPrivacyDialog> {
               'media-privacy-inherited-note',
             ),
             const SizedBox(height: 12),
-            const Divider(height: 1),
+            const FushiDividerControl(height: 1),
             const SizedBox(height: 4),
             FushiSwitchListTile(
               key: const ValueKey<String>('media-nsfw-switch'),

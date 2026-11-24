@@ -13,6 +13,8 @@ import 'dart:async';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiMenuAnchor;
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -469,7 +471,7 @@ class _MusicVolumeButtonState extends State<MusicVolumeButton> {
       context,
     ).read(appProvider);
     final double volume = _dragging ?? appModel.musicVolume;
-    return MenuAnchor(
+    return FushiMenuAnchor(
       controller: _menu,
       alignmentOffset: const Offset(-96, 8),
       onOpen: () => widget.onOpenChanged?.call(true),

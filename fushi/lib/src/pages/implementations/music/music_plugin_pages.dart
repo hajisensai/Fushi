@@ -18,6 +18,9 @@ import 'package:fushi_core/fushi_core.dart'
 import 'package:fushi_music/fushi_music.dart';
 import 'package:intl/intl.dart' show Intl, NumberFormat;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
 
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
@@ -2316,7 +2319,11 @@ class _MorphCard extends StatelessWidget {
   Widget build(BuildContext context) => FushiHoverLift(
     scale: kMusicHoverLiftScale,
     builder: (BuildContext context, bool hovering) {
-      final BorderRadius r = hovering ? hoverRadius : radius;
+      // Apple：圆角恒为分组卡圆角（悬停收紧圆角是 M3E 的形变语言，Apple 下只留
+      // 悬停抬升）。
+      final BorderRadius r = isGlassDesign(context)
+          ? FushiAppleMetrics.of(context).groupBorderRadius
+          : (hovering ? hoverRadius : radius);
       final Widget content = Material(
         type: MaterialType.transparency,
         child: InkWell(onTap: onTap, child: child),
@@ -2450,7 +2457,16 @@ class _RecommendHero extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Apple：大卡底色是 secondaryGroupedBackground 分组色、文字 label /
+    // secondaryLabel，不铺 M3E 的 primaryContainer tonal 大色块。
+    final bool apple = isGlassDesign(context);
+    final FushiAppleColors? appleColors = apple ? appleColorsOf(context) : null;
     final ColorScheme cs = Theme.of(context).colorScheme;
+    final Color cardColor =
+        appleColors?.secondaryGroupedBackground ?? cs.primaryContainer;
+    final Color onCard = appleColors?.label ?? cs.onPrimaryContainer;
+    final Color onCardMuted =
+        appleColors?.secondaryLabel ?? cs.onPrimaryContainer;
     final MusicPluginHomeSection? sec = section;
     final MusicPluginPlaylist? first = playlistMode
         ? sec?.items.whereType<MusicPluginPlaylist>().firstOrNull
@@ -2467,7 +2483,7 @@ class _RecommendHero extends ConsumerWidget {
     final TextStyle titleStyle = context.fushiType.displaySmall.copyWith(
       fontWeight: FontWeight.w900,
       height: 1.05,
-      color: cs.onPrimaryContainer,
+      color: onCard,
     );
     // 封面墙（用户 2026-10-29：「纯色块有点无聊，用封面覆盖点」）：这一段的
     // 封面斜铺在卡片右侧，往左渐隐进 primaryContainer，标题区保持可读。
@@ -2484,7 +2500,7 @@ class _RecommendHero extends ConsumerWidget {
     }.toList();
     final Widget? background = wall.isEmpty
         ? null
-        : _CoverWall(covers: wall, tint: cs.primaryContainer);
+        : _CoverWall(covers: wall, tint: cardColor);
     final Widget buttons = playlistMode
         ? FushiFilledButton.icon(
             onPressed: first == null
@@ -2527,7 +2543,7 @@ class _RecommendHero extends ConsumerWidget {
       );
     }
     return _MorphCard(
-      color: cs.primaryContainer,
+      color: cardColor,
       radius: const BorderRadius.only(
         topLeft: Radius.circular(40),
         topRight: Radius.circular(40),
@@ -2561,8 +2577,8 @@ class _RecommendHero extends ConsumerWidget {
                   Text(
                     eyebrow,
                     style: context.fushiType.labelLarge.copyWith(
-                      color: cs.onPrimaryContainer.withValues(alpha: 0.8),
-                      letterSpacing: 0.8,
+                      color: onCardMuted.withValues(alpha: apple ? 1 : 0.8),
+                      letterSpacing: apple ? 0 : 0.8,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -2572,7 +2588,7 @@ class _RecommendHero extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                     style: titleStyle.copyWith(
                       shadows: <Shadow>[
-                        Shadow(color: cs.primaryContainer, blurRadius: 16),
+                        Shadow(color: cardColor, blurRadius: 16),
                       ],
                     ),
                   ),
@@ -2583,7 +2599,7 @@ class _RecommendHero extends ConsumerWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: context.fushiType.bodyMedium.copyWith(
-                        color: cs.onPrimaryContainer.withValues(alpha: 0.85),
+                        color: onCardMuted.withValues(alpha: apple ? 1 : 0.85),
                       ),
                     ),
                   ],
@@ -2824,6 +2840,27 @@ class _RankBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool top = rank == 1;
+    if (isGlassDesign(context)) {
+      // Apple：名次是圆形数字徽（第一名强调色实底，其余 tertiaryFill），不用
+      // M3E 的饼干多边形 / tertiary 容器色。
+      final FushiAppleColors apple = appleColorsOf(context);
+      return Container(
+        width: 22,
+        height: 22,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: top ? apple.accent : apple.tertiaryFill,
+          shape: BoxShape.circle,
+        ),
+        child: Text(
+          '$rank',
+          style: context.fushiType.labelSmall.copyWith(
+            fontWeight: FontWeight.w700,
+            color: top ? apple.onAccent : apple.label,
+          ),
+        ),
+      );
+    }
     return Container(
       width: 22,
       height: 22,
