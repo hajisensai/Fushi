@@ -398,7 +398,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     _finish((cover: file, candidate: _volumeSeries!.forVolume(cover)));
   }
 
-  /// 弹窗唯一的「选中」出口。BUG-5371：`Navigator.pop(file)` 按实参推断类型，传错
+  /// 弹窗唯一的「选中」出口。BUG-5379：`Navigator.pop(file)` 按实参推断类型，传错
   /// 类型编译期不报、运行时在 pop 里抛类型错误（弹窗卡在转圈、导航栈半弹出）；所有
   /// 出口都经这里，结果类型由签名钉死。
   void _finish(BookCoverScrapeSelection selection) =>

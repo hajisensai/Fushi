@@ -17,13 +17,13 @@ import 'helpers/observe_capture.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
-/// BUG-5371 真 app 复测：「在线匹配封面」→ MangaBaka（真网络）→ 系列卷封面网格 →
+/// BUG-5379 真 app 复测：「在线匹配封面」→ MangaBaka（真网络）→ 系列卷封面网格 →
 /// 选一卷，弹窗必须关闭并返回 (封面文件, 候选)。修复前弹窗卡在转圈、Navigator.pop
 /// 抛类型错误。控件经其回调驱动（不做坐标点击）。
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('BUG-5371 MangaBaka 选卷封面后弹窗关闭并返回封面', (WidgetTester tester) async {
+  testWidgets('BUG-5379 MangaBaka 选卷封面后弹窗关闭并返回封面', (WidgetTester tester) async {
     UpdateChecker.disableAutoCheckForTesting = true;
     final List<String> errors = <String>[];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;

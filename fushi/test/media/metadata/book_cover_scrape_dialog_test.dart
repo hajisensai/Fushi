@@ -451,7 +451,7 @@ void main() {
     };
   }
 
-  testWidgets('BUG-5371 点卷封面：弹窗关闭并返回该卷封面 + 系列资料（不卡转圈）', (
+  testWidgets('BUG-5379 点卷封面：弹窗关闭并返回该卷封面 + 系列资料（不卡转圈）', (
     WidgetTester tester,
   ) async {
     final List<String> downloaded = <String>[];
@@ -478,7 +478,7 @@ void main() {
     expect(selection.candidate.volume, '2');
   });
 
-  testWidgets('BUG-5371「使用系列封面」：弹窗关闭并返回系列候选', (WidgetTester tester) async {
+  testWidgets('BUG-5379「使用系列封面」：弹窗关闭并返回系列候选', (WidgetTester tester) async {
     final List<String> downloaded = <String>[];
     final BookCoverScrapeSelection? Function() result = await openDialogRoute(
       tester,

@@ -1,4 +1,4 @@
-## BUG-5365 · 导航速览里已读完的书写成 0%，同一本书各卡百分比不一致
+## BUG-5378 · 导航速览里已读完的书写成 0%，同一本书各卡百分比不一致
 - **报告**：2026-11-23（用户：书库页悬停「书」导航的速览卡，「最近」里一本已标读完的书显示 0% 进度；另一本书速览写 4%、书架「继续阅读」色块写 3%。）
 - **真实性**：✅ 真 bug，两个根因都是「卡面进度」没有唯一口径，各消费方自己算：
   - 读完写 0%：速览书条目 `fushi/lib/src/pages/implementations/home_nav_peek.dart` `_loadBooks` → `entryOf` 直接按 `position / duration` 画进度、写副行百分比，完全不看读完标记（`completedEpubBookKeysProvider` 已读出来，但只喂给续读候选筛选）。手动标读完、位置仍停在开头的书就写成 0%、空进度条；书架卡（`reader_history/card_widgets.part.dart` `_itemReadFraction`）则是读完恒满格、写「已读完」。
