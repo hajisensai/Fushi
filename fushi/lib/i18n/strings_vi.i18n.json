@@ -3958,7 +3958,7 @@
   "game_capture_workbench": "Không gian thu thập",
   "game_capture_workbench_tab": "Không gian chụp",
   "game_captured_lines": "Dòng đã thu thập",
-  "game_card_line_unavailable": "This line is no longer in the current session; no card was made",
+  "game_card_line_unavailable": "This line is no longer available (it left the current session, or its screenshot no longer matches it); no card was made",
   "game_card_mapping_missing": "Ánh xạ trường Anki thiếu token thẻ trò chơi",
   "game_card_mining_failed": "Card mining failed: $reason",
   "game_card_sentence_audio_missing": "Thẻ được tạo mà không có âm thanh câu; không có âm thanh dòng khác được thay thế.",

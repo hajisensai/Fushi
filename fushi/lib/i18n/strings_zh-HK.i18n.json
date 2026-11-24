@@ -3958,7 +3958,7 @@
   "game_capture_workbench": "捕獲工作台",
   "game_capture_workbench_tab": "工作台",
   "game_captured_lines": "已捕獲台詞",
-  "game_card_line_unavailable": "This line is no longer in the current session; no card was made",
+  "game_card_line_unavailable": "This line is no longer available (it left the current session, or its screenshot no longer matches it); no card was made",
   "game_card_mapping_missing": "Anki 字段映射缺少遊戲卡片字段",
   "game_card_mining_failed": "Card mining failed: $reason",
   "game_card_sentence_audio_missing": "卡片已創建，但沒有句子音頻；未借用其他台詞的音頻。",

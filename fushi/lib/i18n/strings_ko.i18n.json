@@ -3958,7 +3958,7 @@
   "game_capture_workbench": "캡처 작업 공간",
   "game_capture_workbench_tab": "캡처 작업 공간",
   "game_captured_lines": "캡처된 대사",
-  "game_card_line_unavailable": "This line is no longer in the current session; no card was made",
+  "game_card_line_unavailable": "This line is no longer available (it left the current session, or its screenshot no longer matches it); no card was made",
   "game_card_mapping_missing": "Anki 필드 매핑에 게임 카드 토큰이 없습니다",
   "game_card_mining_failed": "Card mining failed: $reason",
   "game_card_sentence_audio_missing": "문장 오디오 없이 카드가 생성되었습니다. 다른 대사의 오디오로 대체되지 않았습니다.",

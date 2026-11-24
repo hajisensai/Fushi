@@ -3958,7 +3958,7 @@
   "game_capture_workbench": "Aufnahme-Arbeitsbereich",
   "game_capture_workbench_tab": "Erfassungsarbeitsbereich",
   "game_captured_lines": "Aufgenommene Zeilen",
-  "game_card_line_unavailable": "This line is no longer in the current session; no card was made",
+  "game_card_line_unavailable": "This line is no longer available (it left the current session, or its screenshot no longer matches it); no card was made",
   "game_card_mapping_missing": "Anki-Feldzuordnungen fehlen Spielkarten-Tokens",
   "game_card_mining_failed": "Card mining failed: $reason",
   "game_card_sentence_audio_missing": "Die Karte wurde ohne Satzaudio erstellt; Audio einer anderen Zeile wurde nicht ersetzt.",

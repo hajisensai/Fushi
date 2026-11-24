@@ -3958,7 +3958,7 @@
   "game_capture_workbench": "Espace de capture",
   "game_capture_workbench_tab": "Espace de capture",
   "game_captured_lines": "Lignes capturées",
-  "game_card_line_unavailable": "This line is no longer in the current session; no card was made",
+  "game_card_line_unavailable": "This line is no longer available (it left the current session, or its screenshot no longer matches it); no card was made",
   "game_card_mapping_missing": "Les mappages de champs Anki manquent des jetons de carte de jeu",
   "game_card_mining_failed": "Card mining failed: $reason",
   "game_card_sentence_audio_missing": "La carte a été créée sans audio de phrase ; aucun audio d'une autre ligne n'a été substitué.",

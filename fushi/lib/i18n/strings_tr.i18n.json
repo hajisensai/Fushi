@@ -3958,7 +3958,7 @@
   "game_capture_workbench": "Yakalama çalışma alanı",
   "game_capture_workbench_tab": "Yakalama çalışma alanı",
   "game_captured_lines": "Yakalanan satırlar",
-  "game_card_line_unavailable": "This line is no longer in the current session; no card was made",
+  "game_card_line_unavailable": "This line is no longer available (it left the current session, or its screenshot no longer matches it); no card was made",
   "game_card_mapping_missing": "Anki alan eşlemelerinde oyun kartı belirteçleri eksik",
   "game_card_mining_failed": "Card mining failed: $reason",
   "game_card_sentence_audio_missing": "Kart cümle sesi olmadan oluşturuldu; başka bir satırın sesi kullanılmadı.",
