@@ -28,6 +28,7 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart'
     show isSystemOcrModelUnavailableFailure;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/media/manga/manga_page_identity.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/utils/misc/atomic_text_file.dart'
     show readAtomicallyWrittenTextFile;
@@ -123,11 +124,12 @@ class MangaOcrRunningJob {
     );
   }
 
-  /// 读者翻到了 [pageIndex]：任务下一页先跑它，再从它往后接着跑。任务不支持
+  /// 读者翻到了身份为 [pageId] 的页（`mangaPageId`，不是阅读器页号——任务的页表
+  /// 是它自己枚举的，页号对不上）：任务下一页先跑它，再从它往后接着跑。任务不支持
   /// 改道（[MangaOcrBackgroundJob.focus] 为 null）或已结束时什么都不做。
-  void focusPage(int pageIndex) {
+  void focusPage(String pageId) {
     if (_ended) return;
-    job.focus?.request(pageIndex);
+    job.focus?.request(pageId);
   }
 
   bool ownsSession(MangaReaderSession session) =>
@@ -831,10 +833,45 @@ class MangaOcrJobRegistry {
     // 落盘的是并进 PDF 文字层之后的那份：阅读页拿 result 刷新显示，必须和磁盘一致。
     final MokuroPayload written = await runExclusiveOnMangaJson<MokuroPayload>(
       target,
-      () => writeMangaJsonAtomically(target, payload),
+      () async => writeMangaJsonAtomically(
+        target,
+        await _alignToVolume(target, payload),
+      ),
     );
     running._result = written;
     follower?.onPersisted(target, written);
     return event;
+  }
+
+  /// 整卷结果按页身份并进书的页表（[alignMangaOcrResult]）：页表与页序以书的
+  /// manga.json 为准。执行器按 `enumerateMangaPages` 自己枚举目录，目录里多一张
+  /// 不在页表里的图时它的结果多一页、后面每页错开一位；整份替换会把这张图塞进
+  /// 页表，阅读器的页数随之改变（反馈 -5BJ11GqOk）。书根 manga.json 还不存在时
+  /// （没有页表可对）结果原样落盘。
+  Future<MokuroPayload> _alignToVolume(
+    String mangaJsonPath,
+    MokuroPayload result,
+  ) async {
+    final File file = File(mangaJsonPath);
+    if (!await file.exists()) return result;
+    final MokuroPayload volume = await parseMangaJsonOffUi(
+      await readAtomicallyWrittenTextFile(file),
+    );
+    if (volume.images.isEmpty) return result;
+    final MangaOcrAlignment aligned = alignMangaOcrResult(
+      volume: volume,
+      result: result,
+    );
+    if (aligned.dropped > 0 || aligned.matched < volume.images.length) {
+      ErrorLogService.instance.log(
+        'MangaOcrJobRegistry.alignToVolume',
+        'OCR page table differs from the volume: '
+            'volume=${volume.images.length} result=${result.images.length} '
+            'matched=${aligned.matched} dropped=${aligned.dropped} '
+            'path=$mangaJsonPath',
+        StackTrace.current,
+      );
+    }
+    return aligned.payload;
   }
 }

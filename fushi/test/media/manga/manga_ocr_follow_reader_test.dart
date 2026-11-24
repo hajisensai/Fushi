@@ -149,25 +149,25 @@ void main() {
   group('MangaOcrPageFocus', () {
     test('take 取走最近一次请求，监听者收到每一次', () {
       final MangaOcrPageFocus focus = MangaOcrPageFocus();
-      final List<int> heard = <int>[];
-      void listener(int page) => heard.add(page);
+      final List<String> heard = <String>[];
+      void listener(String page) => heard.add(page);
       focus.addListener(listener);
       expect(focus.take(), isNull);
       focus
-        ..request(2)
-        ..request(4)
-        ..request(-1);
-      expect(focus.take(), 4);
+        ..request('images/p2.jpg')
+        ..request('images/p4.jpg')
+        ..request('');
+      expect(focus.take(), 'images/p4.jpg');
       expect(focus.take(), isNull);
       focus.removeListener(listener);
-      focus.request(6);
-      expect(heard, <int>[2, 4]);
+      focus.request('images/p6.jpg');
+      expect(heard, <String>['images/p2.jpg', 'images/p4.jpg']);
     });
   });
 
   test('整卷流水线：处理中途读者翻页，下一页就跑读者那页', () async {
     final List<int> loaded = <int>[];
-    final MangaOcrPageFocus focus = MangaOcrPageFocus();
+    final List<int?> focus = <int?>[];
     await MangaOcrPipeline(
       detector: _EmptyDetector(),
       recognizer: _NeverRecognizer(),
@@ -177,10 +177,10 @@ void main() {
       loadPage: (int pageIndex) async {
         loaded.add(pageIndex);
         // 第 0 页识别期间读者翻到了第 4 页。
-        if (pageIndex == 0) focus.request(4);
+        if (pageIndex == 0) focus.add(4);
         return img.Image(width: 10, height: 10);
       },
-      takeFocus: focus.take,
+      takeFocus: () => focus.isEmpty ? null : focus.removeLast(),
     );
     expect(loaded, <int>[0, 4, 5, 1, 2, 3]);
   });

@@ -184,8 +184,9 @@ abstract interface class MangaOcrVolumeJob {
   /// 请求取消（页/块边界生效，幂等）。立即返回，不等任务停下。
   void cancel();
 
-  /// 读者翻到了 [pageIndex]：下一页先跑它，再从它往后接着跑（页边界生效）。
-  void focus(int pageIndex);
+  /// 读者翻到了身份为 [pageId] 的页（`mangaPageId`）：下一页先跑它，再从它往后
+  /// 接着跑（页边界生效）。不在任务页表里的身份忽略。
+  void focus(String pageId);
 }
 
 /// 整卷任务 runner 接口（生产 = isolate；测试 = 进程内 fake）。
@@ -273,8 +274,8 @@ const String _kJobCancelMessage = 'cancel';
 
 /// 主 isolate → 整卷 isolate：读者翻到了这一页（[MangaOcrPageFocus]）。
 class _JobFocusMessage {
-  const _JobFocusMessage(this.pageIndex);
-  final int pageIndex;
+  const _JobFocusMessage(this.pageId);
+  final String pageId;
 }
 
 class _JobIsolateArgs {
@@ -727,12 +728,12 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
   final ReceivePort control = ReceivePort();
   final OcrCancelToken cancelToken = OcrCancelToken();
   final _IsolateOcrEngine engine = _IsolateOcrEngine();
-  int? pendingFocus;
+  String? pendingFocus;
   control.listen((Object? message) {
     if (message == _kJobCancelMessage) {
       cancelToken.cancel();
     } else if (message is _JobFocusMessage) {
-      pendingFocus = message.pageIndex;
+      pendingFocus = message.pageId;
     }
   });
   args.events.send(_JobControlPortMessage(control.sendPort));
@@ -790,7 +791,7 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
         args.events.send(_JobProgressMessage(done, total, pageIndex));
       },
       takeFocus: () {
-        final int? focus = pendingFocus;
+        final String? focus = pendingFocus;
         pendingFocus = null;
         return focus;
       },
@@ -1431,8 +1432,8 @@ class _IsolateVolumeJob implements MangaOcrVolumeJob {
   SendPort? _control;
   bool _cancelRequested = false;
 
-  /// 控制端口到手前收到的焦点页（isolate 还在起），到手后补发。
-  int? _pendingFocus;
+  /// 控制端口到手前收到的焦点页身份（isolate 还在起），到手后补发。
+  String? _pendingFocus;
 
   @override
   Future<String> get result => _completer.future;
@@ -1471,7 +1472,7 @@ class _IsolateVolumeJob implements MangaOcrVolumeJob {
       if (_cancelRequested) {
         message.controlPort.send(_kJobCancelMessage);
       }
-      final int? focus = _pendingFocus;
+      final String? focus = _pendingFocus;
       _pendingFocus = null;
       if (focus != null) message.controlPort.send(_JobFocusMessage(focus));
       return;
@@ -1529,12 +1530,12 @@ class _IsolateVolumeJob implements MangaOcrVolumeJob {
   }
 
   @override
-  void focus(int pageIndex) {
+  void focus(String pageId) {
     final SendPort? control = _control;
     if (control == null) {
-      _pendingFocus = pageIndex;
+      _pendingFocus = pageId;
     } else {
-      control.send(_JobFocusMessage(pageIndex));
+      control.send(_JobFocusMessage(pageId));
     }
   }
 }
@@ -1937,7 +1938,7 @@ class MangaOcrServiceImpl
     bool cancelled = false;
     int lastTotal = 0;
     MangaOcrAcceleration? acceleration;
-    void forwardFocus(int pageIndex) => job?.focus(pageIndex);
+    void forwardFocus(String pageId) => job?.focus(pageId);
 
     controller.onListen = () {
       unawaited(() async {
@@ -1977,7 +1978,7 @@ class MangaOcrServiceImpl
           );
           if (focus != null) {
             // 模型检查期间读者已翻过页：先补一次，之后每次翻页实时转发。
-            final int? pending = focus.take();
+            final String? pending = focus.take();
             if (pending != null) job!.focus(pending);
             focus.addListener(forwardFocus);
           }
