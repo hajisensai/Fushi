@@ -35,6 +35,7 @@ import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseWorkToken;
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
 
@@ -65,13 +66,58 @@ HttpClient createAppHttpClient({
 /// [configure] 在包装前改装底层 [HttpClient]（例如联网搜索抓页换 `connectionFactory`
 /// 按已校验地址建连）：改装仍从装好代理与连接超时的 client 出发，调用方不必另起裸
 /// `IOClient(`。
+///
+/// 返回的 client 在后台写库工作里（[DatabaseWorkToken.current] 非空）发出的请求自动
+/// 绑上那份工作的取消信号：库开始关（备份恢复、合并导入、数据根迁移、退出）时请求被
+/// 中止（抛 `http.RequestAbortedException`），刮削 / 入库 / 封面下载不再拖着关库等一次
+/// 慢网络往返（BUG-5387 审查遗留）。不在后台工作里的请求逐字不变。
 http.Client createAppHttpIoClient({
   Duration? connectionTimeout = kAppHttpConnectionTimeout,
   void Function(HttpClient client)? configure,
-}) => IOClient(
+}) => DatabaseWorkAwareIoClient(
   createAppHttpClient(connectionTimeout: connectionTimeout)
     .._configureWith(configure),
 );
+
+/// [createAppHttpIoClient] 的实现：在后台写库工作里发的请求换成可中止请求，中止触发器
+/// 是那份工作的 [DatabaseWorkToken.cancelled]。调用方已自带中止触发器的请求原样发出。
+class DatabaseWorkAwareIoClient extends IOClient {
+  DatabaseWorkAwareIoClient([super.inner]);
+
+  @override
+  Future<IOStreamedResponse> send(http.BaseRequest request) =>
+      super.send(abortableInCurrentDatabaseWork(request));
+}
+
+/// 当前 Zone 在后台写库工作里时，把 [request] 换成以那份工作取消信号为触发器的
+/// [http.AbortableStreamedRequest]（方法、地址、头、正文、重定向 / 长连接设置原样
+/// 搬过去）；不在工作里、或请求已自带中止触发器时原样返回。
+http.BaseRequest abortableInCurrentDatabaseWork(http.BaseRequest request) {
+  final DatabaseWorkToken? work = DatabaseWorkToken.current;
+  if (work == null) return request;
+  if (request case http.Abortable(abortTrigger: final Future<void> _)) {
+    return request;
+  }
+  // 先 finalize：有的请求（multipart）在 finalize 里才写定 content-type / 长度。
+  final http.ByteStream body = request.finalize();
+  final http.AbortableStreamedRequest out = http.AbortableStreamedRequest(
+    request.method,
+    request.url,
+    abortTrigger: work.cancelled,
+  );
+  out.headers.addAll(request.headers);
+  out.contentLength = request.contentLength;
+  out.followRedirects = request.followRedirects;
+  out.maxRedirects = request.maxRedirects;
+  out.persistentConnection = request.persistentConnection;
+  body.listen(
+    out.sink.add,
+    onError: out.sink.addError,
+    onDone: out.sink.close,
+    cancelOnError: true,
+  );
+  return out;
+}
 
 extension on HttpClient {
   void _configureWith(void Function(HttpClient client)? configure) =>

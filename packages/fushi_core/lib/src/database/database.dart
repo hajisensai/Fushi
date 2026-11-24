@@ -1272,12 +1272,20 @@ class FushiDatabase extends _$FushiDatabase
   /// while the separate `:popup` process passes `false` so it backs off on an
   /// IOERR instead of racing the main process to delete the same sidecar.
   FushiDatabase(String dbDirectory, {bool isMainProcess = true})
-    : this._opened(dbDirectory, isMainProcess, _OpenedExecutorRef());
+    : this._opened(
+        dbDirectory,
+        isMainProcess,
+        _OpenedExecutorRef(),
+        DatabaseBackgroundWork(),
+      );
 
+  // 每个库实例自带一份 [DatabaseBackgroundWork]，拦截器绑在它上面：库封口（[close]）后
+  // 发给**这个**实例的 SQL 一律被拦下，不分登记与否（BUG-5387 审查遗留）。
   FushiDatabase._opened(
     String dbDirectory,
     bool isMainProcess,
     _OpenedExecutorRef ref,
+    this.backgroundWork,
   ) : _isMainProcess = isMainProcess,
       _openedRef = ref,
       super(
@@ -1285,43 +1293,50 @@ class FushiDatabase extends _$FushiDatabase
           dbDirectory,
           isMainProcess: isMainProcess,
           ref: ref,
-        ).interceptWith(databaseWorkInterceptor),
+        ).interceptWith(DatabaseWorkInterceptor(backgroundWork)),
       );
 
   /// Opens a specific `.db` FILE (not a directory). Backup MERGE import
   /// (TODO-888) uses this to migrate an extracted backup DB to the current
   /// schema before merging it into the live DB.
   FushiDatabase.atFile(String dbFilePath, {bool isMainProcess = true})
-    : _isMainProcess = isMainProcess,
-      _openedRef = null,
-      super(
-        _openDbFile(
-          dbFilePath,
-          isMainProcess: isMainProcess,
-        ).interceptWith(databaseWorkInterceptor),
+    : this._intercepted(
+        _openDbFile(dbFilePath, isMainProcess: isMainProcess),
+        isMainProcess,
+        DatabaseBackgroundWork(),
       );
 
   FushiDatabase.forTesting(QueryExecutor e)
-    : _isMainProcess = true,
+    : this._intercepted(e, true, DatabaseBackgroundWork());
+
+  FushiDatabase._intercepted(
+    QueryExecutor executor,
+    bool isMainProcess,
+    this.backgroundWork,
+  ) : _isMainProcess = isMainProcess,
       _openedRef = null,
-      super(e.interceptWith(databaseWorkInterceptor));
+      super(executor.interceptWith(DatabaseWorkInterceptor(backgroundWork)));
 
   /// 在**另一个 isolate** 里接上同一个库：[connection] 来自
   /// [backgroundConnection]（`DriftIsolate.connect()`）。语句与事务都经同一个 drift
   /// 服务端串行（与本库原连接同一把 sqlite 连接，不另开库），写入的表更新会通知回
   /// 其它连接上的 stream 查询。库早已由原连接开好、迁移跑完，这里不会再跑迁移。
   FushiDatabase.shared(DatabaseConnection connection)
+    : this._sharedWith(connection, DatabaseBackgroundWork());
+
+  FushiDatabase._sharedWith(DatabaseConnection connection, this.backgroundWork)
     : _isMainProcess = false,
       _openedRef = null,
-      super(connection.interceptWith(databaseWorkInterceptor));
+      super(connection.interceptWith(DatabaseWorkInterceptor(backgroundWork)));
 
   final bool _isMainProcess;
 
   /// 本库实例上的后台写库工作（换库的生命周期边界，见 [DatabaseBackgroundWork]）。
   ///
-  /// 扫描、刮削、哈希升级、封面回填、响度测量等后台写手一律经
-  /// [runBackgroundWork] 跑；[close] 先取消并等它们全部退出再关连接。
-  final DatabaseBackgroundWork backgroundWork = DatabaseBackgroundWork();
+  /// 扫描、刮削、哈希升级、封面回填、响度测量、下载入库、媒体服务器 / 在线源入库等
+  /// 后台写手一律经 [runBackgroundWork] 跑；[close] 先封口（此后发给本库的 SQL 不论
+  /// 谁发一律拦下），再取消并等登记的工作全部退出，最后关连接。
+  final DatabaseBackgroundWork backgroundWork;
 
   /// 见 [DatabaseBackgroundWork.run]。
   Future<T> runBackgroundWork<T>(
@@ -1339,8 +1354,13 @@ class FushiDatabase extends _$FushiDatabase
     ),
   );
 
+  /// 关库：先封口——此后发给本库的 SQL 不论出自哪里（登记过的后台工作、漏登记的写手、
+  /// 晚到的异步续体）一律抛 [DatabaseWorkCancelledException]，不会再撞上已关的连接、
+  /// 也不会有半截事务提交；再取消并等登记的后台工作退出（它们手里的 FFmpeg 子进程、
+  /// 网络请求同时被中断），最后关连接。
   @override
   Future<void> close() async {
+    backgroundWork.seal();
     await quiesceBackgroundWork();
     await super.close();
   }

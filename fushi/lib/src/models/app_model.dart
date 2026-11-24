@@ -2059,7 +2059,10 @@ class AppModel
         videoLibraryAutoUpdate: () => prefsRepo.videoLibraryAutoUpdate,
         notifyEnabled: feed.isKindEnabled,
       ),
-      probes: <UpdateFeedKind, UpdateProbe>{
+      // BUG-5387 审查遗留：后台更新探针都是后台写手（联网查新集 / 新章节并写库、
+      // 投递更新中心），统一登记成当前库的后台工作——换库时关库等它们停稳，在途
+      // 请求随关库中断。
+      probes: _probesAsDatabaseWork(<UpdateFeedKind, UpdateProbe>{
         UpdateFeedKind.videoEpisode: () => runVideoLibraryUpdateProbe(
           database: database,
           feed: feed,
@@ -2087,7 +2090,7 @@ class AppModel
           UpdateFeedKind.animeExtension,
           MihonMediaKind.anime,
         ),
-      },
+      }),
       // 自动更新开着时：扩展两个域在启动这一轮无视 24 小时间隔照查——自动安装
       // 只在「刚启动、还没碰过在线源」时做，被推迟的更新要在下次启动兑现。
       dueOnStart: mihonExtensionAutoUpdate
@@ -2108,6 +2111,18 @@ class AppModel
     _usageHeartbeat = heartbeat;
     heartbeat.start();
   }
+
+  /// 把每个更新探针包成「当前库的后台工作」（见 [FushiDatabase.runBackgroundWork]）。
+  /// 每次跑探针时才取 [_database]：换过库后跑的探针登记在新库上。
+  Map<UpdateFeedKind, UpdateProbe> _probesAsDatabaseWork(
+    Map<UpdateFeedKind, UpdateProbe> probes,
+  ) => <UpdateFeedKind, UpdateProbe>{
+    for (final MapEntry<UpdateFeedKind, UpdateProbe> entry in probes.entries)
+      entry.key: () => _database.runBackgroundWork<void>(
+        'updates.${entry.key.name}',
+        (DatabaseWorkToken _) => entry.value(),
+      ),
+  };
 
   Future<void> stopUpdateChecks() async {
     final UpdateCheckScheduler? scheduler = _updateCheckScheduler;
@@ -9090,9 +9105,19 @@ class AppModel
       configProvider: () =>
           effectiveTorrentConfig(prefsRepo.qbConnectionConfig),
       importer: buildAnimeDownloadImporter(database),
-      bookImporter: _importDownloadedBooks,
+      // BUG-5387 审查遗留：下载完成后的入库都是后台写手，一律登记成当前库的后台工作
+      // ——换库时关库等它们停稳，它们的 SQL / 网络 / 抽帧随关库中断。
+      bookImporter: (AnimeDownloadPlan plan, List<String> paths) =>
+          _database.runBackgroundWork<int?>(
+            'torrent.bookImport',
+            (DatabaseWorkToken _) => _importDownloadedBooks(plan, paths),
+          ),
       // 发现页新内容类型（有声书/游戏）：整包直通发现导入执行器。
-      discoveryImporter: _importDiscoveryDownload,
+      discoveryImporter: (AnimeDownloadPlan plan, List<String> paths) =>
+          _database.runBackgroundWork<DiscoveryImportOutcome?>(
+            'torrent.discoveryImport',
+            (DatabaseWorkToken _) => _importDiscoveryDownload(plan, paths),
+          ),
       // BUG-1206：字幕在下载完成时按包内真实文件名反查补取，不在选种时预下。
       subtitleResolver: JimakuPlanSubtitleResolver(
         apiKeyProvider: () => prefsRepo.jimakuApiKey,
@@ -10462,6 +10487,9 @@ class AppModel
           policy: const DuplicatePolicy.skip(),
         );
         imported++;
+      } on DatabaseWorkCancelledException {
+        // 换库 / 关库中断（BUG-5387 审查遗留）不是单本失败：整批停下，计划留待重放。
+        rethrow;
       } catch (_) {
         // 单本导入失败跳过，不影响其它书与计划状态（有成功即算入库）。
       }

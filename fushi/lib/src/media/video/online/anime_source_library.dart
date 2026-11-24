@@ -136,9 +136,20 @@ class AnimeSourceLibrary {
   /// [addToLibrary] 的本体：返回这次新加的集（后台库更新探针据此投递新集提醒，
   /// 见 `video_library_update_probe.dart`）。探针是被动刷新，[userIntent] 保持
   /// false——用户删掉的合集不被它复活。
+  ///
+  /// 登记成库的后台工作（BUG-5387 审查遗留）：入库要联网取封面、逐集写行，探针在后台
+  /// 跑——换库时关库等它停稳，它的 SQL 与封面请求随关库中断。
   Future<List<RemoteVideoInfo>> addMissing(
     AnimeSourceVideoClient client, {
     bool userIntent = false,
+  }) => database.runBackgroundWork<List<RemoteVideoInfo>>(
+    'animeSource.addToLibrary',
+    (DatabaseWorkToken _) => _addMissingInWork(client, userIntent: userIntent),
+  );
+
+  Future<List<RemoteVideoInfo>> _addMissingInWork(
+    AnimeSourceVideoClient client, {
+    required bool userIntent,
   }) async {
     final RemoteCollectionAdoptionService adoption =
         RemoteCollectionAdoptionService(database);
@@ -197,7 +208,18 @@ class AnimeSourceLibrary {
   /// 下载完成：把 [file] 登记成本地视频行（同 bookUid 覆盖在线行），归进作品合集，
   /// 补封面与默认字幕，并把在线播放留下的断点接过来（见 [onlinePositionReader]）。
   /// 下载是用户亲手发起的：用户删过的作品合集就此重建（BUG-5014）。
+  ///
+  /// 下载完成后的登记是后台写手（取默认字幕要联网），同样登记成库的后台工作。
   Future<void> registerDownloaded(
+    AnimeSourceVideoClient client,
+    RemoteVideoInfo info,
+    File file,
+  ) => database.runBackgroundWork<void>(
+    'animeSource.registerDownloaded',
+    (DatabaseWorkToken _) => _registerDownloadedInWork(client, info, file),
+  );
+
+  Future<void> _registerDownloadedInWork(
     AnimeSourceVideoClient client,
     RemoteVideoInfo info,
     File file,

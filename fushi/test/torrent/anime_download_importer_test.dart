@@ -10,6 +10,7 @@
 /// 幂等判据只能是 `createdEpisodeUids`（本次真新建的集），不是时间窗、不是去重表。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -108,6 +109,44 @@ void main() {
 
     // AniList 绑定照旧。
     expect(col.anilistId, 42);
+  });
+
+  test('入库登记成库的后台工作：关库等它停稳，关库后的写入被拦成取消（审查遗留 #1）', () async {
+    final FushiDatabase local = FushiDatabase.forTesting(
+      NativeDatabase.memory(),
+    );
+    final Completer<void> posterRequested = Completer<void>();
+    final Completer<void> releasePoster = Completer<void>();
+    final Future<Object?> run =
+        buildAnimeDownloadImporter(
+              local,
+              httpClient: MockClient((http.Request req) async {
+                posterRequested.complete();
+                await releasePoster.future;
+                return http.Response.bytes(
+                  _fakePng,
+                  200,
+                  headers: const <String, String>{'content-type': 'image/png'},
+                );
+              }),
+              collectionCoversDirectory: tmp,
+            )(_plan(coverUrl: 'https://img.anili.st/poster.jpg'), <String>[
+              p.join('D:', 'dl', '某番剧 - 01.mkv'),
+            ])
+            .then<Object?>((Object? v) => v, onError: (Object e) => e);
+
+    await posterRequested.future;
+    expect(local.backgroundWork.inFlightLabels, <String>[
+      'torrent.animeImport',
+    ]);
+    bool closed = false;
+    final Future<void> closing = local.close().then((_) => closed = true);
+    await Future<void>.delayed(Duration.zero);
+    expect(closed, isFalse, reason: '入库还没停稳，关库不能先完成');
+
+    releasePoster.complete();
+    await closing;
+    expect(await run, isA<DatabaseWorkCancelledException>());
   });
 
   test('无海报 URL：合集 coverPath 保持空，不误写', () async {

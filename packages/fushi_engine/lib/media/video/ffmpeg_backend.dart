@@ -435,6 +435,10 @@ Map<String, String>? ffmpegChildEnvironment(List<String> args) =>
 /// `exitCode.timeout` 超时则 SIGKILL 并等进程退出后返回 `returnCode:null`。
 /// 可执行文件不存在时 `Process.start` 抛 [ProcessException]，**向上传播**。
 /// 收集的管道一律宽容 UTF-8 解码（`allowMalformed`），绝不因个别非法字节抛错。
+///
+/// 在后台写库工作里跑（[DatabaseWorkToken.current] 非空）时，库开始关（备份恢复、数据
+/// 根迁移……）就 SIGKILL 子进程、等它真正退出后返回 `returnCode:null`：关库不必等一次
+/// 抽帧 / 探测自然跑完，子进程打开的封面 / 临时文件也随之释放（BUG-5387 审查遗留）。
 Future<FfmpegRunResult> _runToolProcess(
   String executable,
   List<String> args,
@@ -446,6 +450,31 @@ Future<FfmpegRunResult> _runToolProcess(
     args,
     environment: ffmpegChildEnvironment(args),
   );
+  bool cancelled = false;
+  final void Function() unlinkCancel = DatabaseWorkToken.abortOnCancel(() {
+    cancelled = true;
+    process.kill(ProcessSignal.sigkill);
+  });
+  try {
+    return await _collectToolProcess(
+      process,
+      executable,
+      timeout,
+      streams,
+      cancelled: () => cancelled,
+    );
+  } finally {
+    unlinkCancel();
+  }
+}
+
+Future<FfmpegRunResult> _collectToolProcess(
+  Process process,
+  String executable,
+  Duration timeout,
+  _ToolOutputStreams streams, {
+  required bool Function() cancelled,
+}) async {
   Future<String> collect(Stream<List<int>> stream) =>
       stream.transform(const Utf8Decoder(allowMalformed: true)).join();
   Future<String> drain(Stream<List<int>> stream) =>
@@ -460,6 +489,14 @@ Future<FfmpegRunResult> _runToolProcess(
     final int code = await process.exitCode.timeout(timeout);
     final String out = await stdoutText;
     final String err = await stderrText;
+    if (cancelled()) {
+      return FfmpegRunResult(
+        returnCode: null,
+        output: '$kFfmpegCancelledMarker: database is closing',
+        executable: executable,
+        attemptedExecutables: <String>[executable],
+      );
+    }
     return FfmpegRunResult(
       returnCode: code,
       output: switch (streams) {

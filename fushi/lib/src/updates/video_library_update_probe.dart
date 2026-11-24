@@ -108,6 +108,9 @@ Future<int> _refreshAnimeSourceWorks(
       final List<RemoteVideoInfo> added = await library.addMissing(client);
       total += added.length;
       await _publish(database, feed, spec.anime.title, added);
+    } on DatabaseWorkCancelledException {
+      // 换库 / 关库（BUG-5387 审查遗留）：整轮停下，不当成这一部失败接着查下一部。
+      rethrow;
     } on Object catch (error) {
       debugPrint('[video-library-update] ${spec.anime.title} failed: $error');
     } finally {
@@ -147,6 +150,8 @@ Future<int> _refreshMediaServerWorks(
       );
       total += added.length;
       await _publish(database, feed, series.name, added);
+    } on DatabaseWorkCancelledException {
+      rethrow;
     } on Object catch (error) {
       debugPrint('[video-library-update] ${work.workId} failed: $error');
     }

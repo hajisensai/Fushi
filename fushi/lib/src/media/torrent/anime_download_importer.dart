@@ -66,121 +66,148 @@ buildAnimeDownloadImporter(
   Directory? collectionCoversDirectory,
 }) {
   final VideoBookRepository repo = VideoBookRepository(db);
-  return (AnimeDownloadPlan plan, List<String> videoAbsolutePaths) async {
-    if (videoAbsolutePaths.isEmpty) return null;
-    final List<String> sorted = sortVideoPathsByEpisode(videoAbsolutePaths);
-    final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
-      collectionName: plan.seriesTitle,
-      // plan JSON 与 Drift 无法做同一事务；若进程在 DB 提交后、计划 flag
-      // 回写前崩溃，重启会重放 importer。以归一化视频路径作稳定业务键并在
-      // importSplitPlaylist 的单事务内复用条目/合集，重放只补状态、不重复副作用。
-      reuseExistingPaths: true,
-      entries: <PlaylistEntry>[
-        for (final String path in sorted) PlaylistEntry(title: '', path: path),
-      ],
-    );
-
-    // BUG-1896：番剧下载是「一集一个独立任务、完成先后随机」的自动下载流水线，与
-    // 手动 playlist 导入（作者序即真相）性质不同。上面的批内排序只管本批，合集是
-    // 尾插，跨批次就散了。这里显式把**整个合集**重排成季/集序——与
-    // VideoDownloadPipelineService 同一条纪律、同一个原语，是合集顺序的唯一真相源。
-    // 与 pipeline 侧一样不吞异常：重排是入库语义的一部分，DB 真炸了就该让
-    // AnimeDownloadService 把计划标 failed，而不是留一个顺序错乱的合集装作成功。
-    await repo.reorderDownloadedCollectionEpisodes(result.collectionId);
-
-    // BUG-1417：番剧下载完成自动入库也是一次真实入库，必须进首页活动时间轴——
-    // 与对话框 / 拖拽 / 扫描首导同粒度：整本 1 条 added（title=系列名、mediaKey=
-    // 首集 uid），绝不每集一条。
-    //
-    // 幂等**只能**看 createdEpisodeUids：`reuseExistingPaths: true` 让崩溃重放
-    // （DB 已提交、计划 flag 未回写）复用既有条目与既有合集，此时一集都没新建 →
-    // 一条都不记。**不是**靠时间窗/去重表掩盖，而是让判据本身分清「真新增」与
-    // 「复用既有」；活动流表按设计是纯追加（addActivityEvent 不去重），不能也
-    // 不该在那一层兜。同系列后续批次（新集号）确有新建 → 记 1 条，这是真新增内容。
-    // best-effort：recordVideoImportActivity 内部自捕获，失败只 log 不影响入库。
-    if (result.createdEpisodeUids.isNotEmpty && result.episodeUids.isNotEmpty) {
-      await repo.recordVideoImportActivity(
-        bookUid: result.episodeUids.first,
-        title: plan.seriesTitle,
+  // BUG-5387 审查遗留：整次入库（建行 / 合集重排 / 活动事件 / 绑定 / 海报下载 / 首集
+  // 抽帧）登记成 [db] 的后台工作——换库时关库会等它停稳；它的 SQL、海报请求、抽帧子进程
+  // 随库关闭一起被中断。被中断时抛 [DatabaseWorkCancelledException]，计划的
+  // `importInProgress` 留着，下次启动按 `reuseExistingPaths` 幂等重放。
+  return (AnimeDownloadPlan plan, List<String> videoAbsolutePaths) =>
+      db.runBackgroundWork<AnimeDownloadImportOutcome?>(
+        'torrent.animeImport',
+        (DatabaseWorkToken _) => _importAnimeDownload(
+          db,
+          repo,
+          plan,
+          videoAbsolutePaths,
+          httpClient: httpClient,
+          collectionCoversDirectory: collectionCoversDirectory,
+        ),
       );
-    }
+}
 
-    // AniList 绑定（后续 Jimaku 批量对话框可直接复用该 id，跳过搜番消歧）。
-    if (plan.anilistId != null) {
+Future<AnimeDownloadImportOutcome?> _importAnimeDownload(
+  FushiDatabase db,
+  VideoBookRepository repo,
+  AnimeDownloadPlan plan,
+  List<String> videoAbsolutePaths, {
+  required http.Client? httpClient,
+  required Directory? collectionCoversDirectory,
+}) async {
+  if (videoAbsolutePaths.isEmpty) return null;
+  final List<String> sorted = sortVideoPathsByEpisode(videoAbsolutePaths);
+  final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
+    collectionName: plan.seriesTitle,
+    // plan JSON 与 Drift 无法做同一事务；若进程在 DB 提交后、计划 flag
+    // 回写前崩溃，重启会重放 importer。以归一化视频路径作稳定业务键并在
+    // importSplitPlaylist 的单事务内复用条目/合集，重放只补状态、不重复副作用。
+    reuseExistingPaths: true,
+    entries: <PlaylistEntry>[
+      for (final String path in sorted) PlaylistEntry(title: '', path: path),
+    ],
+  );
+
+  // BUG-1896：番剧下载是「一集一个独立任务、完成先后随机」的自动下载流水线，与
+  // 手动 playlist 导入（作者序即真相）性质不同。上面的批内排序只管本批，合集是
+  // 尾插，跨批次就散了。这里显式把**整个合集**重排成季/集序——与
+  // VideoDownloadPipelineService 同一条纪律、同一个原语，是合集顺序的唯一真相源。
+  // 与 pipeline 侧一样不吞异常：重排是入库语义的一部分，DB 真炸了就该让
+  // AnimeDownloadService 把计划标 failed，而不是留一个顺序错乱的合集装作成功。
+  await repo.reorderDownloadedCollectionEpisodes(result.collectionId);
+
+  // BUG-1417：番剧下载完成自动入库也是一次真实入库，必须进首页活动时间轴——
+  // 与对话框 / 拖拽 / 扫描首导同粒度：整本 1 条 added（title=系列名、mediaKey=
+  // 首集 uid），绝不每集一条。
+  //
+  // 幂等**只能**看 createdEpisodeUids：`reuseExistingPaths: true` 让崩溃重放
+  // （DB 已提交、计划 flag 未回写）复用既有条目与既有合集，此时一集都没新建 →
+  // 一条都不记。**不是**靠时间窗/去重表掩盖，而是让判据本身分清「真新增」与
+  // 「复用既有」；活动流表按设计是纯追加（addActivityEvent 不去重），不能也
+  // 不该在那一层兜。同系列后续批次（新集号）确有新建 → 记 1 条，这是真新增内容。
+  // best-effort：recordVideoImportActivity 内部自捕获，失败只 log 不影响入库。
+  if (result.createdEpisodeUids.isNotEmpty && result.episodeUids.isNotEmpty) {
+    await repo.recordVideoImportActivity(
+      bookUid: result.episodeUids.first,
+      title: plan.seriesTitle,
+    );
+  }
+
+  // AniList 绑定（后续 Jimaku 批量对话框可直接复用该 id，跳过搜番消歧）。
+  if (plan.anilistId != null) {
+    try {
+      await db.setMediaCollectionAnilistId(result.collectionId, plan.anilistId);
+    } on DatabaseWorkCancelledException {
+      rethrow;
+    } catch (_) {}
+  }
+
+  if (result.episodeUids.isNotEmpty) {
+    final VideoScrapeOperationLease? lease =
+        VideoScrapeOperationGate.tryEnterOperation();
+    if (lease != null) {
       try {
-        await db.setMediaCollectionAnilistId(
-          result.collectionId,
-          plan.anilistId,
-        );
-      } catch (_) {}
-    }
-
-    if (result.episodeUids.isNotEmpty) {
-      final VideoScrapeOperationLease? lease =
-          VideoScrapeOperationGate.tryEnterOperation();
-      if (lease != null) {
-        try {
-          await VideoCoverMutationGate.runExclusive(() async {
-            // ① 作品海报 → 合集自有封面（见函数注释）。文件名遵循合集封面目录
-            // 约定；gcOrphanCovers 非递归，天然免疫。
-            final String? coverUrl = plan.coverUrl;
-            if (coverUrl != null && coverUrl.isNotEmpty) {
-              try {
-                final Directory covers =
-                    collectionCoversDirectory ??
-                    await VideoStorage.collectionCoversDir();
-                final String? collectionCoverPath =
-                    await downloadVideoCoverToPath(
-                      coverUrl: coverUrl,
-                      outputPath: p.join(
-                        covers.path,
-                        videoCoverFileName('${result.collectionId}'),
-                      ),
-                      httpClient: httpClient,
-                    );
-                if (collectionCoverPath != null) {
-                  await db.updateMediaCollectionCoverPath(
-                    result.collectionId,
-                    collectionCoverPath,
-                  );
-                }
-              } catch (_) {}
-            }
-
-            // ② 首集抽帧缩略图 → 首集条目封面 + coverSource 借用链兜底。
+        await VideoCoverMutationGate.runExclusive(() async {
+          // ① 作品海报 → 合集自有封面（见函数注释）。文件名遵循合集封面目录
+          // 约定；gcOrphanCovers 非递归，天然免疫。
+          final String? coverUrl = plan.coverUrl;
+          if (coverUrl != null && coverUrl.isNotEmpty) {
             try {
-              final String firstUid = result.episodeUids.first;
-              final CoverMetaStore store = CoverMetaStore(
-                await VideoStorage.coversDir(),
-              );
-              if (await store.allowsAutoFrameWrite(firstUid)) {
-                final String? framePath = await extractVideoCover(
-                  videoPath: sorted.first,
-                  bookUid: firstUid,
-                );
-                if (framePath != null) {
-                  await repo.updateCover(firstUid, framePath);
-                  final bool committed = await store.markAutoFrameAfterWrite(
-                    firstUid,
+              final Directory covers =
+                  collectionCoversDirectory ??
+                  await VideoStorage.collectionCoversDir();
+              final String? collectionCoverPath =
+                  await downloadVideoCoverToPath(
+                    coverUrl: coverUrl,
+                    outputPath: p.join(
+                      covers.path,
+                      videoCoverFileName('${result.collectionId}'),
+                    ),
+                    httpClient: httpClient,
                   );
-                  if (committed) {
-                    // ⚠️ 唯一落库点：MediaCollections.coverSource 持久化
-                    // 'video|<uid>'，compositeKey 与历史手写插值逐字节一致。
-                    await db.updateMediaCollectionCover(
-                      result.collectionId,
-                      MediaKind.video.compositeKey(firstUid),
-                    );
-                  }
+              if (collectionCoverPath != null) {
+                await db.updateMediaCollectionCoverPath(
+                  result.collectionId,
+                  collectionCoverPath,
+                );
+              }
+            } on DatabaseWorkCancelledException {
+              rethrow;
+            } catch (_) {}
+          }
+
+          // ② 首集抽帧缩略图 → 首集条目封面 + coverSource 借用链兜底。
+          try {
+            final String firstUid = result.episodeUids.first;
+            final CoverMetaStore store = CoverMetaStore(
+              await VideoStorage.coversDir(),
+            );
+            if (await store.allowsAutoFrameWrite(firstUid)) {
+              final String? framePath = await extractVideoCover(
+                videoPath: sorted.first,
+                bookUid: firstUid,
+              );
+              if (framePath != null) {
+                await repo.updateCover(firstUid, framePath);
+                final bool committed = await store.markAutoFrameAfterWrite(
+                  firstUid,
+                );
+                if (committed) {
+                  // ⚠️ 唯一落库点：MediaCollections.coverSource 持久化
+                  // 'video|<uid>'，compositeKey 与历史手写插值逐字节一致。
+                  await db.updateMediaCollectionCover(
+                    result.collectionId,
+                    MediaKind.video.compositeKey(firstUid),
+                  );
                 }
               }
-            } catch (_) {}
-          });
-        } finally {
-          lease.release();
-        }
+            }
+          } on DatabaseWorkCancelledException {
+            rethrow;
+          } catch (_) {}
+        });
+      } finally {
+        lease.release();
       }
     }
+  }
 
-    return AnimeDownloadImportOutcome(collectionId: result.collectionId);
-  };
+  return AnimeDownloadImportOutcome(collectionId: result.collectionId);
 }

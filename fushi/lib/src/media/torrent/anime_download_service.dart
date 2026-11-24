@@ -6,6 +6,7 @@ import 'package:collection/collection.dart' show ListEquality;
 
 import 'package:flutter/foundation.dart'
     show ValueNotifier, immutable, mapEquals;
+import 'package:fushi_core/fushi_core.dart' show DatabaseWorkCancelledException;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
@@ -885,6 +886,10 @@ class AnimeDownloadService {
         if (await store.save(resolved)) {
           try {
             outcome = await _importer(resolved, videos);
+          } on DatabaseWorkCancelledException {
+            // 换库 / 关库中断了入库（BUG-5387 审查遗留）：不是失败。计划保持
+            // downloading + importInProgress，下次启动按幂等重放补完，不标 failed。
+            rethrow;
           } catch (e) {
             importError = 'video import failed: $e';
           }
@@ -903,6 +908,8 @@ class AnimeDownloadService {
       } else {
         try {
           booksImported = await bookImporter(plan, books) ?? 0;
+        } on DatabaseWorkCancelledException {
+          rethrow;
         } catch (e) {
           importError ??= 'book import failed: $e';
         }
@@ -972,6 +979,9 @@ class AnimeDownloadService {
         // 内容问题（缺字幕/同名书已在库/解压失败…）落稳定原因码，任务行翻译成
         // 用户能照着做的文案，不把异常 toString 甩给用户（BUG-2775）。
         importError = animeDownloadBlockedFailReason(e.blocker);
+      } on DatabaseWorkCancelledException {
+        // 换库 / 关库中断：计划留在 downloading，下次启动重新收尾，不标 failed。
+        rethrow;
       } catch (e) {
         importError = 'discovery import failed: $e';
       }

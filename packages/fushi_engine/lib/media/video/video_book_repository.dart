@@ -149,6 +149,10 @@ class VideoBookRepository {
 
   final FushiDatabase _db;
 
+  /// 本仓库读写的库实例。后台写手经它登记后台工作
+  /// （[FushiDatabase.runBackgroundWork]，换库的生命周期边界）。
+  FushiDatabase get database => _db;
+
   /// 本进程里那一次存量内容指纹补算（见 [backfillContentFingerprintsOncePerProcess]）。
   static Future<int>? _contentFingerprintBackfill;
 
