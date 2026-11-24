@@ -556,13 +556,27 @@ class MusicKaraokeStageLyrics extends ConsumerWidget {
     final bool blurInactive = ref.watch(
       appProvider.select((AppModel m) => m.musicLyricsBlurInactive),
     );
+    final bool showTranslation = ref.watch(
+      appProvider.select((AppModel m) => m.musicLyricsShowTranslation),
+    );
+    final bool showRomanization = ref.watch(
+      appProvider.select((AppModel m) => m.musicLyricsShowRomanization),
+    );
+    final bool showRuby = ref.watch(
+      appProvider.select((AppModel m) => m.musicLyricsShowRuby),
+    );
     return KaraokeLyricsView(
       timeline: timeline,
       clock: clock,
       playing: playing,
       offsetMs: offsetMs,
       onSeek: onSeek,
-      appearance: KaraokeLyricsAppearance(blurInactive: blurInactive),
+      appearance: KaraokeLyricsAppearance(
+        blurInactive: blurInactive,
+        showTranslation: showTranslation,
+        showRomanization: showRomanization,
+        showRuby: showRuby,
+      ),
     );
   }
 }

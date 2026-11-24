@@ -37,15 +37,17 @@ void main() {
     );
   });
 
+  // 计数是进程级的：同一个 `dart test` 进程里别的测试文件（srs_retained_copy_test.dart 等）在别的 isolate 里同时开关库，
+  // 只断言下界（与 native/fushi_fsrs/src/store/ffi.rs 的 `diag_counts_report_open_cores_and_respect_the_buffer_length`
+  // 同一口径）；关库释放结构体由 ffi.rs 的 `closed_handle_rejects_every_entry_point_and_frees_the_core` 精确断言。
   test(
     'diagCounts sees an open core and its SQLite heap (BUG-4075 memory probe)',
-    () {
-      final SrsCoreDiagCounts before = SrsCore.diagCounts()!;
+    () async {
       final SrsCore core = SrsCore.open(dir.path);
       addTearDown(core.close);
       final SrsCoreDiagCounts open = SrsCore.diagCounts()!;
-      expect(open.openHandles, before.openHandles + 1);
-      expect(open.liveCores, before.liveCores + 1);
+      expect(open.openHandles, greaterThanOrEqualTo(1));
+      expect(open.liveCores, greaterThanOrEqualTo(open.openHandles));
       expect(open.sqliteBytes, greaterThan(0));
       expect(open.sqliteHighwaterBytes, greaterThanOrEqualTo(open.sqliteBytes));
       expect(open.walBytes, greaterThanOrEqualTo(0));
@@ -55,11 +57,6 @@ void main() {
           RegExp(r'^srs=\d+/\d+ rd=\d+ sqlite=\d+/\d+MB db=\d+MB wal=\d+MB$'),
         ),
       );
-
-      core.close();
-      final SrsCoreDiagCounts closed = SrsCore.diagCounts()!;
-      expect(closed.openHandles, before.openHandles);
-      expect(closed.liveCores, before.liveCores);
     },
   );
 
@@ -81,27 +78,30 @@ void main() {
   });
 
   // 查词弹窗等辅助进程：只读、不建库。主进程还没建库时按「ready」（等主进程）报 -4，不当成空库打开。
-  test('a secondary open never creates a library and reports the state', () {
-    expect(
-      () => SrsCore.open(dir.path, mode: SrsOpenMode.secondary),
-      throwsA(
-        isA<SrsStoreNotMigrated>().having(
-          (SrsStoreNotMigrated e) => e.state,
-          'state',
-          SrsGenState.ready,
+  test(
+    'a secondary open never creates a library and reports the state',
+    () async {
+      expect(
+        () => SrsCore.open(dir.path, mode: SrsOpenMode.secondary),
+        throwsA(
+          isA<SrsStoreNotMigrated>().having(
+            (SrsStoreNotMigrated e) => e.state,
+            'state',
+            SrsGenState.ready,
+          ),
         ),
-      ),
-    );
-    expect(File(gen4File()).existsSync(), isFalse);
+      );
+      expect(File(gen4File()).existsSync(), isFalse);
 
-    SrsCore.open(dir.path).close();
-    final SrsCore secondary = SrsCore.open(
-      dir.path,
-      mode: SrsOpenMode.secondary,
-    );
-    addTearDown(secondary.close);
-    expect(secondary.debugQuery('SELECT 1 AS one').single['one'], 1);
-  });
+      await SrsCore.open(dir.path).close();
+      final SrsCore secondary = SrsCore.open(
+        dir.path,
+        mode: SrsOpenMode.secondary,
+      );
+      addTearDown(secondary.close);
+      expect(secondary.debugQuery('SELECT 1 AS one').single['one'], 1);
+    },
+  );
 
   // 备份快照已接新代（G11-4），但剥离本机状态的请求明确报错。协议 1 旧主库的搬迁入口（`ffsrs_store_legacy_*`）
   // 已随 G7-6 删掉（主库残留的协议 1 表由 `SrsStorage.open` 明确拒绝，见 srs_legacy_main_database_test.dart）。
@@ -129,7 +129,7 @@ void main() {
 
   // 刷新键是内核的进程内计数（`refresh_keys`，gen4/refresh.rs）：一次取回五个键，没有写入就不变，只写本机状态行的
   // 命令不推进；关库后为 null。
-  test('refresh keys come from the kernel counters', () {
+  test('refresh keys come from the kernel counters', () async {
     final SrsCore core = SrsCore.open(dir.path);
     const String profile = 'p';
     final SrsRefreshKeys a = core.refreshKeys(profile)!;
@@ -140,19 +140,19 @@ void main() {
       'profile': profile,
     });
     expect(core.refreshKeys(profile), a);
-    core.close();
+    await core.close();
     expect(core.refreshKeys(profile), isNull);
   });
 
-  test('a borrowed handle does not close the owner', () {
+  test('a borrowed handle does not close the owner', () async {
     final SrsCore core = SrsCore.open(dir.path);
     final SrsCore borrowed = SrsCore.fromAddress(
       core.address,
       libraryPath: core.libraryPath,
     );
-    borrowed.close();
+    await borrowed.close();
     expect(core.debugQuery('SELECT 1 AS one').single['one'], 1);
-    core.close();
+    await core.close();
     expect(() => core.debugQuery('SELECT 1'), throwsStateError);
   });
 
@@ -161,7 +161,7 @@ void main() {
     final SrsCore core = await SrsCore.openInBackground(dir.path);
     expect(core.owned, isTrue);
     expect(core.debugQuery('SELECT 1 AS one').single['one'], 1);
-    core.close();
+    await core.close();
     expect(() => core.debugQuery('SELECT 1'), throwsStateError);
     // 关闭返回时库文件已没有打开的句柄（后台 isolate 没留下第二个拥有者）。
     File(gen4File()).deleteSync();
@@ -169,7 +169,7 @@ void main() {
 
   // 进程级 SQLite 临时目录（Android 上开库前必须设）：只设一次，同一目录再设是空操作，换目录报错。用常驻的系统临时
   // 目录，不影响本进程里别的测试。
-  test('useTempDirectory is set once per process', () {
+  test('useTempDirectory is set once per process', () async {
     final String stable = Directory.systemTemp.path;
     SrsCore.useTempDirectory(stable);
     SrsCore.useTempDirectory(stable);
@@ -179,7 +179,7 @@ void main() {
     );
     final SrsCore core = SrsCore.open(dir.path);
     expect(core.debugQuery('SELECT 1 AS one').single['one'], 1);
-    core.close();
+    await core.close();
   });
 
   test('openInBackground rethrows the typed open state', () {
@@ -210,13 +210,14 @@ void main() {
         return e.message;
       }
     });
-    core.close();
+    final Future<void> closed = core.close();
     final Object? outcome = await worker;
     expect(
       outcome,
       anyOf(3000000, contains('srs store is closed')),
       reason: 'the worker either finished before the close or saw it',
     );
+    await closed;
 
     final Object? late = await Isolate.run(() {
       try {
@@ -230,6 +231,78 @@ void main() {
       }
     });
     expect(late, contains('srs store is closed'));
+    File(gen4File()).deleteSync();
+  });
+
+  // 反馈 3he3GEoqcU：主进程关库时 UI isolate 同步调 `ffsrs_store_close`，等在途的长命令跑完，Android 主线程 ANR。
+  // close 的同步部分只摘句柄：返回那一刻起经句柄号的调用全报「已关闭」，等在途命令与关连接在后台 isolate 里做，
+  // Future 完成时连接已关（Windows 上开着的库文件删不掉）。
+  test('close detaches at once and finishes off the calling isolate', () async {
+    final SrsCore core = SrsCore.open(dir.path);
+    final int address = core.address;
+    final String? libraryPath = core.libraryPath;
+    expect(core.debugQuery('SELECT 1 AS one').single['one'], 1);
+
+    final Future<void> closed = core.close();
+    expect(core.close(), same(closed), reason: 'idempotent while closing');
+    expect(
+      () => SrsCore.fromAddress(
+        address,
+        libraryPath: libraryPath,
+      ).debugQuery('SELECT 1'),
+      throwsA(
+        isA<SrsCoreException>().having(
+          (SrsCoreException e) => e.message,
+          'message',
+          contains('srs store is closed'),
+        ),
+      ),
+      reason: 'calls by handle number are refused before the close finishes',
+    );
+    await closed;
+    File(gen4File()).deleteSync();
+  });
+
+  test('close returns without waiting for a command in flight on another '
+      'isolate', () async {
+    final SrsCore core = SrsCore.open(dir.path);
+    final int address = core.address;
+    final String? libraryPath = core.libraryPath;
+    final ReceivePort started = ReceivePort();
+    final SendPort startedPort = started.sendPort;
+    final Future<Object?> worker = Isolate.run(() {
+      final SrsCore borrowed = SrsCore.fromAddress(
+        address,
+        libraryPath: libraryPath,
+      );
+      startedPort.send(null);
+      try {
+        return borrowed
+            .debugQuery(
+              'WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n '
+              'WHERE x < 5000000) SELECT count(*) AS c FROM n',
+            )
+            .single['c'];
+      } on SrsCoreException catch (e) {
+        return e.message;
+      }
+    });
+    await started.first;
+    final Stopwatch sinceClose = Stopwatch()..start();
+    final Future<void> closed = core.close();
+    final int closeCallUs = sinceClose.elapsedMicroseconds;
+    final Object? outcome = await worker;
+    final int workerLeftUs = sinceClose.elapsedMicroseconds;
+    await closed;
+    expect(outcome, anyOf(5000000, contains('srs store is closed')));
+    if (outcome == 5000000) {
+      // 查询在途时关：调用方只花摘句柄的工夫，过去它要等查询跑完（closeCallUs >= workerLeftUs）。
+      expect(
+        closeCallUs * 4,
+        lessThan(workerLeftUs),
+        reason: 'close() blocked the caller for the in-flight query',
+      );
+    }
     File(gen4File()).deleteSync();
   });
 

@@ -2078,7 +2078,7 @@ class BackupRestoreService {
             );
           } finally {
             await sdb.close();
-            core.close();
+            await core.close();
           }
         }
       } finally {

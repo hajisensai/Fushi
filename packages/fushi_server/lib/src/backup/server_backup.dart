@@ -92,12 +92,12 @@ typedef ServerSrsSnapshot = Future<void> Function(String path);
 
 /// 没有在跑的复习库连接时（离线 `backup create`）：临时打开库目录 [supportDir] 的新代库快照完就关。
 Future<void> _snapshotSrsOffline(String supportDir, String path) =>
-    Isolate.run<void>(() {
+    Isolate.run<void>(() async {
       final SrsCore core = SrsCore.open(supportDir);
       try {
         core.snapshotInto(path, stripDeviceLocal: false);
       } finally {
-        core.close();
+        await core.close();
       }
     });
 

@@ -466,7 +466,7 @@ Future<void> _handleMineBridge(
         reply = await miningHandler(fields: fields);
         if (reply['ankiConnect'] == true) {
           unawaited(
-            _recordMinedStats(
+            recordOverlayMinedStats(
               model,
               fields,
               (reply['noteId'] as num?)?.toInt(),
@@ -549,7 +549,7 @@ Future<Map<String, Object?>> _mineEntry(
   // queued（popup.js 画 ✓ 不回查），重复回 duplicate（BUG-1908）。
   final described = describeMineOutcome(outcome);
   if (recordStats && described.record) {
-    unawaited(_recordMinedStats(model, fields, outcome.noteId, sentence));
+    unawaited(recordOverlayMinedStats(model, fields, outcome.noteId, sentence));
   }
   if (toastOutcome) {
     // 发起制卡的浮窗已经收起（截屏识字框选页在主窗里，见
@@ -669,7 +669,7 @@ OverlayMiningHandler screenOcrOverlayMiningHandler({
 /// `recordMiningEvent` 吃统计来源值域（`kStatSource*`），`addMinedSentence.source`
 /// 吃收藏句 / 制卡句值域（`kFavoriteSentenceSource*`，那一列还有 audiobook /
 /// lyrics），故各取各的判据包装器。Best-effort: any failure is logged and swallowed.
-Future<void> _recordMinedStats(
+Future<void> recordOverlayMinedStats(
   AppModel model,
   Map<String, String> fields,
   int? noteId,

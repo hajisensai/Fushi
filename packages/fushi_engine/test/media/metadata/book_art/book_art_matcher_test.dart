@@ -103,6 +103,31 @@ void main() {
         BookArtTitleTier.prefixSubtitle,
       );
     });
+
+    // 只有日文原名的候选（Bangumi）对双语书名原来是 none、连候选都进不了。
+    test('双语书名任一段对得上：最多 localExtends（待确认），不抬成自动采用', () {
+      expect(
+        localBookTitleTier('Horimiya ホリミヤ', <String>['ホリミヤ']),
+        BookArtTitleTier.localExtends,
+      );
+      expect(
+        localBookTitleTier('Horimiya ホリミヤ', <String>['Horimiya']),
+        BookArtTitleTier.localExtends,
+      );
+      expect(
+        localBookTitleTier('Horimiya ホリミヤ', <String>['ホリミヤ番外編']),
+        BookArtTitleTier.none,
+      );
+      expect(
+        localBookTitleTier('Horimiya ホリミヤ', <String>['堀さんと宮村くん']),
+        BookArtTitleTier.none,
+      );
+      // 整名本来就对得上的不受影响。
+      expect(
+        localBookTitleTier('ホリミヤ', <String>['ホリミヤ']),
+        BookArtTitleTier.strict,
+      );
+    });
   });
 
   group('作者证据', () {

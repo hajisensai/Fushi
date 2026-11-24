@@ -39,7 +39,7 @@ class SrsStorage {
   /// 库目录（`<数据库目录>`）。
   final String directory;
 
-  bool _closed = false;
+  Future<void>? _closing;
 
   /// [directory] 下的协议 3 库路径（封存的旧库 / 迁移来源）。
   static String legacyPathIn(String directory) =>
@@ -74,28 +74,25 @@ class SrsStorage {
       ).setQueryConcurrency(core.readConcurrency);
       return SrsStorage._(core, directory);
     } on Object {
-      _closeCore(core);
+      await _closeCore(core);
       rethrow;
     }
   }
 
-  /// 关 Rust 连接（之后到达的命令报「已关闭」）。
-  Future<void> close() async {
-    if (_closed) return;
-    _closed = true;
-    _closeCore(core);
-  }
+  /// 关 Rust 连接（幂等）。调用那一刻起之后到达的命令（含已经排队的 worker 命令）报「已关闭」；等在途命令、
+  /// 关连接在后台 isolate 里做（[SrsCore.close]），Future 完成时连接已关。
+  Future<void> close() => _closing ??= _closeCore(core);
 
   /// 关 Rust 连接，并让内核命令 worker 丢掉为这个句柄包的 [SrsCore]（srs_core_workers.dart：换 profile / 覆盖恢复
   /// 反复开关库时不越攒越多）。
-  static void _closeCore(SrsCore core) {
+  static Future<void> _closeCore(SrsCore core) async {
     final int address = core.address;
     final String? libraryPath = core.libraryPath;
-    core.close();
+    await core.close();
     SrsCoreWorkers.of(libraryPath).forget(address);
   }
 
-  bool get isClosed => _closed;
+  bool get isClosed => _closing != null;
 }
 
 /// 主库里还留着协议 1 的 SRS 表（`srs_entities`），而库目录里既没有协议 3 的 `srs.db` 也没有新代库：这份数据从没

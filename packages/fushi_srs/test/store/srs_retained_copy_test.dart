@@ -16,7 +16,7 @@ void main() {
     'a fresh library has no retained copy and deleting does nothing',
     () async {
       final SrsCore core = SrsCore.open(dir.path);
-      core.close();
+      await core.close();
       final SrsRetainedCopyState s = await backend.state(dir.path, nowMs: 1);
       expect(s.kind, SrsRetainedCopyKind.absent);
       expect(s.present, isFalse);

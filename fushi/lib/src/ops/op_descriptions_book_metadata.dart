@@ -38,13 +38,18 @@ List<OpDescription> describeBookMetadataOps(
     summary:
         'Search online book metadata candidates. Sources: bangumi (books), '
         'dlsite (voice / manga / novel works), mangabaka (manga / light novel '
-        'series), anilist (light novels; also returns a banner image), openbd '
+        'series), anilist (light novels, manga, manhwa and manhua; each candidate '
+        'carries format; also returns a banner image), openbd '
         '(ISBN lookup only), ndl (National Diet Library, title or ISBN), '
         'rakuten (Rakuten Books, title or ISBN; only when the user entered '
         'Rakuten credentials in settings), itunes (songs on the Japanese '
         'iTunes store, album cover art; use it for audiobooks that are really '
         'songs with LRC lyrics). Returns id, title, author, year, '
-        'publisher, series, ISBN and cover URL per candidate. MangaBaka data '
+        'publisher, series, ISBN and cover URL per candidate. A book title '
+        'that finds nothing is retried as the series name (volume number '
+        'removed, e.g. "第01巻" / "第1卷" / "第1集" / "1권"), then as the CJK or '
+        'Latin half of a mixed title; the query that matched is returned as '
+        'matchedQuery. MangaBaka data '
         'is CC BY-NC-SA 4.0: show "Data from MangaBaka" wherever it is '
         'displayed.',
     params: const <OpParam>[
@@ -101,9 +106,12 @@ List<OpDescription> describeBookMetadataOps(
     method: 'GET',
     pattern: '$kBookMetadataCtlSearch/:source/:id/volumes',
     summary:
-        'List the Japanese per-volume covers of a MangaBaka series '
-        '(one per volume: regular edition, safest rating, largest '
-        'image). Show "Data from MangaBaka" with them.',
+        'List the per-volume covers of a MangaBaka series (one per '
+        'volume: regular edition, safest rating, largest image) in the '
+        'edition language given by `language` (default Japanese); when that '
+        'language has none, Japanese covers are returned and `language` in '
+        'the result says which edition was used. Show "Data from '
+        'MangaBaka" with them.',
     risk: OpRisk.read,
     params: const <OpParam>[
       OpParam.string(
@@ -112,6 +120,12 @@ List<OpDescription> describeBookMetadataOps(
         required: true,
         inPath: true,
         enumValues: <String>['mangabaka'],
+      ),
+      OpParam.string(
+        'language',
+        description:
+            'Edition language of the book (BCP 47, e.g. zh, zh-TW, ko); '
+            'empty = Japanese.',
       ),
       OpParam.string(
         'id',
