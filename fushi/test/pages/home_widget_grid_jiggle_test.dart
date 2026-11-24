@@ -1,4 +1,4 @@
-// BUG-5358：首页编辑态的 Apple 抖动只在绘制层转动。旧实现（AnimatedBuilder +
+// BUG-5444：首页编辑态的 Apple 抖动只在绘制层转动。旧实现（AnimatedBuilder +
 // Transform.rotate）每帧让每块组件的整棵语义子树重算并下发、块内容整块重画，debug
 // 实例主线程 100% 占满（语义常开的 Windows 上尤甚），编辑首页就「卡死」。
 //

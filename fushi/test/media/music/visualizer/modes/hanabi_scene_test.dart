@@ -209,7 +209,7 @@ class _CountingCanvas implements ui.Canvas {
 }
 
 void main() {
-  group('BUG-5403 GPU 开销', () {
+  group('BUG-5446 GPU 开销', () {
     HanabiScene scene0() {
       final HanabiScene scene = HanabiScene(
         program: compileHanabiProgram(

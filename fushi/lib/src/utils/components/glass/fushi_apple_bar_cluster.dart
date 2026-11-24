@@ -195,7 +195,7 @@ class FushiAppleBarProminentButton extends StatelessWidget {
 /// [GlassBodyMode.clear] 直接着色。[child] 自己处理点击 / 焦点 / 语义（库这一项
 /// 不挂点击、不另立语义）。
 ///
-/// 不经 `GlassPinnedBarChrome`（BUG-5358）：它无条件挂一个
+/// 不经 `GlassPinnedBarChrome`（BUG-5444）：它无条件挂一个
 /// `OverlayPortal.overlayChildLayoutBuilder`（给 iPhone Duo 竖条用；没有竖条时
 /// 永远是 `SizedBox.shrink`）。框架让这种布局构建器**每一帧**都重新布局，布局又
 /// `markNeedsSemanticsUpdate`，而它挂在路由的 Overlay 里、到应用根之间没有已建的

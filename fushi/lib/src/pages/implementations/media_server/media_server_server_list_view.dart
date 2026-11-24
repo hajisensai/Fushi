@@ -426,7 +426,7 @@ class MediaServerListRowData {
 /// 「媒体服务器」一节同一份内容）。
 ///
 /// 不推整个在线服务分类：那个分类受「在线服务」模块门控，模块关着时
-/// [SettingsDetailPage] 判不可见、推上来当帧自 pop，入口点了没反应（BUG-5359）。
+/// [SettingsDetailPage] 判不可见、推上来当帧自 pop，入口点了没反应（BUG-5445）。
 /// 用户拍板：媒体服务器入口在就一定进得去服务器设置，与模块开关无关。
 Future<void> openMediaServerSettings(BuildContext context) {
   return Navigator.of(context, rootNavigator: true).push<void>(

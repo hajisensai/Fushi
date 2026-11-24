@@ -1,4 +1,4 @@
-## BUG-5403 · 花火歌词动画 GPU 占用超高
+## BUG-5446 · 花火歌词动画 GPU 占用超高
 - **报告**：2026-11-24（用户：Windows 桌面约 2000 px 宽屏、全屏歌词页开「花火」样式时 GPU 占用超高）
 - **真实性**：✅ 真 bug，三处根因叠加。Windows Profile 构建实测（`fushi/integration_test/hanabi_gpu_perf_itest.dart`，窗口 1974×1054 物理像素、DPR 2、144 Hz，Impeller GLES/ANGLE，进程显存与私有内存由 `\GPU Process Memory` / `Get-Process` 逐秒采样）：
   - 修前：花火播放中进程显存几秒内涨到约 9 GB（显卡上限）、私有内存 14 GB，随后 `GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT` → FATAL 崩溃；关全屏辉光时显存仍 0.6–9 GB 锯齿、raster p90 48 ms / max 220 ms、只出 58 帧/秒；暂停（开动态）时仍逐帧重画整场景：build p50 4.3 ms、raster p50 6.1 ms、显存常驻 2.2 GB、GPU 3D 24.9%（同条件流光 4.3%、绘光 2.1%）。

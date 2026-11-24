@@ -18,7 +18,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../helpers/test_platform_services.dart';
 
-/// BUG-5359：媒体服务器列表「去设置添加服务器」在「在线服务」模块关着时点了没
+/// BUG-5445：媒体服务器列表「去设置添加服务器」在「在线服务」模块关着时点了没
 /// 反应——入口推的是整个在线服务分类，分类受模块门控，[SettingsDetailPage] 判
 /// 不可见、当帧自 pop。用户拍板：媒体服务器入口在就一定进得去服务器设置，不管
 /// 模块开没开；在线服务里其余条目仍随模块门控。

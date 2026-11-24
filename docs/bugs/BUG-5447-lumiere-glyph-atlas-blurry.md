@@ -1,4 +1,4 @@
-## BUG-5404 · 绘光大字发虚
+## BUG-5447 · 绘光大字发虚
 - **报告**：2026-11-24（用户：Windows 桌面全屏歌词、约 2000px 宽屏，「绘光样式字体不够清晰」，截图里主行焦点字约 120 逻辑 px、背景回声大字更大，边缘明显发虚）
 - **真实性**：✅ 真 bug。根因 `fushi/lib/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_scene.dart:232-289`（修前）：`LumiereGlyphAtlas.build` 把整首歌的字一律按固定 `_em = 64` 图集像素画进一张白字图集，不看屏上字号也不看 devicePixelRatio；绘制时（修前 :1640 回声词、:1864 歌词窗口、:2002 / :2034 片尾卡）用 drawRawAtlas 按 `px * _cell / _em` 放大。焦点字 `heroSize·h`（约 0.085h，受 fontScale）在 1100 逻辑 px 高的窗口上约 90～120 px，回声词 `echoSize·h·(0.25..0.75)` 可到 0.255h ≈ 280 px，再乘 DPR，等于把 64 px 的位图放大 2～6 倍。
   - 量化（`flutter test` 真实像素，Noto Sans JP 149 个不同字，屏上 240 px，数 alpha 介于 10%～90% 的边缘过渡像素）：「夜」修前 1167 / 修后 254 / 直接排字 135；「愛」1461 / 437 / 340；「る」851 / 196 / 108——修前过渡带是直接排字的 4～9 倍。

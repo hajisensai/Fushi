@@ -112,7 +112,7 @@ abstract final class UiActivityProbe {
   /// 为 false：Ticker.start / 解除静音、动图下一帧……）抓栈记下调用点；逐帧续排直接按回调身份查。
   /// [stack] 只给测试用，生产传 null 取当前栈。
   ///
-  /// 已记过调用点的回调再以 `rescheduling: false` 注册时（BUG-5358）：具体调用点直接沿用；
+  /// 已记过调用点的回调再以 `rescheduling: false` 注册时（BUG-5444）：具体调用点直接沿用；
   /// 只有 `~`/`?` 的才重抓，且与其它重抓共用 [kUiActivityStackSampleInterval] 节流。
   /// 起因：`OverlayPortal.overlayChildLayoutBuilder` 的 render object 每次布局都以
   /// `rescheduling: false` 重新注册同一个 `_frameCallback`（整栈只有框架 → `~`），而它在

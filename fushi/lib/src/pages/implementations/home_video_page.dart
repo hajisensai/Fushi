@@ -5936,7 +5936,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   // 提醒配的是刮削 / 字幕凭据（AniDB / Jimaku 等），属于「在线服务」
                   // 模块；模块关着时那个设置分类不可达（推上去当帧自 pop），提醒
                   // 整条不渲染。媒体服务器不在此列，见 openMediaServerSettings
-                  // （BUG-5359）。
+                  // （BUG-5445）。
                   if (ref
                       .read(appProvider)
                       .moduleVisibility

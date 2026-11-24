@@ -2727,7 +2727,7 @@ class _HomePageState extends BasePageState<HomePage>
       MediaServerAcquisitionBackend(
         sessions: _mediaServerAcquisitionSessions,
         // 媒体服务器管理页，不是整个在线服务分类：后者随模块门控，关着时推上去
-        // 当帧自 pop（BUG-5359）。
+        // 当帧自 pop（BUG-5445）。
         configure: openMediaServerSettings,
       ),
     ];

@@ -1,4 +1,4 @@
-## BUG-5359 · 媒体服务器列表「去设置添加服务器」在线服务模块关着时点了没反应
+## BUG-5445 · 媒体服务器列表「去设置添加服务器」在线服务模块关着时点了没反应
 - **报告**：2026-11-24（用户：Cupertino 主题 Windows 宽窗，视频 › 媒体服务器，组下「去设置添加服务器」点了没反应，日志无异常）
 - **真实性**：✅ 真 bug，与设计系统 / 宽窗壳无关（M3E 同样中招）。点按确实触发（运行实例只读 hitTest：命中路径落到该行 `FushiAppleRow` 的 GestureDetector），`openMediaServerSettings` 也确实往根 Navigator push 了；但它推的是**整个**在线服务分类 `SettingsDetailPage(destination: buildServicesDestination())`，该分类受「在线服务」模块门控（`settings_schema_services.dart` `buildServicesDestination` 的 `visible`）。用户关着该模块（运行实例 `moduleVisibility.enabled` 不含 `services`），`SettingsDetailPage.build` 判不可见 → `_popInvisibleDestination()`（`fushi/lib/src/settings/settings_detail_page.dart:94`）当帧自 pop。根因：媒体服务器管理内容只寄居在受模块门控的分类里，没有不依赖分类可见性的入口页，`openMediaServerSettings`（`fushi/lib/src/pages/implementations/media_server/media_server_server_list_view.dart`）只能推整个分类。
 - **用户拍板（2026-11-24，方案 3）**：只要媒体服务器页签 / 入口在，就一定进得去服务器设置，不管「在线服务」模块开没开。（首版 `68f0914ef0b` 按模块门藏掉入口，已按拍板推翻。）

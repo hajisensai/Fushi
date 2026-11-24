@@ -1,4 +1,4 @@
-## BUG-5405 · 绘光切字体卡顿、自定义字体加载完不重画
+## BUG-5448 · 绘光切字体卡顿、自定义字体加载完不重画
 - **报告**：2026-11-24（用户：Windows 桌面全屏歌词，「频繁切换字体好像有点卡，不知道是资源没加载完还是怎样」）
 - **真实性**：✅ 真 bug（卡顿是同步重建，不是资源没加载完）。根因 `fushi/lib/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_visualizer.dart:287-325`（修前）：`_sceneFor` 在 `build()` 里把 fontFamily / fontWeight 放进场景键，换字体就 dispose 旧场景、在 UI 线程同步 `new LumiereScene`——重编整首节目单（`compileLumiereProgram`）、重画精灵图、每个不同的字一个 TextPainter 排版再 `toImageSync`（`lumiere_scene.dart:485-510`）。量化（`flutter test`，debug JIT，机器同时有别的测试在跑，149 个不同字、Noto Sans JP / SC 互切）：一次切换在单帧里同步占 57～188 ms。
   - 附带两处同根问题：① `fontFamilyFallback` 不在键里，只改字体链第 2、3 位时图集停在旧字体；② 没订阅 `PaintingBinding.systemFonts`，字族名先于字体注册生效时（AI 主题字体提示、别处后注册的同名字族）图集会一直停在回落字体。app 字体本身（`AppModel.refreshAppFont`）是 `FontLoader.load` 完成后才 notify，键变化晚于注册，这条路径不会卡在回落字体。

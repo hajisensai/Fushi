@@ -112,7 +112,7 @@ CollageTexture _texture(int pixels, double logical) {
 }
 
 void main() {
-  group('BUG-5403 拼贴平铺走精灵批', () {
+  group('BUG-5446 拼贴平铺走精灵批', () {
     test('格子不重不漏铺满 rect，边缘格子裁 src，tint × alpha 进精灵颜色', () {
       final CollageTexture tex = _texture(52, 26);
       addTearDown(tex.image.dispose);

@@ -1,4 +1,4 @@
-## BUG-5358 · Cupertino 首页编辑态主线程被占满（「一进编辑首页就卡死」）
+## BUG-5444 · Cupertino 首页编辑态主线程被占满（「一进编辑首页就卡死」）
 - **报告**：2026-11-24（用户：「这个首页一旦启动编辑首页就容易卡死」；Windows debug `flutter run`，Cupertino / 玻璃设计）
 - **真实性**：✅ 真 bug。实例在编辑态时主线程 5 s 内 CPU 4.94 s（100%）、约 60 fps 连续出帧、`semanticsEnabled=true`；80 个 VM 栈样本 60% 在 `PipelineOwner.flushSemantics`。三处根因叠加：
   1. `fushi/lib/src/pages/implementations/home_widget_grid.dart:861`（旧）：Apple 编辑态抖动 `AnimatedBuilder` + `Transform.rotate`，常驻 `repeat`。`RenderTransform` 变换一变就 `markNeedsSemanticsUpdate`，每帧每块组件整棵语义子树重算下发；块内容（虚线描边逐段 `extractPath`、封面烘焙面）逐帧整块重画；每帧还经网格 LayoutBuilder 重建。

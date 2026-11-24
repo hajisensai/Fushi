@@ -1266,7 +1266,7 @@ class _OutlinePainter extends CustomPainter {
 
 /// Apple 编辑态的 iOS 主屏式抖动：**只在绘制层**绕中心转 [animation] 对应的小角度。
 ///
-/// BUG-5358：先前是 `AnimatedBuilder` + `Transform.rotate`。[RenderTransform] 的变换
+/// BUG-5444：先前是 `AnimatedBuilder` + `Transform.rotate`。[RenderTransform] 的变换
 /// 一变就 `markNeedsSemanticsUpdate`，抖动又是常驻的 `repeat`，于是编辑态下每一帧
 /// 每块组件的整棵语义子树都重算几何并整批下发（Windows 上有 UIA 客户端时语义常开），
 /// 块内容（虚线描边逐段 `extractPath`、封面烘焙面……）也逐帧整块重画，外加每帧经

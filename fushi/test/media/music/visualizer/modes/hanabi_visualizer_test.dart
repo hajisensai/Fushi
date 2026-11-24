@@ -65,7 +65,7 @@ Future<void> _mount(WidgetTester tester, Widget child) async {
 }
 
 void main() {
-  group('BUG-5403 暂停时停帧', () {
+  group('BUG-5446 暂停时停帧', () {
     testWidgets('花火暂停（开着动态效果）时不再逐帧要帧，播放时照常逐帧', (WidgetTester tester) async {
       final FakeVisualizerClock clock = FakeVisualizerClock(3000);
       await _mount(

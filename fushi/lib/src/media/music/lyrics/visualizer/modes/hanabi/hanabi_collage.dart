@@ -943,7 +943,7 @@ void drawCollageSprite(
 /// 覆盖 [rect] 的每个格子是一个精灵（边缘的格子裁掉 src），整片一次 drawRawAtlas：tint × alpha 走精灵颜色的
 /// modulate，和烟花 / 装饰件同一条路。不用 `ImageShader(repeated)` 画 drawRect：Windows（Impeller GLES /
 /// ANGLE）上每帧这样平铺 toImageSync 出来的纹理，显存在几秒内涨到显卡上限（实测 5–9 GB 锯齿、随后
-/// GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT 崩溃，BUG-5403），换成同一张纹理按精灵画则平稳。
+/// GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT 崩溃，BUG-5446），换成同一张纹理按精灵画则平稳。
 void drawCollageTiling(
   ui.Canvas canvas,
   CollageTexture texture,

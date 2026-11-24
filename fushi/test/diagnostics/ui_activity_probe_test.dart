@@ -330,7 +330,7 @@ void main() {
     testWidgets('已知具体调用点的回调逐帧以非续排身份重注册：不再抓栈、仍按首个调用点归账', (
       WidgetTester tester,
     ) async {
-      // BUG-5358：OverlayPortal.overlayChildLayoutBuilder 每次布局都以
+      // BUG-5444：OverlayPortal.overlayChildLayoutBuilder 每次布局都以
       // rescheduling: false 重新注册同一个回调。
       UiActivityProbe.resetFrames();
       UiActivityProbe.beginFrameCallbackRegistration(
