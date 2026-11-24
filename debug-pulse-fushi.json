@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T17:03:36Z",
+ "generatedAt": "2026-11-24T18:15:05Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "073033d43c75b31fb022d3d5882ee498af9d8a87",
@@ -33,7 +33,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "building",
+     "state": "failed",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45397292097"
     },
     "windows": {
@@ -178,56 +178,6 @@
     },
     "ios": {
      "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32203,
-   "version": "3.4.0",
-   "sha": "f8f2847179eda309f6667a38bc235426b82440c4",
-   "unknown": false,
-   "publishedAt": "2026-11-24T07:40:26Z",
-   "testflight": false,
-   "baseSeq": 32193,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "f8f2847179eda309f6667a38bc235426b82440c4",
-     "subject": "chore(bugs): reindex after merging #4336 #4321 #4353"
-    },
-    {
-     "sha": "1068b7c8235a0247b5f61106bc28f8ed158dd3ed",
-     "subject": "Merge #4353 (claude/dart-heartbeat-watchdog) into develop"
-    },
-    {
-     "sha": "a1d4c55db43601ebc1f23c01e8f0a333951ae2ef",
-     "subject": "Merge #4321 (fix/book-progress-label-consistency) into develop"
-    },
-    {
-     "sha": "77fc4149917c1dbdea87589ec3f99b370775e8c5",
-     "subject": "Merge #4336 (claude/fix-volume-cover-pop) into develop"
-    },
-    {
-     "sha": "d3f6e882208c1dcc10902c971fccecd78d028404",
-     "subject": "chore(bugs): settle BUG number collisions on fe7110dbb"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
     }
    }
   }
