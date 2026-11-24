@@ -38,6 +38,12 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5393](bugs/BUG-5393-merged-user-collection-resurrected-by-sync.md) | ✅ | ✅ | 用户合集被合并掉后，下一次合集同步按对端旧副本原样重建 |
+> 共 4686 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5389](bugs/BUG-5389-update-install-ui-freeze-rm-getlist.md) | ✅ | ✅ | 更新下载完成后交给安装器前窗口「未响应」：Restart Manager 查询在主 isolate 同步跑 |
+| [BUG-5388](bugs/BUG-5388-windows-silent-process-vanish.md) | 🚧 | 🚧 | Windows 阅读中进程无声消失：无 dump、无 WER、无 exitReason |
 > 共 4699 条。点号进各自文件。
 > 共 4700 条。点号进各自文件。
 

@@ -1629,7 +1629,7 @@ Future<List<WindowsProcessInfo>> queryWindowsLibmpvModuleHolders(
   try {
     final String libmpv =
         '$targetInstallDir${Platform.pathSeparator}libmpv-2.dll';
-    return windowsProcessesHoldingFile(libmpv)
+    return (await windowsProcessesHoldingFile(libmpv))
         .map(
           (WindowsProcessEntry entry) => WindowsProcessInfo(
             pid: entry.pid,
@@ -1689,7 +1689,7 @@ Future<List<WindowsProcessInfo>> queryWindowsGalHookModuleHolders(
     // 全部文件登记进同一个 Restart Manager 会话：要的只是占用者集合（一个游戏进程
     // 通常同时持有 hook DLL 和它加载的 LunaHook DLL，结果已按 pid 去重）。逐文件开
     // 会话在这 28 个文件上实测 ~1 s 同步 FFI，正卡在下载完成→退出交给安装器之间。
-    return windowsProcessesHoldingFiles(binaries)
+    return (await windowsProcessesHoldingFiles(binaries))
         .map(
           (WindowsProcessEntry entry) => WindowsProcessInfo(
             pid: entry.pid,
