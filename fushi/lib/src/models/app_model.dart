@@ -12832,6 +12832,12 @@ class AppModel
 
   Future<void> closeDatabase({Duration? pipelineDrainTimeout}) async {
     _isInitialised = false;
+    // BUG-5387：换库的生命周期边界。先让本库名下的后台写库工作（来源扫描、视频刮削 /
+    // 补刮、整文件哈希升级、封面回填、响度测量……）全部收到取消，与下面其它写手的收尾
+    // 并行停下；关连接前等它们真正退出。此后它们发出的 SQL 被拦下，旧库里读到的行身份
+    // 不会写进备份恢复 / 迁移换上来的新库。
+    final Future<void> backgroundWorkStopped = _database
+        .quiesceBackgroundWork();
     // BUG-1569②：合集观察者持有本库的表订阅 + 未决防抖 Timer，关库前必须撤——
     // 否则防抖到点后 _runCollectionsSync 会对已关闭的 db 发起查询（drift「connection
     // was closed」异常）。initialise 装载（installCollectionsSyncWatcher），此前只有
@@ -12842,6 +12848,7 @@ class AppModel
       pipelineDrainTimeout: pipelineDrainTimeout,
     );
     await _drainDictionaryWritesForClose('AppModel.closeDatabase');
+    await backgroundWorkStopped;
     // srs.db 先关：覆盖恢复随后要换 / 删这个文件（POSIX 上删开着的库只是 unlink，连接还写旧 inode）。
     await _closeSrsStorage();
     await _database.close();

@@ -7,6 +7,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/frame_safe_notifier.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseWorkCancelledException;
 import 'package:fushi_engine/foundation/engine_log.dart';
 
 class ErrorLogEntry {
@@ -424,6 +425,12 @@ class ErrorLogService extends ChangeNotifier
 
   @override
   void log(String source, Object error, [StackTrace? stack]) {
+    // BUG-5387：换库 / 关库时被取消的后台写库工作是预期内的停机，不是应用错误——
+    // 进诊断段留证据，不进用户可见错误计数。
+    if (error is DatabaseWorkCancelledException) {
+      logDiagnostic(source, error);
+      return;
+    }
     final entry = ErrorLogEntry(
       timestamp: DateTime.now(),
       source: source,
@@ -473,6 +480,10 @@ class ErrorLogService extends ChangeNotifier
   /// 错误也已在磁盘上，下次启动能读到。同步 IO 仅在罕见的致命路径触发，不影响热路径。
   @override
   void logFatal(String source, Object error, [StackTrace? stack]) {
+    if (error is DatabaseWorkCancelledException) {
+      logDiagnostic(source, error);
+      return;
+    }
     final entry = ErrorLogEntry(
       timestamp: DateTime.now(),
       source: source,

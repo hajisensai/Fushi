@@ -1909,58 +1909,72 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     // 否则点了「重新扫描」什么也不发生。
     bool blockedByScrapeCleanup = false;
     setState(() => _scanning.add(row.id));
+    // BUG-5387：扫描 + 扫完的刮削回调整段登记成当前库的后台工作。备份恢复等换库前
+    // 关库会取消它并等它退出；取消后不再回读来源行（那时库已在关，回读只会打在
+    // 已关闭的连接上——反馈 hfLuOcL7n0 日志里 `_rescan` 的「connection was closed」）。
     try {
-      // 扫描器自己登记进全局扫描占用表（[sourceScanActivity]，每来源锁）：首页的自动
-      // 扫描看到它在扫就排队，不并发扫。
-      Future<SourceScanSummary> scan() => SourceLibraryScanner(
-        _db,
-        transcribeAudiobook: _bookTranscribePort,
-      ).scan(row, restoreDissolvedGroups: restoreDissolvedGroups);
-      final VideoSourceScrapeTaskController? controller =
-          widget.mediaKind == 'video' ? widget.scrapeTaskController : null;
-      summary = controller == null
-          ? await scan()
-          : await controller.runSourceScan(row.id, scan);
-    } on VideoScrapeMaintenanceActiveError {
-      blockedByScrapeCleanup = true;
-    } finally {
-      try {
-        final SourceLibraryRow? updated = await _db.getMediaSourceById(row.id);
-        if (row.mediaKind == 'video' &&
-            summary != null &&
-            onVideoScanCompleted != null) {
-          // 回调属于 HomePage，页面在扫描期间被切走也要继续执行。
-          // 保持 _scanning 到回调结束，确保同来源扫描与自动刮削不会重入。
-          await onVideoScanCompleted(updated ?? row, summary);
-        }
-        if (mounted) {
-          setState(() {
-            _scanning.remove(row.id);
-            final List<SourceLibraryRow>? rows = _rows;
-            if (rows != null && updated != null) {
-              final int idx = rows.indexWhere(
-                (SourceLibraryRow r) => r.id == row.id,
-              );
-              if (idx >= 0) rows[idx] = updated;
-            }
-          });
-          // 扫描可能新增条目，刷新累计计数（TODO-1036）。
-          await _refreshCount(row.id);
-          final SourceScanSummary? done = summary;
-          if (done != null && done.succeeded) _showBookAudiobookSummary(done);
-          if (blockedByScrapeCleanup || done?.blocked != null) {
-            // 扫描器给的 error 就是按 blocked 种类写的本地化文案（清理中 / 来源已移除）。
-            FushiToast.show(
-              msg: done?.blocked != null && done?.error != null
-                  ? done!.error!
-                  : t.media_source_scan_blocked_scrape_cleanup,
-              severity: ToastSeverity.warning,
+      await _db.runBackgroundWork<void>('source.rescan', (
+        DatabaseWorkToken _,
+      ) async {
+        try {
+          // 扫描器自己登记进全局扫描占用表（[sourceScanActivity]，每来源锁）：首页的自动
+          // 扫描看到它在扫就排队，不并发扫。
+          Future<SourceScanSummary> scan() => SourceLibraryScanner(
+            _db,
+            transcribeAudiobook: _bookTranscribePort,
+          ).scan(row, restoreDissolvedGroups: restoreDissolvedGroups);
+          final VideoSourceScrapeTaskController? controller =
+              widget.mediaKind == 'video' ? widget.scrapeTaskController : null;
+          summary = controller == null
+              ? await scan()
+              : await controller.runSourceScan(row.id, scan);
+        } on VideoScrapeMaintenanceActiveError {
+          blockedByScrapeCleanup = true;
+        } finally {
+          try {
+            final SourceLibraryRow? updated = await _db.getMediaSourceById(
+              row.id,
             );
+            if (row.mediaKind == 'video' &&
+                summary != null &&
+                onVideoScanCompleted != null) {
+              // 回调属于 HomePage，页面在扫描期间被切走也要继续执行。
+              // 保持 _scanning 到回调结束，确保同来源扫描与自动刮削不会重入。
+              await onVideoScanCompleted(updated ?? row, summary);
+            }
+            if (mounted) {
+              setState(() {
+                _scanning.remove(row.id);
+                final List<SourceLibraryRow>? rows = _rows;
+                if (rows != null && updated != null) {
+                  final int idx = rows.indexWhere(
+                    (SourceLibraryRow r) => r.id == row.id,
+                  );
+                  if (idx >= 0) rows[idx] = updated;
+                }
+              });
+              // 扫描可能新增条目，刷新累计计数（TODO-1036）。
+              await _refreshCount(row.id);
+              final SourceScanSummary? done = summary;
+              if (done != null && done.succeeded)
+                _showBookAudiobookSummary(done);
+              if (blockedByScrapeCleanup || done?.blocked != null) {
+                // 扫描器给的 error 就是按 blocked 种类写的本地化文案（清理中 / 来源已移除）。
+                FushiToast.show(
+                  msg: done?.blocked != null && done?.error != null
+                      ? done!.error!
+                      : t.media_source_scan_blocked_scrape_cleanup,
+                  severity: ToastSeverity.warning,
+                );
+              }
+            }
+          } finally {
+            onLibraryChanged?.call();
           }
         }
-      } finally {
-        onLibraryChanged?.call();
-      }
+      });
+    } on DatabaseWorkCancelledException {
+      if (mounted) setState(() => _scanning.remove(row.id));
     }
   }
 

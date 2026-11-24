@@ -618,7 +618,21 @@ class VideoLibraryScrapeSweep {
   /// 一次查库两用：清单喂视频页的待确认提醒条，其中没自动试过的作品同时进补刮
   /// 批次。总闸关、controller 忙、作品已试过都只是不发起批次，**清单照常返回**
   /// ——「不自动刮」不等于「不告诉用户有东西待确认」。
+  ///
+  /// BUG-5387：整轮登记成本库的后台工作。关库 / 换库（备份恢复等）时被取消，取消后的
+  /// SQL 发不出去，关库等它退出才真关；被取消的这轮沿用上一份清单。
   Future<List<VideoPendingScrapeWork>> sweepAndListPending() async {
+    try {
+      return await _database.runBackgroundWork<List<VideoPendingScrapeWork>>(
+        'video.scrapeSweep',
+        (DatabaseWorkToken _) => _sweepAndListPendingInWork(),
+      );
+    } on DatabaseWorkCancelledException {
+      return _lastPending;
+    }
+  }
+
+  Future<List<VideoPendingScrapeWork>> _sweepAndListPendingInWork() async {
     if (_sweeping || _controller.isBusy) return _deferUntilIdle(_lastPending);
     _sweeping = true;
     _sweepDeferred = false;
@@ -627,6 +641,7 @@ class VideoLibraryScrapeSweep {
       try {
         planned = await _plannedWorks();
       } catch (error, stack) {
+        if (error is DatabaseWorkCancelledException) rethrow;
         // 计划失败 ≠ 「没有待确认作品」：留痕，沿用上一份清单（不拿空清单盖掉
         // 提醒条），本轮不发批次。
         engineLog.log('VideoLibraryScrapeSweep.plan', error, stack);

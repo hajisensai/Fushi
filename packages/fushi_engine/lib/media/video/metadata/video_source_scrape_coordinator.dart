@@ -698,17 +698,48 @@ class VideoSourceScrapeCoordinator
         VideoScrapeOperationGate.tryEnterOperation();
     if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
-      return await _scrapeSourceUnlocked(
-        source,
-        cancellationToken: cancellationToken,
-        onProgress: onProgress,
-        plannedWorks: <VideoSourceScrapeWork>[work],
-        runScope: 'work',
-        forceFreshAiIdentity: true,
+      return await _asDatabaseWork(
+        'video.identifyWorkWithAi',
+        cancellationToken,
+        () => _scrapeSourceUnlocked(
+          source,
+          cancellationToken: cancellationToken,
+          onProgress: onProgress,
+          plannedWorks: <VideoSourceScrapeWork>[work],
+          runScope: 'work',
+          forceFreshAiIdentity: true,
+        ),
       );
     } finally {
       lease.release();
     }
+  }
+
+  /// BUG-5387：一次刮削登记成 [database] 的后台工作（换库的生命周期边界）。库开始关
+  /// （备份恢复、合并导入、迁移……）时：[cancellationToken] 跟着取消，刮削在下一个阶段
+  /// 边界停下；取消之后发出的 SQL 被拦下，旧库里读到的作品 / 视频身份写不进换上来的
+  /// 新库。库侧的取消统一翻成 [VideoSourceScrapeCancelled]，任务控制器按「已取消」收尾。
+  Future<SourceScrapeReport> _asDatabaseWork(
+    String label,
+    VideoSourceScrapeCancellationToken cancellationToken,
+    Future<SourceScrapeReport> Function() body,
+  ) async {
+    try {
+      return await database.runBackgroundWork<SourceScrapeReport>(label, (
+        DatabaseWorkToken work,
+      ) {
+        unawaited(work.whenCancelled.then((_) => cancellationToken.cancel()));
+        return body();
+      });
+    } on DatabaseWorkCancelledException {
+      throw const VideoSourceScrapeCancelled();
+    }
+  }
+
+  /// 在刮削工作里等一个不经数据库的操作（用户确认）：库开始关时不再等。
+  static Future<T> _guardForDatabaseWork<T>(Future<T> operation) {
+    final DatabaseWorkToken? work = DatabaseWorkToken.current;
+    return work == null ? operation : work.guard(operation);
   }
 
   Future<VideoSourceScrapeWork> _plannedWork(
@@ -816,15 +847,19 @@ class VideoSourceScrapeCoordinator
         VideoScrapeMaintenanceActiveError(),
       );
     }
-    return _scrapeSourceUnlocked(
-      source,
-      cancellationToken: cancellationToken,
-      onProgress: onProgress,
-      onConfirmation: onConfirmation,
-      batchContext: batchContext,
-      plannedWorks: plannedWorks,
-      confirmedLookups: confirmedLookups,
-      runScope: runScope,
+    return _asDatabaseWork(
+      'video.scrapeSource',
+      cancellationToken,
+      () => _scrapeSourceUnlocked(
+        source,
+        cancellationToken: cancellationToken,
+        onProgress: onProgress,
+        onConfirmation: onConfirmation,
+        batchContext: batchContext,
+        plannedWorks: plannedWorks,
+        confirmedLookups: confirmedLookups,
+        runScope: runScope,
+      ),
     ).whenComplete(lease.release);
   }
 
@@ -1925,15 +1960,19 @@ class VideoSourceScrapeCoordinator
             status: resolution.status,
           );
         }
-        selected = await onConfirmation(
-          VideoSourceScrapeConfirmation(
-            sourceId: source.id,
-            sourceLabel: source.label,
-            localWorkTitle: localWork.title,
-            candidates: options,
-            aiSuggestion: ai.suggestion,
-            strictMatches: resolution.strictMatches,
-            workStableKey: localWork.stableKey,
+        // BUG-5387：等用户确认期间库可能要关（备份恢复把界面换成遮罩，用户已没法答）：
+        // 不等了，按取消收尾，关库才能继续。
+        selected = await _guardForDatabaseWork(
+          onConfirmation(
+            VideoSourceScrapeConfirmation(
+              sourceId: source.id,
+              sourceLabel: source.label,
+              localWorkTitle: localWork.title,
+              candidates: options,
+              aiSuggestion: ai.suggestion,
+              strictMatches: resolution.strictMatches,
+              workStableKey: localWork.stableKey,
+            ),
           ),
         );
       }
