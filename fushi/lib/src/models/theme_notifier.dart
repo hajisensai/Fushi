@@ -1319,16 +1319,30 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// 各模块单独设的背景（[kPageBackdropModulePresetsPrefKey] +
   /// [kPageBackdropModuleImagesPrefKey]），图片路径按与全局同一份存在性核对过滤。
-  Map<HomeTab, PageBackdropModuleOverride> _readPageBackdropModuleOverrides() {
-    final Map<HomeTab, PageBackdropPreset> presets =
+  Map<HomeTab, PageBackdropModuleOverride> _readPageBackdropModuleOverrides() =>
+      _readPageBackdropOverrides<HomeTab>(
         decodePageBackdropModulePresets(
           _get(kPageBackdropModulePresetsPrefKey),
-        );
-    final Map<HomeTab, PageBackdropModuleImages> images =
-        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
-    return Map<HomeTab, PageBackdropModuleOverride>.unmodifiable(
-      <HomeTab, PageBackdropModuleOverride>{
-        for (final MapEntry<HomeTab, PageBackdropPreset> e in presets.entries)
+        ),
+        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey)),
+      );
+
+  /// 各页面单独设的背景（与模块同存在两个模块键里，键名是页面 wire）。
+  Map<PageBackdropPage, PageBackdropModuleOverride>
+  _readPageBackdropPageOverrides() =>
+      _readPageBackdropOverrides<PageBackdropPage>(
+        decodePageBackdropPagePresets(_get(kPageBackdropModulePresetsPrefKey)),
+        decodePageBackdropPageImages(_get(kPageBackdropModuleImagesPrefKey)),
+      );
+
+  /// 模块 / 页面两层共用：预设 + 图片拼成覆盖，图片按存在性核对过滤。
+  Map<K, PageBackdropModuleOverride> _readPageBackdropOverrides<K>(
+    Map<K, PageBackdropPreset> presets,
+    Map<K, PageBackdropModuleImages> images,
+  ) {
+    return Map<K, PageBackdropModuleOverride>.unmodifiable(
+      <K, PageBackdropModuleOverride>{
+        for (final MapEntry<K, PageBackdropPreset> e in presets.entries)
           e.key: PageBackdropModuleOverride(
             preset: e.value,
             landscapeImagePath: existingPageBackdropImagePath(
@@ -1355,7 +1369,7 @@ class ThemeNotifier extends ChangeNotifier {
       }
     }
     for (final PageBackdropModuleImages images
-        in decodePageBackdropModuleImages(
+        in decodePageBackdropScopedImages(
           _get(kPageBackdropModuleImagesPrefKey),
         ).values) {
       if (_resolvePageBackdropImage(images.landscape) case final String path) {
@@ -1386,6 +1400,7 @@ class ThemeNotifier extends ChangeNotifier {
     final Color? before = pageBackdropAccentSeed;
     pageBackdropSettings.value = _readPageBackdropSettings();
     pageBackdropModuleOverrides.value = _readPageBackdropModuleOverrides();
+    pageBackdropPageOverrides.value = _readPageBackdropPageOverrides();
     if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
   }
 
@@ -1438,7 +1453,7 @@ class ThemeNotifier extends ChangeNotifier {
       final Object? raw = _get(key);
       if (raw is String && raw.isNotEmpty) return true;
     }
-    return decodePageBackdropModuleImages(
+    return decodePageBackdropScopedImages(
       _get(kPageBackdropModuleImagesPrefKey),
     ).isNotEmpty;
   }
@@ -1602,49 +1617,29 @@ class ThemeNotifier extends ChangeNotifier {
     return fileName;
   }
 
-  // ── 按模块单独设置背景（反馈 DYI1IOZxSM）──────────────────────────────
+  // ── 按模块 / 页面单独设置背景（反馈 DYI1IOZxSM、拍板台 xxbbL0j15l）──────────
 
   /// [tab] 单独设的背景；null = 跟随全局。
   PageBackdropModuleOverride? pageBackdropModuleOverride(HomeTab tab) =>
       pageBackdropModuleOverrides.value[tab];
+
+  /// [page] 单独设的背景；null = 继承所属模块。
+  PageBackdropModuleOverride? pageBackdropPageOverride(PageBackdropPage page) =>
+      pageBackdropPageOverrides.value[page];
 
   /// 给 [tab] 单独设预设；[preset] 为 null = 恢复跟随全局（连同本模块的图片一起删）。
   /// 选「自定义图片」但本模块还没有图时由调用方先走 [importPageBackdropModuleImage]。
   Future<void> setPageBackdropModulePreset(
     HomeTab tab,
     PageBackdropPreset? preset,
-  ) => _serializePageBackdropImageMutation(() async {
-    final Map<HomeTab, PageBackdropPreset> presets =
-        decodePageBackdropModulePresets(
-          _get(kPageBackdropModulePresetsPrefKey),
-        );
-    if (preset == null) {
-      presets.remove(tab);
-      final Map<HomeTab, PageBackdropModuleImages> images =
-          decodePageBackdropModuleImages(
-            _get(kPageBackdropModuleImagesPrefKey),
-          );
-      final PageBackdropModuleImages? removed = images.remove(tab);
-      await _set(
-        kPageBackdropModulePresetsPrefKey,
-        encodePageBackdropModulePresets(presets),
-      );
-      if (removed != null) {
-        await _set(
-          kPageBackdropModuleImagesPrefKey,
-          encodePageBackdropModuleImages(images),
-        );
-        await _sweepUnreferencedPageBackdropImages();
-      }
-    } else {
-      presets[tab] = preset;
-      await _set(
-        kPageBackdropModulePresetsPrefKey,
-        encodePageBackdropModulePresets(presets),
-      );
-    }
-    _publishPageBackdrop();
-  });
+  ) => _setScopedPageBackdropPreset(pageBackdropModuleWire(tab), preset);
+
+  /// 给 [page] 单独设预设；[preset] 为 null = 恢复继承所属模块（连同本页的图片一起删），
+  /// [PageBackdropPreset.plain] = 在这一页关掉背景装饰。
+  Future<void> setPageBackdropPagePreset(
+    PageBackdropPage page,
+    PageBackdropPreset? preset,
+  ) => _setScopedPageBackdropPreset(page.wire, preset);
 
   /// 把用户选的图片复制进 app 数据目录当 [tab] 的背景（[portrait] = 竖屏单独用的
   /// 那张）。换横屏图同时把这个模块切到「自定义图片」。模块图片不参与取色。
@@ -1652,53 +1647,122 @@ class ThemeNotifier extends ChangeNotifier {
     HomeTab tab,
     File source, {
     required bool portrait,
+  }) => _importScopedPageBackdropImage(
+    pageBackdropModuleWire(tab),
+    'module',
+    source,
+    portrait: portrait,
+  );
+
+  /// [importPageBackdropModuleImage] 的页面版：换横屏图同时把 [page] 切到「自定义图片」。
+  Future<void> importPageBackdropPageImage(
+    PageBackdropPage page,
+    File source, {
+    required bool portrait,
+  }) => _importScopedPageBackdropImage(
+    page.wire,
+    'page',
+    source,
+    portrait: portrait,
+  );
+
+  /// 去掉 [tab] 竖屏单独的那张图（竖屏回到与本模块横屏图共用）。
+  Future<void> clearPageBackdropModulePortraitImage(HomeTab tab) =>
+      _clearScopedPageBackdropPortraitImage(pageBackdropModuleWire(tab));
+
+  /// 去掉 [page] 竖屏单独的那张图（竖屏回到与本页横屏图共用）。
+  Future<void> clearPageBackdropPagePortraitImage(PageBackdropPage page) =>
+      _clearScopedPageBackdropPortraitImage(page.wire);
+
+  /// 模块 / 页面两层共用的写入：两层存在同一对 JSON 键里，按 wire 整体读改写，
+  /// 改一层不会丢掉另一层的设置。
+  Future<void> _setScopedPageBackdropPreset(
+    String wire,
+    PageBackdropPreset? preset,
+  ) => _serializePageBackdropImageMutation(() async {
+    final Map<String, PageBackdropPreset> presets =
+        decodePageBackdropScopedPresets(
+          _get(kPageBackdropModulePresetsPrefKey),
+        );
+    if (preset == null) {
+      presets.remove(wire);
+      final Map<String, PageBackdropModuleImages> images =
+          decodePageBackdropScopedImages(
+            _get(kPageBackdropModuleImagesPrefKey),
+          );
+      final PageBackdropModuleImages? removed = images.remove(wire);
+      await _set(
+        kPageBackdropModulePresetsPrefKey,
+        encodePageBackdropScopedPresets(presets),
+      );
+      if (removed != null) {
+        await _set(
+          kPageBackdropModuleImagesPrefKey,
+          encodePageBackdropScopedImages(images),
+        );
+        await _sweepUnreferencedPageBackdropImages();
+      }
+    } else {
+      presets[wire] = preset;
+      await _set(
+        kPageBackdropModulePresetsPrefKey,
+        encodePageBackdropScopedPresets(presets),
+      );
+    }
+    _publishPageBackdrop();
+  });
+
+  /// [slot] 只进复制件的文件名（`<slot>-<wire>-<朝向>-<毫秒>`），便于排查。
+  Future<void> _importScopedPageBackdropImage(
+    String wire,
+    String slot,
+    File source, {
+    required bool portrait,
   }) => _serializePageBackdropImageMutation(() async {
     final Directory dir = await _resolvePageBackdropImageDirectory();
-    final String wire = pageBackdropModuleWire(tab);
     final String name = await _copyPageBackdropImage(
       source,
       dir,
-      'module-$wire-${portrait ? 'portrait' : 'landscape'}',
+      '$slot-$wire-${portrait ? 'portrait' : 'landscape'}',
     );
-    final Map<HomeTab, PageBackdropModuleImages> images =
-        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
+    final Map<String, PageBackdropModuleImages> images =
+        decodePageBackdropScopedImages(_get(kPageBackdropModuleImagesPrefKey));
     final PageBackdropModuleImages current =
-        images[tab] ?? (landscape: null, portrait: null);
-    images[tab] = portrait
+        images[wire] ?? (landscape: null, portrait: null);
+    images[wire] = portrait
         ? (landscape: current.landscape, portrait: name)
         : (landscape: name, portrait: current.portrait);
     await _set(
       kPageBackdropModuleImagesPrefKey,
-      encodePageBackdropModuleImages(images),
+      encodePageBackdropScopedImages(images),
     );
     if (!portrait) {
-      final Map<HomeTab, PageBackdropPreset> presets =
-          decodePageBackdropModulePresets(
+      final Map<String, PageBackdropPreset> presets =
+          decodePageBackdropScopedPresets(
             _get(kPageBackdropModulePresetsPrefKey),
           );
-      presets[tab] = PageBackdropPreset.custom;
+      presets[wire] = PageBackdropPreset.custom;
       await _set(
         kPageBackdropModulePresetsPrefKey,
-        encodePageBackdropModulePresets(presets),
+        encodePageBackdropScopedPresets(presets),
       );
     }
     await _sweepUnreferencedPageBackdropImages();
     _publishPageBackdrop();
   });
 
-  /// 去掉 [tab] 竖屏单独的那张图（竖屏回到与本模块横屏图共用）。
-  Future<void> clearPageBackdropModulePortraitImage(HomeTab tab) =>
+  Future<void> _clearScopedPageBackdropPortraitImage(String wire) =>
       _serializePageBackdropImageMutation(() async {
-        final Map<HomeTab, PageBackdropModuleImages> images =
-            decodePageBackdropModuleImages(
+        final Map<String, PageBackdropModuleImages> images =
+            decodePageBackdropScopedImages(
               _get(kPageBackdropModuleImagesPrefKey),
             );
-        final PageBackdropModuleImages? current = images[tab];
+        final PageBackdropModuleImages? current = images[wire];
         if (current == null || current.portrait == null) return;
-        images[tab] = (landscape: current.landscape, portrait: null);
+        images[wire] = (landscape: current.landscape, portrait: null);
         await _set(
           kPageBackdropModuleImagesPrefKey,
-          encodePageBackdropModuleImages(images),
+          encodePageBackdropScopedImages(images),
         );
         await _sweepUnreferencedPageBackdropImages();
         _publishPageBackdrop();
