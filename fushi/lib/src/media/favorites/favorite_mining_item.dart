@@ -38,3 +38,25 @@ class FavoriteMiningItem {
 
   bool get isVideo => source == kFavoriteSentenceSourceVideo;
 }
+
+/// 收藏句 → 批量制卡输入（首页「收藏句子」小组件的「制卡（N）」用）：只有记着查词
+/// 词头（弹窗顶栏 ★ 收藏）的句子才有词可制，否则为 null。映射与收藏夹页的收藏句
+/// 行逐字段一致；[bookTitle] 缺省用收藏时的标题快照。
+FavoriteMiningItem? favoriteMiningItemOfSentence(
+  FavoriteSentence favorite, {
+  String? bookTitle,
+}) {
+  final String? headword = favorite.expression;
+  if (headword == null || headword.isEmpty) return null;
+  return FavoriteMiningItem(
+    expression: headword,
+    reading: favorite.reading ?? '',
+    sentence: favorite.text,
+    source: favorite.source,
+    bookKey: favorite.bookKey,
+    bookTitle: bookTitle ?? favorite.bookTitle,
+    sectionIndex: favorite.sectionIndex,
+    normCharOffset: favorite.normCharOffset,
+    normCharLength: favorite.normCharLength,
+  );
+}

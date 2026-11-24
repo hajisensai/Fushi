@@ -38,6 +38,7 @@ String homeWidgetLabel(HomeWidgetKind kind) => switch (kind) {
   HomeWidgetKind.aiAgent => t.ai_agent_title,
   HomeWidgetKind.panorama => t.home_panel_panorama_title,
   HomeWidgetKind.languageGoals => t.home_widget_language_goals,
+  HomeWidgetKind.favorites => t.home_widget_favorites,
 };
 
 /// 组件一句话说明（添加面板）。
@@ -54,6 +55,7 @@ String homeWidgetDescription(HomeWidgetKind kind) => switch (kind) {
   HomeWidgetKind.aiAgent => t.home_widget_desc_ai_agent,
   HomeWidgetKind.panorama => t.home_panel_panorama_hint,
   HomeWidgetKind.languageGoals => t.home_widget_desc_language_goals,
+  HomeWidgetKind.favorites => t.home_widget_desc_favorites,
 };
 
 /// 布局里一块组件的名字（编辑态读屏 / 尺寸网格标题）：可配置的组件带上配置

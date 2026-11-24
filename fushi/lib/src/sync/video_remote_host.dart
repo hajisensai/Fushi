@@ -276,6 +276,7 @@ final class VideoRemotePlaybackBinding {
     required this.removeListener,
     this.favoritesChanged,
     this.libraryAnchor,
+    this.originSourceId,
     this.previewAudio,
     this.stopAudio,
     this.setVolume,
@@ -314,6 +315,12 @@ final class VideoRemotePlaybackBinding {
   /// playlist spans several episode rows, each with its own timeline
   /// (BUG-5356).
   final ({String bookUid, int ms}) Function(int startMs)? libraryAnchor;
+
+  /// The remote-source identity favorites written through this binding record
+  /// ([FavoriteSentence.originSourceId], BUG-5379): the player's
+  /// `RemoteLibrarySource.remoteLibrarySourceId` when it streams an item that
+  /// is not in the local library. Null (or returning null) = a library row.
+  final String? Function()? originSourceId;
 
   /// [libraryAnchor] with its default applied.
   ({String bookUid, int ms}) anchorOf(int startMs) =>
@@ -1135,6 +1142,7 @@ final class VideoRemoteHost implements VideoRemoteService {
             // Same statistics-day key as every other favorite write
             // (`statTodayKey()`), honouring the configurable day reset.
             dateKey: FushiDatabase.statDateKeyOf(_now()),
+            originSourceId: binding.originSourceId?.call(),
           ),
         );
       } else if (body['favorited'] == false) {

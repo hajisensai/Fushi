@@ -254,8 +254,15 @@ class AggregateMergeService {
         clockOrder > 0 ||
         (clockOrder == 0 &&
             (other.color ?? '').compareTo(identity.color ?? '') > 0);
-    if (!otherColorWins) return identity;
-    return identity.withColor(other.color, other.colorClock);
+    // The remote-source identity (v179, BUG-5379) is write-once: whichever side
+    // recorded it (an older device syncs the same favorite without it) keeps
+    // it, so the "jump back" on every device finds the right media server.
+    final FavoriteSentence withOrigin =
+        identity.originSourceId == null && other.originSourceId != null
+        ? identity.withOriginSourceId(other.originSourceId)
+        : identity;
+    if (!otherColorWins) return withOrigin;
+    return withOrigin.withColor(other.color, other.colorClock);
   }
 
   /// Content identity of a favorite sentence — delegates to the single source of
