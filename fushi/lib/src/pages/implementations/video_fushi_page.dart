@@ -8225,12 +8225,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
-    _playlistStillExists.dispose();
-    // 播放列表是进程内共享的（换页后的新页接着用），只摘本页的监听。
-    _youtubePlaylist?.removeListener(_onYoutubePlaylistChanged);
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
+    _playlistStillExists.dispose();
+    // 播放列表是进程内共享的（换页后的新页接着用），只摘本页的监听。
+    _youtubePlaylist?.removeListener(_onYoutubePlaylistChanged);
     // 拍板台 42UUu_kcwD-media：离页即让出系统媒体会话（已被别的页面 / 有声书 /
     // 音乐接手时只拆自己的监听）。
     _backgroundMediaSession?.dispose();

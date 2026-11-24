@@ -2116,7 +2116,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   ///   自动放行；用户显式下拉刷新（[_pullToRefresh]）清账重试。
   /// [_backfillingCovers] 防并发重入。
   Future<void> _maybeBackfillCovers() async {
-    if (_backfillingCovers) return;
+    if (_backfillingCovers || !debugVideoCoverBackfillEnabled) return;
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
     // 自动抽帧是可重试增强。全局清理已入场时直接跳过，不能在其隔离窗口重建

@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/media/video/cover_backfill_ledger.dart'
+    show debugVideoCoverBackfillEnabled;
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
@@ -82,6 +84,10 @@ void main() {
 
   setUp(() async {
     dbClosed = false;
+    // 套件默认关掉视频库页的封面回填（flutter_test_config）；本文件挂载视频库页即覆盖
+    // 回填入口（BUG-5422：回填从 initState 同步进来时不得 watch provider），所以显式
+    // 打开，并在用例体内卸页、推进到关库完成（unmountAndCloseDb）。
+    debugVideoCoverBackfillEnabled = true;
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
@@ -105,6 +111,7 @@ void main() {
   });
 
   tearDown(() async {
+    debugVideoCoverBackfillEnabled = false;
     scrapeController.dispose();
     refreshSignal.dispose();
     if (!dbClosed) await db.close();
