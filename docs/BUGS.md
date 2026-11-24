@@ -37,7 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-5390](bugs/BUG-5390-curator-book-scrape-no-author-marked-done.md) | 🚧 | 🚧 | 库管家认对了只缺作者的漫画却写不进作者（Bangumi 候选不带作者），还把这些卷标成做完、从待确认里消失 |
+| [BUG-5390](bugs/BUG-5390-curator-book-scrape-no-author-marked-done.md) | ✅ | ✅ | 库管家认对了只缺作者的漫画却写不进作者（Bangumi 候选不带作者），还把这些卷标成做完、从待确认里消失 |
 | [BUG-5385](bugs/BUG-5385-lyrics-illustration-viewer-stale-reached.md) | ✅ | ✅ | 有声书插图大图浏览打开期间新走过的插图看不到（只列已听到的、且不随播放刷新） |
 | [BUG-5384](bugs/BUG-5384-manga-ocr-page-identity.md) | ✅ | ✅ | manga-ocr-page-identity |
 | [BUG-5383](bugs/BUG-5383-develop-import-cycle-627.md) | ✅ | ✅ | develop import 环守卫红：最大环 627 > 上限 623 |

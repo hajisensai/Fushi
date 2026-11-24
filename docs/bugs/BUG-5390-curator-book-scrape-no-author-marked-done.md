@@ -1,6 +1,8 @@
 ## BUG-5390 · 库管家认对了只缺作者的漫画却写不进作者（Bangumi 候选不带作者），还把这些卷标成做完、从待确认里消失
-- **报告**：2026-11-24（用户：）
-- **真实性**：（沿真实代码路径验真伪后填：✅ 真 bug / ❌ 未复现，附根因 `file:line`）
-- **[ ] ① 未修复** —
-- **[ ] ② 未加自动化测试** —
-- **备注**：
+- **报告**：2026-11-24（BUG-5366 合并后在用户真库复查发现：漫画横幅从 43 部降到 8 部，但 `book.scrape.apply` 0 条，魔法少女にあこがれて / 不揃いの連理 / 行進子犬に恋文を 等作者仍为空，`scrape.books.done:` 记了 61 卷）
+- **真实性**：✅ 真 bug，两处根因：
+  1. `fushi/lib/src/media/metadata/book_metadata_scraper.dart` `mapBookSubject` 不取作者。Bangumi `/v0/search/subjects` 的结果本身带 `infobox`（实测 `魔法少女にあこがれて` → `{"key":"作者","value":"小野中彰大"}`），候选的 `author` 却一直是 null。这批书封面齐全、只缺作者，库管家认对了作品也没有字段可写。
+  2. `packages/fushi_engine/lib/media/library_curate/library_curator.dart` `_scrapeBooks` 写回循环：一卷没有任何要写的字段（`fields` 全空，根本没发 apply）也照样记 `scrape.books.done:`，于是这本书从待确认身份清单里消失，资料却还缺着——横幅数字下降掩盖了没修好。
+- **[x] ① 已修复** — `mapBookSubject` 用 `bangumiInfoboxAuthors`（由 `bangumi_tankobon.dart` 的私有 `_infoboxAuthors` 公开、去重）取 作者 / 作画 / 原作；没有发出任何写入的卷不记做完，单元以 `no_fields` 原因留在待确认（映射到 `PendingIdentityCause.noUsableCandidate`）；`LibraryCurateState` 升 v3，读旧版本时连 `scrape.books.done:` 一起清掉重看（真写过的再查一次只会被 `onlyEmpty` 滤掉）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/metadata/book_metadata_scraper_test.dart`（infobox 作者解析、去重、缺省为 null）、`packages/fushi_engine/test/media/library_curate/library_curator_test.dart`（候选给不出缺的字段 → 不记做完、留 `no_fields`；状态迁移清掉做完记号）。真库探针 `fushi/integration_test/library_curate_realdb_itest.dart`（播种脱敏快照、手动跑一趟、打印前后缺作者数与待确认数、抓漫画书架截图）。
+- **备注**：真库实测（2026-11-24，脱敏快照播种进离屏 Windows runner 跑 `library_curate_realdb_itest.dart`，exit 0）：一趟手动库管家 `scrape.books` changes=51、pending=12、requests=10；缺作者的书 93 → 42；魔法少女にあこがれて→小野中彰大、不揃いの連理→みかん氏、バカに告白→矢坂しゅう、行進子犬に恋文を→玉崎たま、世界で一番おっぱいが好き！→昆布わかめ、週に一度クラスメイトを買う話→羽田宇佐；漫画书架横幅显示「12 部漫画还没认出来」（剩下的是 AI 不敢认的 ambiguous、资料源查无的同人 / 合集、`no_fields` 的哆啦A梦全集）。
