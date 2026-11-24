@@ -10,6 +10,10 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/theme_notifier.dart'
+    show buildFushiFallbackTheme;
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show FushiPageBackdrop;
 import 'package:fushi_core/fushi_core.dart';
 
 import 'fake_media_server_browser.dart';
@@ -34,6 +38,7 @@ void main() {
     List<MediaServerEntry> servers, {
     bool systemBackActive = true,
     List<GamepadButton>? outerGamepad,
+    ThemeData? theme,
   }) {
     Widget page = MediaServerBrowsePage(
       navigation: const Text('nav-probe'),
@@ -59,6 +64,7 @@ void main() {
     }
     return TranslationProvider(
       child: MaterialApp(
+        theme: theme,
         home: Scaffold(
           // 同一测试里换参数重新 pump 时强制重建 State（否则嵌套栈沿用上一次的）。
           body: KeyedSubtree(
@@ -99,6 +105,48 @@ void main() {
     await tester.pump();
     expect(settingsOpened, 1);
   });
+
+  // BUG-5412（反馈 vhFvt3IkHm）：嵌套 Navigator 的根页曾走 adaptivePageRoute，
+  // 真实主题的转场给它垫了第二层 FushiPageBackdrop——背景图在分区里按分区尺寸
+  // 重画（Material 下缩放闪动）、遮罩叠两层且重发背景作用域（Apple 下整块发白）。
+  for (final TargetPlatform platform in <TargetPlatform>[
+    TargetPlatform.windows,
+    TargetPlatform.iOS,
+  ]) {
+    testWidgets('嵌套根页透明、无进场过渡、不再垫第二层页面背景（$platform）', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(
+          const <MediaServerEntry>[],
+          theme: buildFushiFallbackTheme(
+            Brightness.light,
+          ).copyWith(platform: platform),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byType(FushiPageBackdrop),
+        findsOneWidget,
+        reason: '只有外层那一页（home 路由）垫背景',
+      );
+      expect(
+        find.descendant(
+          of: find.byType(MediaServerBrowsePage),
+          matching: find.byType(FushiPageBackdrop),
+        ),
+        findsNothing,
+        reason: '分区内的根页叠在外层页已画好的背景上，不重画',
+      );
+      final ModalRoute<Object?> root = ModalRoute.of(
+        tester.element(find.byType(MediaServerListView)),
+      )!;
+      expect(root.opaque, isFalse);
+      expect(root.transitionDuration, Duration.zero);
+      expect(root.reverseTransitionDuration, Duration.zero);
+    });
+  }
 
   testWidgets('点服务器以二级页面打开：整页盖住分区页签，返回回到列表', (WidgetTester tester) async {
     final FakeMediaServerBrowser only = fakeServer('nas', 'NAS');

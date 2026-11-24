@@ -49,11 +49,43 @@ Future<void> pushMediaServerPlayer(
   );
 }
 
+/// 分区嵌套 [Navigator] 的根路由：**透明、不读主题转场、零时长**。
+///
+/// 根页是分区本身的内容（与兄弟分区同级），不是「推进来的一页」。此前它也走
+/// [adaptivePageRoute]：主题的页面转场（`FushiBackdropPageTransitionsBuilder`）
+/// 给它垫了第二层 `FushiPageBackdrop`——用户背景图片在分区范围内按分区尺寸重画一遍
+/// （不同裁切 + 自己的缓慢漂移缩放 + 换尺寸后重新烘焙模糊时淡入），遮罩叠两层，
+/// 还按首次挂载时的模块重新发布背景作用域（底色是否透明）。Material 下看到画面
+/// 「缩放闪动」，Apple 下分区整块发白盖住壁纸（反馈 vhFvt3IkHm，BUG-5412）。
+///
+/// 这里换成不经主题的 [PageRouteBuilder]：页面直接叠在外壳那一页已画好的背景上，
+/// 背景作用域沿用外壳页的；无进场过渡（初始路由本就不该有进场动画）。服务器首页 /
+/// 网格 / 搜索 / 详情都是 push 到根 Navigator 的二级页面（`_openServer`、
+/// `openMediaServerAggregateSearch`、`openMediaServerDetail`），照旧走
+/// [adaptivePageRoute] 垫整窗背景，不进这条嵌套栈。
+Route<void> mediaServerNestedRootRoute({
+  required RouteSettings settings,
+  required WidgetBuilder builder,
+}) {
+  return PageRouteBuilder<void>(
+    settings: settings,
+    opaque: false,
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
+    pageBuilder:
+        (
+          BuildContext context,
+          Animation<double> animation,
+          Animation<double> secondaryAnimation,
+        ) => builder(context),
+  );
+}
+
 /// 视频页「媒体服务器」分区：服务器列表 → 服务器首页 → 库网格 / 搜索 / 详情 → 播放。
 ///
-/// 前三层是**分区内**的嵌套 [Navigator]：切到别的分区再切回来栈原样保留（壳把本页
-/// Offstage 保活），每层的滚动位置随路由存活。播放页不在这条栈里——它要压在整个
-/// app 之上，走根 Navigator。
+/// 服务器列表是**分区内**嵌套 [Navigator] 的根页（[mediaServerNestedRootRoute]）：
+/// 切到别的分区再切回来原样保留（壳把本页 Offstage 保活）。服务器首页 / 网格 /
+/// 搜索 / 详情 / 播放都是 push 到根 Navigator 的二级页面，不在这条嵌套栈里。
 ///
 /// **分区页签在嵌套 Navigator 之外**，由本页自己画在最上方，各层路由只在它下面叠
 /// 自己的紧凑页头（标题 / 返回 / 动作）。此前页签只放在栈底的服务器列表页里，push
@@ -237,9 +269,11 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
                     child: HeroControllerScope.none(
                       child: Navigator(
                         key: _navigatorKey,
+                        // 根页（服务器列表）是分区本身的内容，不是推进来的一页：
+                        // 透明、无进场过渡（[mediaServerNestedRootRoute]）。二级页面
+                        // 都 push 到根 Navigator，照旧用自适应路由。
                         onGenerateRoute: (RouteSettings settings) =>
-                            adaptivePageRoute<void>(
-                              context: context,
+                            mediaServerNestedRootRoute(
                               settings: settings,
                               builder: (_) => MediaServerListView(
                                 loadServers: widget.loadServers,
