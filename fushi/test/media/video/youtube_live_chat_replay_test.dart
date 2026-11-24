@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate' show ReceivePort;
 
-import 'package:test/test.dart';
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/youtube_live_chat_replay.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart' show MockClient;
+import 'package:test/test.dart';
 
 /// 拍板台 zTedU_pOQF：YouTube 聊天回放的解析与分页会话。fixture 的结构取自 2026-11 线上
 /// `youtubei/v1/next` 与 `live_chat/get_live_chat_replay` 实测响应（字段裁剪到解析用到的）。
@@ -148,7 +152,27 @@ void main() {
         }),
         isNull,
       );
-      expect(decodeYoutubeChatReplayEntry('[]'), isNull);
+    });
+
+    test('响应不是观看页数据（被拦截 / 只回 error）抛 FormatException，不当成「没有」', () {
+      expect(
+        () => decodeYoutubeChatReplayEntry('[]'),
+        throwsA(isA<FormatException>()),
+      );
+      expect(
+        () => decodeYoutubeChatReplayEntry(
+          jsonEncode(<String, Object?>{
+            'error': <String, Object?>{'message': 'Precondition check failed.'},
+          }),
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (FormatException e) => e.message,
+            'message',
+            contains('Precondition check failed.'),
+          ),
+        ),
+      );
     });
   });
 
@@ -288,28 +312,148 @@ void main() {
     expect(client['clientVersion'], kYoutubeChatWebClientVersion);
   });
 
-  test('fetchYoutubeChatReplayEntry：POST next 带 videoId；失败返回 null', () async {
-    String? endpoint;
-    Map<String, Object?>? sent;
-    final String? entry = await fetchYoutubeChatReplayEntry(
-      'vid123',
-      post: (String e, Map<String, Object?> body) async {
-        endpoint = e;
-        sent = body;
-        return jsonEncode(_nextResponse(isReplay: true));
-      },
-    );
-    expect(entry, 'ENTRY');
-    expect(endpoint, 'next');
-    expect(sent!['videoId'], 'vid123');
-    expect(
-      await fetchYoutubeChatReplayEntry(
+  // BUG-5411：探测曾在 IO 函数体里 `Isolate.run(() => decode(body))`，闭包把作用域链上的
+  // HTTP client（连接池里有未完成的 Future / 原生 socket）一起拷进 isolate 消息，拷贝必抛、
+  // 被 catch 吞成「没有聊天回放」——生产上从没出过按钮。测试里的 transport 故意攥着一个
+  // 不可发送的 ReceivePort（等同真实连接池），走与生产同一条 YoutubeHttpClient 链路。
+  group('probeYoutubeChatReplay', () {
+    late ReceivePort unsendable;
+    late _RecordingLog log;
+    late EngineLogSink previousLog;
+
+    setUp(() {
+      unsendable = ReceivePort();
+      log = _RecordingLog();
+      previousLog = engineLog;
+      engineLog = log;
+    });
+
+    tearDown(() {
+      unsendable.close();
+      engineLog = previousLog;
+    });
+
+    /// [reply] 回 (状态码, UTF-8 正文)；响应带上 request，与真实 IOClient 一致
+    /// （YoutubeHttpClient 校验状态码时要读它）。
+    MockClient transport((int, String) Function(http.Request) reply) =>
+        MockClient((http.Request request) async {
+          // 让 transport 的闭包真正持有不可发送的对象。
+          expect(unsendable.sendPort, isNotNull);
+          final (int status, String body) = reply(request);
+          return http.Response.bytes(
+            utf8.encode(body),
+            status,
+            request: request,
+            headers: const <String, String>{
+              'content-type': 'application/json; charset=utf-8',
+            },
+          );
+        });
+
+    test('有聊天回放：POST next 带 videoId，回入口 continuation', () async {
+      http.Request? seen;
+      final YoutubeChatReplayProbe probe = await probeYoutubeChatReplay(
         'vid123',
-        post: (String _, Map<String, Object?> _) async =>
-            throw StateError('offline'),
-      ),
-      isNull,
-    );
+        transport: transport((http.Request r) {
+          seen = r;
+          return (200, jsonEncode(_nextResponse(isReplay: true)));
+        }),
+      );
+      expect(
+        probe,
+        isA<YoutubeChatReplayAvailable>().having(
+          (YoutubeChatReplayAvailable p) => p.entryContinuation,
+          'entryContinuation',
+          'ENTRY',
+        ),
+      );
+      expect(seen!.url.path, '/youtubei/v1/next');
+      expect(
+        (jsonDecode(seen!.body) as Map<String, Object?>)['videoId'],
+        'vid123',
+      );
+      expect(log.errors, isEmpty);
+    });
+
+    test('观看页正常但没有聊天回放 → Absent，不记错误', () async {
+      final YoutubeChatReplayProbe probe = await probeYoutubeChatReplay(
+        'vid123',
+        transport: transport(
+          (http.Request _) => (
+            200,
+            jsonEncode(<String, Object?>{
+              'contents': <String, Object?>{
+                'twoColumnWatchNextResults': <String, Object?>{},
+              },
+            }),
+          ),
+        ),
+      );
+      expect(probe, isA<YoutubeChatReplayAbsent>());
+      expect(log.errors, isEmpty);
+    });
+
+    test('HTTP 错误 / 响应不是观看页数据 → ProbeFailed，并写诊断日志', () async {
+      final YoutubeChatReplayProbe http403 = await probeYoutubeChatReplay(
+        'vid403',
+        transport: transport((http.Request _) => (403, 'nope')),
+      );
+      expect(http403, isA<YoutubeChatReplayProbeFailed>());
+      final YoutubeChatReplayProbe blocked = await probeYoutubeChatReplay(
+        'vidBlocked',
+        transport: transport(
+          (http.Request _) => (
+            200,
+            jsonEncode(<String, Object?>{
+              'playabilityStatus': <String, Object?>{
+                'status': 'LOGIN_REQUIRED',
+              },
+            }),
+          ),
+        ),
+      );
+      expect(blocked, isA<YoutubeChatReplayProbeFailed>());
+      expect(log.errors, hasLength(2));
+      expect(
+        log.errors.first,
+        startsWith('YoutubeChatReplay.probe: videoId=vid403'),
+      );
+      expect(log.errors.last, contains('LOGIN_REQUIRED'));
+    });
+
+    test('取页 fetcher 走同一条链路也能解析（transport 持有不可发送对象）', () async {
+      final YoutubeChatReplayHttpFetcher fetcher = YoutubeChatReplayHttpFetcher(
+        transport: transport(
+          (http.Request _) => (
+            200,
+            jsonEncode(
+              _page(<Map<String, Object?>>[
+                _textAction('a', 1000, <Map<String, Object?>>[
+                  <String, Object?>{'text': 'こんばんは'},
+                ]),
+              ], next: 'NEXT'),
+            ),
+          ),
+        ),
+      );
+      addTearDown(fetcher.close);
+      final YoutubeChatReplayPage page = await fetcher.fetch('ENTRY', 0);
+      expect(page.messages.single.text, 'こんばんは');
+      expect(page.nextContinuation, 'NEXT');
+    });
+
+    test('会话取页失败写诊断日志（不再静默吞掉）', () async {
+      final _FakeFetch fetch = _FakeFetch();
+      final YoutubeChatReplaySession s = YoutubeChatReplaySession(
+        entryContinuation: 'ENTRY',
+        fetch: fetch.call,
+      );
+      unawaited(s.syncTo(0));
+      await fetch.fail(0);
+      expect(s.status, YoutubeChatReplayStatus.failed);
+      expect(log.errors.single, startsWith('YoutubeChatReplay.page: '));
+      expect(log.errors.single, contains('boom'));
+    });
   });
 
   group('YoutubeChatReplaySession', () {
@@ -547,4 +691,19 @@ void main() {
     expect(youtubeChatVisibleCount(list, 4999), 3);
     expect(youtubeChatVisibleCount(list, 99999), 4);
   });
+}
+
+class _RecordingLog implements EngineLogSink {
+  final List<String> errors = <String>[];
+
+  @override
+  void log(String source, Object error, [StackTrace? stack]) =>
+      errors.add('$source: $error');
+
+  @override
+  void logDiagnostic(String source, Object info) {}
+
+  @override
+  void logFatal(String source, Object error, [StackTrace? stack]) =>
+      errors.add('$source: $error');
 }

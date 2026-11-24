@@ -14,7 +14,8 @@ class VideoLiveChatReplay extends ChangeNotifier {
     required String entryContinuation,
     required ValueListenable<int?> position,
     YoutubeChatReplayPageFetch? fetch,
-  }) : _position = position {
+  }) : _position = position,
+       _reprobe = null {
     final YoutubeChatReplayHttpFetcher? fetcher = fetch == null
         ? YoutubeChatReplayHttpFetcher()
         : null;
@@ -26,19 +27,44 @@ class VideoLiveChatReplay extends ChangeNotifier {
     );
   }
 
+  /// 「有没有聊天回放」探测失败（BUG-5411）：不知道有没有，所以按钮照样出、聊天栏显示
+  /// 失败与「重试」，重试 = 重新探测（[reprobe]，由视频页换上探测结果对应的新实例）。
+  /// 与「探测成功但没有聊天回放」（不出按钮）区分开。
+  VideoLiveChatReplay.probeFailed({
+    required this.videoId,
+    required ValueListenable<int?> position,
+    required Future<void> Function() reprobe,
+  }) : _position = position,
+       _reprobe = reprobe,
+       _session = null;
+
   /// 这份聊天回放属于哪个视频（换集 / 换源时据此判断要不要重建）。
   final String videoId;
 
   final ValueListenable<int?> _position;
-  late final YoutubeChatReplaySession _session;
+
+  /// 探测成功时的分页会话；探测失败的实例为 null。
+  late final YoutubeChatReplaySession? _session;
+  final Future<void> Function()? _reprobe;
   YoutubeChatReplayHttpFetcher? _fetcher;
   int _viewers = 0;
   bool _disposed = false;
+  bool _reprobing = false;
+
+  /// 是不是「探测失败」的占位（见 [VideoLiveChatReplay.probeFailed]）。
+  bool get probeFailed => _session == null;
 
   /// 播放头附近的消息窗口（升序，只读视图）。
-  List<YoutubeChatMessage> get messages => _session.messages;
+  List<YoutubeChatMessage> get messages =>
+      _session?.messages ?? const <YoutubeChatMessage>[];
 
-  YoutubeChatReplayStatus get status => _session.status;
+  YoutubeChatReplayStatus get status {
+    final YoutubeChatReplaySession? session = _session;
+    if (session != null) return session.status;
+    return _reprobing
+        ? YoutubeChatReplayStatus.loading
+        : YoutubeChatReplayStatus.failed;
+  }
 
   /// 当前播放位置（毫秒）；播放器还没报过位置时为 0。
   int get positionMs => _position.value ?? 0;
@@ -54,7 +80,7 @@ class VideoLiveChatReplay extends ChangeNotifier {
   void attachViewer() {
     if (_disposed) return;
     _viewers++;
-    if (_viewers == 1) {
+    if (_viewers == 1 && _session != null) {
       _position.addListener(_onPosition);
       _onPosition();
     }
@@ -64,23 +90,44 @@ class VideoLiveChatReplay extends ChangeNotifier {
   void detachViewer() {
     if (_disposed || _viewers == 0) return;
     _viewers--;
-    if (_viewers == 0) _position.removeListener(_onPosition);
+    if (_viewers == 0 && _session != null) {
+      _position.removeListener(_onPosition);
+    }
   }
 
   void _onPosition() {
     final int? pos = _position.value;
     if (pos == null) return;
-    unawaited(_session.syncTo(pos));
+    unawaited(_session?.syncTo(pos));
   }
 
-  /// 失败后「重试」。
-  void retry() => unawaited(_session.retry());
+  /// 失败后「重试」：取页失败重取这一页；探测失败重新探测。
+  void retry() {
+    final YoutubeChatReplaySession? session = _session;
+    if (session != null) {
+      unawaited(session.retry());
+      return;
+    }
+    final Future<void> Function()? reprobe = _reprobe;
+    if (_disposed || _reprobing || reprobe == null) return;
+    _reprobing = true;
+    notifyListeners();
+    unawaited(
+      reprobe().whenComplete(() {
+        if (_disposed) return;
+        _reprobing = false;
+        notifyListeners();
+      }),
+    );
+  }
 
   @override
   void dispose() {
     _disposed = true;
-    if (_viewers > 0) _position.removeListener(_onPosition);
-    _session.dispose();
+    if (_viewers > 0 && _session != null) {
+      _position.removeListener(_onPosition);
+    }
+    _session?.dispose();
     _fetcher?.close();
     _fetcher = null;
     super.dispose();

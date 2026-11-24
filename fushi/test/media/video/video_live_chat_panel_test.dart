@@ -13,7 +13,9 @@ YoutubeChatMessage _msg(String id, int offsetMs, String text) =>
     YoutubeChatMessage(id: id, offsetMs: offsetMs, author: '@$id', text: text);
 
 class _Harness {
-  _Harness(this.pages);
+  _Harness(this.pages, {VideoLiveChatReplay? chat}) : _override = chat;
+
+  final VideoLiveChatReplay? _override;
 
   /// 依次回给每次取页请求的页（用完后再请求就挂起）。
   final List<YoutubeChatReplayPage> pages;
@@ -21,20 +23,22 @@ class _Harness {
   final ValueNotifier<int?> position = ValueNotifier<int?>(0);
   bool failNext = false;
 
-  late final VideoLiveChatReplay chat = VideoLiveChatReplay(
-    videoId: 'vid',
-    entryContinuation: 'ENTRY',
-    position: position,
-    fetch: (String continuation, int offsetMs) {
-      requestedOffsets.add(offsetMs);
-      if (failNext) {
-        failNext = false;
-        return Future<YoutubeChatReplayPage>.error(StateError('offline'));
-      }
-      if (pages.isEmpty) return Completer<YoutubeChatReplayPage>().future;
-      return Future<YoutubeChatReplayPage>.value(pages.removeAt(0));
-    },
-  );
+  late final VideoLiveChatReplay chat =
+      _override ??
+      VideoLiveChatReplay(
+        videoId: 'vid',
+        entryContinuation: 'ENTRY',
+        position: position,
+        fetch: (String continuation, int offsetMs) {
+          requestedOffsets.add(offsetMs);
+          if (failNext) {
+            failNext = false;
+            return Future<YoutubeChatReplayPage>.error(StateError('offline'));
+          }
+          if (pages.isEmpty) return Completer<YoutubeChatReplayPage>().future;
+          return Future<YoutubeChatReplayPage>.value(pages.removeAt(0));
+        },
+      );
 }
 
 YoutubeChatReplayPage _page(List<YoutubeChatMessage> messages) =>
@@ -236,5 +240,40 @@ void main() {
     await tester.pump();
     expect(h.requestedOffsets, hasLength(before));
     expect(h.chat.active, isFalse);
+  });
+  // BUG-5411：「有没有聊天回放」探测失败时不能和「没有」一样悄悄不出按钮——占位实例让
+  // 聊天栏显示失败与「重试」，重试 = 重新探测，期间显示加载中。
+  testWidgets('探测失败的占位：显示失败，点重试重新探测、期间加载中', (WidgetTester tester) async {
+    final ValueNotifier<int?> position = ValueNotifier<int?>(2000);
+    final Completer<void> reprobe = Completer<void>();
+    int reprobes = 0;
+    final VideoLiveChatReplay failed = VideoLiveChatReplay.probeFailed(
+      videoId: 'vid',
+      position: position,
+      reprobe: () {
+        reprobes++;
+        return reprobe.future;
+      },
+    );
+    addTearDown(failed.dispose);
+    expect(failed.probeFailed, isTrue);
+    expect(failed.status, YoutubeChatReplayStatus.failed);
+    final _Harness h = _Harness(<YoutubeChatReplayPage>[], chat: failed);
+    await _pump(tester, h);
+    expect(find.text(t.video_live_chat_failed), findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-live-chat-retry')),
+    );
+    await tester.pump();
+    expect(reprobes, 1);
+    expect(failed.status, YoutubeChatReplayStatus.loading);
+    expect(find.text(t.video_live_chat_loading), findsOneWidget);
+    reprobe.complete();
+    await tester.pump();
+    expect(failed.status, YoutubeChatReplayStatus.failed);
+    // 占位没有分页会话：播放位置变化不触发任何请求。
+    position.value = 9000;
+    await tester.pump();
+    expect(reprobes, 1);
   });
 }
