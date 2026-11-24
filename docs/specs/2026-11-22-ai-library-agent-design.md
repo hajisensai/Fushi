@@ -144,10 +144,19 @@
    - **增量**：把上次复查以来新入库的条目交给它——`library.map` 新增 `addedSince`（毫秒时间戳）过滤，只给这些条目连同它们所在合集的全部成员；再用 `q` 查它们的系列。检查流水线做得对不对、补上漏的。
    - **全库**：第一次、自上次全库复查累积 100 个新条目、或距上次全库复查满 30 天且期间有新条目时，整库过一遍。
    - 无人值守：确认卡一律拒绝、候选卡一律取消（`AiAgentUnattendedHost`，不替用户表态、不挂起）；提示词要求不提问，拿不准的写进汇报。对话存档在「AI 操作记录」（场景 `library_review`），能看汇报、能整场撤销。
-   - 水位（偏好 `library_agent_review_state`）只在会话跑完时推进：模型请求失败 / 取消 / 中断不推进（下次重来）；撞调用上限或连错熔断算跑完（重来只会再撞）。
+   - 水位（偏好 `library_agent_review_state`）只在会话跑完时推进：模型请求失败 / 取消 / 中断不推进（退避后重来，见 §7.1）；撞调用上限、连错熔断或 token 上限算跑完（重来只会再撞）。
    - 门：开关开、AI 模块开、「AI 助手」指派了提供商；任一不满足不发请求。库管家自动开关关着时复查照样按自己的开关排程。
    - 实现：`fushi/lib/src/media/library_curate/library_agent_review.dart`（大环外，经 `registerLibraryAgentAutoReviewer` 注入叶子 `library_curate_auto.dart`）。
 
-代价：每次导入后多一场助手会话；全库复查一次的 token 随库大小线性增长。不设本地上限（口径同 AI 整理库 §10.2）。
+代价：每次导入后多一场助手会话；全库复查一次的 token 随库大小线性增长，但按 §7.1 分段、每段和每趟都有上限。
+
+### 7.1 分段、失败记账与 token 上限（BUG-5365，2026-11-24）
+
+起因：用户本机 11-22～11-24 自动全库复查跑了 40 趟、合计 2250 万 token、0 次写入。全库提示词让模型把整库 `library.map` 读进同一场对话，单场累计到 45～68 万 token 时提供商回 `empty_response`（`llm_error`）；水位只在会话跑完时推进，失败什么都不记，于是每次自动触发（约 1～2 小时一次）都判「首次 → 全库」从头再来。
+
+- **分段**：全库复查按 `library.map` 视图 books → manga → video → games → links 依次走，每个视图按固定窗口（库页 100 行、links 50 个作品）切段；一段 = 一场独立的无人值守会话，提示词只给这一窗（`view` / `offset` / `limit`，不许顺着 `nextOffset` 翻页，`q` 只用于查延伸到窗外的系列）。空视图不开会话。每段跑完游标就落盘（`fullStartedAt` / `fullView` / `fullOffset`），下次触发从没跑完的段接着来；走完收尾时水位推到这趟全库复查开始的时刻。全库进行中不另做增量（新条目留给收尾后的增量）。
+- **失败记账**：每次尝试都落状态。请求失败 / 取消 / 中断 / 会话抛异常 = 失败：计数 +1，退避 1h、2h、4h、8h、16h，封顶 24h；连续 5 次（从第一次失败算起约 15 小时）就熔断暂停，记下当时「AI 助手」提供商的指纹（id + 模型 + 地址）。熔断只在两种情况下解除：提供商 / 模型 / 地址换了，或用户在设置里把开关关了再开。游标与水位在失败时不动。撞调用上限、连错熔断、token 上限算这一段做完。
+- **token 上限**：单场会话 25 万 token（`AgentLimits.maxSessionTokens`，引擎在每次请求模型前检查，用满记 `token_budget` 停下；有人看着的对话仍不设上限）；单趟复查（一次自动触发）75 万 token，用满就不再开下一段。
+- 实现：状态与排程纯函数 `fushi/lib/src/media/library_curate/library_agent_review_state.dart`，执行 `library_agent_review.dart`；测试 `fushi/test/media/library_curate/library_agent_review_test.dart`、`packages/fushi_engine/test/ai/agent/agent_long_task_test.dart`。
 
 没验证：没有在真实库 / 真实模型上跑过自动复查；没有真机验证设置开关。

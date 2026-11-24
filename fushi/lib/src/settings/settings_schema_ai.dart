@@ -10,6 +10,8 @@ import 'package:fushi/src/ai/mcp/ai_mcp_access.dart';
 import 'package:fushi/src/ai/mcp/ai_mcp_ui.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/models/preferences_repository.dart'
+    show PreferencesRepository;
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_history_page.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
@@ -18,6 +20,8 @@ import 'package:fushi/src/pages/implementations/ai_mcp_servers_page.dart'
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_search_section.dart';
+import 'package:fushi/src/media/library_curate/library_agent_review_state.dart'
+    show LibraryAgentReviewState;
 import 'package:fushi/src/media/collections/library_organize_runner.dart'
     show runLibraryCurateInteractive;
 import 'package:fushi/src/pages/implementations/library_organize_history_page.dart';
@@ -417,8 +421,19 @@ SettingsDestination buildAiDestination() {
             icon: FushiIcons.aiAssistant,
             value: (SettingsContext c) =>
                 c.appModel.prefsRepo.libraryAgentReviewAuto,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.prefsRepo.setLibraryAgentReviewAuto(value),
+            // 重新打开 = 用户明确要它继续：解除连败熔断与退避（BUG-5365），复查
+            // 进度保留。
+            onChanged: (SettingsContext c, bool value) async {
+              final PreferencesRepository prefs = c.appModel.prefsRepo;
+              await prefs.setLibraryAgentReviewAuto(value);
+              if (value) {
+                await prefs.setLibraryAgentReviewState(
+                  LibraryAgentReviewState.parse(
+                    prefs.libraryAgentReviewState,
+                  ).resumed().encode(),
+                );
+              }
+            },
             defaultValue: true,
           ),
           // AI 管库 v3（spec docs/specs/2026-11-22-ai-library-agent-design.md §3.5）：
