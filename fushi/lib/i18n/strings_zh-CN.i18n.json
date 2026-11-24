@@ -2490,6 +2490,7 @@
   "data_storage_migrate_overlay_title": "正在迁移数据",
   "data_storage_migrate_overlay_warning": "正在迁移数据，请勿关闭应用或电脑，迁移完成后会自动重启。",
   "data_storage_migrate_success": "数据已迁移，正在重启…",
+  "data_storage_migrate_target_has_library": "目标位置 ${path} 里有当前书库没有的文件（如 ${file}），它可能才是真正的书库，所以没有清空，也没有搬移任何数据。",
   "data_storage_migrating": "正在迁移数据…",
   "data_storage_reject_install_dir": "所选目录是应用的安装位置，不能用来存放数据。请另选一个空目录。",
   "data_storage_restart_failed": "数据已迁移，但自动重启失败，请手动重新打开 Fushi。",

@@ -2490,6 +2490,7 @@
   "data_storage_migrate_overlay_title": "Movendo seus dados",
   "data_storage_migrate_overlay_warning": "Mantenha o app aberto. Não feche nem desligue o computador até terminar.",
   "data_storage_migrate_success": "Dados movidos. Reiniciando…",
+  "data_storage_migrate_target_has_library": "The destination ${path} already holds files your current library doesn't have (e.g. ${file}). It may be your real library, so it was not cleared and nothing was moved.",
   "data_storage_migrating": "Movendo dados…",
   "data_storage_reject_install_dir": "Essa pasta é o local de instalação do app e não pode armazenar seus dados. Escolha uma pasta diferente e vazia.",
   "data_storage_restart_failed": "Dados movidos, mas a reinicialização automática falhou. Reabra o Fushi manualmente.",

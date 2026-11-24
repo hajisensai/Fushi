@@ -16,3 +16,7 @@
 - **备注**：
   - 未在真机复现「弹窗进程冲掉锚点」这一步（需要老安装 + 迁移 + 弹窗进程常驻的真机现场）；修复不依赖这一步是否成立：无论根因为何让解析出的根变错，台账重基都会被磁盘反证拦下，锚点也会被磁盘对账纠正。
   - 同类隐患：其它 SharedPreferences 键（含 Android 上的布局 / 容器锚点、各功能偏好）在多进程下同样可能被旧副本覆盖。Android 书库位置这一条已搬离；其余键的多进程一致性另行登记。
+  - 补漏（#4366 指出、小米真机取证：书库 17 GB 在内部，锚点指向外部空根，与上面推断的方向相反；该机全程无 `:popup` 进程记录，锚点为何翻到外部仍未确定）：
+    1. `hasLibraryFiles` 原把冷启动自建的 `fushiExport/.nomedia` 当书库文件，已中招的安装外部根里恰好只有它，对账判「锚定的根有书」、永不自愈。现跳过 `AppPaths.libraryEvidenceIgnoredEntries`（导出目录 / 导入暂存 / 推荐包暂存 / 引导状态）并忽略 `.nomedia`。
+    2. `planAndroidDocumentsMigration`（`data_root.part.dart`）原无条件 `newDocs.delete(recursive: true)`：锚点错指空根时点「移回内部」，目标就是真书库，会被整树删光。现先核实目标是源的子集（`AppPaths.firstAndroidMigrationTargetOnlyFile`，中断的跨盘复制不删源，所以半成品一定是子集），有源里没有的文件就拒绝（`data_storage_migrate_target_has_library`），一个字节都不删。
+    3. 测试：`android_documents_location_test.dart` 小米现场自愈判定、`.nomedia` / 空运行目录不算书库、目标子集核实三情形；`sandbox_relocation_test.dart` 书库在内部、路径被改到外部 → 根纠正回内部后改回。

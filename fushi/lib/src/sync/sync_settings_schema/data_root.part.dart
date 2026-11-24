@@ -333,8 +333,13 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
 ///
 /// [toExternal] 为真 = 迁到 `Android/data/<包名>/files/data`，否则迁回内部
 /// `app_flutter/<容器>/data`。目标是固定位置、不是用户挑的：上次迁移中途被杀进程留下的
-/// 半成品（引擎复制阶段不删源、提交前位置锚点没写）一定不是活数据——活的书库根就是
-/// 当前根——所以在这里先清掉，否则引擎会以「目标已有数据」永远拒绝这个固定目标。
+/// 半成品（引擎复制阶段不删源、提交前位置锚点没写）要先清掉，否则引擎会以「目标已有
+/// 数据」永远拒绝这个固定目标。
+///
+/// 但「目标一定不是活数据」只在位置锚点正确时成立。锚点错指空根时（反馈 RCv76PPoiJ），
+/// 用户点「移回内部」的目标恰好就是真正的书库（#4366 指出）。所以清之前先核实它确是
+/// 半成品——每个文件在源里都有同名相对路径（[AppPaths.firstAndroidMigrationTargetOnlyFile]）；
+/// 有源里没有的文件就拒绝，一个字节都不删。
 Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
   required AppModel appModel,
   required bool toExternal,
@@ -371,6 +376,24 @@ Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
     );
   }
   try {
+    final String? targetOnly =
+        await AppPaths.firstAndroidMigrationTargetOnlyFile(
+          target: newDocs,
+          source: Directory(oldDocs),
+        );
+    if (targetOnly != null) {
+      ErrorLogService.instance.logDiagnostic(
+        'DataRootMigration.androidClearStaleTarget',
+        '拒绝清空目标 ${newDocs.path}：$targetOnly 在当前书库根 $oldDocs 里没有，'
+            '目标可能是真正的书库',
+      );
+      throw DataRootMigrationPrecheckFailure(
+        t.data_storage_migrate_target_has_library(
+          path: newDocs.path,
+          file: targetOnly,
+        ),
+      );
+    }
     if (await newDocs.exists()) await newDocs.delete(recursive: true);
   } on FileSystemException catch (e, stack) {
     ErrorLogService.instance.logFatal(

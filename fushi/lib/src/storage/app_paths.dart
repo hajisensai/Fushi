@@ -411,8 +411,25 @@ class AppPaths {
         : androidDocumentsLocationExternal;
   }
 
-  /// [root] 下 Fushi 自有顶层项（[fushiOwnedDocumentsEntries]）里是否至少有一个
-  /// **文件**。只认文件不认目录：启动期会顺手建出空的派生目录，那不是书库。
+  /// 书库证据里不算数的顶层项：app 每次冷启动自己就会往里放东西（导出目录的
+  /// `.nomedia`）或只放过程性临时物，与「书库在不在这个根」无关。#4366 指出：已中招
+  /// 的安装（书库在内部、锚点指向外部）外部根里恰好只有冷启动建出的
+  /// `fushiExport/.nomedia`，把它当书库就会让对账认定「锚定的根有书」、永远不自愈。
+  static const Set<String> libraryEvidenceIgnoredEntries = <String>{
+    'fushiExport',
+    'hibikiExport',
+    'dictionaryImportWorkingDirectory',
+    'recommended_pack',
+    'onboarding_tutorial',
+  };
+
+  /// 不算书库证据的文件名：`.nomedia` 是排除媒体扫描的占位（0 字节），任何目录都可能被
+  /// 顺手放一个。
+  static bool isLibraryEvidenceFileName(String name) => name != '.nomedia';
+
+  /// [root] 下 Fushi 自有顶层项（[fushiOwnedDocumentsEntries]，去掉
+  /// [libraryEvidenceIgnoredEntries]）里是否至少有一个书库**文件**。只认文件不认目录：
+  /// 启动期会顺手建出空的派生目录，那不是书库；`.nomedia` 占位也不算。
   /// 遇到第一个文件就停；探测出错或超时返回 [onTimeout]（调用方按保守方向给）。
   static Future<bool> hasLibraryFiles(
     Directory root, {
@@ -421,13 +438,16 @@ class AppPaths {
   }) async {
     Future<bool> probe() async {
       for (final String name in fushiOwnedDocumentsEntries) {
+        if (libraryEvidenceIgnoredEntries.contains(name)) continue;
         final Directory dir = Directory(p.join(root.path, name));
         if (!await dir.exists()) continue;
         await for (final FileSystemEntity e in dir.list(
           recursive: true,
           followLinks: false,
         )) {
-          if (e is File) return true;
+          if (e is File && isLibraryEvidenceFileName(p.basename(e.path))) {
+            return true;
+          }
         }
       }
       return false;
@@ -438,6 +458,30 @@ class AppPaths {
     } catch (_) {
       return onTimeout;
     }
+  }
+
+  /// Android 书库迁移前，固定目标 [target] 里第一个「[source] 里没有同名相对路径」的
+  /// 文件（相对 [target]）；没有返回 null。
+  ///
+  /// 目标是固定位置，上次中断的跨盘复制会留下半成品，必须先清掉引擎才肯搬。半成品一定
+  /// 是源的子集（复制阶段不删源）；目标里出现源里没有的文件，就说明它**不是**半成品
+  /// ——典型是锚点错指空根时，用户点「移回内部」，目标恰好就是真正的书库（#4366 指出）。
+  /// 这时绝不能整树删除。`.nomedia` 占位不计。
+  static Future<String?> firstAndroidMigrationTargetOnlyFile({
+    required Directory target,
+    required Directory source,
+  }) async {
+    if (!await target.exists()) return null;
+    await for (final FileSystemEntity e in target.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (e is! File) continue;
+      if (!isLibraryEvidenceFileName(p.basename(e.path))) continue;
+      final String rel = p.relative(e.path, from: target.path);
+      if (!await File(p.join(source.path, rel)).exists()) return rel;
+    }
+    return null;
   }
 
   /// 本进程启动期对 Android 书库位置做过的纠正（AppModel 写进诊断日志）。

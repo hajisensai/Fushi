@@ -385,6 +385,135 @@ void main() {
         expect(await AppPaths.hasLibraryFiles(tmp, onTimeout: false), isTrue);
       });
 
+      test('#4366 指出：冷启动自建的导出目录 .nomedia 与空运行目录不算书库', () async {
+        // 小米真机现场：外部根里只有冷启动建出的空运行目录 + fushiExport/.nomedia。
+        for (final String d in <String>[
+          'browser',
+          'thumbnails',
+          'dictionaryResources',
+          'webArchive',
+        ]) {
+          Directory(p.join(tmp.path, d)).createSync(recursive: true);
+        }
+        File(
+          p.join(tmp.path, 'fushiExport', '.nomedia'),
+        ).createSync(recursive: true);
+        File(
+          p.join(tmp.path, 'dictionaryImportWorkingDirectory', 'x.tmp'),
+        ).createSync(recursive: true);
+        File(
+          p.join(tmp.path, 'audiobooks', '.nomedia'),
+        ).createSync(recursive: true);
+        expect(await AppPaths.hasLibraryFiles(tmp, onTimeout: true), isFalse);
+
+        File(
+          p.join(tmp.path, 'audiobooks', 'a', 'track01.mp3'),
+        ).createSync(recursive: true);
+        expect(await AppPaths.hasLibraryFiles(tmp, onTimeout: false), isTrue);
+      });
+
+      test('不计入证据的顶层项都是白名单成员（改名时不会悄悄失效）', () {
+        expect(
+          AppPaths.fushiOwnedDocumentsEntries.containsAll(
+            AppPaths.libraryEvidenceIgnoredEntries,
+          ),
+          isTrue,
+        );
+      });
+
+      test('已中招的安装（书库在内部、锚点指向外部空根）按磁盘自愈回内部', () async {
+        final Directory ext = Directory(p.join(tmp.path, 'ext', 'data'))
+          ..createSync(recursive: true);
+        final Directory internalRoot = Directory(
+          p.join(tmp.path, 'app_flutter', 'Fushi', 'data'),
+        )..createSync(recursive: true);
+        Directory(p.join(ext.path, 'thumbnails')).createSync();
+        File(
+          p.join(ext.path, 'fushiExport', '.nomedia'),
+        ).createSync(recursive: true);
+        File(
+          p.join(internalRoot.path, 'fushiExport', '.nomedia'),
+        ).createSync(recursive: true);
+        File(
+          p.join(internalRoot.path, 'fushi_books', 'norway', 'cover.jpg'),
+        ).createSync(recursive: true);
+
+        expect(
+          AppPaths.reconcileAndroidDocumentsLocation(
+            anchored: external,
+            anchoredHasLibrary: await AppPaths.hasLibraryFiles(
+              ext,
+              onTimeout: true,
+            ),
+            otherHasLibrary: await AppPaths.hasLibraryFiles(
+              internalRoot,
+              onTimeout: false,
+            ),
+          ),
+          internal,
+          reason: '旧判据把外部的 fushiExport/.nomedia 当书库，锚点永远停在空的外部根',
+        );
+      });
+
+      group('迁移前清理固定目标（#4366 指出）', () {
+        late Directory source;
+        late Directory target;
+        setUp(() {
+          source = Directory(p.join(tmp.path, 'src'))..createSync();
+          target = Directory(p.join(tmp.path, 'dst'));
+        });
+
+        test('目标不存在 → 可清', () async {
+          expect(
+            await AppPaths.firstAndroidMigrationTargetOnlyFile(
+              target: target,
+              source: source,
+            ),
+            isNull,
+          );
+        });
+
+        test('上次中断留下的半成品（源的子集）→ 可清', () async {
+          for (final String rel in <String>[
+            p.join('fushi_books', 'norway', 'cover.jpg'),
+            p.join('audiobooks', 'a', 'track01.mp3'),
+          ]) {
+            File(p.join(source.path, rel))
+              ..createSync(recursive: true)
+              ..writeAsStringSync('x');
+          }
+          File(p.join(target.path, 'fushi_books', 'norway', 'cover.jpg'))
+            ..createSync(recursive: true)
+            ..writeAsStringSync('x');
+          File(
+            p.join(target.path, 'fushiExport', '.nomedia'),
+          ).createSync(recursive: true);
+          expect(
+            await AppPaths.firstAndroidMigrationTargetOnlyFile(
+              target: target,
+              source: source,
+            ),
+            isNull,
+          );
+        });
+
+        test('目标里有源没有的文件（锚点错指空根时目标就是真书库）→ 拒绝', () async {
+          File(
+            p.join(source.path, 'fushiExport', '.nomedia'),
+          ).createSync(recursive: true);
+          File(p.join(target.path, 'fushi_books', 'norway', 'cover.jpg'))
+            ..createSync(recursive: true)
+            ..writeAsStringSync('x');
+          expect(
+            await AppPaths.firstAndroidMigrationTargetOnlyFile(
+              target: target,
+              source: source,
+            ),
+            p.join('fushi_books', 'norway', 'cover.jpg'),
+          );
+        });
+      });
+
       test('锚点文件原子写、读回一致；坏内容按不存在处理', () async {
         expect(await AppPaths.readAndroidLibraryAnchor(tmp), isNull);
         const AndroidLibraryAnchor anchor = AndroidLibraryAnchor(

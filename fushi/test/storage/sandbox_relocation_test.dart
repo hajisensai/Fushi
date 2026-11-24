@@ -482,6 +482,36 @@ void main() {
         reason: '封面要沿修复后的路径打开',
       );
     });
+
+    test('小米现场（#4366）：书库在内部、路径被改到外部空根 → 根纠正回内部后改回来', () async {
+      // 旧实现留下的现场：锚点错指外部，重基把全库路径改到外部（不存在），台账记外部；
+      // 17 GB 书库文件仍在内部。锚点按磁盘自愈回内部后，台账映射被磁盘证实，必须改回。
+      File(p.join(internal.path, 'fushi_books', 'norway', 'cover.jpg'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync('jpg');
+      await seedBookIn(external, onDisk: false);
+      await db.setPref(
+        SandboxRelocation.lastDocumentsRootPrefKey,
+        external.path,
+      );
+
+      final SandboxRelocationOutcome outcome =
+          await SandboxRelocation.reconcile(
+            db: db,
+            documentsRoot: internal.path,
+            supportRoot: p.join(sandbox.path, 'data', 'files'),
+          );
+
+      expect(outcome.rebased, isTrue);
+      expect(outcome.refusedEvidence, isNull);
+      final String repaired = (await db.getAllEpubBooks()).single.extractDir;
+      expect(p.isWithin(internal.path, repaired), isTrue);
+      expect(File(p.join(repaired, 'cover.jpg')).existsSync(), isTrue);
+      expect(
+        await db.getPref(SandboxRelocation.lastDocumentsRootPrefKey),
+        internal.path,
+      );
+    });
   });
 
   group('rebaseEvidenceFor 纯函数', () {
