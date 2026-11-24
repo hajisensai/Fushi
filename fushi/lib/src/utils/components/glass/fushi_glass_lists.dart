@@ -114,8 +114,8 @@ class FushiAppleMetrics {
   /// 行尾 chevron 尺寸。
   double get chevronSize => (desktop ? 13 : 15) * scale;
 
-  /// 卡片 / 分组圆角：iOS 27 inset grouped ≈ 26（与屏幕圆角同心的胶囊感），
-  /// macOS ≈ 12。
+  /// 卡片 / 分组圆角：iOS 27 inset grouped 26（与屏幕圆角同心的胶囊感），
+  /// macOS 10（均再乘 [scale]）。
   double get groupRadius => (desktop ? 10 : 26) * scale;
 
   /// 分组之间的竖直间距（分组标题在这段间距里）：iOS 27 ≈ 22。

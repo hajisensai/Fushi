@@ -20,6 +20,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -389,8 +390,9 @@ class AppleDiscoveryLockup extends StatelessWidget {
     final String? sub = failed ? t.discovery_source_load_failed : caption;
     return FushiHoverLift(
       builder: (BuildContext context, bool hovering) => FushiPressScale(
+        // 容器圆角全应用统一取共享 token（Apple = 分组圆角），不另立数值。
         child: FushiAppleGroupSurface(
-          borderRadius: BorderRadius.circular((mac ? 12 : 18) * scale),
+          borderRadius: fushiCardBorderRadius(context),
           child: FushiAppleRow(
             focusable: true,
             onTap: onTap,
