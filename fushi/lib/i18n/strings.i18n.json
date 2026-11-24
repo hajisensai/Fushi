@@ -14178,7 +14178,7 @@
   "video_screenshot_ready": "Screenshot ready: ${file}",
   "video_screenshot_saved_to": "Screenshot saved: ${path}",
   "video_screenshot_subtitled": "Screenshot with subtitles",
-  "video_screenshot_web_unsupported": "This site's video is DRM-protected and can't be captured",
+  "video_screenshot_web_unsupported": "Can't capture this site's video (DRM-protected sites can't be captured)",
   "video_search_ai_expand": "More terms with AI",
   "video_search_ai_expanded": "AI suggested ${count} extra search terms",
   "video_search_ai_rank": "Rank with AI",

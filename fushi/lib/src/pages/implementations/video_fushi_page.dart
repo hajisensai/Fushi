@@ -9998,11 +9998,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ),
       // 网页档也走 [_saveScreenshot]：非 DRM 站点（YouTube 等）的帧由页面 canvas 截，与暂停
       // OCR 同一条链路；截不到（Netflix DRM）时它给 OSD 说明，而不是静默 no-op（BUG-5417）。
-      screenshot: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_saveScreenshot(withSubtitles: false)),
+      // 同样过 [webGated]：网页档能不能截图只认 [videoWebBackendSupportsShortcutAction] 一处。
+      screenshot: webGated(
+        ShortcutAction.videoScreenshot,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(_saveScreenshot(withSubtitles: false)),
+        ),
       ),
-      screenshotSubtitled: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_saveScreenshot(withSubtitles: true)),
+      screenshotSubtitled: webGated(
+        ShortcutAction.videoScreenshotSubtitled,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(_saveScreenshot(withSubtitles: true)),
+        ),
       ),
       // 网页档也走 [_ocrCurrentFrame]：它会给 OSD 说明不可用，而不是静默 no-op。
       ocrFrame: () => _runWhenImmersiveAllowsShortcuts(_ocrCurrentFrame),

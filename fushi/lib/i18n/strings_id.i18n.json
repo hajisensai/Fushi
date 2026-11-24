@@ -14178,7 +14178,7 @@
   "video_screenshot_ready": "Tangkapan layar siap: ${file}",
   "video_screenshot_saved_to": "Tangkapan layar tersimpan: ${path}",
   "video_screenshot_subtitled": "Tangkapan layar dengan subtitle",
-  "video_screenshot_web_unsupported": "This site's video is DRM-protected and can't be captured",
+  "video_screenshot_web_unsupported": "Can't capture this site's video (DRM-protected sites can't be captured)",
   "video_search_ai_expand": "Lebih banyak istilah dengan AI",
   "video_search_ai_expanded": "AI menyarankan ${count} istilah pencarian tambahan",
   "video_search_ai_rank": "Peringkatkan dengan AI",

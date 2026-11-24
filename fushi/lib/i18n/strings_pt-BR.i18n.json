@@ -14178,7 +14178,7 @@
   "video_screenshot_ready": "Captura de tela pronta: ${file}",
   "video_screenshot_saved_to": "Captura de tela salva: ${path}",
   "video_screenshot_subtitled": "Captura de tela com legendas",
-  "video_screenshot_web_unsupported": "This site's video is DRM-protected and can't be captured",
+  "video_screenshot_web_unsupported": "Can't capture this site's video (DRM-protected sites can't be captured)",
   "video_search_ai_expand": "Mais termos com IA",
   "video_search_ai_expanded": "A IA sugeriu ${count} termos de busca extras",
   "video_search_ai_rank": "Classificar com IA",

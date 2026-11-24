@@ -14178,7 +14178,7 @@
   "video_screenshot_ready": "Скриншот готов: ${file}",
   "video_screenshot_saved_to": "Скриншот сохранён: ${path}",
   "video_screenshot_subtitled": "Скриншот с субтитрами",
-  "video_screenshot_web_unsupported": "This site's video is DRM-protected and can't be captured",
+  "video_screenshot_web_unsupported": "Can't capture this site's video (DRM-protected sites can't be captured)",
   "video_search_ai_expand": "Больше запросов с ИИ",
   "video_search_ai_expanded": "ИИ предложил дополнительных поисковых запросов: ${count}",
   "video_search_ai_rank": "Ранжировать с ИИ",

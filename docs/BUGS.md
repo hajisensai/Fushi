@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4700 条。点号进各自文件。
+> 共 4702 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5421](bugs/BUG-5421-web-video-page-screenshot-noop.md) | 🚧 | 🚧 | 内置网页播放器页（WebVideoFushiPage）按 S / Shift+S 截图、识别画面文字静默无反应 |
+| [BUG-5420](bugs/BUG-5420-web-video-page-arrow-seek-noop.md) | 🚧 | 🚧 | 内置网页播放器页（WebVideoFushiPage）放 YouTube 时 ←/→ 快退快进没反应 |
 | [BUG-5417](bugs/BUG-5417-web-video-screenshot-shortcut-noop.md) | ✅ | ✅ | 网页档（YouTube 等站点视频）按 S 截图 / PageUp·PageDown 换章没反应 |
 | [BUG-5402](bugs/BUG-5402-media-server-favorite-jump-dead-end.md) | ✅ | ✅ | 媒体服务器直接串流（未入库）的收藏句在收藏夹点了没反应 |
 | [BUG-5401](bugs/BUG-5401-anilist-cover-search-novels-only.md) | ✅ | ✅ | anilist-cover-search-novels-only |

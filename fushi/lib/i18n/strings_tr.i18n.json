@@ -14178,7 +14178,7 @@
   "video_screenshot_ready": "Ekran görüntüsü hazır: ${file}",
   "video_screenshot_saved_to": "Ekran görüntüsü kaydedildi: ${path}",
   "video_screenshot_subtitled": "Altyazılı ekran görüntüsü",
-  "video_screenshot_web_unsupported": "This site's video is DRM-protected and can't be captured",
+  "video_screenshot_web_unsupported": "Can't capture this site's video (DRM-protected sites can't be captured)",
   "video_search_ai_expand": "Yapay zeka ile daha fazla terim",
   "video_search_ai_expanded": "Yapay zeka ${count} ek arama terimi önerdi",
   "video_search_ai_rank": "Yapay zeka ile sırala",

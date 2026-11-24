@@ -1,0 +1,6 @@
+## BUG-5420 · 内置网页播放器页（WebVideoFushiPage）放 YouTube 时 ←/→ 快退快进没反应
+- **报告**：2026-11-24（用户：应用内反馈 yPaPsQ6JYv「方向左右键也失效」，Windows，截图是 YouTube 自带播放器界面全屏态）
+- **真实性**：⏳ 待真机复现。从 BUG-5417 拆出：BUG-5417 只修了原生播放器页网页档的 S / 换章门控，←/→ 在两页都没有同类门控。截图里露出站点自己的控制条（点赞 / 查看商品 / 退出全屏），原生播放器页的播放器档会藏掉站点 chrome（`web_video_session.dart` `_applyPageMode`），所以当时在内置网页播放器页。该页 ←/→ 的两条入口：Flutter 持焦走 `CallbackShortcuts`（`web_video_fushi_page.dart` `_keyboardShortcuts`），WebView2 持焦走键盘桥 `webVideoKeyBridgeScript` → `_onKeyToken`；两条都落到 `_seekRelative(±5000)` → glue `__fushiWebVideo.seek`（非 Netflix 直接写 `<video>.currentTime`，`assets/web_video/web_video_glue.js` seek）。
+- **[ ] ① 未修复** — 已排除（BUG-5417 备注）：YouTube 先吃键（无头 Edge + CDP 实测桥先拿到键）、键位解析（单测）。未排除：WebView2 可捕获档持焦时键是否真进 DOM、YouTube 全屏（`document.fullscreenElement`）下焦点位置、`_relativeSeekBaseMs` 基准、glue `video()` 选中的是不是正片 `<video>`、`seek` 结果码与 seekDone 回执。需在内置网页播放器页真机加日志（`_onKeyToken` 收到的 token、`_seekMs` 的目标与结果码、seekDone）复现。
+- **[ ] ② 未加自动化测试** — 定位后在 `integration_test/youtube_import_open_itest.dart` 同类真机用例里补：焦点驱动按 ←/→，断言 `WebVideoFushiPage.debugSnapshot` 的位置前后移动 5 s。
+- **备注**：PR #4404 的提交 f9be6df58c 信息里带 `Feedback: yPaPsQ6JYv`，合并后反馈服务会把它标成已修复；这条没修，合并后需把 yPaPsQ6JYv 改回 open（`node scripts/feedback.mjs status yPaPsQ6JYv open --as <开发者>`）。

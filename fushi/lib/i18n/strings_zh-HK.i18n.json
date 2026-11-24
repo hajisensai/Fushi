@@ -14178,7 +14178,7 @@
   "video_screenshot_ready": "截圖已準備好：${file}",
   "video_screenshot_saved_to": "截圖已儲存：${path}",
   "video_screenshot_subtitled": "帶字幕截圖",
-  "video_screenshot_web_unsupported": "This site's video is DRM-protected and can't be captured",
+  "video_screenshot_web_unsupported": "Can't capture this site's video (DRM-protected sites can't be captured)",
   "video_search_ai_expand": "AI 補充搜尋詞",
   "video_search_ai_expanded": "AI 補充了 ${count} 個搜尋詞",
   "video_search_ai_rank": "AI 排序",
