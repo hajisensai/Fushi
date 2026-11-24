@@ -139,7 +139,7 @@ void main() {
     expect(view, contains('controller.runSourceScan(row.id, scan)'));
     expect(
       view,
-      contains('await onVideoScanCompleted(updated ?? row, summary)'),
+      contains('await onVideoScanCompleted(updated ?? row, scanned)'),
     );
     expect(view, contains('nfoPolicy: Value<String>(draft.nfoPolicy)'));
     expect(view, contains('imagePolicy: Value<String>(draft.imagePolicy)'));
