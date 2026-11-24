@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5406](bugs/BUG-5406-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
+| [BUG-5418](bugs/BUG-5418-video-one-shot-import-extras-unbound.md) | ✅ | ✅ | 「导入文件夹（仅此一次）」导入的发布组目录，SPs / Menus 特典在系列墙上各自成卡 |
 > 共 4727 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
