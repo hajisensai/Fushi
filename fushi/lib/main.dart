@@ -84,6 +84,7 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
+import 'package:fushi/src/utils/dart_heartbeat.dart';
 import 'package:fushi/src/utils/scheduling/ambient_ticker.dart'
     show waitForUiIdle;
 import 'package:fushi/src/utils/settled_theme.dart';
@@ -518,6 +519,7 @@ void main([List<String> args = const <String>[]]) {
       // 首帧起 runner 就在等这条上报来确认它交付的第一个尺寸。
       StartupTimeline.mark('app-icon');
       installRasterizedFrameSizeReporter();
+      installDartHeartbeat();
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
         await windowManager.ensureInitialized();
         await WindowCaptionChannel.beginStartupWindowPreparation();
