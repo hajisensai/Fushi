@@ -148,6 +148,22 @@ void main() {
       );
     });
 
+    // BUG-5377：无卷号的上 / 中 / 下按同系列分册名次算「第 N 卷」。
+    test('分册：上下两册的「下」是第 2 卷，上中下三册的「下」是第 3 卷', () {
+      num vol(String title, List<String> members) =>
+          collectionMemberVolumeNumber(
+            title: title,
+            memberTitles: members,
+            memberOrdinal: 9,
+          );
+      const List<String> two = <String>['化物語 上', '化物語 下'];
+      expect(vol('化物語 上', two), 1);
+      expect(vol('化物語 下', two), 2);
+      const List<String> three = <String>['化物語 上巻', '化物語 中巻', '化物語 下巻'];
+      expect(vol('化物語 中巻', three), 2);
+      expect(vol('化物語 下巻', three), 3);
+    });
+
     test('主题合集（成员不同系列）里书名尾数不当卷号：Fahrenheit 451 不是 Vol. 451', () {
       const List<String> theme = <String>[
         'Fahrenheit 451',

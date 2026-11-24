@@ -31,6 +31,45 @@ void main() {
       });
     });
 
+    // BUG-5377：结尾「上 / 中 / 下」分册以前整个书名当系列名，上下两册散成两张卡。
+    test('分册：上 / 中 / 下（空格、括号、巻 / 卷 / 册）归同一系列，按分册排', () {
+      final Map<String, int> splits = <String, int>{
+        '化物語 上': 1,
+        '化物語（中）': 2,
+        '化物語 <下>': 3,
+        '化物語〈上〉': 1,
+        '化物語 上巻': 1,
+        '化物語下巻': 3,
+        '化物語 上卷': 1,
+        '化物語 下册': 3,
+        '化物語 【中】': 2,
+      };
+      splits.forEach((String title, int split) {
+        final BookSeriesKey key = parseBookSeriesKey(title)!;
+        expect(key.seriesTitle, '化物語', reason: title);
+        expect(key.split, split, reason: title);
+        expect(key.volume, isNull, reason: '分册不折成卷号：$title');
+      });
+      // 分册在卷号外侧：卷号照读，同卷上册排在下册前。
+      final BookSeriesKey v2a = parseBookSeriesKey('物語シリーズ 第2巻 上')!;
+      final BookSeriesKey v2b = parseBookSeriesKey('物語シリーズ 2 下')!;
+      expect((v2a.seriesTitle, v2a.volume, v2a.split), ('物語シリーズ', 2, 1));
+      expect((v2b.seriesTitle, v2b.volume, v2b.split), ('物語シリーズ', 2, 3));
+      expect(compareBookSeriesPosition(v2a, v2b), lessThan(0));
+      expect(
+        compareBookSeriesPosition(
+          parseBookSeriesKey('化物語 下')!,
+          parseBookSeriesKey('化物語 上')!,
+        ),
+        greaterThan(0),
+      );
+      // 反例：以「上」结尾的书名、单字书名不剥。
+      expect(parseBookSeriesKey('本好きの下剋上')!.seriesTitle, '本好きの下剋上');
+      expect(parseBookSeriesKey('本好きの下剋上')!.split, 0);
+      expect(parseBookSeriesKey('上')!.seriesTitle, '上');
+      expect(parseBookSeriesKey('川の上')!.split, 0);
+    });
+
     // rT5chqFYOK：按话发布的漫画「X 第N話 前編 [hash]」每话各占一张卡。
     test('漫画按话：第N話（可带前編 / 中編 / 後編）归到同一系列，话号不当卷号', () {
       final Map<String, BookEpisodeNumber> episodes =
