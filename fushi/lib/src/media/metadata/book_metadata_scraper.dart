@@ -119,6 +119,31 @@ class BookScrapeCandidate {
     this.pageUrl,
   });
 
+  /// 本系列候选换成某一卷的封面（MangaBaka 卷封面网格选中一卷时的结果）：封面地址与
+  /// 卷号取那一卷，其余条目资料（简介 / 评分 / 标签 / 背景）沿用系列。
+  BookScrapeCandidate forVolume(BookVolumeCover cover) => BookScrapeCandidate(
+    subjectId: subjectId,
+    title: title,
+    coverUrl: cover.url,
+    source: source,
+    originalTitle: originalTitle,
+    author: author,
+    year: year,
+    summary: summary,
+    isAdult: isAdult,
+    date: date,
+    rating: rating,
+    ratingCount: ratingCount,
+    tags: tags,
+    backdropUrl: backdropUrl,
+    publisher: publisher,
+    series: series,
+    volume: cover.label,
+    isbn: isbn,
+    bannerUrl: bannerUrl,
+    pageUrl: pageUrl,
+  );
+
   /// 书目源的 [BookCatalogRecord] → 候选；无封面返回 null。
   static BookScrapeCandidate? fromCatalog(
     BookCatalogRecord r,
