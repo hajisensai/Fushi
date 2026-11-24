@@ -424,6 +424,164 @@ void main() {
     expect(notifier.pageBackdropAccentSeed, isNull);
   });
 
+  // ── BUG-5370：iOS 更新换容器 UUID / 换数据根后背景图不能丢 ─────────────
+
+  test('导入只存文件名：背景图目录整体换了根，重启后图照样解析到新位置', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    await notifier.importPageBackdropImage(source('b.png'), portrait: true);
+    await notifier.importPageBackdropModuleImage(
+      HomeTab.books,
+      source('c.png'),
+      portrait: false,
+    );
+    final String landscapeName = pageBackdropImageFileName(
+      pageBackdropSettings.value.landscapeImagePath!,
+    );
+    final Map<String, String> stored = await database.getAllPrefs();
+    expect(
+      PrefCodec.decodeUntyped(stored[kPageBackdropLandscapeImagePrefKey]!),
+      landscapeName,
+      reason: '偏好只存文件名，不烧进容器根',
+    );
+    expect(
+      PrefCodec.decodeUntyped(stored[kPageBackdropPortraitImagePrefKey]!),
+      isNot(contains(store.path)),
+    );
+    expect(
+      PrefCodec.decodeUntyped(stored[kPageBackdropModuleImagesPrefKey]!),
+      isNot(contains(store.path)),
+    );
+    await notifier.pageBackdropImagesSettled;
+    notifier.dispose();
+
+    // iOS 装新构建：容器 UUID 变了，support 根连同 page_backdrop 目录一起到了新位置。
+    final Directory moved = Directory('${scratch.path}/new-container/store');
+    moved.parent.createSync(recursive: true);
+    store.renameSync(moved.path);
+    ThemeNotifier.pageBackdropImageDirectory = () async => moved;
+    pageBackdropSettings.value = const PageBackdropSettings();
+    notifier = build(await database.getAllPrefs());
+    await notifier.pageBackdropImagesSettled;
+
+    final PageBackdropSettings after = pageBackdropSettings.value;
+    expect(after.hasCustomImage, isTrue);
+    expect(after.landscapeImagePath, startsWith(moved.path));
+    expect(File(after.landscapeImagePath!).existsSync(), isTrue);
+    expect(File(after.portraitImagePath!).existsSync(), isTrue);
+    final String books =
+        pageBackdropModuleOverrides.value[HomeTab.books]!.landscapeImagePath!;
+    expect(books, startsWith(moved.path));
+    expect(File(books).existsSync(), isTrue);
+    expect(notifier.pageBackdropAccentSeed, const Color(green));
+  });
+
+  test('存量绝对路径（旧容器根）：载入时按文件名改写 live、模块与各配置停放的值', () async {
+    store.createSync(recursive: true);
+    for (final String name in <String>[
+      'landscape-1.jpg',
+      'portrait-2.jpg',
+      'module-books-landscape-3.jpg',
+      'landscape-4.jpg',
+      'module-video-landscape-5.jpg',
+    ]) {
+      File('${store.path}/$name').writeAsBytesSync(<int>[1, 2, 3]);
+    }
+    // 旧容器里的路径：文件已随目录搬到 [store]，这些绝对路径本身全悬空。
+    String old(String name) =>
+        '${scratch.path}/OLD-CONTAINER-UUID/Library/page_backdrop/$name';
+    final String gone = old('landscape-0-not-here.jpg');
+    final Map<String, String> prefs = <String, String>{
+      kPageBackdropPresetPrefKey: PrefCodec.encode('custom'),
+      kPageBackdropLandscapeImagePrefKey: PrefCodec.encode(
+        old('landscape-1.jpg'),
+      ),
+      kPageBackdropPortraitImagePrefKey: PrefCodec.encode(
+        old('portrait-2.jpg'),
+      ),
+      kPageBackdropModulePresetsPrefKey: PrefCodec.encode(
+        jsonEncode(<String, String>{'books': 'custom'}),
+      ),
+      kPageBackdropModuleImagesPrefKey: PrefCodec.encode(
+        jsonEncode(<String, Object>{
+          'books': <String, String>{
+            'landscape': old('module-books-landscape-3.jpg'),
+          },
+        }),
+      ),
+      'page_backdrop_image_landscape::uid-other': PrefCodec.encode(
+        old('landscape-4.jpg'),
+      ),
+      'page_backdrop_image_portrait::uid-other': PrefCodec.encode(gone),
+      'page_backdrop_module_images::uid-other': PrefCodec.encode(
+        jsonEncode(<String, Object>{
+          'video': <String, String>{
+            'landscape': old('module-video-landscape-5.jpg'),
+          },
+        }),
+      ),
+    };
+    for (final MapEntry<String, String> e in prefs.entries) {
+      await database.setPref(e.key, e.value);
+    }
+
+    notifier = build(prefs);
+    await notifier.pageBackdropImagesSettled;
+
+    final PageBackdropSettings settings = pageBackdropSettings.value;
+    expect(settings.hasCustomImage, isTrue);
+    expect(
+      settings.landscapeImagePath,
+      resolvePageBackdropImagePath('landscape-1.jpg', directory: store.path),
+    );
+    expect(File(settings.portraitImagePath!).existsSync(), isTrue);
+    expect(
+      File(
+        pageBackdropModuleOverrides.value[HomeTab.books]!.landscapeImagePath!,
+      ).existsSync(),
+      isTrue,
+    );
+
+    Object? read(Map<String, String> all, String key) =>
+        PrefCodec.decodeUntyped(all[key]!);
+    final Map<String, String> all = await database.getAllPrefs();
+    expect(read(all, kPageBackdropLandscapeImagePrefKey), 'landscape-1.jpg');
+    expect(read(all, kPageBackdropPortraitImagePrefKey), 'portrait-2.jpg');
+    expect(
+      decodePageBackdropModuleImages(
+        read(all, kPageBackdropModuleImagesPrefKey),
+      )[HomeTab.books]!.landscape,
+      'module-books-landscape-3.jpg',
+    );
+    expect(
+      read(all, 'page_backdrop_image_landscape::uid-other'),
+      'landscape-4.jpg',
+    );
+    expect(
+      decodePageBackdropModuleImages(
+        read(all, 'page_backdrop_module_images::uid-other'),
+      )[HomeTab.video]!.landscape,
+      'module-video-landscape-5.jpg',
+    );
+    expect(
+      read(all, 'page_backdrop_image_portrait::uid-other'),
+      gone,
+      reason: '目录里没有的文件不改写，照旧按不存在处理',
+    );
+
+    // 换一张图触发清扫：停放配置引用的文件（按文件名比）一个都不能被当孤儿删。
+    await notifier.importPageBackdropImage(source('new.png'), portrait: false);
+    expect(File('${store.path}/landscape-1.jpg').existsSync(), isFalse);
+    for (final String kept in <String>[
+      'portrait-2.jpg',
+      'module-books-landscape-3.jpg',
+      'landscape-4.jpg',
+      'module-video-landscape-5.jpg',
+    ]) {
+      expect(File('${store.path}/$kept').existsSync(), isTrue, reason: kept);
+    }
+  });
+
   // ── 按模块单独设置（反馈 DYI1IOZxSM）────────────────────────────────
 
   test('模块单独导入图片：只改这个模块，全局与应用配色不动', () async {

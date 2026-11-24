@@ -16,6 +16,13 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart'
     show dbSourcePrefKey, kReaderSourcePersistedKey;
 
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
+    show
+        kPageBackdropLandscapeImagePrefKey,
+        kPageBackdropModuleImagesPrefKey,
+        kPageBackdropPortraitImagePrefKey,
+        kPageBackdropSeedCachePrefKey;
+
 /// 一个持久化字段在数据根迁移里的处置。
 enum PathRebaseKind {
   /// 落在 **documents（内容/书库）根**下的绝对路径 —— 迁移必须 rebase 到新 documents 根。
@@ -1469,6 +1476,35 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
     PathRebaseKind.notAPath,
     PathValueShape.none,
     '旧单库显示名（与 local_audio_db_path 同族），不是路径。',
+  ),
+  // BUG-5370：页面背景图键名不像路径（守卫的 key 正则扫不到），值却曾是
+  // `<support>/page_backdrop/...` 的绝对路径——iOS 更新换容器后整批悬空。现在只存文件名、
+  // 读时按当前目录拼；守卫按 kPageBackdropDeviceLocalPrefKeys 逐个要求在这里登记。
+  // 各配置的停放副本（`<键>::<uid>`）同形同处置。
+  PathRebasePref(
+    kPageBackdropLandscapeImagePrefKey,
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '页面背景横屏图：<support>/page_backdrop 里的文件名，读时按当前目录拼成路径，与根无关。'
+    '早先写下的绝对路径由 ThemeNotifier 载入时按文件名改写（文件在目录里才改）。',
+  ),
+  PathRebasePref(
+    kPageBackdropPortraitImagePrefKey,
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '页面背景竖屏图：同横屏图，存文件名。',
+  ),
+  PathRebasePref(
+    kPageBackdropModuleImagesPrefKey,
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '按模块的背景图 JSON（{模块: {landscape, portrait}}），值同横屏图存文件名。',
+  ),
+  PathRebasePref(
+    kPageBackdropSeedCachePrefKey,
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '背景图取色缓存 `<图>|<mtime:size>|<种子>`：图按文件名比对，旧根路径不影响命中。',
   ),
 ];
 
