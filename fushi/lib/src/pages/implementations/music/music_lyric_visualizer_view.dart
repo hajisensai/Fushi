@@ -5,6 +5,7 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:fushi_music/fushi_music.dart';
@@ -640,32 +641,40 @@ class _LyricVisualizerPickerState extends State<_LyricVisualizerPicker> {
             ),
           Flexible(
             child: FushiEntranceScope(
-              child: GridView.builder(
-                shrinkWrap: true,
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 220,
-                  mainAxisExtent: lyricVisualizerStyleTileExtent(context),
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                ),
-                itemCount: entries.length,
-                itemBuilder: fushiStaggeredItemBuilder((
-                  BuildContext context,
-                  int i,
-                ) {
-                  final LyricVisualizerEntry e = entries[i];
-                  return _StyleTile(
-                    entry: e,
-                    selected: !_random && e.mode == widget.current,
-                    onTap: () => Navigator.of(
-                      context,
-                    ).pop(LyricVisualizerPick(mode: e.mode, random: _random)),
-                    onTune: e.tunings.isEmpty
-                        ? null
-                        : () => unawaited(_openTuning(e)),
-                  );
-                }),
+              // 卡片高度要按网格实际列宽排版说明才量得准，所以在 LayoutBuilder 里拿宽度。
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints constraints) =>
+                    GridView.builder(
+                      shrinkWrap: true,
+                      padding: _kStyleGridPadding,
+                      gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+                        maxCrossAxisExtent: _kStyleGridMaxTileWidth,
+                        mainAxisExtent: lyricVisualizerStyleTileExtent(
+                          context,
+                          entries: entries,
+                          gridWidth: constraints.maxWidth,
+                        ),
+                        crossAxisSpacing: _kStyleGridSpacing,
+                        mainAxisSpacing: _kStyleGridSpacing,
+                      ),
+                      itemCount: entries.length,
+                      itemBuilder: fushiStaggeredItemBuilder((
+                        BuildContext context,
+                        int i,
+                      ) {
+                        final LyricVisualizerEntry e = entries[i];
+                        return _StyleTile(
+                          entry: e,
+                          selected: !_random && e.mode == widget.current,
+                          onTap: () => Navigator.of(context).pop(
+                            LyricVisualizerPick(mode: e.mode, random: _random),
+                          ),
+                          onTune: e.tunings.isEmpty
+                              ? null
+                              : () => unawaited(_openTuning(e)),
+                        );
+                      }),
+                    ),
               ),
             ),
           ),
@@ -675,30 +684,66 @@ class _LyricVisualizerPickerState extends State<_LyricVisualizerPicker> {
   }
 }
 
-/// 样式卡高度：按实际字体行高（含系统字号放大）量出「图标行 + 标题一行 + 说明两行」，
-/// 卡片不再是写死高度——写死 112 时说明行只剩十来像素，中文字形上下被裁掉。
-double lyricVisualizerStyleTileExtent(BuildContext context) {
+/// 样式卡高度：按网格实际列宽把每张卡的标题和说明完整排版一次（含系统字号放大），
+/// 取最高那张定整个网格的 `mainAxisExtent`，所有卡的说明都完整显示、不截断不加省略号。
+///
+/// 早先写死 112（说明被上下裁，BUG-5355），后来按「标题一行 + 说明两行」量（说明
+/// 多于两行时被截成省略号，BUG-5369）；说明长短各异，只有按真实宽度排版才量得准。
+double lyricVisualizerStyleTileExtent(
+  BuildContext context, {
+  required List<LyricVisualizerEntry> entries,
+  required double gridWidth,
+}) {
   final TextTheme text = Theme.of(context).textTheme;
+  final TextStyle base = DefaultTextStyle.of(context).style;
   final TextScaler scaler = MediaQuery.textScalerOf(context);
-  double lineHeight(TextStyle? style) {
+  final TextDirection direction = Directionality.of(context);
+  final Locale? locale = Localizations.maybeLocaleOf(context);
+  final double textWidth = math.max(
+    0,
+    lyricVisualizerStyleTileWidth(gridWidth) - _kStyleTilePadding * 2,
+  );
+  double measure(String value, TextStyle? style) {
     final TextPainter painter = TextPainter(
-      text: TextSpan(text: '国Ag', style: style),
-      textDirection: TextDirection.ltr,
+      text: TextSpan(text: value, style: base.merge(style)),
+      textDirection: direction,
       textScaler: scaler,
-      maxLines: 1,
-    )..layout();
+      locale: locale,
+    )..layout(maxWidth: textWidth);
     final double h = painter.height;
     painter.dispose();
     return h;
   }
 
-  return _kStyleTilePadding * 2 +
-      _kStyleTileIconRowHeight +
-      _kStyleTileTitleGap +
-      lineHeight(text.titleMedium) +
-      lineHeight(text.bodySmall) * 2;
+  double tallest = 0;
+  for (final LyricVisualizerEntry e in entries) {
+    final String? description = e.description?.call();
+    final double h =
+        measure(e.label(), text.titleMedium) +
+        (description == null ? 0 : measure(description, text.bodySmall));
+    tallest = math.max(tallest, h);
+  }
+  return (_kStyleTilePadding * 2 +
+          _kStyleTileIconRowHeight +
+          _kStyleTileTitleGap +
+          tallest)
+      .ceilToDouble();
 }
 
+/// 样式网格（`SliverGridDelegateWithMaxCrossAxisExtent`）在 [gridWidth] 下每列的实际宽度，
+/// 与网格自己的分列算法一致。
+double lyricVisualizerStyleTileWidth(double gridWidth) {
+  final double usable = math.max(0, gridWidth - _kStyleGridPadding.horizontal);
+  final int columns = math.max(
+    1,
+    (usable / (_kStyleGridMaxTileWidth + _kStyleGridSpacing)).ceil(),
+  );
+  return math.max(0, usable - _kStyleGridSpacing * (columns - 1)) / columns;
+}
+
+const EdgeInsets _kStyleGridPadding = EdgeInsets.fromLTRB(16, 8, 16, 16);
+const double _kStyleGridMaxTileWidth = 220;
+const double _kStyleGridSpacing = 12;
 const double _kStyleTilePadding = 14;
 const double _kStyleTileIconRowHeight = 48;
 const double _kStyleTileTitleGap = 6;
@@ -751,8 +796,8 @@ class _StyleTile extends StatelessWidget {
                         ),
                     ],
                   ),
-                  // 卡片高度按字体行高量出（lyricVisualizerStyleTileExtent）：标题 +
-                  // 两行说明贴底，完整显示。
+                  // 卡片高度按实际列宽排版量出（lyricVisualizerStyleTileExtent）：
+                  // 标题与说明都不限行数，完整显示，贴底对齐。
                   const SizedBox(height: _kStyleTileTitleGap),
                   Expanded(
                     child: Align(
@@ -761,21 +806,9 @@ class _StyleTile extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
-                          Text(
-                            entry.label(),
-                            style: text.titleMedium,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          Text(entry.label(), style: text.titleMedium),
                           if (entry.description != null)
-                            Flexible(
-                              child: Text(
-                                entry.description!(),
-                                style: text.bodySmall,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
+                            Text(entry.description!(), style: text.bodySmall),
                         ],
                       ),
                     ),
