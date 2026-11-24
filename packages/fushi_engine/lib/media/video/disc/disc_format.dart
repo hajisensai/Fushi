@@ -58,10 +58,16 @@ String? discRootForMemberPath(String memberPath) {
 /// 这些文件是盘的组成部分，不是独立的视频：盘由它的标题（[isDiscMemberPath]）代表，
 /// 流文件名 `00002.m2ts` 只是片段号，没有任何作品信息。BUG-4245 修复前的导入（逐个
 /// `.m2ts` 入库）留下的这种行，不能被当成作品去识别（BUG-5280）。
+///
+/// 两种分隔符都认：库里的路径可能来自另一平台（Windows 端经互联交给 Linux 上的
+/// fushi_server），按宿主平台的 `package:path` 切会让 Linux 认不出 `D:\…\BDMV\STREAM`。
 bool isDiscStreamFilePath(String path) {
-  final List<String> parts = p.split(p.normalize(path));
+  final List<String> parts = path
+      .split(RegExp(r'[\\/]+'))
+      .where((String s) => s.isNotEmpty)
+      .toList(growable: false);
   if (parts.length < 3) return false;
-  final String extension = p.extension(path).toLowerCase();
+  final String extension = p.extension(parts.last).toLowerCase();
   final String parent = parts[parts.length - 2].toUpperCase();
   if (extension == '.vob') return parent == 'VIDEO_TS';
   if (extension == '.ssif') {

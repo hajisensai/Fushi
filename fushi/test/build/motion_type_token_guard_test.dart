@@ -165,8 +165,10 @@ const Map<String, int> _lyricVisualizerArtCurveBudget = <String, int>{
       2,
   'lib/src/media/music/lyrics/visualizer/modes/monet/monet_floating_decor.dart':
       1,
+  // chaotic 晃动的逐段 easeInOut + 离开 chaotic 回正的 easeOut（folia framer
+  // `{ duration: 0.8, ease: 'easeOut' }`）。
   'lib/src/media/music/lyrics/visualizer/modes/monet/monet_lyrics_model.dart':
-      1,
+      2,
   'lib/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart': 2,
   'lib/src/media/music/lyrics/visualizer/modes/monet/monet_visualizer.dart': 3,
   'lib/src/media/music/lyrics/visualizer/modes/partita/partita_painter.dart': 1,

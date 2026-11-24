@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -203,5 +204,45 @@ void main() {
     test('附近没有盘时为空', () {
       expect(_list(root), isEmpty);
     });
+
+    test('上一级里有无权进入的兄弟目录：跳过它，照样找到别处的盘', () {
+      // CI（Linux）上 systemTemp 的兄弟目录里有 `systemd-private-*`，对它的
+      // `BDMV/STREAM` 做 existsSync 会抛 EACCES；Windows 盘根的
+      // `System Volume Information` 同理。这里用 IOOverrides 在任何平台上复现。
+      final Directory cd = Directory(p.join(root.path, 'CD'))..createSync();
+      final Directory locked = Directory(p.join(root.path, 'Locked'))
+        ..createSync();
+      final String ok = p.join(root.path, 'BD', 'BDMV', 'STREAM', '00001.m2ts');
+      _sized(ok, 100 * _kb);
+      final String lockedStream = p.join(locked.path, 'BDMV', 'STREAM');
+      final List<String> found = IOOverrides.runZoned(
+        () => _list(cd),
+        createDirectory: (String path) {
+          final Directory real = Zone.root.run(() => Directory(path));
+          return p.equals(path, lockedStream) ? _DeniedDirectory(real) : real;
+        },
+      );
+      expect(found, <String>[ok]);
+    });
   });
+}
+
+/// 无权访问的目录：existsSync 照 Linux 的 EACCES 抛错，其余委托给真实目录。
+class _DeniedDirectory implements Directory {
+  _DeniedDirectory(this._real);
+
+  final Directory _real;
+
+  @override
+  String get path => _real.path;
+
+  @override
+  bool existsSync() => throw FileSystemException(
+    'Exists failed',
+    path,
+    const OSError('Permission denied', 13),
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

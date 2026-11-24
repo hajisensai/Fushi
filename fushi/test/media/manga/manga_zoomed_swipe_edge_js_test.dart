@@ -39,9 +39,12 @@ void main() {
     '  var sx = 0, sy = 0, st = 0, spx = 0, has = false;',
     '  // ── 触屏双指捏合缩放 ──',
   );
+  // 抽到手势监听器注册块为止（`_end` 之后第一条 document 级监听器，不限事件
+  // 类型）：中间是本节共用的阈值 / 长按 / 落点 helper；监听器本身不抽，node
+  // 桩没有 DOM 事件。
   final String end = section(
     '  function _end(x, y){',
-    "  document.addEventListener('pointerdown', function(e){",
+    '\n  document.addEventListener(',
   );
 
   /// 视口 412×860（竖屏手机）、RTL。`drag(dx)` = 按下 → 分 10 步 pointermove（每步

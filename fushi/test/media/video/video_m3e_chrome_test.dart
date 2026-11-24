@@ -68,10 +68,12 @@ void main() {
       ]);
     });
 
-    test('bottom-right is volume / subtitle / speed / fullscreen', () {
+    // 聊天回放（拍板台 zTedU_pOQF）默认排在字幕之后，只在当前视频有聊天回放时出现。
+    test('bottom-right is volume / subtitle / chat / speed / fullscreen', () {
       expect(layout.itemsIn(VideoControlSlot.bottomRight), <VideoControlItem>[
         VideoControlItem.volume,
         VideoControlItem.subtitleTrack,
+        VideoControlItem.liveChat,
         VideoControlItem.speed,
         VideoControlItem.fullscreen,
       ]);

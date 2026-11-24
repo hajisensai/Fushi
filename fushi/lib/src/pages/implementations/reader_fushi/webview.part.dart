@@ -2783,12 +2783,22 @@ updateLive: function(patch) {
               args[0] as String,
             );
             if (binding == null) return;
-            final ShortcutAction? action = resolveSpreadKeyBridgeAction(
+            final ShortcutAction? bound = resolveSpreadKeyBridgeAction(
               appModel.shortcutRegistry,
               binding,
             );
+            // 裸 ← / → 与键盘焦点路径同一套语义：跟随阅读方向 / 反转开关、有声在场
+            // 改作切句（反馈 uz_2m0E_Eu）。此前这里直接执行注册表绑定，竖排书的双页
+            // 插图页上 WebView 持焦时左右键方向是反的。
+            final ShortcutAction? action =
+                _resolveReaderArrowKey(
+                  binding.key,
+                  modifiers: binding.modifiers,
+                  boundAction: bound,
+                ) ??
+                bound;
             if (action == null) return;
-            _executeShortcutAction(action);
+            _executeShortcutAction(action, keyboardTriggerKey: binding.key);
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
           },
         );

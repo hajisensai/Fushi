@@ -135,16 +135,31 @@ void main() {
     // function no longer closes the list directly and no longer passes a lock.
     // BUG-3888 起画面本身作为第三个参数交给 push-aside 行（行在动画期间冻结画面
     // 宽度），所以判据是「只传 controller / visible / 画面」，不能再多出 lock 参数。
+    // 聊天回放栏（拍板台 zTedU_pOQF）是画面格里再挤出的一列：画面先交给
+    // `_liveChatSidePanel(controller, 可见, 画面)`，它的结果再作为字幕列表的画面参数。
+    // 两层都只传 controller / 可见 / 画面，不许多出 lock 参数。
     expect(
       RegExp(
         r'_subtitleJumpSidePanel\(\s*controller,\s*visible,\s*'
         r'(?://.*\s*)*'
-        r'(?:_webMode \? _wrapWebVideoSurface\(video\) : video|video),?\s*\)',
+        r'_liveChatSidePanel\(\s*controller,\s*_liveChatVisible\.value,\s*'
+        r'(?://.*\s*)*'
+        r'(?:_webMode \? _wrapWebVideoSurface\(video\) : video|video),?\s*\)'
+        r',?\s*\)',
       ).hasMatch(body),
       isTrue,
       reason:
           'layout should delegate the panel column to '
           '_subtitleJumpSidePanel (no lock arg)',
+    );
+    // 聊天栏那一层同样包着画面：它的推挤行里也不许叠 barrier（TODO-636 同一个坑）。
+    final String chatPanel = maskComments(
+      methodBody(src, 'Widget _liveChatSidePanel('),
+    );
+    expect(
+      chatPanel.contains('HitTestBehavior.opaque'),
+      isFalse,
+      reason: '聊天回放栏的推挤行不得在画面上叠 opaque barrier（TODO-636）',
     );
   });
 

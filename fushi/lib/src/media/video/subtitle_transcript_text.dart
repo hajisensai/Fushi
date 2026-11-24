@@ -778,7 +778,7 @@ class SubtitleTranscriptAction extends StatelessWidget {
 ///
 /// 查询串只由**起点**决定，终点恒为句尾——引擎按查询串做最长匹配并回报
 /// `bestLength`（弹窗 / 字幕据此高亮整词跨度），多喂的后文超出 `scanLength`
-/// （`FushiDicts.defaultScanLength` = 16 码点）自然丢弃。
+/// （`FushiDicts.scanLength`，设置项，出厂 16 码点）自然丢弃。
 ///
 /// 起点按脚本分：
 /// - CJK：就是被点字位本身（逐字查词，点「永」命中「永遠」、

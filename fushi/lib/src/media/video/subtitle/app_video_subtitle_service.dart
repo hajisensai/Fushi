@@ -124,7 +124,7 @@ typedef AppVideoSubtitleAudioTrackProbe =
 Future<List<AudioTrackFacts>> _defaultAudioTrackProbe(String videoPath) async =>
     (await probeVideoFacts(videoPath)).audioTracks;
 
-/// 服务从设置里要的两样东西（生产实现读 `PreferencesRepository`，测试注入 fake）。
+/// 服务从设置里要的东西（生产实现读 `PreferencesRepository`，测试注入 fake）。
 abstract interface class AppVideoSubtitleSettings {
   /// 「字幕校对」功能当前指派的提供商；null = 没指派 / AI 模块关闭。
   AiProviderConfig? get proofreadProvider;
@@ -134,6 +134,13 @@ abstract interface class AppVideoSubtitleSettings {
 
   /// 通用联网搜索（歌词补齐查网页用）；null / 没配全 = 只查 LRCLIB。
   WebSearchConfig? get webSearch;
+
+  /// 音乐条目 [scope]（[AppVideoSubtitleTarget.settingScopes] 的一项）记住的「先分离
+  /// 人声」；null = 没记过。
+  bool? musicVocalSeparation(String scope);
+
+  /// 记下条目 [scope] 的「先分离人声」。
+  Future<void> setMusicVocalSeparation(String scope, bool on);
 }
 
 /// 生产实现：现读偏好仓（指派 / 站点改了下一次调用即生效）。
@@ -151,6 +158,14 @@ class PrefsVideoSubtitleSettings implements AppVideoSubtitleSettings {
 
   @override
   WebSearchConfig? get webSearch => prefs.aiWebSearch;
+
+  @override
+  bool? musicVocalSeparation(String scope) =>
+      prefs.musicSubtitleVocalSeparation[scope];
+
+  @override
+  Future<void> setMusicVocalSeparation(String scope, bool on) =>
+      prefs.setMusicSubtitleVocalSeparation(scope, on);
 }
 
 /// UI 与 ctl 取服务的唯一入口（同一个库共用一个实例，任务表跨页面存活）。
@@ -657,15 +672,37 @@ class AppVideoSubtitleService {
   final AppVideoSubtitleRecognizerResolver _resolveRecognizer;
   final AppMusicAsrAudioProfileResolver _musicAudioProfile;
 
-  /// [target] 用哪种转录素材：视频恒为 `mixedAudio`；音乐库歌词默认 `song`（识别前
-  /// 做人声分离，伴奏下整句漏字的根因是模型对唱腔 + 伴奏不出字），手机上内存放不下
-  /// 分离时退回 `mixedAudio`。生成面板按它查 / 下模型，开跑按它挑识别器。
+  /// [target] 用哪种转录素材：视频恒为 `mixedAudio`；音乐库歌词按
+  /// [separatesVocalsFor]——开着是 `song`（识别前做人声分离，伴奏下整句漏字的根因是
+  /// 模型对唱腔 + 伴奏不出字；手机上内存放不下分离时退回 `mixedAudio`），关着直接
+  /// `mixedAudio`（广播 / 讲座这类纯人声内容不必多跑数倍时间的分离）。生成面板按它
+  /// 查 / 下模型，开跑按它挑识别器。
+  ///
+  /// [separateVocals] = 生成面板上此刻的开关（还没落进偏好也按它判）；null = 按记住的。
   Future<AsrAudioProfile> asrAudioProfileFor(
     AppVideoSubtitleTarget target,
-    VideoSubtitleLanguage language,
-  ) async => target.isMusic
+    VideoSubtitleLanguage language, {
+    bool? separateVocals,
+  }) async => target.isMusic && (separateVocals ?? separatesVocalsFor(target))
       ? _musicAudioProfile(language)
       : AsrAudioProfile.mixedAudio;
+
+  /// [target] 识别前要不要先分离人声（拍板 W_wrz-ZPU8）：只有音乐目标会分离；按
+  /// [AppVideoSubtitleTarget.settingScopes] 由近到远取第一个记过的选择，都没记过默认
+  /// 开（歌曲是音乐库的常态）。
+  bool separatesVocalsFor(AppVideoSubtitleTarget target) {
+    if (!target.isMusic) return false;
+    for (final String scope in target.settingScopes) {
+      final bool? on = settings.musicVocalSeparation(scope);
+      if (on != null) return on;
+    }
+    return true;
+  }
+
+  /// 生成面板的「先分离人声」开关：记在 [target] 自己的身份（[AppVideoSubtitleTarget.key]）
+  /// 上，下次打开同一条目、以及没单独记过的下级条目都沿用。
+  Future<void> setSeparatesVocals(AppVideoSubtitleTarget target, bool on) =>
+      settings.setMusicVocalSeparation(target.key, on);
   final AppVideoSubtitleCompleterFactory _completerFactory;
   final Future<Directory> Function() _jobsRoot;
   final AppVideoSubtitleDurationProbe _probeDurationMs;

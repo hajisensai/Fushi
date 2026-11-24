@@ -882,14 +882,21 @@ String normalizeSearchTerm(
 /// 词典搜索结果缓存键的单一真相，逐字不变（变=缓存击穿/旧条目命中不了）。格式：
 /// `<term.length>:<term>/<maxTerms>/<maxResults>`。此前是 [AppModel.searchDictionary]
 /// 内联插值，无法独立断言「键格式不漂移」。
+///
+/// [scanLength]：本次查词交给引擎的扫描窗口（[FushiDicts.scanLength]，反馈
+/// ezCjUoU2QM）。同一个查询串在不同窗口下最长匹配不同，键必须带它；出厂值时后缀为空，
+/// 键与此前逐字相同（[scanLengthCacheSuffix]）。
 @visibleForTesting
 String buildSearchCacheKey({
   required String term,
   required int maxTerms,
   required int maxResults,
+  required int scanLength,
   bool chineseSimpToTrad = false,
 }) {
-  return '${term.length}:$term/$maxTerms/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
+  return '${term.length}:$term/$maxTerms/$maxResults'
+      '${scanLengthCacheSuffix(scanLength)}'
+      '${chineseSimpToTrad ? '/zh' : ''}';
 }
 
 /// 「按中文处理（引擎双向展开简体 ↔ 繁體拼写）」的唯一判据（反馈 3FY6vTqwV-）。
@@ -7122,6 +7129,8 @@ class AppModel
       themeNotifier.activeCustomThemeBackgroundColor;
   Color? get activeCustomThemeSelectionColor =>
       themeNotifier.activeCustomThemeSelectionColor;
+  Color? get activeCustomThemeSelectionTextColor =>
+      themeNotifier.activeCustomThemeSelectionTextColor;
   Color? get activeCustomThemeLinkColor =>
       themeNotifier.activeCustomThemeLinkColor;
   Color? get activeCustomThemeSurfaceColor =>
@@ -11322,6 +11331,8 @@ class AppModel
       filters: filtersOverride ?? profileView?.lookupFilters,
       requestedScriptVariants: requestedScriptVariants,
     );
+    // 扫描窗口只取一次：缓存键与交给引擎的是同一个值（反馈 ezCjUoU2QM）。
+    final int scanLength = FushiDicts.scanLength;
     // 原文振假名改变同长度候选的先后：带 ruby 的查询单独成键（无 ruby 时后缀为空，
     // 键与此前逐字相同）。
     final String cacheKey =
@@ -11331,6 +11342,7 @@ class AppModel
           term: searchTerm,
           maxTerms: effectiveMaxTerms,
           maxResults: effectiveMaxTerms,
+          scanLength: scanLength,
           chineseSimpToTrad: simpToTrad,
         ) +
         rubySpansCacheSuffix(rubySpans);
@@ -11352,6 +11364,7 @@ class AppModel
           FushiLookupRequest(
             text: searchTerm,
             maxResults: effectiveMaxTerms,
+            scanLength: scanLength,
             includeKanji: isSingleKanji(searchTerm),
             hiddenDictionaries: filters.hiddenDictionaryNames,
             // 纯汉字词典的排除单独一个集合：hiddenDictionaries 是术语开关，混合
@@ -12230,7 +12243,7 @@ class AppModel
   String? _mirroredWorkSession;
 
   /// 弹窗进程：按主进程发布的作品会话（[kWorkProfileSessionPrefKey]，读自刚重载的偏好缓存）
-  /// 装上 / 换掉 / 撤下本 isolate 的作品会话覆盖层——与主进程同一条 [WorkProfileScope.enterProfile]，
+  /// 装上 / 换掉 / 撤下本 isolate 的作品会话覆盖层——与主进程同一条 [WorkProfileScope.enterCombos]，
   /// 不另写一份作品配置逻辑。返回时按新会话重读的缓存已就绪。
   Future<void> mirrorMainProcessWorkSession() async {
     final String published = prefsRepo.workProfileSession;
@@ -12695,6 +12708,12 @@ class AppModel
   @override
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
+
+  /// 词典扫描窗口长度（码点，反馈 ezCjUoU2QM）；引擎经 [FushiDicts.scanLengthReader]
+  /// 直接读同一个偏好，这里只给设置页用。
+  int get lookupScanLength => prefsRepo.lookupScanLength;
+  Future<void> setLookupScanLength(int value) =>
+      prefsRepo.setLookupScanLength(value);
 
   void addToDictionaryHistory({required DictionarySearchResult result}) {
     MediaType mediaType = mediaTypes.values.toList()[currentHomeTabIndex];
@@ -15597,6 +15616,10 @@ class AppModel
   Future<void> setMangaSwipePageTurnSensitivity(double value) =>
       prefsRepo.setMangaSwipePageTurnSensitivity(value);
 
+  bool get mangaReverseArrowPageTurn => prefsRepo.mangaReverseArrowPageTurn;
+  Future<void> setMangaReverseArrowPageTurn(bool value) =>
+      prefsRepo.setMangaReverseArrowPageTurn(value);
+
   bool get mangaVolumeKeyPaging => prefsRepo.mangaVolumeKeyPaging;
   Future<void> setMangaVolumeKeyPaging(bool value) =>
       prefsRepo.setMangaVolumeKeyPaging(value);
@@ -16756,7 +16779,8 @@ class _AppModelRemoteLookupService
       );
       // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）；
       // 按配置视图查时带它的命名空间（App 自己的键不变），按请求方词典选择查时再加
-      // 它的指纹命名空间。
+      // 它的指纹命名空间。扫描窗口只取一次，键与交给引擎的是同一个值。
+      final int scanLength = FushiDicts.scanLength;
       final String searchCacheKey =
           (view?.lookupCacheNamespace ?? '') +
           AppModel._requesterFiltersNamespace(requesterFilters) +
@@ -16764,6 +16788,7 @@ class _AppModelRemoteLookupService
             term: searchTerm,
             maxTerms: maximumTerms,
             maxResults: maximumTerms,
+            scanLength: scanLength,
             chineseSimpToTrad: simpToTrad,
           ) +
           rubySpansCacheSuffix(alignedRuby);
@@ -16817,6 +16842,7 @@ class _AppModelRemoteLookupService
             FushiLookupRequest(
               text: searchTerm,
               maxResults: maximumTerms,
+              scanLength: scanLength,
               popupOnly: true,
               hiddenDictionaries: filters.hiddenDictionaryNames,
               dictionaryOrder: filters.termDictionaryOrder,

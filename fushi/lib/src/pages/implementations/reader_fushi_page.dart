@@ -65,6 +65,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
         DictionaryPopupToolGroup,
         dictionaryPopupTopActionConstraints,
         kDictionaryPopupTopActionIconSize;
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart'
+    show DictionaryPopupInputSpec, withPopupArrowPageTurnKeys;
 import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/pages/implementations/kavita/kavita_progress_conflict_dialog.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -286,6 +288,7 @@ import 'package:fushi/src/shortcuts/dictionary_caret_controller.dart';
 // after its definition moved into the shared caret controller (TODO-387).
 export 'package:fushi/src/shortcuts/dictionary_caret_controller.dart'
     show CaretSurface;
+import 'package:fushi/src/shortcuts/directional_page_turn.dart';
 import 'package:fushi/src/shortcuts/reader_space_override.dart';
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
     show WindowFullscreenHost;
@@ -522,11 +525,15 @@ DateTime contentReadyTimeoutDeadline({
 /// 是否暗色。preset 主题在 [_ReaderFushiPageState._themeMap] 里手调，其余主题
 /// （light-theme / system-theme / 任意未覆盖的 key）由 [resolveReaderThemeColors]
 /// 回落到真实 ColorScheme 派生，避免再写死成白底（BUG-208 / TODO-143）。
+///
+/// [selectionText]：查词高亮里被选中文字的字色（拍板台 -8azTfJh_v）。null = 跟随正文
+/// 字色（历史行为）；只有自定义主题能设，用来做反色高亮。
 typedef ReaderThemeColors = ({
   Color bg,
   Color fg,
   Color sentenceAudioHighlight,
   Color selection,
+  Color? selectionText,
   Color link,
   bool dark,
 });
@@ -542,6 +549,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0xDE000000),
         sentenceAudioHighlight: Color(0x66A8C68C),
         selection: Color(0x59C2B280),
+        selectionText: null,
         link: Color(0xFF7A6232),
         dark: false,
       ),
@@ -550,6 +558,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0xDE000000),
         sentenceAudioHighlight: Color(0x6664B4DC),
         selection: Color(0x59C8AA6E),
+        selectionText: null,
         link: Color(0xFF3A5FAD),
         dark: false,
       ),
@@ -560,6 +569,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0xDE000000),
         sentenceAudioHighlight: Color(0x66A0C878),
         selection: Color(0x5988B583),
+        selectionText: null,
         link: Color(0xFF4C7A3E),
         dark: false,
       ),
@@ -568,6 +578,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0xDEFFFFFF),
         sentenceAudioHighlight: Color(0x595096C8),
         selection: Color(0x59BE9B64),
+        selectionText: null,
         link: Color(0xFF6FA8DC),
         dark: true,
       ),
@@ -576,6 +587,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0x99FFFFFF),
         sentenceAudioHighlight: Color(0x594682B4),
         selection: Color(0x59B4915A),
+        selectionText: null,
         link: Color(0xFF7AACDF),
         dark: true,
       ),
@@ -584,6 +596,7 @@ const Map<String, ReaderThemeColors> kReaderPaperPresets =
         fg: Color(0xDEFFFFFF),
         sentenceAudioHighlight: Color(0x663C78AA),
         selection: Color(0x66AA8750),
+        selectionText: null,
         link: Color(0xFF5B9BD5),
         dark: true,
       ),
@@ -633,6 +646,7 @@ ReaderThemeColors resolveReaderThemeColors({
     fg: base.fg,
     sentenceAudioHighlight: audioHighlightOverride,
     selection: base.selection,
+    selectionText: base.selectionText,
     link: base.link,
     dark: base.dark,
   );
@@ -666,6 +680,7 @@ ReaderThemeColors readerThemeColorsFromPalette(FushiReaderPalette palette) {
     fg: palette.text,
     sentenceAudioHighlight: palette.sentenceHighlight,
     selection: palette.lookupHighlight,
+    selectionText: null,
     link: palette.link,
     dark: palette.dark,
   );
@@ -719,6 +734,8 @@ ReaderThemeColors einkReaderThemeColors(
     fg: dark ? Colors.white : Colors.black,
     sentenceAudioHighlight: themed.sentenceAudioHighlight,
     selection: themed.selection,
+    // 墨水屏的查词高亮是线式下划线、不画底色，换字色没有意义（还会与纸色撞色）。
+    selectionText: null,
     link: dark ? Colors.white : Colors.black,
     dark: dark,
   );
@@ -763,6 +780,7 @@ typedef ReaderThemeOverrides = ({
   Color? bg,
   Color? fg,
   Color? selection,
+  Color? selectionText,
   Color? link,
 });
 
@@ -789,6 +807,7 @@ ReaderThemeColors applyReaderThemeOverrides(
     fg: fg,
     sentenceAudioHighlight: base.sentenceAudioHighlight,
     selection: overrides.selection ?? base.selection,
+    selectionText: overrides.selectionText ?? base.selectionText,
     link: overrides.link ?? base.link,
     dark: dark,
   );
@@ -5254,6 +5273,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 真相源）——preset 透传手调专色（与旧 switch 值逐一相等，零变化）、custom 用
       // 用户色、system/light 从真实 ColorScheme 强调色派生（不再落硬编码天蓝/灰/蓝）。
       selectionColor: _colorToCssRgba(rc.selection),
+      // 拍板台 -8azTfJh_v：查词高亮文字色，null = 跟随正文（CSS 不写字色规则）。
+      selectionTextColor: _colorToCssRgba(rc.selectionText),
       sentenceAudioHighlightColor: _colorToCssRgba(audioStyle.background),
       sentenceAudioTextColor: audioStyle.text == null
           ? null
@@ -6017,6 +6038,48 @@ $liveConfigJs
         // 那条鼠标通道的唯一消费者，保留。
         ShortcutAction.readerDismissDict,
       };
+
+  /// 查词弹窗开着且弹窗持焦时，裸 ← / → 也要交回来「关弹窗并翻页」（反馈
+  /// uz_2m0E_Eu ③，与漫画一致）。只追加左右键，翻页动作的其它键位留给弹窗滚动释义；
+  /// 见 [withPopupArrowPageTurnKeys]。
+  @override
+  DictionaryPopupInputSpec get dictionaryPopupInputSpec =>
+      withPopupArrowPageTurnKeys(
+        super.dictionaryPopupInputSpec,
+        registry: appModel.shortcutRegistry,
+        scope: ShortcutScope.reader,
+        pageTurnActions: const <ShortcutAction>{
+          ShortcutAction.readerPageForward,
+          ShortcutAction.readerPageBackward,
+        },
+      );
+
+  /// 弹窗回传的裸 ← / → 走与键盘焦点路径同一个 [_resolveReaderArrowKey]（阅读方向 /
+  /// 反转开关校正），再经 [_executeShortcutAction] 关弹窗并翻页；其余 token 交回基类
+  /// （「返回上一级」/「只关词典」= 关整条弹窗栈）。
+  @override
+  bool onDictionaryPopupInputToken(String token) {
+    final InputBinding? binding = InputBinding.deserialize(token);
+    if (binding != null &&
+        binding.modifiers.isEmpty &&
+        directionalPageTurnSideForKey(binding.key) != null) {
+      final ShortcutAction? action = _resolveReaderArrowKey(
+        binding.key,
+        modifiers: binding.modifiers,
+        boundAction: appModel.shortcutRegistry.resolveKeyboard(
+          binding.key,
+          modifiers: binding.modifiers,
+          scope: ShortcutScope.reader,
+        ),
+      );
+      if (action == ShortcutAction.readerPageForward ||
+          action == ShortcutAction.readerPageBackward) {
+        _executeShortcutAction(action!, keyboardTriggerKey: binding.key);
+        return true;
+      }
+    }
+    return super.onDictionaryPopupInputToken(token);
+  }
 
   // ── DictionaryCaretHost ───────────────────────────────────────────
   // The reader is the host for its [_caret] state machine: it supplies the

@@ -581,6 +581,7 @@ import 'package:fushi/src/media/video/remote_subtitle_catalog.dart';
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -2653,6 +2654,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 锁屏卡封面（本机文件）：按路径缓存是否存在，卡片每次推送都现取信息。
   ({String path, Uri? uri})? _backgroundMediaCover;
 
+  /// 正在异步探测是否存在的封面路径（BUG-3756：封面常在网络盘上，不许同步 stat）。
+  String? _backgroundMediaCoverProbing;
+
   /// BUG-939：`_subtitleMenuSources` 已成功枚举时对应的本地视频路径。字幕轨枚举
   /// （ffprobe 探测内嵌轨 + 同目录外挂）按此 key 记忆：同一视频重开「字幕」分类直接
   /// 用缓存渲染，不再每次重跑 ffprobe 显加载条、也不再把已枚举出的字幕轨先清空重来
@@ -4575,14 +4579,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
+  /// 只读缓存：卡片信息在每次控制器 notify 时同步现取，不能在这里碰文件系统——封面
+  /// 常落在网络盘（BUG-3756），冷目录一次同步 stat 就是数秒的 UI 冻结。缓存未命中先不
+  /// 带封面，交给 [_probeBackgroundMediaCover] 异步探测，探完再把卡片重推一次。
   Uri? _backgroundMediaCoverUri() {
     final String? path = _bookRow?.coverPath;
     if (path == null || path.isEmpty) return null;
     final ({String path, Uri? uri})? cached = _backgroundMediaCover;
     if (cached != null && cached.path == path) return cached.uri;
-    final Uri? uri = File(path).existsSync() ? File(path).uri : null;
-    _backgroundMediaCover = (path: path, uri: uri);
-    return uri;
+    _probeBackgroundMediaCover(path);
+    return null;
+  }
+
+  void _probeBackgroundMediaCover(String path) {
+    if (_backgroundMediaCoverProbing == path) return;
+    _backgroundMediaCoverProbing = path;
+    unawaited(() async {
+      final File file = File(path);
+      final bool exists = await file.exists();
+      // 探测期间换了集（封面路径变了）或已离页：这次结果作废，由新路径自己的探测接手。
+      if (!mounted || _backgroundMediaCoverProbing != path) return;
+      _backgroundMediaCoverProbing = null;
+      _backgroundMediaCover = (path: path, uri: exists ? file.uri : null);
+      if (exists) _backgroundMediaSession?.refreshInfo();
+    }());
   }
 
   /// BUG-2544：回前台（`resumed`）时把上面停下的播放续上。
@@ -8083,15 +8103,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
+    // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
+    _frameProbe.stop();
     // 拍板台 42UUu_kcwD-media：离页即让出系统媒体会话（已被别的页面 / 有声书 /
     // 音乐接手时只拆自己的监听）。
     _backgroundMediaSession?.dispose();
     _backgroundMediaSession = null;
     // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
     WorkProfileScope.instance.leave(this);
-    // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
-    // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
-    _frameProbe.stop();
     _playbackRouteMark.dispose();
     _subtitleMaskDraft.dispose();
     _themeSongTracker.dispose();

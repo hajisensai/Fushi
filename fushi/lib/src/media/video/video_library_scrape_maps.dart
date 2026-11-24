@@ -294,6 +294,12 @@ class _FileEpisodes {
   final Map<String, int> runtimeMinutes;
 }
 
+/// [VideoFileEpisodeRows] 聚合成「文件 → 分集与各集剧照」（与库页主卡同一套聚合，
+/// 合集选集页按文件挑剧照用；拍板 GLMHiavo0y）。没有任何一集带图的文件不进表。
+Map<String, List<VideoFileEpisodeStills>> videoFileEpisodeStillsByBook(
+  VideoFileEpisodeRows rows,
+) => _buildFileEpisodes(rows.episodes, rows.seasons, rows.episodeImages).byBook;
+
 /// 每个文件绑定的全部分集（含没有剧照的——一文件多集时按片长定位续播点要完整
 /// 的集序），主卡渲染时按续播点挑那一集的剧照；没有任何一集带图的文件不进表。
 _FileEpisodes _buildFileEpisodes(

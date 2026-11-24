@@ -40,6 +40,14 @@ class _PrefsBackedSettings implements AppVideoSubtitleSettings {
 
   @override
   WebSearchConfig? get webSearch => PrefsVideoSubtitleSettings(prefs).webSearch;
+
+  @override
+  bool? musicVocalSeparation(String scope) =>
+      PrefsVideoSubtitleSettings(prefs).musicVocalSeparation(scope);
+
+  @override
+  Future<void> setMusicVocalSeparation(String scope, bool on) =>
+      PrefsVideoSubtitleSettings(prefs).setMusicVocalSeparation(scope, on);
 }
 
 void main() {

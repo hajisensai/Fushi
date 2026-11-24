@@ -222,7 +222,7 @@ extension _VideoLiveChat on _VideoFushiPageState {
       onClose: onClose,
       hitTester: _liveChatHitTester,
       lookupHighlightOf: _liveChatHighlightFor,
-      fontSize: 14 * _videoUiScale,
+      fontSize: (context.fushiType.bodyMedium.fontSize ?? 14) * _videoUiScale,
       fontFamily: appModel.subtitleFontFamily,
     );
   }

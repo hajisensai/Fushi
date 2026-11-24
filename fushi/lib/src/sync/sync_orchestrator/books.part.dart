@@ -342,6 +342,75 @@ extension _SyncOrchestratorBooks on SyncOrchestrator {
     }
   }
 
+  /// 章节式互联漫画的每章阅读进度 live sweep（拍板 design-ic-manga-chapter-progress，反馈
+  /// 2bNEiehLgw）：书进度阶段把这类书排除在外（书级位置不带章身份，BUG-5352），它们的进度在
+  /// `manga_chapter_states`，这里逐本按章 LWW（[InterconnectMangaChapterSync.syncOne]）。
+  ///
+  /// 本机没有章节式互联漫画时不发任何请求。有的话先看本轮 host 的能力表（整轮至多一次请求，与其它
+  /// 维度共用）：老 host 不报 [kMangaChapterProgressCapability] → 静默跳过（拍板：老 host 不提示）；
+  /// 不逐本打一串 404。能力表读不到（网络 / 鉴权）记一条错误、本阶段结束。
+  ///
+  /// 每本在自己的书锁里做，与退出书的单本同步互斥；逐本错误进 [report.errors] 不中断整体，会话中途
+  /// 换了 host 本阶段就此结束。
+  Future<void> _syncMangaChapterProgressLive(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) async {
+    final List<EpubBookRow> books = <EpubBookRow>[
+      for (final EpubBookRow book in await _db.getAllEpubBooks())
+        if (InterconnectMangaChapterSync.syncsChapterProgress(book)) book,
+    ];
+    if (books.isEmpty) return;
+    final Object? capabilities;
+    try {
+      capabilities = await _roundHostCapabilities(report, backend);
+    } catch (e) {
+      report.noteError('live manga chapter progress: capabilities', e);
+      return;
+    }
+    if (capabilities is! Map ||
+        capabilities[kMangaChapterProgressCapability] == null) {
+      return;
+    }
+    final InterconnectMangaChapterSync sync = InterconnectMangaChapterSync(
+      db: _db,
+      backend: backend,
+    );
+    try {
+      for (int i = 0; i < books.length; i++) {
+        _checkpoint();
+        final EpubBookRow book = books[i];
+        _emit(
+          SyncPhase.readingData,
+          itemIndex: i,
+          itemTotal: books.length,
+          title: book.title,
+          itemKind: SyncItemKind.book,
+        );
+        try {
+          await syncResourceLocks.withResources(
+            <String>{syncBookResource(book.bookKey)},
+            () async {
+              final MangaChapterSyncStep step = await sync.syncOne(book);
+              if (step.pulled > 0) {
+                // 书架的在线漫画进度按章 `readAt` 算，落了章就要刷新。
+                report.localBookProgressPulled++;
+                report.bookProgressReceived++;
+              }
+              if (step.pushed > 0) report.bookProgressSent++;
+            },
+          );
+        } on InterconnectHostChangedException {
+          rethrow;
+        } catch (e) {
+          report.noteError('live manga chapter progress "${book.title}"', e);
+        }
+      }
+    } on InterconnectHostChangedException catch (e) {
+      report.noteError('live manga chapter progress: host changed', e);
+    }
+  }
+
   /// 互联播放断点 live 双向 sweep 的共享模板（视频 / 有声书）。
   ///
   /// 两条 sweep 只差「哪种条目」与「host 位置从哪读」，读写与基线都在

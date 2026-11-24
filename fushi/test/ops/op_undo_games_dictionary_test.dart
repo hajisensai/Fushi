@@ -465,10 +465,16 @@ void main() {
     ]);
     host = _GameHost(app.repo);
     final OpContext context = OpContext(ref: _Ref(app));
+    // 只把 buildGameCtlRoutes 那一组换成绑假宿主的版本；同在 /api/admin/game/ 下、
+    // 但由别的构造器提供的路由（如 Hook Code 配置）照常保留，否则它们的操作描述挂不上。
+    final List<CtlRoute> gameRoutes = buildGameCtlRoutesWith(host);
+    final Set<String> replaced = <String>{
+      for (final CtlRoute r in gameRoutes) '${r.method} ${r.pattern}',
+    };
     final List<CtlRoute> routes = <CtlRoute>[
       for (final CtlRoute r in buildDomainOpRoutes(context))
-        if (!r.pattern.startsWith('/api/admin/game/')) r,
-      ...buildGameCtlRoutesWith(host),
+        if (!replaced.contains('${r.method} ${r.pattern}')) r,
+      ...gameRoutes,
     ];
     catalog = buildAppOpCatalog(context, routes);
     invoker = OpInvoker(catalog);

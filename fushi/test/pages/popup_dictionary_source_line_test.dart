@@ -245,6 +245,14 @@ Future<void> _settle(WidgetTester tester) async {
   await tester.pump();
 }
 
+/// 原文条里的那个字。查不到结果时空态会把查询词拆成可点的词块
+/// （`LookupRefinePanel`，拍板台 Um72dWD9Cz），同一个字会在词块里再出现一次，
+/// 所以按字找必须限定在原文条 [SourceLookupTextPanel] 里。
+Finder _sourceGlyph(String glyph) => find.descendant(
+  of: find.byType(SourceLookupTextPanel),
+  matching: find.text(glyph),
+);
+
 DictionaryPopupLayer _baseLayer(WidgetTester tester) =>
     tester.widget(find.byType(DictionaryPopupLayer).first);
 
@@ -358,7 +366,7 @@ void main() {
       expect(
         tester
             .getRect(viewport)
-            .contains(tester.getCenter(find.text(text[360]))),
+            .contains(tester.getCenter(_sourceGlyph(text[360]))),
         isTrue,
       );
       expect(
@@ -467,7 +475,7 @@ void main() {
       final double height = tester.getSize(viewport).height;
       expect(height, greaterThan(0));
       expect(height, lessThan(200));
-      final Rect selected = tester.getRect(find.text(text[360]));
+      final Rect selected = tester.getRect(_sourceGlyph(text[360]));
       expect(tester.getRect(viewport).contains(selected.center), isTrue);
       expect(
         tester.getSize(find.byType(DictionaryPopupLayer).first).height,
@@ -806,7 +814,7 @@ void main() {
       expect(await _mineSentence(tester, repo), 'もう行く。');
 
       // 同一行上点「雨」：它在块里的下一句。
-      await tester.tap(find.text('雨'));
+      await tester.tap(_sourceGlyph('雨'));
       await _settle(tester);
       expect(appModel.searched.last, '雨');
       expect(await _mineSentence(tester, repo), '今日は雨');

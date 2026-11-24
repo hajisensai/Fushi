@@ -637,6 +637,7 @@ class CustomThemeEntry {
     this.fontColor,
     this.bgColor,
     this.selectionColor,
+    this.selectionTextColor,
     this.primaryColor,
     this.secondaryColor,
     this.tertiaryColor,
@@ -654,6 +655,10 @@ class CustomThemeEntry {
   final int? fontColor;
   final int? bgColor;
   final int? selectionColor;
+
+  /// 查词高亮里被选中文字的字色（拍板台 -8azTfJh_v）。null = 跟随正文字色；设了就
+  /// 能做「白底黑字 → 选中黑底白字」这种反色高亮。
+  final int? selectionTextColor;
   final int? primaryColor;
   final int? secondaryColor;
   final int? tertiaryColor;
@@ -680,6 +685,7 @@ class CustomThemeEntry {
       fontColor: fontColor,
       bgColor: bgColor,
       selectionColor: selectionColor,
+      selectionTextColor: selectionTextColor,
       primaryColor: primaryColor,
       secondaryColor: secondaryColor,
       tertiaryColor: tertiaryColor,
@@ -699,6 +705,7 @@ class CustomThemeEntry {
     if (fontColor != null) 'fontColor': fontColor,
     if (bgColor != null) 'bgColor': bgColor,
     if (selectionColor != null) 'selectionColor': selectionColor,
+    if (selectionTextColor != null) 'selectionTextColor': selectionTextColor,
     if (primaryColor != null) 'primaryColor': primaryColor,
     if (secondaryColor != null) 'secondaryColor': secondaryColor,
     if (tertiaryColor != null) 'tertiaryColor': tertiaryColor,
@@ -722,6 +729,7 @@ class CustomThemeEntry {
       fontColor: asInt(json['fontColor']),
       bgColor: asInt(json['bgColor']),
       selectionColor: asInt(json['selectionColor']),
+      selectionTextColor: asInt(json['selectionTextColor']),
       primaryColor: asInt(json['primaryColor']),
       secondaryColor: asInt(json['secondaryColor']),
       tertiaryColor: asInt(json['tertiaryColor']),
@@ -2804,6 +2812,13 @@ class ThemeNotifier extends ChangeNotifier {
   Color? get activeCustomThemeSelectionColor => _activeCustomRole(
     (CustomThemeEntry e) => e.selectionColor,
     () => customThemeSelectionColor,
+  );
+
+  /// 当前生效自定义主题的查词高亮文字色（null = 跟随正文字色）。新角色，没有旧扁平
+  /// 偏好可兜底。
+  Color? get activeCustomThemeSelectionTextColor => _activeCustomRole(
+    (CustomThemeEntry e) => e.selectionTextColor,
+    () => null,
   );
 
   /// 当前生效自定义主题的书内链接色（null = 跟随主题）。

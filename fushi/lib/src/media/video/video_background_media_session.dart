@@ -70,8 +70,7 @@ class VideoBackgroundMediaSession {
   ) async {
     _info = info;
     if (identical(_target, target)) {
-      _lastPushed = null;
-      _publish();
+      refreshInfo();
       return;
     }
     _detach();
@@ -117,6 +116,13 @@ class VideoBackgroundMediaSession {
     final FushiAudioHandler? handler = await _obtainHandler();
     if (generation != _generation || !identical(_target, target)) return;
     _handler = handler;
+    _publish();
+  }
+
+  /// 卡片信息变了（如封面异步探测完）：已挂着时按最新信息重推一次卡片。
+  void refreshInfo() {
+    if (!engaged) return;
+    _lastPushed = null;
     _publish();
   }
 

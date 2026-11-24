@@ -370,11 +370,12 @@ void main() {
     // 仍必须取**该集自己**的封面；锚点跟着契约多走一层间接，判据本身不放宽。
     // 视觉搬进共享布局后，「按该集自身解析封面」的契约锁在页面的调用点：喂给
     // collectionEpisodeThumb 的 provider 必须来自 _episodeCover(该集)。
+    // 拍板 GLMHiavo0y：_episodeCover 是该集的候选序首张（手动封面 > 该集剧照 >
+    // 该集截图），三者都只取这一集自己的图；dart format 会把调用折行，按空白容忍匹配。
     expect(
-      containsCodeLine(
-        detailSrc,
-        'collectionEpisodeThumb(context, _episodeCover(',
-      ),
+      RegExp(
+        r'collectionEpisodeThumb\(\s*context,\s*_episodeCover\(',
+      ).hasMatch(maskComments(detailSrc)),
       isTrue,
       reason: '缩略图必须按该集自身解析封面（_episodeCover），不得直接吃合集封面',
     );
@@ -390,9 +391,18 @@ void main() {
       isTrue,
       reason: '无封面 / 读取失败必须退占位图，不得留空或抛',
     );
+    final String candidatesBody = methodBody(
+      detailSrc,
+      'List<ImageProvider> _episodeThumbCandidates(',
+    );
+    expect(
+      containsCodeLine(candidatesBody, '_episodeOwnCover(slot)'),
+      isTrue,
+      reason: '集缩略图候选必须含该集自己的封面（_episodeOwnCover）',
+    );
     final String coverBody = methodBody(
       detailSrc,
-      'ImageProvider? _episodeCover(',
+      'ImageProvider? _episodeOwnCover(',
     );
     expect(
       containsCodeLine(coverBody, 'slot.coverPath'),
