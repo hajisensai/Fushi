@@ -487,16 +487,33 @@ class MusicScrapeService {
     void Function(int done, int total)? onProgress,
     bool Function()? cancelled,
   }) async {
-    final MusicLibraryScrapeReport report = MusicLibraryScrapeReport();
     final FushiDatabase? db = _database();
-    if (db == null) return report;
+    if (db == null) return MusicLibraryScrapeReport();
+    // BUG-5387 审查遗留：整库识别是后台写手（逐首联网 + 写库），登记成库的后台工作——
+    // 换库时关库等它停稳；库开始关就和用户取消一样在下一首之前停下，在途请求被中止。
+    return db.runBackgroundWork<MusicLibraryScrapeReport>(
+      'music.scrapeLibrary',
+      (DatabaseWorkToken work) => _scrapeLibraryInWork(
+        db,
+        onProgress: onProgress,
+        cancelled: () => work.isCancelled || (cancelled?.call() ?? false),
+      ),
+    );
+  }
+
+  Future<MusicLibraryScrapeReport> _scrapeLibraryInWork(
+    FushiDatabase db, {
+    required void Function(int done, int total)? onProgress,
+    required bool Function() cancelled,
+  }) async {
+    final MusicLibraryScrapeReport report = MusicLibraryScrapeReport();
     report.dlsite = await dlsite.scrapeLibrary(cancelled: cancelled);
     final List<MusicTrackRow> todo = await db.listMusicTracksNeedingScrape(
       olderThanVersion: kMusicScraperVersion,
     );
     report.total = todo.length;
     for (int i = 0; i < todo.length; i++) {
-      if (cancelled?.call() ?? false) break;
+      if (cancelled()) break;
       final MusicScrapeOutcome o = await scrapeTrack(todo[i].trackUid);
       switch (o.status) {
         case MusicScrapeStatus.matched:

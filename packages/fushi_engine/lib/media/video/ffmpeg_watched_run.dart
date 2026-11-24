@@ -19,6 +19,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseWorkToken;
 import 'package:meta/meta.dart';
 
 /// 观察式运行的参数。
@@ -121,6 +122,11 @@ Future<FfmpegRunResult> watchFfmpegProcess(
     }
   });
   unawaited(watch.cancel?.then((_) => abort(kFfmpegCancelledMarker)));
+  // 后台写库工作里的转码 / 抽取：库开始关（换库 / 数据根迁移）时同样中止（BUG-5387
+  // 审查遗留），不让关库等一个长转码跑完、也不让子进程占着库目录里的文件。
+  final void Function() unlinkWork = DatabaseWorkToken.abortOnCancel(
+    () => abort(kFfmpegCancelledMarker),
+  );
 
   try {
     final int code = await process.exitCode;
@@ -135,6 +141,7 @@ Future<FfmpegRunResult> watchFfmpegProcess(
     );
   } finally {
     watchdog.cancel();
+    unlinkWork();
   }
 }
 

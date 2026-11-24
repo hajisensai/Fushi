@@ -14,6 +14,8 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
+import 'package:fushi/src/media/video/video_web_playback_mode_panel.dart'
+    show VideoWebPlaybackModeHost;
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
@@ -265,8 +267,7 @@ Widget buildVideoSheetUnderTest({
   required VideoQuickSettingsHost host,
   String? initialCategory,
   List<VideoGroup> groups = VideoGroup.values,
-  bool webBackend = false,
-  VoidCallback? onSwitchToBuiltinWebPlayer,
+  VideoWebPlaybackModeHost? webPlaybackMode,
 }) {
   return ProviderScope(
     child: Consumer(
@@ -277,8 +278,7 @@ Widget buildVideoSheetUnderTest({
           host: host,
           initialCategory: initialCategory,
           groups: groups,
-          webBackend: webBackend,
-          onSwitchToBuiltinWebPlayer: onSwitchToBuiltinWebPlayer,
+          webPlaybackMode: webPlaybackMode,
         );
       },
     ),

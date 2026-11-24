@@ -4,9 +4,12 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
     show BookAudiobookTranscribePort;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart'
+    show sourcelessLocalVideoScrapeScope;
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/media/source_library/source_scan_temp.dart';
+import 'package:fushi/src/media/video/metadata/video_local_index_rebuild.dart';
 
 /// 把一个**本地文件夹**登记成常驻扫描根并立即扫一遍。
 ///
@@ -181,11 +184,12 @@ Future<SourceScanSummary?> importLocalFolderOnceAt({
     ),
   );
   markOneShotSourceLive(tempId);
+  final SourceScanSummary? summary;
   try {
     final SourceLibraryRow? temp = await db.getMediaSourceById(tempId);
     if (temp == null) return null;
     onScanning?.call(tempId);
-    return await SourceLibraryScanner(
+    summary = await SourceLibraryScanner(
       db,
       transcribeAudiobook: transcribeAudiobook,
     ).scan(temp, oneShot: true);
@@ -197,6 +201,18 @@ Future<SourceScanSummary?> importLocalFolderOnceAt({
       markOneShotSourceDone(tempId);
     }
   }
+  // 临时行删掉后，导入的视频（FK 归 NULL）落进无来源范围。扫描里那次本地索引对临时行
+  // 不立项（[VideoSourceMetadataIndexer.index]），这里对无来源范围补上：建本地作品、
+  // 把 `SPs` / `Menus` 里的 NCOP / PV / CM / Menu 挂到正片作品下。修前一次性导入的
+  // 视频永远没有特典绑定，在系列墙上各自成卡（BUG-5418）。
+  if (mediaKind == SourceLibraryKind.video.dbValue) {
+    await indexLocalVideoScope(
+      db,
+      sourcelessLocalVideoScrapeScope,
+      logSource: 'source.importOnce.index',
+    );
+  }
+  return summary;
 }
 
 enum AddLocalFolderOutcome { added, duplicate }

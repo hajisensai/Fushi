@@ -110,8 +110,6 @@ import 'package:fushi/src/media/video/metadata/video_local_index_rebuild.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
     show shouldOpenInWebVideoPlayer;
-import 'package:fushi/src/media/video/web_video_hosting.dart'
-    show WebVideoHosting;
 import 'package:fushi/src/media/video/video_player_controller.dart'
     show VideoPlayerController;
 import 'package:fushi/src/mining/web_mine_background.dart';
@@ -634,7 +632,6 @@ class _HomePageState extends BasePageState<HomePage>
             builder: (_) => WebVideoFushiPage.neutralized(
               bookUid: uid,
               repo: repo,
-              hosting: WebVideoHosting.builtin,
               autoRunMineQueue: true,
               idleAutoMining: true,
               closeAfterMining: true,

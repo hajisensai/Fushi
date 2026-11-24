@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4727 条。点号进各自文件。
+> 共 4729 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5449](bugs/BUG-5449-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
 | [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |
 | [BUG-5447](bugs/BUG-5447-lumiere-glyph-atlas-blurry.md) | ✅ | ✅ | 绘光大字发虚 |
 | [BUG-5446](bugs/BUG-5446-hanabi-visualizer-gpu-cost.md) | ✅ | ✅ | 花火歌词动画 GPU 占用超高 |
@@ -47,6 +48,7 @@
 | [BUG-5421](bugs/BUG-5421-web-video-page-screenshot-noop.md) | 🚧 | 🚧 | 内置网页播放器页（WebVideoFushiPage）按 S / Shift+S 截图、识别画面文字静默无反应 |
 | [BUG-5420](bugs/BUG-5420-web-video-page-arrow-seek-noop.md) | 🚧 | 🚧 | 内置网页播放器页（WebVideoFushiPage）放 YouTube 时 ←/→ 快退快进没反应 |
 | [BUG-5419](bugs/BUG-5419-web-video-builtin-no-subtitle-generate.md) | ✅ | ✅ | Windows 上 YouTube 默认的内置网页播放器页没有「生成字幕」入口，在线视频转录不了 |
+| [BUG-5418](bugs/BUG-5418-video-one-shot-import-extras-unbound.md) | ✅ | ✅ | 「导入文件夹（仅此一次）」导入的发布组目录，SPs / Menus 特典在系列墙上各自成卡 |
 | [BUG-5417](bugs/BUG-5417-web-video-screenshot-shortcut-noop.md) | ✅ | ✅ | 网页档（YouTube 等站点视频）按 S 截图 / PageUp·PageDown 换章没反应 |
 | [BUG-5416](bugs/BUG-5416-seamless-promote-anchor-lost-skips-chapter.md) | ✅ | ✅ | 连续模式无缝衔接：章节交界慢拖时一下跳过整章（晋升时视口锚点落在被移除的宿主上，不补偿） |
 | [BUG-5414](bugs/BUG-5414-browser-page-fullscreen-caption-buttons.md) | ✅ | ✅ | browser-page-fullscreen-caption-buttons |

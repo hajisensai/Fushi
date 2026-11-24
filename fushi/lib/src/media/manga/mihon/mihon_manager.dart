@@ -733,42 +733,47 @@ class MihonManager extends ChangeNotifier {
           'extensions',
           '$packageName.${desktop ? 'apk' : 'ext'}',
         );
-        await database.upsertMangaExtension(
-          MangaExtensionsCompanion.insert(
-            packageName: packageName,
-            storeUrl: Value(proposal.expected?.storeUrl),
-            name: proposal.inspection.name,
-            // 列名冻结，语义 = APK 尺度（见 [MihonExtensionInspection.apkVersionCode]）。
-            versionCode: proposal.inspection.apkVersionCode,
-            versionName: proposal.inspection.versionName,
-            libVersion: proposal.inspection.libVersion,
-            language:
-                proposal.expected?.language ??
-                loaded
-                    .map((MihonSource item) => item.language)
-                    .toSet()
-                    .join(','),
-            contentWarning: Value(proposal.expected?.contentWarning ?? 0),
-            apkPath: storedPath,
-            apkSha256: proposal.apkSha256,
-            signerSha256: signer,
-            installedAt: DateTime.now().millisecondsSinceEpoch,
-            mediaKind: Value(kind.dbValue),
-          ),
-        );
-        await database.replaceMangaOnlineSources(
-          packageName,
-          loaded.map(
-            (MihonSource source) => MangaOnlineSourcesCompanion.insert(
-              extensionPackage: packageName,
-              sourceId: source.id,
-              name: source.name,
-              language: source.language,
-              baseUrl: Value(source.baseUrl),
+        // 扩展行与它的源列表一起提交：中途失败（含换库 / 关库把后台自动更新打断，
+        // BUG-5449）整体回滚，不留「行已是新版、源列表还是旧版」的半截状态——下面的
+        // catch 会把桌面端 APK 回滚成旧版，库里也必须仍是旧版。
+        await database.transaction(() async {
+          await database.upsertMangaExtension(
+            MangaExtensionsCompanion.insert(
+              packageName: packageName,
+              storeUrl: Value(proposal.expected?.storeUrl),
+              name: proposal.inspection.name,
+              // 列名冻结，语义 = APK 尺度（见 [MihonExtensionInspection.apkVersionCode]）。
+              versionCode: proposal.inspection.apkVersionCode,
+              versionName: proposal.inspection.versionName,
+              libVersion: proposal.inspection.libVersion,
+              language:
+                  proposal.expected?.language ??
+                  loaded
+                      .map((MihonSource item) => item.language)
+                      .toSet()
+                      .join(','),
+              contentWarning: Value(proposal.expected?.contentWarning ?? 0),
+              apkPath: storedPath,
+              apkSha256: proposal.apkSha256,
+              signerSha256: signer,
+              installedAt: DateTime.now().millisecondsSinceEpoch,
               mediaKind: Value(kind.dbValue),
             ),
-          ),
-        );
+          );
+          await database.replaceMangaOnlineSources(
+            packageName,
+            loaded.map(
+              (MihonSource source) => MangaOnlineSourcesCompanion.insert(
+                extensionPackage: packageName,
+                sourceId: source.id,
+                name: source.name,
+                language: source.language,
+                baseUrl: Value(source.baseUrl),
+                mediaKind: Value(kind.dbValue),
+              ),
+            ),
+          );
+        });
         if (await backup.exists()) await backup.delete();
         if (await File(proposal.tempPath).exists()) {
           await File(proposal.tempPath).delete();

@@ -10,34 +10,11 @@ import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_hosting_default.dart';
 import 'package:fushi/src/media/video/web_video_subtitle_generation.dart';
-import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
-    show WebVideoSubtitleMediaBlock;
-
-WebVideoPlaybackState _state({
-  String href = 'https://www.youtube.com/watch?v=abc123DEF45',
-  bool hasVideo = true,
-  bool encrypted = false,
-  String audioTrack = '',
-}) => WebVideoPlaybackState(
-  href: href,
-  videoKey: 'yt:abc123DEF45',
-  hasVideo: hasVideo,
-  positionMs: 0,
-  paused: false,
-  durationMs: 600000,
-  videoWidth: 1920,
-  videoHeight: 1080,
-  rate: 1,
-  fullscreen: false,
-  title: 'clip',
-  siteAudioTrackCurrent: audioTrack,
-  encrypted: encrypted,
-);
 
 void main() {
-  // BUG-5419（反馈 lXyoHX1wtr）：Windows 上 YouTube 默认走内置网页播放器页（「Fushi 播放」），
-  // 那一页没有生成字幕入口，在线视频就转录不了。
-  group('Windows 上 YouTube 默认落在内置网页播放器页', () {
+  // BUG-5419（反馈 lXyoHX1wtr）：Windows 上 YouTube 默认走网页档的可捕获档（原来是内置网页播放器
+  // 页，现在是原生播放器页的「制卡优先」档），那一页没有生成字幕入口，在线视频就转录不了。
+  group('Windows 上 YouTube 默认落在网页档制卡优先', () {
     test('YouTube 书在 Windows 交给网页播放器，默认档是 builtin', () {
       const String url = 'https://www.youtube.com/watch?v=abc123DEF45';
       expect(isKnownWebPageVideoUrl(url), isTrue);
@@ -58,48 +35,35 @@ void main() {
       );
     });
 
-    test('内置档、能跑 ASR、不是制卡宿主页时给「生成字幕」钮', () {
+    // 拍板 cbKi3PN0G7-r2（PR #4400）：网页视频两档都在原生播放器页里播，内置网页播放器页只当
+    // 制卡重放宿主。生成字幕入口跟着搬到原生播放器页的网页档，两档都给。
+    test('原生播放器页网页档的生成字幕入口不看宿主档（制卡优先 / 画质优先都给）', () {
+      final String webSource = File(
+        'lib/src/pages/implementations/video_fushi/web_source.part.dart',
+      ).readAsStringSync();
+      final int at = webSource.indexOf('bool get _canRunWebSubtitlePipeline');
+      expect(at, greaterThan(-1));
+      final String gate = webSource.substring(at, webSource.indexOf(');', at));
+      expect(gate, contains('webVideoSubtitlePipelineAvailable('));
+      expect(gate, isNot(contains('_webHosting')));
+      expect(gate, isNot(contains('windowed')));
+      final String subtitle = File(
+        'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+      ).readAsStringSync();
+      expect(subtitle, contains('_canRunWebSubtitlePipeline;'));
       expect(
-        webVideoSubtitleGenerationOffered(
-          asrSupported: true,
-          windowed: false,
-          miningHost: false,
-        ),
-        isTrue,
+        subtitle,
+        contains('if (_webMode) return _webSubtitleStudioPanel(controller);'),
       );
-      expect(
-        webVideoSubtitleGenerationOffered(
-          asrSupported: false,
-          windowed: false,
-          miningHost: false,
-        ),
-        isFalse,
-      );
-      expect(
-        webVideoSubtitleGenerationOffered(
-          asrSupported: true,
-          windowed: true,
-          miningHost: false,
-        ),
-        isFalse,
-      );
-      expect(
-        webVideoSubtitleGenerationOffered(
-          asrSupported: true,
-          windowed: false,
-          miningHost: true,
-        ),
-        isFalse,
-      );
+      expect(subtitle, contains('await _openWebSubtitlePipeline(controller);'));
     });
 
-    test('内置网页播放器页顶栏接上了生成字幕入口', () {
+    test('制卡重放宿主页不给生成字幕入口，只读回书上登记的生成字幕', () {
       final String src = File(
         'lib/src/pages/implementations/web_video_fushi_page.dart',
       ).readAsStringSync();
-      expect(src, contains('if (_subtitleGenerationOffered)'));
-      expect(src, contains('onPressed: () => unawaited(_generateSubtitle())'));
-      expect(src, contains('showVideoSubtitleGenerateSheet('));
+      expect(src, isNot(contains('showVideoSubtitleGenerateSheet(')));
+      expect(src, isNot(contains('_generateSubtitle(')));
       expect(src, contains('unawaited(_restoreGeneratedSubtitle(row))'));
       expect(src, contains('webVideoGeneratedTrackReselectOnVideoChange('));
     });
@@ -142,27 +106,6 @@ void main() {
         ),
         isFalse,
       );
-    });
-  });
-
-  group('webVideoSubtitleGenerationBlock', () {
-    test('没有播放态 / 页面还没有视频 → noVideo', () {
-      expect(
-        webVideoSubtitleGenerationBlock(null),
-        WebVideoSubtitleMediaBlock.noVideo,
-      );
-      expect(
-        webVideoSubtitleGenerationBlock(_state(hasVideo: false)),
-        WebVideoSubtitleMediaBlock.noVideo,
-      );
-    });
-
-    test('EME 加密 → encrypted；普通视频可以开拉', () {
-      expect(
-        webVideoSubtitleGenerationBlock(_state(encrypted: true)),
-        WebVideoSubtitleMediaBlock.encrypted,
-      );
-      expect(webVideoSubtitleGenerationBlock(_state()), isNull);
     });
   });
 

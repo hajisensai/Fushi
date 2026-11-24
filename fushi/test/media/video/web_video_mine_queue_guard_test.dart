@@ -45,15 +45,28 @@ void main() {
       );
     });
 
-    test('内置档页的回抄只在非窗口档时发起', () {
+    test('回抄只在可捕获档的页关页时发起（窗口宿主档住在共享罐里，不抄）', () {
+      // 重放宿主页恒为可捕获档：关页无条件回抄一次。
       final String code = maskComments(page);
+      expect(
+        RegExp(r'syncWebVideoLoginToBrowser\(').allMatches(code),
+        hasLength(1),
+      );
+      // 原生播放器页：只有「制卡优先」档（非底层合成 = 可捕获档）回抄。
+      final String native = maskComments(
+        File(
+          'lib/src/pages/implementations/video_fushi/web_source.part.dart',
+        ).readAsStringSync(),
+      );
       final Iterable<RegExpMatch> calls = RegExp(
         r'syncWebVideoLoginToBrowser\(',
-      ).allMatches(code);
+      ).allMatches(native);
       expect(calls, hasLength(1));
-      final int at = calls.single.start;
-      final String line = code.substring(code.lastIndexOf('\n', at) + 1, at);
-      expect(line, contains('!_windowed'));
+      final String before = native.substring(
+        calls.single.start - 400,
+        calls.single.start,
+      );
+      expect(before, contains('!session.underlay'));
     });
 
     test('复制 cookie 不再预读目标罐、不回报新增数（没有调用方用）', () {

@@ -439,6 +439,124 @@ void main() {
   );
 
   test(
+    'placeholder works never overwrite existing legacy scrape rows (BUG-5418)',
+    () async {
+      // 旧版本在线刮过、还没有规范作品的库：本地索引补建占位作品时，旧投影行
+      // （合集级 / 集级 / 单部电影级）一行都不能被文件名推出的空壳覆盖——
+      // Bangumi 追番映射认 `source` / `subjectId`，详情页认简介。
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      final Directory root = await Directory.systemTemp.createTemp(
+        'video-indexer-legacy-',
+      );
+      addTearDown(() async {
+        await db.close();
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final Directory show = Directory(p.join(root.path, 'Show'));
+      await show.create(recursive: true);
+      final int sourceId = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Legacy source',
+          mediaKind: 'video',
+          rootPath: root.path,
+          createdAt: 1,
+        ),
+      );
+      Future<void> addVideo(String uid, String path) async {
+        await File(path).writeAsBytes(const <int>[0]);
+        await db.upsertVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value<String>(uid),
+            title: Value<String>(p.basenameWithoutExtension(path)),
+            videoPath: Value<String>(path),
+            sourceId: Value<int?>(sourceId),
+          ),
+        );
+      }
+
+      await addVideo('ep-1', p.join(show.path, 'Show - 01.mkv'));
+      await addVideo('ep-2', p.join(show.path, 'Show - 02.mkv'));
+      await addVideo('movie', p.join(root.path, 'Movie.mkv'));
+      final int collectionId = await db.createMediaCollection(
+        'Show',
+        collectionType: 'playlist',
+      );
+      await db.addToCollection(collectionId, MediaKind.video, 'ep-1');
+      await db.addToCollection(collectionId, MediaKind.video, 'ep-2');
+      await db.upsertCollectionScrapeMeta(
+        CollectionScrapeMetaCompanion.insert(
+          collectionId: Value<int>(collectionId),
+          source: 'bangumi',
+          subjectId: '1234',
+          title: '番剧正名',
+          summary: const Value<String?>('合集简介'),
+          scrapedAt: DateTime(2025, 1, 1),
+        ),
+      );
+      await db.upsertVideoScrapeMeta(
+        VideoScrapeMetaCompanion.insert(
+          bookUid: 'ep-1',
+          source: 'bangumi',
+          subjectId: '5678',
+          title: '第一集正名',
+          summary: const Value<String?>('第一集简介'),
+          episodeNumber: const Value<int?>(1),
+          scrapedAt: DateTime(2025, 1, 1),
+        ),
+      );
+      await db.upsertVideoScrapeMeta(
+        VideoScrapeMetaCompanion.insert(
+          bookUid: 'movie',
+          source: 'bangumi',
+          subjectId: '999',
+          title: '电影正名',
+          summary: const Value<String?>('电影简介'),
+          scrapedAt: DateTime(2025, 1, 1),
+        ),
+      );
+
+      expect(
+        await VideoSourceMetadataIndexer(
+          db,
+        ).index((await db.getMediaSourceById(sourceId))!),
+        isTrue,
+      );
+
+      expect(
+        await db.getVideoMetadataWorkByCollection(collectionId),
+        isNotNull,
+        reason: '占位作品照建（特典绑定要挂在它上面）',
+      );
+      expect(await db.getVideoMetadataWorkByBook('movie'), isNotNull);
+      final CollectionScrapeMetaRow collectionMeta = (await db
+          .getCollectionScrapeMeta(collectionId))!;
+      expect(collectionMeta.source, 'bangumi');
+      expect(collectionMeta.subjectId, '1234');
+      expect(collectionMeta.title, '番剧正名');
+      expect(collectionMeta.summary, '合集简介');
+      final VideoScrapeMetaRow episodeMeta = (await db.getVideoScrapeMeta(
+        'ep-1',
+      ))!;
+      expect(episodeMeta.source, 'bangumi');
+      expect(episodeMeta.subjectId, '5678');
+      expect(episodeMeta.summary, '第一集简介');
+      final VideoScrapeMetaRow movieMeta = (await db.getVideoScrapeMeta(
+        'movie',
+      ))!;
+      expect(movieMeta.source, 'bangumi');
+      expect(movieMeta.subjectId, '999');
+      expect(movieMeta.summary, '电影简介');
+      // 没有旧行的空位照常补上占位投影（与修前同口径）。
+      expect(
+        (await db.getVideoScrapeMeta('ep-2'))?.source,
+        VideoMetadataProviderKind.local.name,
+      );
+    },
+  );
+
+  test(
     'unchanged NFO is not re-applied on every launch; an edited one is',
     () async {
       final FushiDatabase db = FushiDatabase.forTesting(

@@ -15,6 +15,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseWorkCancelledException;
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 
 /// 一次域检查。抛异常 = 这轮没查成（网络不通、源挂了），调度器吞掉并照常记时刻
@@ -125,6 +126,10 @@ class UpdateCheckScheduler {
       if (!_dueOnStart.remove(kind) && !isDue(kind)) continue;
       try {
         await entry.value();
+      } on DatabaseWorkCancelledException {
+        // 换库 / 关库中断了探针（BUG-5387 审查遗留）：这一轮整体停下，不记「问过了」
+        // （库正在关，也写不进去），下次启动照常到点再查。
+        return;
       } on Object catch (error) {
         debugPrint(
           'UpdateCheckScheduler: ${kind.dbValue} probe failed. $error',
@@ -157,11 +162,18 @@ class UpdateCheckScheduler {
     if (probe == null || !_isKindEnabled(kind)) return;
     try {
       await probe();
-    } finally {
-      await _prefs.setPref(
-        updateLastCheckPrefKey(kind),
-        _now().millisecondsSinceEpoch,
-      );
+    } on DatabaseWorkCancelledException {
+      // 换库 / 关库中断：不记「问过了」（库正在关，也写不进去）。
+      rethrow;
+    } on Object {
+      await _recordChecked(kind);
+      rethrow;
     }
+    await _recordChecked(kind);
   }
+
+  Future<void> _recordChecked(UpdateFeedKind kind) => _prefs.setPref(
+    updateLastCheckPrefKey(kind),
+    _now().millisecondsSinceEpoch,
+  );
 }

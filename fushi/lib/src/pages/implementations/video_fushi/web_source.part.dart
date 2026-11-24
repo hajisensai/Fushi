@@ -2,8 +2,8 @@ part of '../video_fushi_page.dart';
 
 /// 网页档（站点视频，[VideoPlayerController.isWebBackend]）能服务的控制条按钮：逐帧 /
 /// 片段导出 / 弹幕都要 libmpv 或本地媒体文件，一律不画；截图与识别画面文字只在站点画面能
-/// 截帧时画（[canCaptureFrame]：页面 canvas 截 `<video>` 当前帧，YouTube 等可以、Netflix DRM
-/// 不行——截图与暂停 OCR 同一条截帧链路，BUG-5417）；音轨只在站点上报了音轨时画
+/// 截帧时画（[canCaptureFrame]：页面 canvas 截得到的非 DRM 站，或「制卡优先」档——那一档的
+/// 帧连加密站也截得到）；音轨只在站点上报了音轨时画
 /// （[hasSiteAudioTracks]，目前只有 Netflix）；章节按钮交给通用门控（站点给了片头片尾标记才
 /// 有章节）。纯函数，控制条门控 `_shouldRenderControlItem` 与测试同源调用。
 @visibleForTesting
@@ -20,7 +20,7 @@ bool videoWebBackendSupportsControlItem(
       return false;
     case VideoControlItem.audioTrack:
       return hasSiteAudioTracks;
-    // 截图 / 识别画面文字：站点画面能在页面里截帧（非 DRM，YouTube 等）才画。
+    // 截图 / 识别画面文字：站点画面截得到帧才画。
     case VideoControlItem.screenshot:
     case VideoControlItem.ocrFrame:
       return canCaptureFrame;
@@ -79,9 +79,8 @@ bool webVideoLeavesPlayer(String url) =>
     url.isNotEmpty && !webVideoIsWatchPage(url);
 
 /// 网页档设置面板的分组：mpv / 弹幕都作用在 libmpv 或本地文件上，去掉。「画质增强」页签
-/// 保留——着色器同样不生效，但整页消失会被当成「画质增强按钮没了」（拍板 kp-No6loQi），
-/// 改由面板在网页档把这一页画成说明态（为什么不生效 + 切到内置网页播放器档的入口，
-/// [VideoQuickSettingsSheet.webBackend]）。
+/// 保留（整页消失会被当成「画质增强按钮没了」，拍板 kp-No6loQi），面板在网页档把这一页画成
+/// 档位二选一 + 本档超分（[VideoQuickSettingsSheet.webPlaybackMode]，拍板 cbKi3PN0G7-r2）。
 @visibleForTesting
 List<settings_dest.VideoGroup> videoWebBackendSettingsGroups(
   List<settings_dest.VideoGroup> groups,
@@ -92,32 +91,48 @@ List<settings_dest.VideoGroup> videoWebBackendSettingsGroups(
       g,
 ];
 
-/// 网页站点后端（底层合成）的页面侧：Netflix / YouTube 页这类流媒体书在原生播放器页里
-/// 播放——站点画面由垫在 Flutter 下面的 WebView2 子窗口（硬件 PlayReady，Netflix 4K）
-/// 自己画，从透明像素处透出来；控制条、字幕叠层、查词、收藏、快捷键全是本页原有的那套，
-/// 播放动作经 [WebVideoPlatformPlayer] 变成页面 JS。
+/// 网页站点后端的页面侧：Netflix / YouTube 页这类流媒体书在原生播放器页里播放，两档同一套
+/// 外观——「画质优先」的站点画面由垫在 Flutter 下面的 WebView2 子窗口（硬件 PlayReady，Netflix
+/// 4K）自己画、从透明像素处透出来；「制卡优先」是画在 Flutter 树里的可捕获离屏纹理（软件 DRM
+/// ≤1080p，可超分 / 截图）。控制条、字幕叠层、查词、收藏、快捷键全是本页原有的那套，播放动作
+/// 经 [WebVideoPlatformPlayer] 变成页面 JS。
 ///
 /// 字段（[_webSession] 等）留在主壳——extension 不能带字段。
 extension _VideoWebSource on _VideoFushiPageState {
-  /// 网页站流媒体书的入口（[_initVideo] 分流到这里）：播放方式按 [resolveWebVideoHosting]
-  /// （手动选择 > 按站点实测 > DRM 且能高于 1080p 的预判 > Fushi 播放）。站点原生播放拿到底层
-  /// 合成就在本页播；否则交给内置网页播放器页（它自己的 DOM 字幕层 / 超分 / 制卡重放）。
+  /// 网页站流媒体书的入口（[_initVideo] 分流到这里）。两档都在本页播、同一套播放器外观与控件，
+  /// 差别只在渲染管线（拍板 cbKi3PN0G7-r2）：
+  /// · 「画质优先」（[WebVideoHosting.windowed]）：窗口宿主档 + 底层合成，WebView2 子窗口垫在
+  ///   Flutter 下面，硬件 DRM（Netflix 最高 4K），帧截不到——制卡排队、之后换可捕获档重放；
+  /// · 「制卡优先」（[WebVideoHosting.builtin]）：可捕获档离屏纹理画在 Flutter 树里，软件 DRM
+  ///   ≤1080p，帧可截——超分、截图、识别画面文字都能用。
+  /// 档位 = [VideoFushiPage.webHosting] ?? 偏好与默认规则（[resolveWebVideoHostingFromPrefs]：
+  /// 手动选择 > 按站点实测 > DRM 且能高于 1080p 的预判 > 制卡优先）。拿不到底层合成（引擎不支持 /
+  /// 申请失败）时「画质优先」播不了，落到「制卡优先」。
   Future<void> _openWebSource(VideoBookRow row) async {
     final bool underlay = await underlayCompositionSupported();
     if (!context.mounted) return;
-    final WebVideoHosting hosting = resolveWebVideoHostingFromPrefs(
-      appModel.prefsRepo.getPref,
-      siteKey: webVideoSiteKey(Uri.parse(row.videoPath)),
-      underlaySupported: underlay,
-      displayHeightPx: webVideoDisplayHeightPx(context),
-    );
-    if (hosting == WebVideoHosting.windowed &&
-        await acquireUnderlayComposition()) {
+    final WebVideoHosting wanted =
+        widget.webHosting ??
+        resolveWebVideoHostingFromPrefs(
+          appModel.prefsRepo.getPref,
+          siteKey: webVideoSiteKey(Uri.parse(row.videoPath)),
+          underlaySupported: underlay,
+          displayHeightPx: webVideoDisplayHeightPx(context),
+        );
+    WebVideoHosting hosting = WebVideoHosting.builtin;
+    // 「画质优先」此刻能不能用：引擎支持底层合成，且真去申请时没被拒（申请失败也落到制卡优先，
+    // 顶栏 / 设置面板就不能再把它当成可切的一档）。
+    bool qualityFirstAvailable = underlay;
+    if (wanted == WebVideoHosting.windowed && underlay) {
+      qualityFirstAvailable = await acquireUnderlayComposition();
+    }
+    if (wanted == WebVideoHosting.windowed && qualityFirstAvailable) {
       if (!mounted) {
         // dispose 已在 await 期间跑过（那时还没持有），这份由这里归还。
         unawaited(releaseUnderlayComposition());
         return;
       }
+      hosting = WebVideoHosting.windowed;
       _webUnderlayHeld = true;
       // 站点画面从透明像素处透出来：本页的路由层页底（底色 + 背景装饰）必须让开，
       // 否则网页被整个盖住、看着像「加载不出来」。
@@ -129,46 +144,68 @@ extension _VideoWebSource on _VideoFushiPageState {
         _webTransparentRoute = route;
         setFushiPageRouteTransparent(route, true);
       }
-      await _initWebSource(row);
-      return;
     }
-    if (!context.mounted) return;
-    // 站点入口没有库里的书，内置网页播放器页读不到它：只有底层合成档能在本页播站点
-    // 入口。拿不到底层合成（引擎没带合成器补丁的构建、或用户选了非窗口档）时改用
-    // app 内浏览器打开这个站点，而不是一张「无法加载该视频」的死页（2026-10-20
-    // 用户截图「视频站点这个打不开」：本地调试引擎不支持底层合成）。
-    final WebVideoSite? site = widget.webSite;
-    if (site != null) {
-      // 浏览器交接过来的：那个标签页就在下面、还停在这个地址，回去即可；再压一个浏览器就是
-      // 第二个浏览器。
-      if (widget.webBackToBrowser) {
-        Navigator.of(context).pop();
-      } else {
-        unawaited(
-          Navigator.of(
-            context,
-          ).pushReplacement(fushiWebBrowserRoute(context, site.url)),
-        );
-      }
-      return;
-    }
-    // media_kit controller 尚未 load，pushReplacement 代价只是本页一次空 build。
-    unawaited(
-      Navigator.of(context).pushReplacement(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (_) => WebVideoFushiPage.neutralized(
-            bookUid: _activeBookUid,
-            repo: widget.repo,
-            hosting: hosting,
-            // 选集面板的列表上下文（拍板台 zGXhhMAglH）与浏览器回程随页交接。
-            playlistCollectionId: widget.playlistCollectionId,
-            youtubePlaylistId: _streamBookYoutubePlaylistId,
-            returnToBrowser: widget.webBackToBrowser,
-          ),
-        ),
-      ),
+    if (!mounted) return;
+    _webHosting = hosting;
+    _webQualityFirstAvailable = qualityFirstAvailable;
+    _webHostingProbe = WebVideoHostingProbe(hosting: hosting);
+    _webShaderTier = webVideoShaderTierFromPref(
+      appModel.prefsRepo.getPref(kWebVideoShaderTierPrefKey),
     );
+    await _initWebSource(row);
+  }
+
+  /// 「制卡优先」档的 WebView（含进程死亡后重建的）建好：挂超分（着色器绑在这个 WebView 上，
+  /// 新 WebView 建好时整套重挂，死前那份随旧 WebView 作废）。
+  void _onWebCaptureSurfaceCreated() => unawaited(_applyWebShaderTier());
+
+  /// 「制卡优先」档截画面（[WebVideoPlatformPlayer.surfaceCapture]）：截图 / 识别画面文字用。
+  Future<Uint8List?> _captureWebSurface(
+    WebVideoSession session,
+    String format,
+  ) => session.captureSurface(png: format == 'image/png');
+
+  /// 网页档截不到帧时给用户的说明：「画质优先」档（站点自己画、加密站截不到）指明要切到
+  /// 「制卡优先」；其余情况（画面还没出来）用调用方给的 [fallback]。
+  String _webFrameCaptureUnavailableMessage(String fallback) =>
+      _webMode && _webHosting == WebVideoHosting.windowed
+      ? t.web_video_mode_capture_needed
+      : fallback;
+
+  /// 把 [_webShaderTier] 挂到「制卡优先」档的 WebView 上（fork 的 libplacebo 通道，与制卡重放
+  /// 宿主页同一套 [loadWebVideoShaderTexts] / [applyWebVideoShaders]）。返回 fork 是否按档位
+  /// 生效（关 = 收下空链；其余档 = 收下且着色器文件读到了）；「画质优先」档不经捕获、着色器
+  /// 无从生效，什么都不做、回 false。
+  Future<bool> _applyWebShaderTier() async {
+    final Object? viewId = _webSession?.platformViewId;
+    if (_webHosting != WebVideoHosting.builtin || viewId == null) return false;
+    final VideoShaderTier tier = _webShaderTier;
+    try {
+      final List<String> texts = await loadWebVideoShaderTexts(tier);
+      final bool accepted = await applyWebVideoShaders(viewId, texts);
+      // 诊断（进 error_log）：档位 / 文本数 / fork 是否收下——分别对应文件缺失、DLL 缺失、
+      // 通道不通，真机排障时不用猜。
+      ErrorLogService.instance.log(
+        'VideoFushi.web',
+        'shaders tier=${tier.name} texts=${texts.length} '
+            'accepted=$accepted viewId=$viewId',
+      );
+      return accepted && (tier == VideoShaderTier.off || texts.isNotEmpty);
+    } catch (e, st) {
+      ErrorLogService.instance.log('VideoFushi.web.shaders', e, st);
+      return false;
+    }
+  }
+
+  /// 设置面板「画质增强」页签里选超分档位：记偏好（与制卡重放宿主页同一个键）并当场挂上。
+  /// 没挂上（着色器文件缺失 / fork 不收）就用 OSD 说清楚，不让面板上的选中态冒充已生效。
+  Future<void> _selectWebShaderTier(VideoShaderTier tier) async {
+    if (tier == _webShaderTier) return;
+    _rebuild(() => _webShaderTier = tier);
+    await appModel.prefsRepo.setPref(kWebVideoShaderTierPrefKey, tier.name);
+    final bool ok = await _applyWebShaderTier();
+    if (ok || !mounted || _webShaderTier != tier) return;
+    _showOsd(t.web_video_mode_shaders_failed, severity: ToastSeverity.error);
   }
 
   /// 建会话（脚本 / 4K 环境 / 登录 cookie）→ 网页播放器后端 → [VideoPlayerController.loadWeb]，
@@ -196,9 +233,18 @@ extension _VideoWebSource on _VideoFushiPageState {
     final WebAdblockService adblock = ref.read(webAdblockServiceProvider);
     await warmWebVideoAdblock(adblock, logTag: 'VideoFushi.web.adblockLoad');
     if (!mounted) return;
+    final bool captureFirst = _webHosting == WebVideoHosting.builtin;
     final WebVideoSession session = WebVideoSession(
       bookUid: _activeBookUid,
       pageUrl: row.videoPath,
+      hosting: _webHosting,
+      // 「制卡优先」：可捕获档（软件 DRM 垫片 + Chrome UA），离屏纹理画在 Flutter 树里；输入归属
+      // 由 [_wrapWebVideoSurface] 的命中测试管，不经底层合成。
+      softwareDrm: captureFirst,
+      underlay: !captureFirst,
+      onSurfaceCreated: captureFirst
+          ? (_) => _onWebCaptureSurfaceCreated()
+          : null,
       onTrack: _onWebTrack,
       onState: _onWebState,
       onKeyToken: _onWebKeyToken,
@@ -215,6 +261,9 @@ extension _VideoWebSource on _VideoFushiPageState {
     final VideoPlayerController controller = VideoPlayerController();
     final WebVideoPlatformPlayer platform = WebVideoPlatformPlayer(
       evaluate: session.evaluate,
+      surfaceCapture: captureFirst
+          ? (String format) => _captureWebSurface(session, format)
+          : null,
     );
     // loadWeb 起 Player 之后，后端随 controller.dispose 一起释放；之前失败要自己放。
     bool handedToPlayer = false;
@@ -357,6 +406,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     _syncWebNetflixMetadata(state);
     _notifyWebBlocker(state);
     _observeWebHosting(state);
+    _restoreWebDuckResidue(state);
     final bool playerMode = _webPlayerModeFor(state);
     session.syncInput(playerMode: playerMode, videoChanged: videoChanged);
     if (playerMode) unawaited(_bindWebEpisode(state));
@@ -377,9 +427,9 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
   }
 
-  /// 本页一定是站点原生播放：逐拍喂实测探针，结论按站点记下（下次默认播放方式据此定）。
+  /// 逐拍喂实测探针（按本页实际档位下结论），结论按站点记下（下次默认档位据此定）。
   void _observeWebHosting(WebVideoPlaybackState state) {
-    final WebVideoHostingVerdict? verdict = _webHostingProbe.observe(state);
+    final WebVideoHostingVerdict? verdict = _webHostingProbe?.observe(state);
     final Uri? uri = Uri.tryParse(state.href);
     if (verdict == null || uri == null || uri.host.isEmpty) return;
     unawaited(
@@ -388,6 +438,23 @@ extension _VideoWebSource on _VideoFushiPageState {
         setPref: appModel.prefsRepo.setPref,
         siteKey: webVideoSiteKey(uri),
         verdict: verdict,
+      ),
+    );
+  }
+
+  /// 「制卡优先」档与制卡重放宿主共用可捕获档环境：静音重放中途进程被杀时，Windows 会把这个
+  /// 环境的会话音量一直留在 -100 dB。用户自己开播时检查一次、就地还原（与内置网页播放器同一段）。
+  void _restoreWebDuckResidue(WebVideoPlaybackState state) {
+    if (_webDuckResidueChecked ||
+        _webHosting != WebVideoHosting.builtin ||
+        !state.isPlaying ||
+        !Platform.isWindows) {
+      return;
+    }
+    _webDuckResidueChecked = true;
+    unawaited(
+      LoopbackGalAudioSource.restoreDuckedSessions(
+        webVideoCapturableUserDataFolder(),
       ),
     );
   }
@@ -1431,6 +1498,12 @@ extension _VideoWebSource on _VideoFushiPageState {
     final WebVideoSession? session = _webSession;
     if (session == null) return video;
     final bool hasVideo = _webPlayerMode;
+    // 「制卡优先」档的 WebView 是 Flutter 树里的纹理：播放器档里它不接命中测试（点击 / 滚轮 /
+    // 拖动落到上面的播放器，与「画质优先」档让子窗口停收输入同义），露出站点页面时照常收输入。
+    final Widget surface = WebVideoSurface(
+      key: _webSurfaceKey,
+      session: session,
+    );
     // 网页档没有站点视频时顶部返回条的总高度（含顶部让位，见 [webVideoReturnBarExtent]）：
     // 站点页面让在它下面，返回钮不压在 WebView 上——收输入的 WebView2 子窗口会先于
     // Flutter 吃掉落在它矩形里的点击。
@@ -1443,7 +1516,9 @@ extension _VideoWebSource on _VideoFushiPageState {
           right: 0,
           bottom: 0,
           top: hasVideo ? 0 : barExtent,
-          child: WebVideoSurface(key: _webSurfaceKey, session: session),
+          child: session.underlay
+              ? surface
+              : IgnorePointer(ignoring: hasVideo, child: surface),
         ),
         if (hasVideo && _webAdShowing)
           Positioned.fill(
@@ -1659,32 +1734,41 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
   }
 
-  /// 顶栏「切换到 Fushi 播放」按钮本体（本页一定是站点原生播放；站点入口没有库里的
-  /// 书、Fushi 播放读不到，小窗 / 沉浸锁下也不画 → null）。Apple 把它作为普通条目
-  /// 放进右上玻璃胶囊最前面（[_appleTopTrailingGroup]）；M3E 见
-  /// [_webHostingTopBarButton]。
+  /// 顶栏常驻档位标识本体（拍板 cbKi3PN0G7-r2「要更显眼一点」）：图标 + 档位名的胶囊，一点就换到
+  /// 另一档；另一档用不了（引擎不支持底层合成，「画质优先」播不了）时点开设置面板「画质增强」
+  /// 页签看说明。小窗 / 沉浸锁下不画（→ null）。Apple 把它作为普通条目放进右上玻璃胶囊最前面
+  /// （[_appleTopTrailingGroup]，不另画实心底）；M3E 见 [_webHostingTopBarButton]。
   Widget? _webHostingButton({required bool desktop}) {
-    if (!_webMode ||
-        widget.webSite != null ||
-        _inMiniWindow ||
-        _immersiveLocked.value) {
-      return null;
-    }
-    return FushiTooltip(
-      message: t.web_video_hosting_switch_to_builtin,
-      child: Semantics(
-        button: true,
-        label: t.web_video_hosting_switch_to_builtin,
-        child: _chromeIconButton(
-          icon: FushiIcons.video,
-          desktop: desktop,
-          onPressed: () => unawaited(_switchWebToBuiltinHosting()),
-        ),
-      ),
+    if (!_webMode || _inMiniWindow || _immersiveLocked.value) return null;
+    final WebVideoHosting current = _webHosting;
+    final WebVideoHosting other = otherWebVideoMode(current);
+    final bool canSwitch = _webHostingAvailable(other);
+    return WebVideoModeChip(
+      hosting: current,
+      scale: _videoUiScale,
+      filled: !_appleChrome,
+      tooltip: canSwitch
+          ? t.web_video_mode_chip_tooltip(
+              mode: webVideoModeTitle(current),
+              other: webVideoModeTitle(other),
+            )
+          : t.web_video_mode_chip_tooltip_settings(
+              mode: webVideoModeTitle(current),
+            ),
+      onPressed: () {
+        _pokeControlsVisible();
+        if (canSwitch) {
+          unawaited(_switchWebHosting(other));
+        } else {
+          _showPlayerSettings(
+            initialCategory: settings_dest.VideoGroup.shaders.name,
+          );
+        }
+      },
     );
   }
 
-  /// M3E 顶栏的「切换到 Fushi 播放」：与跳转记录胶囊同一套外观，挂在右上组最前面。
+  /// M3E 顶栏的档位标识：挂在右上组最前面。
   Widget? _webHostingTopBarButton({required bool desktop}) {
     final Widget? button = _webHostingButton(desktop: desktop);
     if (button == null) return null;
@@ -1695,34 +1779,49 @@ extension _VideoWebSource on _VideoFushiPageState {
     );
   }
 
-  /// 「画质增强」说明态里的「切换到内置网页播放器」：记住宿主档偏好（与内置网页播放器页的
-  /// 宿主档菜单同一个键），同一本书原地换成内置网页播放器页（它有自己的超分，见
-  /// `web_video_shaders.dart`），集 / 轨 / 位置一并带过去。站点入口（[VideoFushiPage.webSite]）
-  /// 没有库里的书、内置档读不到，不给这个入口。
-  Future<void> _switchWebToBuiltinHosting() async {
-    final WebVideoPlaybackState? state = _webSession?.lastState;
-    final VideoBookRow? row = _bookRow;
-    if (row != null) {
+  /// [hosting] 这一档此刻能不能用：「画质优先」要引擎支持底层合成。
+  bool _webHostingAvailable(WebVideoHosting hosting) =>
+      hosting == WebVideoHosting.builtin || _webQualityFirstAvailable;
+
+  /// 换档（顶栏档位标识 / 设置面板「画质增强」页签）：按站点记下手动选择（下次默认就是它），
+  /// 本页原地换成同一集的新播放器页（集 / 轨 / 位置一并带过去，[VideoFushiPage.webReturnState]）。
+  /// 站点入口还没播起任何一集时没有可带的状态，新页从站点入口重开。
+  Future<void> _switchWebHosting(WebVideoHosting target) async {
+    if (target == _webHosting || !_webHostingAvailable(target)) return;
+    final WebVideoSession? session = _webSession;
+    final WebVideoPlaybackState? state = session?.lastState;
+    final Uri? site = Uri.tryParse(
+      session?.pageUrl ?? _bookRow?.videoPath ?? '',
+    );
+    if (site != null && site.host.isNotEmpty) {
       await appModel.prefsRepo.setPref(
         kWebVideoHostingManualBySitePrefKey,
         recordManualWebVideoHosting(
           appModel.prefsRepo.getPref(kWebVideoHostingManualBySitePrefKey),
-          webVideoSiteKey(Uri.parse(row.videoPath)),
-          WebVideoHosting.builtin,
+          webVideoSiteKey(site),
+          target,
         ),
       );
     }
     await _controller?.flushPosition();
     if (!context.mounted) return;
+    // 站点入口：播起某一集后本页身份已换成那一集的书（[_bindWebEpisode]），按那本书重开；还没
+    // 播起就仍从站点入口开。
+    final bool episodeBound =
+        widget.webSite == null || _webBoundEpisodeUrl != null;
     await Navigator.of(context).pushReplacement(
       adaptivePageRoute<void>(
         context: context,
-        builder: (_) => WebVideoFushiPage.neutralized(
-          bookUid: _activeBookUid,
+        builder: (_) => VideoFushiPage.neutralized(
+          bookUid: episodeBound ? _activeBookUid : widget.bookUid,
           repo: widget.repo,
-          hosting: WebVideoHosting.builtin,
-          mineReturnState: state == null ? null : WebMineReturnState.of(state),
-          returnToBrowser: widget.webBackToBrowser,
+          webSite: episodeBound ? null : widget.webSite,
+          webBackToBrowser: widget.webBackToBrowser,
+          webReturnState: episodeBound && state != null
+              ? WebMineReturnState.of(state)
+              : null,
+          webHosting: target,
+          // 选集面板的列表上下文（拍板台 zGXhhMAglH）随换档带过去。
           playlistCollectionId: widget.playlistCollectionId,
           youtubePlaylistId: _streamBookYoutubePlaylistId,
         ),
@@ -1730,7 +1829,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     );
   }
 
-  /// 跑制卡队列：同一本书原地换成内置网页播放器（可捕获的 1080p 档），画面一就绪就自动
+  /// 跑制卡队列：同一本书原地换成制卡重放宿主（内置网页播放器页，可捕获档），画面一就绪就自动
   /// 逐句重放落卡（[WebVideoFushiPage.autoRunMineQueue]）。[idle] = 空闲自动制卡的交接：
   /// 那边静音跑、有输入即让位，跑完换回本页（[WebVideoFushiPage.returnHostingAfterMining]）。
   Future<void> _runWebMineQueue({bool idle = false}) async {
@@ -1743,10 +1842,9 @@ extension _VideoWebSource on _VideoFushiPageState {
         builder: (_) => WebVideoFushiPage.neutralized(
           bookUid: _activeBookUid,
           repo: widget.repo,
-          hosting: WebVideoHosting.builtin,
           autoRunMineQueue: true,
-          // 手动 / 空闲都回到本页（重放前的集 / 轨 / 位置一并带过去、再带回来）。
-          returnHostingAfterMining: WebVideoHosting.windowed,
+          // 手动 / 空闲都回到本页这一档（重放前的集 / 轨 / 位置一并带过去、再带回来）。
+          returnHostingAfterMining: _webHosting,
           idleAutoMining: idle,
           mineReturnState: state == null ? null : WebMineReturnState.of(state),
           returnToBrowser: widget.webBackToBrowser,
@@ -1836,8 +1934,18 @@ extension _VideoWebSource on _VideoFushiPageState {
       _webWindowFullscreen = false;
       unawaited(WindowCaptionChannel.setFullscreen(false));
     }
-    _webSession?.mainFrameUrl.removeListener(_onWebNav);
-    _webSession?.dispose();
+    final WebVideoSession? session = _webSession;
+    if (session != null && !session.underlay) {
+      // 「制卡优先」档住在可捕获档的独立 cookie 罐：这里登录的站点会话抄回共享罐（app 内浏览器，
+      // BUG-3801；与内置网页播放器页关页同一条）。「画质优先」档本来就住在共享罐里，不抄
+      // （抄可捕获档只会拿它的旧值盖掉新值，BUG-4818）。
+      final Uri? site = Uri.tryParse(session.pageUrl);
+      if (site != null && site.host.isNotEmpty) {
+        unawaited(syncWebVideoLoginToBrowser(site));
+      }
+    }
+    session?.mainFrameUrl.removeListener(_onWebNav);
+    session?.dispose();
     final Route<Object?>? transparentRoute = _webTransparentRoute;
     if (transparentRoute != null) {
       _webTransparentRoute = null;

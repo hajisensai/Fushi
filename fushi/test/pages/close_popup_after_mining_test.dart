@@ -341,28 +341,6 @@ void main() {
       );
     });
 
-    test('网页视频窗口宿主档：顶层查词窗口里制卡也按视频那行处理', () {
-      final String src = File(
-        'lib/src/pages/implementations/web_video_fushi_page.dart',
-      ).readAsStringSync();
-      final int start = src.indexOf('_mineFromGlobalLookup({');
-      expect(start, greaterThan(0));
-      final String body = src.substring(start, start + 900);
-      expect(
-        RegExp(r'_afterGlobalLookupMineAccepted\(\)').allMatches(body).length,
-        2,
-        reason: '回退纯字段制卡与入队两条路都要处理',
-      );
-      expect(
-        RegExp(
-          r'applyAfterMiningPopupAction\(\s*afterMiningPopupAction,\s*'
-          r'dropPauseMark: dropLookupPauseMark,\s*'
-          r'closeAll: GlobalLookupController\.instance\.dismissDesktopLookup,',
-        ).hasMatch(src),
-        isTrue,
-      );
-    });
-
     test('视频页不再写死「制卡后恒关弹窗」', () {
       final String page = File(
         'lib/src/pages/implementations/video_fushi_page.dart',

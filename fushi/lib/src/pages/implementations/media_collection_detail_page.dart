@@ -58,8 +58,15 @@ import 'package:fushi/src/media/video/video_specs_service.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
 import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart'
+    show VideoMetadataLockableField, parseLockedFields;
 import 'package:fushi_engine/media/video/metadata/video_metadata_manual_edit.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart'
+    show
+        kSourcelessLocalVideoScrapeScopeId,
+        sourcelessLocalVideoScrapeScope,
+        videoBookInScrapeScope;
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/online/anime_source_stream_label.dart';
@@ -573,9 +580,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 转场期间把整个来源重扫一遍（打开慢、转场掉帧）。改成先把已有数据画出来，
     // 转场结束后在后台做、本会话每个来源只做一次，建出作品行再刷新一次。
     if (canonicalWork == null) {
+      // 无来源成员（「导入文件夹（仅此一次）」导入后临时行已删）归无来源范围，按它的
+      // 内存 id 一并兜底索引，与启动回填同口径（BUG-5418）。
       _scheduleSourceIndexing(<int>{
         for (final VideoBookRow member in members)
-          if (member.sourceId != null) member.sourceId!,
+          if (member.sourceId != null)
+            member.sourceId!
+          else if (videoBookInScrapeScope(
+            member,
+            sourcelessLocalVideoScrapeScope,
+          ))
+            kSourcelessLocalVideoScrapeScopeId,
       });
     }
     final VideoMetadataWorkCredits? workCredits =
@@ -1002,8 +1017,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       );
       bool changed = false;
       for (final int sourceId in pending) {
-        final SourceLibraryRow? source = await widget.database
-            .getMediaSourceById(sourceId);
+        final SourceLibraryRow? source =
+            sourceId == kSourcelessLocalVideoScrapeScopeId
+            ? sourcelessLocalVideoScrapeScope
+            : await widget.database.getMediaSourceById(sourceId);
         if (source != null && await indexer.index(source)) changed = true;
       }
       if (!mounted) return;
@@ -1650,7 +1667,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       context: context,
       service: appRemoteVideoSubtitleService(appModel),
       target: RemoteVideoSubtitleTarget.season(
-        title: _canonicalWork?.title ?? _name,
+        title: _workDisplayTitle,
         originalLanguage: _canonicalWork?.originalLanguage,
         members: <RemoteVideoSubtitleSeasonMember>[
           for (final RemoteVideoInfo m in _remoteMembers)
@@ -2287,6 +2304,31 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     );
   }
 
+  /// 作品名：规范作品的标题，但成员上挂的、没有外部身份也没被用户锁定标题的作品
+  /// 除外——那是本地索引按文件名建的占位（单成员合集由
+  /// [FushiDatabase.resolveVideoMetadataWorkForCollection] 落到成员作品上），标题
+  /// 只是那一集的文件名，不是这个合集的名字，用合集名（BUG-5418 审查）。合集自己的
+  /// 作品行建档时就以合集名为题，照用。
+  String get _workDisplayTitle {
+    final VideoMetadataWorkRow? work = _canonicalWork;
+    if (work == null) return _name;
+    final bool memberPlaceholder =
+        work.collectionId == null &&
+        (_workCredits?.identities.isEmpty ?? true) &&
+        !parseLockedFields(
+          work.lockedFields,
+        ).contains(VideoMetadataLockableField.title);
+    return memberPlaceholder ? _name : work.title;
+  }
+
+  /// hero 的旧 v68 题材标签：规范作品没有题材 / 关键词词条时才出（有就在作品资料
+  /// 与信息胶囊里，hero 再放一份是重复）。本地索引建的占位作品没有词条，旧刮削的
+  /// 标签照常显示，不随占位作品出现而消失（BUG-5418 审查）。
+  bool get _showLegacyHeroTags => !_workTerms.any(
+    (VideoMetadataTermRow term) =>
+        term.kind == 'genre' || term.kind == 'keyword',
+  );
+
   /// 详情页 hero：数据求值留在本页（背景轮换 / 元信息 chip / 标签 / 人物 / 续播集 /
   /// 主操作），视觉交给共享的 [CollectionDetailHero]（与媒体服务器详情页同一套）。
   ///
@@ -2297,9 +2339,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     final ScrapeMetadata? meta = _scrapeMeta;
     final String? originalTitle =
         _canonicalWork?.originalTitle ?? meta?.originalTitle;
-    // 规范作品的标签 / 人物在下方有完整区块（人物表横滑、作品资料卡）；hero 再放
-    // 一份只会形成重复内容。旧 v68 资料没有规范详情宿主时才保留 hero 回退，
-    // 避免老库凭空丢信息。简介只在 hero 里展示一份（可展开、可选中划词）。
+    // 规范作品的人物在下方有完整区块（人物表横滑）；hero 再放一份只会形成重复
+    // 内容，没有规范作品时才在 hero 里出。标签 / 简介按字段回落旧 v68 资料
+    // （[_showLegacyHeroTags]、`overview ?? summary`）：本地索引给旧刮削过的合集补
+    // 建的占位作品没有这些字段，硬切到规范作品会让老库凭空丢资料（BUG-5418 审查）。
+    // 简介只在 hero 里展示一份（可展开、可选中划词）。
     final bool useLegacyHeroDetails = _canonicalWork == null;
     final bool started = _isEpisodeStarted(episode);
     final bool discPrimary = _discPrimaryKind == DiscPrimaryKind.playDisc;
@@ -2312,7 +2356,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       cover: _heroCover,
       coverMaterial: ShelfCoverMaterial.glossyPoster,
       logo: _heroLogo,
-      title: _canonicalWork?.title ?? _name,
+      title: _workDisplayTitle,
       // 读屏与测试按合集名找 logo。
       semanticsName: _name,
       // 原名与合集名相同就不重复占一行（刮削回写后二者常常一致）。
@@ -2321,7 +2365,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       // 元信息 chip 行：观看进度恒在（不依赖刮削），年份/话数/评分/时长有刮削资料
       // 才逐项出现（缺的不占位、不写「未知」）。
       chips: _heroChips(meta),
-      tagNames: useLegacyHeroDetails
+      tagNames: _showLegacyHeroTags
           ? <String>[
               for (final ScrapeTag tag in _heroScrapeTags(meta)) tag.name,
             ]
@@ -2335,7 +2379,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                 ),
             ]
           : const <CollectionHeroCredit>[],
-      summary: useLegacyHeroDetails ? meta?.summary : _canonicalWork?.overview,
+      summary: _canonicalWork?.overview ?? meta?.summary,
       // 原盘开不了菜单时，这一行写明原因（主按钮退回普通播放）。多盘不再写「播放
       // 原盘 · 盘名」：主按钮点了先弹选盘，开哪张由用户在弹窗里定。
       continueLabel: discUnavailable != null
@@ -2780,7 +2824,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           ),
         ),
       );
-    } on Object {
+    } on Object catch (error) {
+      // 在线预告片 / 花絮解析失败（视频已下架、网络到不了 YouTube…）是预期内的失败，
+      // 但原先吞掉异常、只弹「无法加载该视频」，反馈里查不到原因（aBGenWuGns）。
+      ErrorLogService.instance.logDiagnostic(
+        'MediaCollectionDetailPage.openWorkExtra',
+        '$url: $error',
+      );
       if (mounted) FushiToast.show(msg: t.video_load_failed_generic);
     }
   }
@@ -4082,7 +4132,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 「接着看」卡（附栏）：只在主操作是播剧集时出；光盘入口仍走续播行文案。
     final bool upNext = !discPrimary && discUnavailable == null;
     return VideoPosterDetailHero(
-      title: work?.title ?? _name,
+      title: _workDisplayTitle,
       mediaType: work?.mediaType,
       status: work?.status,
       originalTitle: originalTitle == _name ? null : originalTitle,
@@ -4098,7 +4148,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       continueLabel: discUnavailable != null
           ? discMenuUnavailableText(discUnavailable)
           : null,
-      summary: useLegacyHeroDetails ? meta?.summary : work.overview,
+      summary: work?.overview ?? meta?.summary,
       primaryAction: MediaDetailPrimaryButton(
         icon: discPrimary ? FushiIcons.toc : FushiIcons.play,
         label: discPrimary
@@ -4244,7 +4294,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     required bool useLegacyHeroDetails,
     required ScrapeMetadata? meta,
   }) {
-    final List<String> tagNames = useLegacyHeroDetails
+    final List<String> tagNames = _showLegacyHeroTags
         ? <String>[for (final ScrapeTag tag in _heroScrapeTags(meta)) tag.name]
         : const <String>[];
     final List<CollectionHeroCredit> credits = useLegacyHeroDetails

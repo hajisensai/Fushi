@@ -39,7 +39,8 @@ const Duration kWebVideoMaxExtrapolation = Duration(seconds: 1);
 /// glue 命令的结果码里表示「已发出」的那些（seek 的回执随后由 seekDone 送达）。
 const Set<String> _kSeekSent = <String>{'bridge', 'direct'};
 
-/// 站点画面能不能在页面里截帧（canvas 导出）：Netflix 是硬件 DRM（PlayReady），只能拿到黑帧；
+/// 站点画面能不能在页面里截帧（canvas 导出，与宿主档无关；「制卡优先」档另有表面截图兜底，
+/// 见 [WebVideoPlatformPlayer.surfaceCapture]）：Netflix 是硬件 DRM（PlayReady），只能拿到黑帧；
 /// 其余站点（YouTube 等 MSE 同源流）可以。
 bool webVideoFrameCaptureSupported(String href) {
   final String host = (Uri.tryParse(href)?.host ?? '').toLowerCase();
@@ -68,11 +69,18 @@ Uint8List? decodeWebVideoFrameDataUrl(Object? result) {
 
 class WebVideoPlatformPlayer extends PlatformPlayer
     implements ExternallyRenderedPlatformPlayer {
-  WebVideoPlatformPlayer({required this.evaluate})
+  WebVideoPlatformPlayer({required this.evaluate, this.surfaceCapture})
     : super(configuration: const PlayerConfiguration());
 
   /// 在站点页面里执行一条 `window.__fushiWebVideo.*` 命令，返回命令的结果码（没发出去为 null）。
   final Future<Object?> Function(String js) evaluate;
+
+  /// 截整个 WebView 表面（[format] 为 `image/png` / `image/jpeg`）；null = 表面截不到。
+  ///
+  /// 只有「制卡优先」档（`WebVideoHosting.builtin`，可捕获的软件 DRM 离屏纹理）给：那一档的帧
+  /// 连 Netflix 这类加密站也截得到，而播放器档的页面只留铺满的 `<video>`，截表面就是截画面。
+  /// 页面 canvas 能截时仍优先 canvas（只有视频本身、没有黑边）。
+  final Future<Uint8List?> Function(String format)? surfaceCapture;
 
   /// 外推时钟的基准：最近一次权威位置与它的时刻。
   Duration _anchor = Duration.zero;
@@ -96,9 +104,13 @@ class WebVideoPlatformPlayer extends PlatformPlayer
   /// 站点音轨（目前只有 Netflix）：media_kit 的 [Tracks.audio] 只放真实轨（没有 auto / no）。
   List<WebVideoSiteTrack> _siteAudioTracks = const <WebVideoSiteTrack>[];
 
-  /// 当前站点画面能否在页面里截帧（[webVideoFrameCaptureSupported]，随快照更新）。
+  /// 当前站点画面能否截帧（随快照更新）：页面 canvas 截得到（[webVideoFrameCaptureSupported]），
+  /// 或本档能截 WebView 表面（[surfaceCapture]）。
   bool get frameCaptureSupported => _frameCaptureSupported;
   bool _frameCaptureSupported = false;
+
+  /// 页面 canvas 能不能截（非 DRM 站点）。
+  bool _pageFrameCaptureSupported = false;
 
   @visibleForTesting
   bool get debugSeekInFlight => _pendingSeekId != null;
@@ -129,8 +141,10 @@ class WebVideoPlatformPlayer extends PlatformPlayer
       state = state.copyWith(buffering: buffering);
       _add(bufferingController, buffering);
     }
-    _frameCaptureSupported =
+    _pageFrameCaptureSupported =
         s.hasVideo && webVideoFrameCaptureSupported(s.href);
+    _frameCaptureSupported =
+        _pageFrameCaptureSupported || (s.hasVideo && surfaceCapture != null);
     final Duration reported = Duration(milliseconds: s.positionMs ?? 0);
     final Duration duration = Duration(milliseconds: s.durationMs ?? 0);
     if (_pendingSeekId != null) {
@@ -412,8 +426,8 @@ class WebVideoPlatformPlayer extends PlatformPlayer
   @override
   Future<void> setSubtitleTrack(SubtitleTrack track) async {}
 
-  /// 画面在站点页面里：非 DRM 站点用页面 canvas 截当前帧（暂停 OCR / 识别画面文字用）；Netflix
-  /// 硬件 DRM 截不到，返回 null（制卡截帧另走重放的可捕获档）。站点字幕不在视频帧里，
+  /// 截当前帧（暂停 OCR / 识别画面文字 / 截图用）：非 DRM 站点先用页面 canvas；截不到时（Netflix
+  /// 硬件 DRM 只给黑帧）退到 [surfaceCapture]（只有「制卡优先」档给）。站点字幕不在视频帧里，
   /// [includeLibassSubtitles] 无意义。
   @override
   Future<Uint8List?> screenshot({
@@ -422,9 +436,15 @@ class WebVideoPlatformPlayer extends PlatformPlayer
   }) async {
     if (_disposed || !_frameCaptureSupported) return null;
     final String type = format == 'image/png' ? 'image/png' : 'image/jpeg';
-    return decodeWebVideoFrameDataUrl(
-      await evaluate("window.__fushiWebVideo.captureFrame('$type')"),
-    );
+    if (_pageFrameCaptureSupported) {
+      final Uint8List? page = decodeWebVideoFrameDataUrl(
+        await evaluate("window.__fushiWebVideo.captureFrame('$type')"),
+      );
+      if (page != null) return page;
+    }
+    final Future<Uint8List?> Function(String format)? capture = surfaceCapture;
+    if (capture == null || _disposed) return null;
+    return capture(type);
   }
 
   /// 没有 mpv 句柄：任何把它当 mpv 用的路径都该在此失败，而不是拿野指针。

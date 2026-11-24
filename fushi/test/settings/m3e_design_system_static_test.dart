@@ -1082,6 +1082,12 @@ class AnotherPopupPart {
           'and playback state as video-subsystem content in the player overlay '
           'and collection hero; card typography scales with appUiScale in the '
           'player, the same reviewed content exception as video_episode_panel.',
+      'lib/src/media/video/web_video_mode_chip.dart':
+          'Web video mode chip lives in the video player top bar next to the '
+          'other player chrome buttons; its label is the labelLarge token size '
+          'times the player control scale (_videoUiScale) so it grows with the '
+          'rest of the controls -- the same reviewed exception as '
+          'video_m3e_chrome / controls_theme.part.dart.',
       'lib/src/media/video/video_subtitle_style.dart':
           'Subtitle appearance model holds user-configurable caption font '
           'size (content), defaults mirror the allowlisted overlay caption.',
@@ -1669,6 +1675,7 @@ class AnotherPopupPart {
       },
       'lib/src/media/video/video_episode_panel.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_episode_rail.dart': <String>{'fontSize:'},
+      'lib/src/media/video/web_video_mode_chip.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_m3e_chrome.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
