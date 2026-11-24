@@ -249,6 +249,8 @@ String syncOutcomeLine(SyncRunOutcome o) {
       return t.sync_last_cooled_down;
     case SyncOutcomeReason.failed:
       return t.sync_last_failed;
+    case SyncOutcomeReason.peerOffline:
+      return t.sync_last_peer_offline;
     case SyncOutcomeReason.cancelled:
       return t.sync_last_cancelled;
   }

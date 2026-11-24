@@ -125,8 +125,14 @@ class MediaCollectionGridDetailPage extends StatefulWidget {
     this.memberNsfwOf,
     this.aiClientFactory,
     this.artScrape,
+    this.trackingSection,
     super.key,
   });
+
+  /// The card's "Tracking" section under its members (series links of book
+  /// and manga cards: one link counts every volume). Null = none (tracking
+  /// off, games).
+  final Widget? trackingSection;
 
   /// 书 / 漫画合集的「获取各卷封面与横幅」「清除已获取的封面」。null = 不提供
   /// （游戏库等）；合集里没有本地书或「在线服务」模块关着时也不出现。
@@ -1446,6 +1452,19 @@ class _MediaCollectionGridDetailPageState
               columns: layout.columns,
               aspect: memberAspect,
               spacing: spacing,
+            ),
+          );
+        }
+        if (widget.trackingSection case final Widget section) {
+          slivers.add(
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                sPad,
+                tokens.spacing.section,
+                sPad,
+                0,
+              ),
+              sliver: SliverToBoxAdapter(child: section),
             ),
           );
         }

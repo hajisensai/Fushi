@@ -464,6 +464,47 @@ void main() {
     });
   });
 
+  group('会话 token 上限 maxSessionTokens（BUG-5365）', () {
+    AiChatTurn costly(AiChatTurn turn, int tokens) => AiChatTurn(
+      text: turn.text,
+      toolCalls: turn.toolCalls,
+      usage: AiChatUsage(inputTokens: tokens),
+    );
+
+    test('用满就在下一次请求前停下，记 token_budget；历史里的工具调用都有结果', () async {
+      final _Llm llm = _Llm(<AiChatTurn>[
+        for (int i = 0; i < 10; i++)
+          costly(_calls(<AiChatToolCall>[_c('m$i', 'library.map')]), 400),
+      ]);
+      final _Toolbox toolbox = _Toolbox(skill: _ReorganizeSkill());
+      final AgentSession session = _session(
+        llm,
+        toolbox,
+        limits: const AgentLimits(maxSessionTokens: 1000),
+      );
+      await session.send('复查');
+      // 400 → 800 → 1200：第三次请求之后用满，第四次不再发。
+      expect(llm.requests, hasLength(3));
+      expect(session.totalTokens, 1200);
+      expect(_notices(session, AgentStopCode.tokenBudget), hasLength(1));
+      final List<AiChatMessage> history = llm.requests.last;
+      expect(history.last.role, 'tool');
+    });
+
+    test('不设上限（默认）：照常跑完', () async {
+      final _Llm llm = _Llm(<AiChatTurn>[
+        for (int i = 0; i < 5; i++)
+          costly(_calls(<AiChatToolCall>[_c('m$i', 'library.map')]), 400),
+        costly(_reply('好了'), 400),
+      ]);
+      final _Toolbox toolbox = _Toolbox(skill: _ReorganizeSkill());
+      final AgentSession session = _session(llm, toolbox);
+      await session.send('复查');
+      expect(llm.requests, hasLength(6));
+      expect(_notices(session, AgentStopCode.tokenBudget), isEmpty);
+    });
+  });
+
   group('计划清单 plan.update', () {
     Map<String, Object?> plan(List<(String, String)> items) =>
         <String, Object?>{

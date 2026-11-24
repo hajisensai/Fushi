@@ -10,6 +10,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/metadata/anidb_app_client.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_text.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart'
     show AnidbEpisodeInfo;
@@ -672,12 +673,9 @@ class AniDbVideoMetadataProvider
       ..._mapStaffCredits(creators),
       ..._parseCharacterCredits(root.getElement('characters')),
     ];
-    final List<String> tags = <String>[
-      for (final FfcXmlElement tag
-          in root.getElement('tags')?.findElements('tag') ??
-              const <FfcXmlElement>[])
-        if (_text(tag.getElement('name')) case final String name) name,
-    ];
+    final List<String> tags = aniDbLeafTagNames(
+      root.getElement('tags')?.findElements('tag') ?? const <FfcXmlElement>[],
+    );
     final String restricted = (root.getAttribute('restricted') ?? '')
         .trim()
         .toLowerCase();
@@ -687,7 +685,7 @@ class AniDbVideoMetadataProvider
       titles: titles,
       premiered: premiered,
       endDate: endDate,
-      plot: _text(root.getElement('description')),
+      plot: _prose(root.getElement('description')),
       rating: rating.value,
       ratingVotes: rating.votes,
       picture: _text(root.getElement('picture')),
@@ -946,7 +944,7 @@ class AniDbVideoMetadataProvider
           seasonNumber: seasonNumber,
           episodeNumber: episodeNumber,
           title: _selectTitles(record).title,
-          plot: _text(element.getElement('summary')),
+          plot: _prose(element.getElement('summary')),
           airDate: airDate,
           year: metadataYear(airDate),
           absoluteNumber: specials ? null : episodeNumber,
@@ -975,7 +973,7 @@ class AniDbVideoMetadataProvider
   List<_AniDbCreator> _parseCreators(FfcXmlElement? parent) => <_AniDbCreator>[
     for (final FfcXmlElement element
         in parent?.findElements('name') ?? const <FfcXmlElement>[])
-      if (_text(element) case final String name)
+      if (_prose(element) case final String name)
         _AniDbCreator(
           id: int.tryParse(element.getAttribute('id') ?? ''),
           name: name,
@@ -1011,13 +1009,13 @@ class AniDbVideoMetadataProvider
     final List<VideoMetadataCredit> credits = <VideoMetadataCredit>[];
     for (final FfcXmlElement element
         in parent?.findElements('character') ?? const <FfcXmlElement>[]) {
-      final String? characterName = _text(element.getElement('name'));
+      final String? characterName = _prose(element.getElement('name'));
       if (characterName == null) continue;
       final int? characterId = int.tryParse(element.getAttribute('id') ?? '');
       final VideoMetadataCharacter character = VideoMetadataCharacter(
         id: characterId?.toString(),
         name: characterName,
-        description: _text(element.getElement('description')),
+        description: _prose(element.getElement('description')),
         imageUrl: _imageUrl(_text(element.getElement('picture'))),
         ids: <VideoMetadataId>[
           if (characterId != null)
@@ -1025,7 +1023,7 @@ class AniDbVideoMetadataProvider
         ],
       );
       for (final FfcXmlElement seiyuu in element.findElements('seiyuu')) {
-        final String? personName = _text(seiyuu);
+        final String? personName = _prose(seiyuu);
         if (personName == null) continue;
         final int? personId = int.tryParse(seiyuu.getAttribute('id') ?? '');
         credits.add(
@@ -1355,6 +1353,12 @@ String? _text(FfcXmlElement? element) {
   final String value = element?.innerText.trim() ?? '';
   return value.isEmpty ? null : value;
 }
+
+/// 给人看的 AniDB 文本（简介、集简介、人名、角色名）：反引号换回撇号。
+String? _prose(FfcXmlElement? element) => switch (_text(element)) {
+  final String value => aniDbDisplayText(value),
+  null => null,
+};
 
 String _xmlLanguage(FfcXmlElement element) =>
     (element.getAttribute('xml:lang') ??

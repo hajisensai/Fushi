@@ -25,6 +25,7 @@ import 'package:fushi_compute/fushi_compute.dart'
         AniDbCatalogNative,
         AniDbCatalogNativeError,
         AniDbNativeSearchHit;
+import 'package:fushi_engine/media/video/metadata/anidb_text.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
@@ -34,14 +35,20 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 typedef AniDbCatalogNow = DateTime Function();
 
 class AniDbTitle {
-  AniDbTitle({required this.value, required this.type, required this.language});
+  /// [value] 一律经 [aniDbDisplayText]（AniDB 把撇号存成反引号）。
+  AniDbTitle({
+    required String value,
+    required this.type,
+    required this.language,
+  }) : value = aniDbDisplayText(value);
 
   AniDbTitle._catalog({
-    required this.value,
+    required String value,
     required this.type,
     required this.language,
     required String normalizedValue,
-  }) : _normalizedValue = normalizedValue;
+  }) : value = aniDbDisplayText(value),
+       _normalizedValue = normalizedValue;
 
   final String value;
 
