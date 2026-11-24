@@ -3489,6 +3489,11 @@ void GlobalLookupWindow::ConfigureWebView() {
                   // writing". Dart answers from the background-mine ledger
                   // (pending / landed / failed + reason).
                   body.find("\"queueOverwrite\"") != std::string::npos ||
+                  // ...and once that background write has FAILED with the frame
+                  // and sentence audio still in hand, the card's + becomes
+                  // "retry": Dart answers {accepted} from the same one-shot
+                  // retry slot the main-window toast's "retry" uses.
+                  body.find("\"retryQueuedMine\"") != std::string::npos ||
                   body.find("\"findMinedMatches\"") != std::string::npos ||
                   body.find("\"openMinedNote\"") != std::string::npos ||
                   body.find("\"openInAnki\"") != std::string::npos ||

@@ -203,6 +203,18 @@ bool maybeHandleOverlayDeferredBridge({
         );
       }
       return true;
+    // review-gal-overlay-mine-fail：后台写卡失败、宿主说还能重写的那颗按钮再点 +。
+    // 用台账里同一个一次性入口（与主窗 toast 的「重试」共用）拿原样画面与句音重写，
+    // 回 {accepted}：false = 入口已失效（toast 上已点过 / 被挤出），popup.js 就地说明。
+    case 'retryQueuedMine':
+      final int? retryBridgeId = _bridgeIdOf(message);
+      final bool accepted = retryQueuedMineBridgeReply(message['args']);
+      if (retryBridgeId != null) {
+        unawaited(
+          resolveBridge(retryBridgeId, <String, Object?>{'accepted': accepted}),
+        );
+      }
+      return true;
     case 'updateEntry':
       unawaited(
         _handleUpdateBridge(
@@ -301,6 +313,15 @@ QueuedOverwriteReply queueOverwriteBridgeReply(Map<Object?, Object?> payload) {
     expression: expression,
     reading: payload['reading']?.toString() ?? '',
   );
+}
+
+/// deferred `retryQueuedMine` 桥：[args] 是 popup.js 传来的参数表（首个是 token）。
+/// 返回是否真的接下了这次重写（见 [OverlayQueuedMines.retry]）。
+@visibleForTesting
+bool retryQueuedMineBridgeReply(Object? args) {
+  final Object? first = args is List && args.isNotEmpty ? args.first : args;
+  if (first is! num) return false;
+  return OverlayQueuedMines.retry(first.toInt());
 }
 
 int? _bridgeIdOf(Map<String, Object?> message) => (message['__bridgeId'] is num)

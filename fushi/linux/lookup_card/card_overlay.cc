@@ -65,7 +65,7 @@ const std::set<std::string>& DeferredHandlers() {
       "srsTermStatus",    "srsTermStatusBatch",   "srsOpenCard",
       // review-gal-overlay-mine-fail: same list as the Windows router; Dart
       // answers queueOverwrite from the background-mine ledger.
-      "queueOverwrite",
+      "queueOverwrite",   "retryQueuedMine",
   };
   return handlers;
 }

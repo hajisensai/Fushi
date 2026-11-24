@@ -4170,6 +4170,131 @@ async function testHostSettlementWithOtherTokenDoesNotClaim() {
   assert.equal(mountedHintText(context), 'OWN_FAIL');
 }
 
+// 后台写卡失败、宿主还留着那张卡的画面与句音（retryable）：卡上的 + 就是「重试」——
+// 走 retryQueuedMine（宿主原样重写，与主窗 toast 的重试共用一次性入口），不重新制卡
+// （那会重抓已经换掉的游戏画面）。全屏游戏里这是唯一看得见的重试入口。
+function retryHarness(context, expression, retryReply) {
+  const state = appQueuedHarness(context);
+  state.retryCalls = [];
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'retryQueuedMine') {
+      state.retryCalls.push(payload);
+      return Promise.resolve(retryReply);
+    }
+    if (name !== 'mineEntry') return base(name, payload);
+    state.mines++;
+    return Promise.resolve({ queued: true, ankiConnect: false, queuedToken: 9 });
+  };
+  return state;
+}
+
+async function testRetryableFailureTurnsPlusIntoRetry() {
+  const context = loadPopup();
+  context.window.i18nMineRetryHint = 'RETRY_HINT';
+  const state = retryHarness(context, '離宮', { accepted: true });
+  const button = mountMineHeaderFor(context, '離宮');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 1);
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離宮', outcome: 'failed', message: 'ANKI_DOWN', token: 9, retryable: true,
+  });
+  await flush();
+  assert.equal(claimed, 1);
+  assert.equal(mountedHintText(context), 'ANKI_DOWN RETRY_HINT', '原因后面说可以点 + 重试');
+  assert.equal(button.dataset.queued, '');
+  assert.equal(button.textContent, '+');
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 1, '重试不得重新制卡（会重抓已换掉的画面）');
+  assert.equal(state.retryCalls.length, 1);
+  assert.equal(state.retryCalls[0], 9, '凭 token 请宿主原样重写');
+  assert.equal(button.dataset.queued, '1', '重写在路上：画回「已加入」');
+  const landed = await context.window.fushiSettleQueuedMine({
+    expression: '離宮', outcome: 'landed', noteId: 5, token: 9,
+  });
+  await flush();
+  assert.equal(landed, 1, '重写的结局凭同一 token 认领');
+  assert.equal(button.dataset.queued, '');
+}
+
+async function testRejectedRetrySaysSoInPlace() {
+  const context = loadPopup();
+  context.window.i18nMineRetryUnavailable = 'RETRY_GONE';
+  const state = retryHarness(context, '離散', { accepted: false });
+  const button = mountMineHeaderFor(context, '離散');
+  await flush();
+  await button.onclick();
+  await flush();
+  await context.window.fushiSettleQueuedMine({
+    expression: '離散', outcome: 'failed', message: 'X', token: 9, retryable: true,
+  });
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(state.retryCalls.length, 1);
+  assert.equal(mountedHintText(context), 'RETRY_GONE', '入口已失效（toast 上已点过）要就地说明');
+  assert.equal(button.dataset.queued, '', '不能挂着「已加入」');
+  assert.equal(button.textContent, '+');
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 2, '入口失效后再点按新卡制作');
+}
+
+async function testToastRetryRequeuesTheCardButton() {
+  const context = loadPopup();
+  const state = retryHarness(context, '離縁', { accepted: true });
+  const button = mountMineHeaderFor(context, '離縁');
+  await flush();
+  await button.onclick();
+  await flush();
+  await context.window.fushiSettleQueuedMine({
+    expression: '離縁', outcome: 'failed', message: 'X', token: 9, retryable: true,
+  });
+  await flush();
+  assert.equal(button.dataset.queued, '');
+  // 主窗 toast 上点了重试：宿主推 requeued，卡上的按钮跟着画回「已加入」。
+  const requeued = await context.window.fushiSettleQueuedMine({
+    expression: '離縁', outcome: 'requeued', token: 9,
+  });
+  await flush();
+  assert.equal(requeued, 1);
+  assert.equal(button.dataset.queued, '1');
+  await button.onclick();
+  await flush();
+  assert.equal(state.retryCalls.length, 0, '已在重写：+ 不再是重试入口');
+  assert.equal(state.mines, 1);
+}
+
+// 不带 retryable 的失败（素材已不在）：+ 照旧按新卡制作。
+async function testNonRetryableFailureMinesAnew() {
+  const context = loadPopup();
+  context.window.i18nMineRetryHint = 'RETRY_HINT';
+  const state = retryHarness(context, '離床', { accepted: true });
+  const button = mountMineHeaderFor(context, '離床');
+  await flush();
+  await button.onclick();
+  await flush();
+  await context.window.fushiSettleQueuedMine({
+    expression: '離床', outcome: 'failed', message: 'ONLY_REASON', token: 9,
+  });
+  await flush();
+  assert.equal(mountedHintText(context), 'ONLY_REASON');
+  await button.onclick();
+  await flush();
+  assert.equal(state.retryCalls.length, 0);
+  assert.equal(state.mines, 2);
+}
+
+Promise.all([
+  testRetryableFailureTurnsPlusIntoRetry(),
+  testRejectedRetrySaysSoInPlace(),
+  testToastRetryRequeuesTheCardButton(),
+  testNonRetryableFailureMinesAnew(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
 Promise.all([
   testHostSettledFailureClearsQueuedMarkInPlace(),
   testHostSettledLandingPaintsLatestEditableCheck(),

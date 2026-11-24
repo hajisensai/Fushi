@@ -3034,38 +3034,41 @@ class GalHookTextOverlayController extends ChangeNotifier {
       result = GalHookMiningResult(failureReason: '$error');
     }
     final GalHookRetryWrite? retryWrite = result.retryWrite;
+    // 用同一份画面与句音重写（游戏画面早已换了，不能重新采样）。沿用同一张 [queued]：
+    // 查词卡上那颗按钮凭同一个 token 认领重写的结局。
+    final VoidCallback? rewrite = retryWrite == null
+        ? null
+        : () {
+            FushiToast.showMine(
+              msg: t.card_mining_pending,
+              status: MineToastStatus.pending,
+              term: fields['expression'],
+              reading: fields['reading'],
+            );
+            unawaited(
+              _landLookupMineInBackground(
+                retryWrite(repo: model.miningAnkiRepository),
+                queued: queued,
+                model: model,
+                fields: fields,
+                sentence: sentence,
+              ),
+            );
+          };
     final Map<String, Object?> reply = _reportLookupMine(
       result,
       repo: model.miningAnkiRepository,
       fields: fields,
       updateNoteId: null,
-      retry: retryWrite == null
+      // toast 的「重试」与查词卡上的 + 共用台账里同一个一次性入口：谁先点谁生效，
+      // 另一处再点不会写出第二张。
+      retry: rewrite == null
           ? null
-          : () {
-              FushiToast.showMine(
-                msg: t.card_mining_pending,
-                status: MineToastStatus.pending,
-                term: fields['expression'],
-                reading: fields['reading'],
-              );
-              unawaited(
-                _landLookupMineInBackground(
-                  retryWrite(repo: model.miningAnkiRepository),
-                  // 重试的结局同样推回原来那个覆盖窗（卡还开着就跟着翻成 ✓）。
-                  queued: OverlayQueuedMines.begin(
-                    expression: queued.expression,
-                    reading: queued.reading,
-                    route: queued.route,
-                  ),
-                  model: model,
-                  fields: fields,
-                  sentence: sentence,
-                ),
-              );
-            },
+          : () => OverlayQueuedMines.retry(queued.token),
     );
-    // 主窗 toast 在游戏全屏时看不见：同一个结局（含失败原因）推回发起它的查词卡。
-    unawaited(OverlayQueuedMines.settle(queued, reply));
+    // 主窗 toast 在游戏全屏时看不见：同一个结局（含失败原因）推回发起它的查词卡；
+    // 失败且还能重写时，卡上的 + 就是「重试」（全屏游戏里唯一看得见的重试入口）。
+    unawaited(OverlayQueuedMines.settle(queued, reply, rewrite: rewrite));
     if (!result.success) return;
     unawaited(
       recordOverlayMinedStats(model, fields, result.outcome?.noteId, sentence),

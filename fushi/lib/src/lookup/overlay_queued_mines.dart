@@ -16,6 +16,7 @@
 // * [OverlayQueuedMines.queueOverwriteReply] 给 deferred 的 `queueOverwrite` 桥一个
 //   真回答：还在写 / 已落地 / 已失败（带原因）。
 
+import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
@@ -35,6 +36,10 @@ enum QueuedMineOutcome {
 
   /// Anki 里本来就有这张卡（没新增，但卡确实在）。
   duplicate,
+
+  /// 失败后点了「重试」（查词卡上的 + 或主窗 toast），同一份画面与句音重新在后台写：
+  /// 弹窗把按钮画回「已加入」，结局稍后照常推来。
+  requeued,
 }
 
 /// 推给覆盖窗的一次结局。
@@ -47,6 +52,7 @@ class QueuedMineSettlement {
     this.token,
     this.noteId,
     this.message,
+    this.retryable = false,
   });
 
   /// 由宿主给弹窗的那种制卡回包（`{ankiConnect, noteId, duplicate?, queued?,
@@ -60,6 +66,7 @@ class QueuedMineSettlement {
     required String expression,
     required String reading,
     int? token,
+    bool retryable = false,
   }) {
     if (reply['queued'] == true) return null;
     if (reply['ankiConnect'] == true) {
@@ -87,6 +94,8 @@ class QueuedMineSettlement {
           : QueuedMineOutcome.failed,
       token: token,
       message: muted ? null : message,
+      // 重复不是失败（卡已在 Anki），不给重试。
+      retryable: retryable && !duplicate,
     );
   }
 
@@ -101,6 +110,10 @@ class QueuedMineSettlement {
   final int? noteId;
   final String? message;
 
+  /// 失败且宿主还留着这张卡做好的画面与句音（[OverlayQueuedMines.retry] 有入口）：
+  /// 弹窗下一次点 + 走 `retryQueuedMine` 重写，不重新制卡（游戏画面早已换了）。
+  final bool retryable;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'expression': expression,
     'reading': reading,
@@ -108,6 +121,7 @@ class QueuedMineSettlement {
     if (token != null) 'token': token,
     if (noteId != null) 'noteId': noteId,
     if (message != null) 'message': message,
+    if (retryable) 'retryable': true,
   };
 }
 
@@ -150,6 +164,14 @@ class _QueuedMineEntry {
   QueuedMineSettlement? settlement;
 }
 
+/// 一次失败后台写卡留下的重写入口（[OverlayQueuedMines.retry] 一次性取走）。
+class _QueuedMineRetry {
+  const _QueuedMineRetry(this.ticket, this.rewrite);
+
+  final QueuedMineTicket ticket;
+  final VoidCallback rewrite;
+}
+
 /// app 外查词卡后台写卡的台账（按词 = expression + reading 记最近一次）。
 abstract final class OverlayQueuedMines {
   /// queued 回包里携带 [QueuedMineTicket.token] 的键（popup.js `parseMineResult`
@@ -163,6 +185,13 @@ abstract final class OverlayQueuedMines {
   static final LinkedHashMap<String, _QueuedMineEntry> _entries =
       LinkedHashMap<String, _QueuedMineEntry>();
   static int _nextToken = 0;
+
+  /// 失败卡的重写入口（按 token）。查词卡上的 + 与主窗 toast 的「重试」共用同一个
+  /// 一次性入口，谁先点谁生效，另一处再点不会写出第二张。入口握着已编码好的画面与
+  /// 句音，所以有上限，满了丢最早的（那个弹窗早已不在，toast 也早消失了）。
+  static const int _retryCapacity = 32;
+  static final LinkedHashMap<int, _QueuedMineRetry> _retries =
+      LinkedHashMap<int, _QueuedMineRetry>();
 
   static QueuedMinePusher _pusher = _pushToOverlay;
 
@@ -182,6 +211,7 @@ abstract final class OverlayQueuedMines {
   @visibleForTesting
   static void debugReset() {
     _entries.clear();
+    _retries.clear();
     _nextToken = 0;
     _pusher = _pushToOverlay;
   }
@@ -215,25 +245,75 @@ abstract final class OverlayQueuedMines {
   /// 覆盖窗。回包仍是 `queued`（进了离线待发队列）时什么都不做——「已加入」依然属实。
   /// [ticket] 已被同词的新一次 [begin] 顶掉时只推不记：旧按钮若还在也该撤「已加入」，
   /// 台账留给新那次。推送失败只记日志：结局主窗 toast 已经说过了。
+  ///
+  /// [rewrite] 是失败后用同一份画面与句音重写这张卡的入口（引擎还留着素材时才有）：
+  /// 登记成 [ticket] 的一次性重试入口，结局带 `retryable`，弹窗下一次点 + 就走它；
+  /// 主窗 toast 的「重试」也必须经 [retry] 调，不要直接调 [rewrite]。
   static Future<void> settle(
     QueuedMineTicket ticket,
-    Map<String, Object?> reply,
-  ) async {
+    Map<String, Object?> reply, {
+    VoidCallback? rewrite,
+  }) async {
     final QueuedMineSettlement? settlement =
         QueuedMineSettlement.fromPopupReply(
           reply,
           expression: ticket.expression,
           reading: ticket.reading,
           token: ticket.token,
+          retryable: rewrite != null,
         );
+    _retries.remove(ticket.token);
     if (settlement == null) return;
+    if (settlement.retryable) {
+      _retries[ticket.token] = _QueuedMineRetry(ticket, rewrite!);
+      while (_retries.length > _retryCapacity) {
+        _retries.remove(_retries.keys.first);
+      }
+    }
     final _QueuedMineEntry? entry =
         _entries[_key(ticket.expression, ticket.reading)];
     if (entry != null && entry.token == ticket.token) {
       entry.settlement = settlement;
     }
+    await _push(ticket.route, settlement);
+  }
+
+  /// [token] 那张失败卡还能不能重试（入口还在）。
+  static bool canRetry(int token) => _retries.containsKey(token);
+
+  /// 取走并执行 [token] 的一次性重试入口（查词卡上的 + 经 deferred `retryQueuedMine`
+  /// 桥、主窗 toast 的「重试」都走这里）。先把台账里这个词改回「还在写」、给发起它的
+  /// 覆盖窗推一条 `requeued`（toast 上点的重试，卡上的按钮也要画回「已加入」），再
+  /// 重写；结局照旧经 [settle] 推回。返回 false = 入口已失效（另一处点过 / 被挤出 /
+  /// 卡已落地）。
+  static bool retry(int token) {
+    final _QueuedMineRetry? pending = _retries.remove(token);
+    if (pending == null) return false;
+    final QueuedMineTicket ticket = pending.ticket;
+    final _QueuedMineEntry? entry =
+        _entries[_key(ticket.expression, ticket.reading)];
+    if (entry != null && entry.token == token) entry.settlement = null;
+    unawaited(
+      _push(
+        ticket.route,
+        QueuedMineSettlement(
+          expression: ticket.expression,
+          reading: ticket.reading,
+          outcome: QueuedMineOutcome.requeued,
+          token: token,
+        ),
+      ),
+    );
+    pending.rewrite();
+    return true;
+  }
+
+  static Future<void> _push(
+    GlobalLookupRoute route,
+    QueuedMineSettlement settlement,
+  ) async {
     try {
-      await _pusher(ticket.route, settlement.toJson());
+      await _pusher(route, settlement.toJson());
     } catch (error) {
       glog('queuedMine: settle push FAILED (non-fatal): $error');
     }
@@ -261,6 +341,8 @@ abstract final class OverlayQueuedMines {
         settled: QueuedOverwriteSettled.failed,
         message: settlement.message,
       ),
+      // 不会记进台账（[retry] 把它改回 null = 还在写），按「还在写」答。
+      QueuedMineOutcome.requeued => const QueuedOverwriteReply(),
     };
   }
 }
