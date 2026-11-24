@@ -878,6 +878,17 @@ class DiscLibraryImporter {
     required int? sourceId,
     required bool restoreDissolvedGroups,
   }) async {
+    // 候选名依次被占着的那几个（修前就按这串名字认合集），与新建时要用的第一个空位。
+    final Set<String> takenNames = <String>{};
+    String name = nameCandidates.first;
+    for (final String candidate in nameCandidates) {
+      name = candidate;
+      if (await _db.getMediaCollectionByNaturalKey(candidate, 'playlist') ==
+          null) {
+        break;
+      }
+      takenNames.add(candidate);
+    }
     final MediaCollectionRow? existing =
         await collectionHoldingOrganizeKey(_db, organizeKey) ??
         await _adoptCollection(
@@ -888,6 +899,7 @@ class DiscLibraryImporter {
           },
           owns: owns,
           minDiscRoots: minDiscRoots,
+          legacyNames: takenNames,
         );
     if (existing != null) {
       return _DiscCollection(
@@ -895,14 +907,6 @@ class DiscLibraryImporter {
         name: existing.name,
         created: false,
       );
-    }
-    String name = nameCandidates.first;
-    for (final String candidate in nameCandidates) {
-      name = candidate;
-      if (await _db.getMediaCollectionByNaturalKey(candidate, 'playlist') ==
-          null) {
-        break;
-      }
     }
     // BUG-1739 同款守卫：用户删过这个合集（修前按名字记的墓碑，或带着分组键的删除
     // 哨兵），重扫不复活。
@@ -935,6 +939,7 @@ class DiscLibraryImporter {
     required Set<String> wantedPaths,
     required bool Function(String discRoot) owns,
     required int minDiscRoots,
+    required Set<String> legacyNames,
   }) async {
     final ({MediaCollectionRow? keyless, MediaCollectionRow? aliased}) found =
         await _adoptableCollection(
@@ -942,6 +947,7 @@ class DiscLibraryImporter {
           wantedPaths: wantedPaths,
           owns: owns,
           minDiscRoots: minDiscRoots,
+          legacyNames: legacyNames,
         );
     if (found.aliased case final MediaCollectionRow aliased) return aliased;
     final MediaCollectionRow? legacy = found.keyless;
@@ -959,8 +965,11 @@ class DiscLibraryImporter {
   /// 成员里有本轮的标题行（[wantedPaths]）、视频成员至少一半（[kConvergenceOverlapRatio]，
   /// 与收敛的成员重叠同一口径）在 [owns] 认的盘上、且跨了至少 [minDiscRoots] 张盘
   /// （几张盘并组时，修前那种一盘一个的单盘合集不当发布组合集认领，由
-  /// [_dissolveSupersededDiscCollections] 收拾）。多个候选取本轮标题行最多的，再取
-  /// 盘上成员最多的，再取 id 小的。
+  /// [_dissolveSupersededDiscCollections] 收拾）。名字就是这组盘的合集名候选
+  /// （[legacyNames]，修前按名字认的正是它）的不受 [minDiscRoots] 限制：修前只有一张盘
+  /// 在库时建的发布组合集只跨一张盘，升级后同一轮又到了另一张盘，也要认回它，而不是
+  /// 另建一个、再请用户把旧的移空。多个候选取本轮标题行最多的，再取盘上成员最多的，
+  /// 再取 id 小的。
   ///
   /// `keyless` 是还没挂键的候选（认领一次后就有键，之后按键找回）；`aliased` 是别名里
   /// 带 [organizeKey] 的候选（被并进了别的合集、那个合集又被用户接手，收敛只认用户合集
@@ -971,6 +980,7 @@ class DiscLibraryImporter {
     required Set<String> wantedPaths,
     required bool Function(String discRoot) owns,
     required int minDiscRoots,
+    required Set<String> legacyNames,
   }) async {
     final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
       for (final VideoBookRow row in await _videoRepo.listAll())
@@ -1019,7 +1029,7 @@ class DiscLibraryImporter {
       }
       if (titles == 0 ||
           owned < videos * kConvergenceOverlapRatio ||
-          roots.length < minDiscRoots) {
+          (roots.length < minDiscRoots && !legacyNames.contains(c.name))) {
         continue;
       }
       final (int, int) score = (titles, owned);

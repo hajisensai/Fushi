@@ -1057,6 +1057,43 @@ void main() {
       );
     });
 
+    test('修前只有一卷在库时建的发布组合集（只跨一张盘、无键）：升级后同一轮到了第二卷，按名字认回、不另建', () async {
+      final int legacy = await db.createMediaCollection(
+        'BOCCHI THE ROCK!',
+        collectionType: 'playlist',
+      );
+      for (int i = 1; i <= 2; i++) {
+        final String uid = 'video/legacy-1-$i';
+        await db.upsertVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value<String>(uid),
+            title: Value<String>('BOCCHI THE ROCK! 1 - 0$i'),
+            videoPath: Value<String>(episodePath(volume(1), i)),
+          ),
+        );
+        await db.addToCollection(
+          legacy,
+          MediaKind.video,
+          uid,
+          userIntent: false,
+        );
+      }
+
+      final DiscLibraryImportReport report = await import(<String>[
+        volume(1),
+        volume(2),
+      ]);
+      expect(report.imported, 0);
+      expect(
+        report.discs.map((DiscLibraryImportedDisc d) => d.collectionId).toSet(),
+        <int>{legacy},
+      );
+      expect(await memberPaths(legacy), episodesOf(<int>[1, 2]));
+      expect(await db.getAllMediaCollections(), hasLength(1));
+      expect((await db.getMediaCollectionById(legacy))!.organizeKey, isNotNull);
+      expect(await pendingRemovals(), isEmpty);
+    });
+
     test('切集判据改为不切（盘根外包 BD 目录）：其余分集行也从发布组合集解绑', () async {
       // 解绑判「合集是不是这个发布目录的」与并组同一判据：修前解绑仍按盘根上一层
       // （`… vol.1`）比，而合集成员的发布目录已跳过 `BD`，对不上，其余分集行留在
