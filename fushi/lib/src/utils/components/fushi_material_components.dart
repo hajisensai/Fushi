@@ -4715,6 +4715,18 @@ FushiIconButton _headerActionOfMoreEntry(FushiHeaderMoreEntry entry) =>
       onTap: entry.onSelected,
     );
 
+/// Apple iOS 档（[fushiAppleUsesMacMetrics] 为 false）页头 / 顶栏最多平铺几颗
+/// 动作（iOS 27 导航栏尾部惯例，用户 2026-11-24 拍板），其余按收纳优先级收进
+/// 「⋯」。macOS 档与 M3E 不设上限（放得下就全平铺）。
+const int kFushiAppleIosHeaderMaxActions = 3;
+
+/// [fushiResolveHeaderActions] 在当前设计系统 / 档位下至少要收几颗：Apple iOS 档
+/// 超过 [kFushiAppleIosHeaderMaxActions] 的部分，其余 0。
+int fushiHeaderMinCollapsed(BuildContext context, int actionCount) =>
+    isGlassDesign(context) && !fushiAppleUsesMacMetrics(context)
+    ? math.max(0, actionCount - kFushiAppleIosHeaderMaxActions)
+    : 0;
+
 /// 页头 / 顶栏动作行的**唯一**自适应收纳判据（[FushiPageHeader]、外壳动作组
 /// [FushiShellHeaderActions]、自带 AppBar 的页面共用；M3E 与 Apple 同一套）。
 ///
@@ -4736,6 +4748,9 @@ FushiIconButton _headerActionOfMoreEntry(FushiHeaderMoreEntry entry) =>
 /// 收纳不改外露动作的相对顺序，「⋯」恒在最后——焦点遍历即「外露按钮 → ⋯」。
 /// 菜单项由被收纳动作的图标 + 文案（label 优先、回退 tooltip）派生，共用同一个
 /// onTap，禁用态同步置灰。[fit] 非空时展开方向带回差。
+///
+/// Apple iOS 档另有数量上限（[fushiHeaderMinCollapsed]）：宽度放得下也最多平铺
+/// [kFushiAppleIosHeaderMaxActions] 颗，不带字展开；M3E 判据不变。
 FushiResolvedHeaderActions fushiResolveHeaderActions(
   BuildContext context, {
   required List<Widget> actions,
@@ -4811,12 +4826,14 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
     return visible;
   }
 
-  if (flat.isEmpty || !budget.isFinite) {
+  final int minCollapsed = fushiHeaderMinCollapsed(context, flat.length);
+  if (flat.isEmpty || (!budget.isFinite && minCollapsed == 0)) {
     return (items: assemble(const <int>{}), expandLabels: allowLabels);
   }
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final TextScaler textScaler = MediaQuery.textScalerOf(context);
-  if (allowLabels &&
+  if (minCollapsed == 0 &&
+      allowLabels &&
       _estimateHeaderActionsWidth(
             tokens,
             assemble(const <int>{}),
@@ -4851,7 +4868,13 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
     ], textScaler: textScaler);
   }
 
-  final int collapsed = fit == null
+  if (!budget.isFinite) {
+    return (
+      items: assemble(order.take(math.min(minCollapsed, order.length)).toSet()),
+      expandLabels: false,
+    );
+  }
+  final int widthCollapsed = fit == null
       ? fushiHeaderCollapseCount(
           collapsible: order.length,
           widthWith: widthWith,
@@ -4873,6 +4896,10 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
                   : (item.key ?? item.runtimeType),
           ]),
         );
+  final int collapsed = math.max(
+    widthCollapsed,
+    math.min(minCollapsed, order.length),
+  );
   return (items: assemble(order.take(collapsed).toSet()), expandLabels: false);
 }
 

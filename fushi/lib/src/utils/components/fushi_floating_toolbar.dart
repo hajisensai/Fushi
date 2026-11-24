@@ -41,6 +41,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/misc/notice_placement.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show kFushiAppleIosHeaderMaxActions, fushiHeaderMinCollapsed;
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
     show FushiExpressiveLoadingIndicator;
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
@@ -1669,7 +1671,16 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
       pinnedMenu: menuPinned || widget.menu.isNotEmpty,
       slotWidth: fushiTopBarActionSlotWidth(context),
     );
-    return math.max(fit, widget.pinnedActions.length);
+    // Apple iOS 档最多平铺 [kFushiAppleIosHeaderMaxActions] 颗（与页头收纳
+    // [fushiHeaderMinCollapsed] 同一判据），其余进「⋯」；M3E / macOS 档不设上限。
+    int total = 0;
+    for (final List<FushiToolbarItem> g in groups) {
+      total += g.length;
+    }
+    final int cap = fushiHeaderMinCollapsed(context, total) > 0
+        ? kFushiAppleIosHeaderMaxActions
+        : total;
+    return math.max(math.min(fit, cap), widget.pinnedActions.length);
   }
 
   /// 动作组的宽度预算：两条测宽路径（带字排法 / 自适应溢出）共用。

@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/components/fushi_continue_blocks.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
@@ -993,7 +994,7 @@ class FushiContinueStillCard extends StatelessWidget {
             fit: StackFit.expand,
             children: <Widget>[
               entry.cover,
-              ..._StillMaterial.layers(lifted),
+              ..._StillMaterial.layers(context, lifted),
               const IgnorePointer(
                 child: DecoratedBox(
                   decoration: BoxDecoration(
@@ -1125,7 +1126,7 @@ class FushiContinueSideTile extends StatelessWidget {
                 fit: StackFit.expand,
                 children: <Widget>[
                   entry.cover,
-                  ..._StillMaterial.layers(lifted),
+                  ..._StillMaterial.layers(context, lifted),
                   if (subtitle != null && subtitle.isNotEmpty)
                     Positioned(
                       left: 10,
@@ -1342,28 +1343,34 @@ class _StillMaterial extends StatelessWidget {
   final BorderRadius radius;
   final Widget card;
 
-  /// 卡内裁切区里的光层：扫光 + 跟指针的镜面高光。
-  static List<Widget> layers(bool lifted) => <Widget>[
-    IgnorePointer(child: ShelfCoverSheen(active: lifted)),
-    const FushiTiltGlare(),
-  ];
+  /// 卡内裁切区里的光层：扫光 + 跟指针的镜面高光。Apple（[isGlassDesign]）
+  /// 不画——Apple 的卡片只有按压缩放与悬停轻微抬升（用户 2026-11-24）。
+  static List<Widget> layers(BuildContext context, bool lifted) =>
+      isGlassDesign(context)
+      ? const <Widget>[]
+      : <Widget>[
+          IgnorePointer(child: ShelfCoverSheen(active: lifted)),
+          const FushiTiltGlare(),
+        ];
 
   @override
   Widget build(BuildContext context) {
     final bool eink = isEinkTheme(context);
     final bool dark = Theme.of(context).brightness == Brightness.dark;
-    return FushiTilt(
-      child: AnimatedContainer(
-        duration: fushiMotionDuration(context, FushiMotion.medium),
-        curve: FushiMotion.standard,
-        decoration: BoxDecoration(
-          borderRadius: radius,
-          boxShadow: eink
-              ? const <BoxShadow>[]
-              : shelfMaterialShadows(dark: dark, lifted: lifted),
-        ),
-        child: card,
+    final Widget surface = AnimatedContainer(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      curve: FushiMotion.standard,
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: eink
+            ? const <BoxShadow>[]
+            : shelfMaterialShadows(dark: dark, lifted: lifted),
       ),
+      child: card,
     );
+    // Apple：不跟指针 3D 倾斜，按下轻压（[FushiPressScale]），悬停抬升由外层
+    // [FushiHoverLift] 给；M3E 照旧倾斜。
+    if (isGlassDesign(context)) return FushiPressScale(child: surface);
+    return FushiTilt(child: surface);
   }
 }

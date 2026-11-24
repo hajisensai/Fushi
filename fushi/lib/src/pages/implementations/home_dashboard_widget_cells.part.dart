@@ -172,6 +172,9 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
       );
     }
     final double gap = tokens.spacing.gap;
+    if (isGlassDesign(context)) {
+      return _continueHeroApple(tokens, appModel, entries);
+    }
     return HomeWidgetFrame(
       key: const ValueKey<String>('home-continue-card'),
       title: t.home_continue,
@@ -224,6 +227,75 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
       ),
     );
   }
+
+  /// Cupertino「继续」主角（TV app「接着看」式，用户 2026-11-24 拍板）：主卡单独
+  /// 占格、不套分区卡——剧照主卡铺满它那一段（按 cover 裁切），竖封面主卡本身
+  /// 就是一张卡；其余条目（格子够大时）是旁边 / 下面另一块无标题的分组卡。
+  Widget _continueHeroApple(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<_ContinueEntry> entries,
+  ) => KeyedSubtree(
+    key: const ValueKey<String>('home-continue-card'),
+    child: LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        Widget hero(double height) => FushiContinueOrientedEntry(
+          entry: _continueMainEntry(tokens, appModel, entries.first),
+          builder: (FushiContinueEntry main) {
+            if (main.still) {
+              return KeyedSubtree(
+                key: const ValueKey<String>('home-continue-apple-still'),
+                child: FushiContinueStillCard(entry: main),
+              );
+            }
+            final double cover = math.max(60, height - tokens.spacing.gap * 3);
+            return HomeWidgetOverflowClip(
+              child: FushiContinueSpotlight(
+                main: main,
+                heroCoverHeight: cover,
+                soloCoverHeight: cover,
+                staggerEntrance: false,
+              ),
+            );
+          },
+        );
+
+        final _ContinueSplit split = _continueSplitFor(
+          c.biggest,
+          entries.length,
+          minSide: _kContinueMiniSideMin,
+        );
+        if (split == _ContinueSplit.none) return hero(c.maxHeight);
+        final bool sideways = split == _ContinueSplit.side;
+        return _heroWithSide(
+          area: c.biggest,
+          sideways: sideways,
+          hero: hero,
+          side: (Size area) {
+            final double pad = homeWidgetFramePadding(dense: true);
+            return HomeWidgetFrame(
+              title: t.home_continue,
+              icon: FushiIcons.playCircle,
+              hueKey: HomeWidgetKind.continueHero.id,
+              poster: false,
+              dense: true,
+              showHeader: false,
+              child: _continueCardSide(
+                tokens,
+                appModel,
+                entries,
+                Size(
+                  math.max(0, area.width - pad * 2),
+                  math.max(0, area.height - pad * 2),
+                ),
+                sideways,
+              ),
+            );
+          },
+        );
+      },
+    ),
+  );
 
   /// 主卡 + 其余条目两段的分割：[sideways] 时左右（主卡占约 55%），否则上下（主卡占
   /// 约 60%）。[hero] 拿到主卡那段的高度，[side] 拿到其余条目那段的尺寸。
@@ -1552,7 +1624,12 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
           ],
         );
         final FushiCoverBlockColors? colors = style?.colors;
-        if (!wide || colors == null) return _fitCenter(column);
+        if (!wide || colors == null) {
+          // Apple：大数字贴着小标题排（各卡「标题 → 数字」间距一致），不竖向居中。
+          return isGlassDesign(context) && colors == null
+              ? HomeWidgetOverflowClip(child: column)
+              : _fitCenter(column);
+        }
         return Row(
           children: <Widget>[
             ExcludeSemantics(

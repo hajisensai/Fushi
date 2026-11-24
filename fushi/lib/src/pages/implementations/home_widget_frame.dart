@@ -14,8 +14,6 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/models/home_widget_layout.dart'
-    show HomeWidgetCategory, HomeWidgetKind;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
@@ -124,6 +122,9 @@ const double kHomeWidgetHeaderHeight = 18;
 /// 小标题行与内容之间的间距。
 const double kHomeWidgetHeaderGap = 6;
 
+/// Apple 分区卡小标题行与内容之间的间距（Health 摘要卡标题与大数字之间的留白）。
+const double kHomeWidgetAppleHeaderGap = 10;
+
 /// 一块小组件的外框：小标题行 + 撑满剩余空间的内容。
 ///
 /// [onTap] 非空时整块是一个点按目标（也是一个焦点停靠点）；内容里另有按钮时它们
@@ -197,7 +198,8 @@ class HomeWidgetFrame extends StatelessWidget {
         : null;
     // Apple 分区卡（iOS Health / Fitness「摘要」卡与 iOS 小组件口径）：文字与配色
     // 一律取 [FushiAppleColors]——正文 label、次要 secondaryLabel、强调 accent；
-    // 小标题是 footnote semibold 的类别色（[homeWidgetAppleTint]）。海报色块 /
+    // 小标题（图标 + 文字）一律 footnote semibold 的强调色——各卡同色，不按类别
+    // 着色、「追踪」要处理时也不变红（状态由正文表达，用户 2026-11-24）。海报色块 /
     // M3E 不走这里。
     final FushiAppleColors? apple = colors == null && isGlassDesign(context)
         ? appleColorsOf(context)
@@ -212,7 +214,7 @@ class HomeWidgetFrame extends StatelessWidget {
     final Color accent =
         colors?.accent ?? apple?.accent ?? tokens.surfaces.primary;
     final Color headerColor = apple != null
-        ? homeWidgetAppleTint(apple, hueKey, attention: attention)
+        ? apple.accent
         : attention
         ? scheme.error
         : colors != null
@@ -271,7 +273,11 @@ class HomeWidgetFrame extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: kHomeWidgetHeaderGap),
+            SizedBox(
+              height: apple != null
+                  ? kHomeWidgetAppleHeaderGap
+                  : kHomeWidgetHeaderGap,
+            ),
           ],
           Expanded(child: child),
         ],
@@ -489,21 +495,6 @@ class HomeWidgetFigure extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Apple 分区卡小标题的类别色（iOS Health 摘要卡：每类一种系统色）：学习类
-/// （今日 / 近 7 天 / 复习 / 语言目标）= 系统橙（Fitness 活动色）、其余（继续 /
-/// 最近添加 / 工具）= 强调色；[attention]（追踪有要处理的事）= destructive。
-Color homeWidgetAppleTint(
-  FushiAppleColors colors,
-  String hueKey, {
-  bool attention = false,
-}) {
-  if (attention) return colors.destructive;
-  return switch (HomeWidgetKind.fromId(hueKey)?.category) {
-    HomeWidgetCategory.study => colors.warning,
-    _ => colors.accent,
-  };
 }
 
 /// Apple 分区卡的外壳：secondarySystemGroupedBackground 实色、连续曲率圆角

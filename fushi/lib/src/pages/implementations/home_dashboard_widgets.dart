@@ -1182,10 +1182,10 @@ class HomeWeekBars extends StatelessWidget {
     final Color today = color ?? a.accent;
     final Color past = color?.withValues(alpha: 0.35) ?? a.fill;
     final double? line = reference != null && reference! > 0 ? reference : null;
-    final double peak = math.max(
-      values.fold<int>(0, math.max).toDouble(),
-      line ?? 0,
-    );
+    // 纵轴顶留余量（Swift Charts 自动轴取整到「好看」的刻度，最高柱不顶满）。
+    final double peak =
+        math.max(values.fold<int>(0, math.max).toDouble(), line ?? 0) *
+        _kAppleWeekBarsHeadroom;
     final double hairline = 1 / MediaQuery.devicePixelRatioOf(context);
     final List<String>? axis = axisLabels;
     final TextStyle axisStyle =
@@ -1229,18 +1229,24 @@ class HomeWeekBars extends StatelessWidget {
                       LayoutBuilder(
                         builder: (BuildContext _, BoxConstraints c) {
                           final double h = values[i] == 0 ? 0 : barArea * f;
-                          final double r = math.min(
-                            c.maxWidth / 2,
-                            4 * m.scale,
+                          // 柱宽按 Swift Charts 类目轴比例：约半格宽、封顶、居中，
+                          // 宽格里也不成大方块。
+                          final double w = math.min(
+                            c.maxWidth * _kAppleWeekBarBandShare,
+                            _kAppleWeekBarMaxWidth * m.scale,
                           );
-                          return SizedBox(
-                            width: double.infinity,
-                            height: math.max(0, h),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: i == values.length - 1 ? today : past,
-                                borderRadius: BorderRadius.vertical(
-                                  top: Radius.circular(math.min(r, h / 2)),
+                          final double r = math.min(w / 2, 4 * m.scale);
+                          return Align(
+                            alignment: Alignment.bottomCenter,
+                            child: SizedBox(
+                              width: w,
+                              height: math.max(0, h),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: i == values.length - 1 ? today : past,
+                                  borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(math.min(r, h / 2)),
+                                  ),
                                 ),
                               ),
                             ),
@@ -1314,6 +1320,15 @@ class HomeWeekBars extends StatelessWidget {
     );
   }
 }
+
+/// Apple 周柱纵轴顶部余量：最高柱占柱区约 87%。
+const double _kAppleWeekBarsHeadroom = 1.15;
+
+/// Apple 周柱一根占它那一格宽的比例（Swift Charts 类目柱约半格）。
+const double _kAppleWeekBarBandShare = 0.5;
+
+/// Apple 周柱最宽多少（逻辑像素，macOS 档再乘 [FushiAppleMetrics.scale]）。
+const double _kAppleWeekBarMaxWidth = 16;
 
 /// 「最近添加」紧凑行（2026-10-10，横屏 / 宽屏侧栏）：小竖封面 + 标题 + 「类型 ·
 /// 相对时间」一行。侧栏宽度有限，列表比横滑封面行省地方，标题也能完整露出。

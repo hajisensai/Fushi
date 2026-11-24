@@ -3263,7 +3263,11 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 色块下面的面板是否画成海报色块（重设计外壳、且库页布局不是封面网格；墨水屏
   /// 下 [shellRedesignActive] 为 false）。只在 build 期间读（依赖 inherited 外壳
   /// 设置）。
+  ///
+  /// Cupertino（[isGlassDesign]）下恒 false：海报拼贴是 M3E 的版式，Apple 首页一律
+  /// 走分区卡（用户 2026-11-24「不要混搭」）。
   bool get _posterPanels =>
+      !isGlassDesign(context) &&
       shellRedesignActive(context) &&
       shellContentLayoutOf(context) != ShellContentLayout.grid;
 

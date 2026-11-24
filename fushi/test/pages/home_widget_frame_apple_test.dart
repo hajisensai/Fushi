@@ -85,9 +85,9 @@ void main() {
             as ShapeDecoration;
     expect(deco.color, a.secondaryGroupedBackground);
     expect(deco.shape, isA<RoundedSuperellipseBorder>());
-    // 小标题是学习类的类别色（系统橙），不是 M3E sectionLabel。
+    // 小标题各卡统一强调色，不是 M3E sectionLabel、也不按类别着色。
     final Text header = tester.widget<Text>(find.text('Past week'));
-    expect(header.style?.color, a.warning);
+    expect(header.style?.color, a.accent);
     // Swift Charts 式星期首字母。
     expect(find.text('M'), findsOneWidget);
     expect(find.text('T'), findsNWidgets(2));
