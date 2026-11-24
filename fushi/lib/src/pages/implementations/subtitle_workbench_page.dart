@@ -158,17 +158,17 @@ class SubtitleCollectionSpec {
   String get seriesKey => collection.name.trim().toLowerCase();
 }
 
-/// 「为合集获取字幕」入口用：按 [subtitleCollectionDerivedSeasonKeyOf] 派生，叠上
+/// 「为合集获取字幕」入口用：按 [subtitleCollectionDerivedSeasonKeys] 整批派生，叠上
 /// 手动分栏 / 手动季集指定，得到喂给 [SubtitleCollectionPanel.sectionKeys] 的表。
 Future<Map<String, String>> loadCollectionSubtitleSectionKeys(
   FushiDatabase database,
   List<VideoBookRow> members,
 ) async {
   final Map<String, CollectionSectionResolution> resolved =
-      await loadCollectionSections(database, <String, String>{
-        for (final VideoBookRow member in members)
-          member.bookUid: subtitleCollectionDerivedSeasonKeyOf(member),
-      });
+      await loadCollectionSections(
+        database,
+        subtitleCollectionDerivedSeasonKeys(members),
+      );
   return <String, String>{
     for (final MapEntry<String, CollectionSectionResolution> entry
         in resolved.entries)

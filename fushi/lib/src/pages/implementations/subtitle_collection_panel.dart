@@ -18,6 +18,8 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show isDiscMemberPath;
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/src/media/video/anilist_client.dart';
 import 'package:fushi/src/media/video/anilist_failure_notice.dart';
@@ -297,15 +299,33 @@ String subtitleCollectionSeasonKeyOf(
   Map<String, String> sectionKeys = const <String, String>{},
 }) {
   if (sectionKeys[member.bookUid] case final String resolved) return resolved;
-  return subtitleCollectionDerivedSeasonKeyOf(member);
+  return subtitleCollectionDerivedSeasonKeys(<VideoBookRow>[
+    member,
+  ])[member.bookUid]!;
 }
 
-/// [subtitleCollectionSeasonKeyOf] 不看任何手动指定时的文件名派生键（入口把它喂给
-/// `loadCollectionSections` 当派生键）。
-String subtitleCollectionDerivedSeasonKeyOf(VideoBookRow member) {
-  final String fromPath = collectionGroupKeyForFilename(member.videoPath);
-  if (fromPath != kCollectionExtrasGroupKey) return fromPath;
-  return collectionGroupKeyForFilename(member.title);
+/// [subtitleCollectionSeasonKeyOf] 不看任何手动指定时的派生键（`book_uid → 键`，入口
+/// 把它喂给 `loadCollectionSections` 当派生键）。
+///
+/// **整批**按路径派生（[collectionGroupKeysForPaths]，与合集详情页分栏同一判据）：
+/// 切了集的蓝光盘上，分集进第 1 季、同盘整条标题进 PV·特典——这要看同盘的其它成员
+/// 才判得出，逐条按文件名推会把原盘特典与正片混进同一节（BUG-5391）。路径落进
+/// PV·特典、且不是原盘成员时（流媒体成员的 `anime-source://…` 描述等）再退到标题
+/// （远端标题常带 `S04E18`）。
+Map<String, String> subtitleCollectionDerivedSeasonKeys(
+  List<VideoBookRow> members,
+) {
+  final List<String> fromPaths = collectionGroupKeysForPaths(<String>[
+    for (final VideoBookRow member in members) member.videoPath,
+  ]);
+  return <String, String>{
+    for (int i = 0; i < members.length; i++)
+      members[i].bookUid:
+          fromPaths[i] != kCollectionExtrasGroupKey ||
+              isDiscMemberPath(members[i].videoPath)
+          ? fromPaths[i]
+          : collectionGroupKeyForFilename(members[i].title),
+  };
 }
 
 /// 「为合集获取字幕」的分季：把有序成员按季聚成分节（季号升序、PV·特典殿后）。纯函数。
@@ -316,13 +336,18 @@ String subtitleCollectionDerivedSeasonKeyOf(VideoBookRow member) {
 List<CollectionSeasonSection<VideoBookRow>> subtitleCollectionSeasonSections(
   List<VideoBookRow> members, {
   Map<String, String> sectionKeys = const <String, String>{},
-}) => sortCollectionSeasonSections<VideoBookRow>(
-  buildCollectionSeasonSections<VideoBookRow>(
-    members: members,
-    keyOf: (VideoBookRow member) =>
-        subtitleCollectionSeasonKeyOf(member, sectionKeys: sectionKeys),
-  ),
-);
+}) {
+  final Map<String, String> derived = subtitleCollectionDerivedSeasonKeys(
+    members,
+  );
+  return sortCollectionSeasonSections<VideoBookRow>(
+    buildCollectionSeasonSections<VideoBookRow>(
+      members: members,
+      keyOf: (VideoBookRow member) =>
+          sectionKeys[member.bookUid] ?? derived[member.bookUid]!,
+    ),
+  );
+}
 
 /// 多季合集打开面板时先选哪一季：[preferredSeason] 对应的季存在就用它（入口带来的
 /// 「当前季」：详情页选中的 tab / 播放页正在播的这一集），否则第一个真实季（没有
