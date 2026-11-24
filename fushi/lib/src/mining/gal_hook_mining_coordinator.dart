@@ -75,20 +75,51 @@ class GalHookLineScreenshot {
   final Uint8List pngBytes;
 }
 
+/// 一次 gal 场景卡**没走到制卡结局**（[GalHookMiningResult.aborted]）时停在哪一步。
+///
+/// 提示文案按它分流（[GalHookMiningResult.failureStage]）：写卡阶段被引擎中止、行已失效
+/// 这些都不是「窗口截图失败」，不能一律报成截图失败（#4362 审查遗留）。
+enum GalHookMiningFailureStage {
+  /// 采样前这句台词已失效：不在当前会话、出现位置已变、或冻结截图与该行对不上。
+  lineUnavailable,
+
+  /// 没有绑定游戏窗口（或不在外部窗口模式）。
+  windowUnbound,
+
+  /// 抓游戏窗口画面失败。
+  capture,
+
+  /// 「只用游戏原始资源」的音频门禁：没拿到对应语音，按设置拒绝制卡。
+  audioGate,
+
+  /// 画面与句音都已到手，写卡阶段被制卡引擎中止（缺必需音频 / 封面与音频都没产出等）。
+  write,
+
+  /// 编排本身抛了未预期的异常（串行队列兜底）。
+  internal,
+}
+
 class GalHookMiningResult {
   const GalHookMiningResult({
     this.outcome,
+    this.failureStage,
     this.failureReason,
     this.sentenceAudioMissing = false,
     this.degradedToStill = false,
     this.degradedToAnimated = false,
     this.staleScene = false,
-    this.audioFallbackDisabled = false,
     this.unmappedTokens = const <String>[],
     this.retryWrite,
-  });
+  }) : assert(
+         (outcome == null) == (failureStage != null),
+         'an aborted result must say which stage stopped it; '
+         'a result with an outcome has no failure stage',
+       );
 
   final MineOutcome? outcome;
+
+  /// [aborted] 时非空：停在哪一步。有 [outcome]（含失败结局）时为空。
+  final GalHookMiningFailureStage? failureStage;
   final String? failureReason;
   final bool sentenceAudioMissing;
   final bool degradedToStill;
@@ -101,7 +132,10 @@ class GalHookMiningResult {
   /// 无法重建历史行当时的画面，故显式标注「画面可能与该台词不对应」，供调用方提示用户
   /// （BUG-955：禁止把当前画面冒充成历史台词的画面而不告知）。
   final bool staleScene;
-  final bool audioFallbackDisabled;
+
+  /// 被「只用游戏原始资源」音频门禁拒绝（[GalHookMiningFailureStage.audioGate]）。
+  bool get audioFallbackDisabled =>
+      failureStage == GalHookMiningFailureStage.audioGate;
   final List<String> unmappedTokens;
 
   /// 反馈 y90oiVojic：写卡这一步失败（Anki 没开 / 没配置 / 引擎中止）时非空。用**这一次
@@ -425,7 +459,10 @@ class GalHookMiningCoordinator {
     GalHookLineScreenshot? previewStill,
   }) async {
     GalHookMiningResult failure(Object error, StackTrace stack) =>
-        GalHookMiningResult(failureReason: error.toString());
+        GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.internal,
+          failureReason: error.toString(),
+        );
     void logFailure(Object error, StackTrace stack) => ErrorLogService.instance
         .log('GalHookMiningCoordinator.mineLine', error, stack);
     // 两段队列都是「串行 + 永不毒化」（BUG-956）：单次制卡异常（含错误日志自身抛）
@@ -518,6 +555,7 @@ class GalHookMiningCoordinator {
     if (entry == null || !_lineValidator(entry)) {
       return done(
         const GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.lineUnavailable,
           failureReason: 'captured line is no longer available',
         ),
       );
@@ -527,6 +565,7 @@ class GalHookMiningCoordinator {
             providedLineScreenshot.pngBytes.isEmpty)) {
       return done(
         const GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.lineUnavailable,
           failureReason: 'screenshot does not match captured line',
         ),
       );
@@ -537,6 +576,7 @@ class GalHookMiningCoordinator {
       // 打码位置是在那张预览图上框的：换了一行就不是同一张图，不能把码打到别的画面上。
       return done(
         const GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.lineUnavailable,
           failureReason: 'screenshot does not match captured line',
         ),
       );
@@ -557,13 +597,17 @@ class GalHookMiningCoordinator {
     if (!occurrenceIsCurrent()) {
       return done(
         const GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.lineUnavailable,
           failureReason: 'captured occurrence is no longer available',
         ),
       );
     }
     if (!state.externalWindowMode || window == null) {
       return done(
-        const GalHookMiningResult(failureReason: 'game window is not bound'),
+        const GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.windowUnbound,
+          failureReason: 'game window is not bound',
+        ),
       );
     }
 
@@ -611,6 +655,7 @@ class GalHookMiningCoordinator {
 
     GalHookMiningResult captureFailed(WindowCaptureResult still) =>
         GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.capture,
           failureReason: still.error ?? 'game window capture failed',
         );
 
@@ -824,6 +869,7 @@ class GalHookMiningCoordinator {
             stack,
           );
           return const GalHookMiningResult(
+            failureStage: GalHookMiningFailureStage.capture,
             failureReason: 'game window capture failed',
           );
         }
@@ -865,10 +911,10 @@ class GalHookMiningCoordinator {
     if (sentenceAudioMissing &&
         job.state.audioFallbackPolicy.blocksMiningWhenMissing) {
       return const GalHookMiningResult(
+        failureStage: GalHookMiningFailureStage.audioGate,
         failureReason:
             'no matching game resource audio; audio fallback is disabled',
         sentenceAudioMissing: true,
-        audioFallbackDisabled: true,
       );
     }
     await writeDictionaryMediaCache(
@@ -890,6 +936,7 @@ class GalHookMiningCoordinator {
         // 还有没有这一行无关。
         if (!retrying && !job.occurrenceIsCurrent()) {
           return const GalHookMiningResult(
+            failureStage: GalHookMiningFailureStage.lineUnavailable,
             failureReason: 'captured occurrence is no longer available',
           );
         }
@@ -928,6 +975,7 @@ class GalHookMiningCoordinator {
         );
         if (mined.aborted || mined.outcome is! MineOutcome) {
           return GalHookMiningResult(
+            failureStage: GalHookMiningFailureStage.write,
             failureReason: mined.abortReason ?? 'scene card mining aborted',
             sentenceAudioMissing: sentenceAudioMissing,
             degradedToStill: degradedToStill,
@@ -971,8 +1019,10 @@ class GalHookMiningCoordinator {
     retryWrite = ({required BaseAnkiRepository repo}) =>
         _finishQueue.enqueue<GalHookMiningResult>(
           () => writeCard(retrying: true, repo: repo),
-          buildFailure: (Object error, StackTrace stack) =>
-              GalHookMiningResult(failureReason: error.toString()),
+          buildFailure: (Object error, StackTrace stack) => GalHookMiningResult(
+            failureStage: GalHookMiningFailureStage.internal,
+            failureReason: error.toString(),
+          ),
           onError: (Object error, StackTrace stack) => ErrorLogService.instance
               .log('GalHookMiningCoordinator.retryWrite', error, stack),
         );

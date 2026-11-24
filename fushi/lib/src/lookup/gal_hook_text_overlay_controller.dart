@@ -29,6 +29,7 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
+import 'package:fushi/src/mining/gal_hook_mining_failure_text.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/galgame_window_gif.dart';
@@ -3018,7 +3019,10 @@ class GalHookTextOverlayController extends ChangeNotifier {
         error,
         stack,
       );
-      result = GalHookMiningResult(failureReason: '$error');
+      result = GalHookMiningResult(
+        failureStage: GalHookMiningFailureStage.internal,
+        failureReason: '$error',
+      );
     }
     final GalHookRetryWrite? retryWrite = result.retryWrite;
     _reportLookupMine(
@@ -3066,13 +3070,9 @@ class GalHookTextOverlayController extends ChangeNotifier {
         ? null
         : MineNoticeAction(label: t.card_notice_retry, onPressed: retry);
     if (result.aborted) {
-      // 截图已经成功后，resource-only 音频门禁也可能中止制卡。不要把所有
-      // abort 都误报成“窗口截图失败”；与 texthooker 页入口保持同一分流。
-      final String abortMessage = result.audioFallbackDisabled
-          ? t.game_audio_fallback_disabled_missing
-          : result.failureReason != null
-          ? '${t.external_window_capture_failed}：${result.failureReason}'
-          : t.external_window_capture_failed;
+      // 按停在哪一步分流（行失效 / 没绑窗口 / 截图 / 音频门禁 / 写卡被引擎中止），
+      // 不把所有 abort 都报成「窗口截图失败」；与 texthooker 页入口共用同一函数。
+      final String abortMessage = galHookMiningAbortMessage(result);
       FushiToast.showMine(
         msg: abortMessage,
         status: MineToastStatus.failed,

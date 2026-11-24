@@ -426,7 +426,20 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   late bool _showLyrics = widget.startWithLyrics;
 
   String? _loadedUid;
-  MusicLyricsResolution? _lyrics;
+  MusicLyricsResolution? _lyricsValue;
+
+  /// 当前这首歌词带了哪些副行（翻译 / 罗马音 / 注音），随 [_lyrics] 同步。歌词显示面板
+  /// 订阅它：面板开着时切歌，置灰状态跟着新歌词走（不是打开那一刻的快照）。
+  final ValueNotifier<MusicLyricsExtras> _lyricsExtras =
+      ValueNotifier<MusicLyricsExtras>(MusicLyricsExtras.none);
+
+  MusicLyricsResolution? get _lyrics => _lyricsValue;
+
+  /// 换歌词的唯一入口：同时刷新 [_lyricsExtras]，不让两份状态各改各的。
+  set _lyrics(MusicLyricsResolution? value) {
+    _lyricsValue = value;
+    _lyricsExtras.value = MusicLyricsExtras.of(value?.timeline);
+  }
 
   /// 音频旁同名 `.cdg`（CD+G 画面，§9.2）；CUE 曲目不认。
   String? _cdgPath;
@@ -564,6 +577,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     _lookupCursor.dispose();
     _rangePreview.dispose();
     _companion.dispose();
+    _lyricsExtras.dispose();
     _playbackRouteMark.dispose();
     _engine.removeListener(_onEngine);
     unawaited(_generatedSub?.cancel());
@@ -2263,7 +2277,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                 showMusicLyricsDisplaySheet(
                   _themedContext,
                   prefs: appModelNoUpdate.prefsRepo,
-                  extras: MusicLyricsExtras.of(_lyrics?.timeline),
+                  extras: _lyricsExtras,
                 ),
               ),
             ),

@@ -12,7 +12,13 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_window_gif.dart'
     show GalWindowAnimatedCapture;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
+    show
+        ImmersionMiningRequest,
+        ImmersionMiningResult,
+        MiningAnimatedFormat,
+        MiningStillFormat,
+        VideoMiningImageMode;
+import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
@@ -112,6 +118,29 @@ class _CoverBytesRepo extends _RecordingRepo {
   }
 }
 
+/// 写卡阶段被制卡引擎中止（缺必需音频 / 封面与音频都没产出）的替身。
+class _AbortingEngine extends ImmersionMiningEngine {
+  int calls = 0;
+
+  @override
+  Future<ImmersionMiningResult> mine(
+    ImmersionMiningRequest req, {
+    required MiningMediaCompression compression,
+    required FutureOr<String> tempDir,
+    required BaseAnkiRepository repo,
+    FfmpegFailureReporter? onFailure,
+    FfmpegFailureReporter? onCoverFailure,
+    FfmpegFailureReporter? onAudioFailure,
+    AudioSourceFallbackReporter? onAudioSourceFallback,
+  }) async {
+    calls++;
+    return const ImmersionMiningResult(
+      aborted: true,
+      abortReason: 'required audio missing',
+    );
+  }
+}
+
 /// 反馈 y90oiVojic：按脚本依次回写卡结果；[gate] 非空时每次写卡先等它（模拟慢编码 /
 /// 慢后端）。
 class _ScriptedRepo extends _RecordingRepo {
@@ -175,8 +204,10 @@ void main() {
     gif,
     Future<WindowCaptureResult> Function(int hwnd)? still,
     Future<Directory> Function()? tempFactory,
+    ImmersionMiningEngine? engine,
   }) => GalHookMiningCoordinator(
     session: session,
+    engine: engine,
     textService: service,
     lineLookup: service.entryById,
     lineValidator: validator,
@@ -593,6 +624,7 @@ void main() {
         );
 
     expect(failed.aborted, isTrue);
+    expect(failed.failureStage, GalHookMiningFailureStage.capture);
     expect(failed.failureReason, 'window disappeared');
     expect(failedRepo.contexts, isEmpty);
   });
@@ -880,6 +912,7 @@ void main() {
         );
 
     expect(result.aborted, isTrue);
+    expect(result.failureStage, GalHookMiningFailureStage.lineUnavailable);
     expect(result.failureReason, contains('no longer available'));
     expect(gifCalls, 0);
     expect(audioCalls, 0);
@@ -1019,6 +1052,7 @@ void main() {
           );
 
       expect(result.aborted, isTrue);
+      expect(result.failureStage, GalHookMiningFailureStage.audioGate);
       expect(result.audioFallbackDisabled, isTrue);
       expect(result.sentenceAudioMissing, isTrue);
       expect(repo.contexts, isEmpty);
@@ -1460,6 +1494,26 @@ void main() {
           );
       expect(result.duplicate, isTrue);
       expect(result.retryWrite, isNull);
+    });
+
+    // #4362 审查遗留：画面与句音都已到手、写卡阶段被引擎中止，结果必须标成写卡阶段，
+    // 提示才不会再说成「窗口截图失败」。
+    test('写卡阶段被引擎中止：failureStage = write，可重试', () async {
+      final TexthookerLineEntry entry = service.appendLine('中止の台詞')!;
+      final _AbortingEngine engine = _AbortingEngine();
+      final GalHookMiningResult result =
+          await coordinator(validator: (_) => true, engine: engine).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '中止'},
+            compression: MiningMediaCompression.compressed,
+            repo: _RecordingRepo(),
+          );
+      expect(engine.calls, 1);
+      expect(result.aborted, isTrue);
+      expect(result.failureStage, GalHookMiningFailureStage.write);
+      expect(result.failureReason, 'required audio missing');
+      expect(result.audioFallbackDisabled, isFalse);
+      expect(result.retryWrite, isNotNull);
     });
 
     test('queued 回包：popup.js 画「已加入」并解锁，不报失败', () {
