@@ -30,7 +30,7 @@ Widget _app(
   final ThemeData theme = buildFushiThemeData(
     scheme: _scheme,
     textTheme: Typography.material2021().black,
-    glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: glass ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
     glassDesign: glass,
   ).copyWith(platform: platform);
   return MaterialApp(

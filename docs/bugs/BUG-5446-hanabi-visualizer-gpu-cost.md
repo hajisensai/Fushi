@@ -1,0 +1,20 @@
+## BUG-5446 · 花火歌词动画 GPU 占用超高
+- **报告**：2026-11-24（用户：Windows 桌面约 2000 px 宽屏、全屏歌词页开「花火」样式时 GPU 占用超高）
+- **真实性**：✅ 真 bug，三处根因叠加。Windows Profile 构建实测（`fushi/integration_test/hanabi_gpu_perf_itest.dart`，窗口 1974×1054 物理像素、DPR 2、144 Hz，Impeller GLES/ANGLE，进程显存与私有内存由 `\GPU Process Memory` / `Get-Process` 逐秒采样）：
+  - 修前：花火播放中进程显存几秒内涨到约 9 GB（显卡上限）、私有内存 14 GB，随后 `GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT` → FATAL 崩溃；关全屏辉光时显存仍 0.6–9 GB 锯齿、raster p90 48 ms / max 220 ms、只出 58 帧/秒；暂停（开动态）时仍逐帧重画整场景：build p50 4.3 ms、raster p50 6.1 ms、显存常驻 2.2 GB、GPU 3D 24.9%（同条件流光 4.3%、绘光 2.1%）。
+  - 根因 1（显存暴涨，主因）：`fushi/lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_collage.dart:942-976` `drawCollageTiling` 每帧用 `ui.ImageShader(TileMode.repeated)` + `drawRect` 平铺 toImageSync 出来的拼贴纹理（装饰带 / 胶片 / 网点底纹 / 图案贴片）。按层二分（每次只留一类绘制）：只留拼贴层即复现、去掉平铺即消失；换 `FilterQuality.low`、复用同一个 ImageShader、去 tint 都仍复现。引擎 / ANGLE 侧的具体机制未查清（Impeller 源码 `TiledTextureContents` 路径看不出每帧分配）。
+  - 根因 2（每帧整场景画 4 遍）：`hanabi_scene.dart:1100-1127` `_paintScreenBloom` 三层全屏辉光各开一个全屏 saveLayer（模糊 + 提亮矩阵）把整个场景 picture 重放一遍，加上 `:1006` 本体，每帧场景栅格化 4 次；folia 原版是场景层画进一张纹理再做 bloom。
+  - 根因 3（暂停时满帧重画）：`lyric_visualizer_frame.dart:115` `_wantsTicker => playing || motion`，开着动态效果时暂停也逐帧推 tick；花火画面只由歌词时间决定（`hanabi_visualizer.dart:356` 的画家每 tick 重画），暂停时照刷新率重画整场景。
+  - 附带：`hanabi_scene.dart:1019` 片尾卡设的 `_batch.halo` 从不归零，回拖 / 单曲循环后每个镜头的烟花 flush 多出 5 层全屏模糊。
+- **[x] ① 已修复** —
+  - 平铺改成精灵批：覆盖 rect 的每个格子（边缘格子裁 src）一次 `drawRawAtlas`，tint × alpha 走精灵颜色 modulate（`collageTileBatch` / `drawCollageTiling`），与烟花、装饰件同一条已验证平稳的路径；纹理、图案、走片速度都不变。
+  - 全屏辉光只栅格化一次：场景 picture 按设备像素 `toImageSync` 成一张纹理（`rasterizeHanabiSceneLayer`），三层辉光直接对这张纹理 `drawImage` + 提亮 / 模糊滤镜加色叠回；本体仍直接画 picture（不改与背景的混合结果），σ、权重、色调不变。
+  - `LyricVisualizerFrame` 加 `idleAnimation`（默认 true，其余样式行为不变）；花火传 false，暂停时 Ticker 停、只在输入变化时重画一次。
+  - 每帧开始把场景火花批次的 `halo` 归零，片尾卡仍按「辉光」参数挂。
+  - 修后同一探针：花火播放中 raster p50 1.15 / p90 1.60 / max 5.8 ms、160 帧/秒，关辉光 p90 1.45 ms；整段花火场景进程显存 ≤ 0.73 GB、私有内存 ≤ 1.3 GB，不再崩溃；暂停 build p50 0.07 ms（不再重画；探针的 fullyLive 帧策略仍在出帧，真实 app 里 Ticker 停后不再要帧）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/music/visualizer/modes/hanabi_collage_test.dart`（平铺格子不重不漏铺满 rect、src 不越界、颜色编码 tint × alpha；源码守卫：花火目录不再出现 `ImageShader(`）、`hanabi_scene_test.dart`（辉光开时顶层只 drawPicture 1 次 + 3 次 drawImage、无带滤镜的 saveLayer，关辉光 0 次 drawImage；栅格化按设备像素出图；片尾卡后回拖 halo 归零）、`hanabi_visualizer_test.dart`（花火暂停 + 开动态不再要帧、播放照常要帧；驱动器默认有闲置动画照常要帧、`idleAnimation: false` 停帧）；设备级探针 `fushi/integration_test/hanabi_gpu_perf_itest.dart`（手动跑，profile）。
+- **备注**：
+  - 未在用户的真实歌曲 / 共享背景组合下复测，探针为黑底、合成歌词；GPU 3D 百分比在该探针下噪声大（fullyLive 帧策略持续出帧），以 raster 帧时与显存为主证据。
+  - 「辉光」参数在 folia 里挂在每个镜头的烟花层上，本仓花火的镜头烟花层从未挂（只有片尾卡挂），保真缺口另议，本次未改。
+  - 引擎侧 ImageShader 平铺显存暴涨的机制未查清；其他用 `ImageShader` 的样式（意象 metaphor、歌词背景、全景）是否同样受影响未验证。
+  - 流光（luminous）基线自身在探针开头也出现过约 4 GB 的瞬时显存峰值，另案未查。

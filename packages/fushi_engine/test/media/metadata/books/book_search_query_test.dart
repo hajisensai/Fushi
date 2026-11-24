@@ -93,6 +93,58 @@ void main() {
     });
   });
 
+  group('主标题（去副标题）', () {
+    test('全角分隔符随处切；中日文书名按第一个空白切', () {
+      expect(bookTitleMainPart('テスト漫画：ブルー'), 'テスト漫画');
+      expect(bookTitleMainPart('ワンパンマン ～外伝～'), 'ワンパンマン');
+      expect(bookTitleMainPart('ソードアート・オンライン プログレッシブ'), 'ソードアート・オンライン');
+      expect(bookTitleMainPart('Spice and Wolf: Spring Log'), 'Spice and Wolf');
+    });
+
+    test('半角 - ~ : 两边都是中日韩字时也算分隔（文件名常见写法）', () {
+      expect(bookTitleMainPart('ワンパンマン~外伝~'), 'ワンパンマン');
+      expect(bookTitleMainPart('三体-黑暗森林'), '三体');
+      expect(bookTitleMainPart('テスト漫画:ブルー'), 'テスト漫画');
+      expect(bookTitleMainPart('テスト漫画－ブルー'), 'テスト漫画');
+      expect(bookTitleMainPart('Re:ゼロから始める異世界生活 ~外伝~'), 'Re:ゼロから始める異世界生活');
+    });
+
+    test('切不出像样的主标题时 null', () {
+      expect(bookTitleMainPart('One Piece'), isNull);
+      expect(bookTitleMainPart('Spider-Man'), isNull);
+      expect(bookTitleMainPart('Re:ゼロから始める異世界生活'), isNull);
+      expect(bookTitleMainPart('86―エイティシックス―'), isNull);
+      expect(bookTitleMainPart('나 혼자만 레벨업'), isNull);
+      expect(bookTitleMainPart('ホリミヤ'), isNull);
+    });
+
+    test('系列级最后试主标题；单卷级在「名」之后试', () {
+      expect(series('テスト漫画：ブルー 第2巻'), <String>['テスト漫画：ブルー', 'テスト漫画']);
+      expect(volume('テスト漫画：ブルー 第2巻'), <String>[
+        'テスト漫画：ブルー 第2巻',
+        'テスト漫画：ブルー 2',
+        'テスト漫画：ブルー',
+        'テスト漫画',
+      ]);
+    });
+
+    test('bookSeriesSearchQueries：输入已是系列名，不再去卷号', () {
+      expect(bookSeriesSearchQueries('Steins;Gate 0'), <String>[
+        'Steins;Gate 0',
+      ]);
+      expect(bookSeriesSearchQueries('Spider-Man 2099'), <String>[
+        'Spider-Man 2099',
+      ]);
+      expect(bookSeriesSearchQueries('テスト漫画：ブルー'), series('テスト漫画：ブルー 第2巻'));
+    });
+
+    test('bookSearchSeriesTitle：去标签与卷号', () {
+      expect(bookSearchSeriesTitle('[川原礫] ソードアート・オンライン 01'), 'ソードアート・オンライン');
+      expect(bookSearchSeriesTitle('[Comic][进击的巨人][諫山創] Vol.01'), '进击的巨人');
+      expect(bookSearchSeriesTitle('ホリミヤ'), 'ホリミヤ');
+    });
+  });
+
   group('splitBookTitleScripts', () {
     test('只有两种文字都在时才拆', () {
       expect(splitBookTitleScripts('ONE PIECE ワンピース'), (

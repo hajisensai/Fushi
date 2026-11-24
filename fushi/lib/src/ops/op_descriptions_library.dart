@@ -1783,6 +1783,29 @@ List<OpDescription> _describeMangaOcrOps(OpDescribeKit kit) {
 // AI 整理库（已有撤销机制：直接挂到 organize-undo）
 // ─────────────────────────────────────────────────────────────────────────
 
+/// 同意 / 暂缓一条整理建议的撤销：调 `proposals/:id/undo`，建议回到等确认。
+OpUndo _proposalUndo(OpDescribeKit kit) => opCustomUndo(
+  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) =>
+      <String, Object?>{'id': _map(result)['id']},
+  describe: (Map<String, Object?> p) => 'organize suggestion ${p['id']}',
+  revert: (Map<String, Object?> payload) async {
+    final Object? id = payload['id'];
+    if (id == null) return const OpUndoOutcome.done();
+    try {
+      await kit.callRoute(
+        'POST',
+        '$_organize/proposals/:id/undo',
+        params: <String, String>{'id': '$id'},
+      );
+    } on CtlFailure {
+      return const OpUndoOutcome.superseded(
+        'suggestion was already undone or the collection is gone',
+      );
+    }
+    return const OpUndoOutcome.done();
+  },
+);
+
 List<OpDescription> _describeOrganizeOps(OpDescribeKit kit) => <OpDescription>[
   OpDescription(
     id: 'library.organize.run',
@@ -1871,24 +1894,47 @@ List<OpDescription> _describeOrganizeOps(OpDescribeKit kit) => <OpDescription>[
     method: 'GET',
     pattern: '$_organize/proposals',
     summary:
-        'AI-organize suggestions waiting for the user: merging or renaming '
-        "the user's own collections (never applied automatically).",
+        'Suggestions waiting for the user: merging, renaming or removing '
+        "members from the user's own collections (never applied "
+        'automatically; kind merge / rename / removeMembers, removeMembers '
+        'carries members and a reasonCode such as disc_extra).',
     params: <OpParam>[
       OpParam.boolean(
         'all',
-        description: 'Also list accepted / rejected / stale suggestions.',
+        description:
+            'Also list accepted / rejected / deferred / stale suggestions.',
       ),
     ],
   ),
-  const OpDescription(
+  OpDescription(
     id: 'library.organize.proposal.accept',
     method: 'POST',
     pattern: '$_organize/proposals/:id/accept',
     summary:
-        'Apply one pending suggestion as the user (merge or rename the '
-        "user's collections). Not part of organize undo.",
-    risk: OpRisk.irreversible,
-    params: <OpParam>[
+        'Apply one pending suggestion as the user (merge, rename, or remove '
+        "members from the user's collections). Undo puts it back and the "
+        'suggestion returns to pending.',
+    risk: OpRisk.write,
+    params: const <OpParam>[
+      OpParam.string(
+        'id',
+        description: 'Suggestion id from library.organize.proposals.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+    undo: _proposalUndo(kit),
+  ),
+  OpDescription(
+    id: 'library.organize.proposal.defer',
+    method: 'POST',
+    pattern: '$_organize/proposals/:id/defer',
+    summary:
+        'Not this time: hide one pending suggestion on this device for 7 days; '
+        'it may be suggested again afterwards.',
+    risk: OpRisk.write,
+    undo: _proposalUndo(kit),
+    params: const <OpParam>[
       OpParam.string(
         'id',
         description: 'Suggestion id from library.organize.proposals.',
@@ -1902,13 +1948,32 @@ List<OpDescription> _describeOrganizeOps(OpDescribeKit kit) => <OpDescription>[
     method: 'POST',
     pattern: '$_organize/proposals/:id/reject',
     summary:
-        'Reject one pending suggestion; the same suggestion is not offered '
-        'again.',
+        'Never: reject one pending suggestion. Members it would remove or merge '
+        'away are pinned to their collection (synced), so no device suggests '
+        'it again.',
     risk: OpRisk.irreversible,
     params: <OpParam>[
       OpParam.string(
         'id',
         description: 'Suggestion id from library.organize.proposals.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+  ),
+  const OpDescription(
+    id: 'library.organize.proposal.undo',
+    method: 'POST',
+    pattern: '$_organize/proposals/:id/undo',
+    summary:
+        'Undo an accepted suggestion (put removed members back in place, '
+        'split a merge, rename back) or a deferred one; the suggestion returns '
+        'to pending.',
+    risk: OpRisk.irreversible,
+    params: <OpParam>[
+      OpParam.string(
+        'id',
+        description: 'Accepted suggestion id from library.organize.proposals.',
         required: true,
         inPath: true,
       ),

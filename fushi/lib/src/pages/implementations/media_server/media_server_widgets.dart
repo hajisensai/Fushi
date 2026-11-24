@@ -1,4 +1,6 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
@@ -237,7 +239,7 @@ class MediaServerStatusDot extends StatelessWidget {
     // 「亮起」的落位感（尺寸走 spatial 弹簧）。墨水屏 / 减弱动态效果下瞬切。
     final FushiMotionScheme motion = context.fushiMotion;
     final double size = status == MediaServerConnectionStatus.online ? 10 : 8;
-    return Tooltip(
+    return FushiTooltip(
       message: label,
       child: Semantics(
         label: label,

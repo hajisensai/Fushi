@@ -64,27 +64,43 @@ bool isEinkTheme(BuildContext context) {
   return Theme.of(context).extension<FushiEinkTheme>()?.einkMode ?? false;
 }
 
-/// 功能层表面（导航 / 底部弹层 / 对话框）的材质。与颜色主题正交：颜色仍由
-/// ColorScheme 决定，这里只决定表面是实心还是半透明 + 背景模糊。
+/// Apple（Cupertino）设计系统下悬浮控件层（按钮、栏、菜单、对话框）的玻璃画质
+/// 档位，即设置 › 外观 ›「玻璃画质」。与颜色主题正交：颜色仍由 ColorScheme
+/// 决定，这里只决定表面是实色还是哪一档 `liquid_glass_widgets` 玻璃。
+///
+/// 判据只有一处：[glassMaterialOf]（已扣除墨水屏 / 增强对比度 / 着色器支持）；
+/// 消费端只读它，不自己再看偏好。MD3（M3E）恒为 [off]。
 enum FushiGlassMaterial {
-  /// 实心表面（默认）。
+  /// 实色：无模糊、无着色器（2026-10-12 起 Apple 外观的观感）。系统「降低透明度
+  /// / 增强对比度」、墨水屏下强制此档。
   off,
 
-  /// 毛玻璃：半透明填充 + BackdropFilter 模糊。
-  frosted,
+  /// 精简：`GlassQuality.minimal`，零自定义着色器，BackdropFilter 模糊 +
+  /// iOS 27 中性色调（`GlassThemeVariant.minimalLight` / `minimalDark`）。默认档。
+  minimal,
 
-  /// 液态玻璃：折射 / 色散 / 高光着色器（`liquid_glass_widgets`）。只在引擎
-  /// 支持着色器 ImageFilter（Impeller）时生效，否则 [glassMaterialOf] 降级为
-  /// [frosted]。
-  liquid;
+  /// 标准：`GlassQuality.standard`，轻量着色器（高光边 + 折射），Skia 也能跑。
+  standard,
 
-  /// 偏好值（`glass_material`）→ 枚举；未知值回落 [off]。
+  /// 高级：静态主表面（栏、对话框、菜单）与库的英雄控件用
+  /// `GlassQuality.premium`（完整 iOS 27 材质），其余 standard。premium 需要
+  /// 引擎支持着色器 ImageFilter（Impeller），否则 [glassMaterialOf] 降为 [standard]。
+  premium;
+
+  /// 偏好 `glass_quality` 缺省 / 读不懂时的档位。
+  static const FushiGlassMaterial defaultTier = FushiGlassMaterial.minimal;
+
+  /// 偏好值（`glass_quality`，存枚举名）→ 枚举；缺省 / 未知值回落 [defaultTier]。
   static FushiGlassMaterial fromPrefValue(String? value) {
     for (final FushiGlassMaterial m in FushiGlassMaterial.values) {
       if (m.name == value) return m;
     }
-    return FushiGlassMaterial.off;
+    return defaultTier;
   }
+
+  /// 是否走库的着色器路径（standard / premium）。
+  bool get usesShader =>
+      this == FushiGlassMaterial.standard || this == FushiGlassMaterial.premium;
 }
 
 /// 玻璃材质的 ThemeExtension 载体，与 [FushiEinkTheme] 同一写法：挂在
@@ -93,7 +109,7 @@ enum FushiGlassMaterial {
 class FushiGlassTheme extends ThemeExtension<FushiGlassTheme> {
   const FushiGlassTheme(this.material, {this.glassDesign = false});
 
-  /// 表面材质（off / frosted / liquid），已扣除系统降低透明度。
+  /// 玻璃画质档位（off / minimal / standard / premium），已扣除系统降低透明度。
   final FushiGlassMaterial material;
 
   /// 是否「玻璃」设计系统：为 true 时共享组件与控件包装渲染
@@ -124,10 +140,12 @@ class FushiGlassTheme extends ThemeExtension<FushiGlassTheme> {
 bool Function() debugShaderFilterSupported = () =>
     ImageFilter.isShaderFilterSupported;
 
-/// 当前上下文实际生效的玻璃材质。墨水屏（半透明 = 灰阶抖动 + 残影）与系统
-/// 「增强对比度」（[MediaQueryData.highContrast]）下一律回退 [FushiGlassMaterial.off]；
-/// 读不到扩展（测试裸 ThemeData、查词弹窗主题）同样是 off。[FushiGlassMaterial.liquid]
-/// 在不支持着色器 ImageFilter 的引擎（Skia 后端）上降级为 frosted。
+/// 当前上下文实际生效的玻璃画质档位——全应用唯一判据。墨水屏（半透明 = 灰阶
+/// 抖动 + 残影）与系统「增强对比度」（[MediaQueryData.highContrast]）下一律回退
+/// [FushiGlassMaterial.off]（系统「降低透明度」已在主题层扣除）；读不到扩展
+/// （测试裸 ThemeData、查词弹窗主题）同样是 off。[FushiGlassMaterial.premium]
+/// 在不支持着色器 ImageFilter 的引擎上降为 standard（standard 的轻量着色器是
+/// 普通片元着色器，不需要 ImageFilter.shader，Skia 上照样能跑）。
 FushiGlassMaterial glassMaterialOf(BuildContext context) {
   final FushiGlassMaterial material =
       Theme.of(context).extension<FushiGlassTheme>()?.material ??
@@ -137,8 +155,8 @@ FushiGlassMaterial glassMaterialOf(BuildContext context) {
   if (MediaQuery.maybeHighContrastOf(context) ?? false) {
     return FushiGlassMaterial.off;
   }
-  if (material == FushiGlassMaterial.liquid && !debugShaderFilterSupported()) {
-    return FushiGlassMaterial.frosted;
+  if (material == FushiGlassMaterial.premium && !debugShaderFilterSupported()) {
+    return FushiGlassMaterial.standard;
   }
   return material;
 }

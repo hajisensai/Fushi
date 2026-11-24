@@ -335,6 +335,54 @@ void main() {
       }
     });
 
+    for (final bool userIntent in <bool>[false, true]) {
+      test('用户合集被并掉（userIntent=$userIntent）后同步不按对端旧副本重建', () async {
+        // 真库实测：AI 复查把几个原盘分卷用户合集并进一个，几秒后同步把对端仍「活
+        // 着、归用户」的旧副本当成「用户接手」按原样重建，同一批文件挂在两个合集里。
+        final _Device a = device();
+        final _Device b = device();
+        final int target = await a.db.createMediaCollection('Vol 1');
+        final int source = await a.db.createMediaCollection('Vol 2');
+        await a.db.addToCollection(
+          target,
+          MediaKind.video,
+          'v1',
+          userIntent: false,
+        );
+        await a.db.addToCollection(
+          source,
+          MediaKind.video,
+          'v2',
+          userIntent: false,
+        );
+        await settle(Random(21));
+        expect(
+          (await b.db.getMediaCollectionByNaturalKey(
+            'Vol 2',
+            'collection',
+          ))?.origin,
+          'user',
+        );
+
+        await mergeMediaCollectionsInto(
+          a.db,
+          targetId: target,
+          sourceIds: <int>[source],
+          userIntent: userIntent,
+          skipTombstonedInTarget: !userIntent,
+        );
+        await settle(Random(22));
+        for (final _Device d in devices) {
+          final Map<String, _Snapshot> byName = <String, _Snapshot>{
+            for (final _Snapshot s in await _snapshot(d.db)) s.name: s,
+          };
+          expect(byName.keys, <String>['Vol 1'], reason: '被并掉的合集不该被重建');
+          expect(byName['Vol 1']!.members, <String>{'video|v1', 'video|v2'});
+          expect(await d.db.getRejectedOrganizeKeys(), isEmpty);
+        }
+      });
+    }
+
     test('AI 把成员从用户合集挪走（库管家 §7）：各端一致、不被并回；用户加回 = 钉住，'
         '跨端后 AI 再移被拒', () async {
       final _Device a = device();

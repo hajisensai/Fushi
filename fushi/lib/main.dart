@@ -20,6 +20,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
+import 'package:media_kit/native_wakeup.dart';
+import 'package:fushi_compute/fushi_compute.dart' show fushiComputePortWakeup;
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -173,6 +175,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/anki/card_source_relocation_startup.dart';
 import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
@@ -588,6 +591,11 @@ void main([List<String> args = const <String>[]]) {
       JustAudioMediaKit.pitch = false;
       JustAudioMediaKit.ensureInitialized();
       MediaKit.ensureInitialized();
+      // BUG-5413：libmpv 的唤醒回调改走 Dart 端口（fushi_compute 的 `ffc_port_wakeup`），不再给 libmpv
+      // 一个随 isolate 销毁的 NativeCallable。Android 上 audio_service 会在 Activity 走后销毁引擎、进程
+      // 留在后台，libmpv 核心线程再唤醒已删的 callable，VM 就 abort 整个进程（反馈 Wgbo462Sfc）。
+      // 必须在建任何播放器之前。
+      useNativePortWakeup(fushiComputePortWakeup());
       // 液态玻璃材质的着色器预热：只把 FragmentProgram 读进内存，免得第一次打开
       // 弹层时闪一帧占位。纯 IO、与启动无依赖，后台跑不挡首帧；没开 liquid 档的
       // 用户也只是多读几个着色器文件。
@@ -933,6 +941,10 @@ void main([List<String> args = const <String>[]]) {
       // 时 provider 随 srsModuleEnabledProvider 重建 / 销毁。
       StartupTimeline.mark('app-model-init');
       installSrsAppRuntime(container);
+      // 拍板 hSZjfrcejt：BUG-5049 修复（6463f4cf00）之前制的小说卡出处存的是音频
+      // 匹配坐标，后台按卡上句子在原书里重定位、改写成阅读器坐标（一次性、幂等、
+      // 可中断续跑）。
+      scheduleCardSourceRelocationMigration(appModel.database);
       // issue #1949：用户打开了「启动 Fushi 时自动启动 Anki」且本机 AnkiConnect
       // 没在监听时拉起 Anki 桌面版；不等它就绪，不阻塞启动。
       unawaited(

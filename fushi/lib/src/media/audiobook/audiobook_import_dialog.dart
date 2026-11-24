@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_asr_core/asr_core.dart';
@@ -292,25 +293,31 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
               buildImportAction(context, onImport: _doImport),
             ]
           : [
-              adaptiveDialogAction(
-                context: context,
-                onPressed: importing ? null : () => Navigator.pop(context),
-                child: Text(t.dialog_close),
+              FushiSheetAction.cancel(
+                child: adaptiveDialogAction(
+                  context: context,
+                  onPressed: importing ? null : () => Navigator.pop(context),
+                  child: Text(t.dialog_close),
+                ),
               ),
-              adaptiveDialogAction(
-                context: context,
-                onPressed: importing || _exporting
-                    ? null
-                    : () => _enterReplaceSubtitleMode(existing),
-                child: Text(t.audio_panel_pick_new_subtitle),
+              FushiSheetAction.other(
+                child: adaptiveDialogAction(
+                  context: context,
+                  onPressed: importing || _exporting
+                      ? null
+                      : () => _enterReplaceSubtitleMode(existing),
+                  child: Text(t.audio_panel_pick_new_subtitle),
+                ),
               ),
-              adaptiveDialogAction(
-                context: context,
-                isDestructiveAction: true,
-                onPressed: importing || _exporting
-                    ? null
-                    : () => _removeAudiobook(existing),
-                child: Text(t.audiobook_delete),
+              FushiSheetAction.other(
+                child: adaptiveDialogAction(
+                  context: context,
+                  isDestructiveAction: true,
+                  onPressed: importing || _exporting
+                      ? null
+                      : () => _removeAudiobook(existing),
+                  child: Text(t.audiobook_delete),
+                ),
               ),
             ],
     );
@@ -334,6 +341,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             ImportPickTileGrid(
+              groupTitle: t.import_group_files,
               children: [
                 ImportPickTile(
                   tone: ImportTone.rose,
@@ -533,7 +541,12 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
           stagger(_audioSourceRow()),
           if (!widget.audioOnly) ...[
             SizedBox(height: tokens.spacing.gap * 1.5),
-            stagger(ImportPickTileGrid(children: [_alignmentRow()])),
+            stagger(
+              ImportPickTileGrid(
+                groupTitle: t.import_format_group_subtitles,
+                children: [_alignmentRow()],
+              ),
+            ),
           ],
           if (isDesktopPlatform) ...[
             SizedBox(height: tokens.spacing.gap),
@@ -588,6 +601,7 @@ class _AudiobookImportDialogState extends State<AudiobookImportDialog>
   /// 由用户明确挑文件而非盲目吞整个目录 —— 多段有声书语义完好保留。
   Widget _audioSourceRow() {
     return ImportPickBlock(
+      groupTitle: t.import_format_group_audio,
       tone: ImportTone.rose,
       icon: FushiIcons.audio,
       title: _hasAudioSource

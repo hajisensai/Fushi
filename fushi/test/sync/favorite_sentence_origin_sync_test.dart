@@ -6,17 +6,21 @@ import 'package:test/test.dart';
 /// 不丢：wire JSON 往返保留、旧条目字节不变；同步 / 备份合并时一侧记着、一侧没记
 /// （旧版本设备同步过来的同一条收藏）取记着的那一侧，两种参数顺序结果一致。
 void main() {
-  FavoriteSentence fav({String? origin, int createdUs = 1700000000000000}) =>
-      FavoriteSentence(
-        id: 'hl_$createdUs',
-        text: 'そうか',
-        bookTitle: 'Ep 3',
-        createdAt: DateTime.fromMicrosecondsSinceEpoch(createdUs),
-        bookKey: '1234',
-        normCharOffset: 61000,
-        source: kFavoriteSentenceSourceVideo,
-        originSourceId: origin,
-      );
+  FavoriteSentence fav({
+    String? origin,
+    String? locator,
+    int createdUs = 1700000000000000,
+  }) => FavoriteSentence(
+    id: 'hl_$createdUs',
+    text: 'そうか',
+    bookTitle: 'Ep 3',
+    createdAt: DateTime.fromMicrosecondsSinceEpoch(createdUs),
+    bookKey: '1234',
+    normCharOffset: 61000,
+    source: kFavoriteSentenceSourceVideo,
+    originSourceId: origin,
+    originLocator: locator,
+  );
 
   test('wire JSON 往返保留来源；没有来源的不写该字段', () {
     final FavoriteSentence withOrigin = fav(origin: 'plex:m1|a1');
@@ -55,5 +59,67 @@ void main() {
       expect(merged.id, oldDevice.id);
       expect(merged.originSourceId, 'plex:m1|a1');
     }
+  });
+
+  test('v180 重开规格：wire 往返保留、改色不丢、没有的不写字段', () {
+    final FavoriteSentence online = fav(
+      origin: 'anime-source:ext:42',
+      locator: '{"kind":"anime-source"}',
+    );
+    expect(online.toJson()['originLocator'], '{"kind":"anime-source"}');
+    expect(
+      FavoriteSentence.fromJson(online.toJson()).originLocator,
+      '{"kind":"anime-source"}',
+    );
+    expect(fav().toJson().containsKey('originLocator'), isFalse);
+    expect(
+      online
+          .withColor(
+            'pink',
+            DateTime.fromMicrosecondsSinceEpoch(1800000000000000),
+          )
+          .originLocator,
+      '{"kind":"anime-source"}',
+    );
+  });
+
+  test('合并：来源与重开规格成对取记着的一侧；同来源只缺规格时补上规格', () {
+    final FavoriteSentence bare = fav();
+    final FavoriteSentence sourceOnly = fav(
+      origin: 'anime-source:ext:42',
+      createdUs: 1700000000000001,
+    );
+    final FavoriteSentence full = fav(
+      origin: 'anime-source:ext:42',
+      locator: '{"kind":"anime-source"}',
+      createdUs: 1700000000000002,
+    );
+    for (final (FavoriteSentence a, FavoriteSentence b)
+        in <(FavoriteSentence, FavoriteSentence)>[
+          (bare, full),
+          (full, bare),
+          (sourceOnly, full),
+          (full, sourceOnly),
+        ]) {
+      final FavoriteSentence merged =
+          AggregateMergeService.mergeFavoriteSentences(
+            <FavoriteSentence>[a],
+            <FavoriteSentence>[b],
+          ).single;
+      expect(merged.originSourceId, 'anime-source:ext:42');
+      expect(merged.originLocator, '{"kind":"anime-source"}');
+    }
+    // 两侧来源不同：不把别的来源的规格拼过来。
+    final FavoriteSentence other = fav(
+      origin: 'plex:m1|a1',
+      createdUs: 1699999999999999,
+    );
+    final FavoriteSentence merged =
+        AggregateMergeService.mergeFavoriteSentences(
+          <FavoriteSentence>[other],
+          <FavoriteSentence>[full],
+        ).single;
+    expect(merged.originSourceId, 'plex:m1|a1');
+    expect(merged.originLocator, isNull);
   });
 }

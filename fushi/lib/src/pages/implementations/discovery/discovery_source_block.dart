@@ -22,6 +22,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_source_block.dart';
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_widgets.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -294,6 +296,10 @@ class DiscoverySourceGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Apple：中性灰圆角方块（拍板点 6，不按来源 id 取色）。
+    if (isGlassDesign(context)) {
+      return AppleDiscoverySourceGlyph(name: name, icon: icon, size: size);
+    }
     final FushiCoverBlockColors? given = colors;
     if (given == null) {
       return DiscoverySourceColorsBuilder(
@@ -485,6 +491,19 @@ class DiscoverySourceBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      return AppleDiscoverySourceCard(
+        name: name,
+        onTap: onTap,
+        chips: chips,
+        covers: covers,
+        failed: failed,
+        height: height,
+        icon: icon,
+        onRetry: onRetry,
+        focusId: focusId,
+      );
+    }
     final List<Widget> strip = covers.take(4).toList(growable: false);
     final ImageProvider? coverImage = strip.isEmpty
         ? null
@@ -704,6 +723,13 @@ class DiscoveryAddSourceBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      return AppleDiscoveryAddSourceCard(
+        onTap: onTap,
+        hint: hint,
+        height: height,
+      );
+    }
     final FushiCoverBlockColors colors = FushiCoverBlockColors.resolve(
       Theme.of(context),
       null,
@@ -843,6 +869,15 @@ class DiscoverySourceSelectedHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      return AppleDiscoverySourceSelectedHeader(
+        name: name,
+        onBack: onBack,
+        chips: chips,
+        icon: icon,
+        trailing: trailing,
+      );
+    }
     return DiscoverySourceColorsBuilder(
       sourceId: sourceId,
       name: name,

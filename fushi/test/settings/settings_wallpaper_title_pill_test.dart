@@ -1,9 +1,11 @@
-// 自定义图片页底上，MD3 分段分组标题垫同色胶囊（PR #3840）：图片明暗不可控，
+// 自定义图片页底上，MD3 分段分组标题垫毛玻璃胶囊（PR #3840；11-24 改走全应用统一的
+// [FushiBackdropFrost]）：图片明暗不可控，
 // 直接压在图上的小标题对比度忽高忽低。只在图片背景下垫，纯色 / 形状预设不变；
 // 垫了胶囊文字左缘位置也不变。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
+import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -34,14 +36,12 @@ Widget _app() => MaterialApp(
   ),
 );
 
-Finder _pill() => find.ancestor(
-  of: find.text(_title),
-  matching: find.byWidgetPredicate(
-    (Widget w) =>
-        w is DecoratedBox &&
-        w.decoration is ShapeDecoration &&
-        (w.decoration as ShapeDecoration).shape is StadiumBorder,
+Finder _pill() => find.descendant(
+  of: find.ancestor(
+    of: find.text(_title),
+    matching: find.byType(FushiBackdropFrost),
   ),
+  matching: find.byType(FushiBackdropFrostPlate),
 );
 
 void main() {

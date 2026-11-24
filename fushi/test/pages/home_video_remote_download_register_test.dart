@@ -169,6 +169,25 @@ void main() {
     }
   }
 
+  /// 卸掉页面并让封面图的真实读盘收尾（打开 → 读 → 关）。
+  ///
+  /// 书架卡经 `FileImage` 读落盘的 `<uid>.cover.jpg`，读盘的续体排在 fake zone 里：用例体
+  /// 结束后没人再 pump，句柄就一直开着。本文件的路径提供目录跨用例共享，下一条用例的
+  /// 登记链会先删同名封面再写——Windows 上删一个还开着的文件直接抛「另一个程序正在
+  /// 使用此文件」，封面落不了盘（`coverPath == null`）。所以显示过落盘封面的用例在
+  /// 用例体内卸页，交替给真实 I/O 时间与 pump，直到句柄关掉。
+  Future<void> releaseCoverFileHandles(WidgetTester tester) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    imageCache.clear();
+    imageCache.clearLiveImages();
+    for (int i = 0; i < 10; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+  }
+
   testWidgets('下载对端视频后建出 VideoBooks 行（bookUid=video.id，videoPath=落地路径）', (
     WidgetTester tester,
   ) async {
@@ -320,6 +339,7 @@ void main() {
     }, reason: 'host 有 coverUrl 时先拉 host 封面');
     expect(row.coverPath, isNotNull);
     expect(File(row.coverPath!).readAsBytesSync(), fakeJpegBytes(fill: 0xE0));
+    await releaseCoverFileHandles(tester);
   });
 
   // 上一条在 Linux CI 上的间歇红（coverPath 为 null、用例卡满 30 秒）：页面自己的后台

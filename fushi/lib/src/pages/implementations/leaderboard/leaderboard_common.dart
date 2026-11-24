@@ -504,7 +504,10 @@ class _LeaderboardCoverState extends ConsumerState<LeaderboardCover> {
         onTap: () => setState(() => _revealed = true),
         borderRadius: isEinkTheme(context)
             ? tokens.radii.chipRadius
-            : shelfMaterialRadius(material),
+            : ShelfCoverShape.of(
+                context,
+                material,
+              ).radiusFor(Size(width, height)),
         child: box,
       ),
     );

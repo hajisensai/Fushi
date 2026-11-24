@@ -15,6 +15,8 @@ import 'package:fushi/src/pages/implementations/library_organize_history_page.da
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
     show FushiMastheadHeader;
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiPageHeader;
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiListLeadingIcon;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -335,8 +337,12 @@ void main() {
       );
       await pumpPage(tester, apple: apple);
 
+      // M3E = 页头大字外壳；Apple = iOS 27 / macOS 27 导航栏行（二级页不走
+      // 页头大字，3ea6f9358b4）。两者都要把正文让到栏下沿之下。
       final double headerBottom = tester
-          .getRect(find.byType(FushiMastheadHeader))
+          .getRect(
+            find.byType(apple ? FushiPageHeader : FushiMastheadHeader).first,
+          )
           .bottom;
       expect(headerBottom, greaterThan(0));
       expect(

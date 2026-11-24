@@ -175,6 +175,8 @@ void main() {
         'srsTermStatus',
         'srsTermStatusBatch',
         'srsOpenCard',
+        // review-gal-overlay-mine-fail：「已加入」的 ✓ 再点，Dart 照后台写卡台账回答。
+        'queueOverwrite',
       ]) {
         expect(
           cpp,

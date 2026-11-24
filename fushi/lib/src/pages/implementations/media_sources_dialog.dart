@@ -1,6 +1,6 @@
 // TODO-817 M1c / TODO-1274 来源库管理对话框：本文件只剩**对话框外壳**——列表、
 // 添加/扫描/移除/重排的全部行为住在 [MediaSourcesView]（`media_sources_view.dart`），
-// 与库页「导入」视图（各模块的 `ImportCollagePage` 来源区）共用同一份实现。
+// 与库页「导入」视图（各模块的 `ImportPageLayout` 来源区）共用同一份实现。
 //
 // 保留本对话框入口的原因：视频页等处仍以「页头按钮 → 弹框管理」的既有交互暴露来源
 // 管理，逐像素不变（Never break userspace）；新的页面入口只是多一条路进同一间屋子。

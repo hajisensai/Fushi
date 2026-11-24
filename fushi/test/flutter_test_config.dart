@@ -9,6 +9,8 @@ import 'helpers/fake_audiobook_duration_probe.dart';
 import 'helpers/fake_inappwebview_platform.dart';
 import 'helpers/fake_video_specs_probe.dart';
 import 'package:fushi/src/engine_bindings.dart';
+import 'package:fushi/src/media/video/cover_backfill_ledger.dart'
+    show debugVideoCoverBackfillEnabled;
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi_engine/stats/stat_facts.dart' show debugStatFactsInline;
@@ -40,6 +42,9 @@ import 'package:fushi_web_core/testing.dart';
 ///    [installNoGalgameProcessProbe].
 /// 8. Runs `loadStatFacts` on the calling isolate (FakeAsync can't drive the
 ///    production background isolate). See [installInlineStatFacts].
+/// 9. Keeps the video library's background cover backfill off (its real file
+///    I/O never completes under FakeAsync and `db.close()` waits for it). See
+///    [installNoVideoCoverBackfill].
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // 引擎（fushi_engine）的日志 / 数据根 / ffmpeg 平台后端装配点：与 main() 同一份，
   // 让测试里的引擎代码拿到与从前逐字节一致的行为（AppPaths 路径、ErrorLogService）。
@@ -52,6 +57,7 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   installFakeAudiobookDurationProbe();
   installNoGalgameProcessProbe();
   installInlineStatFacts();
+  installNoVideoCoverBackfill();
   // 网页内容核心（fushi_web_core）是硬依赖：指向本仓刚编好的原生库（或 FUSHI_WEB_CORE_LIB）。
   // 找不到不在这里报错——用到它的测试第一次加载时抛 FushiWebCoreLibraryMissing，照常失败。
   useDevFushiWebCoreLibrary();
@@ -67,6 +73,18 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
 /// `packages/fushi_engine/test/stats/stat_facts_parity_test.dart` 钉住。
 void installInlineStatFacts() {
   debugStatFactsInline = true;
+}
+
+/// 视频库页的缺封面后台抽帧回填（[debugVideoCoverBackfillEnabled]）在整个
+/// `test/` 套件里默认**不起**。
+///
+/// 回填登记成库上的后台工作，关库（`FushiDatabase.close()`）要等它退出（BUG-5387）；
+/// 它逐行做真实文件 I/O 与 ffmpeg，这些回调落在组件测试的 FakeAsync 里，用例体结束后
+/// 没人再推，tearDown 的 `db.close()` 就永远等下去（BUG-5422 修好 debug 下回填被断言
+/// 掀掉之后，几十个挂载视频库页的测试会成片挂到超时）。测回填本身的用例显式打开、
+/// 用例体内卸页并推进到关库完成（`home_video_floating_toolbar_test.dart`）。
+void installNoVideoCoverBackfill() {
+  debugVideoCoverBackfillEnabled = false;
 }
 
 /// galgame 捕获会话的游戏进程退出监视（BUG-4002）在整个 `test/` 套件里默认**不起**：

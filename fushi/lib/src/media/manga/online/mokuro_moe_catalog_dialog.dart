@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_catalog_view.dart';
@@ -120,32 +121,40 @@ class _MokuroMoeCatalogDialogState extends State<MokuroMoeCatalogDialog> {
   ) {
     if (!snapshot.inSeriesStage) {
       return <Widget>[
-        adaptiveDialogAction(
-          context: context,
-          onPressed: _close,
-          child: Text(t.dialog_close),
+        FushiSheetAction.cancel(
+          child: adaptiveDialogAction(
+            context: context,
+            onPressed: _close,
+            child: Text(t.dialog_close),
+          ),
         ),
       ];
     }
     return <Widget>[
-      adaptiveDialogAction(
-        context: context,
-        onPressed: !snapshot.canDownloadAll
-            ? null
-            : () => _viewKey.currentState?.enqueueAll(),
-        child: Text(t.manga_online_download_all),
+      FushiSheetAction.other(
+        child: adaptiveDialogAction(
+          context: context,
+          onPressed: !snapshot.canDownloadAll
+              ? null
+              : () => _viewKey.currentState?.enqueueAll(),
+          child: Text(t.manga_online_download_all),
+        ),
       ),
-      adaptiveDialogAction(
-        context: context,
-        onPressed: !snapshot.canDownload
-            ? null
-            : () => _viewKey.currentState?.enqueueSelected(),
-        child: Text(t.manga_online_download_selected),
+      FushiSheetAction.confirm(
+        child: adaptiveDialogAction(
+          context: context,
+          onPressed: !snapshot.canDownload
+              ? null
+              : () => _viewKey.currentState?.enqueueSelected(),
+          child: Text(t.manga_online_download_selected),
+        ),
       ),
-      adaptiveDialogAction(
-        context: context,
-        onPressed: _close,
-        child: Text(t.dialog_close),
+      FushiSheetAction.cancel(
+        child: adaptiveDialogAction(
+          context: context,
+          onPressed: _close,
+          child: Text(t.dialog_close),
+        ),
       ),
     ];
   }

@@ -29,7 +29,7 @@ void main() {
   ThemeData theme({required bool glass}) => buildFushiThemeData(
     scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
     textTheme: Typography.material2021().black,
-    glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: glass ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
     glassDesign: glass,
   );
 
@@ -375,8 +375,15 @@ void main() {
                 child: FushiFocusRoot(
                   child: FushiToolScaffold(
                     title: 'tool',
+                    // 动作要有内容：Apple 导航栏把无子节点的 SizedBox 当旧行
+                    // 手写的间隔剔掉（fushi_glass_bars.dart `_AppleBarActions`）。
                     actions: <Widget>[
-                      SizedBox(key: actionKey, width: 24, height: 24),
+                      SizedBox(
+                        key: actionKey,
+                        width: 24,
+                        height: 24,
+                        child: const Icon(Icons.share, size: 24),
+                      ),
                     ],
                     body: const SizedBox.expand(),
                     bottomNavigationBar: Builder(
@@ -405,7 +412,9 @@ void main() {
 
       setOuter(() => glass = true);
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.byType(GlassContainer), findsWidgets);
+      // 玻璃底栏换成库的 GlassTabBar（bc47e107bee），顶栏改 iOS 27 导航栏后
+      // 不一定挂 GlassContainer；只要求切换后确实画出了库的玻璃组件。
+      expect(liquidWidgets(), findsWidgets);
       expect(
         identical(tester.element(find.byKey(fushiMaterialNavKey)), navBefore),
         isTrue,
@@ -505,24 +514,34 @@ void main() {
       expect(liquidWidgets(), findsNothing);
     });
 
-    testWidgets('glass extended sidebar: floating panel, icon + label rows', (
-      WidgetTester tester,
-    ) async {
-      await pumpRail(tester, glass: true, extended: true);
-      expect(
-        tester.getSize(find.byKey(fushiMaterialNavKey)).width,
-        kGlassNavSidebarWidth,
-      );
-      // 悬浮玻璃面板离窗口边 8。
-      final Rect panel = tester.getRect(find.byType(GlassContainer).first);
-      expect(panel.left, 8);
-      expect(panel.top, 8);
-      // 行是横排：图标在文字左边、同一水平线。
-      final Rect icon = tester.getRect(_fushiIcon(Icons.book));
-      final Rect label = tester.getRect(find.text('Books'));
-      expect(icon.right, lessThan(label.left));
-      expect((icon.center.dy - label.center.dy).abs(), lessThan(2));
-    });
+    testWidgets(
+      'glass extended sidebar: edge-attached panel, icon + label rows',
+      (WidgetTester tester) async {
+        await pumpRail(tester, glass: true, extended: true);
+        expect(
+          tester.getSize(find.byKey(fushiMaterialNavKey)).width,
+          kGlassNavSidebarWidth,
+        );
+        // macOS 27 贴边侧栏（95b4150b92d）：玻璃底紧贴窗口左 / 上 / 下缘，
+        // 不再是离边 8 的悬浮面板。
+        final Rect panel = tester.getRect(
+          find
+              .descendant(
+                of: find.byType(AppleEdgeSidebarSurface),
+                matching: find.byType(GlassContainer),
+              )
+              .first,
+        );
+        expect(panel.left, 0);
+        expect(panel.top, 0);
+        expect(panel.bottom, 800);
+        // 行是横排：图标在文字左边、同一水平线。
+        final Rect icon = tester.getRect(_fushiIcon(Icons.book));
+        final Rect label = tester.getRect(find.text('Books'));
+        expect(icon.right, lessThan(label.left));
+        expect((icon.center.dy - label.center.dy).abs(), lessThan(2));
+      },
+    );
 
     // 2026-10-05 用户反馈「所有文字不要隐藏」：窄条不再只有图标，图标下方恒
     // 显示标签（与 MD3 收起 rail 一致），总宽不变。

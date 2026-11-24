@@ -68,6 +68,8 @@ void main() {
     pageBackdropSettings.value = const PageBackdropSettings();
     pageBackdropModuleOverrides.value =
         const <HomeTab, PageBackdropModuleOverride>{};
+    pageBackdropPageOverrides.value =
+        const <PageBackdropPage, PageBackdropModuleOverride>{};
     await database.close();
     if (scratch.existsSync()) scratch.deleteSync(recursive: true);
   });
@@ -626,6 +628,70 @@ void main() {
     expect(extracted, isEmpty, reason: '模块图片不取色');
     expect(notifier.pageBackdropAccentSeed, const Color(green));
     expect(primary(), accent);
+  });
+
+  test('复习答题页单独设图：与模块层同存一对键互不丢，恢复继承才删图（拍板台 xxbbL0j15l）', () async {
+    notifier = build();
+    await notifier.setPageBackdropModulePreset(
+      HomeTab.srs,
+      PageBackdropPreset.wave,
+    );
+    await notifier.importPageBackdropPageImage(
+      PageBackdropPage.srsReview,
+      source('review.png'),
+      portrait: false,
+    );
+    final PageBackdropModuleOverride review =
+        pageBackdropPageOverrides.value[PageBackdropPage.srsReview]!;
+    expect(review.preset, PageBackdropPreset.custom);
+    expect(review.landscapeImagePath, startsWith(store.path));
+    expect(File(review.landscapeImagePath!).existsSync(), isTrue);
+    expect(
+      pageBackdropSettingsFor(HomeTab.srs).preset,
+      PageBackdropPreset.wave,
+      reason: '总览页（复习模块）不受答题页影响',
+    );
+    expect(
+      pageBackdropSettingsFor(
+        null,
+        page: PageBackdropPage.srsReview,
+      ).landscapeImagePath,
+      review.landscapeImagePath,
+    );
+
+    // 改模块层（换图会触发清扫、恢复跟随会整体改写两个键）不能丢掉页面层。
+    await notifier.importPageBackdropModuleImage(
+      HomeTab.srs,
+      source('srs.png'),
+      portrait: false,
+    );
+    await notifier.setPageBackdropModulePreset(HomeTab.srs, null);
+    expect(pageBackdropModuleOverrides.value, isEmpty);
+    expect(pageBackdropPageOverrides.value[PageBackdropPage.srsReview], review);
+    expect(File(review.landscapeImagePath!).existsSync(), isTrue);
+
+    // 关掉：纯色，图先留着（切回自定义还能用）。
+    await notifier.setPageBackdropPagePreset(
+      PageBackdropPage.srsReview,
+      PageBackdropPreset.plain,
+    );
+    expect(
+      pageBackdropSettingsFor(
+        null,
+        page: PageBackdropPage.srsReview,
+      ).effectivePreset,
+      PageBackdropPreset.plain,
+    );
+    expect(File(review.landscapeImagePath!).existsSync(), isTrue);
+
+    // 恢复继承：连同本页的图一起删，回到模块（此时即全局）。
+    await notifier.setPageBackdropPagePreset(PageBackdropPage.srsReview, null);
+    expect(pageBackdropPageOverrides.value, isEmpty);
+    expect(File(review.landscapeImagePath!).existsSync(), isFalse);
+    expect(
+      pageBackdropSettingsFor(null, page: PageBackdropPage.srsReview),
+      pageBackdropSettings.value,
+    );
   });
 
   test('模块单独设形状预设；恢复跟随全局连同模块图片一起删', () async {

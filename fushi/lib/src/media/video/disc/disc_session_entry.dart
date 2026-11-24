@@ -4,7 +4,6 @@ import 'package:fushi_engine/media/collections/shelf_sort.dart'
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discRootForMemberPath;
-import 'package:path/path.dart' as p;
 
 /// One physical disc inside a library entry (a collection or a standalone work).
 ///
@@ -18,6 +17,7 @@ class DiscRef {
     required this.rootPath,
     required this.book,
     required this.lastPlayedAt,
+    required this.label,
   });
 
   final String rootPath;
@@ -27,9 +27,82 @@ class DiscRef {
   /// when none of them was ever played.
   final int? lastPlayedAt;
 
-  /// The disc directory name (`Disc 2`), which is what the user sees on the
-  /// box and in the source folder.
-  String get label => p.basename(rootPath);
+  /// What the user sees for this disc: the folder name that tells it apart
+  /// from the other discs of the entry (`Disc 2`, `ぼっち・ざ・ろっく！ vol.3`),
+  /// never a generic wrapper like `BD` (see [discLabelsForRoots]).
+  final String label;
+}
+
+/// Folder names that only wrap a disc (`…/vol.3/BD/BDMV`) and say nothing about
+/// which disc it is. Compared case-insensitively.
+const Set<String> _genericDiscFolderNames = <String>{
+  'bd',
+  'bd-rom',
+  'bd_rom',
+  'bdrom',
+  'bdmv',
+  'bluray',
+  'blu-ray',
+  'disc',
+  'disk',
+  'dvd',
+  'dvd-rom',
+  'dvdrom',
+  'uhd',
+  'video_ts',
+};
+
+List<String> _pathSegments(String path) => path
+    .split(RegExp(r'[\\/]+'))
+    .where((String s) => s.isNotEmpty)
+    .toList(growable: false);
+
+bool _isGenericDiscFolder(String name) =>
+    _genericDiscFolderNames.contains(name.trim().toLowerCase());
+
+/// Index of the deepest folder of [segments] that is not a generic wrapper;
+/// the last one when every folder is generic.
+int _ownNameIndex(List<String> segments) {
+  for (int i = segments.length - 1; i >= 0; i--) {
+    if (!_isGenericDiscFolder(segments[i])) return i;
+  }
+  return segments.length - 1;
+}
+
+/// Display labels for the disc roots [roots] of one entry, same order.
+///
+/// A disc's own name is its root folder, skipping generic wrappers (a box set
+/// laid out as `vol.1/BD/BDMV` … `vol.6/BD/BDMV` is six `BD` folders: the
+/// user-facing name is the `vol.N` folder above). When two discs still end up
+/// with the same name (`Season 1/Disc 1` and `Season 2/Disc 1`), each label
+/// becomes the path from the first folder that differs down to its own name.
+List<String> discLabelsForRoots(List<String> roots) {
+  final List<List<String>> segments = <List<String>>[
+    for (final String root in roots) _pathSegments(root),
+  ];
+  final List<int> own = <int>[
+    for (final List<String> s in segments) _ownNameIndex(s),
+  ];
+  final List<String> names = <String>[
+    for (int i = 0; i < roots.length; i++)
+      segments[i].isEmpty ? roots[i] : segments[i][own[i]],
+  ];
+  if (names.toSet().length == names.length) return names;
+  int common = segments.isEmpty ? 0 : segments.first.length;
+  for (final List<String> s in segments.skip(1)) {
+    int i = 0;
+    while (i < common && i < s.length && s[i] == segments.first[i]) {
+      i++;
+    }
+    common = i;
+  }
+  return <String>[
+    for (int i = 0; i < roots.length; i++)
+      if (segments[i].isEmpty || common > own[i])
+        names[i]
+      else
+        segments[i].sublist(common, own[i] + 1).join(' / '),
+  ];
 }
 
 /// The disc roots behind [members], sorted by disc number / directory name
@@ -44,9 +117,11 @@ List<DiscRef> collectDiscRefs(Iterable<VideoBookRow> members) {
     if (root == null) continue;
     byRoot.putIfAbsent(root, () => <VideoBookRow>[]).add(book);
   }
+  final List<String> roots = byRoot.keys.toList(growable: false);
+  final List<String> labels = discLabelsForRoots(roots);
   final List<DiscRef> discs = <DiscRef>[
-    for (final MapEntry<String, List<VideoBookRow>> entry in byRoot.entries)
-      _discRefFor(entry.key, entry.value),
+    for (int i = 0; i < roots.length; i++)
+      _discRefFor(roots[i], byRoot[roots[i]]!, labels[i]),
   ];
   discs.sort((DiscRef a, DiscRef b) {
     final int byName = naturalCompare(a.label, b.label);
@@ -55,7 +130,7 @@ List<DiscRef> collectDiscRefs(Iterable<VideoBookRow> members) {
   return discs;
 }
 
-DiscRef _discRefFor(String root, List<VideoBookRow> books) {
+DiscRef _discRefFor(String root, List<VideoBookRow> books, String label) {
   VideoBookRow chosen = books.first;
   int? latest;
   for (final VideoBookRow book in books) {
@@ -65,7 +140,12 @@ DiscRef _discRefFor(String root, List<VideoBookRow> books) {
       chosen = book;
     }
   }
-  return DiscRef(rootPath: root, book: chosen, lastPlayedAt: latest);
+  return DiscRef(
+    rootPath: root,
+    book: chosen,
+    lastPlayedAt: latest,
+    label: label,
+  );
 }
 
 /// The disc a one-tap "play disc" opens: the most recently watched one, else

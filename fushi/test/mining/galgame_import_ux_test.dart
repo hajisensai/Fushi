@@ -28,12 +28,12 @@ void main() {
       );
     });
 
-    test('导入视图经 ImportCollagePage 的 spec.onDrop 装整页落点', () {
+    test('导入视图经 ImportPageLayout（两套布局）的 spec.onDrop 装整页落点', () {
       final String body = methodBody(source, 'Widget _buildImport(');
-      // 导入稿 v2：落点由 [ImportCollagePage] 按 spec.onDrop 装（不再另写拖放卡）。
+      // 导入稿 v2：落点由导入布局（M3E MaterialImportLayout / Apple AppleImportLayout）按 spec.onDrop 装（不再另写拖放卡）。
       expect(
         body,
-        contains('ImportCollagePage('),
+        contains('ImportPageLayout('),
         reason:
             '此前整个游戏域只有**库**页挂了 drop target，而 DropSurfaceScope '
             '按当前 section 过滤 —— 站在「导入」页拖 exe 进来完全没反应。',
@@ -88,11 +88,11 @@ void main() {
     });
 
     test('drop target 必须包在导入视图的最外层（内层会被布局裁掉命中区）', () {
-      // 导入稿 v2：落点由共用骨架 ImportCollagePage 装，必须包在滚动视图 / 错峰
+      // 导入稿 v2：落点由共用骨架（MaterialImportLayout，Apple 版同形）装，必须包在滚动视图 / 错峰
       // 进场之外（整页都是命中区）；游戏页的 DesktopContentLayout 直接以骨架为
       // child，中间不再夹别的容器。
       final String body = methodBody(source, 'Widget _buildImport(');
-      expect(body, contains('child: ImportCollagePage('));
+      expect(body, contains('child: ImportPageLayout('));
       final String collage = maskComments(
         File(
           'lib/src/media/import/import_collage_page.dart',

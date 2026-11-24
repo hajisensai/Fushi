@@ -258,8 +258,17 @@ class ServerSelfUpdater implements HostSelfUpdater {
                 'api.github.com',
                 '/repos/$kServerReleaseRepo/releases/latest',
               );
+        final Object? listed = await _fetch(url);
+        // 滚动 debug release 建得早，按创建时间排在列表后面，迟早掉出前 20 条：
+        // debug 装机单独按 tag 取一次（取不到不影响列表里的 beta / formal）。
+        final Object? releasesJson = info.isDebug
+            ? <Object?>[
+                ...(listed is List ? listed : <Object?>[listed]),
+                await _fetchDebugRolling(),
+              ]
+            : listed;
         _latest = pickServerUpdate(
-          releasesJson: await _fetch(url),
+          releasesJson: releasesJson,
           current: info,
           assetSuffix: assetSuffix!,
         );
@@ -270,6 +279,21 @@ class ServerSelfUpdater implements HostSelfUpdater {
         _resolving = null;
       }
     }();
+  }
+
+  /// 滚动 debug release；还没发过 / 取失败 → null（只留痕）。
+  Future<Object?> _fetchDebugRolling() async {
+    try {
+      return await _fetch(
+        Uri.https(
+          'api.github.com',
+          '/repos/$kServerReleaseRepo/releases/tags/$kServerDebugRollingTag',
+        ),
+      );
+    } catch (e, stack) {
+      engineLog.log('ServerSelfUpdate.debugRolling', e, stack);
+      return null;
+    }
   }
 
   HostUpdateStatus _snapshot(bool allowed) => HostUpdateStatus(

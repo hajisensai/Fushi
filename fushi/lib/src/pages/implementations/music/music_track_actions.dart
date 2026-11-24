@@ -303,6 +303,27 @@ Future<MusicPlaylistTarget?> musicCreatePlaylist(
   return editor.createPlaylist(name, trackIds: trackIds);
 }
 
+/// 「新建歌单」动作本体：问名字建歌单，建好提示并回调 [onCreated]（调用方刷新
+/// 列表），失败按 [errorText] 提示。M3E 段头按钮与 Apple 段头裸字形同用这一份。
+Future<void> musicCreatePlaylistAndNotify(
+  BuildContext context,
+  MusicPlaylistEditor editor, {
+  required VoidCallback onCreated,
+  required String Function(Object error) errorText,
+}) async {
+  try {
+    final MusicPlaylistTarget? p = await musicCreatePlaylist(context, editor);
+    if (p == null) return;
+    FushiToast.show(
+      msg: t.music_action_playlist_created(name: p.title),
+      severity: ToastSeverity.success,
+    );
+    onCreated();
+  } on Object catch (e) {
+    FushiToast.show(msg: errorText(e), severity: ToastSeverity.error);
+  }
+}
+
 /// 歌单列表顶部的「新建歌单」按钮：建好后提示并回调 [onCreated]（调用方刷新列表）。
 Widget musicCreatePlaylistButton(
   BuildContext context,
@@ -315,22 +336,12 @@ Widget musicCreatePlaylistButton(
     key: key,
     // 段头里的次要动作：与同行的刷新图标、推荐页「私人电台」同为 S 号。
     size: FushiButtonSize.s,
-    onPressed: () async {
-      try {
-        final MusicPlaylistTarget? p = await musicCreatePlaylist(
-          context,
-          editor,
-        );
-        if (p == null) return;
-        FushiToast.show(
-          msg: t.music_action_playlist_created(name: p.title),
-          severity: ToastSeverity.success,
-        );
-        onCreated();
-      } on Object catch (e) {
-        FushiToast.show(msg: errorText(e), severity: ToastSeverity.error);
-      }
-    },
+    onPressed: () => musicCreatePlaylistAndNotify(
+      context,
+      editor,
+      onCreated: onCreated,
+      errorText: errorText,
+    ),
     icon: const FushiIcon(FushiIcons.add),
     label: Text(t.music_action_new_playlist),
   ),

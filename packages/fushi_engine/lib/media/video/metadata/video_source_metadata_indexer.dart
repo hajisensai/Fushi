@@ -2,7 +2,7 @@ library;
 
 export 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show BooleanExpressionOperators, Value;
 import 'package:fushi_engine/media/video/bluray/bluray_disc_extras.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
@@ -163,6 +163,7 @@ class VideoSourceMetadataIndexer {
       if (match != null) {
         candidates = _candidatesByDirectory(indexed.values, book.videoPath);
       } else if (discMain != null) {
+        if (await _dropStaleDiscExtraEpisode(book)) changed = true;
         // 蓝光特典挂在同盘父标题的作品下：同一个 PLAYLIST 目录里可能并排着几条
         // 正片级标题，按目录就近会二义，按「含父标题那条 .mpls 的作品」才唯一。
         // 正片不在库时父标题是顶上来的最长特典，它自己进了计划、有作品
@@ -219,6 +220,38 @@ class VideoSourceMetadataIndexer {
       );
     }
     return changed;
+  }
+
+  /// 原盘特典 [book] 身上残留的刮削身份：选片判据改过之前它被选成盘标题、进了盘
+  /// 合集，刮削按合集顺序给了它集号（《ぼっち・ざ・ろっく！》BD 每卷的采访被编成
+  /// 第 3 集，集名、剧照都是「馳せサンズ」），或者单独成过一部作品（临时资料行顶着
+  /// 「BOCCHI THE ROCK! 6 - 03」）。特典不进刮削计划，重刮不会再写它，这些行只会
+  /// 一直顶着正片的集名 / 剧照。结构上已确证它是特典：删掉它的刮削行、解开分集
+  /// 绑定——用户手动钉死的绑定（[kUserVerifiedMatchRating]）除外。有改动时返回 true。
+  Future<bool> _dropStaleDiscExtraEpisode(VideoBookRow book) async {
+    bool changed = false;
+    final VideoScrapeMetaRow? meta = await database.getVideoScrapeMeta(
+      book.bookUid,
+    );
+    if (meta != null) {
+      await database.deleteVideoScrapeMeta(book.bookUid);
+      changed = true;
+    }
+    final int unbound =
+        await (database.update(database.videoMetadataEpisodes)..where(
+              (table) =>
+                  table.bookUid.equals(book.bookUid) &
+                  (table.anidbMatchRating.isNull() |
+                      table.anidbMatchRating
+                          .equals(kUserVerifiedMatchRating)
+                          .not()),
+            ))
+            .write(
+              const VideoMetadataEpisodesCompanion(
+                bookUid: Value<String?>(null),
+              ),
+            );
+    return changed || unbound > 0;
   }
 
   /// 认领本来源目录下没有来源的蓝光盘标题（BUG-3231 / 3233）。

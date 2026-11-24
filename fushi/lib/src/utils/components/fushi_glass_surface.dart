@@ -148,7 +148,7 @@ class FushiGlassSurface extends StatelessWidget {
     final Color fill = base.withValues(
       alpha: fushiGlassFillOpacity(brightness),
     );
-    if (glassMaterialOf(context) == FushiGlassMaterial.liquid) {
+    if (glassMaterialOf(context).usesShader) {
       return _buildLiquid(fill);
     }
     final ImageFilter blur = ImageFilter.blur(

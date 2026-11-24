@@ -67,7 +67,7 @@ class BangumiBookSubject {
       platform: _string(json['platform']),
       isSeries: json['series'] == true,
       isNsfw: json['nsfw'] == true,
-      authors: _infoboxAuthors(json['infobox']),
+      authors: bangumiInfoboxAuthors(json['infobox']),
       volumes: volumes,
     );
   }
@@ -217,7 +217,9 @@ int _commonPrefixLength(String a, String b) {
   return n;
 }
 
-List<String> _infoboxAuthors(Object? infobox) {
+/// Bangumi 条目 `infobox` 里的作者（作者 / 作画 / 原作，按出现顺序，去重）；搜索结果
+/// （`/v0/search/subjects`）与条目详情都带 `infobox`。
+List<String> bangumiInfoboxAuthors(Object? infobox) {
   if (infobox is! List) return const <String>[];
   final List<String> out = <String>[];
   for (final Object? row in infobox) {
@@ -235,7 +237,7 @@ List<String> _infoboxAuthors(Object? infobox) {
       }
     }
   }
-  return out;
+  return out.toSet().toList();
 }
 
 Object? _decode(String body) {

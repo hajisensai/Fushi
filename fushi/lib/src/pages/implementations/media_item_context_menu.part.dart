@@ -349,14 +349,12 @@ class _ItemMenuSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
-    final ShapeBorder shape = RoundedRectangleBorder(
+    final OutlinedBorder shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.all(Radius.circular(apple ? 12 : 20)),
     );
     if (apple) {
-      return DecoratedBox(
-        decoration: fushiAppleSolidFloatingDecoration(context, shape: shape),
-        child: Material(type: MaterialType.transparency, child: child),
-      );
+      // 与 showFushiMenu 同一块 Apple 菜单面板（随玻璃画质、菜单圆角）。
+      return FushiAppleMenuSurface(child: child);
     }
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainer,
@@ -382,8 +380,16 @@ class _ItemMenuHeader extends StatelessWidget {
     final bool apple = isGlassDesign(context);
     final TextTheme textTheme = Theme.of(context).textTheme;
     final Color titleColor = apple
-        ? appleColorsOf(context).label
+        ? appleColorsOf(context).secondaryLabel
         : Theme.of(context).colorScheme.onSurface;
+    // iOS 27 上下文菜单顶部的标题：13pt secondaryLabel（不抢菜单行的视觉）。
+    final TextStyle? appleTitle = apple
+        ? context.fushiType.bodySmall.copyWith(
+            fontWeight: FontWeight.w600,
+            color: titleColor,
+            letterSpacing: 0,
+          )
+        : null;
     final String? line = frame.progressLabel ?? frame.author;
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
@@ -411,10 +417,12 @@ class _ItemMenuHeader extends StatelessWidget {
                     key: const ValueKey<String>('item_menu_title'),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: (textTheme.titleSmall ?? const TextStyle()).copyWith(
-                      color: titleColor,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style:
+                        appleTitle ??
+                        (textTheme.titleSmall ?? const TextStyle()).copyWith(
+                          color: titleColor,
+                          fontWeight: FontWeight.w700,
+                        ),
                   ),
                 ),
                 if (line != null && line.isNotEmpty)
@@ -423,9 +431,14 @@ class _ItemMenuHeader extends StatelessWidget {
                     key: const ValueKey<String>('item_menu_progress'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: (textTheme.bodySmall ?? const TextStyle()).copyWith(
-                      color: frame._authorStyle(context).color,
-                    ),
+                    style: apple
+                        ? context.fushiType.bodySmall.copyWith(
+                            color: appleColorsOf(context).tertiaryLabel,
+                            letterSpacing: 0,
+                          )
+                        : (textTheme.bodySmall ?? const TextStyle()).copyWith(
+                            color: frame._authorStyle(context).color,
+                          ),
                   ),
               ],
             ),
@@ -443,9 +456,10 @@ class _ItemMenuSectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color color = isGlassDesign(context)
-        ? appleColorsOf(context).secondaryLabel
-        : Theme.of(context).colorScheme.onSurfaceVariant;
+    if (isGlassDesign(context)) {
+      return FushiAppleMenuSectionHeader(text, alignWithCheck: false);
+    }
+    final Color color = Theme.of(context).colorScheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
       child: Text(
@@ -534,20 +548,24 @@ class _ItemPrimaryButton extends StatelessWidget {
     final bool apple = isGlassDesign(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final FushiAppleColors? palette = apple ? appleColorsOf(context) : null;
-    final Color background = filled
-        ? (palette?.accent ?? scheme.primary)
+    // Apple：iOS 27 上下文菜单顶部那排横排动作——一律 secondaryFill 圆角底、
+    // 图标在上文字在下、label 色，不着强调色（「继续」也一样；选中项底色
+    // 加深成 fill）。MD3 不变。
+    final bool tile = apple || !filled;
+    final Color background = apple
+        ? (selected ? palette!.fill : palette!.secondaryFill)
+        : filled
+        ? scheme.primary
         : (selected
-              ? (apple
-                    ? palette!.accent.withValues(alpha: 0.16)
-                    : scheme.secondaryContainer)
-              : (palette?.secondaryFill ?? scheme.surfaceContainerLowest));
-    final Color foreground = filled
-        ? (palette?.onAccent ?? scheme.onPrimary)
-        : (selected
-              ? (palette?.accent ?? scheme.onSecondaryContainer)
-              : (palette?.label ?? scheme.onSurface));
+              ? scheme.secondaryContainer
+              : scheme.surfaceContainerLowest);
+    final Color foreground = apple
+        ? palette!.label
+        : filled
+        ? scheme.onPrimary
+        : (selected ? scheme.onSecondaryContainer : scheme.onSurface);
     final TextTheme text = Theme.of(context).textTheme;
-    final Widget content = filled
+    final Widget content = !tile
         ? Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
@@ -575,9 +593,14 @@ class _ItemPrimaryButton extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: (text.labelSmall ?? const TextStyle()).copyWith(
-                  color: foreground,
-                ),
+                style: apple
+                    ? context.fushiType.labelMedium.copyWith(
+                        color: foreground,
+                        letterSpacing: 0,
+                      )
+                    : (text.labelSmall ?? const TextStyle()).copyWith(
+                        color: foreground,
+                      ),
               ),
             ],
           );
@@ -587,13 +610,18 @@ class _ItemPrimaryButton extends StatelessWidget {
         child: Material(
           color: background,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(apple ? 10 : 16)),
+            borderRadius: BorderRadius.all(Radius.circular(apple ? 12 : 16)),
           ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onPressed,
-            focusColor: filled ? null : scheme.secondaryContainer,
-            hoverColor: filled ? null : scheme.secondaryContainer,
+            focusColor: apple
+                ? palette!.tertiaryFill
+                : (filled ? null : scheme.secondaryContainer),
+            hoverColor: apple
+                ? palette!.tertiaryFill
+                : (filled ? null : scheme.secondaryContainer),
+            splashFactory: apple ? NoSplash.splashFactory : null,
             child: Semantics(
               button: true,
               selected: selected,
@@ -720,6 +748,33 @@ class _ItemWorkbenchTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    if (apple) {
+      // iOS 27 菜单行：[图标][文字 / 状态副标题][›]。
+      final String? status = this.status;
+      return MouseRegion(
+        onEnter: (_) => onHover?.call(true),
+        onExit: (_) => onHover?.call(false),
+        child: Semantics(
+          button: true,
+          label: status == null ? label : '$label, $status',
+          excludeSemantics: true,
+          child: FushiAppleMenuItemRow(
+            icon: icon,
+            label: label,
+            subtitle: status,
+            onPressed: onPressed,
+            focusNode: focusNode,
+            trailing: FushiIcon(
+              FushiIcons.chevronRight,
+              size: fushiAppleCompact(context)
+                  ? 11 * fushiAppleMacScale(context)
+                  : 17,
+              color: appleColorsOf(context).label,
+            ),
+          ),
+        ),
+      );
+    }
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final FushiAppleColors? palette = apple ? appleColorsOf(context) : null;
     final Color background = emphasized
@@ -868,6 +923,20 @@ class _ItemToggleRowState extends State<_ItemToggleRow> {
   Widget build(BuildContext context) {
     final ItemMenuToggleState? state = _state;
     final bool on = state?.value ?? false;
+    if (isGlassDesign(context)) {
+      // iOS 菜单的开关项：行首 ✓ 表示开着，不放开关控件。
+      return Semantics(
+        checked: state == null ? null : on,
+        child: FushiAppleMenuItemRow(
+          key: ValueKey<String>('item_menu_toggle_${widget.action.label}'),
+          icon: widget.action.icon,
+          label: widget.action.label,
+          selected: on,
+          checkColumn: true,
+          onPressed: () => unawaited(_toggle()),
+        ),
+      );
+    }
     return Semantics(
       toggled: state == null ? null : on,
       child: _ContextMenuRow(
@@ -1037,7 +1106,7 @@ class _ItemSubmenuRowState extends State<_ItemSubmenuRow> {
   @override
   Widget build(BuildContext context) {
     final Color chevron = isGlassDesign(context)
-        ? appleColorsOf(context).secondaryLabel
+        ? appleColorsOf(context).label
         : Theme.of(context).colorScheme.onSurfaceVariant;
     final Widget row = widget.workbench
         ? _ItemWorkbenchTile(

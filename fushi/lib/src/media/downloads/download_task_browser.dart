@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/media_search_text.dart';
@@ -36,10 +37,52 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/media/downloads/apple/apple_download_list_parts.dart';
+import 'package:fushi/src/media/downloads/apple/apple_download_task_row.dart'
+    show appleDownloadMenuPosition;
+import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart';
+
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show FushiShellTitleScope;
+
+part 'apple/apple_download_task_browser.dart';
 
 enum DownloadTaskSort { created, title, progress, status }
 
 enum DownloadTaskGrouping { none, collection, kind, status }
+
+/// 汇总口径（M3E 汇总 hero 与 Apple 汇总行共用）：速度只计报得出实时指标的
+/// 来源；计数按生命周期状态。
+AppleDownloadSummaryData summarizeDownloadTasks(List<DownloadTaskEntry> tasks) {
+  int down = 0;
+  int up = 0;
+  int active = 0;
+  int queued = 0;
+  int completed = 0;
+  for (final DownloadTaskEntry task in tasks) {
+    down += task.downRateBps ?? 0;
+    up += task.upRateBps ?? 0;
+    switch (task.status) {
+      case DownloadTaskStatus.active:
+        active++;
+      case DownloadTaskStatus.queued:
+        queued++;
+      case DownloadTaskStatus.completed:
+        completed++;
+      case DownloadTaskStatus.attention:
+      case DownloadTaskStatus.paused:
+      case DownloadTaskStatus.cancelled:
+        break;
+    }
+  }
+  return AppleDownloadSummaryData(
+    downBps: down,
+    upBps: up,
+    active: active,
+    queued: queued,
+    completed: completed,
+  );
+}
 
 String downloadTaskKindLabel(DownloadTaskKind kind) => switch (kind) {
   DownloadTaskKind.video => t.anime_download_kind_video,
@@ -209,7 +252,16 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
   DownloadTaskKind? _kind;
   DownloadTaskStatusFilter _statusFilter = DownloadTaskStatusFilter.all;
   DownloadTaskSort _sort = DownloadTaskSort.created;
-  DownloadTaskGrouping _grouping = DownloadTaskGrouping.collection;
+
+  /// 用户选过的分组；null = 按设计系统的默认（M3E 按合集，Apple 按状态——
+  /// 方案 A 的「需要处理 / 进行中 / 已完成」）。
+  DownloadTaskGrouping? _groupingChoice;
+  DownloadTaskGrouping get _grouping =>
+      _groupingChoice ??
+      (isGlassDesign(context)
+          ? DownloadTaskGrouping.status
+          : DownloadTaskGrouping.collection);
+  set _grouping(DownloadTaskGrouping value) => _groupingChoice = value;
   bool _reverse = false;
   bool _collapseAll = false;
   final Map<String, bool> _expandedGroups = <String, bool>{};
@@ -241,6 +293,9 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
       _expandedGroups.clear();
     }
   }
+
+  /// 给 Apple 版式（part 里的 extension）用的 setState 入口。
+  void _update(VoidCallback fn) => setState(fn);
 
   bool _groupExpanded(String key) => _expandedGroups[key] ?? !_collapseAll;
 
@@ -1171,6 +1226,15 @@ class _DownloadTaskBrowserState extends State<DownloadTaskBrowser> {
     final List<DownloadTaskEntry> rendered = rows
         .whereType<DownloadTaskEntry>()
         .toList();
+    if (isGlassDesign(context)) {
+      return _buildApple(
+        context,
+        visible: visible,
+        groups: groups,
+        rendered: rendered,
+        statusCounts: statusCounts,
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double page = tokens.spacing.page;
     // Apple 没有 FAB：「添加」挪进工具行首位（iOS / macOS 的添加动作在栏内，
@@ -1402,27 +1466,12 @@ class DownloadSummaryHero extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    int down = 0;
-    int up = 0;
-    int active = 0;
-    int queued = 0;
-    int completed = 0;
-    for (final DownloadTaskEntry task in tasks) {
-      down += task.downRateBps ?? 0;
-      up += task.upRateBps ?? 0;
-      switch (task.status) {
-        case DownloadTaskStatus.active:
-          active++;
-        case DownloadTaskStatus.queued:
-          queued++;
-        case DownloadTaskStatus.completed:
-          completed++;
-        case DownloadTaskStatus.attention:
-        case DownloadTaskStatus.paused:
-        case DownloadTaskStatus.cancelled:
-          break;
-      }
-    }
+    final AppleDownloadSummaryData summary = summarizeDownloadTasks(tasks);
+    final int down = summary.downBps;
+    final int up = summary.upBps;
+    final int active = summary.active;
+    final int queued = summary.queued;
+    final int completed = summary.completed;
     final ColorScheme cs = Theme.of(context).colorScheme;
     final Color onContainer =
         fushiCardToneColors(context, FushiCardTone.primary)?.onContainer ??

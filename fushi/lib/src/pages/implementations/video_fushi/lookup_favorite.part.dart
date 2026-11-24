@@ -26,6 +26,16 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
   String? get _favoriteOriginSourceId =>
       widget.remoteClient?.remoteLibrarySourceId;
 
+  /// 本页收藏 [bookKey] 那一集时记下的重开规格（[FavoriteSentence.originLocator]，
+  /// v180）：只有来源身份 + 条目 id 找不回条目的来源（在线视频源，
+  /// [RemoteVideoReopenSpec]）才有，其余 null。
+  String? _favoriteOriginLocatorFor(String bookKey) {
+    final Object? client = widget.remoteClient;
+    return client is RemoteVideoReopenSpec
+        ? client.reopenSpecFor(bookKey)
+        : null;
+  }
+
   /// 点字幕第 [graphemeIndex] 个字符：暂停 → 从该位置起取词 → 推入与阅读器/词典页
   /// 同款的 [DictionaryPopupLayer] 浮层（定位到被点字符的屏幕 [charRect] 附近）。
   ///
@@ -292,6 +302,9 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
           expression: headword?.expression,
           reading: headword?.reading,
           originSourceId: _favoriteOriginSourceId,
+          originLocator: _favoriteOriginLocatorFor(
+            anchor?.bookUid ?? _activeBookUid,
+          ),
         ),
       );
     }
@@ -486,6 +499,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
           source: kFavoriteSentenceSourceVideo,
           dateKey: statTodayKey(),
           originSourceId: _favoriteOriginSourceId,
+          originLocator: _favoriteOriginLocatorFor(anchor.bookUid),
         ),
       );
     }

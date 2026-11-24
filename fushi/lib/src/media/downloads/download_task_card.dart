@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/downloads/apple/apple_download_task_row.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -426,8 +427,32 @@ class _DownloadTaskCardState extends State<DownloadTaskCard> {
     return Row(mainAxisSize: MainAxisSize.min, spacing: 2, children: children);
   }
 
+  /// Apple（方案 A）：同一份数据画成 inset 分组行（[AppleDownloadTaskRow]），
+  /// 展开态、菜单派发与 M3E 卡共用本 State。
+  Widget _buildApple(BuildContext context) => AppleDownloadTaskRow(
+    taskId: widget.taskId,
+    title: widget.title,
+    status: widget.status,
+    subtitle: widget.subtitle,
+    progress: widget.progress,
+    leading: widget.leading,
+    tone: widget.tone ?? DownloadTaskTone.neutral,
+    metrics: widget.metrics,
+    quickAction: widget.quickAction,
+    menuActions: widget.menuActions,
+    method: widget.method,
+    externalSource: widget.externalSource,
+    summary: widget.summary,
+    coverUrl: widget.coverUrl,
+    details: widget.details,
+    expanded: _expanded,
+    onToggleExpanded: _toggle,
+    onMenuAction: _dispatchMenuAction,
+  );
+
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     final ThemeData theme = Theme.of(context);
     final DownloadTaskTone tone = widget.tone ?? DownloadTaskTone.neutral;
     final double? progress = widget.progress?.clamp(0, 1).toDouble();

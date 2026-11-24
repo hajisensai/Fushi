@@ -13,6 +13,7 @@ import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
+import 'package:fushi/src/media/favorites/favorite_video_origin_failure.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository;
@@ -430,9 +431,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     setState(() {
       _state = value;
       if (value['error'] != null) {
-        _error = videoRemoteErrorText(
-          VideoRemoteError(value['error'].toString()),
-        );
+        _error = videoRemoteErrorText(_snapshotError(value));
       }
       _anchor = DateTime.now();
       _revision = (value['revision'] as num?)?.toInt() ?? _revision;
@@ -1764,7 +1763,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     if (waiter == null || waiter.isCompleted || favorite == null) return;
     try {
       if (_state['error'] != null) {
-        throw VideoRemoteError(_state['error'].toString());
+        throw _snapshotError(_state);
       }
       final Map<String, dynamic>? cue = _favoriteCue(favorite);
       if (cue != null) waiter.complete(cue);
@@ -2363,6 +2362,10 @@ String videoRemoteErrorText(Object error) {
     case 'favorite_subtitle_ambiguous':
       return t.video_remote_error_favorite_ambiguous;
     case 'favorite_source_unavailable':
+      // 新版电脑随码附上细分原因（来源没登录 / 对端离线 / 扩展没装……）；旧版电脑
+      // 不带、或带了本机还不认识的原因，退回笼统文案。
+      return FavoriteVideoOriginFailure.fromWireReason(error.reason)?.message ??
+          t.video_remote_error_favorite_source_unavailable;
     case 'favorite_subtitle_unavailable':
       return t.video_remote_error_favorite_source_unavailable;
     case 'favorite_subtitle_missing':
@@ -2432,3 +2435,14 @@ String videoRemoteErrorText(Object error) {
   }
   return t.video_remote_error_unknown(code: code);
 }
+
+/// 快照上的异步失败（`error` + 可选的细分原因 `errorReason`，见
+/// `VideoRemoteHost.reportError`）。
+VideoRemoteError _snapshotError(Map<String, dynamic> snapshot) =>
+    VideoRemoteError(
+      snapshot['error'].toString(),
+      reason: switch (snapshot['errorReason']) {
+        final String reason when reason.isNotEmpty => reason,
+        _ => null,
+      },
+    );

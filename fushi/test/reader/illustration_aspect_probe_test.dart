@@ -128,6 +128,18 @@ void main() {
       expect(imageSizeFromHeader(bytes), (width: 1600, height: 900));
     });
 
+    test('JPEG：段之间夹着的杂字节跳过去找下一个 marker（与 libjpeg 一致）', () {
+      final Uint8List bytes = cat(<List<int>>[
+        <int>[0xFF, 0xD8],
+        <int>[0xFF, 0xE0, 0x00, 0x04, 0x00, 0x00],
+        <int>[0x00, 0x00, 0x12, 0x34], // 段长写错留下的杂字节。
+        <int>[0xFF, 0xC0, 0x00, 0x11, 0x08],
+        <int>[0x03, 0x84], // 高 900
+        <int>[0x06, 0x40], // 宽 1600
+      ]);
+      expect(imageSizeFromHeader(bytes), (width: 1600, height: 900));
+    });
+
     test('JPEG：字节在走到 SOF 前用完 → null（交调用方整文件重读）', () {
       final Uint8List bytes = cat(<List<int>>[
         <int>[0xFF, 0xD8, 0xFF, 0xE1, 0x10, 0x00],

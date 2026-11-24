@@ -105,21 +105,42 @@ abstract final class UiActivityProbe {
   /// 归给这个调用点。
   static String? _registeringSite;
 
+  /// 已知 `~`/`?` 调用点的回调重抓栈的节流（见 [beginFrameCallbackRegistration]）。
+  static final Stopwatch _sinceCallbackStack = Stopwatch();
+
   /// 帧回调注册开始（[SchedulerBinding.scheduleFrameCallback] 入口）。首次注册（`rescheduling`
   /// 为 false：Ticker.start / 解除静音、动图下一帧……）抓栈记下调用点；逐帧续排直接按回调身份查。
   /// [stack] 只给测试用，生产传 null 取当前栈。
+  ///
+  /// 已记过调用点的回调再以 `rescheduling: false` 注册时（BUG-5444）：具体调用点直接沿用；
+  /// 只有 `~`/`?` 的才重抓，且与其它重抓共用 [kUiActivityStackSampleInterval] 节流。
+  /// 起因：`OverlayPortal.overlayChildLayoutBuilder` 的 render object 每次布局都以
+  /// `rescheduling: false` 重新注册同一个 `_frameCallback`（整栈只有框架 → `~`），而它在
+  /// 任何一帧都会重新布局；liquid_glass 的 `GlassPinnedBarChrome` 每个顶栏挂一个，保活的
+  /// 各 tab 合计十几个，旧逻辑因此每帧抓十几次整栈再跑正则，debug 下吃掉主线程约四分之一。
   static void beginFrameCallbackRegistration(
     Function callback, {
     required bool rescheduling,
     StackTrace? stack,
   }) {
     String? site = _callbackSites[callback];
-    if (rescheduling && site != null) {
+    final bool recapture =
+        site == null ||
+        (!rescheduling &&
+            _isVague(site) &&
+            !(_sinceCallbackStack.isRunning &&
+                _sinceCallbackStack.elapsed < kUiActivityStackSampleInterval));
+    if (!recapture) {
       // 还活着的回调挪到队尾，不被后来大量短命 ticker 挤出去（常驻的孤儿 ticker 正是要找的那个）。
       _callbackSites
         ..remove(callback)
         ..[callback] = site;
     } else {
+      if (site != null) {
+        _sinceCallbackStack
+          ..reset()
+          ..start();
+      }
       final String fresh = frameRequestSiteOf(
         (stack ?? StackTrace.current).toString(),
       );
@@ -173,6 +194,9 @@ abstract final class UiActivityProbe {
     _builds = 0;
     _buildSites.clear();
     _sinceStack
+      ..stop()
+      ..reset();
+    _sinceCallbackStack
       ..stop()
       ..reset();
     _requests = 0;

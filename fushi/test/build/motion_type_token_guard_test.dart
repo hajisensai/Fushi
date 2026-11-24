@@ -103,6 +103,7 @@ void main() {
           ..._subtitleContentBudget,
           ..._typeScaleTokenBudget,
           ..._lyricVisualizerContentFontBudget,
+          ..._lyricsContentFontBudget,
         });
     expect(
       offenders,
@@ -185,6 +186,13 @@ const Map<String, int> _lyricVisualizerContentFontBudget = <String, int>{
   'lib/src/media/music/lyrics/visualizer/modes/monet/monet_visualizer.dart': 2,
   'lib/src/media/music/lyrics/visualizer/modes/still/still_layout.dart': 2,
   'lib/src/pages/implementations/music/music_lyric_visualizer_view.dart': 3,
+};
+
+/// 逐字歌词页的歌词正文是歌词内容区（按本文件头的约定不走 UI 字阶）：Apple 设计系统
+/// 下 [musicAppleLyricsAppearance] 的主行字号与 M3E 的 `KaraokeLyricsAppearance`
+/// 默认字号同属歌词外观常量（再乘系统文字缩放），只豁免这一处。
+const Map<String, int> _lyricsContentFontBudget = <String, int>{
+  'lib/src/pages/implementations/music/music_lyrics_page_apple.part.dart': 1,
 };
 
 /// 2026-10-05 存量：`Curves.` 每文件出现次数（只许减少）。

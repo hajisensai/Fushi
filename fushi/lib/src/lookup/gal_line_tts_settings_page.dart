@@ -302,9 +302,8 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
     String? hint,
     String? error,
     required ValueChanged<String> onChanged,
-  }) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-    child: FushiTextField(
+  }) => _groupField(
+    FushiTextField(
       key: key,
       initialValue: initial,
       labelText: label,
@@ -316,6 +315,12 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
       onChanged: onChanged,
     ),
   );
+
+  /// 分组里一整行的输入框：Apple 下直接交给分组排成表单行
+  /// （[FushiAppleFormRowScope]，无填充框、行间分隔线），MD3 照旧按行内边距排。
+  Widget _groupField(FushiTextField field) => isGlassDesign(context)
+      ? field
+      : Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 8), child: field);
 
   Widget _speakerSection() => AdaptiveSettingsSection(
     title: t.gal_line_tts_speaker_section,
@@ -565,9 +570,8 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
     return AdaptiveSettingsSection(
       title: t.gal_line_tts_test_section,
       children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: FushiTextField(
+        _groupField(
+          FushiTextField(
             key: const ValueKey<String>('gal-tts-test-input'),
             controller: _sample,
             minLines: 1,

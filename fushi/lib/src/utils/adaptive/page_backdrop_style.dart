@@ -156,8 +156,8 @@ const Map<String, String> kPageBackdropProfileParkedPrefKeyPrefixes =
 
 /// [prefs]（偏好表原始编码值）里仍在引用的全部背景图（存的原值：文件名或存量绝对
 /// 路径，调用方按 [pageBackdropImageFileName] 比对）：live 键与各配置停放的值，
-/// 全局两张 + 各模块的。[skipParkedUid] 的停放值不算——激活配置的停放值是它上次切走时
-/// 的旧值，live 键才是它现在的图（下次切走会被覆盖），算进去只会让换掉的旧图多留一阵。
+/// 全局两张 + 各模块 / 页面的。[skipParkedUid] 的停放值不算——激活配置的停放值是它上次
+/// 切走时的旧值，live 键才是它现在的图（下次切走会被覆盖），算进去只会让换掉的旧图多留一阵。
 Set<String> pageBackdropReferencedImagePaths(
   Map<String, String> prefs, {
   String? skipParkedUid,
@@ -169,7 +169,7 @@ Set<String> pageBackdropReferencedImagePaths(
 
   void addModuleImages(Object? value) {
     for (final PageBackdropModuleImages images
-        in decodePageBackdropModuleImages(value).values) {
+        in decodePageBackdropScopedImages(value).values) {
       addPath(images.landscape);
       addPath(images.portrait);
     }
@@ -331,13 +331,13 @@ String? healPageBackdropImageRef(
 }
 
 /// [kPageBackdropModuleImagesPrefKey] 值（解码后的 JSON 串）里的存量绝对路径按
-/// [healPageBackdropImageRef] 改写；没有要改的返回 null。
+/// [healPageBackdropImageRef] 改写（模块与页面层级的图都改）；没有要改的返回 null。
 String? healPageBackdropModuleImagesValue(
   Object? raw, {
   required bool Function(String name) inDirectory,
 }) {
-  final Map<HomeTab, PageBackdropModuleImages> images =
-      decodePageBackdropModuleImages(raw);
+  final Map<String, PageBackdropModuleImages> images =
+      decodePageBackdropScopedImages(raw);
   bool changed = false;
   String? heal(String? path) {
     final String? healed = healPageBackdropImageRef(
@@ -349,16 +349,16 @@ String? healPageBackdropModuleImagesValue(
     return healed;
   }
 
-  final Map<HomeTab, PageBackdropModuleImages> out =
-      <HomeTab, PageBackdropModuleImages>{
-        for (final MapEntry<HomeTab, PageBackdropModuleImages> e
+  final Map<String, PageBackdropModuleImages> out =
+      <String, PageBackdropModuleImages>{
+        for (final MapEntry<String, PageBackdropModuleImages> e
             in images.entries)
           e.key: (
             landscape: heal(e.value.landscape),
             portrait: heal(e.value.portrait),
           ),
       };
-  return changed ? encodePageBackdropModuleImages(out) : null;
+  return changed ? encodePageBackdropScopedImages(out) : null;
 }
 
 /// 偏好里存的图片路径：空串 / 非字符串 / [exists] 判为不存在的一律视为没有。
@@ -411,7 +411,42 @@ HomeTab? pageBackdropModuleFromWire(Object? raw) {
   return null;
 }
 
-/// 某个模块单独设的背景（不可变）。
+// ── 按页面单独设置（拍板台 xxbbL0j15l，2026-11-24）────────────────────────────
+//
+// 层级：全局 → 模块（[HomeTab]）→ 模块里单独可设的页面（[PageBackdropPage]）。页面
+// 没单独设就继承所属模块解析出的背景（模块也没设就是全局）；选「纯色」等于在这一页
+// 关掉背景装饰。与模块层一样只覆盖「画什么」（预设 + 图片），也不参与取色。
+//
+// 页面层的设置与模块层存在同两个偏好键里（[kPageBackdropModulePresetsPrefKey] /
+// [kPageBackdropModuleImagesPrefKey]），键名是 [PageBackdropPage.wire]：设备本地登记、
+// 配置停放、存量路径改写、引用扫描都沿用模块那一套，不另立键。读取侧（模块 / 页面
+// 各自的 decode）认不出的 wire 跳过（等于跟随上一层）；整键读改写（Scoped 编解码）
+// 原样保留认不出的 wire 及其图片——别的版本 / 设备写下的层级不会因为本机改了另一层
+// 被抹掉，它的图也照样算被引用、不被清扫误删。
+
+/// 模块里能单独设背景的页面。[wire] 冻结（改了等于数据迁移），且不得与
+/// [pageBackdropModuleWire] 的任何值重名（两层共用一个 JSON 对象）。
+enum PageBackdropPage {
+  /// 复习答题页（`SrsReviewPage`）：默认继承复习模块（牌组总览）的背景。
+  srsReview('srs_review', HomeTab.srs);
+
+  const PageBackdropPage(this.wire, this.module);
+
+  final String wire;
+
+  /// 所属模块：本页没单独设时继承它的背景，从哪个 tab 的入口打开都一样。
+  final HomeTab module;
+
+  /// [wire] 的反向；认不出的返回 null。
+  static PageBackdropPage? fromWire(Object? raw) {
+    for (final PageBackdropPage page in values) {
+      if (page.wire == raw) return page;
+    }
+    return null;
+  }
+}
+
+/// 某个模块（或页面）单独设的背景（不可变）。
 @immutable
 class PageBackdropModuleOverride {
   const PageBackdropModuleOverride({
@@ -457,60 +492,111 @@ PageBackdropSettings resolvePageBackdropSettings(
   );
 }
 
-/// 解析 [kPageBackdropModulePresetsPrefKey] 的值：坏 JSON / 认不出的模块或预设
-/// 一律跳过（等于那个模块跟随全局）；已删除的「角落形状」旧值解析为默认预设。
-Map<HomeTab, PageBackdropPreset> decodePageBackdropModulePresets(Object? raw) {
+/// 解析 [kPageBackdropModulePresetsPrefKey] 的值，键是层级 wire（模块 / 页面，也包括本版本
+/// 认不出的 wire——原样保留，见上方分层说明）：坏 JSON / 空键 / 认不出的预设跳过；已删除的
+/// 「角落形状」旧值解析为默认预设。写入侧按这份整体改写，各层的设置互不丢。
+Map<String, PageBackdropPreset> decodePageBackdropScopedPresets(Object? raw) {
   final Map<String, Object?> json = _decodeJsonObject(raw);
-  final Map<HomeTab, PageBackdropPreset> out = <HomeTab, PageBackdropPreset>{};
+  final Map<String, PageBackdropPreset> out = <String, PageBackdropPreset>{};
   json.forEach((String key, Object? value) {
-    final HomeTab? tab = pageBackdropModuleFromWire(key);
-    if (tab == null || value is! String) return;
+    if (key.isEmpty || value is! String) return;
     final PageBackdropPreset? preset = _presetFromWireOrNull(value);
-    if (preset != null) out[tab] = preset;
+    if (preset != null) out[key] = preset;
   });
   return out;
 }
 
-String encodePageBackdropModulePresets(Map<HomeTab, PageBackdropPreset> map) =>
+String encodePageBackdropScopedPresets(Map<String, PageBackdropPreset> map) =>
     jsonEncode(<String, String>{
-      for (final MapEntry<HomeTab, PageBackdropPreset> e in map.entries)
-        pageBackdropModuleWire(e.key): e.value.wire,
+      for (final MapEntry<String, PageBackdropPreset> e in map.entries)
+        e.key: e.value.wire,
     });
 
-/// 某个模块的两张图片路径（未核对存在与否）。
+/// [decodePageBackdropScopedPresets] 里模块那一层。
+Map<HomeTab, PageBackdropPreset> decodePageBackdropModulePresets(
+  Object? raw,
+) => <HomeTab, PageBackdropPreset>{
+  for (final MapEntry<String, PageBackdropPreset> e
+      in decodePageBackdropScopedPresets(raw).entries)
+    if (pageBackdropModuleFromWire(e.key) case final HomeTab tab) tab: e.value,
+};
+
+/// [decodePageBackdropScopedPresets] 里页面那一层。
+Map<PageBackdropPage, PageBackdropPreset> decodePageBackdropPagePresets(
+  Object? raw,
+) => <PageBackdropPage, PageBackdropPreset>{
+  for (final MapEntry<String, PageBackdropPreset> e
+      in decodePageBackdropScopedPresets(raw).entries)
+    if (PageBackdropPage.fromWire(e.key) case final PageBackdropPage page)
+      page: e.value,
+};
+
+String encodePageBackdropModulePresets(Map<HomeTab, PageBackdropPreset> map) =>
+    encodePageBackdropScopedPresets(<String, PageBackdropPreset>{
+      for (final MapEntry<HomeTab, PageBackdropPreset> e in map.entries)
+        pageBackdropModuleWire(e.key): e.value,
+    });
+
+/// 某个模块（或页面）的两张图片路径（未核对存在与否）。
 typedef PageBackdropModuleImages = ({String? landscape, String? portrait});
 
-/// 解析 [kPageBackdropModuleImagesPrefKey] 的值；空串路径视为没有。
-Map<HomeTab, PageBackdropModuleImages> decodePageBackdropModuleImages(
+/// 解析 [kPageBackdropModuleImagesPrefKey] 的值，键是层级 wire（同
+/// [decodePageBackdropScopedPresets]，认不出的 wire 原样保留）；空串路径视为没有。
+Map<String, PageBackdropModuleImages> decodePageBackdropScopedImages(
   Object? raw,
 ) {
   final Map<String, Object?> json = _decodeJsonObject(raw);
-  final Map<HomeTab, PageBackdropModuleImages> out =
-      <HomeTab, PageBackdropModuleImages>{};
+  final Map<String, PageBackdropModuleImages> out =
+      <String, PageBackdropModuleImages>{};
   json.forEach((String key, Object? value) {
-    final HomeTab? tab = pageBackdropModuleFromWire(key);
-    if (tab == null || value is! Map) return;
+    if (key.isEmpty || value is! Map) return;
     String? path(Object? v) => v is String && v.isNotEmpty ? v : null;
     final PageBackdropModuleImages images = (
       landscape: path(value['landscape']),
       portrait: path(value['portrait']),
     );
     if (images.landscape != null || images.portrait != null) {
-      out[tab] = images;
+      out[key] = images;
     }
   });
   return out;
 }
 
-String encodePageBackdropModuleImages(
-  Map<HomeTab, PageBackdropModuleImages> map,
+String encodePageBackdropScopedImages(
+  Map<String, PageBackdropModuleImages> map,
 ) => jsonEncode(<String, Object>{
-  for (final MapEntry<HomeTab, PageBackdropModuleImages> e in map.entries)
+  for (final MapEntry<String, PageBackdropModuleImages> e in map.entries)
     if (e.value.landscape != null || e.value.portrait != null)
-      pageBackdropModuleWire(e.key): <String, String>{
+      e.key: <String, String>{
         if (e.value.landscape case final String l) 'landscape': l,
         if (e.value.portrait case final String p) 'portrait': p,
       },
+});
+
+/// [decodePageBackdropScopedImages] 里模块那一层。
+Map<HomeTab, PageBackdropModuleImages> decodePageBackdropModuleImages(
+  Object? raw,
+) => <HomeTab, PageBackdropModuleImages>{
+  for (final MapEntry<String, PageBackdropModuleImages> e
+      in decodePageBackdropScopedImages(raw).entries)
+    if (pageBackdropModuleFromWire(e.key) case final HomeTab tab) tab: e.value,
+};
+
+/// [decodePageBackdropScopedImages] 里页面那一层。
+Map<PageBackdropPage, PageBackdropModuleImages> decodePageBackdropPageImages(
+  Object? raw,
+) => <PageBackdropPage, PageBackdropModuleImages>{
+  for (final MapEntry<String, PageBackdropModuleImages> e
+      in decodePageBackdropScopedImages(raw).entries)
+    if (PageBackdropPage.fromWire(e.key) case final PageBackdropPage page)
+      page: e.value,
+};
+
+String encodePageBackdropModuleImages(
+  Map<HomeTab, PageBackdropModuleImages> map,
+) => encodePageBackdropScopedImages(<String, PageBackdropModuleImages>{
+  for (final MapEntry<HomeTab, PageBackdropModuleImages> e in map.entries)
+    pageBackdropModuleWire(e.key): e.value,
 });
 
 /// 偏好值不是 JSON 对象（缺键、空串、坏数据）时按「没有任何模块单独设置」处理。
@@ -543,9 +629,30 @@ pageBackdropModuleOverrides =
       const <HomeTab, PageBackdropModuleOverride>{},
     );
 
-/// [module] 实际生效的背景设置（null = 不属于任何模块，用全局）。
-PageBackdropSettings pageBackdropSettingsFor(HomeTab? module) =>
-    resolvePageBackdropSettings(
-      pageBackdropSettings.value,
-      module == null ? null : pageBackdropModuleOverrides.value[module],
+/// 全局发布点：各页面单独设的背景（只含有设置的页面），与
+/// [pageBackdropModuleOverrides] 同一处写入。
+final ValueNotifier<Map<PageBackdropPage, PageBackdropModuleOverride>>
+pageBackdropPageOverrides =
+    ValueNotifier<Map<PageBackdropPage, PageBackdropModuleOverride>>(
+      const <PageBackdropPage, PageBackdropModuleOverride>{},
     );
+
+/// [module] 实际生效的背景设置（null = 不属于任何模块，用全局）。
+///
+/// [page] 非空时再叠一层页面单独的设置；页面没设（或设了图片却不可用）就是
+/// [page] 所属模块解析出的设置——此时忽略 [module]，页面总按自己的模块继承。
+PageBackdropSettings pageBackdropSettingsFor(
+  HomeTab? module, {
+  PageBackdropPage? page,
+}) {
+  final HomeTab? owner = page?.module ?? module;
+  final PageBackdropSettings inherited = resolvePageBackdropSettings(
+    pageBackdropSettings.value,
+    owner == null ? null : pageBackdropModuleOverrides.value[owner],
+  );
+  if (page == null) return inherited;
+  return resolvePageBackdropSettings(
+    inherited,
+    pageBackdropPageOverrides.value[page],
+  );
+}

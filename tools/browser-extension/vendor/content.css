@@ -2489,7 +2489,7 @@
    M3E 形状变形：静息整圆，按下收成 10px 圆角方块并缩到 0.92，松手带轻过冲弹回。
    时长对齐 Flutter 共享动效 token（FushiMotion.micro 90ms 按下 / short 180ms 松手 +
    release 软过冲）；减弱动态效果由 JS 挂 .no-motion 归零，墨水屏走 html.eink 通配压平。
-   Apple 设计系统（html.fushi-glass-host.fushi-apple）在后面换成 Apple 胶囊口径。 */
+   Apple 设计系统（html.fushi-glass-host.fushi-apple）在后面换成裸字形按钮。 */
 .ctx-adjust-button {
     box-sizing: border-box;
     width: 32px;
@@ -2546,7 +2546,7 @@
    （「复习中 · 3天后」/「新卡」/「已暂停」）只进提示与无障碍标签。复习模块关着时 popup.js
    根本不渲染它。按队列分色——到期复习用主色、学习中用三级色、新卡用次级色、暂停
    用中性灰；颜色全部走注入的色角色变量（亮 / 暗 / 自定义主题自动跟随），淡染半透明，
-   自定义卡面底色下同样成立。Apple 设计系统在下面换成系统灰底 + 强调色图标。
+   自定义卡面底色下同样成立。Apple 设计系统在下面换成裸字形按钮（保留队列强调色）。
    墨水屏由 html.eink 通配压平圆角 / 动效。 */
 .srs-status-badge {
     border: none;

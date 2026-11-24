@@ -125,6 +125,7 @@ class _PastedTextBookDialogState extends State<PastedTextBookDialog>
         // 粘贴文本色块（外层「粘贴文本」方式块的钉色）里放 M3E 填充式字段。
         body: ImportSectionBlock(
           tone: importMethodTone(ImportMethodKind.pasteText, ImportTone.coral),
+          groupTitle: t.import_group_text,
           children: <Widget>[
             FushiTextField(
               controller: _titleController,

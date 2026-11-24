@@ -322,9 +322,12 @@ class _HanabiVisualizerState extends State<HanabiVisualizer> {
         fontFamilyFallback: inherited.fontFamilyFallback,
       ),
     );
+    final double dpr = MediaQuery.devicePixelRatioOf(buildContext);
     return RepaintBoundary(
       child: LyricVisualizerFrame(
         context: c,
+        // 画面只由歌词时间决定（[HanabiFrame] 不读墙钟）：暂停时停帧，不按刷新率重画整个场景。
+        idleAnimation: false,
         builder: (BuildContext bc, LyricVisualizerTicks ticks) => CustomPaint(
           size: Size.infinite,
           painter: _HanabiPainter(
@@ -336,6 +339,7 @@ class _HanabiVisualizerState extends State<HanabiVisualizer> {
             baseStyle: baseStyle,
             beats: _beatsFor(c),
             keywordColor: hanabiKeywordColorOf(c.theme),
+            devicePixelRatio: dpr,
           ),
         ),
       ),
@@ -353,6 +357,7 @@ class _HanabiPainter extends CustomPainter {
     required this.baseStyle,
     required this.beats,
     required this.keywordColor,
+    required this.devicePixelRatio,
   }) : super(repaint: ticks);
 
   final HanabiScene scene;
@@ -363,6 +368,7 @@ class _HanabiPainter extends CustomPainter {
   final TextStyle baseStyle;
   final List<HanabiBeatEvent> beats;
   final int? Function(String text)? keywordColor;
+  final double devicePixelRatio;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -401,6 +407,7 @@ class _HanabiPainter extends CustomPainter {
         beatBursts: tuning.number(HanabiTuningKeys.beatBursts, 1),
         pulseScale: pulse.scale,
         pulseRotation: pulse.rotation,
+        devicePixelRatio: devicePixelRatio,
       ),
     );
     canvas.restore();
@@ -416,5 +423,6 @@ class _HanabiPainter extends CustomPainter {
       old.theme.background != theme.background ||
       old.settings != settings ||
       old.baseStyle != baseStyle ||
+      old.devicePixelRatio != devicePixelRatio ||
       !identical(old.beats, beats);
 }

@@ -592,8 +592,16 @@ extension _VideoClipExport on _VideoFushiPageState {
   ///
   /// 去向由 [VideoScreenshotDestination] 决定：弹对话框（历史行为）/ 进剪贴板 /
   /// 静默写进指定目录。复用 [VideoPlayerController.screenshot]（制卡同源，JPEG）。
+  ///
+  /// 网页档同样走这里：非 DRM 站点的帧由页面 canvas 截（与暂停 OCR 同一条链路）；截不到
+  /// （[VideoPlayerController.canCaptureFrame] 为假：Netflix DRM，或页面里还没有视频）给 OSD
+  /// 说明，不静默吞掉按键（BUG-5417）。
   Future<void> _saveScreenshot({bool withSubtitles = false}) async {
     final VideoPlayerController? controller = _controller;
+    if (controller != null && !controller.canCaptureFrame) {
+      _showOsd(t.video_screenshot_web_unsupported);
+      return;
+    }
     final Uint8List? raw = await controller?.screenshot();
     if (raw == null) {
       _showScreenshotFailure('no frame available');
@@ -816,14 +824,17 @@ extension _VideoClipExport on _VideoFushiPageState {
     }
   }
 
+  /// 截图文件名的来源：本地片源取文件路径（取文件名主干）；网页档的「路径」是观看页 URL
+  /// （`watch?v=…` 当文件名没有意义），取视频标题（BUG-5417）。
   String _screenshotSourcePathOrTitle() {
+    final String rawTitle = (_title ?? widget.remoteInfo?.title ?? '').trim();
+    final String? title = rawTitle.isEmpty ? null : rawTitle;
+    if (title != null && (_controller?.isWebBackend ?? false)) return title;
     final String? currentVideoPath = _currentVideoPath;
     if (currentVideoPath != null && currentVideoPath.trim().isNotEmpty) {
       return currentVideoPath;
     }
-    final String? title = _title ?? widget.remoteInfo?.title;
-    if (title != null && title.trim().isNotEmpty) return title;
-    return 'video';
+    return title ?? 'video';
   }
 
   String _uniqueScreenshotSavePath(

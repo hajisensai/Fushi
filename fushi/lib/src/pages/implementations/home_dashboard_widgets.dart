@@ -15,6 +15,7 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_poster_block.dart'
@@ -31,6 +32,8 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// 首载骨架块：中性底色圆角块（MD3 surfaceContainer 档 / Apple tertiaryFill /
@@ -241,14 +244,20 @@ class HomeGoalRing extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double? target = fraction;
-    final Color accent = tokens.surfaces.primary;
+    // Apple：强调色环 + systemFill 底轨、环心 label（不取 M3E primary / 中性块色）。
+    final FushiAppleColors? apple =
+        isGlassDesign(context) && !isEinkTheme(context)
+        ? appleColorsOf(context)
+        : null;
+    final Color accent = apple?.accent ?? tokens.surfaces.primary;
+    final Color track = apple?.fill ?? fushiNeutralBlockColor(context);
     if (target == null) {
       return SizedBox.square(
         dimension: size,
         child: DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: fushiNeutralBlockColor(context),
+            color: track,
             border: isEinkTheme(context)
                 ? Border.all(color: tokens.surfaces.outline)
                 : null,
@@ -279,7 +288,7 @@ class HomeGoalRing extends StatelessWidget {
                     // （前景 30%，与「语言目标」环同一个）。
                     backgroundColor: isEinkTheme(context)
                         ? tokens.surfaces.onSurface.withValues(alpha: 0.3)
-                        : fushiNeutralBlockColor(context),
+                        : track,
                     // 铺满 [size]：不给外框时 M3E 指示器按默认 40 画在 52 的槽里，
                     // 环心只剩 ~22 宽，「37%」压在弧上（2026-11-20 走查截图）。
                     constraints: BoxConstraints.tight(Size.square(size)),
@@ -294,7 +303,7 @@ class HomeGoalRing extends StatelessWidget {
                     '${(value * 100).round()}%',
                     style: context.fushiType.labelSmall.copyWith(
                       fontWeight: FontWeight.w600,
-                      color: tokens.surfaces.onSurface,
+                      color: apple?.label ?? tokens.surfaces.onSurface,
                     ),
                   ),
               ],
@@ -344,6 +353,12 @@ class HomeStudyHeader extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
     final bool hasGoal = setGoalLabel == null;
+    // Apple：文字 label / secondaryLabel，整行点按走系统高亮（不画墨水）。
+    final FushiAppleColors? apple =
+        isGlassDesign(context) && !isEinkTheme(context)
+        ? appleColorsOf(context)
+        : null;
+    final Color strong = apple?.label ?? tokens.surfaces.onSurface;
     final Duration swap = fushiMotionDuration(context, FushiMotion.short);
     final Widget valueText = AnimatedSwitcher(
       duration: swap,
@@ -355,13 +370,15 @@ class HomeStudyHeader extends StatelessWidget {
         maxLines: 1,
         softWrap: false,
         style: (theme.textTheme.titleLarge ?? tokens.type.listTitle).copyWith(
-          color: tokens.surfaces.onSurface,
+          color: strong,
           fontWeight: FontWeight.w700,
         ),
       ),
     );
     final Color timeColor =
-        tokens.type.metadata.color ?? tokens.surfaces.onSurface;
+        apple?.secondaryLabel ??
+        tokens.type.metadata.color ??
+        tokens.surfaces.onSurface;
     final Widget time = Semantics(
       key: const ValueKey<String>('home-today-time'),
       container: true,
@@ -382,10 +399,7 @@ class HomeStudyHeader extends StatelessWidget {
               maxLines: 1,
               softWrap: false,
               style: (theme.textTheme.titleMedium ?? tokens.type.listTitle)
-                  .copyWith(
-                    color: tokens.surfaces.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  .copyWith(color: strong, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -402,43 +416,54 @@ class HomeStudyHeader extends StatelessWidget {
               FushiTextButton(onPressed: onEditGoal, child: Text(setLabel)),
             ],
           );
+    final Widget row = Padding(
+      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+      child: Row(
+        children: <Widget>[
+          HomeGoalRing(fraction: fraction, size: 52),
+          SizedBox(width: tokens.spacing.card),
+          // 字数与时长恒在同一行（用户：「每日目标的同一行右侧加上今日时长」）：
+          // 放得下时两端对齐（时长贴右）；极窄屏（320）放不下时整行等比缩小，
+          // 两个数字一起缩，不折行、不省略号截断、也不会只把其中一个压成小字。
+          Expanded(
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints c) => FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: c.maxWidth),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: <Widget>[
+                      valueText,
+                      SizedBox(width: tokens.spacing.card),
+                      trailingRow,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (apple != null) {
+      return FushiPlainButton(
+        key: const ValueKey<String>('home-goal-row'),
+        onPressed: hasGoal ? onEditGoal : null,
+        borderRadius: BorderRadius.circular(
+          FushiAppleMetrics.of(context).groupRadius / 2,
+        ),
+        child: row,
+      );
+    }
     return InkWell(
       key: const ValueKey<String>('home-goal-row'),
       onTap: hasGoal ? onEditGoal : null,
       canRequestFocus: hasGoal,
       borderRadius: FushiBorderRadius.card,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-        child: Row(
-          children: <Widget>[
-            HomeGoalRing(fraction: fraction, size: 52),
-            SizedBox(width: tokens.spacing.card),
-            // 字数与时长恒在同一行（用户：「每日目标的同一行右侧加上今日时长」）：
-            // 放得下时两端对齐（时长贴右）；极窄屏（320）放不下时整行等比缩小，
-            // 两个数字一起缩，不折行、不省略号截断、也不会只把其中一个压成小字。
-            Expanded(
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints c) => FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: AlignmentDirectional.centerStart,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minWidth: c.maxWidth),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: <Widget>[
-                        valueText,
-                        SizedBox(width: tokens.spacing.card),
-                        trailingRow,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: row,
     );
   }
 }
@@ -1055,10 +1080,15 @@ class HomeWeekBars extends StatelessWidget {
     this.height = 44,
     this.reference,
     this.color,
+    this.axisLabels,
   });
 
   /// 柱色（当前目标的语言色，与旁边的环同色）；null = 主题主色。墨水屏忽略。
   final Color? color;
+
+  /// 与 [values] 对齐的横轴短标签（星期首字母）；只有 Apple（Swift Charts 口径）
+  /// 画，高度够时画在细基线下面。null = 不画。
+  final List<String>? axisLabels;
 
   /// 升序 7 天的数值（最后一个是今天）。
   final List<int> values;
@@ -1077,6 +1107,7 @@ class HomeWeekBars extends StatelessWidget {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
+    if (apple) return _buildApple(context);
     final Color? tint = eink ? null : color;
     final Color today = eink
         ? cs.onSurface
@@ -1141,7 +1172,163 @@ class HomeWeekBars extends StatelessWidget {
             ),
     );
   }
+
+  /// Apple（Swift Charts BarMark / Health 周图口径）：顶端圆角的柱、今天强调色
+  /// （或目标语言色）、其余 systemFill 灰；0 值不画柱，只留一条 hairline 基线；
+  /// 高度够时基线下是星期首字母（secondaryLabel）。柱从基线长起，时长取
+  /// [fushiMotionDuration]。
+  Widget _buildApple(BuildContext context) {
+    final FushiAppleColors a = appleColorsOf(context);
+    final FushiAppleMetrics m = FushiAppleMetrics.of(context);
+    final Color today = color ?? a.accent;
+    final Color past = color?.withValues(alpha: 0.35) ?? a.fill;
+    final double? line = reference != null && reference! > 0 ? reference : null;
+    // 纵轴顶留余量（Swift Charts 自动轴取整到「好看」的刻度，最高柱不顶满）。
+    final double peak =
+        math.max(values.fold<int>(0, math.max).toDouble(), line ?? 0) *
+        _kAppleWeekBarsHeadroom;
+    final double hairline = 1 / MediaQuery.devicePixelRatioOf(context);
+    final List<String>? axis = axisLabels;
+    final TextStyle axisStyle = appleTextStyle(
+      context,
+      size: (m.desktop ? 10 : 11) * m.scale,
+      weight: FontWeight.w500,
+      height: 1.2,
+      color: a.secondaryLabel,
+    );
+    final double axisHeight =
+        MediaQuery.textScalerOf(context).scale(axisStyle.fontSize ?? 11) * 1.2 +
+        2;
+    // 柱区至少留 24 高才挂星期行，矮格只画柱。
+    final bool showAxis =
+        axis != null &&
+        axis.length == values.length &&
+        height >= 24 + axisHeight;
+    final double barArea = showAxis ? height - axisHeight : height;
+    final double gap = 4 * m.scale;
+    final Widget bars = SizedBox(
+      key: const ValueKey<String>('home-week-bars'),
+      height: barArea,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: <Widget>[
+          for (int i = 0; i < values.length; i++) ...<Widget>[
+            if (i > 0) SizedBox(width: gap),
+            Expanded(
+              child: FushiTooltip(
+                message: labels[i],
+                excludeFromSemantics: true,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(
+                    begin: 0,
+                    end: peak == 0 ? 0 : values[i] / peak,
+                  ),
+                  duration: fushiMotionDuration(context, FushiMotion.medium),
+                  curve: FushiMotion.standard,
+                  builder: (BuildContext _, double f, Widget? __) =>
+                      LayoutBuilder(
+                        builder: (BuildContext _, BoxConstraints c) {
+                          final double h = values[i] == 0 ? 0 : barArea * f;
+                          // 柱宽按 Swift Charts 类目轴比例：约半格宽、封顶、居中，
+                          // 宽格里也不成大方块。
+                          final double w = math.min(
+                            c.maxWidth * _kAppleWeekBarBandShare,
+                            _kAppleWeekBarMaxWidth * m.scale,
+                          );
+                          final double r = math.min(w / 2, 4 * m.scale);
+                          return Align(
+                            alignment: Alignment.bottomCenter,
+                            child: SizedBox(
+                              width: w,
+                              height: math.max(0, h),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: i == values.length - 1 ? today : past,
+                                  borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(math.min(r, h / 2)),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+    final Widget plot = Stack(
+      children: <Widget>[
+        if (line == null)
+          bars
+        else
+          FushiBarReferenceLine(
+            fraction: line / peak,
+            height: barArea,
+            color: a.tertiaryLabel,
+            child: bars,
+          ),
+        // 细基线（Swift Charts 横轴线）。
+        PositionedDirectional(
+          start: 0,
+          end: 0,
+          bottom: 0,
+          child: SizedBox(
+            height: hairline,
+            child: ColoredBox(color: a.separator),
+          ),
+        ),
+      ],
+    );
+    return Semantics(
+      container: true,
+      label: semanticLabel,
+      excludeSemantics: true,
+      child: !showAxis
+          ? plot
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                plot,
+                SizedBox(
+                  height: axisHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: <Widget>[
+                      for (int i = 0; i < axis.length; i++) ...<Widget>[
+                        if (i > 0) SizedBox(width: gap),
+                        Expanded(
+                          child: Text(
+                            axis[i],
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.clip,
+                            textAlign: TextAlign.center,
+                            style: axisStyle,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
 }
+
+/// Apple 周柱纵轴顶部余量：最高柱占柱区约 87%。
+const double _kAppleWeekBarsHeadroom = 1.15;
+
+/// Apple 周柱一根占它那一格宽的比例（Swift Charts 类目柱约半格）。
+const double _kAppleWeekBarBandShare = 0.5;
+
+/// Apple 周柱最宽多少（逻辑像素，macOS 档再乘 [FushiAppleMetrics.scale]）。
+const double _kAppleWeekBarMaxWidth = 16;
 
 /// 「最近添加」紧凑行（2026-10-10，横屏 / 宽屏侧栏）：小竖封面 + 标题 + 「类型 ·
 /// 相对时间」一行。侧栏宽度有限，列表比横滑封面行省地方，标题也能完整露出。

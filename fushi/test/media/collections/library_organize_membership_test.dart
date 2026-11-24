@@ -699,19 +699,31 @@ void main() {
       expect(merge.sourceNames, <String>['Two']);
 
       expect(
-        await resolveLibraryOrganizeProposal(db, merge.id, accept: true),
+        await resolveLibraryOrganizeProposal(
+          db,
+          merge.id,
+          decision: OrganizeProposalDecision.accept,
+        ),
         OrganizeProposalState.accepted,
       );
       expect(await db.getMediaCollectionById(two), isNull);
       expect(await members(one), <String, bool>{a: true, b: true});
       expect(
-        await resolveLibraryOrganizeProposal(db, merge.id, accept: true),
+        await resolveLibraryOrganizeProposal(
+          db,
+          merge.id,
+          decision: OrganizeProposalDecision.accept,
+        ),
         isNull,
         reason: '已处理过',
       );
 
       expect(
-        await resolveLibraryOrganizeProposal(db, rename.id, accept: false),
+        await resolveLibraryOrganizeProposal(
+          db,
+          rename.id,
+          decision: OrganizeProposalDecision.rejectForever,
+        ),
         OrganizeProposalState.rejected,
       );
       expect((await db.getMediaCollectionById(one))!.name, 'One');
@@ -747,7 +759,11 @@ void main() {
         db,
       )).single;
       expect(
-        await resolveLibraryOrganizeProposal(db, p.id, accept: true),
+        await resolveLibraryOrganizeProposal(
+          db,
+          p.id,
+          decision: OrganizeProposalDecision.accept,
+        ),
         OrganizeProposalState.stale,
       );
       expect((await db.getMediaCollectionById(one))!.name, 'One');

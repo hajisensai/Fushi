@@ -105,4 +105,49 @@ void main() {
       });
     }
   }
+
+  // Apple 分区卡（合并 develop 时并进来的 [HomeWidgetFigureWithLine.alignment]）：大字
+  // 贴着卡头排，不在内容区里竖向居中；缺省仍竖向居中。
+  for (final AlignmentGeometry alignment in <AlignmentGeometry>[
+    AlignmentDirectional.centerStart,
+    AlignmentDirectional.topStart,
+  ]) {
+    testWidgets('alignment $alignment：整组按 alignment 摆', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 170,
+                height: 200,
+                child: HomeWidgetFigureWithLine(
+                  figure: const HomeWidgetFigure(value: '12'),
+                  line: const Text('27 分钟', key: timeKey),
+                  lineStyle: const TextStyle(fontSize: 12),
+                  alignment: alignment,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      final Rect content = tester.getRect(
+        find.byType(HomeWidgetFigureWithLine),
+      );
+      final Rect figure = tester.getRect(find.byType(HomeWidgetFigure));
+      final Rect line = tester.getRect(find.byKey(timeKey));
+      if (alignment == AlignmentDirectional.topStart) {
+        expect(figure.top, moreOrLessEquals(content.top));
+      } else {
+        expect(
+          figure.top - content.top,
+          moreOrLessEquals(content.bottom - line.bottom, epsilon: 0.5),
+        );
+        expect(figure.top, greaterThan(content.top + 1));
+      }
+    });
+  }
 }

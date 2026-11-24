@@ -94,7 +94,7 @@ void main() {
       );
       // _switchEpisode 远端分支接通 _loadRemoteEpisode。
       expect(
-        episodeSrc.contains('if (_isRemote) {') &&
+        episodeSrc.contains('if (_isRemote && !_streamBookEpisodes) {') &&
             episodeSrc.contains(
               '_loadRemoteEpisode(index, startIntent: intent)',
             ),

@@ -8212,6 +8212,11 @@ class GalHookSessionController extends ChangeNotifier {
     return window.hwnd;
   }
 
+  /// 测试接缝：直接把会话置成给定状态（布局测试要「捕获中」的版面，不必真起
+  /// helper / 注入链路）。生产代码不调用；测试 tearDown 置回 `GalHookSessionState()`。
+  @visibleForTesting
+  void debugSetStateForTesting(GalHookSessionState next) => _setState(next);
+
   void _setState(GalHookSessionState next) {
     _state = next;
     _syncMagpieUpscaling();

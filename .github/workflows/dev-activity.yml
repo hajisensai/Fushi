@@ -3,11 +3,12 @@
 # Renders docs/assets/dev-activity.svg: weekly commit volume on `develop` plus
 # the release cadence of the three update channels (debug / beta / stable).
 #
-# Why the branch handling matters: this workflow runs on `main` (scheduled
-# workflows only ever run from the default branch) but all development happens
-# on `develop`. The checkout therefore uses fetch-depth: 0 and the ref is passed
-# to the generator explicitly, so the SVG committed to `main` charts `develop`'s
-# activity. The generator hard-fails when the ref does not resolve rather than
+# Branch handling: scheduled workflows run on the default branch, which is
+# `develop` since 2026-11-25 (it used to be `main`, so the SVG landed on main while
+# charting develop). The chart is committed to develop, the branch whose README
+# GitHub shows. The ref is still passed to the generator explicitly
+# (origin/develop) so a manual dispatch from another branch charts the same
+# history. The generator hard-fails when the ref does not resolve rather than
 # emitting an empty chart that would read as "no development happened".
 #
 # Release-channel safety: this workflow ONLY commits docs/assets/dev-activity.svg.
@@ -19,7 +20,7 @@ name: Update Dev Activity Chart
 on:
   schedule:
     # Daily at 03:47 UTC, deliberately offset from the star-history workflow
-    # (03:17) so the two bots do not race each other's push to main.
+    # (03:17) so the two bots do not race each other's push to develop.
     - cron: '47 3 * * *'
   workflow_dispatch:
 

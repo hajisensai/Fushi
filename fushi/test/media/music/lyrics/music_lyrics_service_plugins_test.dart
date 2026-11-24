@@ -458,7 +458,6 @@ void main() {
         parseStoredMusicLyrics(
           Uint8List.fromList(utf8.encode('{not json')),
           kMusicPluginLyricsTracksFormat,
-          isUserEdited: false,
           parse: _parse,
         ),
         throwsA(isA<LyricsParseException>()),
@@ -467,7 +466,6 @@ void main() {
         parseStoredMusicLyrics(
           Uint8List.fromList(utf8.encode('{}')),
           kMusicPluginLyricsTracksFormat,
-          isUserEdited: false,
           parse: _parse,
         ),
         throwsA(isA<LyricsParseException>()),

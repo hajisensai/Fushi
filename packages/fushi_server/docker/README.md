@@ -84,7 +84,18 @@ is turned off inside the container; update the image instead.
 |---|---|---|
 | **Source** (default) | `docker compose up -d --build` | The newest code from this checkout. Slow first build. |
 | **Release bundle** | `docker compose -f docker-compose.bundle.yml up -d --build` | Packaging a published [fushi-server release](https://github.com/hajisensai/fushi-server/releases) in about a minute. Only as new as the latest release. `FUSHI_SERVER_TAG` pins one; a `fushi_server-*-linux-x64.tar.gz` in `dist/` is used instead of downloading. |
-| **Prebuilt** | `FUSHI_IMAGE=ghcr.io/hajisensai/fushi-server:latest` in `.env`, then `docker compose up -d` (no `--build`) | Once the maintainer publishes images (`.github/workflows/server-docker-publish.yml`). Not available yet. |
+| **Prebuilt** | `FUSHI_IMAGE=ghcr.io/hajisensai/fushi-server:latest` in `.env`, then `docker compose up -d` (no `--build`) | Published automatically with every [fushi-server release](https://github.com/hajisensai/fushi-server/releases); see the tags below. |
+
+Prebuilt image tags (same channels and version numbers as the Fushi app):
+
+| Tag | Channel | Moves when |
+|---|---|---|
+| `latest`, `<x.y.z>`, `<x.y>`, `<x>` | formal | a Fushi release is published |
+| `beta`, `<x.y.z>-beta.<seq>` | beta | a Fushi beta is published |
+| `debug`, `debug-<seq>` | debug | `develop` changes something the server ships (checked every 30 minutes) |
+
+Pin a full version (`3.4.0`, `3.4.0-beta.24500`, `debug-24510`) to stay put; a
+channel tag follows its channel. `beta` and `debug` builds are prereleases.
 
 Both builds give the same container: same settings, volumes and ports. The
 source build runs `packages/fushi_server/tool/build_linux_bundle.sh`, the same

@@ -4,8 +4,8 @@
 # * 79% 的 PR 来自 fork（W1ght/hibiki），fork PR 的 `pull_request` token 只读，
 #   取消 / 删缓存全是 403；而 PR CI 82% 的 runner 时间花在 PR 合并**之后**。
 # * `pull_request_target` 能给 fork PR 基础仓库的 token，但它的 workflow 定义取自
-#   **默认分支 main**——main 落后 develop 一百多个提交、agent 不碰它；#1829 把
-#   cache-cleanup 改成 pull_request_target 后它一次都没跑过。
+#   **默认分支**——当时是 main（2026-11-25 起改为 develop），main 落后 develop 一百多个
+#   提交、agent 不碰它；#1829 把 cache-cleanup 改成 pull_request_target 后它一次都没跑过。
 # * 合并**就是**一次 push 到 develop：push 事件跑的是 develop 自己的这份 workflow，
 #   token 可写。所以在这里按「这次 push 合并了哪些 PR」清理，fork 与同仓一视同仁。
 #   只有「fork PR 未合并就关掉」不在覆盖面里（同仓的那种由 cache-cleanup.yml 管）。

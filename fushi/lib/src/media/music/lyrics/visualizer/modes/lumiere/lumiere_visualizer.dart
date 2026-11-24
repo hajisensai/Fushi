@@ -10,6 +10,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_audio.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_glyph_atlas.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_scene.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
@@ -280,15 +281,29 @@ class LumiereVisualizer extends StatefulWidget {
   final LyricVisualizerContext context;
 
   @override
-  State<LumiereVisualizer> createState() => _LumiereVisualizerState();
+  State<LumiereVisualizer> createState() => LumiereVisualizerState();
 }
 
-class _LumiereVisualizerState extends State<LumiereVisualizer> {
+class LumiereVisualizerState extends State<LumiereVisualizer> {
   LumiereScene? _scene;
   Object? _sceneKey;
   final LumiereAudioSampler _audio = LumiereAudioSampler();
 
-  LumiereScene _sceneFor(LyricVisualizerContext c, TextStyle inherited) {
+  @visibleForTesting
+  LumiereScene? get debugScene => _scene;
+
+  @override
+  void initState() {
+    super.initState();
+    // 自定义字体是异步注册的：注册表一变（字体加载完）就让图集重画，不停在回落字体上。
+    PaintingBinding.instance.systemFonts.addListener(_onSystemFontsChanged);
+  }
+
+  void _onSystemFontsChanged() => _scene?.glyphs.reload();
+
+  /// 场景只随歌词 / 种子 / 标题这些节目单输入重建；字体不在键里，换字体走
+  /// [LumiereGlyphs.requestStyle] 在后台重画图集，不重编节目单、不卡 UI 线程。
+  LumiereScene _sceneFor(LyricVisualizerContext c, LumiereGlyphStyle style) {
     final bool seamless = c.tuning.flag(
       LumiereTuningKeys.seamlessTransitions,
       true,
@@ -300,11 +315,12 @@ class _LumiereVisualizerState extends State<LumiereVisualizer> {
       c.title,
       c.artist,
       c.album,
-      inherited.fontFamily,
-      inherited.fontWeight,
     );
     final LumiereScene? existing = _scene;
-    if (existing != null && key == _sceneKey) return existing;
+    if (existing != null && key == _sceneKey) {
+      existing.glyphs.requestStyle(style);
+      return existing;
+    }
     existing?.dispose();
     _sceneKey = key;
     return _scene = LumiereScene(
@@ -314,14 +330,13 @@ class _LumiereVisualizerState extends State<LumiereVisualizer> {
       title: c.title,
       artist: c.artist,
       album: c.album,
-      fontFamily: inherited.fontFamily,
-      fontFamilyFallback: inherited.fontFamilyFallback,
-      fontWeight: inherited.fontWeight ?? FontWeight.w500,
+      glyphStyle: style,
     );
   }
 
   @override
   void dispose() {
+    PaintingBinding.instance.systemFonts.removeListener(_onSystemFontsChanged);
     _scene?.dispose();
     _scene = null;
     super.dispose();
@@ -332,8 +347,11 @@ class _LumiereVisualizerState extends State<LumiereVisualizer> {
     final LyricVisualizerContext c = widget.context;
     final LumiereScene scene = _sceneFor(
       c,
-      c.applyThemeFont(DefaultTextStyle.of(buildContext).style),
+      LumiereGlyphStyle.of(
+        c.applyThemeFont(DefaultTextStyle.of(buildContext).style),
+      ),
     );
+    final double devicePixelRatio = MediaQuery.devicePixelRatioOf(buildContext);
     final LyricVisualizerTheme? theme = c.theme;
     scene.themeIcons = theme?.glyphIcons ?? const <IconData>[];
     final bool keywords =
@@ -364,6 +382,7 @@ class _LumiereVisualizerState extends State<LumiereVisualizer> {
             audio: _audio,
             cameraMotion: lumiereCameraMotion(c.intensity),
             keywords: keywords ? theme : null,
+            devicePixelRatio: devicePixelRatio,
           ),
         ),
       ),
@@ -382,7 +401,10 @@ class _LumierePainter extends CustomPainter {
     required this.audio,
     required this.cameraMotion,
     required this.keywords,
-  }) : super(repaint: ticks);
+    required this.devicePixelRatio,
+  }) : super(
+         repaint: Listenable.merge(<Listenable>[ticks, scene.glyphs.changed]),
+       );
 
   final LumiereScene scene;
   final LyricVisualizerContext context;
@@ -393,6 +415,7 @@ class _LumierePainter extends CustomPainter {
   final LumiereAudioSampler audio;
   final double cameraMotion;
   final LyricVisualizerTheme? keywords;
+  final double devicePixelRatio;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -421,6 +444,7 @@ class _LumierePainter extends CustomPainter {
         settings: settings,
         fontScale: context.fontScale,
         lightBackground: lightBackground,
+        devicePixelRatio: devicePixelRatio,
       ),
     );
     canvas.restore();
@@ -434,5 +458,6 @@ class _LumierePainter extends CustomPainter {
       old.settings != settings ||
       old.lightBackground != lightBackground ||
       old.cameraMotion != cameraMotion ||
+      old.devicePixelRatio != devicePixelRatio ||
       !identical(old.keywords, keywords);
 }

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiDividerControl;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.dart';
@@ -518,7 +520,11 @@ class WebBrowserSidebar extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      const Divider(height: 16, indent: 6, endIndent: 6),
+                      const FushiDividerControl(
+                        height: 16,
+                        indent: 6,
+                        endIndent: 6,
+                      ),
                       _header(
                         context,
                         t.web_browser_menu_bookmarks,
@@ -558,7 +564,11 @@ class WebBrowserSidebar extends StatelessWidget {
                                       : onOpenUrl(b.url!),
                                 ),
                       ),
-                      const Divider(height: 16, indent: 6, endIndent: 6),
+                      const FushiDividerControl(
+                        height: 16,
+                        indent: 6,
+                        endIndent: 6,
+                      ),
                       _entry(
                         context,
                         key: const ValueKey<String>(

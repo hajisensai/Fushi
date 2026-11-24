@@ -14,7 +14,7 @@ Widget _app(Widget child, {required bool glass}) {
     theme: buildFushiThemeData(
       scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
       textTheme: Typography.material2021().black,
-      glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+      glass: glass ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
       glassDesign: glass,
     ).copyWith(splashFactory: NoSplash.splashFactory),
     builder: (BuildContext context, Widget? child) =>

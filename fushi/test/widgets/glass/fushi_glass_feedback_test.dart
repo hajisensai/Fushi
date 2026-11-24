@@ -20,7 +20,7 @@ Future<void> _pump(
   final ThemeData theme = buildFushiThemeData(
     scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
     textTheme: Typography.material2021().black,
-    glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: glass ? FushiGlassMaterial.standard : FushiGlassMaterial.off,
     glassDesign: glass,
   );
   await tester.pumpWidget(
@@ -135,8 +135,54 @@ void main() {
       ),
       findsOneWidget,
     );
+    // 气泡是自带一层的厚材质（压在视频画面 / 封面上不是裸字）：填充不透明度
+    // 不低于厚材质下限。
+    final GlassContainer bubble = tester.widget<GlassContainer>(
+      find.ancestor(
+        of: find.text('Glass tip'),
+        matching: find.byType(GlassContainer),
+      ),
+    );
+    expect(bubble.useOwnLayer, isTrue);
+    expect(
+      bubble.settings!.glassColor.a,
+      greaterThanOrEqualTo(kFushiThickMaterialDarkAlpha - 0.001),
+    );
+    // 气泡离锚点下沿留出间距（按目标边沿定位，不是按中心）。
+    final Rect anchor = tester.getRect(find.text('anchor'));
+    final Rect tip = tester.getRect(
+      find.ancestor(
+        of: find.text('Glass tip'),
+        matching: find.byType(GlassContainer),
+      ),
+    );
+    expect(tip.top, greaterThanOrEqualTo(anchor.bottom + kFushiTooltipGap - 1));
     await tester.pump(const Duration(seconds: 3));
     await tester.pumpAndSettle();
+  });
+
+  test('fushiTooltipEdgePosition 按目标边沿留间距，下方放不下翻到上方', () {
+    final Offset below = fushiTooltipEdgePosition(
+      const TooltipPositionContext(
+        target: Offset(400, 100),
+        targetSize: Size(40, 40),
+        tooltipSize: Size(80, 20),
+        verticalOffset: 24,
+        overlaySize: Size(800, 600),
+      ),
+    );
+    expect(below.dy, 100 + 20 + kFushiTooltipGap);
+    expect(below.dx, 400 - 40);
+    final Offset above = fushiTooltipEdgePosition(
+      const TooltipPositionContext(
+        target: Offset(400, 590),
+        targetSize: Size(40, 40),
+        tooltipSize: Size(80, 20),
+        verticalOffset: 24,
+        overlaySize: Size(800, 600),
+      ),
+    );
+    expect(above.dy, 590 - 20 - kFushiTooltipGap - 20);
   });
   for (final bool glass in <bool>[false, true]) {
     for (final bool rich in <bool>[false, true]) {

@@ -22,3 +22,14 @@ String formatStatTime(int ms) {
 /// 目标数值的外显。计数口径相同，只换单位文案。
 String formatStatWords(int words) =>
     t.stat_format_words(n: formatStatCharsAxis(words));
+
+/// 热力图气泡日期标签：`M-dd`；跨年补年份成 `Y-M-dd`。[dateKey] 形如 `2026-07-18`
+/// （`statDateKey` 格式）；无法解析时原样返回。
+String formatStatHeatmapDay(String dateKey) {
+  final DateTime? d = DateTime.tryParse(dateKey);
+  if (d == null) return dateKey;
+  final DateTime now = DateTime.now();
+  final String dd = d.day.toString().padLeft(2, '0');
+  if (d.year == now.year) return '${d.month}-$dd';
+  return '${d.year}-${d.month}-$dd';
+}

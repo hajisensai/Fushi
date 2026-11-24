@@ -281,19 +281,22 @@ void main() {
     );
     expect(find.text('Singer'), findsOneWidget);
 
-    // 顶栏只平铺 搜索 · 视图 · 添加：本地曲库维护（重扫 / 已移除的曲目）收在「⋯」里；
-    // 「⋯」里不再有「来源」（拍板台 4GBgF6TrNr）。
-    expect(find.byKey(const ValueKey<String>('music_rescan')), findsNothing);
-    await tester.tap(find.byKey(const ValueKey<String>('music-library-more')));
-    await tester.pumpAndSettle();
+    // 本地曲库维护（重扫 / 已移除的曲目）是页面「⋯」的项：页头统一收纳判据下宽窗
+    // 放得下就平铺成独立图标钮（同一个 key、文案进 tooltip），一项都没收时「⋯」
+    // 不出现；「来源」不在其中（拍板台 4GBgF6TrNr）。
     expect(find.byKey(const ValueKey<String>('music_sources')), findsNothing);
-    expect(find.byKey(const ValueKey<String>('music_rescan')), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('music_hidden_tracks')),
-      findsOneWidget,
+    final FushiIconButton rescan = tester.widget(
+      find.byKey(const ValueKey<String>('music_rescan')),
     );
-    await tester.tapAt(Offset.zero);
-    await tester.pumpAndSettle();
+    expect(rescan.tooltip, t.music_library_rescan);
+    final FushiIconButton hidden = tester.widget(
+      find.byKey(const ValueKey<String>('music_hidden_tracks')),
+    );
+    expect(hidden.tooltip, t.music_hidden_tracks_title);
+    expect(
+      find.byKey(const ValueKey<String>('music-library-more')),
+      findsNothing,
+    );
 
     // 点「在线」组：没有推荐时落在「来源」（音源排序与开关 + 歌词来源），就地嵌在
     // 音乐页里，不另推页面。

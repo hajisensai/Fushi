@@ -18,7 +18,8 @@ part of '../video_fushi_page.dart';
 ///   `onSeekStart` 记出发点、`onSeekEnd` 落点时判定；横滑 / 双击取相对基准时作废。
 ///
 /// 呈现（所有者 2026-11-02 定稿，取代浮动胶囊）：
-/// - 顶栏右上角动作区最前面一枚独立的按钮胶囊（[_videoJumpHistoryTopBarGroup]）：
+/// - 顶栏右上角动作区最前面：M3E 是一枚独立的按钮胶囊
+///   （[_videoJumpHistoryTopBarGroup]），Apple 是右上玻璃胶囊里最前面的普通按钮：
 ///   ↶ 返回，走过返回后多出 ↷ 前进，位置只进 tooltip；长按 / 右键打开「跳转记录」
 ///   面板。跟着控制条一起显隐，控制条收着时跳转**不做任何提示**；设置关掉、超过
 ///   自动隐藏时长（[_videoJumpAutoHide]）、小窗 / 画中画 / 沉浸锁下不画。
@@ -31,9 +32,8 @@ part of '../video_fushi_page.dart';
 extension _VideoJumpBack on _VideoFushiPageState {
   /// 历史所属的「哪一集」：换集 / 换片后旧集的毫秒在新集上没有意义，作废整段历史。
   /// 原盘「全部播放」跨集只换库身份、播放器时间轴不变（BUG-5356），历史照样有效。
-  String get _videoJumpScopeKey => _discMenuEpisodes != null
-      ? _playerAxisScope
-      : '$_activeBookUid#$_currentEpisode';
+  String get _videoJumpScopeKey =>
+      _discMenuEpisodes != null ? _playerAxisScope : _playingEpisodeScope;
 
   /// 历史是否属于当前这一集（build 里只读这个判据，不在 build 里改状态）。
   bool get _videoJumpHasHistory =>
@@ -244,15 +244,15 @@ extension _VideoJumpBack on _VideoFushiPageState {
     );
   }
 
-  /// 顶栏右上角动作区最前面的「↶ / ↷」按钮胶囊（不画时零尺寸）。按钮定义取共用件
-  /// [jumpHistoryToolbarItems]（tooltip / 长按 / key 三页同源），经
-  /// [FushiToolbarButton.iconBuilder] 套上控制条统一的 [_chromeIconButton]
-  /// （中性档，插入时弹簧缩放 + 淡入）。
-  Widget _videoJumpHistoryTopBarGroup(
+  /// 「↶ / ↷」两颗按钮（不画时空表）。按钮定义取共用件 [jumpHistoryToolbarItems]
+  /// （tooltip / 长按 / key 三页同源），经 [FushiToolbarButton.iconBuilder] 套上
+  /// 控制条统一的 [_chromeIconButton]（中性档，插入时弹簧缩放 + 淡入）。
+  /// [key] 是按钮身份（[VideoBarEntry.slotKey]）。
+  List<({Key key, Widget button})> _videoJumpHistoryButtons(
     BuildContext from, {
     required bool desktop,
   }) {
-    if (!_videoJumpToolbarShown) return const SizedBox.shrink();
+    if (!_videoJumpToolbarShown) return const <({Key key, Widget button})>[];
     final int? back = _videoJumpHistory.backTarget;
     final int? forward = _videoJumpHistory.forwardTarget;
     final List<FushiToolbarItem> items = jumpHistoryToolbarItems(
@@ -268,7 +268,6 @@ extension _VideoJumpBack on _VideoFushiPageState {
       },
       onOpenPanel: () => unawaited(_openVideoJumpHistoryPanel(from)),
     );
-    if (items.isEmpty) return const SizedBox.shrink();
     // 外观走控制条统一的 [_chromeIconButton]；强调态插入动效、长按 / 右键、
     // 提示、语义由 [FushiToolbarButton] 统一（与阅读器 / 漫画顶栏同一份装配）。
     final ({
@@ -278,46 +277,60 @@ extension _VideoJumpBack on _VideoFushiPageState {
       Color selectedForeground,
     })
     palette = fushiFloatingToolbarPalette(context);
-    Widget buttonFor(FushiToolbarItem item) => FushiToolbarButton(
-      item: item,
-      foreground: palette.foreground,
-      selectedContainer: palette.selectedContainer,
-      selectedForeground: palette.selectedForeground,
-      // 中性档（透明底）：本组自己就是一枚浮动胶囊，按钮再上 secondary tonal 会在
-      // 圆胶囊里叠出一块 M3E「开」态方圆角色块，看着像两颗按钮叠在一起
-      // （#ekVmlGuze5）；tonal 档是开关类按钮的「开」态，返回 / 前进不是开关。
-      iconBuilder: (BuildContext _, FushiToolbarItem it, Color _) =>
-          _chromeIconButton(
-            icon: it.icon,
-            desktop: desktop,
-            onPressed: () => it.onPressed?.call(),
+    return <({Key key, Widget button})>[
+      for (final FushiToolbarItem item in items)
+        (
+          key: item.key ?? ValueKey<IconData>(item.icon),
+          button: FushiToolbarButton(
+            item: item,
+            foreground: palette.foreground,
+            selectedContainer: palette.selectedContainer,
+            selectedForeground: palette.selectedForeground,
+            // 中性档（透明底）：按钮再上 secondary tonal 会在胶囊里叠出一块
+            // M3E「开」态方圆角色块，看着像两颗按钮叠在一起（#ekVmlGuze5）；
+            // tonal 档是开关类按钮的「开」态，返回 / 前进不是开关。
+            iconBuilder: (BuildContext _, FushiToolbarItem it, Color _) =>
+                _chromeIconButton(
+                  icon: it.icon,
+                  desktop: desktop,
+                  onPressed: () => it.onPressed?.call(),
+                ),
           ),
-    );
+        ),
+    ];
+  }
 
+  /// M3E：顶栏右上角动作区最前面的「↶ / ↷」独立按钮胶囊（不画时零尺寸）。
+  /// Apple 不走这里——两颗按钮作为普通条目进右上那一枚玻璃胶囊
+  /// （[_appleTopTrailingGroup]），不另起玻璃形状。
+  Widget _videoJumpHistoryTopBarGroup(
+    BuildContext from, {
+    required bool desktop,
+  }) {
+    final List<({Key key, Widget button})> buttons = _videoJumpHistoryButtons(
+      from,
+      desktop: desktop,
+    );
+    if (buttons.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: EdgeInsetsDirectional.only(end: 8 * _videoUiScale),
-      child: VideoGlassSurface(
-        enabled: _appleChrome,
-        padding: items.length > 1
-            ? EdgeInsets.symmetric(horizontal: 4 * _videoUiScale)
-            : EdgeInsets.zero,
-        child: VideoControlBar(
-          key: const ValueKey<String>('video_jump_history_top_bar'),
-          fill: false,
-          clusterStyle: _m3eFloatingBarStyle(verticalAlignment: 0),
-          moreButtonBuilder: (VoidCallback open) =>
-              _videoBarMoreButton(open, desktop: desktop),
-          singleActionButtonBuilder: (VideoBarMenuAction action) =>
-              _videoBarSingleActionButton(action, desktop: desktop),
-          onMenuOpenChanged: _onVideoBarMenuOpenChanged,
-          entries: <VideoBarEntry>[
-            for (final FushiToolbarItem item in items)
-              VideoBarEntry(
-                cluster: VideoBarCluster.start,
-                child: buttonFor(item),
-              ),
-          ],
-        ),
+      child: VideoControlBar(
+        key: const ValueKey<String>('video_jump_history_top_bar'),
+        fill: false,
+        clusterStyle: _m3eFloatingBarStyle(verticalAlignment: 0),
+        moreButtonBuilder: (VoidCallback open) =>
+            _videoBarMoreButton(open, desktop: desktop),
+        singleActionButtonBuilder: (VideoBarMenuAction action) =>
+            _videoBarSingleActionButton(action, desktop: desktop),
+        onMenuOpenChanged: _onVideoBarMenuOpenChanged,
+        entries: <VideoBarEntry>[
+          for (final ({Key key, Widget button}) b in buttons)
+            VideoBarEntry(
+              cluster: VideoBarCluster.start,
+              slotKey: b.key,
+              child: b.button,
+            ),
+        ],
       ),
     );
   }

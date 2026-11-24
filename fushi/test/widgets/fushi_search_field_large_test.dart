@@ -3,11 +3,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart'
+    show kFushiAppleSearchBarHeight;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show kFushiAppleMacScaleNonMac;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
 // FushiSearchField 的 large 档契约：MD3 = M3 SearchBar（56 高、28 圆角全胶囊、
-// 无描边、正文竖直居中、trailing 槽 48 触控区）；Apple 没有 56 的搜索栏，
-// large 仍是 36 的 iOS 搜索胶囊。regular 档不受影响（MD3 40）。
+// 无描边、正文竖直居中、trailing 槽 48 触控区）；Apple iOS 档（窄窗）是大标题
+// 下 44 高的独立搜索栏、macOS 档（宽窗）仍是 28 × macScale 的 NSSearchField。
+// regular 档不受影响（MD3 40、Apple iOS 36）。
 
 Future<void> _pump(
   WidgetTester tester, {
@@ -15,11 +20,18 @@ Future<void> _pump(
   required FushiSearchFieldSize size,
   List<Widget> trailing = const <Widget>[],
   String text = '',
+  bool narrow = false,
 }) async {
+  if (narrow) {
+    // 桌面平台窄于 600 = Apple iOS 档（fushiAppleUsesMacMetrics）。
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+  }
   final ThemeData theme = buildFushiThemeData(
     scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
     textTheme: Typography.material2021().black,
-    glass: apple ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: apple ? FushiGlassMaterial.minimal : FushiGlassMaterial.off,
     glassDesign: apple,
   ).copyWith(platform: TargetPlatform.windows);
   await tester.pumpWidget(
@@ -30,7 +42,7 @@ Future<void> _pump(
           body: Align(
             alignment: Alignment.topCenter,
             child: SizedBox(
-              width: 480,
+              width: narrow ? 360 : 480,
               child: FushiSearchField(
                 fieldKey: const ValueKey<String>('field'),
                 controller: TextEditingController(text: text),
@@ -129,7 +141,7 @@ void main() {
     );
   });
 
-  testWidgets('Apple large stays a 36-tall iOS search capsule', (
+  testWidgets('Apple large on the iOS tier is a 44-tall search bar', (
     WidgetTester tester,
   ) async {
     await _pump(
@@ -137,15 +149,26 @@ void main() {
       apple: true,
       size: FushiSearchFieldSize.large,
       text: 'abc',
+      narrow: true,
     );
     final Rect field = tester.getRect(
       find.byKey(const ValueKey<String>('field')),
     );
-    expect(field.height, 36);
+    expect(field.height, kFushiAppleSearchBarHeight);
     final Rect editable = tester.getRect(find.byType(EditableText));
     expect(
       (editable.center.dy - field.center.dy).abs(),
       lessThanOrEqualTo(0.5),
     );
+  });
+
+  testWidgets('Apple large on the macOS tier stays a 28 x macScale field', (
+    WidgetTester tester,
+  ) async {
+    await _pump(tester, apple: true, size: FushiSearchFieldSize.large);
+    final Rect field = tester.getRect(
+      find.byKey(const ValueKey<String>('field')),
+    );
+    expect(field.height, moreOrLessEquals(28 * kFushiAppleMacScaleNonMac));
   });
 }

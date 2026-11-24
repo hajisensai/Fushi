@@ -23,6 +23,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiDividerControl;
 
 /// The companion's Settings tab (S4): a search field, the settings of what
 /// the top screen shows ("For this screen · Reader"), then every category.
@@ -658,7 +660,8 @@ class _RowsCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         for (int i = 0; i < rows.length; i++) ...<Widget>[
-          if (i > 0) const Divider(height: 1, indent: 16, endIndent: 16),
+          if (i > 0)
+            const FushiDividerControl(height: 1, indent: 16, endIndent: 16),
           _SettingRow(
             key: ValueKey<String>('companion-setting-${rows[i].key}'),
             row: rows[i],

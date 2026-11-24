@@ -112,7 +112,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - 源码 `packages/fushi_server/`（纯 Dart，依赖 `packages/fushi_engine`）；本机构建 `cd packages/fushi_server && dart build cli`，产物 `build/cli/<os>_<arch>/bundle/`（`bin/` 可执行 + `lib/` native asset）。**不要 `dart compile exe`**：sqlite3 是 native asset，单文件 exe 运行时打不开 DB。
 - CI：`build-multiplatform.yml` 的 `linux-server` job（PR 上只覆盖服务端；Linux App 在 `release-desktop.yml` 出包，见上「Linux 桌面」；PR 上按下文「PR 平台 job 的路径门」在服务端的 Dart 依赖闭包或它随包的原生库变动时才开）跑 `dart build cli`，再把两块随包原生库放进 `bundle/lib/`（fushi_p2p 与 fushi-anki-sync 同理随包，见下两节）：① `libfushi_torrent_ffi.so`（`native/fushi_torrent/build_linux_so.sh`：vcpkg manifest **静态链** libtorrent 2.0.11 + boost + openssl，overlay triplet `x64-linux-fpic`，ABI 校验同 `native-torrent-gate.yml`；目标机零运行库依赖）② `libonnxruntime.so` 1.22.0 CPU 版（与 `third_party/flutter_onnxruntime/linux` 同版本；CUDA 用户自换 GPU 包并配 `onnxruntime_library`）。随后用这份 `.so` 跑 `packages/fushi_torrent` 的 FFI 测试，再真进程冒烟：起 `serve`，断言 admin API 报 `backend=embedded` 且 17 语 ASR plan 无 error（= 两块库都真被 dlopen 了）。工件名 `fushi_server-linux-x64`。
 - 服务端找随包库的规则在 `packages/fushi_server/lib/src/native_libs.dart`：`<exe 同级>` → `<exe>/../lib/` → cwd；都没有就交给引擎按裸名走系统搜索路径。
-- 发布：Release **落在独立仓 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server)，不落本仓**（2026-09-14 起）。那边只有 README / LICENSE / 一条薄 workflow `release.yml`（`workflow_dispatch`，输入 channel = beta / formal、source_ref = 本仓 ref 默认 `develop`），它 `uses: hajisensai/Fushi/.github/workflows/release-server.yml@develop` 调本仓的**可复用 workflow**（`workflow_call`）：Linux（`ubuntu-22.04`，静态 `.so`）+ Windows（vcpkg DLL）两个包，各自真进程冒烟后由 publish job 用调用方的 `GITHUB_TOKEN` 发到 fushi-server 的 GitHub Release，tag `v<version>-beta.<seq>` / `v<version>`；源码 checkout 显式钉 `repository: hajisensai/Fushi`（公开仓，**零 PAT / 零 secret**）。版本取 `packages/fushi_server/pubspec.yaml` 的 `version:`（与 app 独立），序号仍是 `tool/release_sequence.sh`（在 hibiki checkout 上算）。**本仓自己不能发服务端包**：channel job 断言 `github.repository != hajisensai/Fushi` 直接红——app 稳定通道更新检查走本仓 `releases/latest`，服务端包在本仓成为 Latest 会把五端 app 的更新判成「远端不比本机新」而停更；搬到独立仓后 formal 就是正常的 Latest。`tool/check_release_policy.ps1` 锁三件事：只有 `workflow_call`、有这条断言、每个 checkout 都钉源仓。发包操作：`gh workflow run release.yml -R hajisensai/fushi-server -f channel=beta -f source_ref=develop`。没有安装包与自更新。安装、systemd、配置、admin API、上传协议见 [packages/fushi_server/README.md](../../packages/fushi_server/README.md)。
+- 发布：Release **落在独立仓 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server)，不落本仓**（2026-09-14 起）。那边只有 README / LICENSE / 一条薄 workflow `release.yml`（`schedule` 每 30 分钟以 `channel: auto` 调一次，另有 `workflow_dispatch` 可手动指定 channel = debug / beta / formal / auto 与 source_ref），它 `uses: hajisensai/Fushi/.github/workflows/release-server.yml@develop` 调本仓的**可复用 workflow**（`workflow_call`）：Linux（`ubuntu-22.04`，静态 `.so`）+ Windows（vcpkg DLL）两个包，各自真进程冒烟后由 publish job 用调用方的 `GITHUB_TOKEN` 发到 fushi-server 的 GitHub Release，tag `v<version>-beta.<seq>` / `v<version>` / 滚动的 `debug-rolling`（body 记 `source-sha: <sha>`）；release 发出后 docker job 用同一份 Linux 包打 `ghcr.io/hajisensai/fushi-server` 镜像、冒烟后推送（正式版 `latest` / `x.y.z` / `x.y` / `x`，测试版 `beta` / `x.y.z-beta.<seq>`，调试版 `debug` / `debug-<seq>`）。**三通道自动跟 app（2026-11-24 用户拍板）**：跨仓事件要 PAT，所以由 fushi-server 定时轮询，`tool/server_release_plan.py`（测试 `tool/server_release_plan_test.py`，ci-config-gate 跑）每轮按「app 的 `releases/latest` → app 最新 `-beta.<seq>` → develop 新提交（只动 docs / app 自身文件的跳过）」挑一个 fushi-server 还没有的目标；同一目标在最近 10 次失败 run 里失败满 2 次就跳过并告警（job 名带 `[target:<key>]`），修好后手动 dispatch。源码 checkout 显式钉 `repository: hajisensai/Fushi`（公开仓，**零 PAT / 零 secret**）。版本与 app 一致，取 `fushi/pubspec.yaml` 的 `version:`（2026-11-24 起；`packages/fushi_server/pubspec.yaml` 的 version 只是包版本），序号仍是 `tool/release_sequence.sh`（在 hibiki checkout 上算）。服务端远程自更新按 `release.json` 的 channel 选源：formal 只看 `releases/latest`，beta 看 beta + formal、不收 `debug-rolling`，debug 三者都收。**本仓自己不能发服务端包**：channel job 断言 `github.repository != hajisensai/Fushi` 直接红——app 稳定通道更新检查走本仓 `releases/latest`，服务端包在本仓成为 Latest 会把五端 app 的更新判成「远端不比本机新」而停更；搬到独立仓后 formal 就是正常的 Latest。`tool/check_release_policy.ps1` 锁：只有 `workflow_call`、有这条断言、每个 checkout 都钉源仓、版本取 app 的、auto 走 plan 脚本、docker job 在 publish 之后。手动发包：`gh workflow run release.yml -R hajisensai/fushi-server -f channel=beta -f source_ref=develop`。没有安装包。安装、systemd、配置、admin API、上传协议见 [packages/fushi_server/README.md](../../packages/fushi_server/README.md)。
 
 ## 互联 P2P 隧道原生库 fushi_p2p（Rust / iroh）
 
@@ -276,6 +276,18 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   2026-11-17 补上——此前文档写「已放」，实际文件不存在，旧分支上 `--profile quick` 会直接报找不到 profile）；
   `[env]` 那一段只能跟仓库走（要按 worktree 解析路径），旧分支没有。
 
+## 默认分支（2026-11-25 起是 develop）
+
+GitHub 默认分支是 `develop`（用户 2026-11-25 拍板：开发分支才是主分支，`main` 只当正式版快照，正式版发布后由 `release.yml` 自动从 develop 合进去，见下「快速发版」节的 main 同步）。在这之前默认分支是 `main`，它落后 develop 一个发布周期，于是 `schedule` / `workflow_run` / `pull_request_target`（只读默认分支上的 workflow 定义）都读到旧文件，留下过几处绕路，切换时一并收掉或改了注释：
+
+- `build-multiplatform.yml` 的夜间整轮原本靠 `nightly-develop` 派发器转发到 develop，现在 `schedule` 直接在 develop 上整轮跑，派发器与 `nightly` 输入已删。
+- 两条图表 workflow（`dev-activity.yml` / `star-history.yml`）的机器人提交改落 develop（`[skip ci]` + GITHUB_TOKEN，不触发任何构建），推送被拒时 rebase 重试；develop 历史里因此每天最多多两条 `chore(readme)` 提交。
+- 滚动 debug release 的 `target_commitish` 与 `tool/bump_rolling_release_tag.sh` 挪 tag 用的「默认分支尖端」随之变成 develop 尖端，与构建产物同一条线。
+- `native-cache-warm.yml` 的每日 schedule、`pr-merge-gate.yml` 的 `pull_request_target` 自动改读 develop 上的定义。
+- `cache-cleanup` / `merged-pr-cleanup` / `feedback-link` / 设置目录发布当初为绕开默认分支而选的方案原样保留（各自注释已注明当初的理由已不成立，现方案仍可用）。
+
+外部贡献者开 PR 默认指向 develop，不用再手动改 base。
+
 ## 发布通道
 
 默认 push 只发 debug 通道；beta/test 和 formal 都必须手动触发。任何 push 触发的 GitHub Release 都必须是 prerelease 且 `make_latest: false`，不得创建或更新 Latest/正式 release。
@@ -287,7 +299,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 
 ### 反馈修复的发布回填（2026-10-13）
 
-应用内反馈的状态挂在**修复 commit** 上：`.github/workflows/feedback-link.yml` 只挂 push develop/main，由 `tool/feedback_link.mjs` 逐个 commit 解析 message，并用 `GITHUB_TOKEN` 查 `GET /repos/{repo}/commits/{sha}/pulls` 取关联 PR（只认已合并、base 是本分支的）解析其描述，把 `Feedback: <id>[, <id>…]` / `Feedback-NoApp: <id>…` 行（行首、不区分大小写）登记到反馈服务 `POST /v1/ci/feedback/fixed`（幂等：sha 与 scope 不变的重登记不重置发布记录）。commit message 里的 id 归该 commit，PR 描述里的 id 归该 PR 在这次 push 里最后一个 commit，同一 id 多次出现取 push 顺序最后的那个；main 上只处理 distinct 的 commit（正式版后 develop 同步进 main 不重登记）。不用 `pull_request_target`：它取默认分支 main 上的定义，main 落后 develop 一个发布周期，且要在有 secret 的上下文里处理外部 PR。两条发布 workflow 在「Publish mirror update manifest」之后各有回填步骤（`release.yml` = android；`release-desktop.yml` 的 publish job 按本次真实存在的产物分别回填 windows / macos / ios），跑 `tool/feedback_mark_released.sh`：GET `pending?channel&platform` → 本地 `git cat-file -e` + `git merge-base --is-ancestor <fix> <github.sha>` → POST `released`，把「这个通道 / 平台的这个版本已包含修复」记下（`manifest_channel` 的 `formal` 映射成 `stable`）。回填与登记**都不会让 workflow 变红**：步骤 `continue-on-error: true`，脚本任何失败只打 `::warning`。需要仓库 **secret `FEEDBACK_CI_TOKEN`**（与反馈 Worker 的同名 secret 一致；未配置时两个脚本 `::notice` 后直接跳过）与可选的仓库 **variable `FEEDBACK_API_BASE`**（接口根，缺省 `https://rank.fushi.moe`）。守卫 `fushi/test/build/feedback_workflow_guard_test.dart`，脚本离线测试 `fushi/test/tools/feedback_{mark_released,link}_script_test.dart`。
+应用内反馈的状态挂在**修复 commit** 上：`.github/workflows/feedback-link.yml` 只挂 push develop/main，由 `tool/feedback_link.mjs` 逐个 commit 解析 message，并用 `GITHUB_TOKEN` 查 `GET /repos/{repo}/commits/{sha}/pulls` 取关联 PR（只认已合并、base 是本分支的）解析其描述，把 `Feedback: <id>[, <id>…]` / `Feedback-NoApp: <id>…` 行（行首、不区分大小写）登记到反馈服务 `POST /v1/ci/feedback/fixed`（幂等：sha 与 scope 不变的重登记不重置发布记录）。commit message 里的 id 归该 commit，PR 描述里的 id 归该 PR 在这次 push 里最后一个 commit，同一 id 多次出现取 push 顺序最后的那个；main 上只处理 distinct 的 commit（正式版后 develop 同步进 main 不重登记）。不用 `pull_request_target`：它要在有 secret 的上下文里处理外部 PR，而合并本身就是 push。两条发布 workflow 在「Publish mirror update manifest」之后各有回填步骤（`release.yml` = android；`release-desktop.yml` 的 publish job 按本次真实存在的产物分别回填 windows / macos / ios），跑 `tool/feedback_mark_released.sh`：GET `pending?channel&platform` → 本地 `git cat-file -e` + `git merge-base --is-ancestor <fix> <github.sha>` → POST `released`，把「这个通道 / 平台的这个版本已包含修复」记下（`manifest_channel` 的 `formal` 映射成 `stable`）。回填与登记**都不会让 workflow 变红**：步骤 `continue-on-error: true`，脚本任何失败只打 `::warning`。需要仓库 **secret `FEEDBACK_CI_TOKEN`**（与反馈 Worker 的同名 secret 一致；未配置时两个脚本 `::notice` 后直接跳过）与可选的仓库 **variable `FEEDBACK_API_BASE`**（接口根，缺省 `https://rank.fushi.moe`）。守卫 `fushi/test/build/feedback_workflow_guard_test.dart`，脚本离线测试 `fushi/test/tools/feedback_{mark_released,link}_script_test.dart`。
 
 ### 设置项目录自动同步到官网（2026-11-16）
 
@@ -296,7 +308,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - 导出器 `fushi/test/settings/settings_catalog_export_test.dart` 遍历 `fushi_cli config ls` 用的同一份设置索引（`buildSettingsIndex`，整棵 schema + 逃生口页面）。平时是普通单测（守「能走完整棵 schema、机密项不出值」）；设了 `FUSHI_SETTINGS_CATALOG_DIR` 才把 `settings-catalog.{json,md}` 写进那个目录。内容必须确定（不带时间戳 / commit）。
 - **按出包平台各算一遍**（拍板台 pr3506，2026-11-21）：CI 在 Linux 上跑，而 Linux 不出包，所以导出器用 `debugHostPlatformOverride`（`fushi/lib/src/platform/host_platform.dart`）+ `debugDefaultTargetPlatformOverride` 按 Android / iOS / Windows / macOS 各建一个全新安装的 app 走一遍索引（文案取 Android 的中英两遍）。四个平台默认值一致的给 `default`，不一致的改给 `defaultByPlatform`（如 iOS 的挖矿片段格式 `mp4H264`、下载后端 `qbittorrent`）；只在部分平台显示的行给 `platforms`；顶层 `platforms` 列出算过的平台。字段是加法，`kSettingsCatalogSchema` 不变。前提是设置层读平台只经 `hostPlatform`：`lib/src/settings/`、`settings_index.dart`、`ctl_settings_body_*.dart` 与它们依赖的 `store_compliance.dart` / `DesktopLookupService.isDesktop` / `isDesktopSystemBallPlatform` 禁止直读 `Platform.isXxx`（`fushi/test/settings/settings_host_platform_guard_test.dart` 守），`PlatformServices` 的平台字段默认值与 `platform_utils.dart` 的平台判据也读它。读 `Platform.isXxx` 的其余代码（运行期能力判断）不受覆盖影响，若某个设置的默认值经它们间接算出，会在四个平台上都显示 CI 宿主的值——改成读 `hostPlatform` 即可。
 - `release.yml` 的 `tests (checks)` 在每次 push 上跑它并传 artifact `settings-catalog`；同一 workflow 的 `publish-settings-catalog` job（`needs: tests` + `always()`，单测分片红不挡它，只有 run 被取消才不跑；job 级 `contents: write`，tests 仍只读）取本 run 的 artifact，由 `tool/publish_settings_catalog.sh` 推到 `update-manifest` 分支：develop → `settings-catalog-debug.*`，main → `settings-catalog-stable.*`。设置没变就不产生提交；与 `publish-android` 并发推同一分支时，脚本被拒后重取远端 tip、只在最新提交上重放这两个文件。没有 artifact 记 notice 后正常结束。
-- **不用 `workflow_run`**：它只认默认分支 main 上的 workflow 定义，main 落后 develop 一个发布周期，独立 workflow 要等下一个正式版进 main 后才第一次触发（同上一节放弃 `pull_request_target` 的原因）。
+- **不用 `workflow_run`**：放在 `release.yml` 里同 run 发布链路最短。（当初还因为它只认默认分支上的定义，而默认分支曾是落后一个发布周期的 main；2026-11-25 起默认分支是 develop，见下文「默认分支」。）
 - 官网仓（`hajisensai/fushi.moe`）的边缘 Worker `edge/src/settings-catalog.ts` 同域代理这两个文件（不带参数给 stable，没有就退回 debug；`?channel=debug` 指定），llms.txt 的「App reference」指向它。
 - 加减设置项不需要做任何事；改了目录 JSON 的字段含义才要把导出器的 `kSettingsCatalogSchema` 与 Worker 的 `CATALOG_SCHEMA` 一起加一。接线（环境变量名 / artifact 名 / 发布 job 的触发条件与权限）由 `fushi/test/tools/settings_catalog_publish_script_test.dart` 守。
 
@@ -337,7 +349,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 - `skip_tests` **只在 `workflow_dispatch` 生效**；`push`（自动 debug）与 `release`（手动 GitHub Release）事件的 `github.event.inputs.skip_tests` 为空，恒跑完整测试门——`main`/`develop` 的持续测试信号不被削弱，慢的只让手动、你在等的那次发版跳过。
 - 想手动发版也跑测试：dispatch 时把 `skip_tests` 取消勾选（设为 `false`）。
 - `release-desktop.yml`（Win/mac/iOS）本就无测试步骤，天生快，无需该开关。
-- **正式版发布后 main 自动同步成 develop**（2026-09-08 起）：`release.yml` 的 `publish-android` job（2026-10-17 前在 build job 里）在正式通道（`workflow_dispatch channel=formal` 或手动发非 prerelease 的 GitHub Release）写完更新清单后，在临时克隆里 `git merge --no-ff -X theirs origin/develop` 进 main 再推（提交信息沿用人工时代的 `Merge develop into main for <tag>`）。main 上只有两种提交——从 develop 合来的和两条图表 workflow 的机器人提交（scheduled 只能跑在默认分支 main 上，SVG 只落 main），所以 main 永远不是 develop 的祖先、纯快进不可行；`-X theirs` 让图表 SVG 冲突取 develop 的（次日定时任务重生成），其它冲突（modify/delete）直接红、绝不 force-push。只在 `release.yml` 做一次（桌面 workflow 不做，两条并行时不会推两条合并提交）；GITHUB_TOKEN 的 push 不级联触发 main 的 push 构建。守卫 `fushi/test/build/release_workflow_main_sync_guard_test.dart`。
+- **正式版发布后 main 自动同步成 develop**（2026-09-08 起）：`release.yml` 的 `publish-android` job（2026-10-17 前在 build job 里）在正式通道（`workflow_dispatch channel=formal` 或手动发非 prerelease 的 GitHub Release）写完更新清单后，在临时克隆里 `git merge --no-ff -X theirs origin/develop` 进 main 再推（提交信息沿用人工时代的 `Merge develop into main for <tag>`）。main 上只有两种提交——从 develop 合来的合并提交，和 2026-11-25 之前两条图表 workflow 的机器人提交（当时默认分支是 main，scheduled 只在默认分支跑，SVG 落 main；之后改落 develop），所以 main 永远不是 develop 的祖先、纯快进不可行；`-X theirs` 让图表 SVG 冲突取 develop 的，其它冲突（modify/delete）直接红、绝不 force-push。只在 `release.yml` 做一次（桌面 workflow 不做，两条并行时不会推两条合并提交）；GITHUB_TOKEN 的 push 不级联触发 main 的 push 构建。守卫 `fushi/test/build/release_workflow_main_sync_guard_test.dart`。
 - 平台并行：Android（`release.yml`）与桌面（`release-desktop.yml`）是两条独立 workflow，concurrency 组名含各自 workflow 名，同一 tag 同时 dispatch / 同一 `release: published` 事件点燃即真并行（2026-09-08 起；此前两条同名组会串行、后到的 pending 还会取消先到的 pending）；桌面内部 `apple needs: windows` 是**故意串行**，避免两 job 抢同一 release 上传，勿改。
 
 ### 正式版预构建与审批发布（2026-10-17）
@@ -624,10 +636,10 @@ macOS 32 次、iOS 25 次、linux-server 95 次（此前每个 job 都是 237 �
   dispatch 时跑。
 - **兜底**：① 编译 / 链接——`release-desktop.yml` 在每次 develop push 上就做 Windows / macOS / iOS
   的 release 构建，被路径门跳过的「只改 Dart 的 PR」合进 develop 后照样被编一遍；② appSmoke、
-  debug 配置构建与 FFI 真调用测试只在 build-multiplatform 里——`nightly-develop` job 每晚
-  （UTC 18:41）用 `gh workflow run build-multiplatform.yml --ref develop -f nightly=true` 在
-  develop 上派发一次整轮。不直接 `schedule` 跑：定时任务只在默认分支 main 上、读 main 的代码。
-  **这条要等本文件同步到 main 之后才开始触发**；在那之前需要时手动 dispatch。
+  debug 配置构建与 FFI 真调用测试只在 build-multiplatform 里——它的 `schedule` 每晚（UTC 18:41）
+  在默认分支 develop 上整轮跑一次（Android appSmoke 除外，仍只在手动 dispatch 时跑）。2026-11-25
+  默认分支改成 develop 之前，定时任务只能跑在落后的 main 上，靠一个 `nightly-develop` 派发器
+  转发到 develop，现已删除。
 - 改某个平台 job 让它多读一个目录 / 脚本时，同步把它加进对应正则。守卫
   `fushi/test/build/multiplatform_pr_gating_guard_test.dart` 对账「job 正文里调用到的
   `native/` `packages/` `tool/` `tools/` `ci/` `third_party/` `.github/` 路径都被该 job 的路由覆盖」，

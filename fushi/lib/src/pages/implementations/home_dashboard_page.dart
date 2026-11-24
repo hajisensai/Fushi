@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/collections/collection_cover.dart'
     show collectionOwnCoverCandidates;
 import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/src/media/media_item.dart';
@@ -229,6 +230,7 @@ import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 part 'home_dashboard_widget_cells.part.dart';
 
@@ -406,13 +408,12 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
     // 与库页「导入」同一位置、同一形状），两套设计系统都一样。
     final bool masthead =
         fushiMastheadRoleOf(context) == FushiMastheadRole.primary;
-    final FushiAppleColors? appleColors = apple && !masthead
-        ? appleColorsOf(context)
-        : null;
-    final Color onContainer =
-        appleColors?.label ?? Theme.of(context).colorScheme.onPrimaryContainer;
+    final FushiAppleColors? appleColors = apple ? appleColorsOf(context) : null;
+    final Color onContainer = appleColors != null
+        ? appleDarkColorsOf(context).label
+        : Theme.of(context).colorScheme.onPrimaryContainer;
     final double size = masthead
-        ? 40
+        ? (apple ? FushiPageTitleMetrics.of(context).primaryExtent : 40)
         : apple
         ? fushiAppleFloatingExtent(context)
         : 40;
@@ -424,6 +425,18 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: appleColors?.fill ?? tokens.surfaces.primaryContainer,
+                // Apple：通讯录 / Apple 账户式字母头像——secondaryLabel →
+                // tertiaryLabel 的竖向灰渐变（叠在 systemFill 上），字母白色。
+                gradient: appleColors == null
+                    ? null
+                    : LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: <Color>[
+                          appleColors.tertiaryLabel,
+                          appleColors.secondaryLabel,
+                        ],
+                      ),
               ),
               child: Center(
                 child: name.isEmpty
@@ -434,11 +447,24 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
                       )
                     : Text(
                         String.fromCharCodes(name.runes.take(1)),
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: onContainer,
-                              fontWeight: FontWeight.w700,
-                            ),
+                        // Apple：首字随头像直径缩放（0.45 × 直径），行高沿用
+                        // titleMedium。
+                        style: apple
+                            ? appleTextStyle(
+                                context,
+                                size: size * 0.45,
+                                weight: FontWeight.w700,
+                                color: onContainer,
+                                height:
+                                    Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium?.height ??
+                                    1.25,
+                              )
+                            : Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: onContainer,
+                                fontWeight: FontWeight.w700,
+                              ),
                       ),
               ),
             ),
@@ -465,19 +491,28 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
                   OutlinedBorder shape,
                   FushiMastheadPalette palette,
                   double extent,
-                ) => Material(
-                  shape: shape,
-                  color: palette.indicator,
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    customBorder: shape,
-                    onTap: onTap,
+                ) => apple
+                ? FushiPlainButton(
+                    onPressed: onTap,
+                    borderRadius: BorderRadius.circular(extent / 2),
                     child: SizedBox.square(
                       dimension: extent,
                       child: Center(child: avatar),
                     ),
+                  )
+                : Material(
+                    shape: shape,
+                    color: palette.indicator,
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      customBorder: shape,
+                      onTap: onTap,
+                      child: SizedBox.square(
+                        dimension: extent,
+                        child: Center(child: avatar),
+                      ),
+                    ),
                   ),
-                ),
           ),
         ),
       );
@@ -3271,7 +3306,11 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 色块下面的面板是否画成海报色块（重设计外壳、且库页布局不是封面网格；墨水屏
   /// 下 [shellRedesignActive] 为 false）。只在 build 期间读（依赖 inherited 外壳
   /// 设置）。
+  ///
+  /// Cupertino（[isGlassDesign]）下恒 false：海报拼贴是 M3E 的版式，Apple 首页一律
+  /// 走分区卡（用户 2026-11-24「不要混搭」）。
   bool get _posterPanels =>
+      !isGlassDesign(context) &&
       shellRedesignActive(context) &&
       shellContentLayoutOf(context) != ShellContentLayout.grid;
 
@@ -3456,12 +3495,22 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     WidgetGoalsInput? input,
   }) {
     final _WeekBarsData data = _weekBarsData(goal: goal, input: input);
+    // Apple（Swift Charts 口径）柱下挂星期首字母；M3E 不画。
+    final List<String>? axis = isGlassDesign(context)
+        ? <String>[
+            for (final String key in _statWindow.lastDayKeys(7))
+              MaterialLocalizations.of(
+                context,
+              ).narrowWeekdays[FushiDatabase.statDateKeyToDay(key).weekday % 7],
+          ]
+        : null;
     return HomeWeekBars(
       values: data.values,
       labels: data.labels,
       height: height,
       reference: data.reference,
       semanticLabel: data.semantic,
+      axisLabels: axis,
       color: goal == null
           ? null
           : studyGoalColorsOf(

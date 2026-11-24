@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/video/online/anime_source_book_spec.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/video/online/anime_episode_downloader.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
@@ -90,6 +91,28 @@ void main() {
       'anime-source:eu.kanade.tachiyomi.animeextension.all.fixture:42',
     );
   });
+
+  test(
+    'reopen spec of an episode names its work and episode (v180 favorite)',
+    () {
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.last.id;
+      final AnimeSourceBookSpec? spec = AnimeSourceBookSpec.tryParse(
+        c.reopenSpecFor(id),
+      );
+      expect(c, isA<RemoteVideoReopenSpec>());
+      expect(spec, isNotNull);
+      expect(
+        spec!.extensionPackage,
+        'eu.kanade.tachiyomi.animeextension.all.fixture',
+      );
+      expect(spec.sourceId, '42');
+      expect(spec.anime.url, anime.url);
+      expect(spec.anime.title, anime.title);
+      expect(spec.episode.url, '/ep/2');
+      expect(c.reopenSpecFor('anime-source:other:1:/ep/9'), isNull);
+    },
+  );
 
   test(
     'stream resolution picks the preferred candidate and exposes its headers',

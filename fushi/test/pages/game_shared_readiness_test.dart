@@ -223,14 +223,29 @@ void main() {
       );
       final String overviewBuild = topLevelFunctionBody(overview, 'build')!;
       expect(containsIdentifier(overviewBuild, 'waitingForThread'), isTrue);
+      // 会话标题 / 副标题的文案由 M3E 卡片与 Apple 工作台共用的 _SessionSummary
+      // 算（Apple 捕获工作台重做时抽出）：卡片必须把同一 readiness 交给它，等待
+      // 状态的标题与「未选台词线程」副标题在它里面。
+      expect(containsIdentifierCall(overviewBuild, '_SessionSummary'), isTrue);
       expect(
-        containsIdentifier(overviewBuild, 'game_session_waiting_thread'),
+        RegExp(
+          r'readiness:\s*readiness',
+        ).hasMatch(maskCommentsAndStrings(overviewBuild)),
         isTrue,
       );
+      final int summaryStart = searchable.indexOf('class _SessionSummary');
+      expect(summaryStart, greaterThanOrEqualTo(0));
+      final String summary = balancedBlockFrom(
+        texthooker,
+        summaryStart,
+        what: '_SessionSummary 类体',
+      );
+      expect(containsIdentifier(summary, 'waitingForThread'), isTrue);
       expect(
-        containsIdentifier(overviewBuild, 'game_text_thread_unset'),
+        containsIdentifier(summary, 'game_session_waiting_thread'),
         isTrue,
       );
+      expect(containsIdentifier(summary, 'game_text_thread_unset'), isTrue);
 
       final String toolbar = topLevelFunctionBody(
         texthooker,
