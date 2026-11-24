@@ -105,7 +105,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
-    show CollectionSectionResolution, collectionGroupKeyForFilename;
+    show CollectionSectionResolution, collectionGroupKeysForPaths;
 import 'package:fushi_engine/media/collections/collection_section_loader.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/sync/override_title_db.dart';

@@ -4,7 +4,15 @@ import 'dart:convert';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart'
-    show OrganizeProposalKind, kMemberRemovalReasonDiscExtra;
+    show
+        OrganizeProposalKind,
+        kMemberRemovalReasonDiscExtra,
+        kMemberRemovalReasonDiscStale,
+        kMemberRemovalReasonDiscSuperseded;
+import 'package:fushi_engine/media/collections/library_organize/organize_convergence.dart'
+    show kOrganizeConvergenceTrigger;
+import 'package:fushi_engine/media/video/disc/disc_library_import.dart'
+    show kDiscImportOrganizeTrigger;
 import 'package:fushi_engine/media/library_agent/library_changeset.dart'
     show kLibraryChangesetTrigger;
 import 'package:material_ui/material_ui.dart';
@@ -241,6 +249,8 @@ class _LibraryOrganizeHistoryPageState
       trigger: switch (run.run.trigger) {
         'auto' => t.library_organize_trigger_auto,
         kLibraryChangesetTrigger => t.library_organize_trigger_agent,
+        kOrganizeConvergenceTrigger => t.library_organize_trigger_convergence,
+        kDiscImportOrganizeTrigger => t.library_organize_trigger_disc_import,
         _ => t.library_organize_trigger_manual,
       },
       n: run.changes.length,
@@ -579,6 +589,10 @@ String? libraryOrganizeProposalReasonText(String? reasonCode) =>
     switch (reasonCode) {
       kMemberRemovalReasonDiscExtra =>
         t.library_organize_proposal_reason_disc_extra,
+      kMemberRemovalReasonDiscStale =>
+        t.library_organize_proposal_reason_disc_stale,
+      kMemberRemovalReasonDiscSuperseded =>
+        t.library_organize_proposal_reason_disc_superseded,
       _ => null,
     };
 

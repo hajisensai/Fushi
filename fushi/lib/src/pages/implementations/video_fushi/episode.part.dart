@@ -461,8 +461,11 @@ extension _VideoEpisode on _VideoFushiPageState {
         e.path.isNotEmpty ? e.path : e.title,
     ];
     final List<int?> numbers = parsedEpisodeNumbersOf(numberKeys);
+    // 切了集的原盘分集按顺序跨盘编号，特典不编号（与合集详情页同口径，BUG-5391）。
+    final List<int?> discOrdinals = discEpisodeOrdinalsOf(numberKeys);
     final Map<String, int?> numberByKey = <String, int?>{
-      for (int i = 0; i < numberKeys.length; i++) numberKeys[i]: numbers[i],
+      for (int i = 0; i < numberKeys.length; i++)
+        numberKeys[i]: discOrdinals[i] ?? numbers[i],
     };
     final Map<String, CoverMeta>? coverMeta = _playlistCoverMeta;
     List<ImageProvider> thumbs(_PlaylistEpisodeRef e) {

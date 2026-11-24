@@ -5927,23 +5927,26 @@ List<String> videoScrapeTitleCandidates({
 /// 排好（入库时按盘序 × 盘内集序写进合集），这里照这个顺序编号。
 ///
 /// 只作用于「含分集成员、或成员跨多张盘」的盘作品；单张逐集播放列表的盘维持按文件名
-/// 解析的旧行为。不是这种作品返回空表。
+/// 解析的旧行为。不是这种作品返回空表。合集里混着用户自己加进来的普通视频时只给
+/// 原盘成员编号（普通视频照旧按文件名定号，BUG-5391）。
 Map<String, (int, int)> discOrdinalEpisodeOverrides(
   VideoSourceScrapeWork work,
 ) {
   if (!work.isEpisodic) return const <String, (int, int)>{};
+  final List<VideoBookRow> discMembers = <VideoBookRow>[];
   final Set<String> roots = <String>{};
   bool anyEpisode = false;
   for (final VideoBookRow member in work.members) {
     final String? root = discRootForMemberPath(member.videoPath);
-    if (root == null) return const <String, (int, int)>{};
+    if (root == null) continue;
+    discMembers.add(member);
     roots.add(root.toLowerCase());
     anyEpisode = anyEpisode || isBlurayEpisodePath(member.videoPath);
   }
   if (!anyEpisode && roots.length < 2) return const <String, (int, int)>{};
   return <String, (int, int)>{
-    for (int i = 0; i < work.members.length; i++)
-      work.members[i].bookUid: (1, i + 1),
+    for (int i = 0; i < discMembers.length; i++)
+      discMembers[i].bookUid: (1, i + 1),
   };
 }
 

@@ -6,6 +6,9 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/collections/collection_season_groups.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
 import 'package:fushi_engine/media/video/disc/disc_library_import.dart';
 import 'package:fushi_engine/media/video/disc/disc_release_set.dart';
@@ -14,6 +17,8 @@ import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart'
     show discOrdinalEpisodeOverrides;
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart'
+    show parsedEpisodeNumbersOf;
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -58,6 +63,28 @@ void main() {
     for (final MediaCollectionItemRow item in await db.getCollectionItems(id))
       (await db.getVideoBookByBookUid(item.entryKey))!.videoPath,
   ];
+
+  /// 待确认的「移出成员」建议（原盘入库记的）。
+  Future<List<LibraryOrganizeProposalView>> pendingRemovals() async =>
+      <LibraryOrganizeProposalView>[
+        for (final LibraryOrganizeProposalView v
+            in await loadLibraryOrganizeProposals(db))
+          if (v.kind == OrganizeProposalKind.removeMembers) v,
+      ];
+
+  /// 用户逐条点「移出」。
+  Future<void> acceptAll(List<LibraryOrganizeProposalView> proposals) async {
+    for (final LibraryOrganizeProposalView v in proposals) {
+      expect(
+        await resolveLibraryOrganizeProposal(
+          db,
+          v.id,
+          decision: OrganizeProposalDecision.accept,
+        ),
+        OrganizeProposalState.accepted,
+      );
+    }
+  }
 
   List<String> allEpisodePaths() => <String>[
     for (int i = 1; i <= 6; i++) episodePath(disc1, i),
@@ -184,8 +211,16 @@ void main() {
     final DiscLibraryImportReport report = await import(<String>[disc1, disc2]);
     final int collectionId = report.discs.first.collectionId;
     expect(collectionId, isNot(oldCollection));
-    expect(await db.getMediaCollectionById(oldCollection), isNull);
     expect(await memberPaths(collectionId), allEpisodePaths());
+    // 修前导入器建的合集都是 `user`：单盘合集不直接拆，记成待确认建议（用户
+    // 2026-11-24 拍板），用户同意后移空自删。
+    final LibraryOrganizeProposalView proposal =
+        (await pendingRemovals()).single;
+    expect(proposal.targetName, '魔女の旅々　上巻');
+    expect(proposal.reasonCode, kMemberRemovalReasonDiscSuperseded);
+    expect(await db.getMediaCollectionById(oldCollection), isNotNull);
+    await acceptAll(<LibraryOrganizeProposalView>[proposal]);
+    expect(await db.getMediaCollectionById(oldCollection), isNull);
 
     final VideoBookRow first = (await db.getVideoBookByBookUid(
       'video/00001 (13)',
@@ -540,6 +575,17 @@ void main() {
         <int>{collectionId},
       );
       expect(await memberPaths(collectionId), episodesOf(<int>[1, 2, 3]));
+      // 旧单盘合集是 `user`：不直接移，记三条建议；重跑不重复记。
+      final List<LibraryOrganizeProposalView> proposals =
+          await pendingRemovals();
+      expect(proposals, hasLength(3));
+      expect(
+        proposals.map((LibraryOrganizeProposalView v) => v.reasonCode).toSet(),
+        <String>{kMemberRemovalReasonDiscSuperseded},
+      );
+      await import(<String>[volume(1), volume(2), volume(3)]);
+      expect(await pendingRemovals(), hasLength(3));
+      await acceptAll(proposals);
       for (final int id in legacy) {
         expect(await db.getMediaCollectionById(id), isNull);
       }
@@ -606,11 +652,24 @@ void main() {
           sourceId: Value<int?>(sourceId),
         ),
       );
+      // 修前的发布组合集：第 1 集、第 3 个「标题」（采访）、vol.2 的 Live。
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value<String>('video/legacy-ep1'),
+          title: const Value<String>('BOCCHI THE ROCK! 1 - 01'),
+          videoPath: Value<String>(episodePath(volume(1), 1)),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
       final int legacy = await db.createMediaCollection(
         'BOCCHI THE ROCK!',
         collectionType: 'playlist',
       );
-      for (final String uid in <String>['video/interview', 'video/live']) {
+      for (final String uid in <String>[
+        'video/legacy-ep1',
+        'video/interview',
+        'video/live',
+      ]) {
         await db.addToCollection(
           legacy,
           MediaKind.video,
@@ -635,8 +694,51 @@ void main() {
         volume(3),
       ], sourceId: sourceId);
       final int collectionId = report.discs.first.collectionId;
-      expect(collectionId, legacy);
-      expect(await memberPaths(collectionId), episodesOf(<int>[1, 2, 3]));
+      expect(collectionId, legacy, reason: '修前的无键合集按成员认领');
+      final MediaCollectionRow adopted = (await db.getMediaCollectionById(
+        legacy,
+      ))!;
+      expect(adopted.organizeKey, startsWith('d:video:set:'));
+      expect(adopted.origin, CollectionOrigin.user.dbValue, reason: '认领不改来源');
+      // 用户的合集：特典不直接移出，记成一条待确认建议；分集照常补进来、按卷序排。
+      expect(await memberPaths(collectionId), <String>[
+        episodePath(volume(1), 1),
+        episodePath(volume(1), 2),
+        interview,
+        episodePath(volume(2), 1),
+        episodePath(volume(2), 2),
+        live,
+        ...episodesOf(<int>[3]),
+      ]);
+      final LibraryOrganizeProposalView proposal =
+          (await pendingRemovals()).single;
+      expect(proposal.reasonCode, kMemberRemovalReasonDiscExtra);
+      expect(
+        proposal.members.map((OrganizeProposalMember m) => m.entryKey).toSet(),
+        <String>{'video/interview', 'video/live'},
+      );
+      // 特典留在合集里时详情页 / 播放器的分栏与集号：特典进 PV·特典、不占号。
+      final List<String> paths = await memberPaths(collectionId);
+      expect(collectionGroupKeysForPaths(paths), <String>[
+        's1',
+        's1',
+        kCollectionExtrasGroupKey,
+        's1',
+        's1',
+        kCollectionExtrasGroupKey,
+        's1',
+        's1',
+      ]);
+      expect(discEpisodeOrdinalsOf(paths), <int?>[
+        1,
+        2,
+        null,
+        3,
+        4,
+        null,
+        5,
+        6,
+      ]);
       expect(
         (await db.getVideoBookByBookUid('video/interview'))!.title,
         'BOCCHI THE ROCK! 1 - 00005',
@@ -665,6 +767,258 @@ void main() {
         await db.getVideoScrapeMeta('video/interview'),
         isNull,
         reason: '特典身上修前刮来的「第 3 集」不再顶着正片集名',
+      );
+
+      await acceptAll(<LibraryOrganizeProposalView>[proposal]);
+      expect(await memberPaths(collectionId), episodesOf(<int>[1, 2, 3]));
+      await import(<String>[volume(1), volume(2), volume(3)]);
+      expect(await pendingRemovals(), isEmpty, reason: '移出之后重扫不再提');
+    });
+
+    test('新建的发布组合集 origin=rule 带键；改名后重扫按键认回，不另建', () async {
+      final int id = (await import(<String>[
+        volume(1),
+        volume(2),
+      ])).discs.first.collectionId;
+      final MediaCollectionRow created = (await db.getMediaCollectionById(id))!;
+      expect(created.origin, CollectionOrigin.rule.dbValue);
+      expect(created.organizeKey, startsWith('d:video:set:'));
+      await db.renameMediaCollection(id, '孤独摇滚！');
+
+      final DiscLibraryImportReport again = await import(<String>[
+        volume(1),
+        volume(2),
+        volume(3),
+      ]);
+      expect(again.imported, 0);
+      expect(again.discs.first.collectionId, id);
+      expect(await db.getAllMediaCollections(), hasLength(1));
+      expect(await memberPaths(id), episodesOf(<int>[1, 2, 3]));
+    });
+
+    test('被 AI 并进别的合集（键进别名）：重扫认回那个合集', () async {
+      final int id = (await import(<String>[
+        volume(1),
+        volume(2),
+      ])).discs.first.collectionId;
+      final MediaCollectionRow disc = (await db.getMediaCollectionById(id))!;
+      final int ai = await db.createMediaCollection(
+        'ぼっち・ざ・ろっく！',
+        collectionType: 'playlist',
+        origin: CollectionOrigin.ai,
+        organizeKey: 't:video:ぼっちざろっく!',
+      );
+      for (final MediaCollectionItemRow item in await db.getCollectionItems(
+        id,
+      )) {
+        await db.addToCollection(
+          ai,
+          MediaKind.video,
+          item.entryKey,
+          userIntent: false,
+        );
+      }
+      await db.absorbOrganizeIdentity(targetId: ai, source: disc);
+      await db.deleteMediaCollection(id);
+
+      final DiscLibraryImportReport again = await import(<String>[
+        volume(1),
+        volume(2),
+        volume(3),
+      ]);
+      expect(again.discs.first.collectionId, ai);
+      expect(await db.getAllMediaCollections(), hasLength(1));
+      expect(await memberPaths(ai), episodesOf(<int>[1, 2, 3]));
+    });
+
+    test('用户加进来的普通视频不动；用户合集里的特典只记建议', () async {
+      final int id = (await import(<String>[
+        volume(1),
+        volume(2),
+      ])).discs.first.collectionId;
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value<String>('video/bonus-mp4'),
+          title: const Value<String>('Bocchi the Rock! - S01E13'),
+          videoPath: Value<String>(
+            p.join(temp.path, 'loose', 'Bocchi the Rock! - S01E13.mp4'),
+          ),
+        ),
+      );
+      // 用户亲手加：合集转为用户的。
+      await db.addToCollection(id, MediaKind.video, 'video/bonus-mp4');
+      expect(
+        (await db.getMediaCollectionById(id))!.origin,
+        CollectionOrigin.user.dbValue,
+      );
+      // 修前混进来的特典（非用户亲手加）。
+      writeFixturePlaylist(volume(1), '00005', const <(String, int)>[
+        ('00060', 1970),
+      ]);
+      final String interview = p.join(
+        volume(1),
+        'BDMV',
+        'PLAYLIST',
+        '00005.mpls',
+      );
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value<String>('video/interview'),
+          title: const Value<String>('BOCCHI THE ROCK! 1 - 03'),
+          videoPath: Value<String>(interview),
+        ),
+      );
+      await db.addToCollection(
+        id,
+        MediaKind.video,
+        'video/interview',
+        userIntent: false,
+      );
+
+      await import(<String>[volume(1), volume(2), volume(3)]);
+      final List<String> paths = await memberPaths(id);
+      expect(paths, contains(interview), reason: '用户的合集不直接移');
+      expect(
+        paths,
+        contains(p.join(temp.path, 'loose', 'Bocchi the Rock! - S01E13.mp4')),
+      );
+      final LibraryOrganizeProposalView proposal =
+          (await pendingRemovals()).single;
+      expect(
+        proposal.members.map((OrganizeProposalMember m) => m.entryKey),
+        <String>['video/interview'],
+        reason: '用户亲手加的普通视频不进建议',
+      );
+    });
+
+    test('混进普通视频（用户拍板：要支持）：不提议移出；原盘按顺位、普通视频按文件名定号，撞号相邻排', () async {
+      final int sourceId = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'bd',
+          mediaKind: 'video',
+          rootPath: temp.path,
+          createdAt: 1,
+        ),
+      );
+      final int id = (await import(<String>[
+        volume(1),
+        volume(2),
+        volume(3),
+      ], sourceId: sourceId)).discs.first.collectionId;
+      String loose(String name) => p.join(temp.path, 'loose', name);
+      for (final (String uid, String name) v in <(String, String)>[
+        ('video/e03', 'Bocchi the Rock! - S01E03.mkv'),
+        ('video/e13', 'Bocchi the Rock! - S01E13.mkv'),
+        ('video/making', 'Making of.mkv'),
+      ]) {
+        await db.upsertVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value<String>(v.$1),
+            title: Value<String>(v.$2),
+            videoPath: Value<String>(loose(v.$2)),
+            sourceId: Value<int?>(sourceId),
+          ),
+        );
+        await db.addToCollection(id, MediaKind.video, v.$1);
+      }
+
+      await import(<String>[
+        volume(1),
+        volume(2),
+        volume(3),
+      ], sourceId: sourceId);
+      expect(await pendingRemovals(), isEmpty, reason: '普通视频不提议移出');
+      final List<String> paths = await memberPaths(id);
+      expect(paths, contains(loose('Making of.mkv')), reason: '解不出集号的留在原位');
+      expect(
+        paths.where((String path) => path != loose('Making of.mkv')).toList(),
+        <String>[
+          episodePath(volume(1), 1),
+          episodePath(volume(1), 2),
+          episodePath(volume(2), 1),
+          loose('Bocchi the Rock! - S01E03.mkv'),
+          episodePath(volume(2), 2),
+          episodePath(volume(3), 1),
+          episodePath(volume(3), 2),
+          loose('Bocchi the Rock! - S01E13.mkv'),
+        ],
+        reason: '撞号的两个都留着、相邻排（原盘在前）；超出原盘集数的排在最后一集后面',
+      );
+      // 展示：原盘按顺位、普通视频按文件名（与刮削同口径），都在第 1 季。
+      final List<int?> ordinals = discEpisodeOrdinalsOf(paths);
+      final List<int?> parsed = parsedEpisodeNumbersOf(paths);
+      expect(
+        <int?>[
+          for (int i = 0; i < paths.length; i++)
+            if (paths[i] != loose('Making of.mkv')) ordinals[i] ?? parsed[i],
+        ],
+        <int?>[1, 2, 3, 3, 4, 5, 6, 13],
+      );
+      expect(collectionGroupKeysForPaths(paths).toSet(), <String>{
+        's1',
+        kCollectionExtrasGroupKey,
+      }, reason: '只有解不出集号的普通视频进 PV·特典');
+
+      // 刮削计划：原盘只在原盘成员之间编号，普通视频不占原盘的号。
+      final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+      final VideoSourceScrapeWork work = (await VideoSourceWorkPlanner(db).plan(
+        source,
+      )).singleWhere((VideoSourceScrapeWork w) => w.collection?.id == id);
+      final Map<String, (int, int)> overrides = discOrdinalEpisodeOverrides(
+        work,
+      );
+      expect(overrides.keys, isNot(contains('video/e03')));
+      expect(overrides.values.toList(), <(int, int)>[
+        for (int i = 1; i <= 6; i++) (1, i),
+      ]);
+      expect(
+        work.members.map((VideoBookRow m) => m.bookUid),
+        containsAll(<String>['video/e03', 'video/e13']),
+      );
+    });
+
+    test('几个修前的无键合集：认领本轮标题最多的那个，其余单盘合集记建议', () async {
+      Future<int> legacy(String name, List<int> volumes) async {
+        final int id = await db.createMediaCollection(
+          name,
+          collectionType: 'playlist',
+        );
+        for (final int n in volumes) {
+          for (int i = 1; i <= 2; i++) {
+            final String uid = 'video/$name-$n-$i';
+            await db.upsertVideoBook(
+              VideoBooksCompanion(
+                bookUid: Value<String>(uid),
+                title: Value<String>('$name $n-$i'),
+                videoPath: Value<String>(episodePath(volume(n), i)),
+              ),
+            );
+            await db.addToCollection(
+              id,
+              MediaKind.video,
+              uid,
+              userIntent: false,
+            );
+          }
+        }
+        return id;
+      }
+
+      final int small = await legacy('A', <int>[1]);
+      final int big = await legacy('B', <int>[2, 3]);
+      final DiscLibraryImportReport report = await import(<String>[
+        volume(1),
+        volume(2),
+        volume(3),
+      ]);
+      expect(report.discs.first.collectionId, big);
+      expect(report.imported, 0);
+      expect((await db.getMediaCollectionById(small))!.organizeKey, isNull);
+      expect(
+        (await pendingRemovals()).map(
+          (LibraryOrganizeProposalView v) => v.targetName,
+        ),
+        <String>['A'],
       );
     });
 

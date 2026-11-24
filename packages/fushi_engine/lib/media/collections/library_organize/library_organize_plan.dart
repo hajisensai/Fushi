@@ -250,6 +250,14 @@ class MemberRemovalProposal {
 /// [MemberRemovalProposal.reasonCode]：原盘特典不是正片的一集。
 const String kMemberRemovalReasonDiscExtra = 'disc_extra';
 
+/// [MemberRemovalProposal.reasonCode]：原盘重扫后这一条不再是正片标题（整卷已切成
+/// 分集、或分集又改回了整卷）。
+const String kMemberRemovalReasonDiscStale = 'disc_stale';
+
+/// [MemberRemovalProposal.reasonCode]：这张盘的各集已并进同一发布的合集，这个单盘
+/// 合集不再需要（全部移出后合集自删）。
+const String kMemberRemovalReasonDiscSuperseded = 'disc_superseded';
+
 class OrganizeProposal {
   const OrganizeProposal({
     required this.kind,

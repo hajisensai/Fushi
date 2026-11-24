@@ -643,9 +643,21 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 分栏：文件名派生键叠上手动分栏 / 手动季集指定（拍板台 iR6ccUys9H）。远端集
     // 的指定在 host 上，用 host 下发的生效分栏（BUG-5084，见
     // [CollectionEpisodeSlot.baseSectionKey]）。
+    // 本地槽整批派生（[collectionGroupKeysForPaths]）：切了集的原盘上分集进第 1 季、
+    // 同盘整条标题进 PV·特典，特典不占集号（BUG-5391）。
+    final List<CollectionEpisodeSlot> localSlots = <CollectionEpisodeSlot>[
+      for (final CollectionEpisodeSlot slot in episodeSlots)
+        if (slot.local != null) slot,
+    ];
+    final List<String> localKeys = collectionGroupKeysForPaths(<String>[
+      for (final CollectionEpisodeSlot slot in localSlots)
+        slot.local!.videoPath,
+    ]);
     final Map<String, String> groupKeys = <String, String>{
       for (final CollectionEpisodeSlot slot in episodeSlots)
         slot.entryKey: slot.baseSectionKey,
+      for (int i = 0; i < localSlots.length; i++)
+        localSlots[i].entryKey: localKeys[i],
     };
     final Map<String, CollectionSectionResolution> resolvedSections =
         await loadCollectionSections(widget.database, <String, String>{
@@ -1198,12 +1210,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   Map<String, int> get _episodeNumbers {
     if (identical(_episodeNumbersSlots, _slots)) return _episodeNumbersCache;
-    final List<int?> numbers = parsedEpisodeNumbersOf(<String>[
+    final List<String> filenames = <String>[
       for (final CollectionEpisodeSlot slot in _slots) slot.filename,
-    ]);
+    ];
+    final List<int?> numbers = parsedEpisodeNumbersOf(filenames);
+    // 切了集的原盘：分集按合集顺序跨盘编号（与刮削计划同口径），用户自己加进来的
+    // 普通视频照旧按文件名定号，特典不编号（BUG-5391）。
+    final List<int?> discOrdinals = discEpisodeOrdinalsOf(filenames);
     _episodeNumbersCache = <String, int>{
       for (int i = 0; i < _slots.length; i++)
-        if (numbers[i] != null) _slots[i].entryKey: numbers[i]!,
+        if (discOrdinals[i] ?? numbers[i] case final int n)
+          _slots[i].entryKey: n,
     };
     _episodeNumbersSlots = _slots;
     return _episodeNumbersCache;

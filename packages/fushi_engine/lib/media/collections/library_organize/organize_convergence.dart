@@ -336,7 +336,7 @@ Future<void> rehomeDissolvedOrganizerCollections(
     // 同一个分组、用户删的：拒绝。成员回到散条目，不转给任何持有者——否则等于把
     // 用户删掉的分组部分复活。
     if (sameGroup && !d.deadMerged) continue;
-    MediaCollectionRow? target = await _collectionHoldingKey(db, key);
+    MediaCollectionRow? target = await collectionHoldingOrganizeKey(db, key);
     if (target == null) {
       final String name = disambiguatedOrganizeName(d.row.name, key);
       final int id = await db.createMediaCollection(
@@ -371,8 +371,9 @@ Future<void> rehomeDissolvedOrganizerCollections(
   }
 }
 
-/// 键或别名里带 [key] 的活合集（多个时取胜方序最前的，与收敛同口径）。
-Future<MediaCollectionRow?> _collectionHoldingKey(
+/// 键或别名里带 [key] 的活合集（多个时取胜方序最前的，与收敛同口径：整理器合集认
+/// 主键与别名，用户合集只认主键）。原盘入库按确定性分组键认回自己的合集也走这里。
+Future<MediaCollectionRow?> collectionHoldingOrganizeKey(
   FushiDatabase db,
   String key,
 ) async {
