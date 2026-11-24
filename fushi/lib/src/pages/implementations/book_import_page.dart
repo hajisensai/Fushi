@@ -20,7 +20,7 @@ import 'package:fushi/src/media/media_source.dart' show MediaItemAppLookup;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_server_list_view.dart'
-    show mediaServerSettingsAction;
+    show openMediaServerSettings;
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -253,7 +253,7 @@ class _BookImportPageState extends ConsumerState<BookImportPage> {
                 mediaKind: 'book',
                 presentation: MediaSourcesPresentation.blocks,
                 entranceIndexOffset: spec.sourceEntranceIndex,
-                onConnectServer: mediaServerSettingsAction(context, ref),
+                onConnectServer: () => openMediaServerSettings(context),
                 connectServerHint: 'Kavita · Audiobookshelf · OPDS',
                 onLibraryChanged: widget.onLibraryChanged,
               ),

@@ -5929,25 +5929,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                       ),
                     ],
                   ],
-                  VideoOnlineServicesBanner(
-                    preferences: ref.read(appProvider).prefsRepo,
-                    onRegister: () async {
-                      await Navigator.of(context).push<void>(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const OnlineServicesOnboardingPage(),
-                        ),
-                      );
-                    },
-                    onOpenSettings: () async {
-                      await Navigator.of(context).push<void>(
-                        MaterialPageRoute<void>(
-                          builder: (_) => SettingsDetailPage(
-                            destination: buildServicesDestination(),
+                  // 提醒配的是刮削 / 字幕凭据（AniDB / Jimaku 等），属于「在线服务」
+                  // 模块；模块关着时那个设置分类不可达（推上去当帧自 pop），提醒
+                  // 整条不渲染。媒体服务器不在此列，见 openMediaServerSettings
+                  // （BUG-5359）。
+                  if (ref
+                      .read(appProvider)
+                      .moduleVisibility
+                      .isEnabled(ModuleId.services))
+                    VideoOnlineServicesBanner(
+                      preferences: ref.read(appProvider).prefsRepo,
+                      onRegister: () async {
+                        await Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                const OnlineServicesOnboardingPage(),
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                        );
+                      },
+                      onOpenSettings: () async {
+                        await Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) => SettingsDetailPage(
+                              destination: buildServicesDestination(),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   // 有作品刮不出身份时的常驻提醒（BUG-2201）。放在这里而不是正文
                   // sliver 里：正文按分区分三套 sliver，且会随列表滚走。
                   _buildPendingScrapeBanner(),

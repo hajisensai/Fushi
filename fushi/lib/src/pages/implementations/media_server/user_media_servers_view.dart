@@ -171,9 +171,10 @@ class _UserMediaServersViewState extends ConsumerState<UserMediaServersView> {
     if (mounted) setState(() {});
   }
 
+  void _openSettings() => openMediaServerSettings(context);
+
   @override
   Widget build(BuildContext context) {
-    final VoidCallback? openSettings = mediaServerSettingsAction(context, ref);
     final List<MediaServerListRowData> rows = userMediaServerRows(
       context,
       widget.domain,
@@ -186,11 +187,11 @@ class _UserMediaServersViewState extends ConsumerState<UserMediaServersView> {
       builder: (BuildContext context, double top) => rows.isEmpty
           // 页签只在有服务器时出现；最后一台刚被删、页签还没随之消失的那一帧
           // 也给出去设置的入口，不画空白。
-          ? MediaServerListEmpty(top: top, onOpenSettings: openSettings)
+          ? MediaServerListEmpty(top: top, onOpenSettings: _openSettings)
           : MediaServerGroupedList(
               rows: rows,
               top: top,
-              onOpenSettings: openSettings,
+              onOpenSettings: _openSettings,
             ),
     );
   }

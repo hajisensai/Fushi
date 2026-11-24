@@ -527,99 +527,7 @@ SettingsDestination buildServicesDestination() {
           ),
         ],
       ),
-      // 媒体服务器保持常显不折叠：Jellyfin / Plex 两行的「已配置」要异步读数据库
-      // （_JellyfinSettingsLink / _PlexSettingsLink），同步的分组摘要数不到它们，
-      // 收起后摘要只会少报；三行本身已各带状态，常显即可。
-      SettingsSection(
-        id: 'services.media',
-        title: t.video_library_media_servers,
-        items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'services.media_server.jellyfin',
-            searchTitle: 'Jellyfin · Emby · ${t.jellyfin_settings_title}',
-            cliList: buildJellyfinCliList(),
-            builder: (SettingsContext c) =>
-                _JellyfinSettingsLink(settingsContext: c),
-          ),
-          SettingsCustomItem(
-            id: 'services.media_server.plex',
-            searchTitle: 'Plex · ${t.video_library_media_servers}',
-            cliList: buildPlexCliList(),
-            builder: (SettingsContext c) =>
-                _PlexSettingsLink(settingsContext: c),
-          ),
-          // 以下四项都是用户自己填地址的服务器（同 Jellyfin / Plex）：浏览、阅读 /
-          // 串流与下载到本机都不属于 App Store 受限能力，iOS 也保留（2026-10-27 用户
-          // 拍板，判据 `userConfiguredServersAvailable`，见 store_compliance.dart）。
-          // 所以放在常显的这一节，而不是 iOS 上整节隐藏的「资源」里。
-          _servicePage(
-            id: 'services.opds_servers',
-            title: t.discovery_opds_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryOpdsServers.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) => const OpdsServerSettingsSection(),
-          ),
-          _servicePage(
-            id: 'services.alist_sites',
-            title: t.discovery_alist_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryAListSites.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) => const AListSiteSettingsSection(),
-          ),
-          _servicePage(
-            id: 'services.kavita_servers',
-            title: t.kavita_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.kavitaServers.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) => const KavitaServerSettingsSection(),
-          ),
-          _servicePage(
-            id: 'services.audiobookshelf_servers',
-            title: t.discovery_audiobookshelf_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryAudiobookshelfServers.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) =>
-                const AudiobookshelfServerSettingsSection(),
-            // 首页「继续」混排是显式 opt-in（默认关，与 Jellyfin 的「在视频库中混排
-            // 显示」同原则）。schema 原生开关：设置搜索 / 控制通道 / 覆盖测试都认得。
-            sections: <SettingsSection>[
-              SettingsSection(
-                id: 'services.audiobookshelf.home',
-                items: <SettingsItem>[
-                  SettingsSwitchItem(
-                    id: 'services.audiobookshelf.show_in_home',
-                    title: t.discovery_audiobookshelf_home_continue_title,
-                    subtitle: t.discovery_audiobookshelf_home_continue_hint,
-                    value: (SettingsContext c) =>
-                        c.appModel.prefsRepo.audiobookshelfShowInHome,
-                    onChanged: (SettingsContext c, bool value) =>
-                        c.appModel.prefsRepo.setAudiobookshelfShowInHome(value),
-                    defaultValue: false,
-                  ),
-                ],
-              ),
-            ],
-          ),
-          // 音乐的服务器曲库（OpenSubsonic 增删、Jellyfin 家族与 OpenSubsonic 的混排开关、
-          // Apple Music、串流音质）：和上面几项一样是用户自填地址的服务器凭据，与它们同
-          // 一节、同一种行（PR #3039 遗留，反馈 983broef-P）。曲库页「来源 › 添加 ›
-          // 服务器」推的也是同一个 [buildMusicServersDestination]，两处不各写一份。
-          SettingsNavigationItem(
-            id: 'services.music_servers',
-            title: t.music_servers_title,
-            subtitleBuilder: musicServersSettingsStatus,
-            child: buildMusicServersDestination,
-          ),
-        ],
-      ),
+      buildMediaServersSection(),
       // 弹幕服务器与媒体服务器的账号不是一类东西，单独成区更好找。
       SettingsSection(
         id: 'services.danmaku',
@@ -997,3 +905,116 @@ String anidbHttpApiStatusLabel(VideoSourceScrapeGlobalConfig config) =>
         version: '${config.anidbHttpClientVersion}',
       )
     : t.video_anidb_http_api_unregistered;
+
+/// 「媒体服务器」一节（Jellyfin / Emby / Plex / OPDS / AList / Kavita / ABS / 音乐服务器）：
+/// 设置 › 在线服务 里嵌这一节，[buildMediaServersDestination] 独立页也用这同一节，
+/// 两处不各写一份。
+SettingsSection buildMediaServersSection() {
+  // 媒体服务器保持常显不折叠：Jellyfin / Plex 两行的「已配置」要异步读数据库
+  // （_JellyfinSettingsLink / _PlexSettingsLink），同步的分组摘要数不到它们，
+  // 收起后摘要只会少报；三行本身已各带状态，常显即可。
+  return SettingsSection(
+    id: 'services.media',
+    title: t.video_library_media_servers,
+    items: <SettingsItem>[
+      SettingsCustomItem(
+        id: 'services.media_server.jellyfin',
+        searchTitle: 'Jellyfin · Emby · ${t.jellyfin_settings_title}',
+        cliList: buildJellyfinCliList(),
+        builder: (SettingsContext c) =>
+            _JellyfinSettingsLink(settingsContext: c),
+      ),
+      SettingsCustomItem(
+        id: 'services.media_server.plex',
+        searchTitle: 'Plex · ${t.video_library_media_servers}',
+        cliList: buildPlexCliList(),
+        builder: (SettingsContext c) => _PlexSettingsLink(settingsContext: c),
+      ),
+      // 以下四项都是用户自己填地址的服务器（同 Jellyfin / Plex）：浏览、阅读 /
+      // 串流与下载到本机都不属于 App Store 受限能力，iOS 也保留（2026-10-27 用户
+      // 拍板，判据 `userConfiguredServersAvailable`，见 store_compliance.dart）。
+      // 所以放在常显的这一节，而不是 iOS 上整节隐藏的「资源」里。
+      _servicePage(
+        id: 'services.opds_servers',
+        title: t.discovery_opds_settings_title,
+        status: (SettingsContext c) =>
+            c.appModel.prefsRepo.discoveryOpdsServers.isEmpty
+            ? t.settings_service_not_configured
+            : t.settings_service_configured,
+        body: (SettingsContext c) => const OpdsServerSettingsSection(),
+      ),
+      _servicePage(
+        id: 'services.alist_sites',
+        title: t.discovery_alist_settings_title,
+        status: (SettingsContext c) =>
+            c.appModel.prefsRepo.discoveryAListSites.isEmpty
+            ? t.settings_service_not_configured
+            : t.settings_service_configured,
+        body: (SettingsContext c) => const AListSiteSettingsSection(),
+      ),
+      _servicePage(
+        id: 'services.kavita_servers',
+        title: t.kavita_settings_title,
+        status: (SettingsContext c) =>
+            c.appModel.prefsRepo.kavitaServers.isEmpty
+            ? t.settings_service_not_configured
+            : t.settings_service_configured,
+        body: (SettingsContext c) => const KavitaServerSettingsSection(),
+      ),
+      _servicePage(
+        id: 'services.audiobookshelf_servers',
+        title: t.discovery_audiobookshelf_settings_title,
+        status: (SettingsContext c) =>
+            c.appModel.prefsRepo.discoveryAudiobookshelfServers.isEmpty
+            ? t.settings_service_not_configured
+            : t.settings_service_configured,
+        body: (SettingsContext c) =>
+            const AudiobookshelfServerSettingsSection(),
+        // 首页「继续」混排是显式 opt-in（默认关，与 Jellyfin 的「在视频库中混排
+        // 显示」同原则）。schema 原生开关：设置搜索 / 控制通道 / 覆盖测试都认得。
+        sections: <SettingsSection>[
+          SettingsSection(
+            id: 'services.audiobookshelf.home',
+            items: <SettingsItem>[
+              SettingsSwitchItem(
+                id: 'services.audiobookshelf.show_in_home',
+                title: t.discovery_audiobookshelf_home_continue_title,
+                subtitle: t.discovery_audiobookshelf_home_continue_hint,
+                value: (SettingsContext c) =>
+                    c.appModel.prefsRepo.audiobookshelfShowInHome,
+                onChanged: (SettingsContext c, bool value) =>
+                    c.appModel.prefsRepo.setAudiobookshelfShowInHome(value),
+                defaultValue: false,
+              ),
+            ],
+          ),
+        ],
+      ),
+      // 音乐的服务器曲库（OpenSubsonic 增删、Jellyfin 家族与 OpenSubsonic 的混排开关、
+      // Apple Music、串流音质）：和上面几项一样是用户自填地址的服务器凭据，与它们同
+      // 一节、同一种行（PR #3039 遗留，反馈 983broef-P）。曲库页「来源 › 添加 ›
+      // 服务器」推的也是同一个 [buildMusicServersDestination]，两处不各写一份。
+      SettingsNavigationItem(
+        id: 'services.music_servers',
+        title: t.music_servers_title,
+        subtitleBuilder: musicServersSettingsStatus,
+        child: buildMusicServersDestination,
+      ),
+    ],
+  );
+}
+
+/// 媒体服务器管理独立页：「去设置添加服务器」类入口推它（[SettingsDetailPage.subPage]）。
+///
+/// 用户 2026-11-24 拍板（BUG-5359）：只要媒体服务器页签 / 入口在，就一定进得去服务器
+/// 设置，不管「在线服务」模块开没开——已登录的服务器在模块关着时照样能浏览 / 播放，
+/// 增删改服务器是它的一部分。所以本页**不挂** [buildServicesDestination] 的模块门
+/// （`visible` 留空）；在线服务分类里其余条目（字幕源 / 索引器 / 刮削凭据 / 弹幕等）
+/// 仍随分类一起受模块门控。id 沿用 services（子页同父分类 id，见
+/// [SettingsDetailPage.subPage]）。
+SettingsDestination buildMediaServersDestination() => SettingsDestination(
+  id: SettingsDestinationId.services,
+  title: t.video_library_media_servers,
+  icon: FushiIcons.server,
+  sections: <SettingsSection>[buildMediaServersSection()],
+);

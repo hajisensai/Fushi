@@ -8,10 +8,6 @@ import 'package:fushi/src/pages/implementations/media_server/media_server_aggreg
 import 'package:fushi/src/pages/implementations/media_server/media_server_home_view.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/module_registry.dart';
-import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
@@ -78,10 +74,7 @@ class MediaServerListView extends StatefulWidget {
 
   final Future<List<MediaServerEntry>> Function() loadServers;
   final MediaServerPlayHandler play;
-
-  /// 「去设置添加服务器」。null = 此刻去不了（见 [mediaServerSettingsAction]），
-  /// 列表下的添加行与空态按钮整条不渲染。
-  final VoidCallback? onOpenSettings;
+  final VoidCallback onOpenSettings;
 
   @override
   State<MediaServerListView> createState() => _MediaServerListViewState();
@@ -429,30 +422,18 @@ class MediaServerListRowData {
   final Widget? trailing;
 }
 
-/// 「去设置添加服务器」的点按动作；设置 › 在线服务此刻不可达时为 null。
+/// 打开媒体服务器管理页（[buildMediaServersDestination]：与 设置 › 在线服务 里
+/// 「媒体服务器」一节同一份内容）。
 ///
-/// 服务设置页受「在线服务」模块（[ModuleId.services]）门控：模块关着时
-/// [SettingsDetailPage] 判分类不可见、推上来当帧就自己 pop，入口点了等于没反应
-/// （BUG-5359）。所以入口跟浏览 › 下载设置、发现页「管理来源」一样，模块关着就
-/// 不渲染。判据与设置分类自己的 `visible` 同一条 [isSettingsDestinationVisible]，
-/// 不另写；用 `ref.watch`，模块开关一变入口随之出现 / 消失。
-VoidCallback? mediaServerSettingsAction(BuildContext context, WidgetRef ref) {
-  final bool reachable = isSettingsDestinationVisible(
-    SettingsDestinationId.services,
-    ref.watch(appProvider).moduleVisibility,
-  );
-  if (!reachable) return null;
-  return () => openMediaServerSettings(context);
-}
-
-/// 打开「设置 › 服务」（媒体服务器在这里增删）。调用方先经
-/// [mediaServerSettingsAction] 判可达，别直接挂到入口上。
-void openMediaServerSettings(BuildContext context) {
-  Navigator.of(context, rootNavigator: true).push<void>(
+/// 不推整个在线服务分类：那个分类受「在线服务」模块门控，模块关着时
+/// [SettingsDetailPage] 判不可见、推上来当帧自 pop，入口点了没反应（BUG-5359）。
+/// 用户拍板：媒体服务器入口在就一定进得去服务器设置，与模块开关无关。
+Future<void> openMediaServerSettings(BuildContext context) {
+  return Navigator.of(context, rootNavigator: true).push<void>(
     adaptivePageRoute<void>(
       context: context,
       builder: (_) =>
-          SettingsDetailPage(destination: buildServicesDestination()),
+          const SettingsDetailPage.subPage(buildMediaServersDestination),
     ),
   );
 }
@@ -467,26 +448,21 @@ class MediaServerListEmpty extends StatelessWidget {
 
   /// 顶部让位（浮动工具区高度）。
   final double top;
-
-  /// null = 设置去不了（[mediaServerSettingsAction]），只留提示、不画按钮。
-  final VoidCallback? onOpenSettings;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
-    final VoidCallback? open = onOpenSettings;
     return Padding(
       padding: EdgeInsets.only(top: top),
       child: FushiPlaceholderMessage(
         icon: FushiIcons.server,
         message: t.media_server_servers_empty_hint,
-        action: open == null
-            ? null
-            : FushiFilledButton.tonalIcon(
-                key: const ValueKey<String>('media-server-list-go-settings'),
-                onPressed: open,
-                icon: const FushiIcon(FushiIcons.settingsGear),
-                label: Text(t.media_server_servers_go_settings),
-              ),
+        action: FushiFilledButton.tonalIcon(
+          key: const ValueKey<String>('media-server-list-go-settings'),
+          onPressed: onOpenSettings,
+          icon: const FushiIcon(FushiIcons.settingsGear),
+          label: Text(t.media_server_servers_go_settings),
+        ),
       ),
     );
   }
@@ -508,15 +484,12 @@ class MediaServerGroupedList extends StatelessWidget {
 
   /// 顶部让位（浮动工具区高度），加成列表顶部内边距。
   final double top;
-
-  /// null = 设置去不了（[mediaServerSettingsAction]），组下不画添加行。
-  final VoidCallback? onOpenSettings;
+  final VoidCallback onOpenSettings;
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final int count = rows.length;
-    final VoidCallback? open = onOpenSettings;
     return FushiEntranceScope(
       child: ListView(
         key: const PageStorageKey<String>('media-server-list'),
@@ -546,20 +519,18 @@ class MediaServerGroupedList extends StatelessWidget {
                         count: count,
                       ),
                     ),
-                  if (open != null) ...<Widget>[
-                    SizedBox(height: tokens.spacing.section),
-                    FushiStaggeredEntrance(
-                      index: count,
-                      child: FushiGroupedListItem(
-                        key: const ValueKey<String>('media-server-list-add'),
-                        index: 0,
-                        count: 1,
-                        focusId: const FushiFocusId('media-server-list-add'),
-                        onTap: open,
-                        child: const _AddServerRow(),
-                      ),
+                  SizedBox(height: tokens.spacing.section),
+                  FushiStaggeredEntrance(
+                    index: count,
+                    child: FushiGroupedListItem(
+                      key: const ValueKey<String>('media-server-list-add'),
+                      index: 0,
+                      count: 1,
+                      focusId: const FushiFocusId('media-server-list-add'),
+                      onTap: onOpenSettings,
+                      child: const _AddServerRow(),
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),

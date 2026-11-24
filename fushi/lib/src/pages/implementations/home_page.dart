@@ -143,10 +143,8 @@ import 'package:fushi/src/media/video/online/video_online_sources_gate.dart'
     show isVideoOnlineSourcesAvailable;
 import 'package:fushi/src/media/manga/mihon/mihon_extensions_page.dart'
     show MihonExtensionsPage;
-import 'package:fushi/src/settings/settings_detail_page.dart'
-    show SettingsDetailPage;
-import 'package:fushi/src/settings/settings_schema_services.dart'
-    show buildServicesDestination;
+import 'package:fushi/src/pages/implementations/media_server/media_server_server_list_view.dart'
+    show openMediaServerSettings;
 import 'package:fushi/src/settings/video_resource_site_settings_link.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart'
     show MediaServerConfig;
@@ -2728,14 +2726,9 @@ class _HomePageState extends BasePageState<HomePage>
         ),
       MediaServerAcquisitionBackend(
         sessions: _mediaServerAcquisitionSessions,
-        configure: (BuildContext context) =>
-            Navigator.of(context, rootNavigator: true).push<void>(
-              adaptivePageRoute<void>(
-                context: context,
-                builder: (_) =>
-                    SettingsDetailPage(destination: buildServicesDestination()),
-              ),
-            ),
+        // 媒体服务器管理页，不是整个在线服务分类：后者随模块门控，关着时推上去
+        // 当帧自 pop（BUG-5359）。
+        configure: openMediaServerSettings,
       ),
     ];
   }
