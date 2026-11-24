@@ -15,6 +15,7 @@ import 'package:fushi/src/utils/adaptive/apple_sidebar_library_host.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/rendering.dart' show OverflowBoxFit, RenderFlex;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -73,7 +74,13 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
         SpringBuilder,
         VelocitySpringBuilder;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show FushiFilledButton, FushiTextButton, fushiClearGlassSettings;
+    show
+        FushiFilledButton,
+        FushiTextButton,
+        fushiClearGlassSettings,
+        fushiGlassButtonRestSettings;
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiAppleSelectionLens;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -3333,6 +3340,19 @@ class _NavRailMenuButton extends StatelessWidget {
   }
 }
 
+/// Apple 主导航静止的选中 lens 底色（底部标签栏胶囊与宽窗顶部标签栏共用）：
+/// 比胶囊更亮一阶的透明 pill（iOS 26 Music 演示 indicatorColor = label@20%；
+/// 这里玻璃本身更透，深色白@10%——再高在深色栏上就是一块灰白雾——浅色
+/// 黑@7%）。实色档换高一阶的分组底色。
+Color appleNavLensRestColor(BuildContext context) {
+  if (glassMaterialOf(context) == FushiGlassMaterial.off) {
+    return appleColorsOf(context).tertiaryGroupedBackground;
+  }
+  return Theme.of(context).colorScheme.brightness == Brightness.dark
+      ? Colors.white.withValues(alpha: 0.10)
+      : Colors.black.withValues(alpha: 0.07);
+}
+
 /// Apple 设计系统（iOS 26）标签栏的玻璃胶囊本体：无色透明玻璃（
 /// [fushiClearGlassSettings] 的 bar 档）+ 选中项下一枚更亮的透明 lens。
 ///
@@ -3446,7 +3466,6 @@ class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
 
   @override
   Widget build(BuildContext context) {
-    final FushiAppleColors apple = appleColorsOf(context);
     final bool dark =
         Theme.of(context).colorScheme.brightness == Brightness.dark;
     final bool solid = glassMaterialOf(context) == FushiGlassMaterial.off;
@@ -3454,14 +3473,7 @@ class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
     final bool morph = !solid && !reduceMotion;
     final GlassQuality quality = fushiGlassQuality(context, prominent: true);
     const double radius = kGlassNavBarCapsuleHeight / 2;
-    // 静止的选中 lens：比胶囊更亮一阶的透明 pill（iOS 26 Music 演示
-    // indicatorColor = label@20%；这里玻璃本身更透，深色白@10%——再高在深色
-    // 栏上就是一块灰白雾——浅色黑@7%）。实色档换高一阶的分组底色。
-    final Color restColor = solid
-        ? apple.tertiaryGroupedBackground
-        : (dark
-              ? Colors.white.withValues(alpha: 0.10)
-              : Colors.black.withValues(alpha: 0.07));
+    final Color restColor = appleNavLensRestColor(context);
     // 透镜：几乎无色、一圈细亮边 + 折射。深色收低光照与 rim，避免拖动时
     // 整颗透镜泛白。
     final LiquidGlassSettings lensSettings = LiquidGlassSettings(

@@ -128,6 +128,16 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   );
   final Set<int> _shutSections = <int>{};
 
+  /// 顶部标签栏选中 lens 的按住 / 拖动状态：只有 lens 层监听，拖动时目的地
+  /// 不重建。
+  final ValueNotifier<_AppleTabLensDrag> _lensDrag =
+      ValueNotifier<_AppleTabLensDrag>(const _AppleTabLensDrag());
+
+  /// lens 上一次对准的（目的地, 格矩形）：同一目的地只是格几何变了（窗口缩放
+  /// 重排）时 lens 直接跟到位，不弹簧追赶；换目的地才滑过去。
+  int? _lensIndex;
+  Rect? _lensCell;
+
   @override
   void initState() {
     super.initState();
@@ -156,6 +166,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   @override
   void dispose() {
     widget.libraryHost?.removeListener(_onLibraryRows);
+    _lensDrag.dispose();
     _t.dispose();
     super.dispose();
   }
@@ -346,6 +357,11 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
             final double tabOnly = (settled * 2 - 1).clamp(0.0, 1.0);
             final Rect panel = Rect.lerp(sidePanel, tabs.capsule, t)!;
             final int count = widget.items.length;
+            // 落定在标签栏形态后，选中块交给液态玻璃 lens 层（与 Apple 分段
+            // 选择器同一套 [FushiAppleSelectionLens]）；形变途中仍由各目的地
+            // 自己的底色插值。
+            final bool lensActive =
+                t >= 0.999 && tabs.cells.containsKey(widget.currentIndex);
             return Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
@@ -379,12 +395,8 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                   child: IgnorePointer(
                     child: t <= 0
                         ? const AppleEdgeSidebarSurface()
-                        : FushiAppleFloatingSurface(
-                            shape: RoundedSuperellipseBorder(
-                              borderRadius: BorderRadius.circular(
-                                _kAppleTabBarHeight / 2 * settled,
-                              ),
-                            ),
+                        : _AppleTabBarGlassSurface(
+                            radius: _kAppleTabBarHeight / 2 * settled,
                           ),
                   ),
                 ),
@@ -419,20 +431,48 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                       child: _toggleButton(apple, toTabBar: false),
                     ),
                   ),
-                for (int i = 0; i < count; i++)
-                  if (tabs.cells[i] case final Rect cell)
-                    _buildItem(
-                      context,
-                      index: i,
-                      apple: apple,
-                      from: side.rows[i],
-                      to: cell,
-                      // 依次起飞：越靠后的目的地越晚出发（两个方向同一顺序）。
-                      t: _stagger(t, i, count),
-                      tabLabel: tabLabel,
-                      iconOnly: tabs.iconOnly || widget.footer.contains(i),
-                      windowActive: windowActive,
+                // 目的地层夹在 lens 的实色底（下）与玻璃透镜（上）之间；整层
+                // 结构恒定，lens 动画只重建 lens 自己。
+                Positioned.fill(
+                  key: const ValueKey<String>('apple-tab-bar-items'),
+                  child: _buildTabLens(
+                    context,
+                    cells: tabs.cells,
+                    active: lensActive,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: <Widget>[
+                        for (int i = 0; i < count; i++)
+                          if (tabs.cells[i] case final Rect cell)
+                            _buildItem(
+                              context,
+                              index: i,
+                              apple: apple,
+                              from: side.rows[i],
+                              to: cell,
+                              // 依次起飞：越靠后的目的地越晚出发（两个方向同一
+                              // 顺序）。
+                              t: _stagger(t, i, count),
+                              tabLabel: tabLabel,
+                              iconOnly:
+                                  tabs.iconOnly || widget.footer.contains(i),
+                              windowActive: windowActive,
+                              lensOwnsSelection: lensActive,
+                            ),
+                      ],
                     ),
+                  ),
+                ),
+                Positioned.fromRect(
+                  key: const ValueKey<String>('apple-tab-bar-swipe'),
+                  rect: tabs.capsule,
+                  child: _buildTabSwipe(
+                    context,
+                    cells: tabs.cells,
+                    capsule: tabs.capsule,
+                    active: lensActive,
+                  ),
+                ),
               ],
             );
           },
@@ -440,6 +480,171 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
         );
       },
     );
+  }
+
+  /// 标签栏选中 lens：落定后实色底 + 按住 / 拖动 / 换项滑动时浮起的液态玻璃
+  /// 透镜（[FushiAppleSelectionLens]，与 Apple 分段选择器同一套）；[child] 是
+  /// 目的地层。拖动中 lens 跟手、宽度取手指下那一格。
+  Widget _buildTabLens(
+    BuildContext context, {
+    required Map<int, Rect> cells,
+    required bool active,
+    required Widget child,
+  }) {
+    final FushiSpringSpec slide = context.fushiMotion.spatialFast;
+    final Rect? selectedCell = cells[widget.currentIndex];
+    return ValueListenableBuilder<_AppleTabLensDrag>(
+      valueListenable: _lensDrag,
+      child: child,
+      builder: (BuildContext context, _AppleTabLensDrag drag, Widget? child) {
+        final Rect cell = selectedCell ?? Rect.zero;
+        double left = cell.left;
+        double width = cell.width;
+        final double? center = active ? drag.center : null;
+        if (center != null) {
+          width = (cells[_cellAt(cells, center)] ?? cell).width;
+          final ({double min, double max}) span = _cellSpan(cells);
+          left = (center - width / 2).clamp(
+            span.min,
+            math.max(span.min, span.max - width),
+          );
+        }
+        final bool geometryOnly =
+            _lensIndex == widget.currentIndex && _lensCell != cell;
+        _lensIndex = widget.currentIndex;
+        _lensCell = cell;
+        final double radius = cell.height / 2;
+        return FushiAppleSelectionLens(
+          left: left,
+          width: width,
+          top: cell.top,
+          height: cell.height,
+          radius: radius,
+          slideDuration: center != null || geometryOnly
+              ? Duration.zero
+              : slide.duration,
+          slideCurve: slide.curve,
+          held: active && (center != null || drag.held),
+          visible: active && selectedCell != null,
+          restDecoration: BoxDecoration(
+            color: appleNavLensRestColor(context),
+            borderRadius: BorderRadius.circular(radius),
+          ),
+          child: child!,
+        );
+      },
+    );
+  }
+
+  /// 标签栏上的按住 / 横拖：按住选中格时 lens 浮起；从选中格起手横拖时 lens
+  /// 跟手滑行，从别处起手则松手时选中指针所在格（lens 再滑过去）。层本身
+  /// translucent，不挡目的地的点按 / 焦点 / 悬停。
+  Widget _buildTabSwipe(
+    BuildContext context, {
+    required Map<int, Rect> cells,
+    required Rect capsule,
+    required bool active,
+  }) {
+    double shellX(Offset local) => local.dx + capsule.left;
+    bool onSelected(double x) {
+      final Rect? c = cells[widget.currentIndex];
+      return c != null && x >= c.left && x <= c.right;
+    }
+
+    void release() {
+      if (!_lensDrag.value.dragging) {
+        _lensDrag.value = const _AppleTabLensDrag();
+      }
+    }
+
+    void end() {
+      final _AppleTabLensDrag drag = _lensDrag.value;
+      final double? target = drag.center ?? drag.pointer;
+      _lensDrag.value = const _AppleTabLensDrag();
+      if (target == null || !active) return;
+      final int? index = _cellAt(cells, target);
+      if (index == null) return;
+      if (index != widget.currentIndex) fushiSelectionHaptic(context);
+      widget.onTap(index);
+    }
+
+    return IgnorePointer(
+      ignoring: !active,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (PointerDownEvent event) {
+          if (onSelected(shellX(event.localPosition))) {
+            _lensDrag.value = const _AppleTabLensDrag(held: true);
+          }
+        },
+        onPointerUp: (PointerUpEvent _) => release(),
+        onPointerCancel: (PointerCancelEvent _) => release(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          excludeFromSemantics: true,
+          dragStartBehavior: DragStartBehavior.down,
+          onHorizontalDragStart: (DragStartDetails details) {
+            final double x = shellX(details.localPosition);
+            final ({double min, double max}) span = _cellSpan(cells);
+            if (x < span.min || x > span.max) return;
+            final Rect? selected = cells[widget.currentIndex];
+            if (selected != null && onSelected(x)) {
+              _lensDrag.value = _AppleTabLensDrag(
+                center: selected.center.dx,
+                grab: x - selected.center.dx,
+                held: true,
+              );
+            } else {
+              _lensDrag.value = _AppleTabLensDrag(pointer: x);
+            }
+          },
+          onHorizontalDragUpdate: (DragUpdateDetails details) {
+            final _AppleTabLensDrag drag = _lensDrag.value;
+            if (!drag.dragging) return;
+            final double x = shellX(details.localPosition);
+            _lensDrag.value = drag.center != null
+                ? _AppleTabLensDrag(
+                    center: x - drag.grab,
+                    grab: drag.grab,
+                    held: true,
+                  )
+                : _AppleTabLensDrag(pointer: x);
+          },
+          onHorizontalDragEnd: (DragEndDetails _) => end(),
+          onHorizontalDragCancel: () =>
+              _lensDrag.value = const _AppleTabLensDrag(),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+  }
+
+  /// 离横坐标 [x]（外壳坐标）最近的标签格；没有格时 null。
+  static int? _cellAt(Map<int, Rect> cells, double x) {
+    int? best;
+    double bestDistance = double.infinity;
+    for (final MapEntry<int, Rect> entry in cells.entries) {
+      final Rect r = entry.value;
+      final double d = x < r.left
+          ? r.left - x
+          : (x > r.right ? x - r.right : 0);
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = entry.key;
+      }
+    }
+    return best;
+  }
+
+  /// 全部标签格的横向跨度（外壳坐标）。
+  static ({double min, double max}) _cellSpan(Map<int, Rect> cells) {
+    double min = double.infinity;
+    double max = double.negativeInfinity;
+    for (final Rect r in cells.values) {
+      if (r.left < min) min = r.left;
+      if (r.right > max) max = r.right;
+    }
+    return min.isFinite ? (min: min, max: max) : (min: 0, max: 0);
   }
 
   static double _stagger(double t, int i, int count) {
@@ -642,6 +847,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     required TextStyle tabLabel,
     required bool iconOnly,
     required bool windowActive,
+    required bool lensOwnsSelection,
   }) {
     // 侧栏里被折叠的行：侧栏模式下不画，标签栏模式下从胶囊格位置
     // 原地淡入。
@@ -660,13 +866,15 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     final TextStyle label = TextStyle.lerp(sideLabel, tabLabel, s)!;
     // 选中态（2026-11-24 用户「侧栏还不是 macOS 27」）：侧栏是 macOS 26 源列表
     // 的中性色圆角底（secondarySystemFill，窗口失焦时减半），标签仍 label 色、
-    // 图标仍强调色——不再是强调色实心块。标签栏模式是灰色托盘 + 强调色字。
+    // 图标仍强调色——不再是强调色实心块。标签栏模式落定后选中块交给液态
+    // 玻璃 lens 层（[lensOwnsSelection]，目的地自己不再画底），形变途中插值到
+    // lens 的静止底色，交接无跳变。
     final Color sideFill = windowActive
         ? apple.secondaryFill
         : apple.secondaryFill.withValues(alpha: apple.secondaryFill.a * 0.5);
-    final Color fill = selected
-        ? Color.lerp(sideFill, apple.secondaryFill, s)!
-        : Colors.transparent;
+    final Color fill = !selected || lensOwnsSelection
+        ? Colors.transparent
+        : Color.lerp(sideFill, appleNavLensRestColor(context), s)!;
     final Color fg = selected
         ? Color.lerp(apple.label, apple.accent, s)!
         : apple.label;
@@ -1027,4 +1235,58 @@ class AppleSidebarTopBleed extends InheritedWidget {
 
   @override
   bool updateShouldNotify(AppleSidebarTopBleed oldWidget) => false;
+}
+
+/// 顶部标签栏选中 lens 的手势状态：[held] = 按住选中格；[center] = 正拖着
+/// lens（中心横坐标，[grab] 是起手点相对中心的偏移）；[pointer] = 从别的格
+/// 起手的横拖，松手时指针所在横坐标。坐标均为外壳坐标。
+@immutable
+class _AppleTabLensDrag {
+  const _AppleTabLensDrag({
+    this.center,
+    this.grab = 0,
+    this.pointer,
+    this.held = false,
+  });
+
+  final double? center;
+  final double grab;
+  final double? pointer;
+  final bool held;
+
+  bool get dragging => center != null || pointer != null;
+}
+
+/// Apple 宽窗顶部标签栏（及侧栏 ↔ 标签栏形变途中）的悬浮面：与底部标签栏
+/// 胶囊同一套无色透明栏玻璃（[fushiClearGlassSettings] 的 bar 档，自带一层），
+/// 静止不画常驻高光边（[fushiGlassButtonRestSettings]）；实色档（off）是系统
+/// 材质实色悬浮面，精简档走库的非着色器磨砂路径。
+class _AppleTabBarGlassSurface extends StatelessWidget {
+  const _AppleTabBarGlassSurface({required this.radius});
+
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    if (glassMaterialOf(context) == FushiGlassMaterial.off) {
+      return DecoratedBox(
+        decoration: fushiAppleSolidFloatingDecoration(
+          context,
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(radius),
+          ),
+        ),
+      );
+    }
+    return GlassContainer(
+      // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
+      useOwnLayer: true,
+      quality: fushiGlassQuality(context, prominent: true),
+      shape: LiquidRoundedSuperellipse(borderRadius: radius),
+      settings: fushiGlassButtonRestSettings(
+        fushiClearGlassSettings(context, bar: true),
+      ),
+      platformViewBackdrop: fushiGlassOverPlatformView(context),
+    );
+  }
 }
