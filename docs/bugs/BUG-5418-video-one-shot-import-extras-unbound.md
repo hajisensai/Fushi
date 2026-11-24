@@ -12,6 +12,8 @@
   （成员按 `videoBookInScrapeScope`、NFO / 作品根按 `videoScrapeRootFor`，不认领孤儿蓝光），一次性临时行直接不立项；
   `importLocalFolderOnceAt` 删掉临时行后对无来源范围补跑一次索引；启动回填 / 清除刮削记录后的重建改为遍历
   `localVideoScrapeScopes`（含无来源范围），已经按修前方式导入的库下次启动自动补上绑定。
+  详情页「没有规范作品时兜底索引」（`MediaCollectionDetailPage._scheduleSourceIndexing`）同样把无来源成员
+  归到无来源范围一并索引，不再只认有来源 id 的成员。
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/metadata/video_one_shot_import_extras_test.dart`：用反馈样本目录
   清单做夹具，一次性导入后 13 个 SPs / Menus 特典全部挂到正片作品下、正片不被当特典；修前状态（无来源视频没有作品）
   经启动回填补上绑定且第二次零写入；常驻来源同目录对照。

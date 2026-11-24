@@ -59,6 +59,11 @@ import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.
 import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_manual_edit.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart'
+    show
+        kSourcelessLocalVideoScrapeScopeId,
+        sourcelessLocalVideoScrapeScope,
+        videoBookInScrapeScope;
 import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/online/anime_source_stream_label.dart';
@@ -572,9 +577,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     // 转场期间把整个来源重扫一遍（打开慢、转场掉帧）。改成先把已有数据画出来，
     // 转场结束后在后台做、本会话每个来源只做一次，建出作品行再刷新一次。
     if (canonicalWork == null) {
+      // 无来源成员（「导入文件夹（仅此一次）」导入后临时行已删）归无来源范围，按它的
+      // 内存 id 一并兜底索引，与启动回填同口径（BUG-5418）。
       _scheduleSourceIndexing(<int>{
         for (final VideoBookRow member in members)
-          if (member.sourceId != null) member.sourceId!,
+          if (member.sourceId != null)
+            member.sourceId!
+          else if (videoBookInScrapeScope(
+            member,
+            sourcelessLocalVideoScrapeScope,
+          ))
+            kSourcelessLocalVideoScrapeScopeId,
       });
     }
     final VideoMetadataWorkCredits? workCredits =
@@ -990,8 +1003,10 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       );
       bool changed = false;
       for (final int sourceId in pending) {
-        final SourceLibraryRow? source = await widget.database
-            .getMediaSourceById(sourceId);
+        final SourceLibraryRow? source =
+            sourceId == kSourcelessLocalVideoScrapeScopeId
+            ? sourcelessLocalVideoScrapeScope
+            : await widget.database.getMediaSourceById(sourceId);
         if (source != null && await indexer.index(source)) changed = true;
       }
       if (!mounted) return;
