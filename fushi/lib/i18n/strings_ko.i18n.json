@@ -14178,6 +14178,7 @@
   "video_screenshot_ready": "스크린샷 준비됨: ${file}",
   "video_screenshot_saved_to": "스크린샷이 저장됨: ${path}",
   "video_screenshot_subtitled": "자막 포함 스크린샷",
+  "video_screenshot_web_unsupported": "This site's video is DRM-protected and can't be captured",
   "video_search_ai_expand": "AI로 검색어 더 찾기",
   "video_search_ai_expanded": "AI가 추가 검색어 ${count}개를 제안했습니다",
   "video_search_ai_rank": "AI로 순위 매기기",

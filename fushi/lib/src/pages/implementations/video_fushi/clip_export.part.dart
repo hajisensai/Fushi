@@ -592,8 +592,16 @@ extension _VideoClipExport on _VideoFushiPageState {
   ///
   /// 去向由 [VideoScreenshotDestination] 决定：弹对话框（历史行为）/ 进剪贴板 /
   /// 静默写进指定目录。复用 [VideoPlayerController.screenshot]（制卡同源，JPEG）。
+  ///
+  /// 网页档同样走这里：非 DRM 站点的帧由页面 canvas 截（与暂停 OCR 同一条链路）；截不到
+  /// 的站点（[VideoPlayerController.canCaptureFrame] 为假，Netflix DRM）给 OSD 说明，不静默
+  /// 吞掉按键（BUG-5417）。
   Future<void> _saveScreenshot({bool withSubtitles = false}) async {
     final VideoPlayerController? controller = _controller;
+    if (controller != null && !controller.canCaptureFrame) {
+      _showOsd(t.video_screenshot_web_unsupported);
+      return;
+    }
     final Uint8List? raw = await controller?.screenshot();
     if (raw == null) {
       _showScreenshotFailure('no frame available');

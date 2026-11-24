@@ -14178,6 +14178,7 @@
   "video_screenshot_ready": "Schermafbeelding gereed: ${file}",
   "video_screenshot_saved_to": "Schermafbeelding opgeslagen: ${path}",
   "video_screenshot_subtitled": "Schermafbeelding met ondertitels",
+  "video_screenshot_web_unsupported": "This site's video is DRM-protected and can't be captured",
   "video_search_ai_expand": "Meer termen met AI",
   "video_search_ai_expanded": "AI stelde ${count} extra zoektermen voor",
   "video_search_ai_rank": "Rangschikken met AI",

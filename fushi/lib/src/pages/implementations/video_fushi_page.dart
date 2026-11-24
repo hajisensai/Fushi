@@ -9902,9 +9902,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   VideoPlayerShortcutActions _buildVideoShortcutActions(
     VideoPlayerController controller,
   ) {
-    // 网页档（站点视频）：截图 / 逐帧 / 小窗 / 着色器对比 / 章节都要 libmpv，诚实 no-op。
+    // 网页档（站点视频）：要 libmpv 的动作（逐帧 / 小窗 / 着色器对比）诚实 no-op，判据只在
+    // [videoWebBackendSupportsShortcutAction] 写一次；截图与上 / 下一章站点能服务，照常执行
+    // （BUG-5417）。
     final bool web = controller.isWebBackend;
     void unsupported() {}
+    VoidCallback webGated(ShortcutAction action, VoidCallback run) =>
+        web && !videoWebBackendSupportsShortcutAction(action)
+        ? unsupported
+        : run;
     return VideoPlayerShortcutActions(
       togglePlayPause: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.playOrPause()),
@@ -9952,11 +9958,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _keepControlsAliveIfVisible();
         unawaited(controller.seekRelative(_asbSeekMs));
       }),
-      toggleShaderCompare: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(_toggleShaderCompare()),
-            ),
+      toggleShaderCompare: webGated(
+        ShortcutAction.videoToggleShaderCompare,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(_toggleShaderCompare()),
+        ),
+      ),
       volumeUp: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_adjustVolume(_volumeStep)),
       ),
@@ -9977,26 +9984,26 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 开 / 再按恢复。键盘（_handleHoldSpeedKey）与手柄（_handleHoldSpeedGamepadEdge）
       // 有松开沿，都不经此表（BUG-3330）。
       toggleHoldSpeed: () => _runWhenImmersiveAllowsShortcuts(_toggleHoldSpeed),
-      previousFrame: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(controller.frameStep(forward: false)),
-            ),
-      nextFrame: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(controller.frameStep(forward: true)),
-            ),
-      screenshot: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(_saveScreenshot(withSubtitles: false)),
-            ),
-      screenshotSubtitled: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(_saveScreenshot(withSubtitles: true)),
-            ),
+      previousFrame: webGated(
+        ShortcutAction.videoPreviousFrame,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(controller.frameStep(forward: false)),
+        ),
+      ),
+      nextFrame: webGated(
+        ShortcutAction.videoNextFrame,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(controller.frameStep(forward: true)),
+        ),
+      ),
+      // 网页档也走 [_saveScreenshot]：非 DRM 站点（YouTube 等）的帧由页面 canvas 截，与暂停
+      // OCR 同一条链路；截不到（Netflix DRM）时它给 OSD 说明，而不是静默 no-op（BUG-5417）。
+      screenshot: () => _runWhenImmersiveAllowsShortcuts(
+        () => unawaited(_saveScreenshot(withSubtitles: false)),
+      ),
+      screenshotSubtitled: () => _runWhenImmersiveAllowsShortcuts(
+        () => unawaited(_saveScreenshot(withSubtitles: true)),
+      ),
       // 网页档也走 [_ocrCurrentFrame]：它会给 OSD 说明不可用，而不是静默 no-op。
       ocrFrame: () => _runWhenImmersiveAllowsShortcuts(_ocrCurrentFrame),
       toggleFullscreen: () => _runWhenImmersiveAllowsShortcuts(() {
@@ -10007,11 +10014,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       }),
       // 'W' = 进/出小窗模式（桌面无边框置顶小窗 / Android 系统画中画）。沉浸锁下
       // 与其它视频键同待遇（锁着就不响应），见 [_runWhenImmersiveAllowsShortcuts]。
-      toggleMiniWindow: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(_toggleVideoMiniWindow()),
-            ),
+      toggleMiniWindow: webGated(
+        ShortcutAction.videoToggleMiniWindow,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(_toggleVideoMiniWindow()),
+        ),
+      ),
       // 'Shift+M' = 小窗里唤出 / 收起那套自绘 chrome（顶部拖动带 + 退出钮、居中三键）。
       // 非小窗档 [_toggleMiniChrome] 自己早退，不需要在这里再判一次。
       toggleMiniChrome: () =>
@@ -10071,28 +10079,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
       // 无章节时 controller no-op。与跳句同范式（BUG-2030）：只续命、不唤起；章节**面板**
       // 里点条目仍 poke（那是指针交互，见 [_buildChapterSidePanel]）。
-      previousChapter: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(() {
-              _keepControlsAliveIfVisible();
-              unawaited(
-                _recordVideoJumpAround(
-                  controller.previousChapter,
-                  source: JumpSource.chapter,
-                ),
-              );
-            }),
-      nextChapter: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(() {
-              _keepControlsAliveIfVisible();
-              unawaited(
-                _recordVideoJumpAround(
-                  controller.nextChapter,
-                  source: JumpSource.chapter,
-                ),
-              );
-            }),
+      previousChapter: webGated(
+        ShortcutAction.videoPreviousChapter,
+        () => _runWhenImmersiveAllowsShortcuts(() {
+          _keepControlsAliveIfVisible();
+          unawaited(
+            _recordVideoJumpAround(
+              controller.previousChapter,
+              source: JumpSource.chapter,
+            ),
+          );
+        }),
+      ),
+      nextChapter: webGated(
+        ShortcutAction.videoNextChapter,
+        () => _runWhenImmersiveAllowsShortcuts(() {
+          _keepControlsAliveIfVisible();
+          unawaited(
+            _recordVideoJumpAround(
+              controller.nextChapter,
+              source: JumpSource.chapter,
+            ),
+          );
+        }),
+      ),
       // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
       // ±_kSubtitleDelayNudgeMs（走 _setDelayMs 写穿 delayMs 落盘 + OSD）。都过沉浸门控，
       // 与顶部快速设置面板同源、零第二套状态。TODO-2837：z/x 保持只调**主字幕轨**；
