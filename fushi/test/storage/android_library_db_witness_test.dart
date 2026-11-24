@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import 'package:fushi/src/storage/android_library_db_witness.dart';
 import 'package:fushi/src/storage/android_stray_library_merge.dart';
@@ -418,6 +419,58 @@ void main() {
           );
       expect(after!.onlyInAnchored, before.onlyInAnchored);
       expect(after.onlyInOther, before.onlyInOther);
+    });
+    test('主库全表作证：错根里最新导入的书多于旧抽样上限，也不会盖过真书库的老书', () async {
+      // 真书库在外部、导入得早（rowid 小）；锚点错指内部期间又导入了一大批（rowid 大）。
+      // 曾经只取每表最新 1000 行，新书占满样本 → 判内部、整库往错根搬。
+      const int oldBooks = 1100;
+      const int strayBooks = 1000;
+      // 先让 FushiDatabase 建好表（schema 以它为准），再用裸连接批量灌行。
+      final FushiDatabase created = FushiDatabase(support.path);
+      try {
+        await created.getAllEpubBooks();
+      } finally {
+        await created.close();
+      }
+      final sqlite.Database raw = sqlite.sqlite3.open(
+        p.join(support.path, fushiDatabaseFileName),
+      );
+      try {
+        raw.execute('BEGIN');
+        final sqlite.PreparedStatement insert = raw.prepare(
+          'INSERT INTO epub_books (book_key, title, epub_path, extract_dir, '
+          'chapter_count, chapters_json, imported_at) '
+          "VALUES (?, ?, ?, ?, 1, '[\"c\"]', 0)",
+        );
+        void add(Directory root, String key) {
+          final String dir = p.join(root.path, 'fushi_books', key);
+          Directory(dir).createSync(recursive: true);
+          insert.execute(<Object?>[key, key, p.join(dir, 'o.epub'), dir]);
+        }
+
+        for (int i = 0; i < oldBooks; i++) {
+          add(externalRoot, 'old$i');
+        }
+        for (int i = 0; i < strayBooks; i++) {
+          add(internalRoot, 'new$i');
+        }
+        insert.dispose();
+        raw.execute('COMMIT');
+      } finally {
+        raw.dispose();
+      }
+
+      final AndroidLibraryDbWitness? w = await AndroidLibraryDbWitness.probe(
+        supportRoot: support,
+        anchoredRoot: internalRoot,
+        otherRoot: externalRoot,
+        timeout: const Duration(minutes: 1),
+      );
+      expect(w, isNotNull);
+      expect(w!.sampled, oldBooks + strayBooks);
+      expect(w.onlyInOther, oldBooks);
+      expect(w.onlyInAnchored, strayBooks);
+      expect(w.favorsOther, isTrue);
     });
   });
 }

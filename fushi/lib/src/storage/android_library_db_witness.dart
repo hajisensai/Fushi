@@ -12,7 +12,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 /// 判断书库到底在哪个根（拍板台 review-library-anchor-both-roots，承接 BUG-5375）。
 ///
 /// 场景：锚点曾被冲到错的根，那段时间里用户又往错的根导入了书——两边都有文件，单看
-/// 磁盘「哪边有文件」已经分不出真假。数据库才是书库的账本：抽样它记的书库路径，取
+/// 磁盘「哪边有文件」已经分不出真假。数据库才是书库的账本：读出它记的全部书库路径，取
 /// 数据根内的相对尾段（`fushi_books/<key>` 等），看这条尾段**只在哪个根**里存在。
 ///
 /// 只认「只在一边存在」的样本：中断的跨盘迁移会让同一尾段两边都在（复制阶段不删源），
@@ -41,39 +41,29 @@ class AndroidLibraryDbWitness {
   /// 证据是否指向另一个根：严格多数才算（平局 = 迁移中断的完整副本，沿用锚点）。
   bool get favorsOther => onlyInOther > onlyInAnchored;
 
-  /// 每张表最多读多少行。按 rowid 倒序取，确定性（同一库每次启动结论相同）。
-  static const int perTableLimit = 1000;
-
   /// 读主库用的查询：都是指向数据根内书库内容的列。表 / 列不存在（老 schema）就跳过。
+  ///
+  /// **全表读、不抽样**：两边都有书的成因正是「锚点错指期间往错的根导入了书」，错根里的
+  /// 恰恰是最新的那批行。只取最新 N 行（曾经是 `ORDER BY rowid DESC LIMIT 1000`）在书多于
+  /// N 本时会让错根里的新书占满样本、反把真书库判成落选根，随后整库往错根搬。只读几列
+  /// 路径字符串、在后台 isolate 里逐条 stat，几千本也是亚秒级，且只在两边都有书这一罕见
+  /// 情形才跑。
   static const List<String> _queries = <String>[
-    'SELECT extract_dir AS p FROM epub_books ORDER BY rowid DESC LIMIT ?',
-    'SELECT audio_root AS p FROM audiobooks '
-        'WHERE audio_root IS NOT NULL ORDER BY rowid DESC LIMIT ?',
-    'SELECT srt_path AS p FROM srt_books ORDER BY rowid DESC LIMIT ?',
-    'SELECT video_path AS p FROM video_books ORDER BY rowid DESC LIMIT ?',
-    'SELECT cover_path AS p FROM video_books '
-        'WHERE cover_path IS NOT NULL ORDER BY rowid DESC LIMIT ?',
+    'SELECT extract_dir AS p FROM epub_books',
+    'SELECT audio_root AS p FROM audiobooks WHERE audio_root IS NOT NULL',
+    'SELECT srt_path AS p FROM srt_books',
+    'SELECT video_path AS p FROM video_books',
+    'SELECT cover_path AS p FROM video_books WHERE cover_path IS NOT NULL',
   ];
 
-  /// 只读地从 [supportRoot] 下的主库（兼看旧名）读出书库路径样本；主库不存在、打不开
+  /// 只读地从 [supportRoot] 下的主库（兼看旧名）读出书库路径；主库不存在、打不开
   /// 或超时返回 null（没有证据）。SQLite 读放后台 isolate，不卡启动的 UI 线程。
   static Future<List<String>?> readStoredLibraryPaths(
     Directory supportRoot, {
     Duration timeout = const Duration(seconds: 5),
   }) async {
-    String? dbPath;
-    for (final String name in <String>[
-      fushiDatabaseFileName,
-      legacyHibikiDatabaseFileName,
-    ]) {
-      final String candidate = p.join(supportRoot.path, name);
-      if (await File(candidate).exists()) {
-        dbPath = candidate;
-        break;
-      }
-    }
-    if (dbPath == null) return null;
-    final String path = dbPath;
+    final String? path = await _databasePath(supportRoot);
+    if (path == null) return null;
     try {
       return await Isolate.run<List<String>?>(
         () => readStoredLibraryPathsSync(path),
@@ -81,6 +71,18 @@ class AndroidLibraryDbWitness {
     } catch (_) {
       return null;
     }
+  }
+
+  /// [supportRoot] 下现存的主库文件（兼看旧名）；都不存在返回 null。
+  static Future<String?> _databasePath(Directory supportRoot) async {
+    for (final String name in <String>[
+      fushiDatabaseFileName,
+      legacyHibikiDatabaseFileName,
+    ]) {
+      final String candidate = p.join(supportRoot.path, name);
+      if (await File(candidate).exists()) return candidate;
+    }
+    return null;
   }
 
   /// [readStoredLibraryPaths] 的同步内核：只读打开 [dbPath]、按 [_queries] 取样后关闭。
@@ -96,9 +98,7 @@ class AndroidLibraryDbWitness {
       final List<String> paths = <String>[];
       for (final String sql in _queries) {
         try {
-          for (final sqlite.Row row in db.select(sql, <Object?>[
-            perTableLimit,
-          ])) {
+          for (final sqlite.Row row in db.select(sql)) {
             final Object? value = row['p'];
             if (value is String && value.isNotEmpty) paths.add(value);
           }
@@ -184,20 +184,34 @@ class AndroidLibraryDbWitness {
       FileSystemEntity.typeSync(path, followLinks: false) !=
       FileSystemEntityType.notFound;
 
-  /// 读主库样本并计票；没有证据返回 null。
+  /// 读主库并计票；没有证据（主库不存在 / 打不开 / 超时）返回 null。
+  ///
+  /// 读库与计票（每条尾段两次 stat）整段放在后台 isolate：全表读时 stat 次数随书量
+  /// 线性增长，不能落在启动期的 UI isolate 上。
   static Future<AndroidLibraryDbWitness?> probe({
     required Directory supportRoot,
     required Directory anchoredRoot,
     required Directory otherRoot,
+    Duration timeout = const Duration(seconds: 5),
   }) async {
-    final List<String>? paths = await readStoredLibraryPaths(supportRoot);
-    if (paths == null) return null;
-    return tally(
-      storedPaths: paths,
-      anchoredRoot: anchoredRoot.path,
-      otherRoot: otherRoot.path,
-      exists: pathExists,
-    );
+    final String? path = await _databasePath(supportRoot);
+    if (path == null) return null;
+    final String anchored = anchoredRoot.path;
+    final String other = otherRoot.path;
+    try {
+      return await Isolate.run<AndroidLibraryDbWitness?>(() {
+        final List<String>? paths = readStoredLibraryPathsSync(path);
+        if (paths == null) return null;
+        return tally(
+          storedPaths: paths,
+          anchoredRoot: anchored,
+          otherRoot: other,
+          exists: pathExists,
+        );
+      }).timeout(timeout, onTimeout: () => null);
+    } catch (_) {
+      return null;
+    }
   }
 
   @override
