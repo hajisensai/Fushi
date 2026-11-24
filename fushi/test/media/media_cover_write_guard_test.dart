@@ -121,9 +121,12 @@ const Map<String, Set<String>> kNonCoverRawWriters = <String, Set<String>>{
   // iOS「文件」App 收件箱起又多一处：vacateLegacyIosDocuments 把旧版放在 Documents 里的
   // 整个书库（nested 的 `<容器>/data` 或 flat 白名单顶层项）整体 rename / 合并搬出
   // Documents——与数据根迁移同性质的整库搬家，不写任何封面字节、不改封面文件名。
+  // BUG-5375 起再多一处：writeAndroidLibraryAnchor 把 Android 书库位置锚点（support
+  // 根下一个小 JSON）先写本进程临时文件再 rename 原子替换——写的是锚点，不是封面。
   'lib/src/storage/app_paths.dart': <String>{
     'migrateLegacyDiagnostics',
     'vacateLegacyIosDocuments',
+    'writeAndroidLibraryAnchor',
   },
 };
 
@@ -251,7 +254,8 @@ kCoverPathDerivers = <String, (CoverDeriverRole, String)>{
     CoverDeriverRole.rawWritesNonCoverAssets,
     '目录派生的定义处，封面目录只派生不落盘。文件里唯一的裸写是 '
         'migrateLegacyDiagnostics 把旧版诊断文件搬进诊断目录（4w_veZGiQ7）、'
-        'vacateLegacyIosDocuments 把旧版 iOS Documents 里的书库整库搬出，'
+        'vacateLegacyIosDocuments 把旧版 iOS Documents 里的书库整库搬出、'
+        'writeAndroidLibraryAnchor 原子写 Android 书库位置锚点（BUG-5375），'
         '都与封面无关（逐函数名单见 kNonCoverRawWriters）。',
   ),
   'lib/src/media/video/external_video_ingest.dart': (
