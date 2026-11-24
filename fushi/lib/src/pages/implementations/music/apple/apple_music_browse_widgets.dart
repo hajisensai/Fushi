@@ -432,84 +432,127 @@ class AppleMusicEntityRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiAppleColors c = appleColorsOf(context);
     final double k = FushiAppleMetrics.of(context).scale;
+    return AppleMusicListRowFrame(
+      onTap: onTap,
+      separator: separator,
+      leading: appleMusicCover(
+        cover: cover,
+        size: appleMusicRowCoverExtent(context),
+        radius: appleMusicRowCoverRadius(context),
+        title: title,
+        circular: circular,
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 2 * k,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Flexible(
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: appleMusicText(context, size: 15 * k),
+                      ),
+                    ),
+                    for (final Widget b in badges) ...<Widget>[
+                      SizedBox(width: 5 * k),
+                      b,
+                    ],
+                  ],
+                ),
+                if (subtitle.isNotEmpty)
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: appleMusicText(
+                      context,
+                      size: 12.5 * k,
+                      color: c.secondaryLabel,
+                    ),
+                  ),
+                ?extra,
+              ],
+            ),
+          ),
+          FushiIcon(
+            FushiIcons.chevronRight,
+            size: 16 * k,
+            color: c.tertiaryLabel,
+          ),
+          SizedBox(width: 6 * k),
+        ],
+      ),
+    );
+  }
+}
+
+/// Apple 实体行（[AppleMusicEntityRow]）行首封面的边长：iOS 48，macOS 档 ×scale。
+double appleMusicRowCoverExtent(BuildContext context) =>
+    48 * FushiAppleMetrics.of(context).scale;
+
+/// Apple 实体行行首封面的连续曲率圆角（与 [appleMusicRowCoverExtent] 同比缩放）。
+double appleMusicRowCoverRadius(BuildContext context) =>
+    6 * FushiAppleMetrics.of(context).scale;
+
+/// Apple 列表行的骨架（实体行 / 歌单页「新建歌单…」等动作行共用）：最小行高 64、
+/// 行首 [leading]（封面 / 方块）+ 11 间距 + [child]；按下整行铺 fill 底、可聚焦、
+/// Enter 激活（[AppleMusicRowHighlight]）。[separator] 在**行底**画 0.5 细线，左端
+/// 与文字左缘对齐（UITableView 的 separatorInset），不随内容高度漂。
+class AppleMusicListRowFrame extends StatelessWidget {
+  const AppleMusicListRowFrame({
+    super.key,
+    required this.leading,
+    required this.child,
+    required this.onTap,
+    this.separator = true,
+  });
+
+  final Widget leading;
+  final Widget child;
+  final VoidCallback? onTap;
+  final bool separator;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors c = appleColorsOf(context);
+    final double k = FushiAppleMetrics.of(context).scale;
+    final double gap = 11 * k;
     return ConstrainedBox(
       constraints: BoxConstraints(minHeight: 64 * k),
       child: AppleMusicRowHighlight(
         onTap: onTap,
-        child: Row(
+        child: Stack(
+          alignment: AlignmentDirectional.centerStart,
           children: <Widget>[
-            appleMusicCover(
-              cover: cover,
-              size: 48 * k,
-              radius: 6 * k,
-              title: title,
-              circular: circular,
-            ),
-            SizedBox(width: 11 * k),
-            Expanded(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: separator
-                      ? Border(
-                          bottom: BorderSide(color: c.separator, width: 0.5),
-                        )
-                      : null,
-                ),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8 * k),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          spacing: 2 * k,
-                          children: <Widget>[
-                            Row(
-                              children: <Widget>[
-                                Flexible(
-                                  child: Text(
-                                    title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: appleMusicText(
-                                      context,
-                                      size: 15 * k,
-                                    ),
-                                  ),
-                                ),
-                                for (final Widget b in badges) ...<Widget>[
-                                  SizedBox(width: 5 * k),
-                                  b,
-                                ],
-                              ],
-                            ),
-                            if (subtitle.isNotEmpty)
-                              Text(
-                                subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: appleMusicText(
-                                  context,
-                                  size: 12.5 * k,
-                                  color: c.secondaryLabel,
-                                ),
-                              ),
-                            ?extra,
-                          ],
-                        ),
-                      ),
-                      FushiIcon(
-                        FushiIcons.chevronRight,
-                        size: 16 * k,
-                        color: c.tertiaryLabel,
-                      ),
-                      SizedBox(width: 6 * k),
-                    ],
+            Row(
+              children: <Widget>[
+                leading,
+                SizedBox(width: gap),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8 * k),
+                    child: child,
                   ),
                 ),
-              ),
+              ],
             ),
+            if (separator)
+              PositionedDirectional(
+                start: appleMusicRowCoverExtent(context) + gap,
+                end: 0,
+                bottom: 0,
+                child: SizedBox(
+                  height: 0.5,
+                  child: ColoredBox(color: c.separator),
+                ),
+              ),
           ],
         ),
       ),

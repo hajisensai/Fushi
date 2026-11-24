@@ -32,6 +32,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show isGlassDesign;
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
+    show FushiCoverBlocks;
 import 'package:fushi/src/media/music/music_format_badge.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/music/music_audio_intake.dart'
@@ -58,6 +60,9 @@ import 'package:fushi/src/pages/implementations/library_view_options.dart'
     show libraryGridSizeClassOf;
 import 'package:fushi/src/pages/implementations/library_layout/library_layout.dart';
 import 'package:fushi/src/pages/implementations/music/music_import_view.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_browse_widgets.dart'
+    show AppleMusicEntityRow;
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_playlists_layout.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
@@ -1670,6 +1675,14 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         ),
       );
     }
+    if (_section == MusicLibrarySection.playlists && isGlassDesign(context)) {
+      return _ApplePlaylists(
+        accounts: accountLists,
+        playlists: snap.playlists,
+        counts: snap.playlistTrackCounts,
+        style: _libraryStyle(context, MusicLibrarySection.playlists),
+      );
+    }
     if (accountPlaylists) {
       return _playlistsWithAccounts(
         context,
@@ -2302,6 +2315,39 @@ Future<void> _openLocalPlaylistByUid(
   openMusicLocalPlaylist(context, p);
 }
 
+/// 「新建歌单」：问名字建一个空的本地歌单（歌曲在曲目菜单「加入歌单」里加），建好
+/// 提示。M3E 色块按钮与 Apple「新建歌单…」行同用这一份。
+void _createLocalPlaylist(BuildContext context, AppModel app) {
+  if (!app.isDatabaseReady) return;
+  unawaited(() async {
+    final MusicPlaylistTarget? created = await musicCreatePlaylist(
+      context,
+      MusicLocalPlaylistEditor(app.database),
+    );
+    if (created == null) return;
+    FushiToast.show(
+      msg: t.music_action_playlist_created(name: created.title),
+      severity: ToastSeverity.success,
+    );
+  }());
+}
+
+/// 「导入歌单文件」：选一个 `.m3u` / `.m3u8`，条目对曲库后建成本地歌单并打开。M3E
+/// 色块按钮与 Apple「导入歌单文件…」行同用这一份。
+void _importLocalPlaylist(BuildContext context, AppModel app) {
+  if (!app.isDatabaseReady) return;
+  final FushiDatabase db = app.database;
+  unawaited(() async {
+    final String? uid = await musicImportPlaylistFile(
+      context: context,
+      appModel: app,
+      db: db,
+    );
+    if (uid == null || !context.mounted) return;
+    await _openLocalPlaylistByUid(context, db, uid);
+  }());
+}
+
 /// 本地歌单的「新建歌单」「导入歌单文件」（`.m3u` / `.m3u8`，导入后直接打开）。
 class _LocalPlaylistActions extends StatelessWidget {
   const _LocalPlaylistActions();
@@ -2328,20 +2374,7 @@ class _ImportLocalPlaylistButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) => FushiPressScale(
     child: FushiFilledButton.tonalIcon(
       key: const ValueKey<String>('music_import_local_playlist'),
-      onPressed: () {
-        final AppModel app = ref.read(appProvider);
-        if (!app.isDatabaseReady) return;
-        final FushiDatabase db = app.database;
-        unawaited(() async {
-          final String? uid = await musicImportPlaylistFile(
-            context: context,
-            appModel: app,
-            db: db,
-          );
-          if (uid == null || !context.mounted) return;
-          await _openLocalPlaylistByUid(context, db, uid);
-        }());
-      },
+      onPressed: () => _importLocalPlaylist(context, ref.read(appProvider)),
       icon: const FushiIcon(FushiIcons.folderOpen),
       label: Text(t.music_action_import_playlist),
     ),
@@ -2454,6 +2487,111 @@ class _PlaylistList extends StatelessWidget {
   }
 }
 
+/// 歌单页签的 Apple 版（Apple Music 资料库 › 歌单，iOS 27 / macOS 27）：一张分组
+/// 列表。有已登录账号歌单时先列各插件一段（[MusicPluginLibrarySection]，段头是
+/// Apple 段头 + 裸字形），再列「本地歌单」一段；只有本地时不画段头（与 Apple Music
+/// 一样直接是列表）。本地段首行「新建歌单…」、次行「导入歌单文件…」——两行与歌单行
+/// 同几何（行首与封面同尺寸的方块 + 强调色字），空段就只剩这两行，不另叠空态插画与
+/// 大按钮。列表自己不留顶部内边距：页头底下那一档间距由大字页头统一给（与曲库其它
+/// 分区同一处），段与段之间的分组间距由段头自带。
+class _ApplePlaylists extends ConsumerWidget {
+  const _ApplePlaylists({
+    required this.accounts,
+    required this.playlists,
+    required this.counts,
+    required this.style,
+  });
+
+  /// 声明 `library` 能力的插件（各列一段「我的歌单」）。
+  final List<MusicPluginManifest> accounts;
+  final List<MusicPlaylistRow> playlists;
+
+  /// 各歌单条目数（歌单 uid → 条数）。
+  final Map<String, int> counts;
+
+  /// 列表 / 色块（曲库页头的视图切换）。
+  final MusicViewStyle style;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool blocks = musicCoverBlocksActive(context, style);
+    String countOf(MusicPlaylistRow p) =>
+        t.music_tracks_count(count: counts[p.playlistUid] ?? 0);
+    final List<Widget> head = <Widget>[
+      for (final MusicPluginManifest m in accounts)
+        MusicPluginLibrarySection(
+          key: ValueKey<String>('music-plugin-library-${m.id}'),
+          manifest: m,
+        ),
+      if (accounts.isNotEmpty)
+        AppleMusicPlaylistsSectionHeader(title: t.music_playlists_local),
+      AppleMusicPlaylistActionRow(
+        key: const ValueKey<String>('music_new_local_playlist'),
+        icon: FushiIcons.add,
+        title: '${t.music_action_new_playlist}…',
+        onTap: () => _createLocalPlaylist(context, ref.read(appProvider)),
+      ),
+      AppleMusicPlaylistActionRow(
+        key: const ValueKey<String>('music_import_local_playlist'),
+        icon: FushiIcons.folderOpen,
+        title: '${t.music_action_import_playlist}…',
+        separator: playlists.isNotEmpty && !blocks,
+        onTap: () => _importLocalPlaylist(context, ref.read(appProvider)),
+      ),
+      if (blocks && playlists.isNotEmpty)
+        Padding(
+          padding: EdgeInsets.only(top: tokens.spacing.gap),
+          child: FushiCoverBlocks(
+            layout: shellContentLayoutOf(context),
+            staggerEntrance: false,
+            itemCount: playlists.length,
+            itemBuilder:
+                (BuildContext context, int i, FushiCoverBlockSize size) {
+                  final MusicPlaylistRow p = playlists[i];
+                  return MusicCollectionBlock(
+                    key: ValueKey<String>('music-playlist-${p.playlistUid}'),
+                    size: size,
+                    title: p.name,
+                    subtitle: countOf(p),
+                    leadingIcon: FushiIcons.playlist,
+                    onTap: () => openMusicLocalPlaylist(context, p),
+                  );
+                },
+          ),
+        ),
+    ];
+    final int rowCount = blocks ? 0 : playlists.length;
+    return FushiEntranceScope(
+      child: ListView.builder(
+        key: const ValueKey<String>('music-library-playlists-apple'),
+        padding: withBottomSafeInset(
+          context,
+          EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            0,
+            tokens.spacing.page,
+            tokens.spacing.section,
+          ),
+        ),
+        itemCount: head.length + rowCount,
+        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
+          if (i < head.length) return head[i];
+          final int index = i - head.length;
+          final MusicPlaylistRow p = playlists[index];
+          return AppleMusicEntityRow(
+            key: ValueKey<String>('music-playlist-${p.playlistUid}'),
+            title: p.name,
+            subtitle: countOf(p),
+            separator: index < playlists.length - 1,
+            onTap: () => openMusicLocalPlaylist(context, p),
+          );
+        }),
+      ),
+    );
+  }
+}
+
 /// 「新建歌单」：问名字建一个空的本地歌单（歌曲在曲目菜单「加入歌单」里加）。
 class _NewLocalPlaylistButton extends ConsumerWidget {
   const _NewLocalPlaylistButton();
@@ -2462,21 +2600,7 @@ class _NewLocalPlaylistButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) => FushiPressScale(
     child: FushiFilledButton.tonalIcon(
       key: const ValueKey<String>('music_new_local_playlist'),
-      onPressed: () {
-        final AppModel app = ref.read(appProvider);
-        if (!app.isDatabaseReady) return;
-        unawaited(() async {
-          final MusicPlaylistTarget? created = await musicCreatePlaylist(
-            context,
-            MusicLocalPlaylistEditor(app.database),
-          );
-          if (created == null) return;
-          FushiToast.show(
-            msg: t.music_action_playlist_created(name: created.title),
-            severity: ToastSeverity.success,
-          );
-        }());
-      },
+      onPressed: () => _createLocalPlaylist(context, ref.read(appProvider)),
       icon: const FushiIcon(FushiIcons.add),
       label: Text(t.music_action_new_playlist),
     ),

@@ -110,7 +110,9 @@ import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart'
     show isMusicPluginRelayClient, isMusicPluginSourcesAvailable;
 import 'package:fushi/src/pages/implementations/music/apple/apple_music_browse_widgets.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_playlists_layout.dart';
 import 'package:fushi/src/pages/implementations/music/apple/apple_music_recommend_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
     show ShortcutBindingScope;
 import 'package:fushi/src/shortcuts/input_binding.dart' show InputBinding;
@@ -2248,27 +2250,73 @@ class _MusicPluginLibrarySectionState
     _data = _load();
   });
 
+  /// 段头：M3E 是库页分组标题 + 色块「新建歌单」+ 刷新图标；Apple 是 Apple Music
+  /// 资料库段头（[AppleMusicPlaylistsSectionHeader]），动作全是裸字形。
+  Widget _header(BuildContext context, MusicPluginManifest m) {
+    final Widget? create = _pluginCreatePlaylistButton(
+      context,
+      ref,
+      m,
+      onCreated: _reload,
+    );
+    final Key refreshKey = ValueKey<String>(
+      'music-plugin-library-refresh-${m.id}',
+    );
+    final String title = t.music_plugin_library_title(name: m.name);
+    if (isGlassDesign(context)) {
+      return AppleMusicPlaylistsSectionHeader(
+        title: title,
+        actions: <Widget>[
+          ?create,
+          FushiAppleGlyphButton(
+            key: refreshKey,
+            icon: FushiIcons.refresh,
+            tooltip: t.refresh,
+            onPressed: _reload,
+          ),
+        ],
+      );
+    }
+    return _SectionHeader(
+      title: title,
+      group: true,
+      actions: <Widget>[
+        ?create,
+        FushiPressScale(
+          child: FushiIconButton(
+            key: refreshKey,
+            tooltip: t.refresh,
+            icon: FushiIcons.refresh,
+            onTap: _reload,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 单行说明（出错 / 未登录 / 空）：Apple 是 secondaryLabel 脚注行。
+  Widget _note(BuildContext context, String text, {Widget? trailing}) {
+    if (isGlassDesign(context)) {
+      return AppleMusicPlaylistsNote(text, trailing: trailing);
+    }
+    final Widget label = Text(text, style: context.fushiType.bodySmall);
+    return trailing == null
+        ? label
+        : Row(
+            children: <Widget>[
+              Expanded(child: label),
+              trailing,
+            ],
+          );
+  }
+
   @override
   Widget build(BuildContext context) {
     final MusicPluginManifest m = widget.manifest;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        _SectionHeader(
-          title: t.music_plugin_library_title(name: m.name),
-          group: true,
-          actions: <Widget>[
-            ?_pluginCreatePlaylistButton(context, ref, m, onCreated: _reload),
-            FushiPressScale(
-              child: FushiIconButton(
-                key: ValueKey<String>('music-plugin-library-refresh-${m.id}'),
-                tooltip: t.refresh,
-                icon: FushiIcons.refresh,
-                onTap: _reload,
-              ),
-            ),
-          ],
-        ),
+        _header(context, m),
         FutureBuilder<List<MusicPluginPlaylist>?>(
           future: _data,
           builder:
@@ -2277,10 +2325,7 @@ class _MusicPluginLibrarySectionState
                 AsyncSnapshot<List<MusicPluginPlaylist>?> snap,
               ) {
                 if (snap.hasError) {
-                  return Text(
-                    musicPluginErrorText(snap.error!),
-                    style: context.fushiType.bodySmall,
-                  );
+                  return _note(context, musicPluginErrorText(snap.error!));
                 }
                 if (snap.connectionState != ConnectionState.done) {
                   return const FushiLinearProgressIndicator();
@@ -2290,42 +2335,33 @@ class _MusicPluginLibrarySectionState
                   // 经互联中继用的插件（清单里没有 login）：账号在代跑它的那台设备上登录，
                   // 本机没有插件管理可去。
                   if (!m.can(MusicPluginCapability.login)) {
-                    return Text(
+                    return _note(
+                      context,
                       t.music_plugin_relay_login_hint(name: m.name),
-                      style: context.fushiType.bodySmall,
                     );
                   }
-                  return Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          t.music_plugin_library_login_hint(name: m.name),
-                          style: context.fushiType.bodySmall,
+                  return _note(
+                    context,
+                    t.music_plugin_library_login_hint(name: m.name),
+                    trailing: FushiPressScale(
+                      child: FushiTextButton(
+                        key: ValueKey<String>(
+                          'music-plugin-library-manage-${m.id}',
                         ),
+                        onPressed: () async {
+                          await openMusicPluginManagement(
+                            context,
+                            appModel: ref.read(appProvider),
+                          );
+                          if (mounted) _reload();
+                        },
+                        child: Text(t.music_plugins_title),
                       ),
-                      FushiPressScale(
-                        child: FushiTextButton(
-                          key: ValueKey<String>(
-                            'music-plugin-library-manage-${m.id}',
-                          ),
-                          onPressed: () async {
-                            await openMusicPluginManagement(
-                              context,
-                              appModel: ref.read(appProvider),
-                            );
-                            if (mounted) _reload();
-                          },
-                          child: Text(t.music_plugins_title),
-                        ),
-                      ),
-                    ],
+                    ),
                   );
                 }
                 if (lists.isEmpty) {
-                  return Text(
-                    t.music_playlists_empty,
-                    style: context.fushiType.bodySmall,
-                  );
+                  return _note(context, t.music_playlists_empty);
                 }
                 // 与曲库本地歌单同一份「色块 / 列表」样式（曲库页头的切换键）。
                 return MusicViewStyleBuilder(

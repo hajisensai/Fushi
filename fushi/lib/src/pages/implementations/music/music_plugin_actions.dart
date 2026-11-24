@@ -705,12 +705,34 @@ Widget? _pluginCreatePlaylistButton(
   required VoidCallback onCreated,
 }) {
   if (!manifest.can(MusicPluginCapability.playlistEdit)) return null;
+  final MusicPlaylistEditor editor = _PluginPlaylistEditor(
+    _sourceOf(ref, manifest.id),
+  );
+  final Key key = ValueKey<String>('music-plugin-new-playlist-${manifest.id}');
+  String errorText(Object e) => _pluginActionError(manifest, e);
+  if (isGlassDesign(context)) {
+    // Apple 段头不放色块胶囊：一枚裸「＋」字形（文字进 tooltip / 读屏），页面上
+    // 「新建歌单」字样只出现在本地歌单那一行。
+    return FushiAppleGlyphButton(
+      key: key,
+      icon: FushiIcons.add,
+      tooltip: t.music_action_new_playlist,
+      onPressed: () => unawaited(
+        musicCreatePlaylistAndNotify(
+          context,
+          editor,
+          onCreated: onCreated,
+          errorText: errorText,
+        ),
+      ),
+    );
+  }
   return musicCreatePlaylistButton(
     context,
-    _PluginPlaylistEditor(_sourceOf(ref, manifest.id)),
-    key: ValueKey<String>('music-plugin-new-playlist-${manifest.id}'),
+    editor,
+    key: key,
     onCreated: onCreated,
-    errorText: (Object e) => _pluginActionError(manifest, e),
+    errorText: errorText,
   );
 }
 
