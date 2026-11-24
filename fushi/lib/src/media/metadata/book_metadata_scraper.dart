@@ -8,7 +8,7 @@
 /// 源（[BookScrapeSource]）：Bangumi（中文书 / 轻小说 / 漫画条目最全，免 API key）、
 /// DLsite（同人 / 商业的音声 ASMR、漫画、小说；有声书最常见的来源）、MangaBaka（漫画 /
 /// 轻小说系列，原图分辨率高、带每卷封面；数据 CC BY-NC-SA 4.0，展示处必须署名），以及书目类四源
-/// （协议层在 `fushi_engine/media/metadata/books/`）：AniList 轻小说（免 key，带横幅图）、
+/// （协议层在 `fushi_engine/media/metadata/books/`）：AniList 轻小说与漫画（免 key，带横幅图）、
 /// openBD（只按 ISBN）、NDL Search（国立国会図書館，按书名 / ISBN）、楽天ブックス（要用户
 /// 自己的 applicationId + accessKey，设备本地），以及给「以有声书导入的歌曲」用的 iTunes
 /// 歌曲源（专辑封面，免 key，见 `itunes_music.dart`）。接口按候选中间表示
@@ -23,7 +23,7 @@ import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart'
     show seriesFirst;
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart'
     show pickMangaBakaVolumeImages;
-import 'package:fushi_engine/media/metadata/books/anilist_novels.dart';
+import 'package:fushi_engine/media/metadata/books/anilist_books.dart';
 import 'package:fushi_engine/media/metadata/books/book_catalog.dart';
 import 'package:fushi_engine/media/metadata/books/itunes_music.dart';
 import 'package:fushi_engine/media/metadata/books/ndl_search.dart';
@@ -117,6 +117,7 @@ class BookScrapeCandidate {
     this.bannerUrl,
     this.coverHeaders,
     this.pageUrl,
+    this.format,
   });
 
   /// 书目源的 [BookCatalogRecord] → 候选；无封面返回 null。
@@ -146,6 +147,7 @@ class BookScrapeCandidate {
       backdropUrl: r.bannerUrl,
       coverHeaders: r.coverHeaders,
       pageUrl: r.pageUrl,
+      format: r.format,
     );
   }
 
@@ -155,6 +157,9 @@ class BookScrapeCandidate {
 
   /// 候选来自哪个源。
   final BookScrapeSource source;
+
+  /// 形态（轻小说 / 漫画 / 韩漫 / 国漫 / 短篇，AniList 给）；其余源为 null。
+  final BookCatalogFormat? format;
 
   /// 展示用主标题（优先中文名）。
   final String title;
@@ -390,7 +395,8 @@ class BookMetadataScraper {
     return work == null ? null : mapDlsiteWork(work);
   }
 
-  /// AniList 按名搜轻小说（format NOVEL）。[includeNsfw] 为 false 时服务端就排除
+  /// AniList 按名搜（轻小说、漫画都搜，候选带 [BookScrapeCandidate.format]）。
+  /// [includeNsfw] 为 false 时服务端就排除
   /// isAdult 条目，一页名额不被它们占掉。
   Future<List<BookScrapeCandidate>> searchAniList(
     String keyword, {
@@ -398,7 +404,7 @@ class BookMetadataScraper {
     bool includeNsfw = false,
   }) => _catalogList(
     BookScrapeSource.anilist,
-    () => AniListNovelClient(
+    () => AniListBookClient(
       _catalog,
     ).search(keyword, limit: limit, includeAdult: includeNsfw),
   );
@@ -453,7 +459,7 @@ class BookMetadataScraper {
     final BookCatalogRecord? record;
     try {
       record = switch (source) {
-        BookScrapeSource.anilist => await AniListNovelClient(
+        BookScrapeSource.anilist => await AniListBookClient(
           _catalog,
         ).fetchById(id),
         BookScrapeSource.openbd => await OpenBdClient(_catalog).fetchByIsbn(id),
