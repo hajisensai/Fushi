@@ -15,6 +15,7 @@ import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_poster_block.dart'
@@ -1188,14 +1189,13 @@ class HomeWeekBars extends StatelessWidget {
         _kAppleWeekBarsHeadroom;
     final double hairline = 1 / MediaQuery.devicePixelRatioOf(context);
     final List<String>? axis = axisLabels;
-    final TextStyle axisStyle =
-        (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
-          fontSize: (m.desktop ? 10 : 11) * m.scale,
-          fontWeight: FontWeight.w500,
-          letterSpacing: 0,
-          height: 1.2,
-          color: a.secondaryLabel,
-        );
+    final TextStyle axisStyle = appleTextStyle(
+      context,
+      size: (m.desktop ? 10 : 11) * m.scale,
+      weight: FontWeight.w500,
+      height: 1.2,
+      color: a.secondaryLabel,
+    );
     final double axisHeight =
         MediaQuery.textScalerOf(context).scale(axisStyle.fontSize ?? 11) * 1.2 +
         2;

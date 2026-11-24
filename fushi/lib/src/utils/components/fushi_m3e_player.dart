@@ -25,6 +25,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 
 // M3 Expressive 播放器公共件：歌词模式（MD3）与手机字幕遥控器共用。
 //
@@ -972,15 +973,13 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
       ui.lerpDouble(mac ? 4 : 6, mac ? 8 : 12, drag)! * scale,
     );
     final Color played = fushiAppleTrackPlayedColor(apple, drag);
-    final TextStyle timeStyle =
-        (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
-          fontSize: (mac ? 10 : 11) * scale,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0,
-          height: 1.3,
-          color: played,
-          fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
-        );
+    final TextStyle timeStyle = appleTextStyle(
+      context,
+      size: (mac ? 10 : 11) * scale,
+      weight: FontWeight.w600,
+      height: 1.3,
+      color: played,
+    ).copyWith(fontFeatures: const <FontFeature>[FontFeature.tabularFigures()]);
     final BorderRadius radius = BorderRadius.circular(thickness / 2);
     final Widget line = Center(
       child: SizedBox(

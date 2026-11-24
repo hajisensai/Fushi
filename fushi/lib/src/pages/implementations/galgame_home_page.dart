@@ -3,6 +3,8 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show fushiAppleBarButtonExtent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -2115,7 +2117,10 @@ class _AppleStreamToolbarAction extends StatelessWidget {
     return FushiPlainButton(
       key: const ValueKey<String>('game-home-stream-toggle'),
       onPressed: onPressed,
-      borderRadius: BorderRadius.circular(22 * k),
+      // 与工具栏玻璃钮同高的胶囊：半径 = 钮高 / 2（[fushiAppleBarButtonExtent]）。
+      borderRadius: BorderRadius.circular(
+        fushiAppleBarButtonExtent(context) / 2,
+      ),
       semanticLabel: label,
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 14 * k),

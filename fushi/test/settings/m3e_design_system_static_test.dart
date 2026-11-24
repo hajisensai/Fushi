@@ -789,15 +789,14 @@ class AnotherPopupPart {
           'Native HTML card face: every fontSize: is the computed CSS font-size of the note\'s own card HTML (times the card zoom), and the <details> marker is 0.7x its summary\'s computed size; card content typography, not page chrome (same class as srs_fushi_card_view).',
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart':
           'Layout editor renders note content at the per-field user size scale (look.scale x body size); content typography, not page chrome.',
-      'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart':
-          'Apple design-system sidebar/tab strip: radii follow the iOS/macOS sidebar selection and tab-pill metrics (Apple branch, not M3E).',
       'lib/src/utils/components/fushi_design_tokens.dart':
           'Token source owns app radii and semantic surface roles.',
       'lib/src/utils/components/fushi_material_components.dart':
           'Shared MD3 component implementation may map tokens to framework widgets.',
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls '
-          '(including the Apple pop-up button capsule radius).',
+          '(including the Apple pop-up button and macOS 27 stepper capsule '
+          'radii).',
       'lib/src/media/music/lyrics/karaoke/karaoke_appearance.dart':
           'Karaoke lyrics are content, not chrome: the main-line size is the '
           'user-adjustable lyric font size (KaraokeLyricsAppearance.fontSize, '
@@ -946,13 +945,6 @@ class AnotherPopupPart {
           'user content passed to LyricsModeHtml / the platform overlay '
           'channel, not page chrome — same rationale as the parent '
           'reader_fushi_page.dart allowlist (extracted verbatim).',
-      // 2026-10-04 歌词覆盖层 Apple 外观：按用户要求逐值复刻 Niratan 的 Apple Music
-      // 播放面板（封面圆角 12、进度条 / 元数据 / 读数的固定字号），画在恒深色的
-      // 模糊封面媒体面上，是播放器内容而非普通页面 chrome；MD3 外观仍走设计令牌。
-      'lib/src/media/audiobook/lyrics_player/lyrics_player_apple.dart':
-          'Apple Music-style lyrics player reproduces Niratan player metrics '
-          '(artwork radius, scrubber and metadata type sizes) on a fixed-dark '
-          'blurred-cover media surface; player content, not page chrome.',
       // TODO-589 batch7: reader chrome 域(底栏/设置 sheet/进度条/主题/收藏句/图片查看)
       // 拆到 reader_fushi/chrome.part.dart；同一份「reader content / 阅读器 chrome」
       // 豁免随搬运延伸到该 part（零行为变化，逐字符搬运自父文件）。
@@ -1362,7 +1354,15 @@ class AnotherPopupPart {
           kGlassDesignSystemImplementation,
       'lib/src/utils/components/glass/fushi_glass_toggles.dart':
           kGlassDesignSystemImplementation,
+      // iOS 27 / macOS 27 输入框（UITextField / NSTextField / 搜索框）的字号与
+      // 键盘焦点内环圆角就是组件自身度量。
+      'lib/src/utils/components/glass/fushi_glass_inputs.dart':
+          kGlassDesignSystemImplementation,
       'lib/src/settings/glass_settings_renderer.dart':
+          kSharedComponentImplementation,
+      // 日期 / 时间选择的 Apple 分支：CupertinoDatePicker 的滚轮字号（iOS 21 /
+      // macOS 15）经 CupertinoTextThemeData 下发，是组件自身度量。
+      'lib/src/utils/components/fushi_date_time_picker.dart':
           kSharedComponentImplementation,
       // settings kit（2026-10）：设置模块的共享设计积木（M3E 形状色块 / 胶囊
       // 搜索栏 / 浮动页头 + Apple 分支的 iOS 字号），同「共享原语本身」类。
@@ -1493,11 +1493,30 @@ class AnotherPopupPart {
           'Apple branch of the shortcut key-cap chip pins its label to 12 w500 '
           '(macOS key-cap label); the MD3 branch stays on the shared tag chip '
           'type. FushiTypeRoles has no Apple key-cap role yet.',
-      'lib/src/settings/settings_home_page.dart':
-          'Settings shell under the Apple design system: the iOS large title '
-          '(34 bold) and the CupertinoSearchTextField metrics (radius, 13 / 17 '
-          'text) reproduce the iOS / macOS Settings app header; the MD3 branch '
-          'stays on the shared settings primitives.',
+      // Apple 分支的 HIG 圆角（iOS 27 / macOS 27 分支）：Apple 设计系统暂无圆角
+      // 刻度令牌（只有分组圆角 FushiAppleMetrics.groupRadius），M3E 分支仍走
+      // FushiM3eShape / FushiBorderRadius。
+      'lib/src/media/video/video_subtitle_sync_row.dart':
+          'Apple branch of the subtitle-delay readout is an iOS text-field-shaped '
+          'tertiaryFill box with the iOS text-field corner (10, same as the '
+          'FushiTextFieldControl iOS shell it morphs into when editing); the '
+          'M3E branch stays on FushiM3eShape.cardRadius. Apple has no radius '
+          'scale token yet.',
+      'lib/src/pages/implementations/home_dashboard_widget_cells.part.dart':
+          'Apple branch of the in-widget mini tap target: FushiPlainButton '
+          'requires an explicit press-highlight shape, 8 = iOS cell highlight '
+          'inset inside a home widget; the M3E branch stays on '
+          'FushiBorderRadius.card. Apple has no radius scale token yet.',
+      // M3E-only 拆分文件：Apple 行在 lookup/apple/apple_lookup_history_row.dart，
+      // 查词页按 isGlassDesign 分派（home_dictionary_page `if (glass)`），本文件
+      // 不会在 Apple 下渲染，「漏出 Material 色调」的风险不存在；但判据
+      // （[_m3eChromeHits] 看文件内有无 Apple 分支）对拆分后的纯 M3E 文件无从识别。
+      'lib/src/pages/implementations/lookup_history_row.dart':
+          'M3E-only split of the lookup history row (the Apple row lives in '
+          'lookup/apple/apple_lookup_history_row.dart and the lookup page '
+          'dispatches on isGlassDesign): the hover fill and the dictionary '
+          'count pill read the M3E tonal role surfaceContainerHigh directly, '
+          'which is spec usage — no Apple branch can leak Material tones here.',
     };
 
     // TODO-2715 ①：豁免的**粒度**从「整份文件」收到「这份文件里被审过的那几个 token」。
@@ -1538,9 +1557,6 @@ class AnotherPopupPart {
       },
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart': <String>{
         'fontSize:',
-      },
-      'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart': <String>{
-        'BorderRadius.circular(',
       },
       'lib/src/media/music/lyrics/karaoke/karaoke_appearance.dart': <String>{
         'fontSize:',
@@ -1644,9 +1660,9 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/media/video/graphic_subtitle_ocr.dart': <String>{'fontSize:'},
+      // 面板已带 Apple 分支（_alignPanelScheme），色调容器按判据不再计入。
       'lib/src/media/video/subtitle_waveform_align_panel.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHighest',
       },
       'lib/src/media/video/video_chapter_panel.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_danmaku_text_metrics.dart': <String>{
@@ -1772,8 +1788,6 @@ class AnotherPopupPart {
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
         'fontSize:',
       },
-      'lib/src/media/audiobook/lyrics_player/lyrics_player_apple.dart':
-          <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_fushi_page.dart': <String>{
         'BorderRadius.circular(',
       },
@@ -1810,6 +1824,7 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/utils/components/settings_shared.dart': <String>{
+        'BorderRadius.circular(',
         'VisualDensity.compact',
         'fontSize:',
       },
@@ -1850,7 +1865,6 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/settings/settings_kit_core.dart': <String>{'fontSize:'},
-      'lib/src/settings/settings_home_page.dart': <String>{'fontSize:'},
       'lib/src/utils/adaptive/adaptive_navigation.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
@@ -1955,6 +1969,21 @@ class AnotherPopupPart {
         'SwitchListTile(',
         'CheckboxListTile(',
       },
+      'lib/src/utils/components/glass/fushi_glass_inputs.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_date_time_picker.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/media/video/video_subtitle_sync_row.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/pages/implementations/home_dashboard_widget_cells.part.dart':
+          <String>{'BorderRadius.circular('},
+      'lib/src/pages/implementations/lookup_history_row.dart': <String>{
+        'surfaceContainerHigh',
+      },
       'lib/src/media/video/video_portrait_layout.dart': <String>{'fontSize:'},
       'lib/src/pages/implementations/video_fushi/portrait.part.dart': <String>{
         'fontSize:',
@@ -1995,6 +2024,9 @@ class AnotherPopupPart {
     );
     for (final File file in dartFiles) {
       final String path = file.path.replaceAll(r'\', '/');
+      // Apple 专属文件（`isGlassDesign` 分派后才渲染的 Cupertino 版面 / 原语）
+      // 不画 M3E chrome，本守卫的「M3E 决策」无从谈起，不在扫描面内。
+      if (_isAppleOnlySource(path)) continue;
       final String? reason = allowedFiles[path];
       // TODO-2715：先剥注释。判据是禁止型（isNot），注释里写着 `fontSize:` 的说明
       // 文字会被当成命中——既制造假红，又会把一条注释登记进豁免范围。
@@ -2568,10 +2600,18 @@ class AnotherPopupPart {
       1,
       reason: '封面 widget 只画一次：在前景封面卡里',
     );
+    // 唯一一次解包落在前景封面变量上，它只进前景裁切：无材质旧卡的圆角
+    // ClipRRect，或材质封面的 ShelfCoverShape 裁切（Cupertino 专辑连续曲率）。
+    expect(frame, contains('final Widget coverImage = cover!;'));
     expect(
       frame,
-      matches(RegExp(r'ClipRRect\([^;]*?child: cover!,')),
+      matches(RegExp(r'ClipRRect\([^;]*?child: coverImage,')),
       reason: '前景封面必须在圆角封面卡（ClipRRect）里画，不是背景层',
+    );
+    expect(
+      RegExp(r'coverImage\b').allMatches(frame).length,
+      3,
+      reason: '前景封面变量只用在声明 + 两种前景裁切里，不另铺背景层',
     );
   });
 
@@ -4413,6 +4453,17 @@ String _withoutTransparentInkHosts(String source) {
 ///
 /// 其余 token（`fontSize:`、`VisualDensity.compact`、裸 `Card(` / `ListTile(` …）
 /// 判据不变：M3E 字阶走 `context.fushiType`，组件走共享 Fushi* 原语。
+/// Apple 专属源文件：路径里有 `/apple/` 目录（各模块的 Cupertino 方案 A 版面，
+/// 如 `srs/apple/`、`library_layout/apple/`），或文件名本身带 `apple` 词元
+/// （`apple_*.dart`、`*_apple.dart`、`*_apple.part.dart`、`fushi_apple_*`）。约定：
+/// 这类文件只在 `isGlassDesign(context)` 分派后的 Apple 分支里渲染，没有 M3E
+/// 外观；M3E 与 Apple 混写的文件不按此豁免，仍逐个受审。
+bool _isAppleOnlySource(String path) {
+  if (path.contains('/apple/')) return true;
+  final String name = path.substring(path.lastIndexOf('/') + 1);
+  return RegExp(r'(^|_)apple(_|\.)').hasMatch(name);
+}
+
 List<String> _m3eChromeHits(String source, List<String> forbidden) {
   final bool appleAware = RegExp(
     r'isGlassDesign\(|appleColorsOf\(|FushiAppleColors',

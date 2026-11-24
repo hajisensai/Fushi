@@ -785,23 +785,20 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                               ? FushiAppleMetrics.of(context)
                               : null;
                           final TextStyle titleStyle = am != null
-                              ? am
-                                    .titleStyle(context)
-                                    .copyWith(
-                                      fontSize:
-                                          (am.desktop ? 13 : 15) * am.scale,
-                                      fontWeight: FontWeight.w600,
-                                      color: fg,
-                                    )
+                              ? appleTextStyle(
+                                  context,
+                                  size: (am.desktop ? 13 : 15) * am.scale,
+                                  weight: FontWeight.w600,
+                                  color: fg,
+                                )
                               : tokens.type.listTitle.copyWith(color: fg);
                           final TextStyle metaStyle = am != null
-                              ? am
-                                    .subtitleStyle(context)
-                                    .copyWith(
-                                      fontSize:
-                                          (am.desktop ? 11 : 13) * am.scale,
-                                      color: muted,
-                                    )
+                              ? appleTextStyle(
+                                  context,
+                                  size: (am.desktop ? 11 : 13) * am.scale,
+                                  height: 1.3,
+                                  color: muted,
+                                )
                               : tokens.type.metadata.copyWith(color: muted);
                           final TextStyle browStyle = context
                               .fushiType

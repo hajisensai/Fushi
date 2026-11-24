@@ -1,4 +1,6 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
@@ -132,7 +134,7 @@ class _LookupHistoryCollageRowState extends State<LookupHistoryCollageRow> {
       context,
       fushiPosterHue(widget.term),
     );
-    final BorderRadius radius = BorderRadius.circular(12);
+    const BorderRadius radius = FushiM3eShape.smallRadius;
     final bool reveal = hovering || _focused || _menuFocused;
 
     final Color background = widget.selected

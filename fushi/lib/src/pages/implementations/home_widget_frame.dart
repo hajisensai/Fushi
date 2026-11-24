@@ -13,6 +13,7 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
@@ -425,8 +426,8 @@ class HomeWidgetFigure extends StatelessWidget {
       // Apple（Health 摘要卡）：大数字 label 粗体、单位 secondaryLabel semibold。
       final FushiAppleColors a = appleColorsOf(context);
       final FushiAppleMetrics m = FushiAppleMetrics.of(context);
-      final TextStyle base =
-          Theme.of(context).textTheme.bodyLarge ?? const TextStyle();
+      final double bodyLineHeight =
+          Theme.of(context).textTheme.bodyLarge?.height ?? 1.25;
       final double valueSize =
           (m.desktop ? (large ? 28 : 22) : (large ? 34 : 28)) * m.scale;
       return FittedBox(
@@ -437,21 +438,23 @@ class HomeWidgetFigure extends StatelessWidget {
             children: <InlineSpan>[
               TextSpan(
                 text: value,
-                style: base.copyWith(
-                  fontSize: valueSize,
-                  fontWeight: FontWeight.w700,
+                style: appleTextStyle(
+                  context,
+                  size: valueSize,
+                  weight: FontWeight.w700,
                   height: 1.1,
-                  letterSpacing: 0,
                   color: a.label,
                 ),
               ),
               if (u != null)
                 TextSpan(
                   text: ' $u',
-                  style: base.copyWith(
-                    fontSize: m.subtitleSize,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0,
+                  // 单位沿用 bodyLarge 的行高（与数字同一行盒）。
+                  style: appleTextStyle(
+                    context,
+                    size: m.subtitleSize,
+                    weight: FontWeight.w600,
+                    height: bodyLineHeight,
                     color: a.secondaryLabel,
                   ),
                 ),

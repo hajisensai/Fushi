@@ -14,6 +14,7 @@ import 'package:fushi_engine/media/collections/collection_cover.dart'
     show collectionOwnCoverCandidates;
 import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
 import 'package:fushi/src/media/media_item.dart';
@@ -427,13 +428,24 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
                       )
                     : Text(
                         String.fromCharCodes(name.runes.take(1)),
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: onContainer,
-                              fontWeight: FontWeight.w700,
-                              fontSize: apple ? size * 0.45 : null,
-                              letterSpacing: apple ? 0 : null,
-                            ),
+                        // Apple：首字随头像直径缩放（0.45 × 直径），行高沿用
+                        // titleMedium。
+                        style: apple
+                            ? appleTextStyle(
+                                context,
+                                size: size * 0.45,
+                                weight: FontWeight.w700,
+                                color: onContainer,
+                                height:
+                                    Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium?.height ??
+                                    1.25,
+                              )
+                            : Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: onContainer,
+                                fontWeight: FontWeight.w700,
+                              ),
                       ),
               ),
             ),
