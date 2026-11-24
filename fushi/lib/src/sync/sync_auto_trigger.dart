@@ -18,6 +18,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show BookProgressSyncAction;
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_error_messages.dart'
+    show friendlySyncErrorDetail;
 import 'package:fushi/src/sync/sync_manager.dart';
 import 'package:fushi/src/sync/sync_module_gate.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
@@ -28,6 +30,7 @@ import 'package:fushi/src/sync/sync_task_board.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi/i18n/strings.g.dart';
 
 // 模块门与取消信号从这里转出：同步入口的消费方（UI 外壳、桌面控制通道、AppModel）
 // 不必另 import。
@@ -45,6 +48,22 @@ export 'package:fushi/src/sync/sync_task_board.dart'
         SyncTaskError;
 
 final _bookKeyPattern = RegExp(r'fushi://book/(.+)');
+
+/// 一条通道失败在后台任务明细里的那一行（BUG-5368）：本地化通道名 + 友好文案。
+///
+/// 此前五处 catch 各自拼 `'sync channel (interconnect=true): $e'`，原始异常的
+/// toString（`SyncBackendError: No reachable Fushi server address`）连同调试用的
+/// 前缀原样上屏，绕过了 BUG-1693 的 [friendlySyncErrorDetail]。任务表是用户看的，
+/// 不是日志：原始异常照旧进 `developer.log`。
+String _channelTaskError(SyncChannel channel, Object error, {String? title}) {
+  final String channelLabel = channel.isInterconnect
+      ? t.sync_task_channel_interconnect
+      : t.sync_task_channel_cloud;
+  final String where = title == null ? channelLabel : '$channelLabel · $title';
+  // 鉴权失败在通道层被包成 [SyncChannelAuthError]（BUG-1578），拆开才能按类型分派。
+  final Object cause = error is SyncChannelAuthError ? error.error : error;
+  return '$where: ${friendlySyncErrorDetail(cause)}';
+}
 
 // [syncInProgress] / [syncProgress] / [syncActivity] 的定义在 `sync_task_board.dart`：
 // 按资源加锁后同一时刻可能有好几轮同步在跑，单值装不下，它们改由任务表 [syncTasks]
@@ -738,7 +757,8 @@ const _syncCooldownMs = 5 * 60 * 1000;
 /// 全候选串行探测（2s × 候选数 × 每分钟），零退避。
 ///
 /// 语义（固定退避）：
-/// - 任一自动 sweep 以 [SyncOutcomeReason.failed] 收场 → 记「now + [_syncCooldownMs]」
+/// - 任一自动 sweep 以 [SyncOutcomeReason.failed] 或 [SyncOutcomeReason.peerOffline]（BUG-5368）
+///   收场 → 记「now + [_syncCooldownMs]」
 ///   为退避截止；截止前的自动 sweep 直接判 [SyncOutcomeReason.cooledDown] 跳过。
 /// - 成功（completed）→ 清零退避（对端活了，恢复正常节奏）；手动同步成功同样清零。
 /// - autoDisabled / cooledDown / noChannels 不触碰退避戳。
@@ -769,7 +789,9 @@ void noteAutoSweepOutcomeForBackoff(
   SyncOutcomeReason reason, {
   required int nowMs,
 }) {
-  if (reason == SyncOutcomeReason.failed) {
+  // BUG-5368：对端离线不算失败，但同样要退避——不然每分钟 tick 都重付全候选探测。
+  if (reason == SyncOutcomeReason.failed ||
+      reason == SyncOutcomeReason.peerOffline) {
     _autoSweepFailureBackoffUntilMs = nowMs + _syncCooldownMs;
   } else if (reason == SyncOutcomeReason.completed) {
     _autoSweepFailureBackoffUntilMs = null;
@@ -835,6 +857,7 @@ Future<void> _runAutoSyncAll({
       // 让局域网互联跟着一起哑。
       bool anyChannelFailed = false;
       int cooledChannels = 0;
+      int peerOfflineChannels = 0;
       for (final SyncChannel channel in channels) {
         // BUG-1580：冷却窗**按通道**判。冷却是「这条通道刚同步过」，不是设备的属性。
         final int? lastSync = await repo.getLastSyncMs(channel.scope);
@@ -871,12 +894,18 @@ Future<void> _runAutoSyncAll({
           // 模块被关掉：整轮收场，不再跑后面的通道（不是这条通道的失败）。
           rethrow;
         } catch (e, stack) {
+          // BUG-5368（反馈 AND29vti1l）：互联对端离线（电脑没开 Fushi / 不在同一
+          // 网络）是预期状态（BUG-5262），不是这条通道的失败：跳过它，不进任务表的
+          // 失败项（否则每轮 sweep 都留一条「已结束，1 项失败」，红点常亮），结局
+          // 另记 peerOffline。手动「立即同步」不走这里，照常把它报给用户。
+          if (e is SyncPeerUnreachableError) {
+            peerOfflineChannels++;
+            continue;
+          }
           // 记账不吞事实：这条通道失败了，其余通道继续跑，最终 reason 也据此如实
           // 报「失败」而不是伪装成 completed。
           anyChannelFailed = true;
-          task.error(
-            'sync channel (interconnect=${channel.isInterconnect}): $e',
-          );
+          task.error(_channelTaskError(channel, e));
           developer.log(
             'Sync channel failed (interconnect=${channel.isInterconnect})',
             error: e,
@@ -886,8 +915,12 @@ Future<void> _runAutoSyncAll({
         }
       }
       // 一条通道都没跑起来 = 本轮什么也没同步，UI 上必须与「正常跑完」分开说。
+      // 对端离线排在 completed 前：云通道跑完了而互联没跑，「上次同步」要说出
+      // 互联被跳过，也要靠它推进退避（见 [noteAutoSweepOutcomeForBackoff]）。
       if (anyChannelFailed) {
         reason = SyncOutcomeReason.failed;
+      } else if (peerOfflineChannels > 0) {
+        reason = SyncOutcomeReason.peerOffline;
       } else if (channelsRun > 0) {
         reason = SyncOutcomeReason.completed;
       } else {
@@ -1063,9 +1096,7 @@ Future<ManualSyncResult> runManualFullSync({
             'sync channel (interconnect=${channel.isInterconnect})',
             e,
           );
-          task.error(
-            'sync channel (interconnect=${channel.isInterconnect}): $e',
-          );
+          task.error(_channelTaskError(channel, e));
           developer.log(
             'Manual sync channel failed '
             '(interconnect=${channel.isInterconnect})',
@@ -1263,9 +1294,7 @@ Future<ManualSyncResult> runManualAssetTransfer({
             'asset transfer channel (interconnect=${channel.isInterconnect})',
             e,
           );
-          task.error(
-            'asset transfer channel (interconnect=${channel.isInterconnect}): $e',
-          );
+          task.error(_channelTaskError(channel, e));
           developer.log(
             'Manual asset transfer channel failed '
             '(interconnect=${channel.isInterconnect})',
@@ -1608,6 +1637,7 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
       // 通道的合集同步这一轮**根本不执行**。合集是双端都在改的维度，漏跑一轮就是
       // 「我在手机上建的合集，桌面上一直不出现」。
       bool anyChannelFailed = false;
+      int peerOfflineChannels = 0;
       for (final SyncChannel channel in channels) {
         try {
           final SyncRunReport? report = await _onChannel(
@@ -1648,11 +1678,13 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
         } on SyncCancelledException {
           rethrow;
         } catch (e, stack) {
+          // BUG-5368：对端离线是预期状态，跳过而不记失败（与 sweep 同一口径）。
+          if (e is SyncPeerUnreachableError) {
+            peerOfflineChannels++;
+            continue;
+          }
           anyChannelFailed = true;
-          task.error(
-            'collections sync channel '
-            '(interconnect=${channel.isInterconnect}): $e',
-          );
+          task.error(_channelTaskError(channel, e));
           developer.log(
             'Collections sync channel failed '
             '(interconnect=${channel.isInterconnect})',
@@ -1665,6 +1697,8 @@ Future<void> _runCollectionsSync({required FushiDatabase db}) async {
       // 部分失败如实报 failed，不伪装成 completed（与 sweep 同一记账口径）。
       if (anyChannelFailed) {
         reason = SyncOutcomeReason.failed;
+      } else if (peerOfflineChannels > 0) {
+        reason = SyncOutcomeReason.peerOffline;
       } else {
         reason = channelsRun > 0
             ? SyncOutcomeReason.completed
@@ -1775,6 +1809,9 @@ enum _ExitChannelResult {
 
   /// 抛错收场。
   failed,
+
+  /// 互联对端离线（BUG-5368）：预期状态，跳过、不记失败。
+  peerOffline,
 
   /// 拿到锁后重读这本书时，它已不在库里。
   bookGone,
@@ -1909,10 +1946,9 @@ Future<_ExitChannelResult> _syncExitedBookChannelOnce({
     }
     return _ExitChannelResult.ran;
   } catch (e, stack) {
-    task.error(
-      'book exit sync (interconnect=${channel.isInterconnect}) '
-      '"$title": $e',
-    );
+    // BUG-5368：对端离线是预期状态（BUG-5262），跳过而不记失败。
+    if (e is SyncPeerUnreachableError) return _ExitChannelResult.peerOffline;
+    task.error(_channelTaskError(channel, e, title: title));
     developer.log(
       'Book-exit sync channel failed '
       '(interconnect=${channel.isInterconnect})',
@@ -2000,6 +2036,8 @@ Future<void> _runAutoSync({
       reason = SyncOutcomeReason.failed;
     } else if (results.contains(_ExitChannelResult.cancelled)) {
       reason = SyncOutcomeReason.cancelled;
+    } else if (results.contains(_ExitChannelResult.peerOffline)) {
+      reason = SyncOutcomeReason.peerOffline;
     } else if (channelsRun > 0) {
       reason = SyncOutcomeReason.completed;
     } else if (results.every(
