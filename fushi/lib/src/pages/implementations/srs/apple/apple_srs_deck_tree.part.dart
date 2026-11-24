@@ -10,8 +10,8 @@ part of '../srs_deck_list_page.dart';
 // - 行尾三色圆体计数（新 blue / 学习中 red / 待复习 green，0 变 tertiaryLabel，不画
 //   药丸底）+ 强调色小圆钮 ▶（无活留位对齐）。
 //
-// 行为全在 [_DeckRow] / [_DeckList] / [_DeckDragShell] 里与 M3E 共用一份：点行 =
-// 宽屏选中 / 手机进详情、行首区折叠、←/→ 与手柄 D-pad 折叠、菜单键 / Shift+F10、
+// 行为全在 [_DeckRow] / [_DeckList] / [_DeckDragShell] 里与 M3E 共用一份：点行（有活 =
+// 复习，没活 = 宽屏选中 / 手机进详情）、点计数区看详情（[_countsTarget]）、行首区折叠、←/→ 与手柄 D-pad 折叠、菜单键 / Shift+F10、
 // 拖放排序与「移到顶层」落点、删除进度。本文件只多两样 Apple 专属交互：右键 / 窄屏
 // 长按出 Apple context menu（[_appleDeckMenuItems]，同项同序、删除红字单独一节），
 // iOS 档左滑「复习」。
@@ -447,13 +447,19 @@ extension _AppleDeckRowTile on _DeckRow {
               ),
             ),
             SizedBox(width: gap),
-            SrsAppleCountTriple(
-              key: ValueKey<String>('srs-counts-${deck.deck.id}'),
-              newCount: deck.newCount,
-              learnCount: deck.learnCount,
-              reviewCount: deck.reviewCount,
-              reviewPending: deck.rwkvPending,
-              reviewMinutesLeft: deck.reviewMinutesLeft,
+            // 与 M3E 同一个计数区入口（[_countsTarget]）：本机牌组点计数看详情，
+            // 有活的行点行是复习，触摸上看详情走这里。
+            _countsTarget(
+              SrsAppleCountTriple(
+                key: ValueKey<String>('srs-counts-${deck.deck.id}'),
+                newCount: deck.newCount,
+                learnCount: deck.learnCount,
+                reviewCount: deck.reviewCount,
+                reviewPending: deck.rwkvPending,
+                reviewMinutesLeft: deck.reviewMinutesLeft,
+              ),
+              // 点按区撑满行的内容高（不撑高行）：iOS 档约 44pt。
+              minHeight: m.rowMinHeight - 2 * m.rowVertical,
             ),
             // 没活时留位不画：各行的计数列照样对齐。
             Visibility(

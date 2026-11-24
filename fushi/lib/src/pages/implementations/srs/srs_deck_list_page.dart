@@ -1837,11 +1837,18 @@ class _DeckRow extends StatelessWidget {
   );
 
   /// 行尾计数区：本机牌组点它看详情（[onOpen]），远程牌组原样不可点。
-  Widget _countsTarget(Widget counts) {
+  ///
+  /// [minHeight]：点按区的最小高度，缺省 Material 最小点按尺寸；Apple 紧凑行（窄屏
+  /// ≤ 56）传行的内容高，点按区撑满行高而不把行撑高。
+  Widget _countsTarget(
+    Widget counts, {
+    double minHeight = kMinInteractiveDimension,
+  }) {
     if (remote) return counts;
     return _DeckCountsDetailsTarget(
       key: ValueKey<String>('srs-counts-details-${deck.deck.id}'),
       onTap: () => onOpen(deck),
+      minHeight: minHeight,
       child: counts,
     );
   }
@@ -2004,10 +2011,12 @@ class _DeckCountsDetailsTarget extends StatelessWidget {
     super.key,
     required this.onTap,
     required this.child,
+    this.minHeight = kMinInteractiveDimension,
   });
 
   final VoidCallback onTap;
   final Widget child;
+  final double minHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -2021,9 +2030,7 @@ class _DeckCountsDetailsTarget extends StatelessWidget {
             behavior: HitTestBehavior.opaque,
             onTap: onTap,
             child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                minHeight: kMinInteractiveDimension,
-              ),
+              constraints: BoxConstraints(minHeight: minHeight),
               child: Align(widthFactor: 1, heightFactor: 1, child: child),
             ),
           ),
