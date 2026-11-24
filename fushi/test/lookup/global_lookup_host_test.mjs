@@ -3746,7 +3746,7 @@ function flushTimers() {
     expression: '猫', reading: 'ねこ', outcome: 'failed', message: 'ANKI_DOWN',
   }));
   assert.strictEqual(forwarded, 2, 'forwarded into both the root and the child card');
-  assert.deepStrictEqual(received.map((r) => r.id).sort(), ['frame-0', 'frame-1']);
+  assert.deepStrictEqual(received.map((r) => r.id).sort((a, b) => a.localeCompare(b)), ['frame-0', 'frame-1']);
   // host.js runs in its own vm realm: compare by value, not by prototype.
   assert.strictEqual(JSON.stringify(received[0].settlement), JSON.stringify({
     expression: '猫', reading: 'ねこ', outcome: 'failed', message: 'ANKI_DOWN',

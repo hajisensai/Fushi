@@ -4008,7 +4008,7 @@ Promise.all([
 // mountMineHeaderFor 把按钮挂在 window.__fushiRoot（shadow-root 车道）下，提示也画在那里。
 function mountedHintText(context) {
   const root = context.window.__fushiRoot;
-  const hint = (root && root.querySelector('.inline-hint')) ||
+  const hint = root?.querySelector('.inline-hint') ||
     context.document.querySelector('.inline-hint');
   return hint ? (hint.textContent || '') : null;
 }

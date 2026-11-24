@@ -6892,8 +6892,8 @@ function createEntryHeader(entry, idx) {
         // 宿主推来的后台写卡结局（window.fushiSettleQueuedMine → 本闭包）。返回本按钮
         // 是否认领了它（= 本弹窗排过这张卡的队）。
         mineButton.__fushiSettleQueuedMine = async (settlement) => {
-            const outcome = settlement && settlement.outcome;
-            const token = settlement ? settlement.token : undefined;
+            const outcome = settlement?.outcome;
+            const token = settlement?.token;
             // 带 token 的结局只认那一次排队（同词排过两次时旧结局不撤新「已加入」）。
             const mine = queuedLocally &&
                 (typeof token !== 'number' || token === queuedToken);
