@@ -10,7 +10,7 @@ import 'package:fushi/src/media/audiobook/book_import_dialog.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragAudioExtensions, kDragBookExtensions, kDragSubtitleExtensions;
 import 'package:fushi/src/media/drag_drop/reader_shelf_drop_router.dart';
-import 'package:fushi/src/media/import/import_collage_page.dart';
+import 'package:fushi/src/media/import/import_page_layout.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/import/import_inbox_text.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
@@ -242,9 +242,9 @@ class _BookImportPageState extends ConsumerState<BookImportPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context)) _buildHeader(),
+          if (!isGlassDesign(context)) _buildHeader(),
           Expanded(
-            child: ImportCollagePage(
+            child: ImportPageLayout(
               spec: spec,
               onAddSource: () => unawaited(_viewKey.currentState?.addSource()),
               addSourceEnabled: _viewKey.currentState?.isBusy != true,

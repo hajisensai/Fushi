@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_import_button.dart';
 import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_scope_bar.dart';
 import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_title_menu.dart';
@@ -143,11 +144,16 @@ class _AppleLibraryLayoutState<T extends Object>
         ? const <Never>[]
         : _ordered(shownGroup);
     final LibraryChromeImport? import = spec.import;
+    // 停在导入页（Cupertino 导入页方案 A）：大标题是「导入」，不画标题菜单与分区
+    // 胶囊行（副标题「到 〈库名〉」由导入页自己画，回库点「导入」钮 / 侧栏分区）。
+    final bool onImport = import?.selected ?? false;
 
     // 标题菜单（一级分组 + 调整顺序）：侧栏承载分区时不需要。
     final VoidCallback? reorder = _reorderAction(spec.current);
     final bool titleMenu =
-        !sidebarHosts && (spec.groups.length >= 2 || reorder != null);
+        !onImport &&
+        !sidebarHosts &&
+        (spec.groups.length >= 2 || reorder != null);
     Widget wrapTitle(BuildContext context, Widget title, TextStyle style) =>
         AppleLibraryTitleMenu(
           title: title,
@@ -168,7 +174,8 @@ class _AppleLibraryLayoutState<T extends Object>
           ],
         );
 
-    final Widget? scopeBar = sidebarHosts || shownSections.length < 2
+    final Widget? scopeBar =
+        onImport || sidebarHosts || shownSections.length < 2
         ? null
         : AppleLibraryScopeBar<T>(
             // 换组即换一排胶囊（段数与段值都变）。
@@ -189,10 +196,11 @@ class _AppleLibraryLayoutState<T extends Object>
       secondary: _secondary(scopeBar, spec.accessory),
     );
     // 大标题恒在（它本身就是一级分组的菜单入口）：侧栏已标出模块与分区时内容区
-    // 标题换成当前分区名（macOS Finder / Music 的做法，停在导入页时仍是页名）；
+    // 标题换成当前分区名（macOS Finder / Music 的做法；停在导入页时是「导入」）；
     // 没有外壳页名（独立挂载）时回落当前组名。
-    final String sectionTitle =
-        (sidebarHosts ? _currentSectionLabel(spec) : null) ?? spec.title;
+    final String sectionTitle = onImport
+        ? t.library_view_import
+        : (sidebarHosts ? _currentSectionLabel(spec) : null) ?? spec.title;
     chrome = FushiShellTitleScope(
       title: sectionTitle.isNotEmpty
           ? sectionTitle

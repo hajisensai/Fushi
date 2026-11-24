@@ -19,7 +19,7 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_add_flow.dart';
 import 'package:fushi/src/mining/galgame_repository.dart'
     show GalgameRepository;
-import 'package:fushi/src/media/import/import_collage_page.dart';
+import 'package:fushi/src/media/import/import_page_layout.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
 import 'package:fushi/src/pages/implementations/discovery_manage_sources_action.dart';
@@ -415,7 +415,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
   Widget _chromeInsetFor(GameSection section, {required Widget child}) =>
       switch (section) {
         GameSection.dashboard => FushiFloatingChromeScrollInset(child: child),
-        // [ImportCollagePage] 自己读 [FushiFloatingChromeInset] 加进滚动内边距
+        // [ImportPageLayout] 自己读 [FushiFloatingChromeInset] 加进滚动内边距
         // （内容从工具区下方起排、往下滚到工具区底下），不能先被 ScrollInset 归零。
         GameSection.importGames ||
         GameSection.library ||
@@ -484,12 +484,12 @@ class _HomeGamePageState extends State<HomeGamePage> {
   }
 
   /// 游戏「导入」视图（导入稿 v2 第二节 5）：与书 / 漫画 / 视频 / 音乐同一套
-  /// [ImportCollagePage]——引导首块 + 两个方式块（添加游戏 / 扫描文件夹），其下
+  /// [ImportPageLayout]——引导首块 + 两个方式块（添加游戏 / 扫描文件夹），其下
   /// 「常驻来源」色块区（互联块照旧保留，IM21；扫描根；添加来源直接选目录）。
   ///
   /// 拖放只认 .exe（[addGamesFromPaths] → `filterOutDuplicateGameExes` 丢弃文件夹），
   /// 所以引导首块只说 .exe、格式只有 EXE；「扫描文件夹」只在方式块与添加来源里。
-  /// 整页落点由 [ImportCollagePage] 按 spec.onDrop 装（此前另写的拖放卡与虚线
+  /// 整页落点由 [ImportPageLayout] 按 spec.onDrop 装（此前另写的拖放卡与虚线
   /// 画笔删掉，IM11），外层仍是本页 IndexedStack 的 `DropSurfaceScope` 门。
   Widget _buildImport(BuildContext context) {
     // IndexedStack 急切构建全部子区，本视图在无 ProviderScope 的 widget 测试里
@@ -547,7 +547,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
     );
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
-      child: ImportCollagePage(
+      child: ImportPageLayout(
         spec: spec,
         // 来源列表一挂载就查来源表与各来源计数：访问过导入页才构建。
         sources: _importVisited

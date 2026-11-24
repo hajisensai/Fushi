@@ -1,5 +1,5 @@
 /// 视频库「导入」视图（导入稿 v2「3. 视频」）：本域内容入库的唯一入口页，套
-/// 共用的 [ImportCollagePage]（引导首块 + 方式块 + 常驻来源色块区）。
+/// 共用的 [ImportPageLayout]（引导首块 + 方式块 + 常驻来源色块区）。
 ///
 /// - 方式按规范顺序：导入视频 → 导入文件夹 → IPTV 频道列表 → 网络共享（R8）；
 ///   网络说明从 [importNetworkTransportsSummary] 派生（BUG-4858 / IM10）；
@@ -25,7 +25,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDragPlaylistExtensions;
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart'
     show FileDropCallback;
-import 'package:fushi/src/media/import/import_collage_page.dart';
+import 'package:fushi/src/media/import/import_page_layout.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/import/import_inbox_text.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
@@ -330,7 +330,7 @@ class _VideoImportPageState extends ConsumerState<VideoImportPage> {
           // 浮动顶栏（IM18：此前 Cupertino 下整个页头不建，iOS 看不到刮削入口）。
           _buildHeader(busy),
           Expanded(
-            child: ImportCollagePage(
+            child: ImportPageLayout(
               spec: spec,
               onAddSource: () {
                 if (!_busy) unawaited(_viewKey.currentState?.addSource());
@@ -384,7 +384,7 @@ class _VideoImportPageState extends ConsumerState<VideoImportPage> {
       enabled: !busy,
       onSelected: _clearAllScrapeRecords,
     );
-    final bool apple = isCupertinoPlatform(context);
+    final bool apple = isGlassDesign(context);
     final List<FushiHeaderMoreEntry> moreEntries = <FushiHeaderMoreEntry>[
       if (apple && scrapeAll != null) scrapeAllEntry,
       if (apple && openTasks != null) tasksEntry,
