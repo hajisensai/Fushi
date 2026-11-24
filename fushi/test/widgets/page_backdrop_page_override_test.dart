@@ -164,7 +164,11 @@ void main() {
       );
       final Map<String, PageBackdropPreset> scoped =
           decodePageBackdropScopedPresets(presets);
-      expect(scoped.keys, unorderedEquals(<String>['srs', 'srs_review']));
+      // 认不出的层级 wire（别的版本 / 设备写的）在整键读改写里原样保留，不被本机抹掉。
+      expect(
+        scoped.keys,
+        unorderedEquals(<String>['srs', 'srs_review', 'alien']),
+      );
       expect(
         decodePageBackdropScopedPresets(
           encodePageBackdropScopedPresets(scoped),
@@ -190,6 +194,26 @@ void main() {
         ),
         decodePageBackdropScopedImages(images),
       );
+    });
+
+    test('认不出的层级 wire 的图同样算被引用、同样改写存量绝对路径', () {
+      final String images = jsonEncode(<String, Object>{
+        'future_page': <String, String>{'landscape': r'C:\old\next.png'},
+      });
+      expect(
+        pageBackdropReferencedImagePaths(<String, String>{
+          kPageBackdropModuleImagesPrefKey: PrefCodec.encode(images),
+        }),
+        contains(r'C:\old\next.png'),
+      );
+      final String? healed = healPageBackdropModuleImagesValue(
+        images,
+        inDirectory: (String name) => name == 'next.png',
+      );
+      expect(decodePageBackdropScopedImages(healed)['future_page'], (
+        landscape: 'next.png',
+        portrait: null,
+      ));
     });
 
     test('页面的图算作被引用（换图清扫不误删），存量绝对路径一并改写', () {
