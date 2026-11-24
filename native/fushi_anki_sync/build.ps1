@@ -114,13 +114,19 @@ $notice = $notice.Replace('@ANKI_COMMIT@', $AnkiCommit).Replace('@REPO@', $repo)
 # attaches the started process to a job object afterwards and throws "Cannot process
 # request because the process (N) has exited" when the helper already answered and quit
 # (fushi-server run 45425911086). Drive System.Diagnostics.Process directly and write the
-# request to the raw stdin stream, byte for byte.
+# request to the raw stdin stream, byte for byte. .NET Framework wraps the redirected stdin
+# in an AutoFlush StreamWriter over [Console]::InputEncoding, which emits that encoding's
+# preamble the moment the process starts: on a UTF-8 console (CI runners) that is the same
+# EF BB BF again (fushi-server run 45450096365). Start it under a preamble-less UTF-8.
 $psi = New-Object System.Diagnostics.ProcessStartInfo
 $psi.FileName = $installed
 $psi.UseShellExecute = $false
 $psi.RedirectStandardInput = $true
 $psi.RedirectStandardOutput = $true
-$proc = [System.Diagnostics.Process]::Start($psi)
+$savedInputEncoding = [Console]::InputEncoding
+[Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false
+try { $proc = [System.Diagnostics.Process]::Start($psi) }
+finally { [Console]::InputEncoding = $savedInputEncoding }
 $requestBytes = [Text.Encoding]::ASCII.GetBytes('{"id":1,"cmd":"version"}' + "`n")
 $proc.StandardInput.BaseStream.Write($requestBytes, 0, $requestBytes.Length)
 $proc.StandardInput.Close()
