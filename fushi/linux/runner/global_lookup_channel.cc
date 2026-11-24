@@ -27,7 +27,8 @@ constexpr char kHelperName[] = "fushi_lookup_card";
 // is no reason to start a web view just to say so.
 FlMethodResponse* AnswerWithoutHelper(const std::string& method) {
   if (method == "isShowing" || method == "isWebViewReady" ||
-      method == "suspendForCapture" || method == "restoreAfterCapture") {
+      method == "suspendForCapture" || method == "restoreAfterCapture" ||
+      method == "lookupOverlaySelection") {
     g_autoptr(FlValue) result = fl_value_new_bool(FALSE);
     return FL_METHOD_RESPONSE(fl_method_success_response_new(result));
   }
@@ -295,8 +296,9 @@ void OnSelectionMethodCall(FlMethodChannel*, FlMethodCall* call, gpointer) {
 #endif
     return;
   }
-  // captureContext (UI Automation / AX on Windows / macOS) has no X11
-  // counterpart; Dart falls back to captureSelection.
+  // captureContext (UI Automation / AX on Windows / macOS) is not a runner
+  // call on Linux: Dart reads the context over AT-SPI itself
+  // (lib/src/lookup/linux_atspi_context.dart).
   g_autoptr(FlMethodResponse) response =
       FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
   Respond(call, response);

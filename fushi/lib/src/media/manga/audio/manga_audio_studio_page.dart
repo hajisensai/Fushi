@@ -7,6 +7,7 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate.dart'
@@ -23,6 +24,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/ai/ai_manga_audio_assistant.dart'
+    show findMangaNameReadings;
 import 'package:fushi/src/media/audiobook/tts/irodori_voice_packs.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/cast_substitutions_page.dart';
 import 'package:fushi/src/media/audiobook/tts/cast/series_cast_resolver.dart';
@@ -124,6 +127,9 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
   bool _loading = true;
   MangaRenderManifest? _manifest;
 
+  /// [_manifest] 的清单文件（登记的是外部导入的清单时在用户目录里，句文件与它同目录）。
+  File? _manifestFile;
+
   /// 已出音频、但按当前替换表 / 人名读法该念的文字已变的句子（载入与改表后重算）。
   List<MangaSpokenTextChange> _readingChanges = const <MangaSpokenTextChange>[];
   CastVoicingLedger _ledger = CastVoicingLedger();
@@ -182,8 +188,12 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
       widget.appModel,
       widget.bookKey,
     );
+    final File manifestFile = (await mangaAudioEditTarget(
+      widget.appModel,
+      widget.bookKey,
+    )).manifestFile;
     final MangaRenderManifest? manifest = await MangaRenderManifest.load(
-      mangaRenderManifestFile(widget.appModel, widget.bookKey),
+      manifestFile,
     );
     final CastVoicingLedger ledger = await ttsVoicingStoreFor(
       widget.appModel,
@@ -192,6 +202,7 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     setState(() {
       _volume = volume;
       _manifest = manifest;
+      _manifestFile = manifestFile;
       _ledger = ledger;
       _loading = false;
       if (volume?.series == null) _volumeOnly = true;
@@ -350,12 +361,20 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
     final MangaAudioVolume? volume = _volume;
     final String? base = _basePresetId;
     if (volume == null || base == null || _busy) return;
-    await _queue.enqueue(
-      bookKey: volume.bookKey,
-      title: _title(volume),
-      presetId: base,
-      kind: TtsRenderJobKind.manga,
-    );
+    try {
+      await _queue.enqueue(
+        bookKey: volume.bookKey,
+        title: _title(volume),
+        presetId: base,
+        kind: TtsRenderJobKind.manga,
+      );
+    } on TtsRenderRejected {
+      FushiToast.show(
+        msg: t.manga_audio_package_error_importing,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (mounted) setState(() {});
   }
 
@@ -446,6 +465,18 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
             series: series.roster,
             volume: volume.script.roster,
           ).values,
+          findReadings: (List<CastTextSubstitution> names) =>
+              findMangaNameReadings(
+                widget.appModel,
+                bookKey: volume.bookKey,
+                seriesKey: seriesKey,
+                workTitle: series.title.isNotEmpty
+                    ? series.title
+                    : volume.row.title,
+                names: names,
+                substitutions:
+                    volume.series?.substitutions ?? series.substitutions,
+              ),
           save: (List<CastTextSubstitution> next) async {
             final SeriesCastProfile fresh =
                 await seriesCastStoreFor(widget.appModel).update(
@@ -547,13 +578,33 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
       FushiToast.show(msg: t.manga_audio_job_busy);
       return;
     }
-    await _queue.enqueue(
-      bookKey: volume.bookKey,
-      title: _title(volume),
-      presetId: base,
-      kind: TtsRenderJobKind.manga,
-      lineRequests: requests,
-    );
+    // 登记的是广播剧时不能按句补回：当场提示，不排一个注定失败的任务（任务里同一判据
+    // 兜底）。
+    try {
+      await mangaLineEditTarget(widget.appModel, volume.bookKey);
+    } on TtsRenderFailure catch (e) {
+      FushiToast.show(
+        msg: ttsRenderFailureText(e.code),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    if (!mounted) return;
+    try {
+      await _queue.enqueue(
+        bookKey: volume.bookKey,
+        title: _title(volume),
+        presetId: base,
+        kind: TtsRenderJobKind.manga,
+        lineRequests: requests,
+      );
+    } on TtsRenderRejected {
+      FushiToast.show(
+        msg: t.manga_audio_package_error_importing,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     FushiToast.show(msg: t.manga_audio_backfill_queued);
     if (mounted) setState(() {});
   }
@@ -660,7 +711,9 @@ class _MangaAudioStudioPageState extends State<MangaAudioStudioPage> {
   }
 
   String _linePath(MangaRenderedLine line) => p.join(
-    mangaRenderManifestFile(widget.appModel, widget.bookKey).parent.path,
+    (_manifestFile ?? mangaRenderManifestFile(widget.appModel, widget.bookKey))
+        .parent
+        .path,
     line.file,
   );
 

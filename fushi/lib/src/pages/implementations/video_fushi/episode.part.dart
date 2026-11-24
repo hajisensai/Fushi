@@ -383,6 +383,7 @@ extension _VideoEpisode on _VideoFushiPageState {
       if (_subtitleListVisible.value) {
         _closeSubtitleJumpList();
       }
+      if (_liveChatVisible.value) _liveChatVisible.value = false;
       _episodeListVisible.value = true;
       if (_videoSidePanel.value != null) {
         _hideVideoSidePanel();

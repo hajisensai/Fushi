@@ -125,7 +125,51 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 音乐播放（无缝 / ReplayGain）：生效点是音乐引擎下发给独立 libmpv 实例的属性
   // （gapless-audio / prefetch-playlist / replaygain），harness 里没有在播的 mpv。
   // 设置值 → 引擎输出设置 → mpv 属性这条链由 music_player_engine_test 咬住。
+  // 本批合入的三组新设置（拍板 R721ZgWVSB / EuOLprw_dV / zTedU_pOQF）：生效点分别在
+  // 漫画阅读器的翻页手势、截屏识字浮层的制卡、视频页的聊天回放栏，harness 设置页里
+  // 都没有。偏好 → 生效的链由各自专项测试咬住。
+  // 漫画「反转方向键翻页」（反馈 uz_2m0E_Eu ④）：生效点是漫画页的键盘解析，harness
+  // 设置页里没有漫画页；偏好 → resolveMangaArrowPageTurn(reverse:) 的链由专项测试咬住。
+  'manga/Reverse arrow-key page turns':
+      'test/shortcuts/page_turn_unify_test.dart（reverse 对调跨页方向校正结果；漫画页按 mangaReverseArrowPageTurn 传 reverse）',
+  'manga/Swipe page-turn sensitivity':
+      'test/media/manga/manga_swipe_sensitivity_test.dart（阈值 = 基准 / 灵敏度，注入手势 JS 后慢拖翻不翻页随值变）',
+  'floatingBall/Frame the screenshot when adding a card':
+      'test/lookup/screen_ocr_overlay_mining_frame_test.dart（开 → 制卡前弹框选；任一偏好关 → 不弹）',
+  'video/Open chat replay automatically':
+      'test/media/video/video_live_chat_panel_test.dart（videoLiveChatOpensOnLoad：设置开 → 换上聊天回放即开栏）',
+  'video/Show names in chat replay':
+      'test/media/video/video_live_chat_panel_test.dart（关掉「显示用户名」后不出发送者）',
   'music/Gapless playback': 'test/media/music/music_player_engine_test.dart',
+  // 歌词页 MV 背景（#4249）：生效点是正在开着的歌词页里的 MusicMvBackdropController
+  // （harness 设置页里没有歌词页、也没有在播的曲目）。歌词页把偏好原样赋给
+  // controller.enabled（music_lyrics_page.dart），开 / 关 / 再开对画面来源订阅的效果
+  // 由专项测试咬住。
+  'music/Show the MV behind lyrics':
+      'test/pages/music_lyrics_mv_backdrop_setting_effect_test.dart',
+  // 全屏歌词动画：生效点是歌词页里的全屏动画层（harness 设置页里没有正在播的歌词页）。
+  // 歌词页把这几项偏好原样交给宿主，宿主 → 样式 context 由专项测试咬住。
+  'music/Animated lyrics style':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Random style for each song':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animation intensity':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animated lyrics text size':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Hide animated lyrics subtitles':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animated lyrics subtitle content':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animated lyrics subtitle size':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animated lyrics subtitle font':
+      'test/media/music/visualizer/lyric_visualizer_settings_effect_test.dart',
+  'music/Animation background':
+      'test/media/music/visualizer/lyric_visualizer_host_test.dart（宿主按请求画背景）',
+  // 动作行：打开模型管理对话框；下载 / 删除与状态由专项测试咬住。
+  'music/Audio analysis models':
+      'test/media/music/analysis/music_analysis_wiring_test.dart',
   // 在线插件音质：生效点是插件曲目在 mpv 后端打开时经 musicPluginPlaybackHost.quality 取档，
   // harness 里没有插件也没有在播的 mpv。设置值 → 持久化 → 取流装配点拿到新档、清掉「只对这首」
   // 由 app_model_music_plugin_quality_test 咬住；只重开插件曲目 / 只重排下一首由
@@ -862,7 +906,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'navigation/Library panorama': 'test/pages/home_panorama_panel_test.dart',
   // 悬浮球「AI」按钮：默认勾选 / 平台可用 / 场景上下文在专项测试里钉死。
   'floatingBall/AI': 'test/floating_ball/floating_ball_ai_action_test.dart',
-  // 手柄查词模式开启方式（副屏 S6）：偏好的读取与默认（副屏在用 = 按住 L1、否则关）
+  // 手柄查词模式开启方式（副屏 S6）：偏好的读取与默认（一律按住 L1，单屏也是）
   // 和按键行为由 ControllerLookupMode 的专项测试钉死（生效点在手柄分派层）。
   'general/Controller lookup mode':
       'test/second_screen/controller_lookup_mode_test.dart',
@@ -1082,6 +1126,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // buildFfmpegClipArgs tempo 参数）+ 偏好写穿 + 阅读器制卡调用点源码守卫，都在专项测试里。
   'cardCreation/Match sentence audio to playback speed':
       'test/settings/mining_audio_follow_playback_speed_guard_test.dart + test/utils/desktop_audio_clipper_test.dart',
+  // 制卡句子音频跟随播放音量（d7mXlstcv9）：效果在 ffmpeg `-af volume`（纯函数
+  // buildFfmpegVolumeFilter / 增益换算）+ 偏好写穿 + 歌曲 / 有声书制卡调用点，都在专项测试里。
+  'cardCreation/Match sentence audio to playback volume':
+      'test/settings/mining_audio_follow_playback_volume_test.dart + test/pages/music_lyrics_page_test.dart + test/utils/desktop_audio_clipper_test.dart',
   // TODO-135: 默认标签区现无条件显示（fushi/分类两开关移出 isConfigured 门控），
   // focus-driven 现能驱动到它们；但它们写的是 AnkiSettings（经 SharedPreferences，
   // 非本测试的内存 DB），故 changed=false。标签拼装行为本体由 fushi_anki 真制卡
@@ -1942,6 +1990,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 任何 AI 不调度、开着时接管旧自动整理的触发点，编排逻辑由引擎测试覆盖。
   'ai/Curate the library automatically':
       'test/ops/ctl_library_curate_routes_test.dart',
+  // AI 管库自动复查（默认开）：生效点是库管家自动路径跑完后的无人值守助手会话
+  // （harness 里没有导入、操作上下文与 AI 提供商）。专项测试咬住开关关 / 没指派
+  // 助手不跑、首次全库 → 无新条目不跑 → 增量、请求失败不推进水位、流水线关着也复查。
+  'ai/Review the library with the AI assistant after imports':
+      'test/media/library_curate/library_agent_review_test.dart',
   // 允许已配对设备使用 AI 助手：生效点是互联 host 的 /api/assistant agent 门（harness
   // 里没有互联服务器）。专项测试咬住「关着 → disabled、不建模型」与控制通道写不进去。
   "interconnect/Use this device's AI assistant":

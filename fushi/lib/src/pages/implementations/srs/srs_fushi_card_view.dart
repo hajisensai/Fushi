@@ -1382,6 +1382,24 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
                 : AlignmentDirectional.centerStart,
             child: _Chip(text: srsPlainText(value), style: s),
           ),
+          // 大号发音键（听力预设正面）：与听力卡题面那颗同一按钮，每段音频一颗。
+          FushiCardFieldStyle.audio => switch (srsAudioSources(value)) {
+            final List<String> names when names.isNotEmpty => Wrap(
+              alignment: front ? WrapAlignment.center : WrapAlignment.start,
+              spacing: s.pad,
+              runSpacing: s.pad,
+              children: <Widget>[
+                for (final String name in names)
+                  _AudioButton(
+                    name: name,
+                    large: true,
+                    style: s,
+                    onPlay: (String n) => _playNames(<String>[n]),
+                  ),
+              ],
+            ),
+            _ => null,
+          },
           _ => _htmlFragment(
             srsFushiItemHtml(item, widget.fields) ?? '',
             '$key-body',
@@ -2004,7 +2022,7 @@ WidgetSpan srsRubyWidgetSpan({
 ///
 /// 为什么不用 [Offstage]：释义子树由 GlobalKey 从背面（语义可见）挪进来时（预览切回正面、
 /// 复习换下一张），[RenderOffstage] 不遍历子树语义，挪过来的语义节点仍指着背面那棵已卸下
-/// 的父节点；Flutter 3.47 的 flushSemantics 照这条过期父链算几何，触发
+/// 的父节点；Flutter 3.47 起（3.50.0 仍是）的 flushSemantics 照这条过期父链算几何，触发
 /// `computeChildGeometry` 的「父不是祖先」断言（无障碍开启时每次背面 → 正面都炸）。
 class SrsWarmOffstage extends SingleChildRenderObjectWidget {
   const SrsWarmOffstage({super.key, required super.child});

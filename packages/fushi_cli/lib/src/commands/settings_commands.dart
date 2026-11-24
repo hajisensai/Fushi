@@ -72,6 +72,15 @@ const List<CtlCommandGroup> settingsCommandGroups = <CtlCommandGroup>[
         build: _buildConfigItems,
         render: _renderConfigItems,
       ),
+      CtlCommandSpec(
+        name: 'backdrop-image',
+        summary:
+            '用一张图当页面背景（外观 › 页面背景的「图片」；--portrait 竖屏图，'
+            '--module 只给某个主模块；直接用原图，不裁剪）',
+        usage: '<图片>',
+        configure: _configureBackdropImage,
+        build: _buildBackdropImage,
+      ),
     ],
   ),
   CtlCommandGroup(
@@ -955,3 +964,23 @@ String _renderKeysChange(Object? data) {
   }
   return out.toString();
 }
+
+void _configureBackdropImage(ArgParser parser) {
+  parser
+    ..addFlag('portrait', negatable: false, help: '设成竖屏单独用的那张')
+    ..addOption(
+      'module',
+      help:
+          '只给这个主模块设（home / books / manga / video / music / browse / '
+          'dictionaries / srs / games / web / settings）',
+    );
+}
+
+CtlRequestSpec _buildBackdropImage(CtlCommandContext c) => CtlRequestSpec.post(
+  '/api/admin/appearance/page-backdrop/image',
+  body: <String, Object?>{
+    'path': ctlAbsolutePath(c.positional(0, '图片')),
+    if (c.flag('portrait')) 'portrait': true,
+    'module': ?c.option('module'),
+  },
+);

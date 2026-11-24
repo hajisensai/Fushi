@@ -25,6 +25,7 @@ import 'dart:math' as math;
 import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
@@ -216,6 +217,10 @@ class MangaReadAloudController extends ChangeNotifier {
   bool _backward = false;
   bool _spokeAny = false;
 
+  /// [playFromSentence] 指定的句子（OCR 块）：那页的朗读计划还没建好时先记在这里，
+  /// [_drive] 拿到那页计划后再换成句下标。任何一次打断都清掉它。
+  List<int>? _pendingSentenceBlocks;
+
   /// 本控制器自己发起的打断（stop / 切句 / 跳页 / 暂停）每次 +1。
   int _playGeneration = 0;
 
@@ -225,6 +230,9 @@ class MangaReadAloudController extends ChangeNotifier {
   final Map<int, Future<MangaPageTextResult>> _texts =
       <int, Future<MangaPageTextResult>>{};
   final Map<int, _PagePlan> _plans = <int, _PagePlan>{};
+
+  /// 本卷已排过的页里页面注过音的词：只在首次出现处注音的词，后面页也按它念。
+  final MangaRubyReadings _learnedReadings = MangaRubyReadings();
   final Set<Future<void>> _disposing = <Future<void>>{};
   bool _disposed = false;
 
@@ -306,26 +314,54 @@ class MangaReadAloudController extends ChangeNotifier {
       return;
     }
     final _PagePlan? plan = _plans[pageIndex];
-    if (plan != null && blocks.isNotEmpty) {
-      final Set<int> wanted = blocks.toSet();
-      int best = -1;
-      int bestOverlap = 0;
-      for (int i = 0; i < plan.utterances.length; i++) {
-        final int overlap = plan.utterances[i].blocks
-            .where(wanted.contains)
-            .length;
-        if (overlap > bestOverlap) {
-          best = i;
-          bestOverlap = overlap;
-        }
-      }
-      if (best >= 0) {
-        _page = pageIndex;
-        _index = best;
-        _backward = false;
-      }
+    final int? best = plan == null ? null : _utteranceFor(plan, blocks);
+    if (best != null) {
+      _page = pageIndex;
+      _index = best;
+      _backward = false;
     }
     resume();
+  }
+
+  /// 「从此句播放」（右键菜单 / 长按面板 / 鼠标「跳到点击句」，与小说有声书的「从本句
+  /// 播放」同义）：从第 [pageIndex] 页与 [blocks] 交集最大的那句句首读起，正在读、暂停、
+  /// 失败停住都可以。那页的朗读计划还没建好时先记下、建好后再定位；对不上任何句子时
+  /// 从那页第一句读。没在朗读（未开始 / 已读完）时什么都不做。
+  void playFromSentence(int pageIndex, List<int> blocks) {
+    if (_disposed || !isActive) return;
+    _interrupt();
+    if (_problem is MangaReadAloudSynthesisProblem) {
+      _plans[_page]?.scheduler?.resume();
+    }
+    _page = pageIndex.clamp(0, math.max(0, _host.pageCount - 1));
+    _backward = false;
+    _finish = null;
+    final _PagePlan? plan = _plans[_page];
+    if (plan == null) {
+      _index = 0;
+      _pendingSentenceBlocks = blocks;
+    } else {
+      _index = _utteranceFor(plan, blocks) ?? 0;
+    }
+    _launch();
+  }
+
+  /// [plan] 里与 [blocks] 交集最大的那句的下标；对不上任何句子为 null。
+  static int? _utteranceFor(_PagePlan plan, List<int> blocks) {
+    if (blocks.isEmpty) return null;
+    final Set<int> wanted = blocks.toSet();
+    int? best;
+    int bestOverlap = 0;
+    for (int i = 0; i < plan.utterances.length; i++) {
+      final int overlap = plan.utterances[i].blocks
+          .where(wanted.contains)
+          .length;
+      if (overlap > bestOverlap) {
+        best = i;
+        bestOverlap = overlap;
+      }
+    }
+    return best;
   }
 
   void next() {
@@ -430,6 +466,7 @@ class MangaReadAloudController extends ChangeNotifier {
   /// 只有正在播自己的句子时才停全局播放器。
   void _interrupt() {
     _playGeneration++;
+    _pendingSentenceBlocks = null;
     _follower.interrupt();
     if (_ownsPlayback) {
       _ownsPlayback = false;
@@ -469,6 +506,11 @@ class MangaReadAloudController extends ChangeNotifier {
       }
       final _PagePlan plan = resolved as _PagePlan;
       _dropPlans(keep: <int>{_page, _page + 1});
+      final List<int>? pending = _pendingSentenceBlocks;
+      if (pending != null) {
+        _pendingSentenceBlocks = null;
+        _index = _utteranceFor(plan, pending) ?? 0;
+      }
       if (_index == _kLastOfPage) _index = plan.utterances.length - 1;
       if (plan.utterances.isEmpty || _index >= plan.utterances.length) {
         if (_backward && _page > 0) {
@@ -618,6 +660,7 @@ class MangaReadAloudController extends ChangeNotifier {
       case MangaPageTextReady(page: final MokuroImage image):
         final _PagePlan? raced = _plans[page];
         if (raced != null) return raced;
+        _learnedReadings.learnPage(image.blocks);
         final List<MangaReadAloudUtterance> utterances = planMangaPageReadAloud(
           image,
           pageIndex: page,
@@ -625,6 +668,7 @@ class MangaReadAloudController extends ChangeNotifier {
           pronunciation: _pronunciation,
           preSynthesis: _preSynthesis,
           maxInputLength: _rig.maxInputLength,
+          learnedReadings: _learnedReadings,
         );
         final List<int> chunkStart = <int>[];
         final List<String> texts = <String>[];

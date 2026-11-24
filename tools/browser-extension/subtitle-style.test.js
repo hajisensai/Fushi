@@ -151,15 +151,20 @@ test('boxAutoFit：默认开；显式 false 才关；只有底板有高度时才
   assert.strictEqual(S.fitEnabled({ boxWidth: 60 }), false);
 });
 
-test('nextFitScale：放不下就收、有富余就放、刚好就收手；顶到区间边界不再空转', () => {
+test('nextFitScale：放不下就收、有富余也不放（只缩不放）、刚好就收手；顶到区间边界不再空转', () => {
   const S = loadStyle();
   // 内容比可用空间高一倍 → 倍率减半。
   let step = S.nextFitScale(1, { contentH: 200, availH: 100, contentW: 0, availW: 0 });
   assert.ok(step.fit < 1 && Math.abs(step.fit - 0.5) < 0.001);
   assert.strictEqual(step.done, false);
-  // 只占一半 → 放大一倍（「底板越大字越大」）。
+  // 只缩不放（反馈 UAiGljqcTw，维护者拍板「默认和 mpv 一样」）：上限就是设置字号。
+  assert.strictEqual(S.FIT_RANGE[1], 1);
+  // 设置字号下只占一半 → 原样保持设置字号并收手，不放大去填满底板。
   step = S.nextFitScale(1, { contentH: 50, availH: 100, contentW: 0, availW: 0 });
-  assert.ok(Math.abs(step.fit - 2) < 0.001);
+  assert.deepEqual(step, { fit: 1, done: true });
+  // 之前缩过头（0.5 下只占三分之一）→ 往回放，但最多回到设置字号。
+  step = S.nextFitScale(0.5, { contentH: 30, availH: 100, contentW: 0, availW: 0 });
+  assert.strictEqual(step.fit, 1);
   // 刚好放下（容差内）→ 收手。
   assert.strictEqual(S.nextFitScale(1, { contentH: 99, availH: 100 }).done, true);
   // 横向溢出只许收不许放：高度还有富余也不放大。
@@ -209,7 +214,7 @@ function makeFitPair(opts) {
   return { el, textEl, props, fit, font };
 }
 
-test('fitTextInto：长句缩到放得下、短句放大填满盒子；关掉自适应/随内容时交还 CSS', () => {
+test('fitTextInto：长句缩到放得下、短句保持设置字号（只缩不放）；关掉自适应/随内容时交还 CSS', () => {
   const S = loadStyle();
   const frame = { width: 1000, height: 600 };
   // 底板 40% 宽 × 20% 高 = 400 × 120 px，扣掉上下内边距 24 后可用高 96。
@@ -223,12 +228,15 @@ test('fitTextInto：长句缩到放得下、短句放大填满盒子；关掉自
   assert.ok(fitLong < 1, '长句必须缩小，实得 ' + fitLong);
   assert.ok(long.textEl.scrollHeight <= availH + 0.5, '收手时必须真的放得下');
 
-  // ② 短句（3 字）：一行绰绰有余 → 放大到把盒子填满（「底板越大字越大」）。
+  // ② 短句（3 字）：一行绰绰有余 → 保持设置字号，不写倍率（旧版放大到填满盒子，
+  // 于是一行的字比两行的大，反馈 UAiGljqcTw）。
   const short = makeFitPair({ chars: 3, availW: availW });
   const fitShort = S.fitTextInto(short.el, short.textEl, style, frame);
-  assert.ok(fitShort > 1, '短句应放大，实得 ' + fitShort);
-  assert.ok(short.textEl.scrollHeight <= availH + 0.5, '放大后仍不许溢出');
-  // 同一个盒子里，长句的字比短句小 = 「可展示内容多少」随盒子变。
+  assert.strictEqual(fitShort, 1, '短句保持设置字号，实得 ' + fitShort);
+  assert.strictEqual(short.props.has('--fushi-sub-fit'), false);
+  // ②b 刚好一行放得下的中句（12 字）同样是设置字号——放得下的句子之间字号完全一致。
+  const mid = makeFitPair({ chars: 12, availW: availW });
+  assert.strictEqual(S.fitTextInto(mid.el, mid.textEl, style, frame), 1);
   assert.ok(fitLong < fitShort);
 
   // ③ 关掉自适应：倍率交还 CSS（字号回到用户设的「大小」）。
@@ -261,13 +269,15 @@ test('applyFit：非 1 写 --fushi-sub-fit、回 1 清掉；坏元素不抛', ()
   const S = loadStyle();
   const props = new Map();
   const el = { style: { setProperty: (k, v) => props.set(k, v), removeProperty: (k) => props.delete(k) } };
-  S.applyFit(el, 1.234);
-  assert.strictEqual(props.get('--fushi-sub-fit'), '1.234');
+  S.applyFit(el, 0.634);
+  assert.strictEqual(props.get('--fushi-sub-fit'), '0.634');
   S.applyFit(el, 1);
   assert.strictEqual(props.has('--fushi-sub-fit'), false);
-  // 区间外的值夹住，坏值当 1。
+  // 区间外的值夹住（上限 1 = 设置字号，等于清掉），坏值当 1。
+  S.applyFit(el, 0.01);
+  assert.strictEqual(props.get('--fushi-sub-fit'), String(S.FIT_RANGE[0]));
   S.applyFit(el, 99);
-  assert.strictEqual(props.get('--fushi-sub-fit'), String(S.FIT_RANGE[1]));
+  assert.strictEqual(props.has('--fushi-sub-fit'), false);
   S.applyFit(el, NaN);
   assert.strictEqual(props.has('--fushi-sub-fit'), false);
   assert.doesNotThrow(() => S.applyFit(null, 2));

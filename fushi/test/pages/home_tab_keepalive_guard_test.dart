@@ -270,13 +270,38 @@ void main() {
       isTrue,
       reason: 'BUG-995：概览门控必须并入远端条目（homeRemote）',
     );
+    // BUG-5197 起远端两份列表按输入记忆（[_remoteListsMemo]）：首页那份 `home`
+    // 在记忆体里取自未筛选的远端可见条目，homeRemote 就是它。BUG-5330 起这份判据
+    // 与侧栏视频速览共用 [visibleHomeRemoteVideos]（只过「显示远端条目」开关、
+    // 清单失败态、上锁、本机同集去重，不吃任何筛选）。
     expect(
       RegExp(
-        r'final List<RemoteVideoInfo> homeRemote = <RemoteVideoInfo>\[\s*'
-        r'for \(final RemoteVideoInfo v in _visibleRemoteVideos\(',
+        r'final List<RemoteVideoInfo> home = visibleHomeRemoteVideos\(\s*'
+        r'remote: remoteState == null \|\| remoteState\.failed',
       ).hasMatch(videoSrc),
       isTrue,
-      reason: 'BUG-995：homeRemote 必须取自远端可见条目（_visibleRemoteVideos）',
+      reason: 'BUG-995：homeRemote 必须取自远端可见条目（visibleHomeRemoteVideos，不筛）',
+    );
+    final String shared = File(
+      'lib/src/media/video/video_continue_watching.dart',
+    ).readAsStringSync();
+    final String sharedBody = shared.substring(
+      shared.indexOf('List<RemoteVideoInfo> visibleHomeRemoteVideos({'),
+      shared.indexOf('class VideoContinueLibrary'),
+    );
+    expect(
+      sharedBody.contains('!showRemoteEntries') &&
+          sharedBody.contains('visibility.hidesRemoteVideo(v)') &&
+          !sharedBody.contains('filter'),
+      isTrue,
+      reason: 'BUG-995：首页远端判据只过开关 / 上锁，不吃标签筛选',
+    );
+    expect(
+      videoSrc.contains(
+        'final List<RemoteVideoInfo> homeRemote = remoteLists.home;',
+      ),
+      isTrue,
+      reason: 'BUG-995：homeRemote 就是记忆体里的未筛选远端列表',
     );
     // _buildOverviewSection 必须接收 remoteVideos 并把它们并进概览 entries。
     expect(

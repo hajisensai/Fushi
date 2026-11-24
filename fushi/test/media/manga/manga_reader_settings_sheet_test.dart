@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
@@ -261,9 +262,11 @@ void main() {
           globalDefaults: const MangaReaderPreferences(),
           // 纵向分页：只对它生效的「显示页间距」也要出现（见下一条测试）。
           // 台词文字条开着：只在它开着时才有意义的「文字条字号」也要出现。
+          // 桌面放大触发选「停留」：只在它下才有意义的「停留时长」也要出现（默认是按住 Ctrl）。
           overrides: const <String, Object?>{
             'mode': 'paged_vertical',
             'bubbleTextStrip': true,
+            'bubbleZoomHover': 'dwell',
           },
           onChanged: (Map<String, Object?> next) async {},
         ),
@@ -586,6 +589,50 @@ void main() {
       findsOneWidget,
     );
     expect(writes.last.animation, MangaPageAnimation.none);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('swipe page-turn sensitivity slider writes the global setting '
+      'on release (R721ZgWVSB)', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final List<MangaPageTurnSettings> writes = <MangaPageTurnSettings>[];
+    await tester.pumpWidget(
+      host(
+        MangaReaderSettingsSheet(
+          globalDefaults: const MangaReaderPreferences(),
+          overrides: const <String, Object?>{},
+          onChanged: (Map<String, Object?> next) async {},
+          pageTurn: const MangaPageTurnSettings(followDrag: false),
+          onPageTurnChanged: (MangaPageTurnSettings v) async => writes.add(v),
+        ),
+        width: null,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Finder row = find.byKey(
+      const ValueKey<String>('manga_swipe_page_turn_sensitivity'),
+    );
+    expect(row, findsOneWidget);
+    AdaptiveSettingsSliderRow slider() =>
+        tester.widget<AdaptiveSettingsSliderRow>(row);
+    expect(slider().value, kMangaSwipePageTurnSensitivityDefault);
+    expect(slider().min, kMangaSwipePageTurnSensitivityMin);
+    expect(slider().max, kMangaSwipePageTurnSensitivityMax);
+
+    // 拖动中只改草稿（读数跟手），不写偏好。
+    slider().onChanged(2.2);
+    await tester.pump();
+    expect(writes, isEmpty);
+    expect(slider().readout, '2.2');
+
+    // 松手写一次，其余翻页设置原样带上。
+    slider().onChangeEnd!(2.2);
+    await tester.pumpAndSettle();
+    expect(writes, hasLength(1));
+    expect(writes.single.swipeSensitivity, closeTo(2.2, 1e-9));
+    expect(writes.single.followDrag, isFalse);
+    expect(slider().value, closeTo(2.2, 1e-9));
     expect(tester.takeException(), isNull);
   });
 }

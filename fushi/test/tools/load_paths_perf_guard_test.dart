@@ -136,12 +136,12 @@ void main() {
         page,
         'Future<void> _loadWatchRecency() async {',
       );
-      expect(recency.contains('_buildWatchRecency('), isTrue);
+      expect(recency.contains('buildVideoWatchRecency('), isTrue);
       final String full = methodBody(
         page,
         'Future<void> _loadLibraryMapsInner(int requestGeneration)',
       );
-      expect(full.contains('_buildWatchRecency('), isTrue);
+      expect(full.contains('buildVideoWatchRecency('), isTrue);
       // 两条路径各记各的代，互不取消。
       expect(recency.contains('_watchRecencyRequestGeneration'), isTrue);
       expect(full.contains('_libraryMapsRequestGeneration'), isTrue);
@@ -173,9 +173,10 @@ void main() {
       final String src = read(
         '../packages/fushi_engine/lib/stats/stat_facts.dart',
       );
+      // BUG-4960：读库 + 派生整体在后台 isolate 的 _loadStatFactsHere 里。
       final String body = methodBody(
         src,
-        'Future<StatFacts> loadStatFacts(',
+        'Future<StatFacts> _loadStatFactsHere(',
         topLevel: true,
       );
       expect(body.contains('await Future.wait<Object?>('), isTrue);

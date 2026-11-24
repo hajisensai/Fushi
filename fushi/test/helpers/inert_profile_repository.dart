@@ -1,3 +1,4 @@
+import 'package:fushi/src/profile/combo/combo_repository.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileMediaKind, ProfileRow;
@@ -116,8 +117,29 @@ class InertProfileRepository implements ProfileRepository {
   ) async {}
 
   @override
-  Future<Map<String, String>> readWorkScopedAnkiSettings(int profileId) async =>
-      const <String, String>{};
+  Future<Map<String, String>?> readWorkScopedAnki(
+    Map<ComboScope, int> layers,
+  ) async => null;
+
+  @override
+  ComboRepository get combos =>
+      throw UnsupportedError('InertProfileRepository has no combo rows');
+
+  @override
+  Future<Map<SettingKey, String>> currentSettings({
+    Set<String>? categories,
+  }) async => const <SettingKey, String>{};
+
+  @override
+  Future<Map<ComboScope, int>> resolveBindingLayers({
+    required String? bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
+  }) async => const <ComboScope, int>{};
+
+  @override
+  Future<WorkComboView?> loadWorkComboView(Map<ComboScope, int> layers) async =>
+      null;
 
   @override
   Future<int> resolveProfileId({

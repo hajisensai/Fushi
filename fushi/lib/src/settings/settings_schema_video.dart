@@ -782,6 +782,35 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: kDefaultVideoDanmakuMaxActive.toDouble(),
           ),
+          // YouTube 直播回放的聊天回放栏（拍板台 zTedU_pOQF，方案 b）：主入口是控制条「聊天」
+          // 按钮（只在有聊天回放的视频上出现），这里只放两条行为偏好；与弹幕开关无关，
+          // 不挂在「显示弹幕」的 visible 门下。
+          SettingsSwitchItem(
+            id: 'video.live_chat.auto_open',
+            title: t.video_setting_live_chat_auto_open,
+            subtitle: t.video_setting_live_chat_auto_open_hint,
+            icon: FushiIcons.forum,
+            video: VideoPlacement(group: VideoGroup.danmaku, order: 100),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoLiveChatAutoOpen,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoLiveChatAutoOpen(value);
+            },
+            defaultValue: false,
+          ),
+          SettingsSwitchItem(
+            id: 'video.live_chat.show_author',
+            title: t.video_setting_live_chat_show_author,
+            subtitle: t.video_setting_live_chat_show_author_hint,
+            icon: FushiIcons.person,
+            video: VideoPlacement(group: VideoGroup.danmaku, order: 110),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.videoLiveChatShowAuthor,
+            onChanged: (SettingsContext settingsContext, bool value) async {
+              await settingsContext.appModel.setVideoLiveChatShowAuthor(value);
+            },
+            defaultValue: true,
+          ),
           // 自建/镜像 Dandanplay 服务器地址是第三方端点，已迁到「在线服务」分区
           // （settings_schema_services.dart）；弹幕行为开关留在这里。
         ],

@@ -109,6 +109,8 @@ typedef PopupDisplayPrefs = ({
   int autoExpandRows,
   List<String> collapsedDictionaryNames,
   List<String> expandedDictionaryNames,
+  List<String> kanjiCollapsedDictionaryNames,
+  List<String> kanjiExpandedDictionaryNames,
 });
 
 /// [prefs] 编成扩展 theme 通道的键值（非 CSS 变量、仅扩展 JS 消费，与 `--fushi-swipe-close`
@@ -127,4 +129,10 @@ Map<String, String> buildPopupDisplayPrefsThemeVars(PopupDisplayPrefs prefs) =>
       '--fushi-auto-expand-rows': '${prefs.autoExpandRows}',
       '--fushi-collapsed-dicts': jsonEncode(prefs.collapsedDictionaryNames),
       '--fushi-expanded-dicts': jsonEncode(prefs.expandedDictionaryNames),
+      '--fushi-kanji-collapsed-dicts': jsonEncode(
+        prefs.kanjiCollapsedDictionaryNames,
+      ),
+      '--fushi-kanji-expanded-dicts': jsonEncode(
+        prefs.kanjiExpandedDictionaryNames,
+      ),
     };

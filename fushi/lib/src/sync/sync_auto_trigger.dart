@@ -11,6 +11,7 @@ import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
+import 'package:fushi/src/sync/interconnect_manga_chapter_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -304,6 +305,10 @@ Future<({int ran, List<Object> errors})> runOnAuthenticatedSyncChannels({
       ran++;
     } catch (e, stack) {
       errors.add(e);
+      // BUG-5262（反馈 w8sFMyflft）：互联对端离线（电脑没开 / 不在同一网络）是预期
+      // 状态，不是应用错误：交还给调用方（推送退避、界面显示「对端离线」），不进用户
+      // 可见错误日志。此前每次复习自动推送都在这里记一条带整段堆栈的错误。
+      if (e is SyncPeerUnreachableError) continue;
       ErrorLogService.instance.log(
         'runOnAuthenticatedSyncChannels(interconnect=${channel.isInterconnect})',
         e,
@@ -1707,6 +1712,16 @@ Future<SyncConflict?> syncExitedBookOnChannel({
   required EpubBookRow book,
 }) async {
   if (backend is InterconnectSyncBackend) {
+    // 章节式互联漫画没有可与 host 对齐的书级进度（BUG-5352），进度按章同步（拍板
+    // design-ic-manga-chapter-progress）：按章 LWW，不产生冲突；老 host（404）静默跳过。
+    if (InterconnectMangaChapterSync.syncsChapterProgress(book)) {
+      await InterconnectMangaChapterSync(
+        db: db,
+        backend: backend,
+      ).syncOne(book);
+      return null;
+    }
+    if (!InterconnectBookProgressSync.syncsBookProgress(book)) return null;
     final InterconnectBookProgressSync sync = InterconnectBookProgressSync(
       db: db,
       backend: backend,

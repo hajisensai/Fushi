@@ -30,7 +30,10 @@ part of '../video_fushi_page.dart';
 /// [_videoJumpPrefs] 设置 / [_videoJumpAutoHide]）。
 extension _VideoJumpBack on _VideoFushiPageState {
   /// 历史所属的「哪一集」：换集 / 换片后旧集的毫秒在新集上没有意义，作废整段历史。
-  String get _videoJumpScopeKey => '$_activeBookUid#$_currentEpisode';
+  /// 原盘「全部播放」跨集只换库身份、播放器时间轴不变（BUG-5356），历史照样有效。
+  String get _videoJumpScopeKey => _discMenuEpisodes != null
+      ? _playerAxisScope
+      : '$_activeBookUid#$_currentEpisode';
 
   /// 历史是否属于当前这一集（build 里只读这个判据，不在 build 里改状态）。
   bool get _videoJumpHasHistory =>

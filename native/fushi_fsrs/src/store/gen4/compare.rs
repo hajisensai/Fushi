@@ -21,6 +21,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use rusqlite::{Connection, OptionalExtension, ToSql, params};
+use serde_json::{Value, json};
 
 use super::cache::CFG_KEY;
 use super::class::{ClassDiff, ClassDiffs, builtin_rule_canon, legacy_config_for};
@@ -28,9 +29,10 @@ use super::derive::{Index, R_LIVE, Ref, body_of};
 use super::schema::sql;
 use super::truth::{EditRead, Truth};
 use crate::gen4::op::{Body4, Log4};
+use crate::store::sync2::load_op;
 use crate::store::sync2::semantics::current_tags;
 use crate::sync2::id::{Id, Key};
-use crate::sync2::op::EntKind;
+use crate::sync2::op::{Body, EntKind};
 use crate::sync2::vv::OpId;
 
 /// 有差异的类别：(类别, 只在旧库, 只在新库)。空 = 完全一致。
@@ -511,6 +513,17 @@ pub(crate) const NOTE_COLS: &[(&str, &str)] = &[
     ("dupe_norm", "dupe_norm"),
     ("source_key", "source_key"),
 ];
+/// [NOTE_COLS] 里装笔记内容（或由内容算出）的列：报告默认不带原文（[column_diffs] 的 `redact`）。
+pub(crate) const NOTE_CONTENT_COLS: &[&str] = &[
+    "term_key",
+    "reading_key",
+    "sort_field",
+    "tags_json",
+    "media_refs",
+    "source_title",
+    "dupe_norm",
+    "source_key",
+];
 pub(crate) const CARD_COLS: &[(&str, &str)] = &[
     ("id", "id"),
     ("note_id", "note_id"),
@@ -641,11 +654,19 @@ pub(crate) struct Collisions {
     /// 撞车的修改记录 ID：`edits` 两边都不比。不看状态——撞车的另一条在新代里被支配了也一样（协议 3 可能留的正是那条）。
     pub edit_ids: BTreeSet<Ref>,
     /// 撞车、且在新代里活着的修改落在的笔记（`note:ID`）：这些笔记的内容（与由内容决定的卡）对不上协议 3 是到达顺序
-    /// 造成的，缓存层不比它们与它们的卡。
+    /// 造成的，缓存层不比它们与它们的卡。跨 profile 撞车的笔记（[entities]）也在这里：协议 3 按 `profile_uid` 列本
+    /// profile 的笔记（`caches.rs` 的全量刷新），行归了别的 profile 的笔记在它的缓存里没有。
     pub notes: BTreeSet<String>,
     /// 撞车的修改落在的寄存器（`种类:ID`, 键），两条都算：协议 3 只存了其中一条，另一个寄存器的胜者随之不同（干跑的
     /// `registerWinners` 不比这些寄存器）。
     pub registers: BTreeSet<(String, String)>,
+    /// 跨 profile 撞车的实体（[taken_entities]）：本 profile 的操作日志里有身份记录、协议 3 的 `srs_entities` 行却归了
+    /// 同库另一个 profile。`entities` 一类按本 profile 的操作集合把它们算进协议 3 一侧；其中的笔记同时进 [notes]。
+    pub entities: BTreeSet<Ref>,
+    /// 行没了的实体（BUG-5294，[taken_entities]）：本 profile 的操作日志里有身份记录、协议 3 的 `srs_entities` 里哪个
+    /// profile 名下都没有这一行（行归过同库另一个 profile，那个 profile 后来被删、行随它删掉）。协议 3 自己的规则下
+    /// （`project_entity`：没有行就写）它是这个 profile 的实体，`entities` 一类照样算进协议 3 一侧；其中的笔记同时进 [notes]。
+    pub orphaned: BTreeSet<Ref>,
 }
 
 /// 扫一遍 `reg_ix` 的全部写入，找出 [Collisions]。同时在内存里的只有每个旧 dot 的第一条修改（大库三十多万个）。
@@ -1311,7 +1332,7 @@ pub(crate) fn against_protocol_3(
             .collect()
     };
     // 撞车的旧修改记录 ID 两边都不比（[Collisions]）。
-    let collided = collisions(t, col)?;
+    let mut collided = collisions(t, col)?;
     let mut old_edits = protocol_3_live_edits(src, profile, &held_ents)?;
     let mut new_edits = live_edit_ids(t, col, &held_ents)?;
     old_edits.retain(|id| !collided.edit_ids.contains(id));
@@ -1328,17 +1349,27 @@ pub(crate) fn against_protocol_3(
         logs,
         refs("SELECT DISTINCT id FROM log_ix WHERE col = ?1")?,
     );
-    let entities = old_refs(
+    // 协议 3 一侧的实体：本 profile 名下的 `srs_entities` 行，加上行归了同库另一个 profile、本 profile 的操作日志里
+    // 也有身份记录的（[taken_entities]）。
+    let mut entities = old_refs(
         src,
         "SELECT id FROM srs_entities WHERE profile_uid = srs_id(?1)",
         profile,
     )?;
-    push_refs(
-        &mut diff,
-        "entities",
-        entities,
-        refs("SELECT DISTINCT id FROM ent_ix WHERE col = ?1")?,
-    );
+    let new_entities = refs("SELECT DISTINCT id FROM ent_ix WHERE col = ?1")?;
+    for (id, (kind, row_elsewhere)) in taken_entities(src, profile, &entities, &new_entities)? {
+        if kind == EntKind::Note {
+            collided.notes.insert(format!("note:{}", id.text()));
+        }
+        if row_elsewhere {
+            collided.entities.insert(id);
+        } else {
+            collided.orphaned.insert(id);
+        }
+    }
+    entities.extend(collided.entities.iter().cloned());
+    entities.extend(collided.orphaned.iter().cloned());
+    push_refs(&mut diff, "entities", entities, new_entities);
     push_pair(&mut diff, ("tags", old_tags, new_tags));
     let media = texts(
         src,
@@ -1389,6 +1420,163 @@ pub(crate) fn against_protocol_3(
         &mut diff,
     )?;
     Ok((diff, rows, collided, known))
+}
+
+/// 跨 profile 撞车的实体（[Collisions::entities]）：协议 3 的 `srs_entities` 以实体 ID 为主键、全库共用
+/// （`store/schema.rs`），同库两个 profile 的操作日志里都有同一个实体的身份记录时只存一行——内容相同的留给先落投影的
+/// profile，不同的归规范 JSON 小者（`sync2::project_entity`）。另一个 profile 名下就没有这一行，而新代按集合各存各的。
+///
+/// 只从 [new] 里协议 3 一侧没有的 ID 找（[own] 是本 profile 名下的行）：本 profile 已应用的操作（`sync2_ops`）里有它的
+/// 身份记录，且这一行要么在库里、归了另一个 profile（撞车，BUG-5267），要么整张表里都没有（行随另一个 profile 的删除
+/// 没了，BUG-5294：`srs_entities` 只有按 `profile_uid` 整批删的路径，`store/profile_data.rs` `purge_on`）——才算协议 3
+/// 一侧的实体。返回 ID → (种类, 行是否归了别的 profile)；证不出的照常记成差异。行在本 profile 名下却不在 [own] 里的
+/// 不会出现（[own] 就是这些行）。
+fn taken_entities(
+    src: &Connection,
+    profile: &str,
+    own: &BTreeSet<Ref>,
+    new: &BTreeSet<Ref>,
+) -> Result<BTreeMap<Ref, (EntKind, bool)>, String> {
+    let mut elsewhere: BTreeMap<&Ref, bool> = BTreeMap::new();
+    {
+        let mut stmt = src
+            .prepare("SELECT profile_uid != srs_id(?2) FROM srs_entities WHERE id = ?1")
+            .map_err(sql)?;
+        for id in new.difference(own) {
+            let other: Option<bool> = stmt
+                .query_row(params![id, profile], |r| r.get(0))
+                .optional()
+                .map_err(sql)?;
+            match other {
+                Some(true) => {
+                    elsewhere.insert(id, true);
+                }
+                None => {
+                    elsewhere.insert(id, false);
+                }
+                Some(false) => {}
+            }
+        }
+    }
+    let mut out = BTreeMap::new();
+    if elsewhere.is_empty() {
+        return Ok(out);
+    }
+    let ops: Vec<(Vec<u8>, i64)> = src
+        .prepare(
+            "SELECT device, seq FROM sync2_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND purged = 0",
+        )
+        .map_err(sql)?
+        .query_map(params![profile, crate::sync2::op::KIND_ENTITY], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    for (device, seq) in ops {
+        let device: [u8; 16] = device
+            .try_into()
+            .map_err(|_| "compare: bad device id blob".to_owned())?;
+        let op_id = OpId {
+            device: Id(device),
+            seq: seq as u64,
+        };
+        let op = load_op(src, profile, &op_id)?
+            .ok_or_else(|| format!("compare: op {} vanished", op_text(&op_id)))?;
+        if let Body::Entity { kind, id, .. } = op.body().map_err(|e| e.to_string())? {
+            let id = Ref::of(&id);
+            if let Some(&taken) = elsewhere.get(&id) {
+                out.insert(id, (kind, taken));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// 给 `trace::id_trace` 的结果逐个 ID 补上协议 3 一侧的行归属（`p3`，BUG-5294 / BUG-5295）：`srs_entities` /
+/// `srs_field_edits` / `srs_review_logs` 里有没有这个 ID 的行、归本 profile（`self`）还是同库别的 profile（`other`），
+/// 以及修改记录 / 日志的操作映射（`sync2_edit_ops` / `sync2_log_meta`）归谁、映射到的操作在不在本 profile 的日志里、
+/// 是否已清除。三张表里都没有的 ID 写 `"p3": {}`。只有归属、字段键与布尔值，不含内容。
+pub(crate) fn annotate_protocol_3(
+    src: &Connection,
+    profile: &str,
+    v: &mut Value,
+) -> Result<(), String> {
+    let Some(ids) = v.get_mut("ids").and_then(Value::as_array_mut) else {
+        return Ok(());
+    };
+    let owner = |mine: bool| if mine { "self" } else { "other" };
+    for item in ids {
+        let Some(id) = item.get("id").and_then(Value::as_str).map(str::to_owned) else {
+            continue;
+        };
+        let mut p3 = serde_json::Map::new();
+        let ent: Option<(bool, String)> = src
+            .prepare_cached(
+                "SELECT profile_uid = srs_id(?2), kind FROM srs_entities WHERE id = srs_id(?1)",
+            )
+            .map_err(sql)?
+            .query_row(params![id, profile], |r| Ok((r.get(0)?, r.get(1)?)))
+            .optional()
+            .map_err(sql)?;
+        if let Some((mine, kind)) = ent {
+            p3.insert("entity".into(), json!({"row": owner(mine), "kind": kind}));
+        }
+        // 修改记录 / 日志：投影行与操作映射各自归谁；映射到的操作在本 profile 的日志里吗、清除了没有。
+        for (what, row_q, map_q) in [
+            (
+                "edit",
+                "SELECT profile_uid = srs_id(?2), field_key FROM srs_field_edits WHERE id = srs_id(?1)",
+                "SELECT m.profile_uid = srs_id(?2), o.purged FROM sync2_edit_ops m LEFT JOIN sync2_ops o                  ON o.profile_uid = srs_id(?2) AND o.device = m.device AND o.seq = m.seq WHERE m.edit_id = srs_id(?1)",
+            ),
+            (
+                "log",
+                "SELECT profile_uid = srs_id(?2), NULL FROM srs_review_logs WHERE id = srs_id(?1)",
+                "SELECT m.profile_uid = srs_id(?2), o.purged FROM sync2_log_meta m LEFT JOIN sync2_ops o                  ON o.profile_uid = srs_id(?2) AND o.device = m.device AND o.seq = m.seq WHERE m.log_id = srs_id(?1)",
+            ),
+        ] {
+            let row: Option<(bool, Option<String>)> = src
+                .prepare_cached(row_q)
+                .map_err(sql)?
+                .query_row(params![id, profile], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()
+                .map_err(sql)?;
+            let map: Option<(bool, Option<i64>)> = src
+                .prepare_cached(map_q)
+                .map_err(sql)?
+                .query_row(params![id, profile], |r| Ok((r.get(0)?, r.get(1)?)))
+                .optional()
+                .map_err(sql)?;
+            if row.is_none() && map.is_none() {
+                continue;
+            }
+            let mut m = serde_json::Map::new();
+            m.insert(
+                "row".into(),
+                row.as_ref()
+                    .map_or(json!(null), |(mine, _)| json!(owner(*mine))),
+            );
+            if let Some((_, Some(key))) = &row {
+                m.insert("key".into(), json!(key));
+            }
+            m.insert(
+                "op".into(),
+                match &map {
+                    None => json!(null),
+                    Some((mine, purged)) => json!({
+                        "owner": owner(*mine),
+                        "inThisLog": purged.is_some(),
+                        "purged": purged.is_some_and(|p| p != 0),
+                    }),
+                },
+            );
+            p3.insert(what.into(), Value::Object(m));
+        }
+        if let Some(o) = item.as_object_mut() {
+            o.insert("p3".into(), Value::Object(p3));
+        }
+    }
+    Ok(())
 }
 
 /// 协议 3 投影里活着的修改记录 ID（不算合成写入者的标签行）：按协议 3 自己的寄存器判据（`registers::judge_register`）
@@ -1515,11 +1703,22 @@ pub(crate) fn column_diffs(
     what: &str,
     old_only: &[String],
     new_only: &[String],
+    redact: bool,
 ) -> Option<ColumnDiffs> {
     let cols: Vec<&'static str> = match what {
+        "notes" => NOTE_COLS.iter().map(|c| c.0).collect(),
         "cards" => CARD_COLS.iter().map(|c| c.0).collect(),
         "stats" => STAT_COLS.iter().map(|c| c.0).collect(),
         _ => return None,
+    };
+    // 笔记行的内容列：[redact] 时只报长度（字符数），不报原文。
+    let content = |name: &str| what == "notes" && NOTE_CONTENT_COLS.contains(&name);
+    let shown = |name: &str, v: &str| -> String {
+        if redact && content(name) && v != "∅" {
+            format!("<{} chars>", v.chars().count())
+        } else {
+            v.to_owned()
+        }
     };
     let split = |rows: &[String]| -> Option<BTreeMap<String, Vec<String>>> {
         let mut out = BTreeMap::new();
@@ -1543,7 +1742,21 @@ pub(crate) fn column_diffs(
         for (i, name) in cols.iter().enumerate().skip(1) {
             if o[i] != n[i] {
                 *out.columns.entry(name).or_default() += 1;
-                cells.push(format!("{name}: {} -> {}", o[i], n[i]));
+                cells.push(format!(
+                    "{name}: {} -> {}",
+                    shown(name, &o[i]),
+                    shown(name, &n[i])
+                ));
+            }
+        }
+        // 笔记行另带笔记类型（不同的话上面已列出），差异先能按类型归类。
+        if what == "notes" {
+            let ty = NOTE_COLS
+                .iter()
+                .position(|c| c.0 == "note_type_id")
+                .expect("listed column");
+            if o[ty] == n[ty] {
+                cells.push(format!("(note_type_id {})", o[ty]));
             }
         }
         out.examples.push(format!("{id} {}", cells.join(", ")));

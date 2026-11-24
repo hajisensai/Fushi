@@ -56,7 +56,7 @@ import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dar
     show musicImportPlaylistFile;
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
-    show MusicBarReserve, MusicFloatingBarHost;
+    show MusicBarReserve, MusicFloatingBarHost, openMusicPlayerPage;
 import 'package:fushi_engine/media/media_extensions.dart'
     show kAudioExtensions, kVideoExtensions;
 import 'package:fushi_engine/media/music/server/music_server.dart'
@@ -88,7 +88,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeScope,
         FushiFloatingChromeScrollInset;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
-    show fushiNotificationFromVisibleSubtree;
+    show fushiNotificationDrivesPageChrome;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -390,7 +390,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   bool _onChromeScroll(ScrollNotification notification) {
     if (!_floatingNow) return false;
     // 隐藏的保活分区 / 横滚卡片行发来的通知不算（后者 controller 内按轴过滤）。
-    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    if (!fushiNotificationDrivesPageChrome(notification)) return false;
     return _chrome.handleScrollNotification(notification);
   }
 
@@ -605,36 +605,43 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     MusicDiscArtIndex.instance.publish(found);
   }
 
-  /// 「继续收听」：从上次那首所在专辑、那一首起播（引擎不持久化播放位置，曲内
-  /// 从头开始）；散曲只播它自己。
+  /// 「继续收听」：进播放页接着听。上次那首就是引擎此刻的当前曲（迷你条上那首）时
+  /// 不重建队列、不从头重播，暂停着就接着放；否则从它所在专辑、那一首起播（散曲只播
+  /// 它自己）。两种情况都进播放页，与专辑页「播放全部」、迷你条点按一致。
   void _continueListening(MusicTrackRow track, MusicLibrarySnapshot snap) {
-    final MusicAlbumRow? album = track.albumUid == null
-        ? null
-        : snap.albumByUid[track.albumUid];
-    final List<MusicTrackRow> tracks = album == null
-        ? <MusicTrackRow>[track]
-        : snap.tracksOfAlbum(album.albumUid);
-    final int start = tracks.indexWhere(
-      (MusicTrackRow t) => t.trackUid == track.trackUid,
-    );
-    unawaited(
-      _app.musicSession.engine.playQueue(
-        <MusicPlayItem>[
-          for (final MusicTrackRow t in tracks)
-            musicPlayItemOf(t, album: album),
-        ],
-        startIndex: start < 0 ? 0 : start,
-        context: album == null
-            ? MusicQueueContext.mixed
-            : MusicQueueContext.album,
-      ),
-    );
+    final MusicPlayerEngine engine = _app.musicSession.engine;
+    if (engine.current?.trackUid == track.trackUid) {
+      if (!engine.isPlaying) unawaited(engine.play());
+    } else {
+      final MusicAlbumRow? album = track.albumUid == null
+          ? null
+          : snap.albumByUid[track.albumUid];
+      final List<MusicTrackRow> tracks = album == null
+          ? <MusicTrackRow>[track]
+          : snap.tracksOfAlbum(album.albumUid);
+      final int start = tracks.indexWhere(
+        (MusicTrackRow t) => t.trackUid == track.trackUid,
+      );
+      unawaited(
+        engine.playQueue(
+          <MusicPlayItem>[
+            for (final MusicTrackRow t in tracks)
+              musicPlayItemOf(t, album: album),
+          ],
+          startIndex: start < 0 ? 0 : start,
+          context: album == null
+              ? MusicQueueContext.mixed
+              : MusicQueueContext.album,
+        ),
+      );
+    }
+    openMusicPlayerPage(context);
   }
 
   /// 曲库顶部「继续收听」区：所有库页共用的「继续」组件
   /// [FushiContinueSpotlight]（2026-10-31 方案 A + 合一）。主卡是上次那首（专辑
   /// 封面 + 专辑名 + 曲名 · 艺人）；宽屏时最近听过的其余专辑排在旁边。点按 =
-  /// 续播，长按 / 右键 = 打开专辑（卡上不放按钮）。
+  /// 续播并进播放页，长按 / 右键 = 打开专辑（卡上不放按钮）。
   Widget? _buildContinueHero(MusicLibrarySnapshot snap) {
     if (_recentTracks.isEmpty) return null;
     MusicAlbumRow? albumOf(MusicTrackRow track) =>
@@ -734,7 +741,11 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 
   /// 「在线 › 来源」里音源的顺序 / 开关 / 启用 / 服务器变了：重读推荐与搜索用的来源，
   /// 以及混排进曲库的服务器专辑。
+  ///
+  /// 来源视图在写完偏好后才回调：那时用户可能已经切走（来源视图已 dispose），本页
+  /// 也可能已关掉，所以先判 mounted（之后的重读要经 ref 取 AppModel）。
   void _onOnlineSourcesChanged() {
+    if (!mounted) return;
     unawaited(_reloadOnlineSources());
     unawaited(_reloadServerAlbums());
   }
@@ -1145,6 +1156,8 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         event,
         registry: _app.shortcutRegistry,
         engine: _app.musicSession.engine,
+        // 曲库：裸方向键留给网格焦点移动（播放页才有裸 ←/→ ±5 秒）。
+        surface: MusicShortcutSurface.library,
       );
 
   /// 打开专辑：有盘面扫描图的 CD 专辑从被点的色块原位（[origin]，全局矩形）放大成

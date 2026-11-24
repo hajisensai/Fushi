@@ -326,7 +326,7 @@ void main() {
       for (final String name in AppPaths.fushiOwnedDocumentsEntries)
         name.toLowerCase(),
     };
-    for (final String folder in ImportInbox.kindFolderNames.values) {
+    for (final String folder in ImportInbox.allFolderNames) {
       expect(owned, isNot(contains(folder.toLowerCase())), reason: folder);
     }
     expect(owned, contains('inbox_imports'));

@@ -59,6 +59,9 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_ly
     show SubtitleLyricsFinder, buildSubtitleLyricsFinder;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show isImportedExternalSubtitlePath;
+import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_video_subtitle_recognizer.dart'
+    show kMossSongVideoSubtitleRecognizerId;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
@@ -77,7 +80,7 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/i18n/strings.g.dart' show t;
 import 'package:fushi/src/asr_host/asr_host.dart'
-    show resolveAppVideoSubtitleRecognizer;
+    show appMusicAsrAudioProfile, resolveAppVideoSubtitleRecognizer;
 import 'package:fushi/src/media/video/subtitle/burned_in_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -96,7 +99,13 @@ typedef AppVideoSubtitleRecognizerResolver =
       required VideoSubtitleSegmenterMode mode,
       MossBackendPreference mossBackend,
       VideoSubtitleLanguage language,
+      AsrAudioProfile audioProfile,
     });
+
+/// 音乐库歌词这次用哪种转录素材（生产实现是 `asr_host.dart` 的
+/// [appMusicAsrAudioProfile]：默认 `song`，手机内存放不下人声分离时 `mixedAudio`）。
+typedef AppMusicAsrAudioProfileResolver =
+    Future<AsrAudioProfile> Function(VideoSubtitleLanguage language);
 
 /// 按提供商建 AI 出口（生产实现 [AiChatTextCompleter]）。返回的 `close` 在任务结束
 /// 时调用（释放 HTTP 连接）。
@@ -115,7 +124,7 @@ typedef AppVideoSubtitleAudioTrackProbe =
 Future<List<AudioTrackFacts>> _defaultAudioTrackProbe(String videoPath) async =>
     (await probeVideoFacts(videoPath)).audioTracks;
 
-/// 服务从设置里要的两样东西（生产实现读 `PreferencesRepository`，测试注入 fake）。
+/// 服务从设置里要的东西（生产实现读 `PreferencesRepository`，测试注入 fake）。
 abstract interface class AppVideoSubtitleSettings {
   /// 「字幕校对」功能当前指派的提供商；null = 没指派 / AI 模块关闭。
   AiProviderConfig? get proofreadProvider;
@@ -125,6 +134,13 @@ abstract interface class AppVideoSubtitleSettings {
 
   /// 通用联网搜索（歌词补齐查网页用）；null / 没配全 = 只查 LRCLIB。
   WebSearchConfig? get webSearch;
+
+  /// 音乐条目 [scope]（[AppVideoSubtitleTarget.settingScopes] 的一项）记住的「先分离
+  /// 人声」；null = 没记过。
+  bool? musicVocalSeparation(String scope);
+
+  /// 记下条目 [scope] 的「先分离人声」。
+  Future<void> setMusicVocalSeparation(String scope, bool on);
 }
 
 /// 生产实现：现读偏好仓（指派 / 站点改了下一次调用即生效）。
@@ -142,6 +158,14 @@ class PrefsVideoSubtitleSettings implements AppVideoSubtitleSettings {
 
   @override
   WebSearchConfig? get webSearch => prefs.aiWebSearch;
+
+  @override
+  bool? musicVocalSeparation(String scope) =>
+      prefs.musicSubtitleVocalSeparation[scope];
+
+  @override
+  Future<void> setMusicVocalSeparation(String scope, bool on) =>
+      prefs.setMusicSubtitleVocalSeparation(scope, on);
 }
 
 /// UI 与 ctl 取服务的唯一入口（同一个库共用一个实例，任务表跨页面存活）。
@@ -271,9 +295,15 @@ class AppVideoSubtitleOptions {
     this.language = VideoSubtitleLanguage.japanese,
     this.frames = false,
     this.pinnedEvidence = const <String, List<SubtitleEvidenceTrack>>{},
+    this.audioProfile,
   });
 
   final bool proofread;
+
+  /// 转录素材：生成面板按它查过 / 下过模型，任务就按它跑（两边判定之间内存变了也
+  /// 不会跑成另一种、撞上没下的模型）。null = 开跑时由
+  /// [AppVideoSubtitleService.asrAudioProfileFor] 定（ctl 等没有面板的入口）。
+  final AsrAudioProfile? audioProfile;
 
   /// 画面参考：AI 校对时每批附上对应时刻的视频画面。只在 [proofread] 开着、且指派的
   /// 提供商能收图（`AiProviderConfig.acceptsImages`）时生效，否则照常纯文字校对。
@@ -297,6 +327,7 @@ class AppVideoSubtitleOptions {
     'language': language.tag,
     if (regenerateGlossary) 'regenerateGlossary': true,
     if (frames) 'frames': true,
+    if (audioProfile != null) 'audioProfile': audioProfile!.name,
   };
 }
 
@@ -559,11 +590,17 @@ Future<VideoSubtitleRecognizerChoice> _defaultResolver({
   required VideoSubtitleSegmenterMode mode,
   MossBackendPreference mossBackend = MossBackendPreference.auto,
   VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
 }) => resolveAppVideoSubtitleRecognizer(
   mode: mode,
   mossBackend: mossBackend,
   language: language,
+  audioProfile: audioProfile,
 );
+
+Future<AsrAudioProfile> _defaultMusicAudioProfile(
+  VideoSubtitleLanguage language,
+) => appMusicAsrAudioProfile(language.asrLanguage);
 
 /// app 层视频字幕服务。
 class AppVideoSubtitleService {
@@ -571,6 +608,7 @@ class AppVideoSubtitleService {
     required this.database,
     required this.settings,
     AppVideoSubtitleRecognizerResolver? recognizerResolver,
+    AppMusicAsrAudioProfileResolver? musicAudioProfile,
     AppVideoSubtitleCompleterFactory? completerFactory,
     Future<Directory> Function()? jobsRoot,
     AppVideoSubtitleDurationProbe? probeDurationMs,
@@ -594,6 +632,7 @@ class AppVideoSubtitleService {
        _frameSource = frameSource ?? ffmpegSubtitleFrameSource,
        _lyricsFinder = lyricsFinder ?? buildSubtitleLyricsFinder,
        _resolveRecognizer = recognizerResolver ?? _defaultResolver,
+       _musicAudioProfile = musicAudioProfile ?? _defaultMusicAudioProfile,
        _completerFactory = completerFactory ?? _defaultCompleter,
        _jobsRoot = jobsRoot ?? defaultVideoSubtitleJobsRoot,
        _probeDurationMs = probeDurationMs ?? probeVideoDurationMs,
@@ -631,6 +670,39 @@ class AppVideoSubtitleService {
   final VideoSubtitleMossPort mossPort;
   final VideoSubtitleAsrModelPort asrModelPort;
   final AppVideoSubtitleRecognizerResolver _resolveRecognizer;
+  final AppMusicAsrAudioProfileResolver _musicAudioProfile;
+
+  /// [target] 用哪种转录素材：视频恒为 `mixedAudio`；音乐库歌词按
+  /// [separatesVocalsFor]——开着是 `song`（识别前做人声分离，伴奏下整句漏字的根因是
+  /// 模型对唱腔 + 伴奏不出字；手机上内存放不下分离时退回 `mixedAudio`），关着直接
+  /// `mixedAudio`（广播 / 讲座这类纯人声内容不必多跑数倍时间的分离）。生成面板按它
+  /// 查 / 下模型，开跑按它挑识别器。
+  ///
+  /// [separateVocals] = 生成面板上此刻的开关（还没落进偏好也按它判）；null = 按记住的。
+  Future<AsrAudioProfile> asrAudioProfileFor(
+    AppVideoSubtitleTarget target,
+    VideoSubtitleLanguage language, {
+    bool? separateVocals,
+  }) async => target.isMusic && (separateVocals ?? separatesVocalsFor(target))
+      ? _musicAudioProfile(language)
+      : AsrAudioProfile.mixedAudio;
+
+  /// [target] 识别前要不要先分离人声（拍板 W_wrz-ZPU8）：只有音乐目标会分离；按
+  /// [AppVideoSubtitleTarget.settingScopes] 由近到远取第一个记过的选择，都没记过默认
+  /// 开（歌曲是音乐库的常态）。
+  bool separatesVocalsFor(AppVideoSubtitleTarget target) {
+    if (!target.isMusic) return false;
+    for (final String scope in target.settingScopes) {
+      final bool? on = settings.musicVocalSeparation(scope);
+      if (on != null) return on;
+    }
+    return true;
+  }
+
+  /// 生成面板的「先分离人声」开关：记在 [target] 自己的身份（[AppVideoSubtitleTarget.key]）
+  /// 上，下次打开同一条目、以及没单独记过的下级条目都沿用。
+  Future<void> setSeparatesVocals(AppVideoSubtitleTarget target, bool on) =>
+      settings.setMusicVocalSeparation(target.key, on);
   final AppVideoSubtitleCompleterFactory _completerFactory;
   final Future<Directory> Function() _jobsRoot;
   final AppVideoSubtitleDurationProbe _probeDurationMs;
@@ -1513,6 +1585,7 @@ class AppVideoSubtitleService {
       List<String> videoPaths = target.videoPaths;
       final VideoSubtitleLanguage language = job.options.language;
       VideoSubtitleSegmenterMode mode = job.options.segmenter;
+      AsrAudioProfile? audioProfile = job.options.audioProfile;
       bool wantFrames = job.options.frames;
       if (job.consistencyOnly) {
         final List<String> rerun = <String>[];
@@ -1539,16 +1612,20 @@ class AppVideoSubtitleService {
           return;
         }
         videoPaths = rerun;
-        // 沿用跑校对时的识别器：换识别器会找不到 `drafts.<id>.json`、整集重新识别。
-        mode = recognizerId == null || recognizerId == kSlidingRecognizerId
+        // 沿用跑校对时的识别器（分段方式与素材）：换识别器会找不到
+        // `drafts.<id>.json`、整集重新识别。
+        mode = recognizerId == null || _isSlidingRecognizer(recognizerId)
             ? VideoSubtitleSegmenterMode.window
             : VideoSubtitleSegmenterMode.moss;
+        audioProfile = _recognizerAudioProfile(recognizerId);
       }
+      audioProfile ??= await asrAudioProfileFor(target, language);
       throwIfSubtitleCancelled(job._cancel);
       final VideoSubtitleRecognizerChoice choice = await _resolveRecognizer(
         mode: mode,
         mossBackend: job.options.mossBackend,
         language: language,
+        audioProfile: audioProfile,
       );
       final String? mossReason = choice.mossUnavailableReason;
       job
@@ -1692,8 +1769,19 @@ class AppVideoSubtitleService {
     }
   }
 
-  /// 滑窗识别器的 id（`SlidingWindowVideoSubtitleRecognizer.id`）。
-  static const String kSlidingRecognizerId = 'sliding_mixed';
+  /// 任务目录记的识别器是不是滑窗（混音 / 歌曲两种 id）。
+  static bool _isSlidingRecognizer(String id) =>
+      id == kSlidingVideoSubtitleRecognizerId ||
+      id == kSlidingSongVideoSubtitleRecognizerId;
+
+  /// 任务目录记的识别器是按哪种素材识别的（null = 没记，交给
+  /// [asrAudioProfileFor]）。
+  static AsrAudioProfile? _recognizerAudioProfile(String? id) => switch (id) {
+    null => null,
+    kSlidingSongVideoSubtitleRecognizerId ||
+    kMossSongVideoSubtitleRecognizerId => AsrAudioProfile.song,
+    _ => AsrAudioProfile.mixedAudio,
+  };
 
   /// 任务目录记的「上次校对带没带画面参考」（`state.json` 的 `frames`）。
   static bool _recordedFrames(Directory dir) {

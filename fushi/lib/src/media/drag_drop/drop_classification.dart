@@ -3,6 +3,8 @@ import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayDiscRootForFile;
+import 'package:fushi_engine/utils/archive/archive_volumes.dart'
+    show isFirstSplitArchiveVolume;
 import 'package:path/path.dart' as p;
 
 /// 书籍扩展名（不带点，小写）。= epub + pdf + TextToEpub.supportedExtensions。
@@ -66,6 +68,22 @@ const Set<String> kDragPlaylistExtensions = <String>{'m3u8', 'm3u'};
 /// 表面（books/video）互不影响，故 .zip 在此被识别为词典包而非 unknown。
 const Set<String> kDragDictionaryExtensions = <String>{'zip', 'dsl', 'mdx'};
 
+/// 只在**词典管理页落点**才认作词典包的压缩包扩展名（不带点，小写）：`.7z` / `.rar`。
+///
+/// = `DictionaryImportManager.kUnpackFirstDictionaryExtensions`（导入器先经
+/// `ArchiveUnpacker` 解开——加密包走口令对话框——再按**内容**判定是哪种词典、是不是
+/// 词典），也是词典页「选文件」按钮一直收的格式。不并进 [kDragDictionaryExtensions]：
+/// 全局分类里 `.rar` 是漫画包、`.7z` 是书 / 漫画的解包导入（拍板 83Fe7zQbhv），只有
+/// 落点本身就是词典页时，「这是词典包」的意图才确定。
+const Set<String> kDictionarySurfaceArchiveExtensions = <String>{'7z', 'rar'};
+
+/// 词典管理页能导入的词典包扩展名全集（不带点，小写）：拖放与「选文件」按钮同一份
+/// （按钮另外只多收 StarDict 的 `.ifo` 与随词典的 `.css` 附件）。
+const Set<String> kDictionarySurfaceDropExtensions = <String>{
+  ...kDragDictionaryExtensions,
+  ...kDictionarySurfaceArchiveExtensions,
+};
+
 /// 漫画扩展名（不带点，小写）：**明确**的漫画载体，落点表面一见即知。
 ///
 /// - `mokuro`：mokuro v0.2+ 的 OCR 结果文件（+ 同级图片），走 `MangaImporter`；
@@ -117,6 +135,25 @@ const Set<String> kDragMangaSurfaceProbeExtensions = <String>{
 /// （`ImportCarrier.pdf` → `importPdfAsManga`）。PDF 没有便宜的「是不是页图」判据，
 /// 在漫画库里就按落点意图走漫画；书架上它仍是一本 PDF 书。
 const Set<String> kDragMangaSurfaceDirectExtensions = <String>{'pdf'};
+
+/// 要**看条目名**才能判断「是不是装着一批书」的压缩包扩展名（不带点，小写）。
+///
+/// `.zip` 同时可能是页图漫画包、Yomitan 词典包、一批 EPUB / TXT；`.rar` 同时可能是漫画包
+/// 和一批书。判据由调用方注入（widget 层传 `probeDroppedBookArchives` 的结果，即引擎
+/// `looksLikeBookArchive`：zip 读中央目录、rar 经 7-Zip 列目录），分类层不碰文件系统；
+/// 判据缺席时维持原分类（zip → 词典包、rar → 漫画包），词典页等不注入判据的落点行为不变。
+/// 判定顺序在页图判据之后：一包页图仍归漫画（拍板 83Fe7zQbhv）。
+const Set<String> kDragBookArchiveProbeExtensions = <String>{'zip', 'rar'};
+
+/// 不解开就**列不出名字**、要「解开一次再按内容分流」的压缩包扩展名（不带点，小写）：`.7z`。
+///
+/// 它不是任何落点的载体扩展名（漫画是 `.cb7`），条目表又可能加密，所以这里**不定性**是书
+/// 还是漫画，只把它交给解包导入（`BookArchiveImporter`）：解开后有书 → 整批导入书；只有
+/// 页图 → 解出的目录交给漫画导入（一卷漫画，不解第二次）；都没有 → 如实报。改动前
+/// `.7z` 落 unknown、拖进书架 / 漫画库静默无反应。分卷第一卷（`book.7z.001` /
+/// `book.zip.001`）同理，由 [isFirstSplitArchiveVolume] 另认；后续卷随第一卷解开，自己
+/// 不单独导入。
+const Set<String> kDragBookArchiveExtensions = <String>{'7z'};
 
 /// [classifyDroppedFiles] / `probeDroppedImageArchives` 按落点取开包扩展名。
 Set<String> dragImageArchiveProbeExtensionsFor({required bool preferManga}) =>
@@ -201,6 +238,7 @@ class DroppedFiles {
     this.blurayDiscs = const <String>[],
     this.pureAudios = const <String>[],
     this.plugins = const <String>[],
+    this.bookArchives = const <String>[],
   });
 
   final List<String> books;
@@ -279,6 +317,12 @@ class DroppedFiles {
   /// （`PluginPackageDropTarget`）；其余落点据 [hasAny] 给「本页不支持」提示，不再静默。
   final List<String> plugins;
 
+  /// 交给「解开一次、按内容分流」的压缩包：经 `isBookArchive` 判据确认装着 EPUB / TXT /
+  /// PDF（或列不出名字）的 `.zip` / `.rar`，以及列不出名字的 `.7z` 与分卷第一卷（见
+  /// [kDragBookArchiveProbeExtensions] / [kDragBookArchiveExtensions]）。书架 / 漫画库
+  /// 据此解包：书整批导入、一包多本给一份汇总；只有页图的交漫画导入。
+  final List<String> bookArchives;
+
   /// 是否有任何可被本功能识别（非 unknown）的文件。
   bool get hasAny =>
       books.isNotEmpty ||
@@ -293,7 +337,8 @@ class DroppedFiles {
       unsupportedMangas.isNotEmpty ||
       torrents.isNotEmpty ||
       blurayDiscs.isNotEmpty ||
-      plugins.isNotEmpty;
+      plugins.isNotEmpty ||
+      bookArchives.isNotEmpty;
 }
 
 String _ext(String path) {
@@ -335,10 +380,15 @@ bool isImportableDropUrl(String candidate) {
 /// [preferManga]：落点是漫画库。图片型 `.epub` 经 [isImageArchive] 归漫画、`.pdf`
 /// 直接归漫画（见 [kDragMangaSurfaceProbeExtensions] / [kDragMangaSurfaceDirectExtensions]）。
 /// 默认 false，书架与其它落点的分类与历史逐字节一致。
+///
+/// [isBookArchive]：`.zip` / `.rar` 是不是装着一批书（按条目名，见
+/// [kDragBookArchiveProbeExtensions]），在 [isImageArchive] 之后问。与 [isImageArchive]
+/// 一样是查表谓词，调用方先离线程判完。
 DroppedFiles classifyDroppedFiles(
   List<String> paths, {
   bool Function(String path)? isDirectory,
   bool Function(String path)? isImageArchive,
+  bool Function(String path)? isBookArchive,
   String? Function(String directory)? blurayDiscRootForDirectory,
   bool preferManga = false,
 }) {
@@ -358,6 +408,7 @@ DroppedFiles classifyDroppedFiles(
   final List<String> directories = <String>[];
   final List<String> torrents = <String>[];
   final List<String> plugins = <String>[];
+  final List<String> bookArchives = <String>[];
   final List<String> unknown = <String>[];
   final Set<String> blurayDiscs = <String>{};
 
@@ -389,6 +440,19 @@ DroppedFiles classifyDroppedFiles(
         probeExtensions.contains(ext) &&
         isImageArchive(path)) {
       mangas.add(path);
+      continue;
+    }
+    // 装着一批书的 `.zip` / `.rar`：命中即**只**归 bookArchives（不再落词典包 / 漫画包），
+    // 否则一包 EPUB 会被当词典包回「本页面不支持」、一包 TXT 的 rar 会被交给漫画导入。
+    if (isBookArchive != null &&
+        kDragBookArchiveProbeExtensions.contains(ext) &&
+        isBookArchive(path)) {
+      bookArchives.add(path);
+      continue;
+    }
+    if (kDragBookArchiveExtensions.contains(ext) ||
+        isFirstSplitArchiveVolume(path)) {
+      bookArchives.add(path);
       continue;
     }
     if (preferManga && kDragMangaSurfaceDirectExtensions.contains(ext)) {
@@ -458,20 +522,33 @@ DroppedFiles classifyDroppedFiles(
     blurayDiscs: blurayDiscs.toList(),
     pureAudios: pureAudios,
     plugins: plugins,
+    bookArchives: bookArchives,
   );
 }
 
-/// 词典管理页拖放专用分类：从拖入路径里挑出词典包（`.zip`/`.dsl`/`.mdx`）以及同批
-/// 拖入的 `.css` 样式附件，按「先词典包后 css」拼成可直接喂给词典导入器的路径列表。
-/// 纯函数，无副作用，便于单测。无词典包时返回空列表（即便夹带了 css 也不导入——
-/// 单独拖个 css 不构成一次导入，与文件选择器 [_importDictionaryFiles] 同语义）。
+/// 词典管理页拖放专用分类：从拖入路径里挑出词典包（[kDictionarySurfaceDropExtensions]：
+/// `.zip`/`.dsl`/`.mdx` 与 `.7z`/`.rar` 压缩包）以及同批拖入的 `.css` 样式附件，按
+/// 「先词典包后 css」拼成可直接喂给词典导入器的路径列表。
+///
+/// 不走全局 [classifyDroppedFiles]：那里 `.rar` 归漫画、`.7z` 归书 / 漫画解包导入，而落在
+/// 词典页的压缩包意图就是词典——是不是词典、是哪种词典由导入器解包后按内容判定，与
+/// 「选文件」按钮同一条路（改动前拖 `.7z` / `.rar` 进来只回「本页面不支持」）。URL 不是
+/// 本地文件，不收。纯函数，无副作用，便于单测。无词典包时返回空列表（即便夹带了 css
+/// 也不导入——单独拖个 css 不构成一次导入，与文件选择器 [_importDictionaryFiles] 同语义）。
 List<String> classifyDroppedFilesForDictionary(List<String> paths) {
-  final DroppedFiles files = classifyDroppedFiles(paths);
-  if (files.dictionaries.isEmpty) return const <String>[];
-  final List<String> cssAttachments = paths
-      .where((String pth) => p.extension(pth).toLowerCase() == '.css')
-      .toList();
-  return <String>[...files.dictionaries, ...cssAttachments];
+  final List<String> packages = <String>[];
+  final List<String> cssAttachments = <String>[];
+  for (final String path in paths) {
+    if (isImportableDropUrl(path)) continue;
+    final String ext = _ext(path);
+    if (kDictionarySurfaceDropExtensions.contains(ext)) {
+      packages.add(path);
+    } else if (ext == 'css') {
+      cssAttachments.add(path);
+    }
+  }
+  if (packages.isEmpty) return const <String>[];
+  return <String>[...packages, ...cssAttachments];
 }
 
 /// 给一个视频挑配对字幕：按**文件名主干**（不含扩展名）大小写不敏感匹配，

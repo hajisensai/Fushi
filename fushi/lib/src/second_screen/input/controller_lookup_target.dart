@@ -18,17 +18,12 @@ enum ControllerLookupStyle {
     return null;
   }
 
-  /// The stored value, else the default: hold-L1 while the companion is up,
-  /// otherwise off (single-screen controller behaviour stays exactly as it
-  /// was until the user opts in).
-  static ControllerLookupStyle resolve(
-    Object? stored, {
-    required bool companionActive,
-  }) =>
-      tryParse(stored) ??
-      (companionActive
-          ? ControllerLookupStyle.holdL1
-          : ControllerLookupStyle.off);
+  /// The stored value, else the default: hold L1, with or without the
+  /// companion (2026-11-22 gamepad lookup unification: the single screen
+  /// defaults to the same lookup mode; a short L1 tap keeps its page binding,
+  /// fired on release).
+  static ControllerLookupStyle resolve(Object? stored) =>
+      tryParse(stored) ?? ControllerLookupStyle.holdL1;
 }
 
 /// Preference key of [ControllerLookupStyle] (`holdL1` / `selectToggle` /
@@ -58,8 +53,9 @@ abstract class ControllerLookupTarget {
   bool get isAvailable => true;
 
   /// False while the page's own caret sits on its in-page dictionary popup
-  /// (single screen): D-pad / A / B then go to the page's existing popup
-  /// controller handling untouched.
+  /// (single screen, after [enterResult]): D-pad / A / B then go to the page's
+  /// existing popup controller handling untouched, and B there returns the
+  /// caret to the text.
   bool get routerOwnsInput => true;
 
   /// Whether [stepCursor] can move by word. When false word steps fall back
@@ -81,6 +77,24 @@ abstract class ControllerLookupTarget {
   /// text line, lyric line, OCR block).
   Future<void> stepLine(int dir);
 
-  /// Looks up the word under the cursor through the page's normal lookup path.
-  Future<void> lookupAtCursor();
+  /// Looks up the word under the cursor through the page's normal lookup path
+  /// and returns the highlighted match length in graphemes (the
+  /// `searchDictionaryResult` highlight length), 0 when nothing matched.
+  ///
+  /// [maxGraphemes] (null = unlimited, the dictionary's longest match) caps the
+  /// query text taken from the cursor: the page cuts the text it looks up to at
+  /// most that many graphemes and changes nothing else. The cursor stays in the
+  /// text — a lookup never moves it into the popup (see [enterResult]).
+  Future<int> lookupAtCursor({int? maxGraphemes});
+
+  /// Graphemes on the cursor's line from the cursor to the line end (cursor
+  /// grapheme included): the upper bound of the selection's right end. Growing
+  /// the right end past it returns the cap to unlimited.
+  int get graphemesFromCursor;
+
+  /// Hands the controller cursor to the page's in-page popup cursor (pick a
+  /// word inside the result, nested lookups). Afterwards [routerOwnsInput] is
+  /// false until the page takes the cursor back (B). No-op by default: pages
+  /// whose lookup only opens on the companion have nothing to enter.
+  Future<void> enterResult() async {}
 }

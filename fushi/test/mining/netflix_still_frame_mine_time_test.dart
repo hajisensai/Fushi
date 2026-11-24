@@ -101,6 +101,7 @@ class _FakeAudioExtractor {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const {},
+    double? gainDb,
   }) async {
     calls++;
     final File out = File(outputPath);

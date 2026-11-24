@@ -8,6 +8,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
 import 'package:fushi/src/utils/components/fushi_logo_title.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart';
@@ -79,6 +81,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/sync/sync_activity.dart' show SyncActivityKind;
+import 'package:fushi/src/sync/sync_task_board.dart'
+    show SyncTaskHandle, beginSyncTask, resetSyncTasksForTest;
 
 /// 首页仪表盘布局回归：**宽屏（PC/横屏）曾因把 stretch/Expanded 的 Row 直接放进纵向
 /// ListView（高度无界）而在 layout 阶段抛「BoxConstraints forces an infinite height」，
@@ -982,6 +987,104 @@ void main() {
     await settleCoverProbes(tester);
     expect(tester.takeException(), isNull);
     expect(logoTitle, findsOneWidget);
+  });
+
+  // BUG-5252：首页「最近添加」小块从前一律给半高档，半高档又不画刮削 logo——
+  // 刮削到 logo 的合集在首页只剩两行文字 + 大字水印，与视频库同一张卡对不上。
+  // 现在半高档也画 logo（进固定标题槽），首页按格子实际高度取尺寸档。
+  test('homeCoverBlockSizeFor：按格子实际高度取尺寸档（BUG-5252）', () {
+    const double half =
+        (kFushiCoverBlockHeroHeight - kFushiCoverBlockSpacing) / 2;
+    expect(homeCoverBlockSizeFor(96), FushiCoverBlockSize.half);
+    expect(homeCoverBlockSizeFor(half - 1), FushiCoverBlockSize.half);
+    expect(homeCoverBlockSizeFor(half), FushiCoverBlockSize.regular);
+    expect(homeCoverBlockSizeFor(200), FushiCoverBlockSize.regular);
+    // 只有允许升首块档的格子（「最近添加」主色块）才升。
+    expect(homeCoverBlockSizeFor(400), FushiCoverBlockSize.regular);
+    expect(
+      homeCoverBlockSizeFor(
+        kFushiCoverBlockHeroHeightCompact - 1,
+        allowHero: true,
+      ),
+      FushiCoverBlockSize.regular,
+    );
+    expect(
+      homeCoverBlockSizeFor(kFushiCoverBlockHeroHeightCompact, allowHero: true),
+      FushiCoverBlockSize.hero,
+    );
+  });
+
+  testWidgets('色块「最近添加」：小块也画刮削 logo，尺寸档跟格子实际高度走（BUG-5252）', (
+    WidgetTester tester,
+  ) async {
+    dashboardLayout = ShellContentLayout.collage;
+    useSize(tester, const Size(1280, 900));
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final File logo = File('${storeDir.path}/logo.png')
+      ..writeAsBytesSync(_kLandscapePng);
+    // 新加进来、还没看过的两集合集 → 「最近添加」里的一项（不进「继续」）。
+    final int cid = await seedCollectionTwoEpisodes(
+      e1: VideoBooksCompanion(
+        bookUid: const Value('e1'),
+        title: const Value('S01E01'),
+        videoPath: const Value('/abs/e1.mp4'),
+        importedAt: Value(now - 2000),
+        localAddedAt: Value<int?>(now - 2000),
+      ),
+      e2: VideoBooksCompanion(
+        bookUid: const Value('e2'),
+        title: const Value('S01E02'),
+        videoPath: const Value('/abs/e2.mp4'),
+        importedAt: Value(now - 1000),
+        localAddedAt: Value<int?>(now - 1000),
+      ),
+    );
+    await db.replaceMediaImagesForCollection(cid, <MediaImagesCompanion>[
+      MediaImagesCompanion.insert(
+        collectionId: Value<int?>(cid),
+        kind: MediaImageKind.logo.dbValue,
+        path: logo.path,
+      ),
+    ]);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    final Finder block = find.byKey(
+      const ValueKey<String>('home-recent-block/0'),
+    );
+    expect(block, findsOneWidget);
+    final Finder logoTitle = find.descendant(
+      of: block,
+      matching: find.byType(FushiLogoTitle),
+    );
+    // 元数据是画到时后台单查（DB + 文件存在性），给真实事件循环几跳。
+    for (int i = 0; i < 20 && logoTitle.evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+    await settleCoverProbes(tester);
+    expect(tester.takeException(), isNull);
+    final double height = tester.getSize(block).height;
+    final FushiCoverBlock cover = tester.widget<FushiCoverBlock>(
+      find.descendant(of: block, matching: find.byType(FushiCoverBlock)),
+    );
+    expect(
+      cover.size,
+      homeCoverBlockSizeFor(height),
+      reason: '尺寸档跟格子实际高度（$height）走',
+    );
+    expect(cover.logo, isNotNull, reason: '合集刮削到的 logo 传进了色块');
+    expect(logoTitle, findsOneWidget, reason: '与视频库系列卡一样画 logo，不退成文字');
+    // logo 在固定标题槽里、整块收在色块内（不压出块外）。
+    final Rect blockRect = tester.getRect(block);
+    final Rect logoRect = tester.getRect(logoTitle);
+    expect(logoRect.height, greaterThan(0));
+    expect(blockRect.contains(logoRect.topLeft), isTrue);
+    expect(
+      blockRect.contains(logoRect.bottomRight - const Offset(1, 1)),
+      isTrue,
+    );
   });
 
   // 设计稿 H8：「最近添加」里同一合集新加的几卷合成一张卡，点开进合集详情页
@@ -3883,6 +3986,66 @@ void main() {
     );
   });
 
+  testWidgets('HBK-AUDIT-219：阅读统计页字数环回退到月目标时，分子含本月更早（本周之前）的字数', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 3200));
+    await seedSampleData();
+    await appModel.setStudyGoals(<StudyGoal>[
+      goalRecord(
+        'm',
+        StudyGoalId.chars,
+        100000,
+        period: StudyGoalPeriod.monthly,
+      ),
+    ]);
+    // 本月 1 日在本周之前时，在那天再读 500 字：月目标分子必须算进去（首页 / 小组件
+    // 同口径）；月初几天本月 1 日落在本周里，旧实现也读得到，只验同口径。
+    final StatWindow w = StatWindow(DateTime.now());
+    final String monthFirst = '${w.todayKey.substring(0, 8)}01';
+    int monthChars = 800;
+    if (monthFirst != w.todayKey) {
+      await seedLegacyReading(
+        title: '吾輩は猫である',
+        dateKey: monthFirst,
+        charsRead: 500,
+        timeMs: 300000,
+      );
+      monthChars += 500;
+    }
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    unawaited(
+      Navigator.of(tester.element(find.byType(HomeDashboardPage))).push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext _) => const ReadingStatisticsPage(),
+        ),
+      ),
+    );
+    await pumpSheet(tester);
+    final Finder fold = find.text(t.stat_analysis);
+    for (int i = 0; i < 30 && fold.evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.ensureVisible(fold);
+    await tester.pump();
+    await tester.tap(fold);
+    await pumpSheet(tester);
+    final Finder ring = find.byKey(
+      const ValueKey<String>('reading-stats-goal-ring'),
+    );
+    expect(ring, findsOneWidget);
+    expect(
+      find.descendant(of: ring, matching: find.text('$monthChars/100000')),
+      findsOneWidget,
+      reason: '月目标环的分子是本月 1 日至今天的全部字数',
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('目标面板：切「每周」→ 预设换成周量级，保存后今日格按本自然周字数显示', (
     WidgetTester tester,
   ) async {
@@ -4634,6 +4797,52 @@ void main() {
     );
   });
 
+  testWidgets('BUG-5206：连点「编辑首页」第二下落在「退出编辑」上，不会恢复默认；恢复默认在底栏', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    const List<HomeWidgetItem> custom = <HomeWidgetItem>[
+      HomeWidgetItem(HomeWidgetKind.today, HomeWidgetSize(2, 1)),
+    ];
+    await storeHomeLayout(wide: custom);
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    final Finder enter = find.byKey(
+      const ValueKey<String>('home-toolbar-edit-home'),
+    );
+    expect(enter, findsOneWidget);
+    final Offset at = tester.getCenter(enter);
+    await tester.tap(enter);
+    await pumpDashboard(tester);
+
+    // 编辑态页头：只剩「退出编辑」，且正好占着「编辑首页」原来的位置（连点的第二下落在它上面）。
+    final Finder exit = find.byKey(
+      const ValueKey<String>('home-toolbar-exit-widget-edit'),
+    );
+    expect(exit, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('home-toolbar-restore-widgets')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-widget-edit-restore')),
+      findsOneWidget,
+    );
+    expect(tester.getCenter(exit), at);
+
+    // 第二下：退出编辑态，布局原样保留（不是被换回默认模板）。
+    await tester.tapAt(at);
+    await pumpDashboard(tester);
+    expect(tester.takeException(), isNull);
+    expect(
+      find.byKey(const ValueKey<String>('home-widget-edit-toolbar')),
+      findsNothing,
+    );
+    expect(enter, findsOneWidget);
+    expect(appModel.homeWidgetLayout.wide, custom);
+  });
+
   testWidgets('焦点可遍历：Tab 能落到主角卡（整卡是唯一停靠点）与横滑行封面卡', (WidgetTester tester) async {
     useSize(tester, const Size(1280, 900));
     await seedSampleData();
@@ -4787,6 +4996,105 @@ void main() {
     await db.setPref('active_profile_id', '$bob');
     await pumpDashboard(tester);
     expect(avatarLabel(), 'Bob', reason: '切换激活 Profile 后头像要跟着变');
+  });
+
+  testWidgets('头像只管账户：同步在跑时头像不画同步环、标签不带同步文字', (WidgetTester tester) async {
+    // 拍板台 design-avatar-combo-placement（2026-11-23）：此前有后台任务时头像外圈
+    // 画进度环、点击改成打开任务明细，同步期间进不了排行榜。
+    useSize(tester, const Size(1280, 900));
+    final int alice = await db.insertProfile(
+      ProfilesCompanion.insert(name: 'Alice', createdAt: 0, updatedAt: 0),
+    );
+    await db.setPref('active_profile_id', '$alice');
+    addTearDown(resetSyncTasksForTest);
+    final SyncTaskHandle sweep = beginSyncTask(SyncActivityKind.fullSweep);
+    sweep.error('boom');
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+
+    expect(
+      find.byKey(const ValueKey<String>('home-avatar-sync-ring')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('home-avatar-sync-error')),
+      findsNothing,
+    );
+    expect(
+      tester
+          .widget<Semantics>(
+            find.byKey(const ValueKey<String>('home-toolbar-avatar')),
+          )
+          .properties
+          .label,
+      'Alice',
+      reason: '头像标签只说账户 / 名字，不再拼同步状态',
+    );
+    sweep.finish();
+  });
+
+  testWidgets('默认配置胶囊：一份配置时不出现；两份以上时在头像右边显示激活配置并随切换更新', (
+    WidgetTester tester,
+  ) async {
+    useSize(tester, const Size(1280, 900));
+    final Finder chip = find.byKey(const ValueKey<String>('home-profile-chip'));
+    final Finder chipName = find.byKey(
+      const ValueKey<String>('home-profile-chip-name'),
+    );
+    final int alice = await db.insertProfile(
+      ProfilesCompanion.insert(name: 'Alice', createdAt: 0, updatedAt: 0),
+    );
+    await db.setPref('active_profile_id', '$alice');
+    await tester.pumpWidget(buildApp());
+    await pumpDashboard(tester);
+    expect((await db.getAllProfiles()).length, 1, reason: '前提：只有一份配置');
+    expect(chip, findsNothing, reason: '只有一份配置时不出现切换入口');
+
+    final int bob = await db.insertProfile(
+      ProfilesCompanion.insert(name: 'Bob', createdAt: 0, updatedAt: 0),
+    );
+    await pumpDashboard(tester);
+    expect(chip, findsOneWidget, reason: '新建第二份配置后出现（听 profiles 表）');
+    expect(tester.widget<Text>(chipName).data, 'Alice');
+    final Finder avatar = find.byKey(
+      const ValueKey<String>('home-toolbar-avatar'),
+    );
+    expect(
+      tester.getTopLeft(chip).dx,
+      greaterThan(tester.getTopRight(avatar).dx),
+      reason: '方案 a：胶囊在头像右边',
+    );
+    expect(
+      tester.getCenter(chip).dy,
+      moreOrLessEquals(tester.getCenter(avatar).dy, epsilon: 1),
+      reason: '与头像同一行、垂直居中对齐',
+    );
+
+    await db.setPref('active_profile_id', '$bob');
+    await pumpDashboard(tester);
+    expect(
+      tester.widget<Text>(chipName).data,
+      'Bob',
+      reason: '别处（设置页 / 悬浮球）切换后胶囊跟着变',
+    );
+
+    await tester.tap(chip);
+    await pumpDashboard(tester);
+    expect(
+      find.byKey(ValueKey<String>('home-profile-menu-$alice')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(ValueKey<String>('home-profile-menu-$bob')),
+      findsOneWidget,
+    );
+    expect(find.text(t.home_profile_menu_header), findsOneWidget);
+    expect(find.text(t.home_profile_menu_binding_note), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('home-profile-menu-manage')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('切换激活 Profile 后首页统计立即换成新配置的（反馈 FH1toxJJxz）', (

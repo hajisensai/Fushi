@@ -119,10 +119,21 @@ void main() {
         reason: 'Shift 按下要能反查画面字幕字符',
       );
       expect(
-        body.contains('_subtitleListHitTester.hitTest'),
+        body.contains('_sideListHitAt('),
         isTrue,
-        reason: 'Shift 按下也要能反查字幕列表侧栏字符',
+        reason: 'Shift 按下也要能反查推挤式侧栏（字幕列表 / 聊天回放栏）字符',
       );
+    });
+
+    test('推挤式侧栏反查同时覆盖字幕列表与聊天回放栏两个句柄', () {
+      final RegExp method = RegExp(
+        r'_SideListHit\? _sideListHitAt\([\s\S]*?\n  \}',
+      );
+      final Match? match = method.firstMatch(src);
+      expect(match, isNotNull, reason: '必须存在 _sideListHitAt 统一反查');
+      final String body = match!.group(0)!;
+      expect(body.contains('_subtitleListHitTester.hitTest'), isTrue);
+      expect(body.contains('_liveChatHitTester.hitTest'), isTrue);
     });
   });
 
@@ -136,7 +147,7 @@ void main() {
       expect(match, isNotNull, reason: '必须存在 _onDismissBarrierHover 方法');
       final String body = match!.group(0)!;
       expect(
-        body.contains('_subtitleListHitTester.hitTest'),
+        body.contains('_sideListHitAt('),
         isTrue,
         reason:
             '浮层开着时 Shift 悬停列表下一个词必须经 barrier 反查列表句柄换词'

@@ -1,3 +1,4 @@
+import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
@@ -17,12 +18,12 @@ import 'package:fushi/src/second_screen/companion/modules/audiobook_companion_co
 import 'package:fushi/src/second_screen/companion/modules/audiobook_companion_schema.dart';
 import 'package:fushi/src/second_screen/companion/modules/reader_companion_hook.dart';
 import 'package:fushi/src/second_screen/companion/modules/reader_companion_schema.dart';
+import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 import 'dart:ui' as ui show Image;
 import 'dart:ui' show ImageFilter;
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
@@ -64,6 +65,8 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart'
         DictionaryPopupToolGroup,
         dictionaryPopupTopActionConstraints,
         kDictionaryPopupTopActionIconSize;
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart'
+    show DictionaryPopupInputSpec, withPopupArrowPageTurnKeys;
 import 'package:fushi/src/pages/implementations/dictionary_popup_theme.dart';
 import 'package:fushi/src/pages/implementations/kavita/kavita_progress_conflict_dialog.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -78,6 +81,7 @@ import 'package:fushi/src/epub/epub_spread_map.dart';
 import 'package:fushi/src/utils/adaptive/fushi_fold_posture.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
+import 'package:fushi/src/media/audiobook/audiobook_follow_style.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session_launcher.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
@@ -85,6 +89,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_media_voice_scope.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_read_along.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_read_along_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
@@ -93,8 +98,8 @@ import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_settings_page.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiChoiceOption, showFushiChoiceDialog;
+import 'package:fushi_engine/tts/render/tts_cast.dart' show kTtsNarrator;
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
-import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart'
@@ -128,6 +133,8 @@ import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi/src/mining/mining_playback_volume_gain.dart';
+import 'package:fushi/src/media/audiobook/audiobook_clip_delivery.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_export.dart';
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
 import 'package:fushi/src/media/audiobook/audiobook_clip_text_render.dart';
@@ -154,10 +161,8 @@ import 'package:fushi/src/reader/audio_highlight_style.dart';
 import 'package:fushi/src/reader/reader_bookmark_logic.dart';
 import 'package:fushi/src/reader/font_vertical_baseline_flag.dart';
 import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
-import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/reader/reader_caret_scripts.dart';
-import 'package:fushi/src/reader/reader_word_sweep.dart';
-import 'package:fushi/src/reader/reader_word_sweep_scripts.dart';
+import 'package:fushi/src/reader/reader_controller_word_step_scripts.dart';
 import 'package:fushi/src/reader/reader_session_remote.dart';
 import 'package:fushi/src/reader/reader_ruby_metrics_script.dart';
 import 'package:fushi/src/reader/reader_audio_position.dart';
@@ -240,8 +245,6 @@ import 'package:fushi/src/utils/misc/debug_log_service.dart';
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/serial_task_queue.dart';
 import 'package:fushi/src/utils/misc/volume_key_channel.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:fushi/src/utils/misc/fushi_share.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/utils/misc/screen_wakelock.dart';
@@ -285,6 +288,7 @@ import 'package:fushi/src/shortcuts/dictionary_caret_controller.dart';
 // after its definition moved into the shared caret controller (TODO-387).
 export 'package:fushi/src/shortcuts/dictionary_caret_controller.dart'
     show CaretSurface;
+import 'package:fushi/src/shortcuts/directional_page_turn.dart';
 import 'package:fushi/src/shortcuts/reader_space_override.dart';
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
     show WindowFullscreenHost;
@@ -318,7 +322,6 @@ part 'reader_fushi/jump_history.part.dart';
 part 'reader_fushi/kavita.part.dart';
 part 'reader_fushi/page_curl.part.dart';
 part 'reader_fushi/seamless.part.dart';
-part 'reader_fushi/word_sweep.part.dart';
 
 /// TODO-904: native WebView2 实例创建失败时，fork 经 onReceivedError 合成的
 /// [WebResourceError] 描述里携带的 sentinel 前缀（须与
@@ -522,14 +525,82 @@ DateTime contentReadyTimeoutDeadline({
 /// 是否暗色。preset 主题在 [_ReaderFushiPageState._themeMap] 里手调，其余主题
 /// （light-theme / system-theme / 任意未覆盖的 key）由 [resolveReaderThemeColors]
 /// 回落到真实 ColorScheme 派生，避免再写死成白底（BUG-208 / TODO-143）。
+///
+/// [selectionText]：查词高亮里被选中文字的字色（拍板台 -8azTfJh_v）。null = 跟随正文
+/// 字色（历史行为）；只有自定义主题能设，用来做反色高亮。
 typedef ReaderThemeColors = ({
   Color bg,
   Color fg,
   Color sentenceAudioHighlight,
   Color selection,
+  Color? selectionText,
   Color link,
   bool dark,
 });
+
+/// 阅读器手调纸色预设（羊皮纸 / 水蓝 / 护眼 / 灰 / 深色 / 纯黑），id 是冻结的旧主题键。
+/// 渲染（[resolveReaderThemeColors] 的 presetMap）与设置页纸色色卡共用这一份。
+/// BUG-396：selection/link 与 css `_themeColors` switch 的预设值逐一相等（ARGB 即
+/// rgba 同值），作为五角色单一真相源透传。
+const Map<String, ReaderThemeColors> kReaderPaperPresets =
+    <String, ReaderThemeColors>{
+      'ecru-theme': (
+        bg: Color(0xFFF7F6EB),
+        fg: Color(0xDE000000),
+        sentenceAudioHighlight: Color(0x66A8C68C),
+        selection: Color(0x59C2B280),
+        selectionText: null,
+        link: Color(0xFF7A6232),
+        dark: false,
+      ),
+      'water-theme': (
+        bg: Color(0xFFDFECF4),
+        fg: Color(0xDE000000),
+        sentenceAudioHighlight: Color(0x6664B4DC),
+        selection: Color(0x59C8AA6E),
+        selectionText: null,
+        link: Color(0xFF3A5FAD),
+        dark: false,
+      ),
+      // 护眼（豆沙绿）：与 reader_content_styles `_themeColors['eyecare-theme']` 的
+      // rgba 预设逐一相等（ARGB 同值），作为五角色单一真相源透传。
+      'eyecare-theme': (
+        bg: Color(0xFFC7EDCC),
+        fg: Color(0xDE000000),
+        sentenceAudioHighlight: Color(0x66A0C878),
+        selection: Color(0x5988B583),
+        selectionText: null,
+        link: Color(0xFF4C7A3E),
+        dark: false,
+      ),
+      'gray-theme': (
+        bg: Color(0xFF23272A),
+        fg: Color(0xDEFFFFFF),
+        sentenceAudioHighlight: Color(0x595096C8),
+        selection: Color(0x59BE9B64),
+        selectionText: null,
+        link: Color(0xFF6FA8DC),
+        dark: true,
+      ),
+      'dark-theme': (
+        bg: Color(0xFF121212),
+        fg: Color(0x99FFFFFF),
+        sentenceAudioHighlight: Color(0x594682B4),
+        selection: Color(0x59B4915A),
+        selectionText: null,
+        link: Color(0xFF7AACDF),
+        dark: true,
+      ),
+      'black-theme': (
+        bg: Color(0xFF000000),
+        fg: Color(0xDEFFFFFF),
+        sentenceAudioHighlight: Color(0x663C78AA),
+        selection: Color(0x66AA8750),
+        selectionText: null,
+        link: Color(0xFF5B9BD5),
+        dark: true,
+      ),
+    };
 
 /// 把当前主题 key 解析成阅读器的颜色角色（背景/字色/跟读高亮/选区高亮/链接）。
 ///
@@ -575,6 +646,7 @@ ReaderThemeColors resolveReaderThemeColors({
     fg: base.fg,
     sentenceAudioHighlight: audioHighlightOverride,
     selection: base.selection,
+    selectionText: base.selectionText,
     link: base.link,
     dark: base.dark,
   );
@@ -608,6 +680,7 @@ ReaderThemeColors readerThemeColorsFromPalette(FushiReaderPalette palette) {
     fg: palette.text,
     sentenceAudioHighlight: palette.sentenceHighlight,
     selection: palette.lookupHighlight,
+    selectionText: null,
     link: palette.link,
     dark: palette.dark,
   );
@@ -661,6 +734,8 @@ ReaderThemeColors einkReaderThemeColors(
     fg: dark ? Colors.white : Colors.black,
     sentenceAudioHighlight: themed.sentenceAudioHighlight,
     selection: themed.selection,
+    // 墨水屏的查词高亮是线式下划线、不画底色，换字色没有意义（还会与纸色撞色）。
+    selectionText: null,
     link: dark ? Colors.white : Colors.black,
     dark: dark,
   );
@@ -705,6 +780,7 @@ typedef ReaderThemeOverrides = ({
   Color? bg,
   Color? fg,
   Color? selection,
+  Color? selectionText,
   Color? link,
 });
 
@@ -731,6 +807,7 @@ ReaderThemeColors applyReaderThemeOverrides(
     fg: fg,
     sentenceAudioHighlight: base.sentenceAudioHighlight,
     selection: overrides.selection ?? base.selection,
+    selectionText: overrides.selectionText ?? base.selectionText,
     link: overrides.link ?? base.link,
     dark: dark,
   );
@@ -2407,6 +2484,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 听书跟随 reveal 落定后的进度补刷（见 `_scheduleReanchorSettleProgressRefresh`）。
   Timer? _revealProgressRefreshTimer;
 
+  /// 分页「读到页边就翻」（反馈 tUJsiLpL9d）：已翻到后半截的那句与翻页时刻（cue 时间域）。
+  /// 音频仍在这句、且没回到翻页时刻之前，再次揭示就停在后半截所在页。
+  ({AudioCue cue, int fromMs})? _audioCueTail;
+
+  /// 句内翻页观察的代际：每次 cue 通知 / 每次到点翻页 +1，迟到的异步分界结果代际
+  /// 不符就丢掉，不覆盖更新的观察。
+  int _audioCueEdgeGen = 0;
+
   /// 统计诊断流水上次记过的单元（`_traceArrive` 去重用）。
   (int, int)? _lastTracedUnit;
 
@@ -2990,9 +3075,6 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   set _caretSurface(CaretSurface value) => _caret.surface = value;
 
   bool get _caretActive => _caret.active;
-
-  /// 整句扫词的会话态（拍板台 5H922XeDHM，见 `reader_fushi/word_sweep.part.dart`）。
-  final _ReaderWordSweepState _wordSweep = _ReaderWordSweepState();
   bool get _caretOnReader => _caret.onReader;
   bool get _caretOnLyrics => _caret.onLyrics;
 
@@ -5191,6 +5273,8 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
       // 真相源）——preset 透传手调专色（与旧 switch 值逐一相等，零变化）、custom 用
       // 用户色、system/light 从真实 ColorScheme 强调色派生（不再落硬编码天蓝/灰/蓝）。
       selectionColor: _colorToCssRgba(rc.selection),
+      // 拍板台 -8azTfJh_v：查词高亮文字色，null = 跟随正文（CSS 不写字色规则）。
+      selectionTextColor: _colorToCssRgba(rc.selectionText),
       sentenceAudioHighlightColor: _colorToCssRgba(audioStyle.background),
       sentenceAudioTextColor: audioStyle.text == null
           ? null
@@ -5850,7 +5934,9 @@ $liveConfigJs
   /// 查词收尾序列：清栈热槽 → deferDisplay 查词 → 高亮并展示弹窗。reader 选词的
   /// 歌词模式与普通模式两分支共用（前后各自的 cue 解析 / cached-range 设置保留在
   /// 各分支，因时机不同：歌词从 fragment 提前设，普通从 data 在其后设）。
-  Future<void> _runLookupAndHighlight(
+  /// Returns the highlighted match length (what the controller lookup mode
+  /// keeps as the selection's right end).
+  Future<int> _runLookupAndHighlight(
     String searchTerm,
     Rect selectionRect, {
     LookupOrigin origin = LookupOrigin.explicit,
@@ -5865,6 +5951,7 @@ $liveConfigJs
       rubySpans: rubySpans,
     );
     await _highlightAndShowPopup(highlightCount, selectionRect);
+    return highlightCount;
   }
 
   // ── Key Navigation ────────────────────────────────────────────────
@@ -5898,10 +5985,15 @@ $liveConfigJs
   void onDictionaryStackChanged() => _caret.onDictionaryStackChanged();
 
   /// Hand the char-level cursor to the freshly rendered top popup when in cursor
-  /// mode. Pure-touch users (surface == none) are unaffected.
+  /// mode. Pure-touch users (surface == none) are unaffected. The controller
+  /// lookup mode keeps its cursor in the text (the next D-pad press changes
+  /// the word); its "enter result" button moves it into the popup instead
+  /// ([_ReaderControllerLookupTarget.enterResult]).
   @override
   void onDictionaryPopupRendered(int index) {
-    _caret.onDictionaryPopupRendered(index);
+    if (!(_controllerLookupTarget?.holdsCursorInText ?? false)) {
+      _caret.onDictionaryPopupRendered(index);
+    }
     // BUG-1071 ②：指针（触摸/鼠标点词）唤出的弹窗此前**没有任何 Flutter 焦点持有者**
     // —— 弹窗是纯原生平台 WebView（无 Flutter FocusNode），点词后 OS 焦点落在原生
     // WebView 上，Esc/关词典键被它吞或到不了 [_handleKeyEvent] → 用户报「键盘关词典
@@ -5945,23 +6037,47 @@ $liveConfigJs
         // 「只关词典」的专用动作（默认无键盘绑定，用户可绑鼠标侧键）——BUG-1071
         // 那条鼠标通道的唯一消费者，保留。
         ShortcutAction.readerDismissDict,
-        // 整句扫词（拍板台 5H922XeDHM）：每停一词就换同一张弹窗，恰恰只在弹窗可见时有
-        // 意义。弹窗持焦（键盘）或指针压在弹窗 / barrier 上（鼠标侧键）时输入只从弹窗
-        // 回传，不转发就等于「点过弹窗一次，扫词键就失效」。
-        ShortcutAction.readerLookupNextWord,
-        ShortcutAction.readerLookupPrevWord,
       };
 
-  /// 弹窗回传 token 的落地点：扫词排在基类「转发动作 = 关整条弹窗栈」**之前**——
-  /// 否则弹窗一持焦，扫词键就退化成「关弹窗」（与视频页同一条约束）。
+  /// 查词弹窗开着且弹窗持焦时，裸 ← / → 也要交回来「关弹窗并翻页」（反馈
+  /// uz_2m0E_Eu ③，与漫画一致）。只追加左右键，翻页动作的其它键位留给弹窗滚动释义；
+  /// 见 [withPopupArrowPageTurnKeys]。
+  @override
+  DictionaryPopupInputSpec get dictionaryPopupInputSpec =>
+      withPopupArrowPageTurnKeys(
+        super.dictionaryPopupInputSpec,
+        registry: appModel.shortcutRegistry,
+        scope: ShortcutScope.reader,
+        pageTurnActions: const <ShortcutAction>{
+          ShortcutAction.readerPageForward,
+          ShortcutAction.readerPageBackward,
+        },
+      );
+
+  /// 弹窗回传的裸 ← / → 走与键盘焦点路径同一个 [_resolveReaderArrowKey]（阅读方向 /
+  /// 反转开关校正），再经 [_executeShortcutAction] 关弹窗并翻页；其余 token 交回基类
+  /// （「返回上一级」/「只关词典」= 关整条弹窗栈）。
   @override
   bool onDictionaryPopupInputToken(String token) {
-    final ShortcutAction? action = resolveDictionaryPopupInputToken(
-      registry: appModel.shortcutRegistry,
-      token: token,
-      scope: ShortcutScope.reader,
-    );
-    if (action != null && _runReaderWordSweepAction(action)) return true;
+    final InputBinding? binding = InputBinding.deserialize(token);
+    if (binding != null &&
+        binding.modifiers.isEmpty &&
+        directionalPageTurnSideForKey(binding.key) != null) {
+      final ShortcutAction? action = _resolveReaderArrowKey(
+        binding.key,
+        modifiers: binding.modifiers,
+        boundAction: appModel.shortcutRegistry.resolveKeyboard(
+          binding.key,
+          modifiers: binding.modifiers,
+          scope: ShortcutScope.reader,
+        ),
+      );
+      if (action == ShortcutAction.readerPageForward ||
+          action == ShortcutAction.readerPageBackward) {
+        _executeShortcutAction(action!, keyboardTriggerKey: binding.key);
+        return true;
+      }
+    }
     return super.onDictionaryPopupInputToken(token);
   }
 

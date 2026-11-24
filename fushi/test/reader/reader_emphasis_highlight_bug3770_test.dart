@@ -20,7 +20,8 @@ import '../helpers/node_runtime.dart';
 /// 墨迹不能变少；当前句窄条仍盖住带傍点的字；交给引擎绘制的高亮不覆盖带傍点的文字，也不覆盖
 /// 高亮对它是空操作的文字（默认字色时整句都不交）；自定义字色时不走 CSS Highlight，VN 在换屏时
 /// （显示之前）把句子包裹好、字色走 wrapper，播放时屏上 DOM 只切 class（BUG-3741 不平移），
-/// 带傍点的字也换成自定义色。
+/// 带傍点的字也换成自定义色。查词高亮设了文字色（反色高亮）时，带傍点的字照样交给引擎换色（能读优先），
+/// 没设时查词高亮对整段是空操作、一个字都不交。
 void main() {
   const String paragraph =
       '彼は<span class="em">教科書通り</span>の<ruby>技術<rt>ぎじゅつ</rt></ruby>で戦った。';
@@ -34,6 +35,7 @@ void main() {
     required String writingMode,
     required String viewMode,
     String? textColor,
+    String? selectionTextColor,
   }) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -44,6 +46,8 @@ void main() {
     final String css = ReaderContentStyles.css(
       settings: settings,
       sentenceAudioTextColor: textColor,
+      selectionColor: selectionTextColor == null ? null : 'rgb(20, 20, 20)',
+      selectionTextColor: selectionTextColor,
     );
     final bool vn = viewMode == 'vn';
     final String engine = ReaderPaginationScripts.engineShell(
@@ -119,6 +123,17 @@ void main() {
             'name': '$writingMode/$viewMode',
             'html': await page(writingMode: writingMode, viewMode: viewMode),
           });
+          // 查词高亮文字色（拍板台 -8azTfJh_v）做的反色高亮：深色查词条上带傍点的字也必须换成
+          // 浅色交给引擎绘制，否则深字落在深条上看不见。
+          pages.add(<String, String>{
+            'name': '$writingMode/$viewMode/selection-text',
+            'selectionText': 'true',
+            'html': await page(
+              writingMode: writingMode,
+              viewMode: viewMode,
+              selectionTextColor: 'rgb(255, 255, 255)',
+            ),
+          });
           // 自定义当前句字色：Blink 上不走 CSS Highlight，VN 换屏时先包裹、播放只切 class。
           pages.add(<String, String>{
             'name': '$writingMode/$viewMode/custom-color',
@@ -145,7 +160,7 @@ void main() {
         return;
       }
       expect(exitCode, 0, reason: '$out\n${run.stderr}');
-      expect(out, contains('PASS 12 emphasis pages'));
+      expect(out, contains('PASS 18 emphasis pages'));
     },
     timeout: const Timeout(Duration(seconds: 150)),
   );

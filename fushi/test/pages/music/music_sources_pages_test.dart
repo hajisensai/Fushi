@@ -2,6 +2,7 @@
 // 「全部」里服务器那排专辑跟着数据源（换 storefront = 换浏览器）重新拉取；选中的来源消失后
 // chip 与内容一起回到「全部」；服务器从推荐页 chip 进入：专辑 → 曲目。
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -15,6 +16,8 @@ import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
@@ -118,11 +121,26 @@ MusicPluginManager _noPlugins() => MusicPluginManager(
 
 typedef _Env = ({AppModel app, PreferencesRepository prefs});
 
+/// YouTube 启用开关的写入卡在 [gate] 上，直到测试放行：用来造「写入途中切走」。
+class _GatedPrefs extends PreferencesRepository {
+  _GatedPrefs(super.db);
+
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<void> setMusicYoutubeEnabled(bool value) async {
+    await gate.future;
+    await super.setMusicYoutubeEnabled(value);
+  }
+}
+
 /// 真 IO / 数据库在 testWidgets 的假时钟里不会完成：环境搭建与偏好写入一律走 runAsync。
-Future<_Env> _env(WidgetTester tester) async {
+Future<_Env> _env(WidgetTester tester, {bool gatedPrefs = false}) async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
-  final PreferencesRepository prefs = PreferencesRepository(db);
+  final PreferencesRepository prefs = gatedPrefs
+      ? _GatedPrefs(db)
+      : PreferencesRepository(db);
   await tester.runAsync(prefs.loadFromDb);
   // 不建临时目录：这些页面不碰数据库目录下的文件。
   final Directory dir = Directory.systemTemp;
@@ -346,6 +364,40 @@ void main() {
     await _teardown(tester);
   });
 
+  // HBK-AUDIT-218：来源视图嵌在曲库页「在线」组里，切页签就 dispose。启用开关的写入
+  // 还没落地时切走，写完宿主仍要收到通知（推荐 / 统一搜索的来源由宿主重读），且不抛。
+  testWidgets('来源页：启用开关写入途中切走，写完照样通知宿主', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    final _Env env = await _env(tester, gatedPrefs: true);
+    int changed = 0;
+    void onChanged() => changed++;
+    await tester.pumpWidget(
+      _host(env.app, MusicOnlineSourcesView(onChanged: onChanged)),
+    );
+    await _settle(tester);
+
+    final Finder toggle = find.descendant(
+      of: find.byKey(
+        const ValueKey<String>('music-source-toggle-$kYoutubeMusicSourceKey'),
+      ),
+      matching: find.byType(Switch),
+    );
+    await tester.tap(toggle);
+    // 写入（真 IO）还没落地就切到别的页签：来源视图 dispose，宿主还在。
+    await tester.pumpWidget(_host(env.app, const SizedBox.shrink()));
+    expect(find.byType(MusicOnlineSourcesView), findsNothing);
+    expect(changed, 0);
+    (env.prefs as _GatedPrefs).gate.complete();
+    await _settle(tester);
+
+    expect(env.prefs.musicYoutubeEnabled, isTrue);
+    expect(changed, 1, reason: '写完必须告诉宿主，宿主才会按新来源重读');
+    expect(tester.takeException(), isNull);
+    await _teardown(tester);
+  });
+
   testWidgets('推荐「全部」：换数据源（如 Apple Music 换地区）后服务器那排专辑按新来源重新拉取', (
     WidgetTester tester,
   ) async {
@@ -468,6 +520,48 @@ void main() {
     expect(find.text('First'), findsOneWidget);
     expect(find.text('Second'), findsOneWidget);
     expect(find.text('1:01'), findsOneWidget);
+    await _teardown(tester);
+  });
+
+  testWidgets('横排货架行高随卡片副行走：两行标题 + 副行的专辑卡在放大字号下也不溢出', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    final _Env env = await _env(tester);
+    final _FakeBrowser navi = _FakeBrowser('subsonic-1');
+    await tester.pumpWidget(
+      _host(
+        env.app,
+        Builder(
+          builder: (BuildContext context) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.5)),
+            child: MusicShelfRow(
+              title: 'Recently added',
+              children: <Widget>[
+                for (int i = 0; i < 3; i++)
+                  MusicServerAlbumCard(
+                    browser: navi,
+                    album: MusicServerAlbum(
+                      id: 'a$i',
+                      title: 'A rather long album title that wraps $i',
+                      artist: 'Band',
+                      year: 2020,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await _settle(tester);
+    // 写死 220 的行高在这里会报 RenderFlex overflow。
+    expect(tester.takeException(), isNull);
+    expect(find.text('Band · 2020'), findsNWidgets(3));
     await _teardown(tester);
   });
 }

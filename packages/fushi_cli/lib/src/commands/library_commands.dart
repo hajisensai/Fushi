@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
@@ -118,6 +121,19 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
         render: _renderOrganizeResolve,
       ),
       CtlCommandSpec(
+        name: 'map',
+        summary: '整库地图（AI 管库 v3 用的紧凑列式快照，分页；只读）',
+        configure: _configureMap,
+        build: _buildMap,
+      ),
+      CtlCommandSpec(
+        name: 'apply-changes',
+        summary: '提交一整份库变更集（JSON 文件，AI 身份落库、整份一条撤销记录；--dry-run 只预演）',
+        usage: '<变更集.json>',
+        configure: _configureApplyChanges,
+        build: _buildApplyChanges,
+      ),
+      CtlCommandSpec(
         name: 'curate',
         summary:
             'AI 库管家：整库跑一趟（合集归属 → 认身份 → 作品关系 → 作品层；直接改库，可用 curate-undo 整趟撤销）',
@@ -165,6 +181,14 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
         summary: '列出 AI 库管家留给你处理的事（合集建议、没认出的作品、要确认的操作）',
         build: _buildCuratePending,
         render: _renderCuratePending,
+      ),
+      CtlCommandSpec(
+        name: 'curate-retry',
+        summary: '对待确认队列里一个书 / 游戏刮削单元让 AI 重试刮削（记一趟，可 curate-undo 整趟撤销）',
+        usage: '<books|games> <ref>',
+        configure: _configureCurateRetry,
+        build: _buildCurateRetry,
+        render: _renderCurateRetry,
       ),
       CtlCommandSpec(
         name: 'source-add',
@@ -1108,6 +1132,33 @@ String _renderCuratePending(Object? data) {
   return out.toString().trimRight();
 }
 
+void _configureCurateRetry(ArgParser parser) {
+  parser.addFlag(
+    'yes',
+    negatable: false,
+    help: '同意把标题、作者或品牌、年份、卷数发给 AI 提供商（首次需要）',
+  );
+}
+
+CtlRequestSpec _buildCurateRetry(CtlCommandContext context) {
+  final String stage = context.positional(0, '阶段（books / games）');
+  if (stage != 'books' && stage != 'games') {
+    throw CtlUsageError('阶段只能是 books / games：$stage');
+  }
+  final String ref = context.positional(1, '刮削单元 ref');
+  return CtlRequestSpec.post(
+    '$_curateRoot/scrape/retry',
+    body: <String, Object?>{
+      'stage': stage,
+      'ref': ref,
+      if (context.flag('yes')) 'yes': true,
+    },
+  );
+}
+
+String _renderCurateRetry(Object? data) =>
+    data is Map ? _renderCurateRun(data) : '$data';
+
 CtlRequestSpec _buildCurateStatus(CtlCommandContext context) =>
     CtlRequestSpec.get('$_curateRoot/status');
 
@@ -1151,4 +1202,79 @@ String _renderCurateLinks(Object? data) {
   return '生效 ${data['applied']} 条 · 建议 ${data['suggested']} 条 · '
       '${data['requests']} 次 AI 请求'
       '${failed.isEmpty ? '' : ' · 失败：${failed.join('、')}'}';
+}
+
+// ── AI 管库 v3（app 侧路由见 ctl_library_agent_routes.dart）─────────────────
+
+const String _agentRoot = '/api/admin/library/agent';
+
+/// `library map --view` 的值域（与 `LibraryMapView.wireName` 同名）。
+const List<String> kLibraryMapViews = <String>[
+  'summary',
+  'books',
+  'manga',
+  'video',
+  'games',
+  'links',
+];
+
+void _configureMap(ArgParser parser) {
+  parser
+    ..addOption(
+      'view',
+      help: '视图：summary（默认，总览）| books | manga | video | games | links',
+      allowed: kLibraryMapViews,
+    )
+    ..addOption('q', help: '只看标题 / 合集名含这段文字的')
+    ..addOption('added-since', help: '只看这个时间（毫秒时间戳）之后入库的')
+    ..addOption('offset', help: '分页起点（上一页给的 nextOffset）')
+    ..addOption('limit', help: '每页行数（默认 400，上限 2000）');
+}
+
+CtlRequestSpec _buildMap(CtlCommandContext context) {
+  final String? view = context.option('view');
+  final String? q = context.option('q');
+  final int? addedSince = context.intOption('added-since');
+  final int? offset = context.intOption('offset');
+  final int? limit = context.intOption('limit');
+  return CtlRequestSpec.get(
+    '$_agentRoot/map',
+    query: <String, String>{
+      if (view != null) 'view': view,
+      if (q != null && q.trim().isNotEmpty) 'q': q.trim(),
+      if (addedSince != null) 'addedSince': '$addedSince',
+      if (offset != null) 'offset': '$offset',
+      if (limit != null) 'limit': '$limit',
+    },
+  );
+}
+
+void _configureApplyChanges(ArgParser parser) {
+  parser.addFlag('dry-run', negatable: false, help: '只预演、不落库（返回会怎么改）');
+}
+
+CtlRequestSpec _buildApplyChanges(CtlCommandContext context) {
+  final String file = context.positional(0, '变更集 JSON 文件');
+  final String text;
+  try {
+    text = File(ctlAbsolutePath(file)).readAsStringSync();
+  } on FileSystemException catch (e) {
+    throw CtlUsageError('读不了 $file：${e.message}');
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(text);
+  } on FormatException catch (e) {
+    throw CtlUsageError('变更集不是合法 JSON：${e.message}');
+  }
+  if (decoded is! Map || decoded['changes'] is! List) {
+    throw const CtlUsageError('变更集必须是 {"changes": [...]} 形状的 JSON 对象');
+  }
+  return CtlRequestSpec.post(
+    '$_agentRoot/changes',
+    body: <String, Object?>{
+      ...decoded.cast<String, Object?>(),
+      if (context.flag('dry-run')) 'dryRun': true,
+    },
+  );
 }

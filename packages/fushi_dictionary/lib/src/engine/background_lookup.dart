@@ -32,10 +32,14 @@ const int kDefaultLookupFfiCacheMaxBytes = 32 << 20;
 /// 拿到的是不同长度的结果集；load-more 以更大上限重查同一个词，键里不含上限就会命中
 /// 上一轮的短结果集，`allLoaded` 随即为 true —— load-more 永久失灵（BUG-1307）。
 ///
-/// 用扫描窗口而不是整串作键：引擎结果只依赖前 [FushiDicts.defaultScanLength] + 1 个
-/// 码点（`lookup.cpp` 的 scan_window + `word_scan.cpp` 的 scan_candidates 只看窗口与
+/// 用扫描窗口而不是整串作键：引擎结果只依赖前 [scanLength] + 1 个码点
+/// （`lookup.cpp` 的 scan_window + `word_scan.cpp` 的 scan_candidates 只看窗口与
 /// 窗口后第一个码点，与 [FushiDicts.matchedLength] 同一份契约）。阅读器传进来的是
 /// 「光标到句尾」的整段余文，整串作键时同一位置的不同余文互相命中不了。
+///
+/// 🔴 **键必须带 [scanLength]**（反馈 ezCjUoU2QM，扫描窗口可设置）：只看窗口长度分不开
+/// 不同设置——长 scanLength + 1 个码点的串在 scanLength 与 scanLength + 1 下窗口相同，
+/// 候选集却不同。非出厂值时键尾追加 `/s<n>`，出厂值时键与此前逐字相同。
 ///
 /// [chineseSimpToTrad] 为 true（查词语言为中文，引擎会额外试繁體变体）时键尾追加
 /// `/zh`：同一个词在中文 / 非中文语境下结果集不同，不能共用缓存。默认 false 时键与
@@ -43,11 +47,19 @@ const int kDefaultLookupFfiCacheMaxBytes = 32 << 20;
 String buildFfiLookupCacheKey({
   required String term,
   required int maxResults,
+  int scanLength = FushiDicts.defaultScanLength,
   bool chineseSimpToTrad = false,
 }) {
-  final String window = FushiDicts.scanWindowOf(term);
-  return '${window.length}:$window/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
+  final String window = FushiDicts.scanWindowOf(term, scanLength: scanLength);
+  return '${window.length}:$window/$maxResults'
+      '${scanLengthCacheSuffix(scanLength)}'
+      '${chineseSimpToTrad ? '/zh' : ''}';
 }
+
+/// 扫描窗口长度的缓存键后缀：出厂值为空串（旧键逐字不变），其余 `/s<n>`。
+/// 原始引擎结果缓存与 app 的查词结果缓存共用这一份。
+String scanLengthCacheSuffix(int scanLength) =>
+    scanLength == FushiDicts.defaultScanLength ? '' : '/s$scanLength';
 
 /// [excludedDictionaries]（交给引擎排除的词典）的缓存键后缀。引擎在截断前排除这些
 /// 词典，结果集随集合变化，必须单独成键；空集返回空串，旧键逐字不变。名字按码元排序
@@ -129,6 +141,7 @@ class FushiLookupRequest {
   const FushiLookupRequest({
     required this.text,
     required this.maxResults,
+    required this.scanLength,
     this.includeKanji = false,
     this.popupOnly = false,
     this.hiddenDictionaries = const <String>{},
@@ -145,6 +158,10 @@ class FushiLookupRequest {
 
   /// 引擎结果上限 == 本次消费的词头预算（BUG-1307）。
   final int maxResults;
+
+  /// 扫描窗口长度（码点）：调用方在宿主 isolate 上取 [FushiDicts.scanLength]，与它自己
+  /// 的结果缓存键用同一个值。后台 isolate 读不到偏好，必须随请求带过去。
+  final int scanLength;
 
   /// 顺带查汉字桶（调用方已判定 [text] 是单个汉字）。
   final bool includeKanji;
@@ -243,6 +260,7 @@ FushiLookupOutcome _computeLookupOutcome({
       buildFfiLookupCacheKey(
         term: request.text,
         maxResults: request.maxResults,
+        scanLength: request.scanLength,
         chineseSimpToTrad: request.chineseSimpToTrad,
       ) +
       rubySpansCacheSuffix(request.rubySpans) +
@@ -269,6 +287,7 @@ FushiLookupOutcome _computeLookupOutcome({
       handle,
       request.text,
       maxResults: request.maxResults,
+      scanLength: request.scanLength,
       chineseSimpToTrad: request.chineseSimpToTrad,
       rubySpans: request.rubySpans,
       excludedDictionaries: request.hiddenDictionaries,

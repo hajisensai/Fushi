@@ -52,6 +52,34 @@ String? discRootForMemberPath(String memberPath) {
   return null;
 }
 
+/// [path] 是不是原盘**内部的流文件**：蓝光 `BDMV/STREAM/*.m2ts`（含 3D 的
+/// `BDMV/STREAM/SSIF/*.ssif`）或 DVD `VIDEO_TS/*.VOB`。纯函数，不碰文件系统。
+///
+/// 这些文件是盘的组成部分，不是独立的视频：盘由它的标题（[isDiscMemberPath]）代表，
+/// 流文件名 `00002.m2ts` 只是片段号，没有任何作品信息。BUG-4245 修复前的导入（逐个
+/// `.m2ts` 入库）留下的这种行，不能被当成作品去识别（BUG-5280）。
+///
+/// 两种分隔符都认：库里的路径可能来自另一平台（Windows 端经互联交给 Linux 上的
+/// fushi_server），按宿主平台的 `package:path` 切会让 Linux 认不出 `D:\…\BDMV\STREAM`。
+bool isDiscStreamFilePath(String path) {
+  final List<String> parts = path
+      .split(RegExp(r'[\\/]+'))
+      .where((String s) => s.isNotEmpty)
+      .toList(growable: false);
+  if (parts.length < 3) return false;
+  final String extension = p.extension(parts.last).toLowerCase();
+  final String parent = parts[parts.length - 2].toUpperCase();
+  if (extension == '.vob') return parent == 'VIDEO_TS';
+  if (extension == '.ssif') {
+    return parts.length >= 4 &&
+        parent == 'SSIF' &&
+        parts[parts.length - 3].toUpperCase() == 'STREAM' &&
+        parts[parts.length - 4].toUpperCase() == 'BDMV';
+  }
+  if (extension != '.m2ts') return false;
+  return parent == 'STREAM' && parts[parts.length - 3].toUpperCase() == 'BDMV';
+}
+
 /// 只看路径能定下的规格：DVD 成员 → [DiscFormat.dvd]；蓝光成员 → [DiscFormat.bluray]
 /// （**还没区分 UHD**，要确证用 [DiscFormatResolver]）；其它 → null。
 DiscFormat? discFormatHintForMemberPath(String memberPath) {

@@ -21,9 +21,23 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_remote_tracks.dart';
+import 'package:fushi/src/media/music/server/music_server_downloads.dart'
+    show MusicServerDownloadService;
 import 'package:fushi/src/media/music/server/music_server_play_item.dart'
     show musicServerPlayItem;
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart'
+    show InterconnectMusicBrowser;
+import 'package:fushi/src/pages/implementations/music/music_library_removal.dart'
+    show musicRemoveRemoteTracksWithUndo;
+import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
+    show openMusicHostMvPage;
+import 'package:fushi/src/pages/implementations/music/music_server_collection_actions.dart'
+    show musicServerDownloadServiceOf, musicServerTrackDownloadActions;
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
+    show musicServerItemActions;
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart'
+    show musicServerSubtitleMenuActions;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -135,16 +149,18 @@ Future<void> musicAddRemoteTrackToLibrary(
   );
 }
 
-/// 远程曲目移出音乐库（行留着：歌单可能还引用它）。
+/// 远程曲目移出音乐库（行留着：歌单可能还引用它），提示带「撤销」（按原入库时刻放回）。
+/// 服务器曲目在跑的下载随之取消；离线副本等撤销窗口过去再删（下载 ⊂ 音乐库，v175）。
 Future<void> musicRemoveRemoteTrackFromLibrary(
+  BuildContext context,
   FushiDatabase db,
   String trackUid,
 ) async {
-  await db.removeMusicRemoteTrackFromLibrary(trackUid, at: _now());
-  FushiToast.show(
-    msg: t.music_action_removed_from_library,
-    severity: ToastSeverity.success,
-  );
+  // 第一个 await 之前取：动作跑完时菜单可能已经卸载。
+  final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(context);
+  await musicRemoveRemoteTracksWithUndo(messenger, db, <String>[
+    trackUid,
+  ], message: (_) => t.music_action_removed_from_library);
 }
 
 /// 远程曲目的「加入 / 移出音乐库」「加入本地歌单」两项菜单动作；不是远程曲目或门没过回空。
@@ -180,7 +196,8 @@ List<MusicMenuAction> musicRemoteTrackLibraryActions(
       id: 'removeFromLibrary',
       label: t.music_action_remove_from_library,
       icon: FushiIcons.close,
-      run: (_) => musicRemoveRemoteTrackFromLibrary(db, track.trackUid.value),
+      run: (BuildContext context) =>
+          musicRemoveRemoteTrackFromLibrary(context, db, track.trackUid.value),
     )
   else
     MusicMenuAction(
@@ -270,32 +287,68 @@ MusicItemMenu? musicServerTrackLibraryMenu(
     open: (MusicMenuAnchor? anchor) => unawaited(() async {
       // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
       final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
-      final List<MusicMenuAction> actions =
-          await musicServerTrackLibraryActions(
+      final List<MusicMenuAction> actions = <MusicMenuAction>[
+        // 收藏 / 即时混音（能收藏 / 能混音的服务器：OpenSubsonic；Jellyfin 由
+        // `musicServerTrackMenu` 出）。
+        ...musicServerItemActions(
+          browser,
+          MusicServerItemKind.track,
+          track.id,
+          reportedFavorite: track.favorite,
+        ),
+        ...await musicServerTrackLibraryActions(
+          app.database,
+          browser,
+          track,
+          albumTitle: albumTitle,
+          downloads: musicServerDownloadServiceOf(
+            context,
             app.database,
             browser,
-            track,
-            albumTitle: albumTitle,
-          );
+          ),
+        ),
+      ];
       if (!context.mounted) return;
       await showMusicActionMenu(
         context,
         anchor: at,
         errorText: (Object e) => t.music_action_failed(error: '$e'),
-        actions: actions,
+        actions: <MusicMenuAction>[
+          ...actions,
+          ...musicServerSubtitleMenuActions(
+            app,
+            browser,
+            track,
+            albumTitle: albumTitle,
+          ),
+          // 互联 host 曲目：host 上的 MV（看 / 微调写回 / 请 host 重新匹配，design-imusic-q7 / q9）。
+          if (browser is InterconnectMusicBrowser)
+            MusicMenuAction(
+              id: 'mv',
+              label: t.music_mv_section,
+              icon: FushiIcons.video,
+              run: (BuildContext context) => openMusicHostMvPage(
+                context: context,
+                browser: browser,
+                track: track,
+              ),
+            ),
+        ],
       );
     }()),
   );
 }
 
-/// Jellyfin / Subsonic 曲目的「加入 / 移出音乐库」「加入本地歌单」（读一次入库状态）；
-/// 不能入库的来源回空。[playlistLabel] 与服务器账号歌单并列时传「加入本地歌单」。
+/// Jellyfin / Subsonic 曲目的「加入 / 移出音乐库」「加入本地歌单」（读一次入库状态），给了
+/// [downloads] 再加离线副本的「下载 / 取消下载 / 删除下载」（v175）；不能入库的来源回空。
+/// [playlistLabel] 与服务器账号歌单并列时传「加入本地歌单」。
 Future<List<MusicMenuAction>> musicServerTrackLibraryActions(
   FushiDatabase db,
   MusicServerBrowser browser,
   MusicServerTrack track, {
   String? albumTitle,
   String? playlistLabel,
+  MusicServerDownloadService? downloads,
 }) async {
   final MusicRemoteTracksCompanion? row = musicServerRemoteTrackCompanion(
     browser,
@@ -306,10 +359,18 @@ Future<List<MusicMenuAction>> musicServerTrackLibraryActions(
   final bool inLibrary =
       (await db.getMusicRemoteTrack(row.trackUid.value))?.libraryAddedAt !=
       null;
-  return musicRemoteTrackLibraryActions(
-    db,
-    row,
-    inLibrary: inLibrary,
-    playlistLabel: playlistLabel,
-  );
+  return <MusicMenuAction>[
+    ...musicRemoteTrackLibraryActions(
+      db,
+      row,
+      inLibrary: inLibrary,
+      playlistLabel: playlistLabel,
+    ),
+    ...musicServerTrackDownloadActions(
+      downloads,
+      browser,
+      track,
+      albumTitle: albumTitle,
+    ),
+  ];
 }

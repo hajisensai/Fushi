@@ -207,9 +207,12 @@ void main() {
         await media.started(s);
       }
       await pumpEventQueue();
+      // 名额按点击顺序发放，但拿到名额后先建私有任务目录（真实磁盘 I/O）才起抽取，
+      // 已放行的几张谁先起 ffmpeg 取决于建目录的快慢，不按点击顺序；落卡顺序另由共享
+      // 队列保证（见本用例末尾）。这里只钉「放行的恰好是前 limit 张、第 limit+1 张在等」。
       expect(
         media.startedSources,
-        admitted,
+        unorderedEquals(admitted),
         reason: '第 ${limit + 1} 张要等名额，不能十张卡起十路 ffmpeg',
       );
 
@@ -309,6 +312,7 @@ class _GatedExtractors {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const {},
+    double? gainDb,
   }) async {
     if (_failingAudio.contains(inputPath)) {
       throw StateError('audio extractor crashed');

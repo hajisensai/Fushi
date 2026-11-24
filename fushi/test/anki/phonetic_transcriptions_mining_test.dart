@@ -141,20 +141,24 @@ void main() {
 
     test('constructPitchPositionHtml folds transcriptions into '
         '{pitch-accent-positions}（英语默认路径）', () {
-      final String body = functionBody('constructPitchPositionHtml');
+      // 条目收集在 pitchPositionEntries（{pitch-accent-positions} 与其单行变体
+      // {pitch-accent-positions-inline} 共用），外层 <ul> 在 constructPitchPositionHtml。
+      final String entries = functionBody('pitchPositionEntries');
       expect(
-        body,
+        entries,
         contains('pitchGroup.transcriptions'),
         reason: '制卡侧不再消费 transcriptions —— 英语卡声调字段会回到恒空',
       );
       expect(
-        body,
+        entries,
         contains('escapePitchText(ipa)'),
         reason: 'IPA 来自词典数据，进 HTML 前必须转义',
       );
       // 全空组返回 ''（而不是 <ul></ul> 空壳），字段才会被按空跳过。
       // 列表标记为什么必须是 ul（BUG-2151）见
       // lapis_pitch_tag_list_markup_test.dart。
+      final String body = functionBody('constructPitchPositionHtml');
+      expect(body, contains('pitchPositionEntries(pitches)'));
       expect(body, contains(r"items ? `<ul>${items}</ul>` : ''"));
     });
 

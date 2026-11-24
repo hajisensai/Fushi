@@ -13,6 +13,8 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart'
     show mangaLineKindLabel;
+import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart'
+    show kMangaAudioDramaFailure;
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
@@ -42,12 +44,16 @@ String ttsRenderFailureText(String? code) {
     // `manga_audio_renderer.dart`）。
     case 'manga_script_empty':
       return t.manga_audio_failure_script_empty;
+    case 'manga_package_importing':
+      return t.manga_audio_package_error_importing;
     case 'manga_script_stale':
       return t.manga_audio_failure_script_stale;
     case 'manga_no_pages':
       return t.manga_audio_failure_no_pages;
     case 'manga_not_rendered':
       return t.manga_audio_failure_not_rendered;
+    case kMangaAudioDramaFailure:
+      return t.manga_audio_failure_drama_registered;
     case 'ffmpeg_missing':
       return t.manga_audio_failure_ffmpeg_missing;
     case 'empty_text':
@@ -56,6 +62,8 @@ String ttsRenderFailureText(String? code) {
       return t.manga_audio_failure_silent_output;
     case 'clip_source_missing':
       return t.manga_audio_failure_clip_missing;
+    case 'line_not_read':
+      return t.manga_audio_failure_line_not_read;
   }
   if (code != null && code.startsWith('tts_')) {
     final String name = code.substring(4);

@@ -205,6 +205,19 @@ void main() {
       );
     });
 
+    test('原盘「全部播放」：按平移到播放器时间轴的起点匹配（BUG-5356）', () {
+      // 收藏存的是那一集自己的时间轴（第 2 集第 2 秒 = 2000），本页播的整条播放列表
+      // 上那一句在 5000：调用方先平移再匹配，不能拿 2000 去撞列表里的同文句。
+      expect(
+        matchVideoRemoteFavoriteCue(
+          rows,
+          _favorite('二', 2000),
+          playerStartMs: 5000,
+        ).id,
+        'primary:2',
+      );
+    });
+
     test('无起点且多行同文 → 409 ambiguous；找不到 → 404', () {
       expect(
         () => matchVideoRemoteFavoriteCue(rows, _favorite('二', null)),

@@ -141,7 +141,8 @@ enum ServerSrsGenState {
   /// 有协议 3 的旧库要迁移、没在跑：管理员取消了，或这一次的结论不该自动重跑（见 [ServerSrsGeneration.code]）。
   needsMigration('needs_migration'),
 
-  /// 上一次迁移对拍不过（报告在 [ServerSrsGeneration.reportPath]），或只剩迁移临时文件：不自动重跑。
+  /// 上一次迁移没完成：原因由内核判定（[ServerSrsGeneration.failure]：对拍有差异 / 没法核对全 / 准备出错，报告在
+  /// [ServerSrsGeneration.reportPath]；或只剩迁移临时文件）。不自动重跑。
   migrationFailed('migration_failed'),
 
   /// 只剩封存的旧库、新代库不见了：迁移不了、也不建空库顶上。
@@ -194,6 +195,7 @@ final class ServerSrsGeneration {
     this.done = 0,
     this.total = 0,
     this.reportPath,
+    this.failure,
     this.neededBytes,
     this.freeBytes,
     this.verdict,
@@ -219,8 +221,12 @@ final class ServerSrsGeneration {
   final int done;
   final int total;
 
-  /// 对拍不过时的诊断报告路径（只含 ID 与计数）。
+  /// 迁移中止时的诊断报告路径（只含 ID 与计数）。
   final String? reportPath;
+
+  /// [ServerSrsGenState.migrationFailed] 的原因（内核判定：本进程刚跑出的中止结论，或重启后状态命令 / 打开错误给的，
+  /// 两处同一形状）；没有 = null。
+  final SrsGen4MigrationFailure? failure;
   final int? neededBytes;
   final int? freeBytes;
 
@@ -262,10 +268,23 @@ final class ServerSrsGeneration {
     ServerSrsGenState.needsMigration =>
       'The protocol 3 review library has not been upgraded yet (the last run was cancelled or stopped). '
           'Start it with `ctl srs migration start`. srs.db is untouched.',
-    ServerSrsGenState.migrationFailed =>
-      'The last upgrade did not pass the parity check and was rolled back; srs.db is untouched. '
-          'It is not retried automatically. Keep the report${reportPath == null ? '' : ' ($reportPath)'} '
-          'and the server log for support; `ctl srs migration start` runs it again.',
+    ServerSrsGenState.migrationFailed => switch (failure?.reason) {
+      SrsGen4MigrationFailureReason.fail =>
+        'The last upgrade found differences in the parity check and was rolled back; srs.db is untouched. '
+            '$_keepReport',
+      SrsGen4MigrationFailureReason.incomplete =>
+        'The last upgrade could not complete the parity check (part of srs.db could not be checked, e.g. a '
+            'note without its note type) and was rolled back; srs.db is untouched. $_keepReport',
+      SrsGen4MigrationFailureReason.error =>
+        'The last upgrade failed while preparing a profile and was rolled back; srs.db is untouched. '
+            '$_keepReport',
+      SrsGen4MigrationFailureReason.interrupted =>
+        'A previous upgrade did not finish: only its temporary file (srs4.db-migrating) is left and srs.db is '
+            'missing. Nothing was deleted and it is not retried automatically. Restore srs.db from a backup '
+            'of this data directory, or contact support with the server log.',
+      null =>
+        'The last upgrade did not finish and was rolled back; srs.db is untouched. $_keepReport',
+    },
     ServerSrsGenState.sealedOldOnly =>
       'Only the sealed protocol 3 library is left and srs4.db is missing. Nothing is rebuilt automatically '
           'and no file was deleted: restore srs4.db from a backup of this data directory, or contact '
@@ -312,6 +331,11 @@ final class ServerSrsGeneration {
           'commit step; `ctl srs migration start` runs it again.',
   };
 
+  /// 中止的三种原因共用的处置说明（报告路径有就带上）。
+  String get _keepReport =>
+      'It is not retried automatically. Keep the report${reportPath == null ? '' : ' ($reportPath)'} '
+      'and the server log for support; `ctl srs migration start` runs it again.';
+
   ServerSrsGeneration _progress(SrsGen4MigrationProgress p) =>
       ServerSrsGeneration(
         state: state,
@@ -346,6 +370,7 @@ final class ServerSrsGeneration {
       'cancellable': step!.cancellable && !cancelRequested,
     },
     'reportPath': ?reportPath,
+    'failureReason': ?failure?.reason.wire,
     'needed': ?neededBytes,
     'free': ?freeBytes,
     'verdict': ?verdict,
@@ -1133,15 +1158,15 @@ class ServerSrs {
       return null;
     }
     final String dir = support.path;
-    SrsGenState? state;
+    SrsGen4MigrationStatus? status;
     try {
-      state = _migrationBackend.status(dir).state;
+      status = _migrationBackend.status(dir);
     } catch (e, stack) {
       // 读不了状态（原生库缺 / 目录坏）：交给下面开库，报同一个错、标成出错。
       engineLog.log('ServerSrs.generation', e, stack);
     }
-    if (state != null && state != SrsGenState.ready) {
-      _onGenState(state, wanted);
+    if (status != null && status.state != SrsGenState.ready) {
+      _onGenState(status.state, wanted, failure: status.failure);
       return null;
     }
     try {
@@ -1159,9 +1184,12 @@ class ServerSrs {
       return storage;
     } on SrsStoreOpenBlocked catch (e) {
       switch (e) {
-        case SrsStoreNotMigrated(state: final SrsGenState s)
+        case SrsStoreNotMigrated(
+              state: final SrsGenState s,
+              :final SrsGen4MigrationFailure? failure,
+            )
             when s != SrsGenState.ready:
-          _onGenState(s, wanted);
+          _onGenState(s, wanted, failure: failure);
         case SrsStoreMigrating():
           _onGenState(SrsGenState.migratingElsewhere, wanted);
         case SrsStoreLegacyUnmigrated():
@@ -1196,7 +1224,12 @@ class ServerSrs {
   }
 
   /// 打开时库目录处在 [state]（不是 ready）：要迁移就自动开始（上一次的结论允许时），其余记成管理员可见的状态。
-  void _onGenState(SrsGenState state, List<String> wanted) {
+  /// [failure]：[SrsGenState.migrationFailed] 时内核判定的原因（状态命令 / 打开错误，与 [state] 同一次判定）。
+  void _onGenState(
+    SrsGenState state,
+    List<String> wanted, {
+    SrsGen4MigrationFailure? failure,
+  }) {
     switch (state) {
       case SrsGenState.needsMigration:
         // 可以自动（再）开始：没跑过（启动 / 重启后续做——迁移本身可重入，被杀留下的临时文件内核取锁后先清），或上次
@@ -1220,10 +1253,15 @@ class ServerSrs {
         // 别的进程迁完（或放弃）了要接着开库 / 迁移：隔一会再看，不等兜底定时器。
         _armMigrationRetry();
       case SrsGenState.migrationFailed:
-        // 本进程刚跑出的失败带着报告路径，别用状态命令的（不带路径）盖掉。
-        if (_generation.state != ServerSrsGenState.migrationFailed) {
+        // 原因与报告路径一律取内核的（重启后也有）。本进程刚跑出的同一个失败还带着结论与时间，原因没变就不盖掉。
+        if (_generation.state != ServerSrsGenState.migrationFailed ||
+            (failure != null && _generation.failure != failure)) {
           _setGeneration(
-            const ServerSrsGeneration(state: ServerSrsGenState.migrationFailed),
+            ServerSrsGeneration(
+              state: ServerSrsGenState.migrationFailed,
+              failure: failure,
+              reportPath: failure?.reportPath,
+            ),
           );
         }
       case SrsGenState.sealedOldOnly:
@@ -1396,6 +1434,7 @@ class ServerSrs {
       code: code,
       reason: reason,
       reportPath: o.reportPath,
+      failure: o.failure,
       neededBytes: o.neededBytes,
       freeBytes: o.freeBytes,
       verdict: verdict,

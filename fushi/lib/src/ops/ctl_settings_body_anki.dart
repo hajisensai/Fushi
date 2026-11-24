@@ -652,6 +652,18 @@ CtlBodyPage _mediaPage() {
           }
         },
       ),
+      SettingsSwitchItem(
+        id: _id('mining_audio_follow_playback_volume'),
+        title: t.mining_audio_follow_playback_volume,
+        subtitle: t.mining_audio_follow_playback_volume_hint,
+        value: (SettingsContext c) =>
+            c.appModel.miningAudioFollowPlaybackVolume,
+        onChanged: (SettingsContext c, bool v) {
+          if (c.appModel.miningAudioFollowPlaybackVolume != v) {
+            c.appModel.toggleMiningAudioFollowPlaybackVolume();
+          }
+        },
+      ),
       _choice<SentenceAudioSourcePick>(
         id: 'video_mining_audio_source',
         title: t.video_mining_audio_source,

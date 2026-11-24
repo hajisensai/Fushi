@@ -303,6 +303,14 @@ abstract interface class AgentSkillContext {
   /// 出候选卡片等用户点；取消返回 null。
   Future<String?> askChoice(String prompt, List<AgentChoiceOption> options);
 
+  /// 把本场切进长程模式（spec `2026-11-22-ai-library-agent-design.md` §3.4）：
+  /// [tools] 里工具箱认得的 id（目录工具或技能）直接装进本场，等同模型
+  /// `ops.describe` 过；本轮剩下的工具调用上限提到 [maxToolCalls]（省略 =
+  /// `AgentLimits.longTaskMaxToolCalls`）。只升不降：已经更高的上限不被调低。
+  /// 连错熔断照旧。下一轮（用户下一句话 / 任务结果续轮）恢复默认上限，已装的
+  /// 工具留在本场。
+  void beginLongTask({required Iterable<String> tools, int? maxToolCalls});
+
   /// 用户按了停止：技能应尽快收尾。
   bool get cancelled;
 }

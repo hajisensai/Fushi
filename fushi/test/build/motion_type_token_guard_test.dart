@@ -84,7 +84,7 @@ void main() {
   test('lib/ 不新增硬编码 Curves.*（用 FushiMotion / 弹簧 token）', () {
     final List<String> offenders = overBudget(
       scan(_curvePattern),
-      _curveBudget,
+      <String, int>{..._curveBudget, ..._lyricVisualizerArtCurveBudget},
     );
     expect(
       offenders,
@@ -102,6 +102,7 @@ void main() {
           ..._fontSpecimenBudget,
           ..._subtitleContentBudget,
           ..._typeScaleTokenBudget,
+          ..._lyricVisualizerContentFontBudget,
         });
     expect(
       offenders,
@@ -151,6 +152,39 @@ const Map<String, int> _subtitleContentBudget = <String, int>{
 /// 裸字号。只豁免这一张表里 [FushiPageTitleScale] 两档的 `fontSize:`。
 const Map<String, int> _typeScaleTokenBudget = <String, int>{
   'lib/src/utils/components/fushi_page_title_metrics.dart': 2,
+};
+
+/// 全屏歌词动画（PR #4211，照 folia-major 移植）的场景内缓动：每处都对应 folia 源码里
+/// 写死的 CSS / framer-motion 缓动（`ease-in-out`、`easeOut` 等），是画面内容的一部分，
+/// 不是 UI 控件动效；换成弹簧 token 会让移植样式的节奏偏离原作。只豁免这些场景文件，
+/// 歌词页工具栏、选样式面板、参数面板等 UI 仍须走 FushiMotion。
+const Map<String, int> _lyricVisualizerArtCurveBudget = <String, int>{
+  'lib/src/media/music/lyrics/visualizer/backgrounds/monet_background.dart': 1,
+  'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_scene.dart': 8,
+  'lib/src/media/music/lyrics/visualizer/modes/luminous/luminous_timing.dart':
+      2,
+  'lib/src/media/music/lyrics/visualizer/modes/monet/monet_floating_decor.dart':
+      1,
+  // chaotic 晃动的逐段 easeInOut + 离开 chaotic 回正的 easeOut（folia framer
+  // `{ duration: 0.8, ease: 'easeOut' }`）。
+  'lib/src/media/music/lyrics/visualizer/modes/monet/monet_lyrics_model.dart':
+      2,
+  'lib/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart': 2,
+  'lib/src/media/music/lyrics/visualizer/modes/monet/monet_visualizer.dart': 3,
+  'lib/src/media/music/lyrics/visualizer/modes/partita/partita_painter.dart': 1,
+  'lib/src/media/music/lyrics/visualizer/modes/tilt/tilt_scene.dart': 2,
+};
+
+/// 全屏歌词动画的场景内文字（歌词、标题 / 歌手占位、场景里的段落标签）是歌词内容区：
+/// 字号照 folia 的 px / rem 写死，再乘场景缩放与用户字号倍率（`fontScale`），按本文件头
+/// 的约定不走 UI 字阶。
+const Map<String, int> _lyricVisualizerContentFontBudget = <String, int>{
+  'lib/src/media/music/lyrics/visualizer/lyric_visualizer_placeholder.dart': 1,
+  'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text.dart': 1,
+  'lib/src/media/music/lyrics/visualizer/modes/machi/machi_text.dart': 1,
+  'lib/src/media/music/lyrics/visualizer/modes/monet/monet_visualizer.dart': 2,
+  'lib/src/media/music/lyrics/visualizer/modes/still/still_layout.dart': 2,
+  'lib/src/pages/implementations/music/music_lyric_visualizer_view.dart': 3,
 };
 
 /// 2026-10-05 存量：`Curves.` 每文件出现次数（只许减少）。

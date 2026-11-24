@@ -124,6 +124,39 @@ String mangaLineKindLabel(CastLineKind kind) => switch (kind) {
   CastLineKind.skip => t.manga_audio_kind_skip,
 };
 
+/// 语气（情绪）→ 文案；null = 不标。
+String mangaEmotionLabel(CastEmotion? emotion) => switch (emotion) {
+  null => t.manga_audio_emotion_none,
+  CastEmotion.neutral => t.manga_audio_emotion_neutral,
+  CastEmotion.joy => t.manga_audio_emotion_joy,
+  CastEmotion.sadness => t.manga_audio_emotion_sadness,
+  CastEmotion.anger => t.manga_audio_emotion_anger,
+  CastEmotion.surprise => t.manga_audio_emotion_surprise,
+  CastEmotion.fear => t.manga_audio_emotion_fear,
+  CastEmotion.disgust => t.manga_audio_emotion_disgust,
+  CastEmotion.embarrassment => t.manga_audio_emotion_embarrassment,
+  CastEmotion.tenderness => t.manga_audio_emotion_tenderness,
+  CastEmotion.tension => t.manga_audio_emotion_tension,
+};
+
+/// 一句的情绪摘要：「愤怒 80」；没标情绪返回 null。
+String? mangaLineEmotionLabel(MangaScriptLine line) {
+  final CastEmotion? emotion = line.emotion;
+  if (emotion == null) return null;
+  final int? intensity = line.intensity;
+  return intensity == null
+      ? mangaEmotionLabel(emotion)
+      : '${mangaEmotionLabel(emotion)} $intensity';
+}
+
+/// 一句的演法摘要：情绪（[mangaLineEmotionLabel]）+ 语气说明，如「愤怒 80 · 必死に食い
+/// 下がる」；都没标返回 null。复核列表的副标题用它，连续几句同一个人时能看出语气有没有
+/// 逐句变化。
+String? mangaLineToneLabel(MangaScriptLine line) {
+  final List<String> parts = <String>[?mangaLineEmotionLabel(line), ?line.tone];
+  return parts.isEmpty ? null : parts.join(' · ');
+}
+
 /// 复核界面优先列出的行：说话人不明，或 AI 自评把握低于此值。
 const double kMangaReviewConfidence = 0.6;
 

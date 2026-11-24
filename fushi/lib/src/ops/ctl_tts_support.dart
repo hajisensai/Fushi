@@ -22,6 +22,7 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
 import 'package:fushi_engine/tts/cast/cast_line_voicing.dart';
 import 'package:fushi_engine/tts/cast/series_cast.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate.dart'
@@ -60,7 +61,8 @@ import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart'
         mangaLineNeedsReview;
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
-    show audiobookRowHasRegistration, updateMangaAudioLine;
+    show updateMangaAudioLine;
+import 'package:fushi/src/media/manga/audio/manga_audio_package_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -101,7 +103,10 @@ class TtsCtlDeps {
     required this.regenerate,
     required this.stopPlayback,
     required this.localAudioBackend,
-  });
+    MangaAudioPackageTasks Function()? packageTasks,
+    String Function()? appLabel,
+  }) : packageTasks = packageTasks ?? (() => MangaAudioPackageTasks.instance),
+       appLabel = appLabel ?? (() => 'fushi');
 
   factory TtsCtlDeps.of(OpContext context) => TtsCtlDeps(
     app: () => context.appModel,
@@ -134,6 +139,7 @@ class TtsCtlDeps {
     stopPlayback: (List<String> bookKeys) =>
         context.appModel.audiobookSession.stopIfPlayingAny(bookKeys),
     localAudioBackend: mangaLocalAudioBackend,
+    appLabel: () => 'fushi ${context.appModel.packageInfo.version}',
   );
 
   final AppModel Function() app;
@@ -162,6 +168,12 @@ class TtsCtlDeps {
   /// 「按句替换本地音频」整形用的后端（只整形本地音频；ffmpeg 不可用抛
   /// [TtsRenderFailure]）。
   final Future<MangaRenderBackend> Function() localAudioBackend;
+
+  /// 有声漫画导出包的任务表（工作台同一张，默认进程级那张）。
+  final MangaAudioPackageTasks Function() packageTasks;
+
+  /// 导出包里记的导出方（`fushi <版本>`）。
+  final String Function() appLabel;
 
   /// 标注任务结束时演出稿的指纹（`<bookKey>@<startedAt>` → 指纹）：撤销标注时据此判断
   /// 之后有没有被手改过。进程内有效；app 重启后撤销报 superseded，不盲目覆盖。
@@ -258,6 +270,14 @@ void requireNotAnnotating(TtsCtlDeps deps, String bookKey) {
   }
 }
 
+/// 本卷正在导入有声漫画包（导入任务占着它，解包到落库结束）时不许标注 / 生成 / 改演出稿
+/// 或成品：导入会整份替换演出稿、成品与登记，两边会互相覆盖。
+void requireNotImportingPackage(TtsCtlDeps deps, String bookKey) {
+  if (deps.packageTasks().importingVolume(bookKey) != null) {
+    throw const CtlFailure.conflict('这一卷正在导入有声漫画包，等它结束（tts package-task）');
+  }
+}
+
 /// 本卷有在排队 / 在跑的生成任务时不许换句文件。
 void requireNotRendering(TtsCtlDeps deps, String bookKey) {
   final TtsRenderJob? job = deps.renderQueue().latestFor(bookKey);
@@ -266,30 +286,37 @@ void requireNotRendering(TtsCtlDeps deps, String bookKey) {
   }
 }
 
-/// 这一卷当前登记的有声成品是不是本机生成的那份（[mangaRenderManifestFile]）。改单句 /
-/// 换本地音频 / 按角色重生成都只改本机生成的清单：登记的是 `tts import` 导进来的外部
-/// 清单时，改本机清单再按句写库会把两份清单的句子混进同一份登记，所以 409。没有登记
-/// （只生成没入库）放行，之后按本机清单整份登记。
-Future<void> requireAppRenderedAudio(TtsCtlDeps deps, String bookKey) async {
-  final AudiobookRow? row = await deps.appModel.database.getAudiobookByBookKey(
-    bookKey,
-  );
-  if (row == null || !audiobookRowHasRegistration(row)) return;
-  final String internal = mangaRenderManifestFile(
-    deps.appModel,
-    bookKey,
-  ).absolute.path;
-  if (row.alignmentFormat == kMangaAlignmentFormat &&
-      p.equals(p.normalize(row.alignmentPath), p.normalize(internal))) {
-    return;
+/// 改单句 / 换本地音频 / 按角色重生成要改的那份成品清单（[mangaAudioEditTarget]）：
+/// 登记的是哪份就改哪份——本机生成的、或 `tts import` 导入的外部清单（原地改写用户
+/// 目录里的清单与音频，拍板 isATnQZ_eN-external）；没登记（只生成没入库）改本机那份，
+/// 之后按它整份登记。登记的是广播剧 / 动画音轨成品时 409：那些段不是按演出稿逐句出的，
+/// 改本机清单再按句写库会把两份清单的句子混进同一份登记。判据与 app 内入口共用
+/// [mangaLineEditTarget]。
+Future<MangaAudioEditTarget> requireLineEditableAudio(
+  TtsCtlDeps deps,
+  String bookKey,
+) async {
+  try {
+    return await mangaLineEditTarget(deps.appModel, bookKey);
+  } on TtsRenderFailure catch (e) {
+    if (e.code != kMangaAudioDramaFailure) rethrow;
+    throw const CtlFailure(
+      409,
+      kMangaAudioDramaFailure,
+      '这一卷登记的有声成品是广播剧 / 动画音轨（段不是按演出稿逐句出的），不能按句改：'
+      '先整卷生成（tts render）换成合成成品',
+    );
   }
-  throw CtlFailure(
-    409,
-    'manga_audio_external',
-    '这一卷登记的有声成品不是本机生成的（${row.alignmentPath}）：在外部管线里改好后用 '
-        'tts import 重新导入，或先整卷生成（tts render）换成本机成品',
-  );
 }
+
+/// 撤销载荷里记下的那份清单（操作当时改的就是它）；旧载荷没记时按当前登记找。
+Future<MangaAudioEditTarget> mangaUndoTarget(
+  AppModel appModel,
+  String bookKey,
+  Object? manifestPath,
+) async => manifestPath is String && manifestPath.isNotEmpty
+    ? MangaAudioEditTarget.forManifest(appModel, bookKey, File(manifestPath))
+    : mangaAudioEditTarget(appModel, bookKey);
 
 /// 说话人的线上名：旁白 / 不明用 `narrator` / `unknown`。
 String ttsSpeakerWire(String speaker) => switch (speaker) {
@@ -337,6 +364,7 @@ Map<String, Object?> ttsMangaLineJson(
   if (line.beatMs != 0) 'beatMs': line.beatMs,
   if (line.emotion != null) 'emotion': line.emotion!.wire,
   if (line.intensity != null) 'intensity': line.intensity,
+  if (line.tone != null) 'tone': line.tone,
   if (line.seed != null) 'seed': line.seed,
   if (line.say != null) 'say': line.say,
   if (line.textFixes.isNotEmpty)
@@ -550,7 +578,10 @@ class TtsLineEdit {
   final String? addedCharacter;
 }
 
-/// 改一句：说话人 / 类型 / 一拍 / 页内位置 / 手填文字 / OCR 错字修正。改过的行记为
+/// 线上「不标语气」的写法（`tts.manga.line.edit` 的 `emotion`）。
+const String kTtsEmotionNone = 'none';
+
+/// 改一句：说话人 / 类型 / 一拍 / 语气与强度 / 语气说明 / 页内位置 / 手填文字 / OCR 错字修正。改过的行记为
 /// 用户手改（重新标注时保留，复核页同一语义）。参数不对抛 400，行不在 404。
 TtsLineEdit editMangaLine(
   MangaAudioVolume volume,
@@ -617,6 +648,62 @@ TtsLineEdit editMangaLine(
     changed = true;
   }
 
+  // 语气（情绪）与强度：进合成（2026-11-23 起；能原生表达情绪的引擎直接用，其余折成
+  // 语速 / 音高 / 音量）。改了之后整卷生成按清单行的演出指纹重出这句。`none` / 空串
+  // 清掉情绪（强度随之清掉）。
+  if (body.containsKey('emotion')) {
+    final String raw = '${body['emotion'] ?? ''}'.trim();
+    if (raw.isEmpty || raw == kTtsEmotionNone) {
+      next = next.copyWith(clearEmotion: true);
+    } else {
+      final CastEmotion? emotion = CastEmotion.parse(raw);
+      if (emotion == null) {
+        throw CtlFailure.badRequest(
+          'emotion 可选：$kTtsEmotionNone / '
+          '${CastEmotion.values.map((CastEmotion e) => e.wire).join(' / ')}',
+        );
+      }
+      next = next.copyWith(emotion: emotion);
+    }
+    changed = true;
+  }
+
+  if (body.containsKey('intensity')) {
+    final Object? raw = body['intensity'];
+    final int? parsed = raw is int ? raw : int.tryParse('${raw ?? ''}'.trim());
+    // -1 / null / 空串 = 不标强度（操作目录会丢掉值为 null 的参数，所以另给 -1）。
+    if (raw == null || '$raw'.trim().isEmpty || parsed == -1) {
+      next = next.copyWith(clearIntensity: true);
+    } else {
+      final int? intensity = parsed;
+      if (intensity == null ||
+          intensity < 0 ||
+          intensity > CastLineLimits.maxIntensity) {
+        throw CtlFailure.badRequest(
+          'intensity 应为 0..${CastLineLimits.maxIntensity}（-1 = 不标强度）',
+        );
+      }
+      if (next.emotion == null) {
+        throw const CtlFailure.badRequest('这一句没有语气，强度要和 emotion 一起给');
+      }
+      next = next.copyWith(intensity: intensity);
+    }
+    changed = true;
+  }
+
+  // 语气说明（自由文本演技指令，如「おずおずと」）：空串清掉；超长截断（[castToneOf]）。
+  if (body.containsKey('tone')) {
+    final Object? toneRaw = body['tone'];
+    if (toneRaw != null && toneRaw is! String) {
+      throw const CtlFailure.badRequest('tone 应为文字（空串 = 清掉）');
+    }
+    final String? tone = castToneOf(toneRaw);
+    next = tone == null
+        ? next.copyWith(clearTone: true)
+        : next.copyWith(tone: tone);
+    changed = true;
+  }
+
   if (body.containsKey('say')) {
     final String say = '${body['say'] ?? ''}'.trim();
     next = say.isEmpty
@@ -666,7 +753,8 @@ TtsLineEdit editMangaLine(
 
   if (!changed) {
     throw const CtlFailure.badRequest(
-      '没有要改的字段（speaker / kind / beat / say / fixes / position）',
+      '没有要改的字段（speaker / kind / beat / emotion / intensity / tone / say / '
+      'fixes / position）',
     );
   }
   next = next.copyWith(source: TtsCastSource.user);
@@ -1014,8 +1102,12 @@ Future<Map<String, Object?>> captureMangaRegenSnapshot(
   String bookKey,
   String lineId,
 ) async {
+  final File manifestFile = (await mangaAudioEditTarget(
+    deps.appModel,
+    bookKey,
+  )).manifestFile;
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
-    mangaRenderManifestFile(deps.appModel, bookKey),
+    manifestFile,
   );
   final MangaScriptLine? scriptLine = (await mangaAudioScriptStoreFor(
     deps.appModel,
@@ -1028,6 +1120,7 @@ Future<Map<String, Object?>> captureMangaRegenSnapshot(
     if (l.lineId == lineId) rendered = l;
   }
   return <String, Object?>{
+    'manifest': manifestFile.path,
     'oldLine': rendered?.toJson(),
     'oldScriptLine': scriptLine?.toJson(),
     'ledgerEntry': ledger.entries[lineId]?.toJson(),
@@ -1039,6 +1132,7 @@ Future<Map<String, Object?>> captureMangaRegenSnapshot(
 Future<Map<String, Object?>> regenerateAndKeepMangaLine(
   TtsCtlDeps deps,
   MangaAudioVolume volume, {
+  required MangaAudioEditTarget target,
   required String lineId,
   required int? seed,
 }) async {
@@ -1046,7 +1140,7 @@ Future<Map<String, Object?>> regenerateAndKeepMangaLine(
   final String bookKey = volume.bookKey;
   final MangaScriptLine? line = volume.script.lineById(lineId);
   if (line == null) throw CtlFailure.notFound('演出稿里没有这一句：$lineId');
-  final File manifestFile = mangaRenderManifestFile(appModel, bookKey);
+  final File manifestFile = target.manifestFile;
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
     manifestFile,
   );
@@ -1081,9 +1175,8 @@ Future<Map<String, Object?>> regenerateAndKeepMangaLine(
     throw CtlFailure(422, e.code, '重生成失败：${e.code}');
   }
 
-  final MangaAudioRenderer renderer = MangaAudioRenderer(
-    backend: const TtsCtlNoSynthesis(),
-    manifestFile: manifestFile,
+  final MangaAudioRenderer renderer = target.renderer(
+    const TtsCtlNoSynthesis(),
   );
   // 旧音频备份（保留候选时清单不再引用它，会被清掉）。
   final File oldFile = File(p.join(manifestFile.parent.path, old.file));
@@ -1134,6 +1227,37 @@ Future<Map<String, Object?>> regenerateAndKeepMangaLine(
   };
 }
 
+/// 撤销「换音」类操作（单句重生成 / 按角色批量重生成 / 换本地音频）时清单这一句只放回
+/// 音频本身：文件、时长、占位、声音、种子、念的文字与整形版本都随那段旧音频一起回去；
+/// 说话人 / 类型 / 一拍等演出字段保留当前值（之后被独立改过的不被抹掉，HBK-AUDIT-208）。
+MangaRenderedLine mangaRenderedAudioRestored(
+  MangaRenderedLine current,
+  MangaRenderedLine before,
+) => current.replaced(
+  file: before.file,
+  durationMs: before.durationMs,
+  placeholder: before.placeholder,
+  voice: before.voice,
+  seed: before.seed,
+  text: before.text,
+  spoken: before.spoken,
+  shape: before.shape,
+  direction: before.direction,
+);
+
+/// 撤销「换音」类操作时演出稿这一句只放回这次操作改过的字段：音源（[MangaScriptLine.audio]）
+/// 总是；种子只在 [seed] 为 true（换种子重生成）时。停顿、说话人、手填文字、错字修正、
+/// 单句声音等之后被独立改过的字段保留当前值（HBK-AUDIT-208）。
+MangaScriptLine mangaScriptAudioRestored(
+  MangaScriptLine current,
+  MangaScriptLine before, {
+  required bool seed,
+}) => current.copyWith(
+  audio: before.audio,
+  seed: seed ? before.seed : null,
+  clearSeed: seed && before.seed == null,
+);
+
 /// 撤销「单句重生成」：清单里这一句还是这次的候选文件时，把备份的旧音频放回去，清单、
 /// 演出稿这一行、未配音账本都恢复到重生成之前。
 Future<OpUndoOutcome> revertMangaRegen(
@@ -1151,7 +1275,12 @@ Future<OpUndoOutcome> revertMangaRegen(
   if (job != null && !job.isTerminal) {
     return const OpUndoOutcome.failed('这一卷正在生成，结束后再撤销');
   }
-  final File manifestFile = mangaRenderManifestFile(appModel, bookKey);
+  final MangaAudioEditTarget target = await mangaUndoTarget(
+    appModel,
+    bookKey,
+    payload['manifest'],
+  );
+  final File manifestFile = target.manifestFile;
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
     manifestFile,
   );
@@ -1171,7 +1300,10 @@ Future<OpUndoOutcome> revertMangaRegen(
   }
   await deps.stopPlayback(<String>[bookKey]);
   await backupFile.copy(p.join(manifestFile.parent.path, oldLine.file));
-  manifest.replaceLine(lineId, (MangaRenderedLine _) => oldLine);
+  manifest.replaceLine(
+    lineId,
+    (MangaRenderedLine now) => mangaRenderedAudioRestored(now, oldLine),
+  );
   await manifest.save(manifestFile);
 
   final MangaAudioScriptStore scripts = mangaAudioScriptStoreFor(appModel);
@@ -1181,7 +1313,10 @@ Future<OpUndoOutcome> revertMangaRegen(
   );
   final MangaScriptLine? now = script.lineById(lineId);
   if (before != null && now != null && now.seed == payload['seed']) {
-    script.replaceLine(lineId, (MangaScriptLine _) => before);
+    script.replaceLine(
+      lineId,
+      (MangaScriptLine l) => mangaScriptAudioRestored(l, before, seed: true),
+    );
     await scripts.save(bookKey, script);
   }
   final CastVoicingEntry? entry = CastVoicingEntry.fromJson(
@@ -1200,10 +1335,7 @@ Future<OpUndoOutcome> revertMangaRegen(
     manifest: manifest,
     lineId: lineId,
   );
-  await MangaAudioRenderer(
-    backend: const TtsCtlNoSynthesis(),
-    manifestFile: manifestFile,
-  ).sweepUnreferenced(manifest);
+  await target.renderer(const TtsCtlNoSynthesis()).sweepUnreferenced(manifest);
   await deleteMangaFileQuietly(backupFile);
   return const OpUndoOutcome.done();
 }
@@ -1255,9 +1387,16 @@ class TtsCtlNoSynthesis implements MangaRenderBackend {
     required String voice,
     required int seed,
     required List<String> segments,
+    required CastLineDirection direction,
     required String outputPath,
     required TtsRenderCancelToken cancel,
   }) => throw UnsupportedError('no synthesis here');
+
+  @override
+  Future<String?> directionKey({
+    required String voice,
+    required CastLineDirection direction,
+  }) async => null;
 
   @override
   Future<int> cutClip({

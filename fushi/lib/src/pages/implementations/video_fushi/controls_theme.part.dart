@@ -118,6 +118,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // ListenableBuilder.merge）。仅桌面 theme，移动端不动。
       hideMouseOnControlsRemoval:
           !(_subtitleListVisible.value ||
+              _liveChatVisible.value ||
               _episodeListVisible.value ||
               _lookupOverlayActive.value),
       // 单击画面 = 播放/暂停（media_kit 桌面默认 false，故此前点画面毫无反应，

@@ -93,8 +93,10 @@ class AppVideoSubtitleTarget {
     this.frameSource,
     bool? wholeSeason,
     String? key,
+    List<String>? settingScopes,
   }) : _wholeSeason = wholeSeason,
-       _key = key;
+       _key = key,
+       _settingScopes = settingScopes;
 
   /// 音乐目标按**曲目**计数（[episodes] 是去重后的文件，CUE 整轨一个文件多首）：要写
   /// 字幕的曲目数与已有生成字幕、跳过的曲目数。视频目标为 null（按集计）。
@@ -120,6 +122,7 @@ class AppVideoSubtitleTarget {
 
   final bool? _wholeSeason;
   final String? _key;
+  final List<String>? _settingScopes;
 
   /// 批量（整季 / 整张专辑 / 整个来源）：已有导出字幕（`<媒体名>.<语言>.srt`）的集由
   /// 管线直接跳过，并做跨集一致性。显式给了就用给的；视频默认按「是不是合集目标」。
@@ -131,6 +134,11 @@ class AppVideoSubtitleTarget {
       (collectionId != null
           ? 'collection:$collectionId'
           : 'book:$bookUid:${episodes.map((AppVideoSubtitleEpisode e) => e.videoPath).join('|')}');
+
+  /// 按条目记住的生成选项（音乐的「先分离人声」）从哪些身份上查，由近到远：第一个
+  /// 记过的说了算，改动只记在第一个（[key]）上。单曲是「曲目 → 专辑 → 来源」——在整张
+  /// 专辑 / 整个来源上关掉后，之后单开其中一首也沿用；缺省只有 [key] 自己。
+  List<String> get settingScopes => _settingScopes ?? <String>[key];
 
   /// 给 CLI / 结果 JSON 看的目标名。
   String get describe => collectionId != null

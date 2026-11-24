@@ -193,7 +193,7 @@ jobs:
       # 只缓存 pub、不缓存 SDK：理由与实测见 build-multiplatform.yml windows job 同处注释。
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.47.6'
+          flutter-version: '3.50.0'
           cache: false
           pub-cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
@@ -653,25 +653,11 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_corpus/build_windows_dll.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_corpus) failed" }
-      # BUG-1589 根因（run 31700342531 的 -v 日志确证）：`aot_elf_release` 阶段
-      # gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出——本仓 AOT 规模
-      # 超出其默认栈保留。本机 SDK 早已用 `editbin /STACK:128M` 打过同款补丁
-      # （flutter upgrade 会冲掉需重打），CI 每次全新 SDK 自然没有，于是发布构建
-      # 固定红。gen_snapshot 不暴露栈大小参数，这是上游工具链限制，只能改二进制
-      # 头；上游抬默认栈或 AOT 深度下降后本步可移除。
-      - name: Raise gen_snapshot stack reserve (BUG-1589)
-        shell: pwsh
-        run: |
-          flutter precache --windows
-          $editbin = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\HostX64\x64\editbin.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $editbin) { throw 'editbin.exe not found in the VS 2022 toolchain' }
-          $snapshots = Get-ChildItem "$env:FLUTTER_ROOT\bin\cache\artifacts\engine" -Recurse -Filter gen_snapshot.exe
-          if (-not $snapshots) { throw 'gen_snapshot.exe not found under engine artifacts' }
-          foreach ($snap in $snapshots) {
-            & $editbin.FullName /STACK:134217728 $snap.FullName
-            if ($LASTEXITCODE -ne 0) { throw "editbin failed on $($snap.FullName)" }
-            Write-Host "Raised stack reserve to 128MB: $($snap.FullName)"
-          }
+      # BUG-1589：曾在这里改 gen_snapshot.exe 的 PE 头把栈保留抬到 128 MB，
+      # 绕开 slang flat map 巨型 string switch 在 Windows 1 MB 主线程栈上的 SSA
+      # 递归溢出（0xC00000FD）。PR #3428 关掉 flat map（slang.yaml `flat_map: false`）
+      # 后，stock gen_snapshot 已能编过，本步按 BUG-1589 写明的移除条件删除；
+      # 守卫 release_build_diagnosability_guard_test.dart 禁止再加回来。
       # BUG-1589：这一步在 develop 上固定红，而错误**看不见**——MSBuild 把自定义
       # 生成步骤的真实报错折叠成 `Target dart_build failed` + `MSB8066`，日志里
       # 只剩这两行。本机用 -v 跑同一条命令才拿到真正的 CMake/hook 报错。
@@ -1404,7 +1390,7 @@ jobs:
           platform: macos
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.47.6'
+          flutter-version: '3.50.0'
           cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
       # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -2919,6 +2905,10 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" build
           mkdir -p fushi/build/release-artifacts
           cp build/flatpak-out/fushi-*-linux-x86_64.flatpak fushi/build/release-artifacts/
+          # The plain bundle tarball ships too: distros without Flatpak (or users who
+          # want a portable copy) run it directly; it has no in-app installer, so the
+          # updater only opens the release page for it (UnsupportedUpdater).
+          cp "$tarball" fushi/build/release-artifacts/
           # One file instead of thousands of OSTree objects for the artifact upload.
           tar -C build/flatpak-out -cf build/flatpak-repo.tar repo
       - name: Upload Linux Flatpak artifact
@@ -2928,6 +2918,7 @@ jobs:
           name: desktop-artifacts-linux
           path: |
             fushi/build/release-artifacts/fushi-*-linux-x86_64.flatpak
+            fushi/build/release-artifacts/fushi-*-linux-x64.tar.gz
           if-no-files-found: ignore
           retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
       - name: Upload Flatpak repo commit artifact
@@ -2971,7 +2962,7 @@ jobs:
           platform: ios
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.47.6'
+          flutter-version: '3.50.0'
           cache: true
       - name: Resolve desktop release channel
         id: channel
@@ -4107,12 +4098,12 @@ jobs:
           # prune deletes it and the rolling release "loses" that device. Scope
           # the candidate set to THIS workflow's filename shapes (Windows:
           # *-windows-setup.exe / macOS: *-macos-arm64.zip + .dmg (+ legacy *-macos.zip) /
-          # iOS: *-ios.ipa / Linux: *-linux-x86_64.flatpak) so it keeps
+          # iOS: *-ios.ipa / Linux: *-linux-x86_64.flatpak + *-linux-x64.tar.gz) so it keeps
           # its own top KEEP_SEQS and never touches Android's assets.
           PLATFORM_ASSETS=()
           for name in "${ASSET_NAMES[@]}"; do
             case "$name" in
-              *-windows-setup.exe|*-macos-arm64.zip|*-macos-arm64.dmg|*-macos.zip|*-ios.ipa|*-linux-x86_64.flatpak) PLATFORM_ASSETS+=("$name") ;;
+              *-windows-setup.exe|*-macos-arm64.zip|*-macos-arm64.dmg|*-macos.zip|*-ios.ipa|*-linux-x86_64.flatpak|*-linux-x64.tar.gz) PLATFORM_ASSETS+=("$name") ;;
             esac
           done
           # Check length BEFORE re-expanding the (possibly empty) array: on macOS
@@ -4373,6 +4364,7 @@ jobs:
           tag_name: ${{ github.event_name == 'release' && steps.channel.outputs.tag || steps.channel.outputs.publish_tag }}
           files: |
             fushi/build/release-artifacts/fushi-*-linux-x86_64.flatpak
+            fushi/build/release-artifacts/fushi-*-linux-x64.tar.gz
       - name: Publish mirror update manifest (Linux assets)
         if: steps.channel.outputs.publish_manifest == 'true' && steps.flatpak_repo.outputs.publish == 'true'
         shell: bash

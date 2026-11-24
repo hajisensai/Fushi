@@ -1,7 +1,8 @@
 /// 生成字幕要用的两类本机模型在 app 层的接缝：
 ///
 /// - [VideoSubtitleAsrModelPort]：视频用的识别模型（`mixedAudio` 包；日语 Parakeet、
-///   普通话 X-ASR zipformer，按 [VideoSubtitleLanguage] 选）；
+///   普通话 X-ASR zipformer，按 [VideoSubtitleLanguage] 选）；音乐库歌词用 `song`
+///   （同一个包 + 人声分离模型）；
 /// - [VideoSubtitleMossPort]：MOSS（audio.cpp 运行库 + MOSS-Transcribe-Diarize 权重）。
 ///
 /// 视频页面板、设置页与桌面 CLI 都经它们读状态 / 触发下载；生产实现只转调
@@ -14,6 +15,7 @@ import 'package:fushi_asr_core/asr_core.dart'
     show
         AsrAccelerationPreference,
         AsrAudioProfile,
+        AsrEncoderVariant,
         AsrLanguage,
         AsrTranscribePlan,
         AsrTranscriptionService,
@@ -32,12 +34,20 @@ import 'package:fushi/src/asr_host/asr_host.dart'
         appMossProvisionedDiskBytes,
         appMossProvisionStatus;
 import 'package:fushi/src/asr_host/shared_model_downloads.dart'
-    show asrDownloadKeyFor, kMossDownloadKey, sharedModelDownloads;
+    show
+        asrDownloadKeyFor,
+        joinSongModelDownload,
+        kMossDownloadKey,
+        sharedModelDownloads;
 
-/// 视频用的识别模型（按 [VideoSubtitleLanguage]）：是否已下载 + 下载。
+/// 生成字幕用的识别模型（按 [VideoSubtitleLanguage] 与素材）：是否已下载 + 下载。
+///
+/// `audioProfile` 只收 `mixedAudio`（视频）与 `song`（音乐库歌词：混音那个包 + 人声
+/// 分离模型）。
 abstract interface class VideoSubtitleAsrModelPort {
   Future<bool> isReady({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   });
 
   /// 下载缺失的模型文件；事件流结束 = 下载完。失败以异常结束流。
@@ -46,20 +56,22 @@ abstract interface class VideoSubtitleAsrModelPort {
   /// （关弹层）不停下载；已在下载时再调只是挂上去看进度，不另起第二条写者。
   Stream<ModelDownloadEvent> download({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   });
 
   /// 接回进行中的下载（别处 / 之前那次弹层发起的）；没在下载时为 null。
   Stream<ModelDownloadEvent>? resumeDownload({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   });
 }
 
-/// 生产实现：与视频页「语音转写」同一个 `mixedAudio` 转录服务装配。
+/// 生产实现：与视频页「语音转写」同一套转录服务装配。
 class AppVideoSubtitleAsrModelPort implements VideoSubtitleAsrModelPort {
   const AppVideoSubtitleAsrModelPort();
 
-  static AsrTranscriptionService _service() =>
-      createAsrTranscriptionService(audioProfile: AsrAudioProfile.mixedAudio);
+  static AsrTranscriptionService _service(AsrAudioProfile profile) =>
+      createAsrTranscriptionService(audioProfile: profile);
 
   static Future<AsrTranscribePlan> _plan(
     AsrTranscriptionService service,
@@ -72,28 +84,70 @@ class AppVideoSubtitleAsrModelPort implements VideoSubtitleAsrModelPort {
   @override
   Future<bool> isReady({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
-  }) async => (await _plan(_service(), language.asrLanguage)).modelReady;
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
+  }) async =>
+      (await _plan(_service(audioProfile), language.asrLanguage)).modelReady;
 
-  static String _key(VideoSubtitleLanguage language) =>
-      asrDownloadKeyFor(language.asrLanguage, AsrAudioProfile.mixedAudio);
+  static String _key(VideoSubtitleLanguage language, AsrAudioProfile profile) =>
+      asrDownloadKeyFor(language.asrLanguage, profile);
 
   @override
   Stream<ModelDownloadEvent> download({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
-  }) => sharedModelDownloads.join(
-    _key(language),
-    () => _downloadMissing(language.asrLanguage),
-  );
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
+  }) {
+    final AsrLanguage asrLanguage = language.asrLanguage;
+    final String mixedKey = _key(language, AsrAudioProfile.mixedAudio);
+    Stream<ModelDownloadEvent> downloadMixed() =>
+        _downloadMissing(asrLanguage, AsrAudioProfile.mixedAudio);
+    if (!audioProfile.separatesVocals) {
+      return sharedModelDownloads.join(mixedKey, downloadMixed);
+    }
+    // 歌曲 = 混音那个包 + 分离模型：识别文件只由混音那条写，就绪后本条只补分离模型。
+    return joinSongModelDownload(
+      sharedModelDownloads,
+      mixedKey: mixedKey,
+      songKey: _key(language, audioProfile),
+      downloadMixedMissing: downloadMixed,
+      mixedReadyVariant: () async {
+        final AsrTranscribePlan mixed = await _plan(
+          _service(AsrAudioProfile.mixedAudio),
+          asrLanguage,
+        );
+        return mixed.modelReady ? mixed.variant : null;
+      },
+      downloadSongMissing: (AsrEncoderVariant variant) =>
+          _downloadSongMissing(asrLanguage, audioProfile, variant),
+    );
+  }
 
   @override
   Stream<ModelDownloadEvent>? resumeDownload({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
-  }) => sharedModelDownloads.attach(_key(language));
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
+  }) =>
+      (audioProfile.separatesVocals
+          ? sharedModelDownloads.attach(_key(language, audioProfile))
+          : null) ??
+      sharedModelDownloads.attach(_key(language, AsrAudioProfile.mixedAudio));
+
+  /// 歌曲素材只补分离模型：按混音包**在盘的**识别变体 [variant] 下（见
+  /// [joinSongModelDownload]），不按歌曲包此刻的推荐变体。
+  static Stream<ModelDownloadEvent> _downloadSongMissing(
+    AsrLanguage language,
+    AsrAudioProfile profile,
+    AsrEncoderVariant variant,
+  ) async* {
+    final AsrTranscriptionService service = _service(profile);
+    if ((await _plan(service, language)).modelReady) return;
+    yield* service.downloadModel(language: language, variant: variant);
+  }
 
   static Stream<ModelDownloadEvent> _downloadMissing(
     AsrLanguage language,
+    AsrAudioProfile profile,
   ) async* {
-    final AsrTranscriptionService service = _service();
+    final AsrTranscriptionService service = _service(profile);
     final AsrTranscribePlan plan = await _plan(service, language);
     if (plan.modelReady) return;
     yield* service.downloadModel(

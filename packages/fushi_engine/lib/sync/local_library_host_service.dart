@@ -15,6 +15,7 @@ import 'package:fushi_engine/media/video/video_sidecar.dart'
         findSidecarSubtitle,
         isSidecarSubtitleSuffix,
         listSidecarSubtitles,
+        ownedSidecarSuffix,
         pickSidecar,
         sidecarSuffixesDisplacedBy;
 import 'package:fushi_audio/fushi_audio_core.dart'
@@ -69,6 +70,7 @@ import 'package:fushi_engine/media/video/series_playback_prefs.dart'
 import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi_engine/sync/online_manga_host_reader.dart';
+import 'package:fushi_engine/sync/manga_chapter_progress_sync.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart'
     show
         hasExportableMangaContent,
@@ -83,6 +85,7 @@ import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
+import 'package:fushi_engine/sync/online_library_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
@@ -114,10 +117,14 @@ import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
         mangaChapterDirectoryByDigest,
         mangaChapterImagesDirectory,
         mangaChapterJsonFile,
-        readDownloadedChapterPayload;
+        mangaChapterSourcePageKey,
+        mangaChapterSourcePagesFile,
+        readDownloadedChapterPayload,
+        readMangaChapterSourcePages,
+        MangaChapterSourcePage;
 import 'package:fushi_engine/media/manga/manga_storage.dart' show MangaStorage;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
-    show MokuroPayload, parseMangaJson;
+    show MokuroImage, MokuroPayload, parseMangaJson;
 
 part 'local_library_host_service/dictionaries.part.dart';
 part 'local_library_host_service/books.part.dart';
@@ -163,6 +170,7 @@ abstract class _LocalLibraryHostBase
         FushiLibraryHostService,
         BookProgressBatchHost,
         MangaLibraryHost,
+        MangaChapterProgressHost,
         LivePositionWriteHost,
         PdfBookImportHost,
         DeletionTombstoneHost,
@@ -185,7 +193,8 @@ abstract class _LocalLibraryHostBase
         VideoMetadataOrderingHost,
         TagSyncHost,
         MediaLinkSyncHost,
-        StreamVideoSyncHost {
+        StreamVideoSyncHost,
+        OnlineLibrarySyncHost {
   FushiDatabase get _db;
   Directory get _dictionaryResourceRoot;
   SyncAssetPackageService get _packages;
@@ -222,6 +231,7 @@ abstract class _LocalLibraryHostBase
   get _extractVideoCover;
   Future<VideoSourceScrapeTaskController?> Function()? get _scrapeController;
   OnlineMangaHostReader? get _onlineMangaReader;
+  OnlineLibraryHostEndpoint get _onlineLibrary;
 }
 
 /// 用真实 Fushi 库（Drift DB + [SyncAssetPackageService]）实现 host 库服务。
@@ -291,6 +301,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
     extractVideoCover,
     Future<VideoSourceScrapeTaskController?> Function()? scrapeController,
     OnlineMangaHostReader? onlineMangaReader,
+    OnlineLibraryParticipant? onlineLibraryParticipant,
   }) : _db = db,
        _dictionaryResourceRoot = dictionaryResourceRoot,
        _packages = packages,
@@ -315,7 +326,12 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
        _videoCoversDirectory = videoCoversDirectory,
        _extractVideoCover = extractVideoCover,
        _scrapeController = scrapeController,
-       _onlineMangaReader = onlineMangaReader;
+       _onlineMangaReader = onlineMangaReader,
+       _onlineLibrary = OnlineLibraryHostEndpoint(
+         db: db,
+         runExclusive: runSyncStateExclusive ?? runExclusive,
+         participant: onlineLibraryParticipant,
+       );
 
   @override
   final FushiDatabase _db;
@@ -457,6 +473,11 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   /// 在线漫画按需取页（app 装配；null = 只供 host 已下载的章，无头服务端即此）。
   @override
   final OnlineMangaHostReader? _onlineMangaReader;
+
+  /// 在线源条目清单（拍板台 mY5VWg1nD-）：信箱恒有；app 装配传参与方
+  /// （`onlineLibraryParticipant`），无头服务端不传、只当信箱。
+  @override
+  final OnlineLibraryHostEndpoint _onlineLibrary;
 }
 
 /// 跨域共享的查询 helper（书 / 视频 / 有声书都用）：主合集归属一趟映射、可导出有声书键集。

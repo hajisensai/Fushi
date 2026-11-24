@@ -96,11 +96,12 @@ void main() {
     });
   });
 
-  // reader 里放飞 highlight 的两个文件：audiobook.part.dart（cue 变更回调三处）与
-  // lyrics.part.dart（退出歌词模式后的显式 reveal，#3722 c48 收的第四处）。
+  // reader 里放飞 highlight 的两个文件：audiobook.part.dart（cue 变更回调三处 + 跨页句
+  // 退回分界前重揭句首的一处 await，反馈 tUJsiLpL9d）与 lyrics.part.dart（退出歌词模式后
+  // 的显式 reveal，#3722 c48 收的第四处）。
   _guardHighlightCallSites(
     'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
-    expectedCallSites: 3,
+    expectedCallSites: 4,
   );
   _guardHighlightCallSites(
     'lib/src/pages/implementations/reader_fushi/lyrics.part.dart',
@@ -112,7 +113,9 @@ void _guardHighlightCallSites(String path, {required int expectedCallSites}) {
   group('reader 里放飞的 highlight 调用点（源码守卫，BUG-4811）：$path', () {
     // `_onCueChanged` / `_exitLyricsMode` 都是页面私有、要真 InAppWebView 才能
     // 行为驱动；这里钉调用点：每一处 highlight 调用要么被 await，要么紧跟
-    // `.catchError(AudiobookBridge.logHighlightError)`。
+    // `.catchError(AudiobookBridge.logHighlightError)`，要么先存进局部
+    // `final Future<void> x = ...`（揭示后还要接着挂页边观察，反馈 tUJsiLpL9d）——
+    // 那样所在方法里之后每一次用到 x 的语句都必须接 logHighlightError，且至少用一次。
     //
     // 语料先过 `maskComments`（行注释 + 块注释换成等长空白，下标与原文一致）：
     // 注释里提到的 `AudiobookBridge.highlight(` 不算调用点，注释里的
@@ -134,6 +137,40 @@ void _guardHighlightCallSites(String path, {required int expectedCallSites}) {
       return -1;
     }
 
+    /// 调用点被存进局部 Future（[prefix] 是调用点所在行的前半截）时：从 [end] 到所在
+    /// 方法收尾（两格缩进的 `}`）之间，每一处用到该变量的语句（到下一个 `;`）要么接了
+    /// [handler]、要么被 await，且至少用到一次。
+    bool storedAndHandled(String prefix, int end) {
+      final Match? stored = RegExp(
+        r'^\s*final\s+Future<void>\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*$',
+      ).firstMatch(prefix);
+      if (stored == null) return false;
+      final String name = stored.group(1)!;
+      final int methodEnd = source.indexOf('\n  }\n', end);
+      final String rest = source.substring(
+        end,
+        methodEnd < 0 ? source.length : methodEnd,
+      );
+      final List<Match> uses = RegExp(
+        '(?<![A-Za-z0-9_\$])${RegExp.escape(name)}(?![A-Za-z0-9_\$])',
+      ).allMatches(rest).toList();
+      if (uses.isEmpty) return false;
+      for (final Match use in uses) {
+        final int stop = rest.indexOf(';', use.end);
+        final String statement = rest.substring(
+          use.start,
+          stop < 0 ? rest.length : stop,
+        );
+        final int useLine = rest.lastIndexOf('\n', use.start) + 1;
+        final bool useAwaited = rest
+            .substring(useLine, use.start)
+            .trimLeft()
+            .startsWith('await ');
+        if (!useAwaited && !statement.contains(handler)) return false;
+      }
+      return true;
+    }
+
     final List<int> callSites = <int>[
       for (final Match m in RegExp(RegExp.escape(call)).allMatches(source))
         m.start,
@@ -153,7 +190,9 @@ void _guardHighlightCallSites(String path, {required int expectedCallSites}) {
             .startsWith('await ');
         final int end = afterMatchingParen(at + call.length - 1);
         expect(end, greaterThan(at));
-        final bool handled = source.startsWith(handler, end);
+        final bool handled =
+            source.startsWith(handler, end) ||
+            storedAndHandled(source.substring(lineStart, at), end);
         if (!awaited && !handled) {
           bare.add(
             'line ${'\n'.allMatches(source.substring(0, at)).length + 1}',

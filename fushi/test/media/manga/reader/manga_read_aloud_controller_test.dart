@@ -428,6 +428,39 @@ void main() {
     c.stop();
   });
 
+  test('从此句播放：读着、暂停时都跳到点中那句；跨页先等那页计划再定位（反馈 RCsvzByem-）', () async {
+    final _Host host = threePages();
+    final MangaReadAloudController c = controllerFor(host);
+    c.start(fromPage: 0);
+    await _waitFor(() => player.playing);
+    // 正在读第 0 页第一句时点第二句（块 1）：打断，从い读起。
+    c.playFromSentence(0, <int>[1]);
+    await _waitFor(() => player.played.length == 2 && player.playing);
+    expect(playedTexts(all), <String>['あ。', 'い。']);
+    // 暂停后点第 2 页（计划还没建）的句子：建好计划后定位到う。
+    c.pause();
+    await _settle();
+    c.playFromSentence(2, <int>[0]);
+    await _waitFor(() => player.played.length == 3 && player.playing);
+    expect(playedTexts(all), <String>['あ。', 'い。', 'う。']);
+    expect(c.state, MangaReadAloudState.playing);
+    // 块对不上任何句子：从那页第一句读。
+    c.playFromSentence(0, <int>[9]);
+    await _waitFor(() => player.played.length == 4 && player.playing);
+    expect(playedTexts(all), <String>['あ。', 'い。', 'う。', 'あ。']);
+    c.stop();
+  });
+
+  test('从此句播放：没在朗读时什么都不做', () async {
+    final _Host host = threePages();
+    final MangaReadAloudController c = controllerFor(host);
+    c.playFromSentence(0, <int>[1]);
+    await _settle();
+    expect(c.state, MangaReadAloudState.idle);
+    expect(player.played, isEmpty);
+    c.dispose();
+  });
+
   test('App 生命周期：inactive 照常读，hidden / paused 才暂停', () async {
     final _Host host = threePages();
     final MangaReadAloudController c = controllerFor(host);

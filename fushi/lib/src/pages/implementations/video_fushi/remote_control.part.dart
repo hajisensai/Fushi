@@ -99,6 +99,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         _volumeDisplay.removeListener(listener);
       },
       favoritesChanged: _refreshFavoritedCueCache,
+      libraryAnchor: _libraryAnchorAt,
       // 以下三组与桌面控制通道（[_playbackRemote]）/ 剧集列表同一批执行体。
       setVolume: (int volume) => _applyUserVideoVolume(volume.toDouble()),
       episodes: _remoteEpisodes,
@@ -565,15 +566,19 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       cueSentence: null,
     ), overrides);
     final String sentence = videoRemoteMineSentence(selection, parsed.sentence);
+    // 回跳锚点按句子所属那一行的时间轴记（原盘「全部播放」= 那一集，BUG-5356）。
+    final ({String bookUid, int ms}) historyAnchor = _libraryAnchorAt(
+      cue.startMs,
+    );
     final VideoMiningHistorySnapshot history =
         VideoMiningHistorySnapshot.capture(
           fields: fields,
           sentence: sentence,
           documentTitle: _title ?? _activeBookUid,
-          bookKey: _activeBookUid,
+          bookKey: historyAnchor.bookUid,
           sectionIndex: _favoriteSectionIndex,
-          cueStartMs: cue.startMs,
-          cueEndMs: cue.endMs,
+          cueStartMs: historyAnchor.ms,
+          cueEndMs: historyAnchor.ms + (cue.endMs - cue.startMs),
           dateKey: statTodayKey(),
         );
     final FushiDatabase historyDb = appModel.database;
@@ -635,8 +640,15 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       await _openRemoteVideoFavorite(favorite);
       return;
     }
-    if (uid == _activeBookUid &&
-        (favorite.sectionIndex ?? 0) == (_favoriteSectionIndex ?? 0)) {
+    // 原盘「全部播放」：收藏落在这条播放列表的某一集上（锚点是那一集的时间轴），平移
+    // 回播放器时间轴后页内跳过去，不另开那一集（BUG-5356）。
+    final int? favoriteOffset = favorite.normCharOffset;
+    final int? discTitleMs = _discMenuEpisodes == null || favoriteOffset == null
+        ? null
+        : _playerMsOfAnchor(uid, favoriteOffset);
+    if (discTitleMs != null ||
+        (uid == _activeBookUid &&
+            (favorite.sectionIndex ?? 0) == (_favoriteSectionIndex ?? 0))) {
       final VideoPlayerController? controller = _controller;
       if (controller == null) {
         throw const VideoRemoteException(409, 'no_video');
@@ -644,6 +656,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       final VideoRemoteCue cue = matchVideoRemoteFavoriteCue(
         _videoRemoteRows(controller),
         favorite,
+        playerStartMs: discTitleMs,
       );
       final int favoriteMs = miningClipTimeMs(cue.startMs, cue.delayMs);
       _recordVideoJumpDeparture(favoriteMs, source: JumpSource.favorite);

@@ -5,13 +5,18 @@ part of 'music_lyrics_page.dart';
 /// Music lyrics adapter of the shared controller lookup mode (hold L1 /
 /// Select): a cursor on one character of a lyric line ([KaraokeLyricsCursor],
 /// drawn by the lyrics view itself: the row stays in view, un-dimmed, the
-/// glyph outlined). D-pad up / down = previous / next lyric line, left / right
-/// = word (subtitle sweep tokenizer) or character within the line. A looks up
-/// through the page's normal lyric lookup ([_MusicLyricsPageState._onLookup]
-/// with the same hit a tap on that glyph gives): the companion's Lookup tab
-/// when it is up, the in-page popup otherwise (pausing per the page's lookup
-/// setting). No music gamepad channel is opened: the mode intercepts the
-/// buttons before page dispatch.
+/// glyph outlined). Line steps = previous / next lyric line with text, cursor
+/// steps = word (subtitle sweep tokenizer) or character within the line. The
+/// mode looks up after every stop ([lookupAtCursor]) through the page's normal
+/// lyric lookup ([_MusicLyricsPageState._onLookup] with the hit a tap on that
+/// glyph gives, the query cut to the mode's right-end cap): the companion's
+/// Lookup tab when it is up, else the in-page popup, replacing the open one in
+/// the warm slot (pausing per the page's lookup setting). The cursor stays in
+/// the lyrics: the music page has no in-page popup cursor, so
+/// [enterResult] keeps the default no-op and [routerOwnsInput] stays true —
+/// the popup is driven by the mode's mine / audio / entry / scroll / close
+/// buttons, words inside it are picked by touch or mouse. No music gamepad
+/// channel is opened: the mode intercepts the buttons before page dispatch.
 class _MusicControllerLookupTarget extends ControllerLookupTarget {
   _MusicControllerLookupTarget(this._s, {required super.readPref});
 
@@ -101,12 +106,27 @@ class _MusicControllerLookupTarget extends ControllerLookupTarget {
     if (next >= 0) _cursor.moveTo(next, 0);
   }
 
+  /// Graphemes from the cursor's lookup start (a Latin word's first letter,
+  /// as the query) to the end of its lyric line; 0 without a cursor.
   @override
-  Future<void> lookupAtCursor() async {
-    if (!_s.mounted) return;
+  int get graphemesFromCursor {
+    final LyricTimeline? t = _s._timeline;
+    final int? line = _cursor.line;
+    if (t == null || line == null || line < 0 || line >= t.lines.length) {
+      return 0;
+    }
+    return musicLyricsGraphemesFromCursor(
+      t.lines[line].text,
+      _cursor.charIndex,
+    );
+  }
+
+  @override
+  Future<int> lookupAtCursor({int? maxGraphemes}) async {
+    if (!_s.mounted) return 0;
     final KaraokeLookupHit? hit = _cursor.hitAtCursor();
-    if (hit == null || hit.lineText.isEmpty) return;
-    await _s._onLookup(hit);
+    if (hit == null || hit.lineText.isEmpty) return 0;
+    return _s._onLookup(hit, maxGraphemes: maxGraphemes, measureMatch: true);
   }
 }
 

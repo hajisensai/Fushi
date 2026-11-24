@@ -177,6 +177,9 @@ ModuleId? moduleOfShortcutScope(ShortcutScope scope) => switch (scope) {
   ShortcutScope.home => null,
   ShortcutScope.gamepad => null,
   ShortcutScope.dictionaryPopup => null,
+  // 手柄查词模式跨阅读器 / 视频 / 漫画 / 歌词常驻，与 dictionaryPopup 同理是查词
+  // **能力**，不随任何单个模块藏起来。
+  ShortcutScope.controllerLookup => null,
   // app 内浏览器不只从「浏览器」模块（WebHubPage）进入：视频站点入口在拿不到底层
   // 合成时也改用它打开站点（video_fushi/web_source.part.dart）。跟着 web 模块藏起
   // 来就会出现「浏览器能用、快捷键却没处改」，故与 dictionaryPopup 同判恒在。
@@ -189,6 +192,7 @@ ModuleId? moduleOfShortcutScope(ShortcutScope scope) => switch (scope) {
   ShortcutScope.manga => ModuleId.manga,
   ShortcutScope.video => ModuleId.video,
   ShortcutScope.music => ModuleId.music,
+  ShortcutScope.musicPlayer => ModuleId.music,
   ShortcutScope.srsReview => ModuleId.srs,
 };
 

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
@@ -217,6 +218,33 @@ void main() {
     });
   });
 
+  group('制卡后行为：恢复默认删值（BUG-5276）', () {
+    test('显式选过（哪怕选的正是默认）算存值；清掉后回到跟默认走', () async {
+      final ReaderFushiSource source = ReaderFushiSource.instance;
+      const ModuleId module = ModuleId.manga;
+      await source.clearAfterMiningPopupAction(module);
+      expect(source.hasStoredAfterMiningPopupAction(module), isFalse);
+
+      final AfterMiningPopupAction defaultAction = source
+          .afterMiningPopupDefaultFor(module);
+      await source.setAfterMiningPopupAction(module, defaultAction);
+      expect(source.hasStoredAfterMiningPopupAction(module), isTrue);
+      expect(source.afterMiningPopupAction(module), defaultAction);
+
+      await source.clearAfterMiningPopupAction(module);
+      expect(source.hasStoredAfterMiningPopupAction(module), isFalse);
+      expect(source.afterMiningPopupAction(module), defaultAction);
+    });
+
+    test('设置行声明 storedChoice，恢复默认走删值而非写回此刻的默认', () {
+      final String schema = File(
+        'lib/src/settings/settings_schema_lookup.dart',
+      ).readAsStringSync();
+      expect(schema, contains('clearAfterMiningPopupAction(module)'));
+      expect(schema, contains('hasStoredAfterMiningPopupAction(module)'));
+    });
+  });
+
   group('两条弹窗车道接线', () {
     test('制卡回调都经 closePopupAfterAcceptedMine，按宿主模块取行为', () {
       for (final String path in <String>[
@@ -402,15 +430,15 @@ void main() {
         reason: '只有真失败挂重试，重复卡片不挂',
       );
       expect(
-        mining.contains(
-          '_showMineOsd(message, MineToastStatus.failed, null, retry);',
-        ),
+        RegExp(
+          r'_showMineOsd\(\s*message,\s*MineToastStatus\.failed,\s*retry: retry,',
+        ).hasMatch(mining),
         isTrue,
         reason: '句子音频抽取中止也要能重试',
       );
       expect(
         tracker.contains(
-          '_showMineOsd(message, MineToastStatus.failed, null, retry);',
+          '_showMineOsd(message, MineToastStatus.failed, retry: retry);',
         ),
         isTrue,
       );

@@ -31,6 +31,8 @@ const Map<String, String> _notRouted = <String, String>{
       'covered: fushi_cli profile import（/api/admin/profiles/import）',
   'importAndSwitchProfile':
       'covered: fushi_cli profile import + profile activate',
+  'pickAndOpenMangaAudioPackageImport':
+      'covered: fushi_cli tts import-package（tts.manga.import-package，界面版只多一步选文件再开导入页）',
   'importFromDirectory':
       'covered: fushi_cli dict import（/api/admin/dictionaries/import）',
   'importFromFile':
@@ -81,34 +83,23 @@ const Map<String, String> _notRouted = <String, String>{
       'internal: 音乐导入端口给视频侧的纯音频入口（用户入口 importMusicFiles 另行登记）',
   'lib/src/media/music/music_audio_intake.dart#importAudioFiles':
       'internal: 音乐导入端口的底层实现（用户入口 importMusicFiles 另行登记）',
+  'importDiscoveryPdf':
+      'internal: 发现页下载队列自动入库 / 书架一包书解包后的 PDF 导入端口（用户直接导 PDF 走 fushi_cli library import <pdf>）',
   'exportBatch': 'ui-only: 旧版只读后的一次性迁移向导（migration_page），不是日常操作',
   'importPastedTextBook':
       'ui-only: 输入是剪贴板粘贴的文本；CLI 等价做法是存成 .txt 后 fushi_cli library import',
   // ── 待补（docs/bugs/BUG-*-cli-ui-only-ops-gaps.md 盘点清单） ────────────────────────────────────────
   'lib/src/media/music/music_audio_intake_port.dart#importMusicFiles':
-      'pending cli-ui-only-ops-gaps: 音乐库导入音频文件',
-  'lib/src/media/music/music_audio_intake.dart#importMusicFiles':
-      'pending cli-ui-only-ops-gaps: 音乐库导入音频文件',
-  'importChapters': 'pending cli-ui-only-ops-gaps: 音乐碟片按章节导入',
-  'importMusicDiscChapters': 'pending cli-ui-only-ops-gaps: 音乐碟片按章节导入',
-  'pickAndAddMusicDiscs': 'pending cli-ui-only-ops-gaps: 音乐碟片添加',
-  'pickAndAddMusicDiscImages': 'pending cli-ui-only-ops-gaps: 音乐碟片镜像添加',
-  'pickAndInstallMusicPlugin': 'pending cli-ui-only-ops-gaps: 音乐歌词 / 元数据插件安装',
-  'exportBesideAudio': 'pending cli-ui-only-ops-gaps: 歌词导出到音频旁',
-  'importAudioCdIfPresent': 'pending cli-ui-only-ops-gaps: 音频 CD 导入',
+      'covered: 端口接口声明；实现 MusicAudioIntake.importMusicFiles 经 fushi_cli music import 调用',
+  'importFiles': 'pending cli-ui-only-ops-gaps: 歌词可视化素材包导入图片',
   'importIptvChannels': 'pending cli-ui-only-ops-gaps: IPTV 播放列表导入频道',
   'pickAndApplyVideoFrameCover': 'pending cli-ui-only-ops-gaps: 视频取帧当封面',
   'exportTranscribedSrt': 'pending cli-ui-only-ops-gaps: 有声书转录结果导出 SRT',
-  'exportTo': 'pending cli-ui-only-ops-gaps: Galgame Hook 码配置导出',
-  'exportWindowRecording': 'pending cli-ui-only-ops-gaps: 窗口录制导出',
-  'importMinedSentencesIntoSrs': 'pending cli-ui-only-ops-gaps: 制卡历史导入 SRS',
-  'importRecoveryCode': 'pending cli-ui-only-ops-gaps: 排行榜恢复码导入（凭据只经 stdin）',
-  'importPageBackdropImage':
-      'pending cli-ui-only-ops-gaps: 页面背景图导入（设置项缺 CLI 入口）',
-  'importPageBackdropModuleImage':
-      'pending cli-ui-only-ops-gaps: 模块页面背景图导入（设置项缺 CLI 入口）',
-  'importNow': 'pending cli-ui-only-ops-gaps: 动画下载计划「立即导入」',
+  'exportWindowRecording':
+      'internal: 制卡管线内部取录制帧拼片段（gal_hook_mining_coordinator），用户入口是 fushi_cli game mine',
   'exportTtsAudiobookM4b': 'pending cli-ui-only-ops-gaps: TTS 有声书导出 M4B',
+  'exportClip':
+      'pending cli-ui-only-ops-gaps: 漫画有声书播放条导出当前句片段视频（MangaReadAloud.exportClip）',
   'importSyncedBookFile': 'pending cli-ui-only-ops-gaps: 阅读历史云端列表里下载单本书',
 };
 

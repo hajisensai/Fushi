@@ -166,6 +166,33 @@ void main() {
   });
 
   group('resolveVideoSubtitleRecognizer', () {
+    test('歌曲素材：滑窗识别器带 song、另立 id；cleanSpeech 不收', () async {
+      final VideoSubtitleRecognizerChoice c =
+          await resolveVideoSubtitleRecognizer(
+            mode: VideoSubtitleSegmenterMode.window,
+            serviceFactory: (asr.AsrAudioProfile profile) => service,
+            audioProfile: asr.AsrAudioProfile.song,
+          );
+      final SlidingWindowVideoSubtitleRecognizer sliding =
+          c.recognizer as SlidingWindowVideoSubtitleRecognizer;
+      expect(sliding.audioProfile, asr.AsrAudioProfile.song);
+      expect(sliding.id, kSlidingSongVideoSubtitleRecognizerId);
+      expect(
+        SlidingWindowVideoSubtitleRecognizer(
+          serviceFactory: (asr.AsrAudioProfile profile) => service,
+        ).id,
+        kSlidingVideoSubtitleRecognizerId,
+      );
+      await expectLater(
+        resolveVideoSubtitleRecognizer(
+          mode: VideoSubtitleSegmenterMode.window,
+          serviceFactory: (asr.AsrAudioProfile profile) => service,
+          audioProfile: asr.AsrAudioProfile.cleanSpeech,
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('window：滑窗、没有「没用上 MOSS」的原因，也不探环境', () async {
       final VideoSubtitleRecognizerChoice c = await resolve(
         VideoSubtitleSegmenterMode.window,

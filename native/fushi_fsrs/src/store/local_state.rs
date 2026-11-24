@@ -8,8 +8,8 @@
 //!   收段通道在别的命令之前自己做完的片没有回包，同样在那一片的 SAVEPOINT 里推进（[advance_revision]）；
 //! - 纪元 `epoch`：行第一次写下时由内核生成（[new_epoch]），回包 `localEpoch`；
 //! - 存量样式去重的游标 `styleCursor`：`edits_rewrite_repr` 推进、`rebuild_caches {resetStyles}` 归零；
-//! - 校时状态 `anchor`：Dart 进程时钟的快照（「可信时间 − 墙钟」每次现算，内核算不出来），随改投影的命令交来（同
-//!   `now`）、或经 `local_anchor` 单独交来，内核写下；请求没带就不动；
+//! - 校时状态 `anchor`：Dart 进程时钟的快照（服务器时间、开机时钟读数、开机时刻），随改投影的命令交来（同 `now`）、
+//!   或经 `local_anchor` 单独交来，内核写下；请求没带就不动；
 //! - 其余键各有各的模块：缓存推导口径版本 `cacheRev`（store/cache_rev.rs）、旧版时钟 / 写入者与冻结键
 //!   （store/legacy_clock.rs）、媒体回收的待回收集合 `mediaGc`（store/media_gc.rs）。它们用 `json_set` 只改自己的键；
 //!   行还不存在时经 [ensure_row] 建。
@@ -100,8 +100,9 @@ fn edit(
     Ok(row)
 }
 
-/// 请求里的校时状态（`anchor: {o, b, s?, t?}`：o = 可信时间 − 墙钟，b = 写下它的进程，s / t = 校时那一刻的服务器
-/// 时间与开机时钟读数；fushi_srs `SrsTrustedClock.anchorState`）。没带 → None；形态不对报错（不写下 Dart 读不懂的值）。
+/// 请求里的校时状态（`anchor: {s, t, e}`：s / t = 校时那一刻的服务器时间与开机时钟读数，e = 校时时按墙钟估的
+/// 开机时刻，用来认「同一次开机」；fushi_srs `SrsTrustedClock.anchorState`）。没带 → None；形态不对报错（不写下
+/// Dart 读不懂的值）。旧版的 `{o, b, s?, t?}`（带「可信时间 − 墙钟」偏移跨进程估算，BUG-5264）不再收。
 pub(crate) fn anchor_of(req: &Value) -> Result<Option<Value>, String> {
     let a = match req.get(ANCHOR_KEY) {
         None | Some(Value::Null) => return Ok(None),
@@ -110,21 +111,11 @@ pub(crate) fn anchor_of(req: &Value) -> Result<Option<Value>, String> {
     let bad = || format!("srs local state: bad anchor {a}");
     let obj = a.as_object().ok_or_else(bad)?;
     let mut out = Map::new();
-    out.insert(
-        "o".to_owned(),
-        Value::from(obj.get("o").and_then(Value::as_i64).ok_or_else(bad)?),
-    );
-    out.insert(
-        "b".to_owned(),
-        Value::from(obj.get("b").and_then(Value::as_str).ok_or_else(bad)?),
-    );
-    for k in ["s", "t"] {
-        match obj.get(k) {
-            None | Some(Value::Null) => {}
-            Some(v) => {
-                out.insert(k.to_owned(), Value::from(v.as_i64().ok_or_else(bad)?));
-            }
-        }
+    for k in ["s", "t", "e"] {
+        out.insert(
+            k.to_owned(),
+            Value::from(obj.get(k).and_then(Value::as_i64).ok_or_else(bad)?),
+        );
     }
     Ok(Some(Value::Object(out)))
 }
@@ -415,10 +406,10 @@ mod tests {
     fn the_anchor_is_written_when_given_and_kept_otherwise() {
         let (core, _d) = open("ls-anchor");
         let w = core.writer().unwrap();
-        let a = anchor_of(&json!({"anchor": {"o": -5, "b": "boot", "s": 10, "t": 20, "x": 1}}))
+        let a = anchor_of(&json!({"anchor": {"s": 10, "t": 20, "e": -5, "x": 1}}))
             .unwrap()
             .unwrap();
-        assert_eq!(a, json!({"o": -5, "b": "boot", "s": 10, "t": 20}));
+        assert_eq!(a, json!({"s": 10, "t": 20, "e": -5}));
         let mut r = projected(1, json!([]));
         persist_projected(&w, P, Some(&a), &mut r).unwrap();
         assert_eq!(read(&w, P).unwrap()["anchor"], a);
@@ -426,22 +417,23 @@ mod tests {
         persist_projected(&w, P, None, &mut r).unwrap();
         assert_eq!(read(&w, P).unwrap()["anchor"], a, "kept when not given");
 
-        let carried = anchor_of(&json!({"anchor": {"o": 3, "b": "other", "s": null}}))
+        let later = anchor_of(&json!({"anchor": {"s": 30, "t": 40, "e": 7}}))
             .unwrap()
             .unwrap();
-        assert_eq!(carried, json!({"o": 3, "b": "other"}));
-        set_anchor(&w, P, &carried).unwrap();
-        assert_eq!(read(&w, P).unwrap()["anchor"], carried);
+        set_anchor(&w, P, &later).unwrap();
+        assert_eq!(read(&w, P).unwrap()["anchor"], later);
         assert_eq!(read(&w, P).unwrap()["revision"], json!(2));
 
         assert_eq!(anchor_of(&json!({})).unwrap(), None);
         assert_eq!(anchor_of(&json!({"anchor": null})).unwrap(), None);
         for bad in [
             json!({"anchor": 1}),
-            json!({"anchor": {"b": "x"}}),
-            json!({"anchor": {"o": 1}}),
-            json!({"anchor": {"o": "1", "b": "x"}}),
-            json!({"anchor": {"o": 1, "b": "x", "s": "2"}}),
+            // 旧版的「偏移 + 进程身份」形态不再收（BUG-5264）。
+            json!({"anchor": {"o": 1, "b": "x"}}),
+            json!({"anchor": {"o": 1, "b": "x", "s": 2, "t": 3}}),
+            json!({"anchor": {"s": 1, "t": 2}}),
+            json!({"anchor": {"s": 1, "t": 2, "e": null}}),
+            json!({"anchor": {"s": "1", "t": 2, "e": 3}}),
         ] {
             assert!(anchor_of(&bad).unwrap_err().contains("bad anchor"), "{bad}");
         }

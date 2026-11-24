@@ -188,7 +188,8 @@ void main() {
   });
 
   group('ReaderCaretRouter enter triggers (cursor inactive)', () {
-    test('Enter and game A enter the cursor from the keyboard path', () {
+    test('Enter enters the cursor; game A no longer does (gamepad lookup '
+        'unification: the controller lookup mode is the gamepad path)', () {
       expect(
         ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.enter),
         isTrue,
@@ -197,7 +198,7 @@ void main() {
         ReaderCaretRouter.isEnterTriggerKeyboard(
           LogicalKeyboardKey.gameButtonA,
         ),
-        isTrue,
+        isFalse,
       );
     });
 
@@ -216,16 +217,6 @@ void main() {
       );
     });
 
-    test('only A enters the cursor from the gamepad path', () {
-      expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.a), isTrue);
-      expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.b), isFalse);
-      expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.x), isFalse);
-      expect(
-        ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.dpadRight),
-        isFalse,
-      );
-    });
-
     test('global focus navigation switch gates cursor entry', () {
       expect(
         ReaderCaretRouter.isEnterTriggerKeyboard(
@@ -237,13 +228,6 @@ void main() {
       expect(
         ReaderCaretRouter.isEnterTriggerKeyboard(
           LogicalKeyboardKey.gameButtonA,
-          focusNavEnabled: false,
-        ),
-        isFalse,
-      );
-      expect(
-        ReaderCaretRouter.isEnterTriggerGamepad(
-          GamepadButton.a,
           focusNavEnabled: false,
         ),
         isFalse,
@@ -279,46 +263,15 @@ void main() {
       },
     );
 
-    test(
-      'custom enterButtons: only the bound button enters, default A does not',
-      () {
-        const Set<GamepadButton> bound = <GamepadButton>{GamepadButton.y};
-        expect(
-          ReaderCaretRouter.isEnterTriggerGamepad(
-            GamepadButton.y,
-            enterButtons: bound,
-          ),
-          isTrue,
-        );
-        expect(
-          ReaderCaretRouter.isEnterTriggerGamepad(
-            GamepadButton.a,
-            enterButtons: bound,
-          ),
-          isFalse,
-        );
-      },
-    );
-
-    test(
-      'an empty override disables enter entirely (no key/button enters)',
-      () {
-        expect(
-          ReaderCaretRouter.isEnterTriggerKeyboard(
-            LogicalKeyboardKey.enter,
-            enterKeys: <LogicalKeyboardKey>{},
-          ),
-          isFalse,
-        );
-        expect(
-          ReaderCaretRouter.isEnterTriggerGamepad(
-            GamepadButton.a,
-            enterButtons: const <GamepadButton>{},
-          ),
-          isFalse,
-        );
-      },
-    );
+    test('an empty override disables enter entirely (no key enters)', () {
+      expect(
+        ReaderCaretRouter.isEnterTriggerKeyboard(
+          LogicalKeyboardKey.enter,
+          enterKeys: <LogicalKeyboardKey>{},
+        ),
+        isFalse,
+      );
+    });
 
     test('focusNavEnabled:false overrides any custom binding', () {
       expect(
@@ -352,13 +305,6 @@ void main() {
         ),
         isFalse,
       );
-      expect(
-        ReaderCaretRouter.isEnterTriggerGamepad(
-          GamepadButton.a,
-          focusNavEnabled: false,
-        ),
-        isFalse,
-      );
     });
 
     test('focusNavEnabled defaults true (existing call sites unchanged)', () {
@@ -366,7 +312,6 @@ void main() {
         ReaderCaretRouter.isEnterTriggerKeyboard(LogicalKeyboardKey.enter),
         isTrue,
       );
-      expect(ReaderCaretRouter.isEnterTriggerGamepad(GamepadButton.a), isTrue);
     });
   });
 }

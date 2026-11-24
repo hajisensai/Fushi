@@ -7,6 +7,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/manga/manga_chapter_storage.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart'
+    show parseMangaJson;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/manga_sync_package.dart';
@@ -500,6 +502,23 @@ void main() {
       expect(chapter.pages.first.name, 'page-000001.jpg');
       final File page = await svc.mangaChapterPageFile('mihon-abc', digest, 1);
       expect(page.readAsBytesSync(), <int>[0xFF, 0xD8, 4, 1]);
+      // 带页身份取（HBK-AUDIT-205）：对得上照给，对不上拒。
+      final File checked = await svc.mangaChapterPageFile(
+        'mihon-abc',
+        digest,
+        1,
+        expectedKeyDigest: remoteMangaPageKeyDigest(chapter.pages[1].key!),
+      );
+      expect(checked.path, page.path);
+      await expectLater(
+        svc.mangaChapterPageFile(
+          'mihon-abc',
+          digest,
+          1,
+          expectedKeyDigest: remoteMangaPageKeyDigest(chapter.pages[0].key!),
+        ),
+        throwsA(isA<MangaPageChanged>()),
+      );
       await expectLater(
         svc.mangaChapterPageFile('mihon-abc', digest, 2),
         throwsA(isA<StateError>()),
@@ -695,6 +714,169 @@ void main() {
       expect(reader.pageFetches, 3, reason: '身份没变的页照旧复用缓存');
     });
 
+    test('取页带页身份：host 此刻那一页换了就拒（HBK-AUDIT-205）', () async {
+      await insertOnlineManga(
+        bookKey: 'mihon-none',
+        chapterKeys: const <String>['/c/1'],
+        downloaded: const <String>{},
+      );
+      final String digest = mangaChapterDigest('/c/1');
+      final RemoteMangaManifest chapter = await online.mangaChapterManifest(
+        'mihon-none',
+        digest,
+      );
+      final String expected0 = remoteMangaPageKeyDigest(chapter.pages[0].key!);
+      // 身份对得上：照常给页，并把身份交给运行时在同一份页表上再核一次。
+      final File page = await online.mangaChapterPageFile(
+        'mihon-none',
+        digest,
+        0,
+        expectedKeyDigest: expected0,
+      );
+      expect(page.readAsBytesSync(), _FakeOnlineReader.pageBytes(0));
+      expect(reader.expectedKeys, <String?>['https://cdn.example/0.png']);
+
+      // host 重启 / 页表被淘汰后重解析出 [B, A, C]：同一页序已是另一页。
+      reader.keys = const <String?>[
+        'https://cdn.example/2.png',
+        null,
+        'https://cdn.example/0.png',
+      ];
+      await expectLater(
+        online.mangaChapterPageFile(
+          'mihon-none',
+          digest,
+          0,
+          expectedKeyDigest: expected0,
+        ),
+        throwsA(isA<MangaPageChanged>()),
+      );
+      // 认不出身份的页（第 1 页）带着身份来取也拒：核不了就不能当成同一页。
+      await expectLater(
+        online.mangaChapterPageFile(
+          'mihon-none',
+          digest,
+          1,
+          expectedKeyDigest: expected0,
+        ),
+        throwsA(isA<MangaPageChanged>()),
+      );
+      expect(reader.pageFetches, 1);
+    });
+
+    test('对端读到一半 host 下完这章：页身份不变，旧页表照取已下载的页'
+        '（review-interconnect-page-id-on-download）', () async {
+      final String bookDir = await insertOnlineManga(
+        bookKey: 'mihon-none',
+        chapterKeys: const <String>['/c/1'],
+        downloaded: const <String>{},
+      );
+      final String digest = mangaChapterDigest('/c/1');
+      final RemoteMangaManifest before = await online.mangaChapterManifest(
+        'mihon-none',
+        digest,
+      );
+
+      // host 的下载服务把这章下完：页图 + 源端页身份旁注 + manga.json（与
+      // MangaDownloadService 同一组引擎 helper）。
+      final Directory chapterDir = mangaChapterDirectory(bookDir, '/c/1');
+      final List<Map<String, Object?>> pages = <Map<String, Object?>>[];
+      for (int i = 0; i < 3; i++) {
+        File(p.join(chapterDir.path, 'images', 'page-00000${i + 1}.png'))
+          ..parent.createSync(recursive: true)
+          ..writeAsBytesSync(<int>[0x89, 0x50, 0x4e, 0x47, 0x40 + i]);
+        pages.add(<String, Object?>{
+          'url': 'images/page-00000${i + 1}.png',
+          'width': 700 + i,
+          'height': 1000,
+          'blocks': <Object?>[],
+        });
+      }
+      final String json = jsonEncode(<String, Object?>{'pages': pages});
+      mangaChapterSourcePagesFile(chapterDir).writeAsStringSync(
+        encodeMangaChapterSourcePages(
+          mangaChapterSourcePagesOf(parseMangaJson(json), reader.keys),
+        ),
+      );
+      mangaChapterJsonFile(chapterDir).writeAsStringSync(json);
+
+      // 下载后的页表：源端认得的页报与下载前同一个身份，认不得的页按文件认。
+      final RemoteMangaManifest after = await online.mangaChapterManifest(
+        'mihon-none',
+        digest,
+      );
+      expect(after.pages[0].key, before.pages[0].key);
+      expect(after.pages[1].key, 'file\u0000page-000002.png\u0000701x1000');
+      expect(after.pages[2].key, before.pages[2].key);
+
+      // 拿着下载前的页表来取：给的是已下载的文件，不再打运行时。
+      final File page = await online.mangaChapterPageFile(
+        'mihon-none',
+        digest,
+        2,
+        expectedKeyDigest: remoteMangaPageKeyDigest(before.pages[2].key!),
+      );
+      expect(p.isWithin(chapterDir.path, page.path), isTrue);
+      expect(page.readAsBytesSync().last, 0x42);
+      // 按文件认页的身份（旧 host 报的页表）照样认。
+      final File byFile = await online.mangaChapterPageFile(
+        'mihon-none',
+        digest,
+        1,
+        expectedKeyDigest: remoteMangaPageKeyDigest(after.pages[1].key!),
+      );
+      expect(byFile.readAsBytesSync().last, 0x41);
+      expect(reader.pageFetches, 0);
+
+      // 另一页的源端身份不冒充这一页。
+      await expectLater(
+        online.mangaChapterPageFile(
+          'mihon-none',
+          digest,
+          0,
+          expectedKeyDigest: remoteMangaPageKeyDigest(before.pages[2].key!),
+        ),
+        throwsA(isA<MangaPageChanged>()),
+      );
+
+      // manga.json 换成另一份内容（第 3 页尺寸变了）：旁注对不上这一页，旧的
+      // 源端身份不再认，保守地 409。
+      pages[2] = <String, Object?>{...pages[2], 'width': 9000};
+      mangaChapterJsonFile(
+        chapterDir,
+      ).writeAsStringSync(jsonEncode(<String, Object?>{'pages': pages}));
+      await expectLater(
+        online.mangaChapterPageFile(
+          'mihon-none',
+          digest,
+          2,
+          expectedKeyDigest: remoteMangaPageKeyDigest(before.pages[2].key!),
+        ),
+        throwsA(isA<MangaPageChanged>()),
+      );
+    });
+
+    test('取完页身份、取图之前页表换了：运行时拒取，不落到旧身份的缓存名下', () async {
+      await insertOnlineManga(
+        bookKey: 'mihon-none',
+        chapterKeys: const <String>['/c/1'],
+        downloaded: const <String>{},
+      );
+      final String digest = mangaChapterDigest('/c/1');
+      reader.racingKeys = () => 'https://cdn.example/other.png';
+      await expectLater(
+        online.mangaChapterPageFile('mihon-none', digest, 0),
+        throwsA(isA<MangaPageChanged>()),
+      );
+      reader.racingKeys = null;
+      final File page = await online.mangaChapterPageFile(
+        'mihon-none',
+        digest,
+        0,
+      );
+      expect(page.readAsBytesSync(), _FakeOnlineReader.pageBytes(0));
+    });
+
     test('现取页缓存按章有界：只留最近的章，当前章必留，删空的书目录', () {
       final Directory root = Directory(p.join(tmp.path, 'page_cache'));
       final DateTime base = DateTime(2026, 1, 1);
@@ -786,6 +968,13 @@ class _FakeOnlineReader implements OnlineMangaHostReader {
     return keys;
   }
 
+  /// [chapterPage] 收到的 expectedPageKey（按调用顺序）。
+  final List<String?> expectedKeys = <String?>[];
+
+  /// 非空时 [chapterPage] 核对身份用它给的值：模拟 host 取完页身份、真正取图之前
+  /// 页表被淘汰并重解析成换了页的一份。
+  String? Function()? racingKeys;
+
   /// 运行时报的页身份（第 1 页认不出）；测试改它模拟源端换页。
   List<String?> keys = const <String?>[
     'https://cdn.example/0.png',
@@ -799,9 +988,16 @@ class _FakeOnlineReader implements OnlineMangaHostReader {
     required String sourceMetadata,
     required Map<String, Object?> chapter,
     required int index,
+    required String? expectedPageKey,
   }) async {
     lastChapter = chapter;
     RangeError.checkValidIndex(index, const <int>[0, 1, 2], 'index');
+    expectedKeys.add(expectedPageKey);
+    // 与真实运行时同一约定：在取图所用的页表上核对身份。
+    final String? current = racingKeys?.call() ?? keys[index];
+    if (expectedPageKey != null && current != expectedPageKey) {
+      throw MangaPageChanged('page $index changed');
+    }
     pageFetches++;
     await gate?.future;
     return Uint8List.fromList(pageBytes(index));

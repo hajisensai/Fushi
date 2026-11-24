@@ -15,10 +15,20 @@ Fushi 有一条已验证的落地路径：**Windows 离屏集成测试 runner**�
 
 ## 0. 工具链（本机 flutter 不在 PATH）
 
-一律用 `D:/flutter_sdk/flutter_3.47.6/bin/flutter.bat`（Flutter 3.47.6，与 CI 和 `fushi/.fvmrc` 同版），
+一律用 `D:/flutter_sdk/flutter_3.50.0/bin/flutter.bat`（Flutter 3.50.0，与 CI 和 `fushi/.fvmrc` 同版），
 `dart.bat` 同目录。用户 PATH 上的 `flutter` 仍是旧 3.44.0，**不要**用它——3.47 起 Material/Cupertino
-拆成 material_ui/cupertino_ui 包，3.44 编不过本仓；用错版本后删 `.dart_tool/hooks_runner` 再用 3.47.6 重跑。
+拆成 material_ui/cupertino_ui 包，3.44 编不过本仓；用错版本后删 `.dart_tool/hooks_runner` 再用 3.50.0 重跑。
 其余本机约定见仓库根 `CLAUDE.local.md`。
+
+**runner 选 SDK 先看 `FLUTTER_ROOT`**（`run_windows_itest.ps1` 的 `Resolve-FlutterExecutable`），
+本机用户 / 系统环境变量里的 `FLUTTER_ROOT` 还是旧 3.47.6。不显式覆盖就会用 3.47.6 引擎配 3.50.0 框架，
+构建期报 `Type 'ui.Hyphens' not found` / `resetInternalState isn't defined`，零测试执行。经 heavy 跑时
+同一条命令里先导出再用 3.50.0 的 dart：
+
+```bash
+export FLUTTER_ROOT='D:\flutter_sdk\flutter_3.50.0'; export FUSHI_FLUTTER='D:\flutter_sdk\flutter_3.50.0\bin\flutter.bat'
+/d/flutter_sdk/flutter_3.50.0/bin/dart.bat tool/heavy.dart -- powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 integration_test/<x>_itest.dart
+```
 
 ## 1. 写一个驱动脚本（integration_test/*.dart）
 
@@ -127,7 +137,8 @@ runner 默认不走代理（`proxy=(none)`）；确实需要时传 `-Proxy <代�
 
 ```powershell
 Get-Process fushi -ErrorAction SilentlyContinue | Stop-Process -Force   # exe 被占用时 install 步会静默不覆盖
-D:\flutter_sdk\flutter_extracted\flutter\bin\flutter.bat build windows --release --no-pub
+D:\flutter_sdk\flutter_3.50.0\bin\flutter.bat build windows --release --no-pub
+# flutter_extracted 是旧 3.44.0，编不过本仓
 ```
 
 新 worktree 首次 Release 构建要从主 checkout 拷

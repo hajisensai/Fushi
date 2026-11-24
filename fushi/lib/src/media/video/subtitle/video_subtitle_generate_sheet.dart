@@ -10,7 +10,8 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
+import 'package:fushi_asr_core/asr_core.dart'
+    show AsrAudioProfile, ModelDownloadEvent;
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart'
     show SubtitleAiUsageTally, kSubtitleAiReplyIncomplete;
@@ -53,6 +54,9 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+
+/// 识别模型判定 / 下载所属的那一套选择（见 `_planKey`）。
+typedef _AsrPlanKey = ({VideoSubtitleLanguage language, bool separateVocals});
 
 /// 面板读写的偏好（生产实现包 [PreferencesRepository]，测试注入 fake）。
 abstract interface class VideoSubtitleGeneratePrefs {
@@ -383,6 +387,25 @@ class _VideoSubtitleGenerateSheetState
   /// 语言初值从哪一档来（提示「为什么选了它」）；用户自己选过 / 接回已有任务后为 null。
   VideoSubtitleLanguageSource? _languageSource;
 
+  /// 音乐：识别前先分离人声（拍板 W_wrz-ZPU8）。初值按条目记住的
+  /// （[AppVideoSubtitleService.separatesVocalsFor]，没记过默认开）；视频恒为 false。
+  late bool _separateVocals = _service.separatesVocalsFor(_target);
+
+  /// 这次转录用的素材（[AppVideoSubtitleService.asrAudioProfileFor]：视频混音；音乐
+  /// 开着分离 = 歌曲档，手机内存不够时退回混音；关着 = 混音）；null = 还在判定。模型
+  /// 就绪 / 下载都按它查，开跑也按它跑（[AppVideoSubtitleOptions.audioProfile]）。
+  AsrAudioProfile? _audioProfile;
+
+  /// 判定出来之前查下载进度用的猜测：音乐开着分离按歌曲（它的接回会兜到混音那条上）。
+  AsrAudioProfile get _profileGuess =>
+      _audioProfile ??
+      (_separateVocals ? AsrAudioProfile.song : AsrAudioProfile.mixedAudio);
+
+  /// 识别模型的判定 / 下载跟着哪一套选择走：换了语言或分离开关，旧选择那次判定与
+  /// 下载的回包都不能写进当前状态。
+  _AsrPlanKey get _planKey =>
+      (language: _language, separateVocals: _separateVocals);
+
   /// 识别模型是否已下载；null = 还在查。
   bool? _modelReady;
   String? _planError;
@@ -446,23 +469,47 @@ class _VideoSubtitleGenerateSheetState
   Future<void> _applyLanguage(VideoSubtitleLanguage language) async {
     setState(() {
       _language = language;
+      // 素材按语言判（各语言的包与内存估算不同），沿用上一门语言的判定会在新判定
+      // 回来前拿错的素材查 / 下模型。
+      _audioProfile = null;
       _modelReady = null;
       _planError = null;
       _asrDownloadError = null;
       _existing = const <String>{};
       _estimate = null;
     });
-    final Stream<ModelDownloadEvent>? asr = _service.asrModelPort
-        .resumeDownload(language: language);
-    if (asr != null) {
-      setState(() => _asrDownload = _starting);
-      unawaited(_followAsr(asr, language));
-    } else {
-      setState(() => _asrDownload = null);
-    }
+    _resumeAsrDownload();
     unawaited(_loadExisting());
     unawaited(_refreshPlan());
     if (_proofread) unawaited(_refreshEstimate());
+  }
+
+  /// 换了模型选择（语言 / 分离开关）后接回那一套模型包进行中的下载（下载归全应用
+  /// 登记表），没有就清掉上一套的进度。
+  void _resumeAsrDownload() {
+    final Stream<ModelDownloadEvent>? asr = _service.asrModelPort
+        .resumeDownload(language: _language, audioProfile: _profileGuess);
+    if (asr != null) {
+      setState(() => _asrDownload = _starting);
+      unawaited(_followAsr(asr, _planKey));
+    } else {
+      setState(() => _asrDownload = null);
+    }
+  }
+
+  /// 「先分离人声」开关：按条目记住；素材跟着变，模型就绪 / 下载重查一遍。
+  Future<void> _setSeparateVocals(bool on) async {
+    if (_running || on == _separateVocals) return;
+    setState(() {
+      _separateVocals = on;
+      _audioProfile = null;
+      _modelReady = null;
+      _planError = null;
+      _asrDownloadError = null;
+    });
+    _resumeAsrDownload();
+    unawaited(_refreshPlan());
+    await _service.setSeparatesVocals(_target, on);
   }
 
   @override
@@ -485,10 +532,10 @@ class _VideoSubtitleGenerateSheetState
     // 下载归全应用登记表、不归弹层（kZZmXQBv7E）：关掉再打开弹层时接回进行中的
     // 那条，进度照常显示、按钮不再亮——以前这里看不到它，再点一次就起第二条写者。
     final Stream<ModelDownloadEvent>? asr = _service.asrModelPort
-        .resumeDownload(language: _language);
+        .resumeDownload(language: _language, audioProfile: _profileGuess);
     if (asr != null) {
       _asrDownload = _starting;
-      unawaited(_followAsr(asr, _language));
+      unawaited(_followAsr(asr, _planKey));
     }
     final Stream<ModelDownloadEvent>? moss = _service.mossPort.resumeEnsure();
     if (moss != null) {
@@ -521,16 +568,24 @@ class _VideoSubtitleGenerateSheetState
   bool get _running => _job?.isRunning ?? false;
 
   Future<void> _refreshPlan() async {
-    final VideoSubtitleLanguage language = _language;
+    final _AsrPlanKey key = _planKey;
     try {
-      final bool ready = await _service.asrModelPort.isReady(
-        language: language,
+      final AsrAudioProfile profile = await _service.asrAudioProfileFor(
+        _target,
+        key.language,
+        separateVocals: key.separateVocals,
       );
-      if (mounted && language == _language) {
+      if (!mounted || key != _planKey) return;
+      setState(() => _audioProfile = profile);
+      final bool ready = await _service.asrModelPort.isReady(
+        language: key.language,
+        audioProfile: profile,
+      );
+      if (mounted && key == _planKey) {
         setState(() => _modelReady = ready);
       }
     } catch (error) {
-      if (mounted && language == _language) {
+      if (mounted && key == _planKey) {
         setState(() => _planError = '$error');
       }
     }
@@ -606,32 +661,38 @@ class _VideoSubtitleGenerateSheetState
       _asrDownloadError = null;
       _asrDownload = _starting;
     });
-    final VideoSubtitleLanguage language = _language;
     unawaited(
-      _followAsr(_service.asrModelPort.download(language: language), language),
+      _followAsr(
+        _service.asrModelPort.download(
+          language: _language,
+          audioProfile: _profileGuess,
+        ),
+        _planKey,
+      ),
     );
   }
 
-  /// 跟一条 [language] 识别模型下载的进度。弹层关掉只摘掉这个监听，下载本身继续。
+  /// 跟一条识别模型下载（[key] 那一套语言 + 分离开关的模型包）的进度。弹层关掉只摘掉
+  /// 这个监听，下载本身继续。
   ///
-  /// 监听绑定发起时的语言：面板换了语言后这条下载属于别的模型包，它的进度 / 失败 /
-  /// 完成都不能写进当前语言的模型状态（换回来时 [_applyLanguage] 会重新接回）。
-  /// 退出 `await for` 只取消本监听，下载归 `sharedModelDownloads`，照常跑完。
+  /// 监听绑定发起时的选择：面板换了语言 / 分离开关后这条下载属于别的模型包，它的
+  /// 进度 / 失败 / 完成都不能写进当前的模型状态（换回来时 [_resumeAsrDownload] 会
+  /// 重新接回）。退出 `await for` 只取消本监听，下载归 `sharedModelDownloads`，照常跑完。
   Future<void> _followAsr(
     Stream<ModelDownloadEvent> download,
-    VideoSubtitleLanguage language,
+    _AsrPlanKey key,
   ) async {
     try {
       await for (final ModelDownloadEvent e in download) {
-        if (!mounted || language != _language) return;
+        if (!mounted || key != _planKey) return;
         setState(() => _asrDownload = e);
       }
     } catch (error) {
-      if (mounted && language == _language) {
+      if (mounted && key == _planKey) {
         setState(() => _asrDownloadError = '$error');
       }
     }
-    if (!mounted || language != _language) return;
+    if (!mounted || key != _planKey) return;
     setState(() => _asrDownload = null);
     await _refreshPlan();
   }
@@ -781,6 +842,7 @@ class _VideoSubtitleGenerateSheetState
           language: _language,
           frames: frames,
           pinnedEvidence: widget.pinnedEvidence,
+          audioProfile: _audioProfile,
         ),
       );
       setState(() => _attach(job));
@@ -818,7 +880,7 @@ class _VideoSubtitleGenerateSheetState
       if (_saveBeside) ...<(String, Widget)>[
         if (!_target.isMusic)
           (t.video_subtitle_ai_language_label, _languageControl()),
-        (t.video_subtitle_ai_model_label, _modelStatus(context)),
+        (t.video_subtitle_ai_model_label, _modelSection(context)),
         (t.video_subtitle_ai_segmenter_label, _segmenterControl()),
       ],
       (t.video_subtitle_ai_proofread_label, _proofreadControl()),
@@ -1025,6 +1087,73 @@ class _VideoSubtitleGenerateSheetState
       ),
     ],
   );
+
+  /// 模型一节：音乐先给「先分离人声」开关，再是模型就绪 / 下载。
+  Widget _modelSection(BuildContext context) {
+    if (!_target.isMusic) return _modelStatus(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 8,
+      children: <Widget>[_vocalSeparationControl(), _modelStatus(context)],
+    );
+  }
+
+  /// 音乐「先分离人声」开关（拍板 W_wrz-ZPU8）：开 = 伴奏重时更准、要多下分离模型、
+  /// 耗时数倍（手机内存不够时这次退回原音频）；关 = 直接识别原音频，广播 / 讲座快
+  /// 很多，伴奏重的歌会漏句。按条目记住。
+  Widget _vocalSeparationControl() {
+    final AsrAudioProfile? profile = _audioProfile;
+    final Widget hint = !_separateVocals
+        ? _hint(
+            t.music_subtitle_vocal_separation_off,
+            key: const ValueKey<String>('music-subtitle-vocal-separation-off'),
+          )
+        : profile != null && !profile.separatesVocals
+        ? _hint(
+            t.music_subtitle_vocal_separation_low_memory,
+            key: const ValueKey<String>(
+              'music-subtitle-vocal-separation-low-memory',
+            ),
+          )
+        : _hint(
+            t.music_subtitle_vocal_separation_on,
+            key: const ValueKey<String>('music-subtitle-vocal-separation-on'),
+          );
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 2,
+            children: <Widget>[
+              Text(
+                t.music_subtitle_vocal_separation_label,
+                style: context.fushiType.bodyMedium,
+              ),
+              FushiAnimatedSize(
+                duration: context.fushiMotion.spatialDefault.duration,
+                curve: context.fushiMotion.spatialDefault.curve,
+                alignment: Alignment.topCenter,
+                child: hint,
+              ),
+              _hint(t.music_subtitle_vocal_separation_remembered),
+            ],
+          ),
+        ),
+        SizedBox(width: FushiDesignTokens.of(context).spacing.gap),
+        KeyedSubtree(
+          key: const ValueKey<String>('music-subtitle-vocal-separation'),
+          child: adaptiveSwitch(
+            context: context,
+            value: _separateVocals,
+            onChanged: _running
+                ? null
+                : (bool v) => unawaited(_setSeparateVocals(v)),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _modelStatus(BuildContext context) {
     final bool? ready = _modelReady;

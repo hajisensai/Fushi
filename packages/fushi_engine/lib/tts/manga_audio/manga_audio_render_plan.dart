@@ -15,14 +15,18 @@
 ///   时，没单句指定声音的合成句改用旁白音色（[mangaSynthVoiceFor]）。
 library;
 
+import 'dart:convert';
+
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_text_split.dart';
 
 /// 一个合成片段的字数上限（30 秒模型上限对应的保守字数，handoff `split_long`）。
@@ -40,6 +44,13 @@ String mangaPlaceholderFileName(String lineId) => '$lineId.ph.wav';
 
 /// 单句换种子重生成的候选文件名（保留后就是这句的文件，撤回则删掉）。
 String mangaCandidateFileName(String lineId, int seed) => '$lineId.s$seed.m4a';
+
+/// 一句成品音频 [file] 提交前的暂存文件名（`p0b1.m4a` → `p0b1.stage.m4a`，扩展名不变，
+/// ffmpeg 照旧按它选封装）。清单从不引用暂存文件：生成 / 补回 / 换本地音频 / 单句候选
+/// 都先写到这里，提交时才改名成 [file]，没提交就删掉，旧清单引用的音频不会被半路改写
+/// 或误删（HBK-AUDIT-201 / 207）。残留的暂存文件由 `sweepUnreferenced` 清掉。
+String mangaStagedFileName(String file) =>
+    '${p.withoutExtension(file)}.stage${p.extension(file)}';
 
 /// 剪有声书的句子在清单 `voice` 字段里的标记（区分「合成」与「有声书片段」，也让片段
 /// 区间变了能被识别出来重剪）。
@@ -65,6 +76,25 @@ String mangaLocalLineFileName(String lineId, MangaLocalAudio audio) =>
 String mangaLocalAudioSourcePath(String directory, MangaLocalAudio audio) =>
     p.join(directory, kMangaLocalAudioDirName, '${audio.sig}${audio.ext}');
 
+/// 一句实际生效的演出（情绪 / 强度 / 语气说明 / 语速音高音量偏移）的可比较指纹，写进
+/// 清单行（[MangaRenderedLine.direction]），重跑时与旧行比对，变了就重出这句。
+///
+/// [effective] 是引擎**实际会用**的演出（`effectiveTtsDirection` 去掉不支持的字段、把情绪
+/// 折成韵律之后），所以只改了引擎表达不了的字段（例如给只收种子的声音包改语气说明）时
+/// 指纹不变、旧音频照用。种子与给定时长不算在内：种子单独比对（[MangaRenderedLine.seed]），
+/// 时长由念的文字推出。没有任何生效字段返回 null（与没有这个字段的旧清单行一致）。
+String? mangaDirectionKey(TtsDirection effective) {
+  final Map<String, Object?> identity = TtsDirection(
+    emotion: effective.emotion,
+    intensity: effective.intensity,
+    rateOffset: effective.rateOffset,
+    pitchOffset: effective.pitchOffset,
+    volumeOffset: effective.volumeOffset,
+    tone: effective.tone,
+  ).cacheIdentity;
+  return identity.isEmpty ? null : jsonEncode(identity);
+}
+
 /// 一句的音源（计划层）。
 sealed class MangaRenderSource {
   const MangaRenderSource();
@@ -76,10 +106,15 @@ final class MangaRenderSynth extends MangaRenderSource {
     required this.voice,
     required this.seed,
     required this.segments,
+    this.direction = const CastLineDirection(),
   });
 
   final String voice;
   final int seed;
+
+  /// 这句标注的演出（情绪 / 强度 / 语气说明 / 偏移）；后端按引擎能力取其中能表达的
+  /// 部分（`effectiveTtsDirection`），不能表达情绪的引擎折成语速 / 音高 / 音量。
+  final CastLineDirection direction;
 
   /// 合成片段（空 = 没有可念的文字）。
   final List<String> segments;
@@ -144,6 +179,7 @@ class MangaRenderItem {
     required String file,
     required int durationMs,
     required String? shape,
+    String? direction,
     bool placeholder = false,
   }) => MangaRenderedLine(
     lineId: lineId,
@@ -160,21 +196,28 @@ class MangaRenderItem {
     voice: voiceTag,
     seed: seed,
     shape: shape,
+    direction: direction,
   );
 
   /// [old] 的音频能不能原样沿用：不是占位、念的文字（[spoken]，人名读法改了也算变）/
   /// 声音 / 种子都没变，且出音频时的
   /// 整形版本就是这次的 [shape]（`MangaRenderBackend.shapeVersion`）。整形参数（裁静音 /
   /// 淡变 / 响度）变了，旧音频与新出的句子混排会忽大忽小，必须重出；没记整形版本的历史
-  /// 清单行（null）一律算版本不符。说话人、类型、一拍这类不影响音频的字段变了照样沿用
-  /// （清单行按新值重建）。
-  bool canReuse(MangaRenderedLine old, {required String shape}) =>
+  /// 清单行（null）一律算版本不符。生效的演出指纹（[direction]，见 [mangaDirectionKey]；
+  /// 由后端按引擎能力算，`MangaRenderBackend.directionKey`）也要一致：情绪 / 语气 / 偏移
+  /// 改了就重出。说话人、类型、一拍这类不影响音频的字段变了照样沿用（清单行按新值重建）。
+  bool canReuse(
+    MangaRenderedLine old, {
+    required String shape,
+    String? direction,
+  }) =>
       !old.placeholder &&
       old.lineId == lineId &&
       old.spokenText == spoken &&
       old.voice == voiceTag &&
       old.seed == seed &&
-      old.shape == shape;
+      old.shape == shape &&
+      old.direction == direction;
 }
 
 /// 一卷的生成计划。
@@ -250,6 +293,7 @@ MangaRenderSource? mangaRenderSourceFor({
         voice: mangaSynthVoiceFor(script, line, defaultVoice, narrator),
         seed: line.effectiveSeed(script.defaultSeed),
         segments: splitMangaLineSegments(spoken),
+        direction: line.direction,
       );
   }
 }
@@ -313,7 +357,9 @@ String mangaLineText(
 }) => mangaLineTexts(line, pageBlocks, substitutions: substitutions).text;
 
 /// 一句的显示文字与实际念的文字。手动填写的念法（`say`）是用户写好的最终文字，两者
-/// 都是它、不过替换表；否则 OCR 拼出的原文：显示过普通替换，念的再加人名读法。
+/// 都是它、不过替换表；否则 OCR 拼出的原文：显示过普通替换，念的先把底本换成页面
+/// 印着的注音读音（[resolveMangaLineTexts]），同卷别处注过音、这里没注的词也按那个
+/// 读音（[MangaRubyReadings]，替换表里写了的词以替换表为准），再过替换表加人名读法。
 ({String text, String spoken}) mangaLineTexts(
   MangaScriptLine line,
   List<List<MokuroBlock>> pageBlocks, {
@@ -321,15 +367,22 @@ String mangaLineText(
 }) {
   final String? say = line.say;
   if (say != null) return (text: say.trim(), spoken: say.trim());
-  final String raw = resolveMangaLineText(
+  final ({String text, String spoken}) raw = resolveMangaLineTexts(
     line,
     line.page < pageBlocks.length
         ? pageBlocks[line.page]
         : const <MokuroBlock>[],
-  ).trim();
+  );
+  final String spoken = MangaRubyReadings.ofVolume(pageBlocks).apply(
+    raw.spoken.trim(),
+    skip: <String>{
+      for (final CastTextSubstitution s in substitutions)
+        if (s.enabled) s.source,
+    },
+  );
   return (
-    text: applyCastSubstitutions(raw, substitutions),
-    spoken: applyCastSpokenSubstitutions(raw, substitutions),
+    text: applyCastSubstitutions(raw.text.trim(), substitutions),
+    spoken: applyCastSpokenSubstitutions(spoken, substitutions),
   );
 }
 

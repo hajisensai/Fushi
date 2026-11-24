@@ -29,6 +29,8 @@ import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_line_editor.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_review_page.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_volume_busy.dart'
+    show MangaVolumeBusyException;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart'
     show GlassSettingsRenderer;
@@ -302,6 +304,8 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
       _tasks.start(request);
     } on MangaAnnotateBusy {
       _toast(t.manga_audio_annotate_busy);
+    } on MangaVolumeBusyException {
+      _toast(t.manga_audio_package_error_importing);
     }
   }
 
@@ -565,8 +569,7 @@ class _MangaAudioScriptPageState extends State<MangaAudioScriptPage> {
     _speakerLabel(line.speaker),
     mangaLineKindLabel(line.kind),
     if (line.beatMs > 0) '+${t.manga_audio_ms_value(ms: line.beatMs)}',
-    if (line.emotion != null)
-      '${line.emotion!.wire}${line.intensity == null ? '' : ' ${line.intensity}'}',
+    ?mangaLineToneLabel(line),
     if (mangaLineNeedsReview(line) && line.speaker != kTtsUnknown)
       t.manga_audio_low_confidence,
     if (line.source == TtsCastSource.user) t.manga_audio_user_edited,

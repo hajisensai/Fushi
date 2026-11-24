@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -24,6 +25,10 @@ import 'package:fushi_engine/media/manga/manga_storage.dart'
     show MangaImportException;
 import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
     show isLegacyMokuroHtmlVolume, kMokuroLegacyHtmlExtension;
+import 'package:fushi_engine/tts/manga_audio/manga_audio_package.dart'
+    show kMangaAudioPackageExtension;
+import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart'
+    show MangaAudioWorkbenchEntry;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -32,6 +37,22 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+
+/// 把已经在磁盘上的页图目录 [directories] 交给 [MangaImportDialog] 导入（书名取目录名）。
+/// 返回是否真的导入了至少一卷。书籍侧的「一包书」解包后遇到漫画就走这里——它由调用方
+/// 以回调注入 `showBookArchiveImportDialog`，压缩包导入框本身不 import 漫画 UI。
+Future<bool> showMangaDirectoriesImportDialog({
+  required BuildContext context,
+  required FushiDatabase db,
+  required List<String> directories,
+}) async {
+  final bool? imported = await showAppDialog<bool>(
+    context: context,
+    builder: (_) => MangaImportDialog(db: db, initialPaths: directories),
+  );
+  return imported == true;
+}
 
 /// 漫画导入对话框。
 ///
@@ -382,6 +403,8 @@ class _MangaImportDialogState extends State<MangaImportDialog>
   static final Set<String> _mangaFileExtensions = <String>{
     for (final String ext in kMangaCarrierFileExtensions) ext.substring(1),
     kMokuroLegacyHtmlExtension.substring(1),
+    // 有声漫画包：选中后转给它自己的导入页（[_handOffAudioPackage]）。
+    kMangaAudioPackageExtension.substring(1),
   };
 
   Future<void> _pickFile() async {
@@ -510,6 +533,10 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       );
       return false;
     }
+    if (carrier == ImportCarrier.mangaAudioPackage) {
+      _handOffAudioPackage(candidate);
+      return false;
+    }
     final String path = _importPathFor(candidate, carrier);
     setState(() {
       _batchPaths = const <String>[];
@@ -524,6 +551,16 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       }
     });
     return true;
+  }
+
+  /// 有声漫画包不是「一卷漫画」：关掉本框，打开有声漫画包的导入页（逐卷认本机同一卷、
+  /// 列出会替换什么、确认后导入），不在这里按单卷导。
+  void _handOffAudioPackage(String path) {
+    final NavigatorState navigator = Navigator.of(context);
+    closeOwnRoute(context, false);
+    unawaited(
+      MangaAudioWorkbenchEntry.importPackage(navigator.context, path: path),
+    );
   }
 
   void _handleDialogDrop(List<String> paths, Offset _) =>
@@ -573,7 +610,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
       desktopOverride: widget.ocrEntryDesktopOverride,
     );
     if (bookKey != null && mounted) {
-      Navigator.pop(context, true);
+      closeOwnRoute(context, true);
     }
   }
 
@@ -623,7 +660,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
         reportProgress(1, t.import_step_done);
         if (mounted) {
           FushiToast.show(msg: summary, severity: ToastSeverity.success);
-          Navigator.pop(context, true);
+          closeOwnRoute(context, true);
         }
       },
     );
@@ -709,7 +746,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
             msg: t.book_import_duplicate_cancelled,
             severity: ToastSeverity.info,
           );
-          Navigator.pop(context, false);
+          closeOwnRoute(context, false);
         }
       },
       action: () async {
@@ -759,9 +796,11 @@ class _MangaImportDialogState extends State<MangaImportDialog>
               policy: DuplicatePolicy.ask(_askOnDuplicate),
               onProgress: _reportPageProgress,
             );
+          case ImportCarrier.mangaAudioPackage:
           case ImportCarrier.epub:
           case ImportCarrier.text:
-            // 不可达：[_adoptPath] / [initState] 只收下 isMangaCapable 的载体。
+            // 不可达：[_adoptPath] / [initState] 只收下 isMangaCapable 的载体，
+            // 有声漫画包在 [_adoptPath] 就转给了它自己的导入页。
             throw StateError(
               'non-manga carrier in MangaImportDialog: $carrier',
             );
@@ -773,7 +812,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
             msg: batchSummary ?? t.srt_import_success,
             severity: ToastSeverity.success,
           );
-          Navigator.pop(context, true);
+          closeOwnRoute(context, true);
         }
       },
     );

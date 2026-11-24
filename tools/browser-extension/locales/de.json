@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "Hintergrundhöhe",
   "opt_subtitleStyleBoxHeight_desc": "% der Videohöhe (5–60). 0 passt sich dem Text an.",
   "opt_subtitleStyleBoxAutoFit_title": "Automatisch anpassen",
-  "opt_subtitleStyleBoxAutoFit_desc": "Skaliert den Text passend in einen Hintergrund mit fester Höhe.",
+  "opt_subtitleStyleBoxAutoFit_desc": "Verkleinert Text, der nicht in einen Hintergrund mit fester Höhe passt; vergrößert nie.",
   "opt_subtitleStyle_auto": "An Text anpassen",
   "opt_resetSubtitleStyle_title": "Standardaussehen wiederherstellen",
   "opt_resetSubtitleStyle_desc": "Setzt diesen Abschnitt zurück (Position und Hintergrundschalter bleiben).",

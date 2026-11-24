@@ -513,7 +513,12 @@ class OneDriveSyncBackend extends SyncBackend
 
   @override
   Future<Uint8List?> getBytesAsset(String assetId) async =>
-      (await _downloadItem(assetId)).bodyBytes;
+      downloadSyncAssetBytesCapped(
+        http.Request('GET', await _itemDownloadUrl(assetId)),
+        assetId: assetId,
+        onError: (http.Response resp) =>
+            throw SyncBackendError('Download failed: HTTP ${resp.statusCode}'),
+      );
 
   @override
   Future<void> putBytesAsset(
@@ -624,16 +629,20 @@ class OneDriveSyncBackend extends SyncBackend
   Future<dynamic> _downloadItemJson(String fileId) async =>
       decodeSyncJsonFileBody(await _downloadItem(fileId));
 
-  Future<http.Response> _downloadItem(String fileId) async {
+  /// [fileId] 的预签名下载地址（Graph item 元数据里的 `downloadUrl`）。
+  Future<Uri> _itemDownloadUrl(String fileId) async {
     final metaResp = await _graphGet('/me/drive/items/$fileId');
     final meta = jsonDecode(metaResp.body) as Map<String, dynamic>;
     final downloadUrl = meta['@microsoft.graph.downloadUrl'] as String?;
     if (downloadUrl == null) {
       throw SyncBackendError('No download URL for item $fileId');
     }
+    return Uri.parse(downloadUrl);
+  }
 
+  Future<http.Response> _downloadItem(String fileId) async {
     final resp = await (await obtainSyncHttpClient()).get(
-      Uri.parse(downloadUrl),
+      await _itemDownloadUrl(fileId),
     );
     if (resp.statusCode >= 400) {
       throw SyncBackendError('Download failed: HTTP ${resp.statusCode}');

@@ -20,3 +20,9 @@ final Listenable syncBackgroundTasksListenable = Listenable.merge(<Listenable>[
 bool hasActiveSyncTasks() =>
     syncTasks.value.any((SyncTask task) => task.isActive) ||
     srsSyncProgress.value != null;
+
+/// 有没有已结束、带失败、用户还没在明细里看过的那几轮（任务表只为有失败的结束轮
+/// 留项，确认见 `acknowledgeFinishedSyncTasks`）。入口按钮据此在同步跑完后仍常驻、
+/// 带红点，直到用户打开明细。
+bool hasUnseenSyncFailures() =>
+    syncTasks.value.any((SyncTask task) => !task.isActive);

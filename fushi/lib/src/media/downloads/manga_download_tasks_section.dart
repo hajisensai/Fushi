@@ -9,6 +9,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
+import 'package:fushi/src/media/downloads/download_task_share.dart';
 import 'package:fushi/src/media/manga/download/manga_download_progress_label.dart';
 import 'package:fushi/src/media/manga/download/manga_download_service.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_list.dart'
@@ -63,7 +64,8 @@ class _MangaDownloadTasksSectionState
   void initState() {
     super.initState();
     final MangaDownloadTaskSources sources =
-        widget.sourcesOverride ?? _appSources();
+        widget.sourcesOverride ??
+        MangaDownloadTaskSources.ofApp(ref.read(appProvider));
     _downloads = sources.downloads;
     _reshelf = sources.reshelf;
     // 删书时保留下来的章节目录（「重新入库」候选）：删书 / 重新入库 / 改下载根
@@ -93,17 +95,11 @@ class _MangaDownloadTasksSectionState
     _watch = null;
     unawaited(_reshelfWatch?.cancel());
     _reshelfWatch = null;
-    super.dispose();
-  }
-
-  /// 没注入时的唯一来源：app 持有的服务（库没就绪 = 两项都没有）。
-  MangaDownloadTaskSources _appSources() {
-    final AppModel appModel = ref.read(appProvider);
-    if (!appModel.isDatabaseReady) return const MangaDownloadTaskSources();
-    return MangaDownloadTaskSources(
-      downloads: appModel.mangaDownloadService,
-      reshelf: appModel.onlineMangaReshelf,
+    DownloadTaskShare.instance.clearOwner(
+      DownloadTaskSharedPart.mangaRecoverable,
+      this,
     );
+    super.dispose();
   }
 
   Future<void> _reloadRecoverable() async {
@@ -134,13 +130,24 @@ class _MangaDownloadTasksSectionState
   Widget build(BuildContext context) {
     final MangaDownloadService? downloads = _downloads;
     final OnlineMangaReshelf? reshelf = _reshelf;
+    final List<DownloadTaskEntry> recoverable = <DownloadTaskEntry>[
+      if (reshelf != null)
+        for (final RecoverableOnlineManga item in _recoverable)
+          recoverableMangaTaskEntry(item, reshelf),
+    ];
+    // 「可重新入库」要扫下载根，只由本段扫；侧栏下载速览读这里递出去的那份。
+    if (widget.sourcesOverride == null) {
+      DownloadTaskShare.instance.publish(
+        DownloadTaskSharedPart.mangaRecoverable,
+        this,
+        recoverable,
+      );
+    }
     final List<DownloadTaskEntry> entries = <DownloadTaskEntry>[
       if (downloads != null)
         for (final MangaDownloadJobRow job in _jobs)
           mangaDownloadTaskEntry(job, downloads),
-      if (reshelf != null)
-        for (final RecoverableOnlineManga item in _recoverable)
-          recoverableMangaTaskEntry(item, reshelf),
+      ...recoverable,
     ];
     final DownloadTasksBuilder? builder = widget.tasksBuilder;
     if (builder != null) return builder(context, entries);
@@ -160,6 +167,15 @@ class _MangaDownloadTasksSectionState
 /// 数据库，单测没覆盖 appProvider 时就会在 initState 里炸）。
 class MangaDownloadTaskSources {
   const MangaDownloadTaskSources({this.downloads, this.reshelf});
+
+  /// 没注入时的唯一来源：app 持有的服务（库没就绪 = 两项都没有）。
+  factory MangaDownloadTaskSources.ofApp(AppModel appModel) {
+    if (!appModel.isDatabaseReady) return const MangaDownloadTaskSources();
+    return MangaDownloadTaskSources(
+      downloads: appModel.mangaDownloadService,
+      reshelf: appModel.onlineMangaReshelf,
+    );
+  }
 
   /// null = 不显示任务表里的漫画任务。
   final MangaDownloadService? downloads;
@@ -189,6 +205,23 @@ DownloadTaskWorkIdentity _mangaWorkIdentity(String bookKey) =>
       provider: kMangaDownloadWorkProvider,
       externalId: bookKey,
     );
+
+/// 页外（侧栏下载速览）用的漫画任务快照：任务表现读一次（与本段同一份映射
+/// [mangaDownloadTaskEntry]）；「可重新入库」不扫盘，取本段最近一次扫出、经
+/// [DownloadTaskShare] 递出来的那份。
+Future<List<DownloadTaskEntry>> mangaDownloadTaskSnapshot(
+  MangaDownloadTaskSources sources,
+) async {
+  final MangaDownloadService? downloads = sources.downloads;
+  return <DownloadTaskEntry>[
+    if (downloads != null)
+      for (final MangaDownloadJobRow job in await downloads.listJobs())
+        mangaDownloadTaskEntry(job, downloads),
+    ...DownloadTaskShare.instance.entriesOf(
+      DownloadTaskSharedPart.mangaRecoverable,
+    ),
+  ];
+}
 
 /// 下载根里一部「有章节、没书架行」的在线漫画 → 统一下载中心条目。
 ///
@@ -241,6 +274,7 @@ DownloadTaskEntry recoverableMangaTaskEntry(
     kind: DownloadTaskKind.manga,
     status: DownloadTaskStatus.attention,
     progress: 1,
+    subtitle: status,
     collectionKey: item.bookKey,
     collectionTitle: item.title,
     workIdentity: _mangaWorkIdentity(item.bookKey),
@@ -325,6 +359,7 @@ DownloadTaskEntry mangaDownloadTaskEntry(
       _ => DownloadTaskStatus.cancelled,
     },
     progress: progress,
+    subtitle: collectionTitle,
     collectionKey: job.bookKey,
     collectionTitle: collectionTitle,
     workIdentity: _mangaWorkIdentity(job.bookKey),

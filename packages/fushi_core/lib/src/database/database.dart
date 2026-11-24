@@ -15,6 +15,7 @@ import 'package:sqlite3/common.dart' show CommonDatabase;
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
 import '../utils/fushi_debug_print.dart';
+import '../utils/media_title_clean.dart';
 import 'activity_event_types.dart';
 import 'book_format.dart';
 import 'collection_order.dart';
@@ -30,7 +31,9 @@ import 'media_link_kind.dart';
 import 'media_source_util.dart'
     show musicAlbumNameKey, musicTrackDirPrefix, musicTrackPathKey;
 import 'music_scrape_tables.dart';
+import 'music_server_ref.dart';
 import 'music_tables.dart';
+import 'music_video_match_cache_tables.dart';
 import 'pref_codec.dart';
 import 'sql_functions.dart';
 import 'sqlite_busy_timeout.dart';
@@ -62,6 +65,7 @@ part 'database_music_identity.part.dart';
 part 'database_music_scrape.part.dart';
 part 'database_theme_song_spans.part.dart';
 part 'database_video_content_fingerprints.part.dart';
+part 'database_music_video_match_cache.part.dart';
 part 'database_media_link_ai_verdicts.part.dart';
 part 'database_people.part.dart';
 part 'database_ai_agent.part.dart';
@@ -1215,10 +1219,15 @@ void _requireOneVideoMetadataOwner({
     MusicPlaylists,
     MusicPlaylistEntries,
     MusicRemoteTracks,
+    MusicServerDownloads,
+    MusicServerPendingActions,
+    MusicServerTrackStates,
     MusicPlayEvents,
     MusicResumePoints,
     VideoThemeSongSpans,
     VideoContentFingerprints,
+    MusicVideoPrints,
+    MusicVideoMatchChecks,
     MediaLinkAiVerdicts,
     MusicScrapeMeta,
     MusicMetadataRawSnapshots,
@@ -1251,6 +1260,7 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbMusicScrape,
         _FushiDbThemeSongSpans,
         _FushiDbVideoContentFingerprints,
+        _FushiDbMusicVideoMatchCache,
         _FushiDbMediaLinkAiVerdicts,
         _FushiDbPeople,
         _FushiDbAiAgent,
@@ -3678,6 +3688,95 @@ class FushiDatabase extends _$FushiDatabase
         // 同版本的解锁口令摘要表（随上锁标记同步 / 备份）。
         if (!await _tableExists('media_lock_credentials')) {
           await m.createTable(mediaLockCredentials);
+        }
+      }
+      if (from < 172) {
+        // v172：存量 video_books.title 清掉文件名残留的末尾 CRC 标签 / 扩展名
+        // （BUG：media-title-crc-suffix-not-cleaned）。写入单点 upsertVideoBook 起
+        // 已过同一个 [cleanImportedTitle]，这里把之前入库的行清一次。表结构不变；
+        // 只改「清洗后确有变化」的行，重跑幂等。
+        // 只动视频：视频身份是 book_uid、标题只是显示名（用户改名直写本列）。
+        // epub_books / srt_books 的 title 是身份（bookKey = sanitizeTtuFilename(title)、
+        // 统计聚合键、同步资产键、来源扫描「已导入」判定），绝不改写，显示层清洗。
+        if (await _tableExists('video_books')) {
+          await cleanStoredVideoBookTitles();
+        }
+      }
+      if (from < 173) {
+        // v173：本地 MV 自动匹配的两张缓存 music_video_prints（视频音轨声纹）/
+        // music_video_match_checks（某首歌已和某个视频版本对齐过）。设备本地、纯缓存、
+        // 无外键（见 music_video_match_cache_tables.dart）；纯建表，幂等守卫同 v165。
+        if (!await _tableExists('music_video_prints')) {
+          await m.createTable(musicVideoPrints);
+        }
+        if (!await _tableExists('music_video_match_checks')) {
+          await m.createTable(musicVideoMatchChecks);
+        }
+      }
+      if (from < 174) {
+        // v174：表结构不变，清洗 music_play_events 快照里带账号凭据的服务器地址
+        // （BUG-5290：服务器曲目的播放流 / 封面地址原样落库，Jellyfin 带 api_key、
+        // Subsonic 带 u + t + s / apiKey）。认得出曲目 / 封面 id 的换成身份占位
+        // （`fushi-music-server://…`，重播时由当前配置的服务器现算地址），认不出的置
+        // NULL。v139 之前的库没有快照列，跳过；幂等。
+        if (await _tableExists('music_play_events') &&
+            await _columnExists('music_play_events', 'source_cover')) {
+          await scrubMusicPlayEventCredentials();
+        }
+      }
+      if (from < 175) {
+        // v175：music_server_downloads——Jellyfin / Subsonic 曲目的离线副本（设备本地，
+        // 一首一行：本机文件路径 + 服务器身份 + 条目 id，不存带凭据的地址）。纯新表、
+        // 不动数据；幂等守卫同 v148。
+        if (!await _tableExists('music_server_downloads')) {
+          await m.createTable(musicServerDownloads);
+        }
+      }
+      if (from < 176) {
+        // v176：服务器曲目离线 / 删配置时的播放上报与收藏、客户端响度（设备本地）。
+        // - music_server_downloads.server_kind：离线副本的播放项带上完整服务器身份；存量行
+        //   按服务器配置身份的前缀回填（Jellyfin 家族 `jellyfin:`、Subsonic `subsonic-`，
+        //   两种身份格式都是代码里写死的、互不重叠），认不出的留 NULL。
+        // - music_server_pending_actions：没送达的播放 / 收藏切换（补发队列）。
+        // - music_server_track_states：收藏的最后已知状态 + 客户端测的响度。
+        // 列存在性 / 表存在性守卫，回填只补 NULL，重跑幂等。
+        if (await _tableExists('music_server_downloads')) {
+          if (!await _columnExists('music_server_downloads', 'server_kind')) {
+            await m.addColumn(
+              musicServerDownloads,
+              musicServerDownloads.serverKind,
+            );
+          }
+          await customStatement(
+            "UPDATE music_server_downloads SET server_kind = CASE "
+            "WHEN source_key LIKE 'jellyfin:%' THEN 'jellyfin' "
+            "WHEN source_key LIKE 'subsonic-%' THEN 'subsonic' END "
+            'WHERE server_kind IS NULL',
+          );
+        }
+        if (!await _tableExists('music_server_pending_actions')) {
+          await m.createTable(musicServerPendingActions);
+        }
+        if (!await _tableExists('music_server_track_states')) {
+          await m.createTable(musicServerTrackStates);
+        }
+      }
+      if (from < 177) {
+        // v177：item_scrape_meta.locked_fields——条目资料的字段锁（书的简介手填后
+        // 条目刮削不再覆盖，BUG-5111）。纯加列、存量 NULL = 无锁；按列存在性守卫，
+        // 重跑幂等。
+        if (await _tableExists('item_scrape_meta') &&
+            !await _columnExists('item_scrape_meta', 'locked_fields')) {
+          await m.addColumn(itemScrapeMeta, itemScrapeMeta.lockedFields);
+        }
+      }
+      if (from < 178) {
+        // v178：study_segments.lookups——段内查词次数（拍板台 4KOWK3c2mn，查词随会话
+        // 编辑平移）。存量段 0；存量按天的 lookup_mining_counters 不动。按列存在性
+        // 守卫加列，重跑幂等。
+        if (await _tableExists('study_segments') &&
+            !await _columnExists('study_segments', 'lookups')) {
+          await m.addColumn(studySegments, studySegments.lookups);
         }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建

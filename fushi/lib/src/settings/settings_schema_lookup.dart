@@ -35,6 +35,7 @@ import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/interconnect_dictionary_lookup_section.dart'
@@ -142,6 +143,16 @@ SettingsSegmentedItem<AfterMiningPopupAction> _afterMiningPopupItem(
         },
     defaultValueBuilder: (SettingsContext settingsContext) =>
         settingsContext.readerSource.afterMiningPopupDefaultFor(module),
+    // 恢复默认 = 删掉本模块的选择、回到跟旧开关推出的默认走，不把此刻的默认钉成
+    // 手选（BUG-5276）。
+    storedChoice: SettingsStoredChoice(
+      isStored: (SettingsContext settingsContext) =>
+          settingsContext.readerSource.hasStoredAfterMiningPopupAction(module),
+      clear: (SettingsContext settingsContext) async {
+        await settingsContext.readerSource.clearAfterMiningPopupAction(module);
+        notifyReaderSettingsChanged(settingsContext);
+      },
+    ),
   );
 }
 
@@ -725,6 +736,27 @@ SettingsDestination buildLookupDestination() {
               settingsContext.refresh();
             },
           ),
+          // 词典扫描窗口（反馈 ezCjUoU2QM）：查词、整词高亮长度、分词共用一个值
+          // （FushiDicts.scanLength 经偏好读取）。缓存键已带窗口，清缓存只为释放旧窗口
+          // 下的结果、让当前查词结果按新窗口重查。
+          SettingsNumberItem(
+            id: 'lookup.scan_length',
+            title: t.settings_lookup_scan_length_title,
+            subtitle: t.settings_lookup_scan_length_hint,
+            icon: Icons.straighten_outlined,
+            integer: true,
+            min: FushiDicts.minScanLength,
+            max: FushiDicts.maxScanLength,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.lookupScanLength,
+            resetValue: (SettingsContext settingsContext) =>
+                FushiDicts.defaultScanLength,
+            onChanged: (SettingsContext settingsContext, num value) async {
+              await settingsContext.appModel.setLookupScanLength(value.toInt());
+              settingsContext.appModel.clearDictionaryResultsCache();
+              settingsContext.refresh();
+            },
+          ),
           // 查词输入框希望输入法切到哪种语言。默认未设置 = 不碰用户的系统输入法
           // 状态（桌面端切输入法是改系统全局状态，会漏到别的 app，不该默认开）。
           //
@@ -1186,8 +1218,9 @@ SettingsDestination buildLookupDestination() {
           // TODO-1030 M0：全局查词（应用外）抓取选中文本周围上下文句。开启后按热键
           // 查词时，除选中词外还经 UI Automation 读取前台应用选区前后各约 600 字，裁出
           // 当前句在弹窗展示（Yomitan {sentence} 风格）。隐私敏感——读前台应用文本，
-          // 默认关闭；关闭时只用剪贴板拿到的纯选中串（现状）。UIA 是 Windows 平台能力，
-          // 故仅桌面（DesktopLookupService.isDesktop）显示。
+          // 默认关闭；关闭时只用剪贴板拿到的纯选中串（现状）。三个桌面端都有对应能力
+          // （Windows UIA / macOS AX / Linux AT-SPI），故仅桌面
+          // （DesktopLookupService.isDesktop）显示。
           SettingsSwitchItem(
             id: 'lookup.global_context_capture',
             title: t.global_context_capture,

@@ -21,6 +21,7 @@ import 'package:fushi/src/media/manga/discovery/manga_discovery_page.dart';
 import 'package:fushi/src/media/torrent/torrent_network_issue_banner.dart';
 import 'package:fushi/src/media/downloads/manga_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/discovery_manage_sources_action.dart';
+import 'package:fushi/src/pages/implementations/download_task_sources.dart';
 import 'package:fushi/src/pages/implementations/interconnect_download_tasks_section.dart';
 import 'package:fushi/src/pages/implementations/remote_download_tasks_section.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
@@ -56,7 +57,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show FushiMastheadRole, FushiMastheadScope;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
-    show fushiNotificationFromVisibleSubtree;
+    show fushiNotificationDrivesPageChrome;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -264,7 +265,7 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   bool _onScroll(ScrollNotification notification) {
     // 保活的离屏页签 / 内容域（TickerMode 关着）发来的通知不算；横向翻页在
     // controller 内按轴过滤。
-    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    if (!fushiNotificationDrivesPageChrome(notification)) return false;
     return _chrome.handleScrollNotification(notification);
   }
 
@@ -966,216 +967,150 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
             margin: const EdgeInsets.only(top: 12),
           ),
     );
-    return AudiobookTranscribeTasksSection(
-      tasksBuilder:
-          (BuildContext context, List<DownloadTaskEntry> transcribe) =>
-              _buildTaskSources(transcribe, banner),
+    // 任务来源清单只在 [DownloadTaskSource] 写一次：本页按它逐个套上来源段，侧栏
+    // 下载速览按同一份清单取快照（download_task_sources.dart）。
+    return nestDownloadTaskSources(
+      wrap: (DownloadTaskSource source, DownloadTasksBuilder tasks) =>
+          switch (source) {
+            DownloadTaskSource.transcribe => AudiobookTranscribeTasksSection(
+              tasksBuilder: tasks,
+            ),
+            DownloadTaskSource.legacy => AnimeDownloadDialog(
+              embedded: true,
+              tasksOnly: true,
+              showTasks: false,
+              onOpenSettings: _openDownloadSettings,
+              tasksBuilder: tasks,
+            ),
+            DownloadTaskSource.direct => DiscoveryDownloadTasksSection(
+              tasksBuilder: tasks,
+            ),
+            DownloadTaskSource.manga => MangaDownloadTasksSection(
+              tasksBuilder: tasks,
+            ),
+            DownloadTaskSource.remote => RemoteDownloadTasksSection(
+              tasksBuilder: tasks,
+            ),
+            DownloadTaskSource.interconnect => InterconnectDownloadTasksSection(
+              tasksBuilder: tasks,
+            ),
+          },
+      leaf: (BuildContext context, List<DownloadTaskEntry> additional) =>
+          _buildTaskList(context, additional, banner),
     );
   }
 
-  Widget _buildTaskSources(List<DownloadTaskEntry> transcribe, Widget banner) {
-    return AnimeDownloadDialog(
-      embedded: true,
-      tasksOnly: true,
-      showTasks: false,
-      onOpenSettings: _openDownloadSettings,
-      tasksBuilder: (BuildContext context, List<DownloadTaskEntry> legacy) =>
-          DiscoveryDownloadTasksSection(
-            tasksBuilder:
-                (
-                  BuildContext context,
-                  List<DownloadTaskEntry> direct,
-                ) => MangaDownloadTasksSection(
-                  tasksBuilder:
-                      (
-                        BuildContext context,
-                        List<DownloadTaskEntry> manga,
-                      ) => RemoteDownloadTasksSection(
-                        tasksBuilder:
-                            (
-                              BuildContext context,
-                              List<DownloadTaskEntry> remote,
-                            ) => InterconnectDownloadTasksSection(
-                              tasksBuilder:
-                                  (
-                                    BuildContext context,
-                                    List<DownloadTaskEntry> interconnect,
-                                  ) => VideoDownloadJobsPanel.database(
-                                    unified: true,
-                                    additionalTasks: <DownloadTaskEntry>[
-                                      ...legacy,
-                                      ...direct,
-                                      ...manga,
-                                      ...remote,
-                                      ...interconnect,
-                                      ...transcribe,
-                                    ],
-                                    database: ref.read(appProvider).database,
-                                    header: banner,
-                                    workFocus: _downloadsWorkFocus,
-                                    onClearWorkFocus: () => setState(
-                                      () => _downloadsWorkFocus = null,
-                                    ),
-                                    onAddTask: _openManualTaskDialog,
-                                    executionDeviceLabel: _executionDeviceLabel,
-                                    onOpenExecutionSettings:
-                                        _openDownloadSettings,
-                                    metricsLoader: ref
-                                        .read(appProvider)
-                                        .videoDownloadPipelineService
-                                        ?.loadTaskSnapshots,
-                                    onRetry: (VideoDownloadJobRow job) async {
-                                      await ref
-                                          .read(appProvider)
-                                          .videoDownloadPipelineService
-                                          ?.retryJob(job.jobId);
-                                    },
-                                    // 继续 / 停做种 / 续做种都是整批形态：批量
-                                    // 整批共用一次后端枚举（HBK-AUDIT-025）。
-                                    onResume:
-                                        (
-                                          List<VideoDownloadJobRow> jobs,
-                                        ) async =>
-                                            await ref
-                                                .read(appProvider)
-                                                .videoDownloadPipelineService
-                                                ?.resumeJobs(_jobIds(jobs)) ??
-                                            const <String, Object>{},
-                                    onCancel: (VideoDownloadJobRow job) async {
-                                      await ref
-                                          .read(appProvider)
-                                          .videoDownloadPipelineService
-                                          ?.cancelJob(job.jobId);
-                                    },
-                                    // 已完成仍做种的任务：停 / 续做种，走任务
-                                    // 自己绑定的后端（BUG-5072）。
-                                    onPauseSeeding:
-                                        (
-                                          List<VideoDownloadJobRow> jobs,
-                                        ) async =>
-                                            await ref
-                                                .read(appProvider)
-                                                .videoDownloadPipelineService
-                                                ?.pauseSeedingJobs(
-                                                  _jobIds(jobs),
-                                                ) ??
-                                            const <String, Object>{},
-                                    onResumeSeeding:
-                                        (
-                                          List<VideoDownloadJobRow> jobs,
-                                        ) async =>
-                                            await ref
-                                                .read(appProvider)
-                                                .videoDownloadPipelineService
-                                                ?.resumeSeedingJobs(
-                                                  _jobIds(jobs),
-                                                ) ??
-                                            const <String, Object>{},
-                                    onPairAudiobook:
-                                        (VideoDownloadJobRow job) async {
-                                          await _pairDownloadedAudiobook(job);
-                                        },
-                                    onOpenDetails: (VideoDownloadJobRow job) async {
-                                      final appModel = ref.read(appProvider);
-                                      final pipeline =
-                                          appModel.videoDownloadPipelineService;
-                                      final details = pipeline != null
-                                          ? await pipeline.loadJobDetails(
-                                              job.jobId,
-                                            )
-                                          : buildPersistedVideoDownloadJobDetails(
-                                              job,
-                                              await appModel.database
-                                                  .getVideoDownloadJobFiles(
-                                                    job.jobId,
-                                                  ),
-                                            );
-                                      if (!context.mounted) return;
-                                      final String torrentId =
-                                          (job.backendTaskId ??
-                                                  job.torrentHash ??
-                                                  '')
-                                              .trim();
-                                      await showAppDialog<void>(
-                                        context: context,
-                                        builder: (BuildContext dialogContext) =>
-                                            TorrentTaskDetailDialog.task(
-                                              torrentId: torrentId,
-                                              title: job.title,
-                                              torrentTitle:
-                                                  job.resourceTitle
-                                                          ?.trim()
-                                                          .isNotEmpty ==
-                                                      true
-                                                  ? job.resourceTitle!.trim()
-                                                  : job.title,
-                                              backendOverride: details.backend,
-                                              liveDataAbsence:
-                                                  details.liveDataAbsence,
-                                              initialSnapshot: details.snapshot,
-                                              initialFiles: details.files,
-                                              networkIssue:
-                                                  appModel.torrentNetworkIssue,
-                                            ),
-                                      );
-                                    },
-                                    onSetPriority:
-                                        (
-                                          VideoDownloadJobRow job,
-                                          int priority,
-                                        ) async {
-                                          final pipeline = ref
-                                              .read(appProvider)
-                                              .videoDownloadPipelineService;
-                                          await pipeline?.setJobPriority(
-                                            job.jobId,
-                                            priority,
-                                          );
-                                        },
-                                    locationLoader:
-                                        (VideoDownloadJobRow job) async {
-                                          final pipeline = ref
-                                              .read(appProvider)
-                                              .videoDownloadPipelineService;
-                                          return pipeline == null
-                                              ? null
-                                              : await pipeline
-                                                    .resolveJobLocation(
-                                                      job.jobId,
-                                                    );
-                                        },
-                                    onDelete:
-                                        (
-                                          job, {
-                                          required bool deleteFiles,
-                                        }) async {
-                                          final appModel = ref.read(
-                                            appProvider,
-                                          );
-                                          final pipeline = appModel
-                                              .videoDownloadPipelineService;
-                                          if (pipeline != null) {
-                                            await pipeline.deleteJob(
-                                              job.jobId,
-                                              deleteFiles: deleteFiles,
-                                            );
-                                          } else {
-                                            await deletePersistedVideoDownloadJob(
-                                              database: appModel.database,
-                                              job: job,
-                                              deleteFiles: deleteFiles,
-                                              pathMappings: appModel
-                                                  .downloadPathMappingsForProfile(
-                                                    job.backendProfileId,
-                                                  ),
-                                            );
-                                          }
-                                        },
-                                  ),
-                            ),
-                      ),
-                ),
+  /// 统一任务列表：持久视频任务 + 各来源段交来的条目（[additionalTasks]）。
+  Widget _buildTaskList(
+    BuildContext context,
+    List<DownloadTaskEntry> additionalTasks,
+    Widget banner,
+  ) {
+    return VideoDownloadJobsPanel.database(
+      unified: true,
+      additionalTasks: additionalTasks,
+      database: ref.read(appProvider).database,
+      header: banner,
+      workFocus: _downloadsWorkFocus,
+      onClearWorkFocus: () => setState(() => _downloadsWorkFocus = null),
+      onAddTask: _openManualTaskDialog,
+      executionDeviceLabel: _executionDeviceLabel,
+      onOpenExecutionSettings: _openDownloadSettings,
+      metricsLoader: ref
+          .read(appProvider)
+          .videoDownloadPipelineService
+          ?.loadTaskSnapshots,
+      onRetry: (VideoDownloadJobRow job) async {
+        await ref
+            .read(appProvider)
+            .videoDownloadPipelineService
+            ?.retryJob(job.jobId);
+      },
+      // 继续 / 停做种 / 续做种都是整批形态：批量
+      // 整批共用一次后端枚举（HBK-AUDIT-025）。
+      onResume: (List<VideoDownloadJobRow> jobs) async =>
+          await ref
+              .read(appProvider)
+              .videoDownloadPipelineService
+              ?.resumeJobs(_jobIds(jobs)) ??
+          const <String, Object>{},
+      onCancel: (VideoDownloadJobRow job) async {
+        await ref
+            .read(appProvider)
+            .videoDownloadPipelineService
+            ?.cancelJob(job.jobId);
+      },
+      // 已完成仍做种的任务：停 / 续做种，走任务
+      // 自己绑定的后端（BUG-5072）。
+      onPauseSeeding: (List<VideoDownloadJobRow> jobs) async =>
+          await ref
+              .read(appProvider)
+              .videoDownloadPipelineService
+              ?.pauseSeedingJobs(_jobIds(jobs)) ??
+          const <String, Object>{},
+      onResumeSeeding: (List<VideoDownloadJobRow> jobs) async =>
+          await ref
+              .read(appProvider)
+              .videoDownloadPipelineService
+              ?.resumeSeedingJobs(_jobIds(jobs)) ??
+          const <String, Object>{},
+      onPairAudiobook: (VideoDownloadJobRow job) async {
+        await _pairDownloadedAudiobook(job);
+      },
+      onOpenDetails: (VideoDownloadJobRow job) async {
+        final appModel = ref.read(appProvider);
+        final pipeline = appModel.videoDownloadPipelineService;
+        final details = pipeline != null
+            ? await pipeline.loadJobDetails(job.jobId)
+            : buildPersistedVideoDownloadJobDetails(
+                job,
+                await appModel.database.getVideoDownloadJobFiles(job.jobId),
+              );
+        if (!context.mounted) return;
+        final String torrentId = (job.backendTaskId ?? job.torrentHash ?? '')
+            .trim();
+        await showAppDialog<void>(
+          context: context,
+          builder: (BuildContext dialogContext) => TorrentTaskDetailDialog.task(
+            torrentId: torrentId,
+            title: job.title,
+            torrentTitle: job.resourceTitle?.trim().isNotEmpty == true
+                ? job.resourceTitle!.trim()
+                : job.title,
+            backendOverride: details.backend,
+            liveDataAbsence: details.liveDataAbsence,
+            initialSnapshot: details.snapshot,
+            initialFiles: details.files,
+            networkIssue: appModel.torrentNetworkIssue,
           ),
+        );
+      },
+      onSetPriority: (VideoDownloadJobRow job, int priority) async {
+        final pipeline = ref.read(appProvider).videoDownloadPipelineService;
+        await pipeline?.setJobPriority(job.jobId, priority);
+      },
+      locationLoader: (VideoDownloadJobRow job) async {
+        final pipeline = ref.read(appProvider).videoDownloadPipelineService;
+        return pipeline == null
+            ? null
+            : await pipeline.resolveJobLocation(job.jobId);
+      },
+      onDelete: (job, {required bool deleteFiles}) async {
+        final appModel = ref.read(appProvider);
+        final pipeline = appModel.videoDownloadPipelineService;
+        if (pipeline != null) {
+          await pipeline.deleteJob(job.jobId, deleteFiles: deleteFiles);
+        } else {
+          await deletePersistedVideoDownloadJob(
+            database: appModel.database,
+            job: job,
+            deleteFiles: deleteFiles,
+            pathMappings: appModel.downloadPathMappingsForProfile(
+              job.backendProfileId,
+            ),
+          );
+        }
+      },
     );
   }
 

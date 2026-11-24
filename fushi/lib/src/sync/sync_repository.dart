@@ -6,6 +6,7 @@ import 'package:fushi/src/models/library_grid_columns.dart'
 import 'package:fushi/src/models/preference_keys.dart'
     show
         kAnkiSettingsPrefKey,
+        kOnlineLibraryLedgerPrefKey,
         kWhatsNewCardDismissedVersionPrefKey,
         kWhatsNewSeenSeqPrefKey,
         kWhatsNewSeenVersionPrefKey,
@@ -26,6 +27,8 @@ import 'package:fushi/src/models/preferences_repository.dart'
         PreferencesRepository;
 import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart'
     show kBtSitesLegacyMigrationPref;
+import 'package:fushi_engine/media/identity/pending_identity.dart'
+    show kBookScrapeIgnoredPrefKey, kGameScrapeIgnoredPrefKey;
 import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart'
     show kVideoScrapeIgnoredWorksPrefKey;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -2113,6 +2116,9 @@ class SyncRepository {
     // 待确认队列里「忽略」的作品：元素是本机合集自增 id / 书 uid 拼的作品键，
     // 换一台设备就指向别的作品（反馈 Fbchzxuq6f）。
     kVideoScrapeIgnoredWorksPrefKey,
+    // 书 / 漫画与游戏的同一种忽略（BUG-5283）：键里是本机合集 / 游戏自增 id。
+    kBookScrapeIgnoredPrefKey,
+    kGameScrapeIgnoredPrefKey,
     _keyBackendType,
     // 云备份通道开关与上一行的后端选择是同一件事的两半——「这台设备走不走云盘、
     // 走哪个」——而凭据本就设备本地。随备份 / 设置同步漂走会出错：只想在电脑上
@@ -2192,6 +2198,9 @@ class SyncRepository {
     _keyInterconnectSourceShareHostItems,
     _keyInterconnectSourceSharePlugins,
     'interconnect_source_share_ledger',
+    // 在线源条目同步账本（拍板台 mY5VWg1nD-）：记的是这台设备的库见过哪些在线条目，
+    // 随 Profile 快照 / 备份走会让本机删过的条目被建回、或对端新加的建不出来。
+    kOnlineLibraryLedgerPrefKey,
     // 「当 host 时愿不愿意为对端转码视频」是本机算力的意愿：一台台式机说「可以」，
     // 不代表那台跑着同一份备份的旧笔记本也愿意被烤。
     kInterconnectTranscodeEnabledPref,
@@ -2273,6 +2282,10 @@ class SyncRepository {
     // AI 库管家：自动开关与本机运行记录 / 水位——同理只对这台设备成立。
     'library_curate_auto',
     'library_curate_state',
+    // AI 管库自动复查：开关与本机复查水位——同理只对这台设备成立（水位漂过去会让
+    // 另一台设备以为已经全库复查过）。
+    'library_agent_review_auto',
+    'library_agent_review_state',
     'video_subtitle_segmenter',
     'video_subtitle_moss_backend',
     // 按系列记住的字幕文件夹（0PZAhFd1RO）：值是这台机器上的外部绝对路径，系列键里
@@ -2299,6 +2312,9 @@ class SyncRepository {
     // 混排开关按这些服务器的 id 记，跟着一起设备本地。
     'music_subsonic_servers',
     'music_server_library_mix',
+    // 音乐库生成字幕按条目记住的「先分离人声」：键是本机曲库的曲目 / 专辑身份与本库
+    // 自增的来源 id，换台设备指向别的条目。
+    'music_subtitle_vocal_separation',
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',
@@ -2320,6 +2336,8 @@ class SyncRepository {
     // 当前预设 id 指向的就是这份清单里的条目，一起留在本机。
     'tts_voice_presets',
     'tts_active_preset_id',
+    // 朗读声音按作品记（本书 / 系列 + 语言 → 预设 id）：同样指向上面清单里的条目。
+    'tts_media_voices',
     // 制卡单词音频的 TTS 兜底声音：可能是上面清单里某份预设的 id，一起留在本机。
     // 各配置自己那份按 uid 停放（`mining_tts_fallback_voice::<uid>`，
     // PrefRedactionPolicy.deviceLocalKeyPrefixes），同样不离开本机。

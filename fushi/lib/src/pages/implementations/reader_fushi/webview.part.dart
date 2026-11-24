@@ -921,6 +921,7 @@ extension _ReaderWebView on _ReaderFushiPageState {
       vnMergeCrossScreenSentenceAudioCues:
           s.visualNovelMergeCrossScreenSentenceAudioCues,
       sentenceAudioCuesJson: sentenceAudioCuesJson,
+      audiobookLineAlignFollow: _audiobookLineAlignFollow,
       seamlessChapters: seamless.active,
       seamlessChapterIndex: seamless.index,
       seamlessChapterOrder: seamless.order,
@@ -953,8 +954,14 @@ extension _ReaderWebView on _ReaderFushiPageState {
       continuousTurnPullPx: s.continuousChapterTurnResistance.pullPx,
       continuousTurnPinMidGesture:
           s.continuousChapterTurnResistance.pinMidGesture,
+      audiobookLineAlignFollow: _audiobookLineAlignFollow,
     );
   }
+
+  /// 连续模式有声书跟读是否整行对齐（偏好 `audiobook_scroll_follow`，反馈 tUJsiLpL9d）。
+  bool get _audiobookLineAlignFollow =>
+      ReaderFushiSource.instance.audiobookScrollFollow ==
+      kAudiobookScrollFollowLineAlign;
 
   /// 实际播放的翻页效果：用户所选按墨水屏 / 系统「减弱动态效果」降级（规则唯一出处
   /// [effectivePageTurnAnimation]）。JS 侧只认这个结果，不再自己判减弱动态效果。
@@ -1031,8 +1038,6 @@ extension _ReaderWebView on _ReaderFushiPageState {
     );
 
     final String caretJs = ReaderCaretScripts.source();
-    // 整句扫词（拍板台 5H922XeDHM）：只读 DOM 的取句 / 查词助手，依赖 fushiSelection。
-    final String wordSweepJs = ReaderWordSweepScripts.source();
 
     return '''
 window.__fushiEngine = {
@@ -1075,7 +1080,6 @@ install: function(C) {
   // BUG-2779: WebKit ruby annotations snap to the base by measured font metrics.
   $kReaderRubyMetricsJs
   $caretJs
-  $wordSweepJs
   // TODO-975：insetBottom 与 chromeBottomInset 同源 _readerBottomReserve
   // （悬浮 0 / 挤压含底栏），由 Dart 侧算好放进 C。
   window.fushiCaret.init({
@@ -2504,7 +2508,10 @@ updateLive: function(patch) {
               hoverSettle = ReaderSelectionScripts.hoverLookupSettledInvocation(
                 payload,
               );
-              await _handleTextSelected(ReaderSelectionData.fromJson(payload));
+              await _handleTextSelected(
+                ReaderSelectionData.fromJson(payload),
+                controllerLookup: payload['controllerLookup'],
+              );
             } catch (e, stack) {
               ErrorLogService.instance.log(
                 'ReaderFushi.onTextSelected',
@@ -2776,12 +2783,22 @@ updateLive: function(patch) {
               args[0] as String,
             );
             if (binding == null) return;
-            final ShortcutAction? action = resolveSpreadKeyBridgeAction(
+            final ShortcutAction? bound = resolveSpreadKeyBridgeAction(
               appModel.shortcutRegistry,
               binding,
             );
+            // 裸 ← / → 与键盘焦点路径同一套语义：跟随阅读方向 / 反转开关、有声在场
+            // 改作切句（反馈 uz_2m0E_Eu）。此前这里直接执行注册表绑定，竖排书的双页
+            // 插图页上 WebView 持焦时左右键方向是反的。
+            final ShortcutAction? action =
+                _resolveReaderArrowKey(
+                  binding.key,
+                  modifiers: binding.modifiers,
+                  boundAction: bound,
+                ) ??
+                bound;
             if (action == null) return;
-            _executeShortcutAction(action);
+            _executeShortcutAction(action, keyboardTriggerKey: binding.key);
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
           },
         );

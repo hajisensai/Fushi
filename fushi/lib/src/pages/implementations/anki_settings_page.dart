@@ -1191,6 +1191,20 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             },
           ),
         ),
+        // 反馈 d7mXlstcv9：句子音频跟随播放音量（歌曲 ReplayGain + 音量、有声书音量）。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.mining_audio_follow_playback_volume',
+          child: AdaptiveSettingsSwitchRow(
+            title: t.mining_audio_follow_playback_volume,
+            subtitle: t.mining_audio_follow_playback_volume_hint,
+            icon: FushiIcons.volumeUp,
+            value: appModel.miningAudioFollowPlaybackVolume,
+            onChanged: (bool value) {
+              appModel.toggleMiningAudioFollowPlaybackVolume();
+              setState(() {});
+            },
+          ),
+        ),
         // 反馈 pNF2ZL7Kfc：视频卡句子音频从哪里取（当前播放音轨 / 中置声道 / 指定音轨）。
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_audio_source',
@@ -2687,6 +2701,8 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_frequency_harmonic_rank;
     case '{pitch-accent-positions}':
       return t.handlebar_pitch_accent_positions;
+    case '{pitch-accent-positions-inline}':
+      return t.handlebar_pitch_accent_positions_inline;
     case '{pitch-accent-categories}':
       return t.handlebar_pitch_accent_categories;
     case '{phonetic-transcriptions}':

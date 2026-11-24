@@ -12,10 +12,16 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_annotate_runner.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_package.dart'
+    show kMangaAudioPackageExtension;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render_plan.dart'
-    show MangaRenderItem, mangaCandidateFileName, mangaLocalAudioSourcePath;
+    show
+        MangaRenderItem,
+        mangaCandidateFileName,
+        mangaLocalAudioSourcePath,
+        mangaStagedFileName;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
@@ -26,10 +32,13 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart'
     show registerMangaAudio;
+import 'package:fushi/src/media/manga/audio/manga_audio_package_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/ops/ctl_tts_package_routes.dart'
+    show kTtsMangaPackageCtlRoot;
 import 'package:fushi/src/ops/ctl_tts_routes.dart';
 import 'package:fushi/src/ops/ctl_tts_support.dart';
 import 'package:fushi/src/ops/op_context.dart';
@@ -155,9 +164,16 @@ class _FakeLocalBackend implements MangaRenderBackend {
     required String voice,
     required int seed,
     required List<String> segments,
+    required CastLineDirection direction,
     required String outputPath,
     required TtsRenderCancelToken cancel,
   }) => throw UnsupportedError('local only');
+
+  @override
+  Future<String?> directionKey({
+    required String voice,
+    required CastLineDirection direction,
+  }) async => null;
 
   @override
   Future<int> cutClip({
@@ -213,6 +229,7 @@ void main() {
   late List<({String lineId, int seed})> regenerated;
   late List<CtlRoute> routes;
   late OpCatalog catalog;
+  late MangaAudioPackageTasks packageTasks;
 
   Future<void> writeScript(MangaAudioScript script) =>
       mangaAudioScriptStoreFor(model).save(bookKey, script);
@@ -261,7 +278,8 @@ void main() {
         title: '第1巻',
         epubPath: 'manga.json',
         extractDir: volDir.path,
-        chapterCount: 1,
+        // 漫画卷的 chapterCount 是页数（MangaImporter 落库约定）。
+        chapterCount: 3,
         chaptersJson: '[]',
         importedAt: 1000,
         format: const Value<String>('manga'),
@@ -318,6 +336,7 @@ void main() {
       runner: renderRunner,
     );
     consent = false;
+    packageTasks = MangaAudioPackageTasks();
     regenerated = <({String lineId, int seed})>[];
     context = OpContext(ref: _Ref(model));
     debugOverrideTtsCtlDeps(
@@ -348,10 +367,14 @@ void main() {
             }) async {
               regenerated.add((lineId: lineId, seed: seed));
               final String file = mangaCandidateFileName(lineId, seed);
+              // 与真生成端一致：候选先写暂存名（登记的那份清单旁边），保留时才发布成 [file]。
               final File out = File(
                 p.join(
-                  mangaRenderManifestFile(model, bookKey).parent.path,
-                  file,
+                  (await mangaAudioEditTarget(
+                    model,
+                    bookKey,
+                  )).manifestFile.parent.path,
+                  mangaStagedFileName(file),
                 ),
               );
               await out.writeAsString('new-$seed');
@@ -367,6 +390,7 @@ void main() {
             },
         stopPlayback: (List<String> keys) async {},
         localAudioBackend: () async => _FakeLocalBackend(),
+        packageTasks: () => packageTasks,
       ),
     );
     routes = buildTtsCtlRoutes(context);
@@ -562,6 +586,107 @@ void main() {
     expect((await undo2()).status, OpUndoStatus.superseded);
   });
 
+  test('改一句的语气 / 强度：校验词表与范围；强度要跟着语气；none 清掉；撤销放回', () async {
+    for (final Map<String, Object?> bad in <Map<String, Object?>>[
+      <String, Object?>{'emotion': 'happy'},
+      <String, Object?>{'emotion': 'anger', 'intensity': 101},
+      <String, Object?>{'emotion': 'anger', 'intensity': -2},
+      <String, Object?>{'intensity': 50},
+    ]) {
+      await expectLater(
+        call(
+          'PUT',
+          '$item/lines/:line',
+          params: <String, String>{'key': wire, 'line': 'p0b0'},
+          body: bad,
+        ),
+        failure(400),
+      );
+    }
+
+    final (Object? result, Future<OpUndoOutcome> Function() undo) = await runOp(
+      'tts.manga.line.edit',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'emotion': 'anger', 'intensity': 80},
+    );
+    final Map<String, Object?> line =
+        (result! as Map<String, Object?>)['line']! as Map<String, Object?>;
+    expect(line['emotion'], 'anger');
+    expect(line['intensity'], 80);
+    MangaScriptLine edited = (await readScript()).lineById('p0b0')!;
+    expect(edited.emotion, CastEmotion.anger);
+    expect(edited.intensity, 80);
+    expect(edited.source, TtsCastSource.user);
+
+    // 只清强度（-1，与操作目录同口径）：语气留着。
+    await call(
+      'PUT',
+      '$item/lines/:line',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'intensity': -1},
+    );
+    edited = (await readScript()).lineById('p0b0')!;
+    expect(edited.emotion, CastEmotion.anger);
+    expect(edited.intensity, isNull);
+
+    // none 清掉语气（强度随之清掉）。
+    final (_, Future<OpUndoOutcome> Function() undoClear) = await runOp(
+      'tts.manga.line.edit',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'emotion': 'none'},
+    );
+    edited = (await readScript()).lineById('p0b0')!;
+    expect(edited.emotion, isNull);
+    expect(edited.intensity, isNull);
+
+    expect((await undoClear()).status, OpUndoStatus.done);
+    expect((await readScript()).lineById('p0b0')!.emotion, CastEmotion.anger);
+    // 第一次改之后这一页又被改过：不覆盖。
+    expect((await undo()).status, OpUndoStatus.superseded);
+  });
+
+  test('改一句的语气说明：写入 / 出现在行 JSON；非文字 400；空串清掉；撤销放回', () async {
+    await expectLater(
+      call(
+        'PUT',
+        '$item/lines/:line',
+        params: <String, String>{'key': wire, 'line': 'p0b0'},
+        body: <String, Object?>{'tone': 3},
+      ),
+      failure(400),
+    );
+    final (Object? result, Future<OpUndoOutcome> Function() undo) = await runOp(
+      'tts.manga.line.edit',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'tone': '  おずおずと '},
+    );
+    final Map<String, Object?> line =
+        (result! as Map<String, Object?>)['line']! as Map<String, Object?>;
+    expect(line['tone'], 'おずおずと');
+    MangaScriptLine edited = (await readScript()).lineById('p0b0')!;
+    expect(edited.tone, 'おずおずと');
+    expect(edited.direction.tone, 'おずおずと');
+    expect(edited.source, TtsCastSource.user);
+
+    expect((await undo()).status, OpUndoStatus.done);
+    expect((await readScript()).lineById('p0b0')!.tone, isNull);
+
+    await call(
+      'PUT',
+      '$item/lines/:line',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'tone': '声を落として'},
+    );
+    await call(
+      'PUT',
+      '$item/lines/:line',
+      params: <String, String>{'key': wire, 'line': 'p0b0'},
+      body: <String, Object?>{'tone': ''},
+    );
+    edited = (await readScript()).lineById('p0b0')!;
+    expect(edited.tone, isNull);
+  });
+
   test('改某角色：改名带走行与声音；声音要在列表里；撤销整份放回', () async {
     await expectLater(
       call(
@@ -747,11 +872,20 @@ void main() {
       File(p.join(manifestFile.parent.path, 'p0b0.m4a')).existsSync(),
       isFalse,
     );
+    // 重生成之后独立改了停顿与念的文字（HBK-AUDIT-208）：撤销只放回音频与种子。
+    final MangaAudioScript edited = await readScript();
+    edited.replaceLine(
+      'p0b0',
+      (MangaScriptLine l) => l.copyWith(beatMs: 900, say: 'こんばんは'),
+    );
+    await writeScript(edited);
 
     expect((await undo()).status, OpUndoStatus.done);
     manifest = (await MangaRenderManifest.load(manifestFile))!;
     expect(manifest.lines.single.file, 'p0b0.m4a');
     expect(manifest.lines.single.durationMs, 1200);
+    expect((await readScript()).lineById('p0b0')!.beatMs, 900);
+    expect((await readScript()).lineById('p0b0')!.say, 'こんばんは');
     expect(
       File(p.join(manifestFile.parent.path, 'p0b0.m4a')).readAsStringSync(),
       'old-audio',
@@ -985,6 +1119,40 @@ void main() {
     await expectLater(importManifest(file.path), failure(409));
   });
 
+  test('导出包正在导入这一卷：标注 / 生成 409、什么都不跑；导入结束后放行（BUG-5337）', () async {
+    consent = true;
+    final Completer<void> gate = Completer<void>();
+    final MangaAudioPackageTask importing = packageTasks.start(
+      kind: MangaAudioPackageTaskKind.import,
+      path: p.join(tmp.path, 'in.fushi-manga-audio'),
+      claims: <String>{mangaPackageBookClaim(bookKey)},
+      run: (MangaAudioPackageTask task) async {
+        await gate.future;
+        return <String, Object?>{};
+      },
+    );
+    await expectLater(call('POST', '$item/annotate'), failure(409));
+    await expectLater(call('POST', '$item/render'), failure(409));
+    await expectLater(
+      call(
+        'PUT',
+        '$item/lines/:line',
+        params: <String, String>{'key': wire, 'line': 'p0b0'},
+        body: <String, Object?>{'speaker': kTtsNarrator},
+      ),
+      failure(409),
+    );
+    expect(annotator.calls, 0);
+    expect(queue.latestFor(bookKey), isNull);
+
+    gate.complete();
+    await importing.whenDone;
+    final Map<String, Object?> rendered =
+        await call('POST', '$item/render') as Map<String, Object?>;
+    expect(rendered['render'], isNotNull);
+    expect(queue.latestFor(bookKey), isNotNull);
+  });
+
   /// 本机生成过的成品：p0b0（太郎）/ p0b1（不明）/ p1b0（旁白）三句，各有音频，已入库。
   Future<File> writeRendered() async {
     final File manifestFile = mangaRenderManifestFile(model, bookKey);
@@ -1178,7 +1346,18 @@ void main() {
     // 从第 3 句开头接着听。
     expect(await AudiobookRepository(db).readPositionMs(bookKey), 1500 + 1200);
 
+    // 换音之后独立把停顿设成 900 ms、改了说话人（HBK-AUDIT-208）：撤销换音只放回音源，
+    // 不抹掉这些编辑。
+    final MangaAudioScript edited = await readScript();
+    edited.replaceLine(
+      'p0b0',
+      (MangaScriptLine l) => l.copyWith(beatMs: 900, speaker: kTtsNarrator),
+    );
+    await writeScript(edited);
+
     expect((await undo()).status, OpUndoStatus.done);
+    expect((await readScript()).lineById('p0b0')!.beatMs, 900);
+    expect((await readScript()).lineById('p0b0')!.speaker, kTtsNarrator);
     final MangaRenderManifest back = (await MangaRenderManifest.load(
       manifestFile,
     ))!;
@@ -1201,10 +1380,120 @@ void main() {
     expect((await undo()).status, OpUndoStatus.superseded);
   });
 
-  test('按句换本地音频 / 单句重生成：登记的是外部导入的清单时 409', () async {
+  test(
+    '外部导入的清单：换本地音频 / 单句重生成 / 按角色重生成都原地改写它，用户的其他文件不碰；撤销放回（拍板 isATnQZ_eN-external）',
+    () async {
+      final File internal = await writeRendered();
+      final String internalBefore = await internal.readAsString();
+      final File external = await writeExternalManifest('ext');
+      final String extDir = external.parent.path;
+      for (final String name in <String>['cover.jpg', 'notes.txt', '001.wav']) {
+        File(p.join(extDir, name)).writeAsStringSync('user-$name');
+      }
+      await importManifest(external.path, confirm: true);
+      Future<MangaRenderManifest> extManifest() async =>
+          (await MangaRenderManifest.load(external))!;
+      Future<Audiobook> book() async =>
+          (await AudiobookRepository(db).findByBookKey(bookKey))!;
+
+      // 换本地音频：外部清单这句换成整形后的文件，写在外部目录里，登记仍指向外部清单。
+      final (
+        Object? replaced,
+        Future<OpUndoOutcome> Function() undoReplace,
+      ) = await runOp(
+        'tts.manga.lines.replace',
+        body: <String, Object?>{
+          'files': <String, String>{'p0b0': localWav('a.wav', 'wav-a').path},
+        },
+      );
+      expect(replaced, containsPair('replaced', 1));
+      final MangaRenderedLine l0 = (await extManifest()).lines[0];
+      expect(l0.file, startsWith('p0b0.f'));
+      expect(File(p.join(extDir, l0.file)).readAsStringSync(), 'shaped:wav-a');
+      expect(File(p.join(extDir, 'p0b0.m4a')).existsSync(), isFalse);
+      expect((await book()).alignmentPath, external.path);
+      expect((await book()).audioPaths![0], p.join(extDir, l0.file));
+      expect((await book()).audioPaths![1], p.join(extDir, 'p0b1.m4a'));
+      expect(await internal.readAsString(), internalBefore);
+
+      expect((await undoReplace()).status, OpUndoStatus.done);
+      expect((await extManifest()).lines[0].file, 'p0b0.m4a');
+      expect(File(p.join(extDir, 'p0b0.m4a')).readAsStringSync(), 'audio-p0b0');
+      expect(File(p.join(extDir, l0.file)).existsSync(), isFalse);
+      expect((await book()).audioPaths![0], p.join(extDir, 'p0b0.m4a'));
+
+      // 单句重生成：候选出在外部目录、保留后外部清单换成它；撤销放回旧音频。
+      final (
+        Object? regen,
+        Future<OpUndoOutcome> Function() undoRegen,
+      ) = await runOp(
+        'tts.manga.line.regenerate',
+        params: <String, String>{'key': wire, 'line': 'p0b1'},
+        body: <String, Object?>{'seed': 7},
+      );
+      expect(regen, containsPair('seed', 7));
+      expect((await extManifest()).lines[1].file, 'p0b1.s7.m4a');
+      expect(File(p.join(extDir, 'p0b1.s7.m4a')).readAsStringSync(), 'new-7');
+      expect((await book()).audioPaths![1], p.join(extDir, 'p0b1.s7.m4a'));
+      expect(await internal.readAsString(), internalBefore);
+      expect((await undoRegen()).status, OpUndoStatus.done);
+      expect((await extManifest()).lines[1].file, 'p0b1.m4a');
+      expect(File(p.join(extDir, 'p0b1.m4a')).readAsStringSync(), 'audio-p0b1');
+
+      // 按角色重生成：预检列的是外部清单里的句子。
+      final Object? dry = await call(
+        'POST',
+        '$item/characters/:name/regenerate',
+        params: <String, String>{'key': wire, 'name': '太郎'},
+        body: <String, Object?>{'dryRun': true},
+      );
+      expect(
+        ((dry! as Map<String, Object?>)['lines']! as List<Object?>).map(
+          (Object? l) => (l! as Map<String, Object?>)['line'],
+        ),
+        <String>['p0b0'],
+      );
+
+      for (final String name in <String>['cover.jpg', 'notes.txt', '001.wav']) {
+        expect(
+          File(p.join(extDir, name)).readAsStringSync(),
+          'user-$name',
+          reason: name,
+        );
+      }
+      expect(await internal.readAsString(), internalBefore);
+    },
+  );
+
+  test('登记的是广播剧 / 动画音轨成品时按句改 409', () async {
     await writeRendered();
-    final File external = await writeExternalManifest('ext');
-    await importManifest(external.path, confirm: true);
+    final File drama = mangaDramaManifestFile(model, bookKey);
+    await drama.parent.create(recursive: true);
+    await File(p.join(drama.parent.path, 'seg0.m4a')).writeAsString('seg');
+    final MangaRenderManifest manifest = MangaRenderManifest(
+      pageCount: 3,
+      engineSignature: 'sig-1',
+      lines: const <MangaRenderedLine>[
+        MangaRenderedLine(
+          lineId: 'seg0',
+          page: 0,
+          blocks: <int>[0],
+          speaker: '太郎',
+          kind: CastLineKind.spoken,
+          beatMs: 0,
+          file: 'seg0.m4a',
+          durationMs: 1000,
+          text: 'seg',
+        ),
+      ],
+    );
+    await manifest.save(drama);
+    await registerMangaAudio(
+      db,
+      bookKey: bookKey,
+      manifestFile: drama,
+      manifest: manifest,
+    );
     await expectLater(
       call(
         'POST',
@@ -1213,7 +1502,7 @@ void main() {
           'files': <String, String>{'p0b0': localWav('a.wav', 'wav-a').path},
         },
       ),
-      coded(409, 'manga_audio_external'),
+      coded(409, 'manga_audio_drama'),
     );
     await expectLater(
       call(
@@ -1221,7 +1510,15 @@ void main() {
         '$item/lines/:line/regenerate',
         params: <String, String>{'key': wire, 'line': 'p0b0'},
       ),
-      coded(409, 'manga_audio_external'),
+      coded(409, 'manga_audio_drama'),
+    );
+    await expectLater(
+      call(
+        'POST',
+        '$item/characters/:name/regenerate',
+        params: <String, String>{'key': wire, 'name': '太郎'},
+      ),
+      coded(409, 'manga_audio_drama'),
     );
   });
 
@@ -1346,6 +1643,13 @@ void main() {
     final MangaAudioScript changed = await readScript();
     changed.replaceLine('p0b0', (MangaScriptLine l) => l.copyWith(seed: seed));
     await writeScript(changed);
+    // 重生成之后独立改了停顿与念的文字（HBK-AUDIT-208）：撤销只放回音频与种子。
+    final MangaAudioScript edited = await readScript();
+    edited.replaceLine(
+      'p0b0',
+      (MangaScriptLine l) => l.copyWith(beatMs: 900, say: 'こんばんは'),
+    );
+    await writeScript(edited);
 
     expect((await undo2()).status, OpUndoStatus.done);
     final MangaRenderManifest back = (await MangaRenderManifest.load(
@@ -1362,6 +1666,8 @@ void main() {
       isFalse,
     );
     expect((await readScript()).lineById('p0b0')!.seed, isNull);
+    expect((await readScript()).lineById('p0b0')!.beatMs, 900);
+    expect((await readScript()).lineById('p0b0')!.say, 'こんばんは');
     expect((await cues()).first.endMs, 1200);
   });
 
@@ -1381,5 +1687,151 @@ void main() {
     ]) {
       expect(catalog[id]!.undo, isNotNull, reason: id);
     }
+  });
+
+  group('有声漫画包', () {
+    const String pkg = kTtsMangaPackageCtlRoot;
+    const Map<String, String> none = <String, String>{};
+
+    void writePages() {
+      for (int i = 0; i < 3; i++) {
+        File(p.join(tmp.path, 'vol', 'p$i.jpg')).writeAsBytesSync(<int>[i, 9]);
+      }
+    }
+
+    test('导出等写完 → 预检认出本机同一卷 → 不确认 409 → 确认导入 → 撤销放回', () async {
+      writePages();
+      await writeRendered();
+      final String out = p.join(tmp.path, 'out$kMangaAudioPackageExtension');
+      final Map<String, Object?> exported =
+          await call(
+                'POST',
+                '$pkg/export',
+                params: none,
+                body: <String, Object?>{
+                  'keys': <String>[wire],
+                  'out': out,
+                  'wait': true,
+                },
+              )
+              as Map<String, Object?>;
+      expect(exported['status'], 'done', reason: '$exported');
+      expect(File(out).existsSync(), isTrue);
+      final Map<String, Object?> task =
+          await call(
+                'GET',
+                '$pkg/tasks/:id',
+                params: <String, String>{'id': exported['taskId']! as String},
+              )
+              as Map<String, Object?>;
+      expect(task['status'], 'done');
+
+      final Map<String, Object?> plan =
+          await call(
+                'POST',
+                '$pkg/import',
+                params: none,
+                body: <String, Object?>{'file': out, 'dryRun': true},
+              )
+              as Map<String, Object?>;
+      expect(plan['dryRun'], isTrue);
+      final Map<Object?, Object?> volume =
+          (plan['volumes']! as List<Object?>).single! as Map<Object?, Object?>;
+      expect(volume['action'], 'useExisting');
+      expect(volume['key'], wire);
+      expect(volume['replacesAudio'], isTrue);
+
+      await expectLater(
+        call(
+          'POST',
+          '$pkg/import',
+          params: none,
+          body: <String, Object?>{'file': out, 'wait': true},
+        ),
+        failure(409),
+      );
+
+      // 本机演出稿先清空：导入后应是包里的 3 句，撤销回到空的那份。
+      await writeScript(MangaAudioScript(engineSignature: 'sig-1'));
+      final (
+        Object? result,
+        Future<OpUndoOutcome> Function() undo,
+      ) = await runOp(
+        'tts.manga.import-package',
+        params: none,
+        body: <String, Object?>{'file': out, 'confirm': true, 'wait': true},
+      );
+      expect(
+        (result! as Map<Object?, Object?>)['status'],
+        'done',
+        reason: '$result',
+      );
+      expect((await readScript()).lines, hasLength(3));
+      expect(await db.getCuesForBook(bookKey), hasLength(3));
+      expect((await undo()).status, OpUndoStatus.done);
+      expect((await readScript()).lines, isEmpty);
+    });
+
+    test('参数与错误：没卷 / 没成品 / 坏包 / 没有的任务', () async {
+      writePages();
+      final String out = p.join(tmp.path, 'x$kMangaAudioPackageExtension');
+      await expectLater(
+        call(
+          'POST',
+          '$pkg/export',
+          params: none,
+          body: <String, Object?>{'out': out},
+        ),
+        failure(400),
+      );
+      // 有演出稿但没登记成品：导出整卷 422，只导演出稿可以。
+      await expectLater(
+        call(
+          'POST',
+          '$pkg/export',
+          params: none,
+          body: <String, Object?>{
+            'keys': <String>[wire],
+            'out': out,
+            'wait': true,
+          },
+        ),
+        failure(422),
+      );
+      final Map<String, Object?> scriptOnly =
+          await call(
+                'POST',
+                '$pkg/export',
+                params: none,
+                body: <String, Object?>{
+                  'keys': <String>[wire],
+                  'out': out,
+                  'scriptOnly': true,
+                  'wait': true,
+                },
+              )
+              as Map<String, Object?>;
+      expect(scriptOnly['status'], 'done', reason: '$scriptOnly');
+
+      final File junk = File(p.join(tmp.path, 'junk.zip'))
+        ..writeAsStringSync('nope');
+      await expectLater(
+        call(
+          'POST',
+          '$pkg/import',
+          params: none,
+          body: <String, Object?>{'file': junk.path, 'dryRun': true},
+        ),
+        failure(422),
+      );
+      await expectLater(
+        call(
+          'GET',
+          '$pkg/tasks/:id',
+          params: const <String, String>{'id': 'nope'},
+        ),
+        failure(404),
+      );
+    });
   });
 }

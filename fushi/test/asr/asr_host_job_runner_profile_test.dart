@@ -102,6 +102,9 @@ void main() {
         parseAsrAudioProfile(' mixedaudio '),
         asr.AsrAudioProfile.mixedAudio,
       );
+      // song 是 app 音乐库歌词自己选的档位（混音 + 人声分离），不是包 / host 任务
+      // 的素材：模型键 `<tag>@song` 与 host 任务的 audioProfile=song 都不认。
+      expect(parseAsrAudioProfile('song'), isNull);
     });
   });
 

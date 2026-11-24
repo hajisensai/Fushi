@@ -33,7 +33,6 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
@@ -44,6 +43,10 @@ import 'package:fushi/src/media/music/mpv_music_output_backend.dart'
 import 'package:fushi/src/media/music/plugin/music_online_mv_video_client.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show MusicPluginStreamUnavailable;
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart';
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart'
+    show isYoutubeMusicSourceAvailable;
+import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/media/playback_route_marks.dart';
@@ -64,12 +67,20 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show FushiIconButtonControl;
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
+    show musicBrowseScaffold;
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi_engine/sync/remote_music_dto.dart'
+    show RemoteMusicVideoCandidate, RemoteMusicVideoCandidateSource;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/metadata/music_video_match.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -163,17 +174,147 @@ class MusicKaraokeTrack {
       : musicEdlUri(path, startMs: cueStartMs!, endMs: cueEndMs);
 }
 
+/// MV 页里要放的画面：主视频地址、（YouTube 分离流时）MV 自己的音频流、请求头；远端画面带
+/// [release]（离页时释放流票）。
+typedef MusicKaraokeMvMedia = ({
+  String video,
+  String? mvAudio,
+  Map<String, String> headers,
+  Future<void> Function()? release,
+});
+
+/// MV 页放的那条 MV 绑定。本机绑定（[MusicKaraokeLocalBinding]）与互联 host 的绑定
+/// （[MusicKaraokeHostBinding]，design-imusic-q7）各管自己的取流、「曲库音轨」地址与微调写回，
+/// 页面里没有来源分支（互联共享音乐库设计 §6.3）。
+abstract interface class MusicKaraokeMvBinding {
+  /// MV 时间 = 音频时间 + offset。
+  int get offsetMs;
+
+  /// 取画面（YouTube 由本机自己的 YouTube 音源取）；放不了为 null。
+  Future<MusicKaraokeMvMedia?> resolve(FushiDatabase db);
+
+  /// 「曲库音轨」外挂进 MV 的音频地址（本机：文件路径；host：签一张音频流票）。
+  Future<String> libraryAudio(MusicKaraokeTrack track);
+
+  /// 页内 ±100 ms 微调写回（本机绑定 / host 上的绑定）。
+  Future<void> setOffset(FushiDatabase db, int offsetMs);
+}
+
+/// YouTube MV 的画面（本机自己的 YouTube 音源取流）。
+Future<MusicKaraokeMvMedia> _youtubeMv(String ref) async {
+  final YoutubeResolvedSource s = await resolveYoutubeSource(
+    ref,
+    withCaptions: false,
+  );
+  return (
+    video: s.streamUrl,
+    mvAudio: s.audioStreamUrl,
+    headers: s.httpHeaders,
+    release: null,
+  );
+}
+
+/// 本机曲目的 MV 绑定（`music_videos` 行）。
+class MusicKaraokeLocalBinding implements MusicKaraokeMvBinding {
+  const MusicKaraokeLocalBinding(this.row);
+
+  final MusicVideoRow row;
+
+  @override
+  int get offsetMs => row.offsetMs;
+
+  @override
+  Future<MusicKaraokeMvMedia?> resolve(FushiDatabase db) async {
+    switch (row.kind) {
+      case MusicVideoKind.local:
+      case MusicVideoKind.animeEpisode:
+        final String? file = await resolveMusicVideoLocalFile(db, row);
+        return file == null
+            ? null
+            : (
+                video: file,
+                mvAudio: null,
+                headers: const <String, String>{},
+                release: null,
+              );
+      case MusicVideoKind.youtube:
+        return _youtubeMv(row.ref);
+    }
+    return null;
+  }
+
+  @override
+  Future<String> libraryAudio(MusicKaraokeTrack track) async => track.path;
+
+  @override
+  Future<void> setOffset(FushiDatabase db, int offsetMs) =>
+      MusicVideoService(database: db).setOffset(row, offsetMs);
+}
+
+/// 互联 host 曲目的 MV 绑定（design-imusic-q7）：本机文件 / 动画集经 host 签画面流票；YouTube 由本机
+/// 自己的 YouTube 音源取（受本机合规门约束，iOS 不出这类绑定）；微调写回 host（按 updatedAt LWW）。
+class MusicKaraokeHostBinding implements MusicKaraokeMvBinding {
+  const MusicKaraokeHostBinding({
+    required this.browser,
+    required this.trackUid,
+    required this.video,
+  });
+
+  final InterconnectMusicBrowser browser;
+  final String trackUid;
+  final MusicServerVideo video;
+
+  @override
+  int get offsetMs => video.offsetMs;
+
+  @override
+  Future<MusicKaraokeMvMedia?> resolve(FushiDatabase db) async {
+    final String? youtube = video.youtubeRef;
+    if (youtube != null) {
+      return isYoutubeMusicSourceAvailable ? _youtubeMv(youtube) : null;
+    }
+    final MusicServerMediaLease lease = await browser.openVideo(video);
+    return (
+      video: lease.uri.toString(),
+      mvAudio: null,
+      headers: const <String, String>{},
+      release: lease.release,
+    );
+  }
+
+  /// 曲库音轨：向 host 签这首的音频流——原样音质、就是这一首（CUE 曲目由 host 无损截段），所以
+  /// [musicHostKaraokeTrack] 不带 CUE 起点，`audio-delay` 就是绑定偏移。
+  @override
+  Future<String> libraryAudio(MusicKaraokeTrack track) async =>
+      (await browser.openTrack(trackUid, forDownload: true)).url;
+
+  @override
+  Future<void> setOffset(FushiDatabase db, int offsetMs) =>
+      browser.setVideoOffset(video, offsetMs);
+}
+
 /// 打开 MV 页。
 Future<void> openMusicMvPage({
   required BuildContext context,
   required MusicTrackRow track,
   required MusicVideoRow binding,
+}) => openMusicKaraokeMvPage(
+  context: context,
+  track: MusicKaraokeTrack.fromRow(track),
+  binding: MusicKaraokeLocalBinding(binding),
+);
+
+/// 打开 MV 页（任意来源的绑定）。
+Future<void> openMusicKaraokeMvPage({
+  required BuildContext context,
+  required MusicKaraokeTrack track,
+  required MusicKaraokeMvBinding binding,
 }) async {
   await Navigator.of(context).push<void>(
     adaptivePageRoute<void>(
       context: context,
       builder: (_) => MusicKaraokeStagePage(
-        track: MusicKaraokeTrack.fromRow(track),
+        track: track,
         picture: MusicKaraokePicture.mv,
         binding: binding,
       ),
@@ -319,11 +460,15 @@ class _MvSource {
     required this.video,
     this.mvAudio,
     this.headers = const <String, String>{},
+    this.release,
   });
 
   final String video;
   final String? mvAudio;
   final Map<String, String> headers;
+
+  /// 远端画面的流票释放（离页时调）。
+  final Future<void> Function()? release;
 }
 
 /// 歌词时钟：读播放器位置并换算到音频时间轴（画布 / CD+G 下偏移恒 0）。
@@ -436,7 +581,7 @@ class MusicKaraokeStagePage extends ConsumerStatefulWidget {
   final MusicKaraokePicture picture;
 
   /// [MusicKaraokePicture.mv] 时的 MV 绑定。
-  final MusicVideoRow? binding;
+  final MusicKaraokeMvBinding? binding;
 
   /// [MusicKaraokePicture.cdg] 时的 `.cdg` 路径。
   final String? cdgPath;
@@ -501,35 +646,18 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
   }
 
   Future<_MvSource?> _resolveMv() async {
-    final MusicVideoRow b = widget.binding!;
-    switch (b.kind) {
-      case MusicVideoKind.local:
-        return _MvSource(video: b.ref);
-      case MusicVideoKind.youtube:
-        final YoutubeResolvedSource s = await resolveYoutubeSource(
-          b.ref,
-          withCaptions: false,
-        );
-        return _MvSource(
-          video: s.streamUrl,
-          mvAudio: s.audioStreamUrl,
-          headers: s.httpHeaders,
-        );
-      case MusicVideoKind.animeEpisode:
-        final ({String bookUid, int episodeIndex})? ref =
-            parseAnimeEpisodeMusicVideoRef(b.ref);
-        if (ref == null) return null;
-        final VideoBookRow? row = await VideoBookRepository(
-          _app.database,
-        ).getByBookUid(ref.bookUid);
-        if (row == null) return null;
-        for (final ({int index, String path}) f in themeSongFilesOf(row)) {
-          if (f.index == ref.episodeIndex) return _MvSource(video: f.path);
-        }
-        return null;
-    }
-    return null;
+    final MusicKaraokeMvMedia? m = await widget.binding!.resolve(_app.database);
+    if (m == null) return null;
+    return _MvSource(
+      video: m.video,
+      mvAudio: m.mvAudio,
+      headers: m.headers,
+      release: m.release,
+    );
   }
+
+  /// 「曲库音轨」外挂的音频地址（host 曲目要签票，只签一次）。
+  Future<String>? _libraryAudio;
 
   Future<void> _start() async {
     final Duration enginePosition = _app.musicSession.engine.position;
@@ -628,7 +756,9 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
     if (native != null) {
       final String? external = _isMv
           ? (audio == MusicMvAudioSource.library
-                ? widget.track.path
+                ? await (_libraryAudio ??= widget.binding!.libraryAudio(
+                    widget.track,
+                  ))
                 : src.mvAudio)
           : null;
       // 外挂轨要在 seek / play 之前加（与视频页外挂音轨同一时序，见
@@ -685,12 +815,10 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
   }
 
   Future<void> _nudge(int deltaMs) async {
-    final MusicVideoRow? binding = widget.binding;
+    final MusicKaraokeMvBinding? binding = widget.binding;
     if (binding == null) return;
     setState(() => _offsetMs += deltaMs);
-    await MusicVideoService(
-      database: _app.database,
-    ).setOffset(binding, _offsetMs);
+    await binding.setOffset(_app.database, _offsetMs);
     if (_audio == MusicMvAudioSource.library) {
       await _native?.setProperty(
         'audio-delay',
@@ -726,6 +854,7 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
         unawaited(app.musicSession.engine.seek(_position));
       }
     }
+    unawaited(_source?.release?.call());
     unawaited(_player.dispose());
     super.dispose();
   }
@@ -980,4 +1109,254 @@ class _MusicKaraokeStagePageState extends ConsumerState<MusicKaraokeStagePage> {
       ),
     );
   }
+}
+
+// 互联 host 曲目的 MV 页（design-imusic-q7 / q9）：列出 host 上这首的 MV 绑定，点一条在 MV 页
+// （卡拉 OK 舞台）里看——本机文件 / 动画集经 host 签画面流票，YouTube 由本机自己的 YouTube 音源取
+// （iOS 不出这类绑定）；页内 ±100 ms 微调写回 host。host 接受远程匹配时（能力位 `videoMatch`）还能
+// 「请 host 重新找本机 MV / 从动画找 / 在线搜索 / 解绑」：匹配只在 host 上对 host 文件跑，客户端
+// 不为远端曲目解码。
+//
+// 布局与本机曲目详情的 MV 一节同一套（分组列表 + 一排按钮），外壳用音乐浏览页的脚手架。
+
+/// 这台设备上能显示的 host MV 绑定：YouTube 类只在本机 YouTube 音源可用时出（iOS 不出）。
+List<MusicServerVideo> musicHostVisibleVideos(
+  List<MusicServerVideo> videos, {
+  required bool youtubeAvailable,
+}) => <MusicServerVideo>[
+  for (final MusicServerVideo v in videos)
+    if (v.youtubeRef == null || youtubeAvailable) v,
+];
+
+/// MV 页要的曲目信息（host 曲目：路径是播放占位，歌词经 host 歌词层取；音频由 host 截好这一首，
+/// 所以不带 CUE 起点）。
+MusicKaraokeTrack musicHostKaraokeTrack(
+  InterconnectMusicBrowser browser,
+  MusicServerTrack track,
+) => MusicKaraokeTrack(
+  trackUid: track.id,
+  path: fushiHostMusicTrackPath(browser.serverId, track.id),
+  title: track.title,
+  artist: track.artist,
+  album: track.album,
+  durationMs: track.durationMs,
+  coverPath: track.coverRef == null
+      ? null
+      : fushiHostMusicCoverPath(browser.serverId, track.coverRef!),
+);
+
+/// 打开 host 曲目的 MV 页。
+Future<void> openMusicHostMvPage({
+  required BuildContext context,
+  required InterconnectMusicBrowser browser,
+  required MusicServerTrack track,
+}) => Navigator.of(context).push<void>(
+  adaptivePageRoute<void>(
+    context: context,
+    builder: (_) => MusicHostMvPage(browser: browser, track: track),
+  ),
+);
+
+class MusicHostMvPage extends StatefulWidget {
+  const MusicHostMvPage({
+    super.key,
+    required this.browser,
+    required this.track,
+    this.youtubeAvailable,
+  });
+
+  final InterconnectMusicBrowser browser;
+  final MusicServerTrack track;
+
+  /// 测试注入；缺省问本机 YouTube 合规门。
+  final bool? youtubeAvailable;
+
+  @override
+  State<MusicHostMvPage> createState() => _MusicHostMvPageState();
+}
+
+class _MusicHostMvPageState extends State<MusicHostMvPage> {
+  late Future<List<MusicServerVideo>> _videos = _load();
+  bool _busy = false;
+
+  bool get _youtube => widget.youtubeAvailable ?? isYoutubeMusicSourceAvailable;
+
+  Future<List<MusicServerVideo>> _load() async => musicHostVisibleVideos(
+    await widget.browser.videosFor(widget.track.id),
+    youtubeAvailable: _youtube,
+  );
+
+  Future<void> _run(Future<void> Function() body) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await body();
+    } on Object catch (e) {
+      FushiToast.show(
+        msg: t.music_action_failed(error: '$e'),
+        severity: ToastSeverity.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _videos = _load();
+        });
+      }
+    }
+  }
+
+  Future<void> _rematch() => _run(() async {
+    final int bound = await widget.browser.rematchVideos(widget.track.id);
+    if (bound == 0) FushiToast.show(msg: t.music_mv_none_found);
+  });
+
+  Future<void> _pick(String source) => _run(() async {
+    final List<RemoteMusicVideoCandidate> list = await widget.browser
+        .videoCandidates(widget.track.id, source);
+    if (!mounted) return;
+    final List<RemoteMusicVideoCandidate> shown = <RemoteMusicVideoCandidate>[
+      for (final RemoteMusicVideoCandidate c in list)
+        if (c.kind != MusicVideoKind.youtube || _youtube) c,
+    ];
+    if (shown.isEmpty) {
+      FushiToast.show(msg: t.music_mv_none_found);
+      return;
+    }
+    final RemoteMusicVideoCandidate? c =
+        await showFushiChoiceDialog<RemoteMusicVideoCandidate>(
+          context: context,
+          title: t.music_mv_candidates_title,
+          icon: FushiIcons.video,
+          options: <FushiChoiceOption<RemoteMusicVideoCandidate>>[
+            for (final RemoteMusicVideoCandidate c in shown)
+              FushiChoiceOption<RemoteMusicVideoCandidate>(
+                value: c,
+                label: c.title,
+                subtitle: c.subtitle,
+              ),
+          ],
+        );
+    if (c != null) await widget.browser.bindVideo(widget.track.id, c);
+  });
+
+  Future<void> _unbind(MusicServerVideo v) =>
+      _run(() => widget.browser.unbindVideo(widget.track.id, v));
+
+  Future<void> _open(MusicServerVideo v) => openMusicKaraokeMvPage(
+    context: context,
+    track: musicHostKaraokeTrack(widget.browser, widget.track),
+    binding: MusicKaraokeHostBinding(
+      browser: widget.browser,
+      trackUid: widget.track.id,
+      video: v,
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => musicBrowseScaffold(
+    context,
+    title: widget.track.title,
+    body: (BuildContext context) => FutureBuilder<List<MusicServerVideo>>(
+      future: _videos,
+      builder: (BuildContext context, AsyncSnapshot<List<MusicServerVideo>> s) {
+        final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+        final List<MusicServerVideo> rows =
+            s.data ?? const <MusicServerVideo>[];
+        final bool canMatch = widget.browser.canMatchVideos;
+        final List<Widget> children = <Widget>[
+          FushiSectionTitle(t.music_mv_section),
+          if (s.connectionState == ConnectionState.done && rows.isEmpty)
+            Text(t.music_mv_none_found),
+          for (int i = 0; i < rows.length; i++)
+            FushiPressScale(
+              key: ValueKey<String>('music-host-mv-${rows[i].id}'),
+              child: FushiGroupedListItem(
+                index: i,
+                count: rows.length,
+                onTap: () => unawaited(_open(rows[i])),
+                child: FushiListItem(
+                  leading: const FushiListLeadingIcon(FushiIcons.video),
+                  title: Text(
+                    rows[i].label ?? rows[i].id,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(t.music_mv_offset_value(ms: rows[i].offsetMs)),
+                  trailing: canMatch
+                      ? FushiIconButton(
+                          tooltip: t.music_mv_unbind,
+                          icon: FushiIcons.close,
+                          enabled: !_busy,
+                          onTap: () => unawaited(_unbind(rows[i])),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+          if (canMatch)
+            Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: <Widget>[
+                FushiPressScale(
+                  child: FushiOutlinedButton.icon(
+                    key: const ValueKey<String>('music_host_mv_rematch'),
+                    onPressed: _busy ? null : () => unawaited(_rematch()),
+                    icon: const FushiIcon(FushiIcons.folder),
+                    label: Text(
+                      _busy ? t.music_mv_searching : t.music_mv_find_local,
+                    ),
+                  ),
+                ),
+                if (_youtube)
+                  FushiPressScale(
+                    child: FushiOutlinedButton.icon(
+                      key: const ValueKey<String>('music_host_mv_online'),
+                      onPressed: _busy
+                          ? null
+                          : () => unawaited(
+                              _pick(RemoteMusicVideoCandidateSource.online),
+                            ),
+                      icon: const FushiIcon(FushiIcons.search),
+                      label: Text(t.music_mv_search_online),
+                    ),
+                  ),
+                FushiPressScale(
+                  child: FushiOutlinedButton.icon(
+                    key: const ValueKey<String>('music_host_mv_anime'),
+                    onPressed: _busy
+                        ? null
+                        : () => unawaited(
+                            _pick(RemoteMusicVideoCandidateSource.anime),
+                          ),
+                    icon: const FushiIcon(FushiIcons.tv),
+                    label: Text(t.music_mv_from_anime),
+                  ),
+                ),
+              ],
+            ),
+        ];
+        return FushiEntranceScope(
+          child: ListView.separated(
+            padding: withBottomSafeInset(
+              context,
+              EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                MediaQuery.paddingOf(context).top + tokens.spacing.gap,
+                tokens.spacing.page,
+                tokens.spacing.section,
+              ),
+            ),
+            itemCount: children.length,
+            separatorBuilder: (_, int _) =>
+                SizedBox(height: tokens.spacing.gap),
+            itemBuilder: fushiStaggeredItemBuilder(
+              (BuildContext context, int i) => children[i],
+            ),
+          ),
+        );
+      },
+    ),
+  );
 }

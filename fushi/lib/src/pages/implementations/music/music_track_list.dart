@@ -1,10 +1,10 @@
 import 'dart:async';
 
-import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/music_cover_source.dart';
 
 import 'package:fushi/src/media/music/music_local_video.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
@@ -22,6 +22,7 @@ import 'package:fushi/src/pages/implementations/music/music_mv_page.dart'
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_detail_chrome.dart'
     show MusicDetailHero, musicDetailHeroGap;
+import 'package:fushi/src/pages/implementations/music/music_library_removal.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart'
     show musicBrowsePagePadding, musicBrowseScaffold;
@@ -36,8 +37,6 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
 import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
-    show FushiSnackBar;
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show ShelfSelectionCheck;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -211,6 +210,7 @@ String musicRemoteSourceLabel(MusicRemoteEntry entry) => switch (entry.kind) {
   MusicRemoteTrackKind.youtube => 'YouTube',
   MusicRemoteTrackKind.server =>
     entry.server?.browser.displayName ?? t.music_remote_server_missing,
+  MusicRemoteTrackKind.fushiHost => t.music_server_fushi_host_subtitle,
   MusicRemoteTrackKind.plugin || null => entry.track.sourceKey,
 };
 
@@ -1164,8 +1164,8 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
       widget.playlist == null ? '$prefix-$uid' : '$prefix-$i-$uid';
 }
 
-/// 本地曲目行缩略图的来源（[MusicCover] 的两个参数）。
-typedef MusicTrackCoverSource = ({String? coverPath, String? embeddedFromPath});
+/// 本地曲目行缩略图的来源（[MusicCover] 的两个参数；规则在引擎 [musicCoverSourceOf]）。
+typedef MusicTrackCoverSource = MusicCoverSource;
 
 /// [entries] 里本地曲目的 uid → 音频路径。
 Map<String, String> musicLocalTrackPathsOf(List<MusicLibraryEntry> entries) =>
@@ -1184,14 +1184,13 @@ MusicTrackCoverSource musicLocalTrackCoverOf(
   required MusicAlbumRow? album,
   required Map<String, String> pathByUid,
 }) {
-  final String? albumEmbedded = switch (album?.coverTrackUid) {
-    final String uid => pathByUid[uid],
-    null => null,
-  };
-  return (
-    coverPath: album?.coverPath,
-    embeddedFromPath:
-        albumEmbedded ?? (track.hasEmbeddedCover ? track.path : null),
+  return musicCoverSourceOf(
+    track: track,
+    album: album,
+    albumEmbeddedPath: switch (album?.coverTrackUid) {
+      final String uid => pathByUid[uid],
+      null => null,
+    },
   );
 }
 

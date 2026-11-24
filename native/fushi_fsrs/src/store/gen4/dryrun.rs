@@ -15,7 +15,9 @@
 //! 刷新、没给缓存配置；预演只在 `migrationBlockers` 里报）。
 //! 4. 对拍（`compare.rs`，与测试装置同一份比法）。基准是**冻结的旧代码对旧库全量重建出来的缓存**，不是旧库里现成的
 //!    缓存表（它允许过期）；现成的与重建的另比一次，单列（§10 第 7 条，不计入判定）。协议 3 自己还欠着收尾的卡与笔记
-//!    （待重放集合、没刷新的合成标签行）只读连接上做不了，跳过并计数。
+//!    （待重放集合、没刷新的合成标签行）只读连接上做不了，跳过并计数。协议 3 一侧与操作集合不一致的日志结果（没有
+//!    `sc` 的旧日志投影行被旧重放改写，或存量重复日志停留在操作号更大的败者副本上，`stale.rs` 逐条佐证）在影子表上改回
+//!    并按协议 3 的重放重放后再重建，报 `oldSideStaleResults`。
 //! 5. 在对拍之外再按规范 ID 比（§6.1 第 5 步、§5.3）：每个寄存器的胜者、每张规范卡的调度状态、每张规范卡（含不在缓存
 //!    里的历史血统卡）名下的规范日志与有效复习。缓存层本身按规范 ID 物化，第 4 步的缓存三类也是按规范 ID 比的
 //!    （协议 3 一侧的行先改写成规范 ID，`compare.rs` 文件头「按规范 ID 比」）。
@@ -55,6 +57,8 @@ use super::ingest::{Settle, ingest_settle};
 use super::legacy;
 use super::native::Native;
 use super::schema::{self, sql};
+use super::stale::{self, Stale};
+use super::trace;
 use super::truth::Truth;
 use crate::gen4::heritage::fingerprint;
 use crate::gen4::op::Body4;
@@ -78,7 +82,11 @@ use crate::sync2::vv::OpId;
 ///   设备、`prev`、`Salts` 的 seq）、`migrationBlockers`（只有真迁移才拦的前提，预演只报、有才写）。旧库的本机状态
 ///   形状不对（`sync2_self` 的 `next_seq` < 1、公钥冲突等，`carry.rs` 报错）时这个 profile 的结论是 `error`、整份也随之
 ///   `error`（以前照样 `pass` / `fail`）。
-pub const REPORT_VERSION: i64 = 4;
+/// - 5：profile 报告加 `oldSideStaleResults`（`{logs, cards, examples}`，`stale.rs`）：协议 3 一侧被旧代码重放改写过、
+///   再没改回来的日志结果，基准改回后重建，逐条佐证、不计入判定（反馈 RhMpA6bn8v）。
+/// - 6：`oldSideStaleResults` 也收协议 3 停在非代表副本上的重复日志（换成新代的最小操作号代表，PR #4245），多一项
+///   `swaps`（其中换代表的条数），这类例子写成「日志 卡 op: M -> W keys: [换了的键] … res: …」。
+pub const REPORT_VERSION: i64 = 6;
 
 /// `knownDifferences.entries` 最多列几条（只有 ID；超出的只计数，`truncated` 为真）。
 pub const KNOWN_ENTRIES: usize = 5_000;
@@ -638,6 +646,9 @@ pub(crate) fn profile_stages(
         "oldSidePending".into(),
         json!({"replayCards": skip.cards.len(), "staleTagNotes": skip.notes.len()}),
     );
+    // 协议 3 一侧偏离操作集合规则（旧重放改写、或重复日志停在败者副本）的日志结果（`stale.rs`）：基准先改回再重建，逐条报出来。
+    let stale = stale::find(src, profile, t, col)?;
+    out.insert("oldSideStaleResults".into(), stale::report(&stale));
     let mut peaks = Map::new();
     let mut mark = |what: &str| {
         peaks.insert(what.into(), json!(mb(peak_mem_mb().0)));
@@ -647,7 +658,7 @@ pub(crate) fn profile_stages(
         profile,
         t,
         col,
-        &mut |src: &Connection, profile: &str, cfg: &str| old_caches(src, profile, cfg),
+        &mut |src: &Connection, profile: &str, cfg: &str| old_caches(src, profile, cfg, &stale),
         &skip,
     )?;
     mark("parity");
@@ -708,6 +719,8 @@ pub(crate) fn profile_stages(
         skip.cards.extend(cards);
     }
     out.insert("collidedNotes".into(), json!(collided.notes.len()));
+    out.insert("collidedEntities".into(), json!(collided.entities.len()));
+    out.insert("orphanedEntities".into(), json!(collided.orphaned.len()));
     mark("canonLoad");
     let regs = registers(src, profile, t, col, &collided)?;
     mark("registerWinners");
@@ -738,9 +751,30 @@ pub(crate) fn profile_stages(
         )?,
     }
     drop(old_rows);
-    drop(baseline);
     mark("canonicalPairs");
     canonical_diff.sort_by_key(|d| d.0);
+    // ID 溯源（BUG-5269）：对拍与按规范 ID 比的例子里出现的 ID、别名层验不上的 ID，逐个摊开两侧的行与派生规则。只是
+    // 诊断：读失败记进报告，不让真迁移（同一个函数）因此失败。
+    let unverified = trace::unverified_ids(t, col, opts.examples);
+    if let Some(a) = out.get_mut("aliases") {
+        a["unverifiedExamples"] = match &unverified {
+            Ok(ids) => json!(ids),
+            Err(e) => json!({ "error": e }),
+        };
+    }
+    let mut trace_ids = example_ids(&[&diff, &canonical_diff], opts.examples);
+    trace_ids.extend(unverified.unwrap_or_default());
+    out.insert(
+        "idTrace".into(),
+        trace::id_trace(t, col, &canon, baseline.rows(), &trace_ids)
+            .and_then(|mut v| {
+                compare::annotate_protocol_3(src, profile, &mut v)?;
+                Ok(v)
+            })
+            .unwrap_or_else(|e| json!({ "error": e })),
+    );
+    drop(baseline);
+    mark("idTrace");
     let failing = failing || !canonical_diff.is_empty();
     out.insert("canonical".into(), diff_json(&canonical_diff, opts));
     out.insert(
@@ -802,8 +836,9 @@ fn alias_json(a: &AliasCounts) -> Value {
 }
 
 /// 差异的报告形：每类只给条数与前几个例子。默认例子只取行的身份（`notes` / `cards` / `stats` 行的第一列、`tags` 的
-/// 笔记 ID、`media` 的内容哈希），不带笔记内容。卡行与统计行另给「同一身份两侧都有的行按列名的差异计数」与前几行的
-/// 「列: 旧 -> 新」（[compare::column_diffs]；这两类的列不含笔记内容）。
+/// 笔记 ID、`media` 的内容哈希），不带笔记内容。笔记行、卡行与统计行另给「同一身份两侧都有的行按列名的差异计数」与
+/// 前几行的「列: 旧 -> 新」（[compare::column_diffs]；笔记行的内容列默认只报字符数，[Options::full_examples] 时给原文）。
+/// 「为什么对不上」由 `idTrace`（[trace::id_trace]）摊开。
 fn diff_json(diff: &Diff, opts: &Options<'_>) -> Value {
     let ex = |what: &str, xs: &[String]| -> Vec<String> {
         xs.iter()
@@ -828,7 +863,9 @@ fn diff_json(diff: &Diff, opts: &Options<'_>) -> Value {
                     "examplesNew": ex(what, new_only),
                 });
                 // 卡行 / 统计行：同一身份两侧都有的，哪几列不同（列全是调度数值与 ID，默认就带）。
-                if let Some(c) = compare::column_diffs(what, old_only, new_only) {
+                if let Some(c) =
+                    compare::column_diffs(what, old_only, new_only, !opts.full_examples)
+                {
                     v["sameIdRows"] = json!(c.rows);
                     v["columns"] = json!(c.columns);
                     v["columnExamples"] = json!(
@@ -925,6 +962,23 @@ fn known_json(k: &Known) -> Value {
     })
 }
 
+/// 差异例子（每类每侧前 [examples] 行）里出现的 UUID 格，按出现顺序（去重在 [trace::id_trace]）。只取 UUID 格，
+/// 笔记行的内容列不会进报告。
+fn example_ids(diffs: &[&Diff], examples: usize) -> Vec<String> {
+    let mut out = Vec::new();
+    for d in diffs {
+        for (what, old, new) in d.iter() {
+            if matches!(*what, "media" | "caches") {
+                continue;
+            }
+            for r in old.iter().take(examples).chain(new.iter().take(examples)) {
+                out.extend(trace::uuids_in_row(r).map(str::to_owned));
+            }
+        }
+    }
+    out
+}
+
 fn ident(what: &str, s: &str) -> String {
     match what {
         "media" => s.split_once('=').map_or(s, |(_, h)| h).to_owned(),
@@ -977,6 +1031,11 @@ fn old_side_pending(src: &Connection, profile: &str) -> Result<Skip, String> {
     Ok(skip)
 }
 
+/// 协议 3 的日志投影表、日志元数据表与 S(e) 表（有要改回的日志投影时按需建影子，[old_caches]）。
+const LOG_TABLE: &str = "srs_review_logs";
+const LOG_META_TABLE: &str = "sync2_log_meta";
+const EVENT_LOCAL_TABLE: &str = "srs_event_local";
+
 /// 协议 3 缓存重建要写的表。
 const CACHE_TABLES: [&str; 4] = [
     "srs_notes_cache",
@@ -988,11 +1047,21 @@ const CACHE_TABLES: [&str; 4] = [
 /// 冻结的旧代码（`store::caches::rebuild`）对旧库全量重建出来的缓存行，旧库一个字节不写：在连接的 `temp` 库里按
 /// `main` 的定义建同名的空表与索引——不带库名的表名先找 `temp`，旧代码的读写都落在这几张临时表上——重建、读行、删表。
 /// [cfg] 已是协议 3 口径（带盐的内置 ID，`compare.rs` `cache_pairs` 经 `class.rs` `legacy_config_for` 换好的）。
-fn old_caches(src: &Connection, profile: &str, cfg: &str) -> Result<CacheRows, OldCachesError> {
+///
+/// [stale] 是协议 3 一侧佐证得了的、偏离操作集合规则的日志投影（`stale.rs`）：非空时日志投影表也在 `temp` 里建一份
+/// 同名的（这个 profile 的行；有换代表的再加 `sync2_log_meta`，换代表改了 S(e) 的再加 `srs_event_local`），先改回、
+/// 按协议 3 的重放重放那些卡，再重建。
+fn old_caches(
+    src: &Connection,
+    profile: &str,
+    cfg: &str,
+    stale: &[Stale],
+) -> Result<CacheRows, OldCachesError> {
     old_caches_with(
         src,
         profile,
         cfg,
+        stale,
         &mut |src: &Connection, profile: &str, cfg| {
             crate::store::caches::rebuild(src, profile, cfg).map(|_| ())
         },
@@ -1009,6 +1078,7 @@ fn old_caches_with(
     src: &Connection,
     profile: &str,
     cfg: &str,
+    stale: &[Stale],
     rebuild: &mut Rebuild<'_>,
 ) -> Result<CacheRows, OldCachesError> {
     use OldCachesError::{Protocol3, Setup};
@@ -1016,8 +1086,38 @@ fn old_caches_with(
         &serde_json::from_str(cfg).map_err(|e| Setup(e.to_string()))?,
     )
     .map_err(Setup)?;
+    let mut tables: Vec<&str> = CACHE_TABLES.to_vec();
+    let mut copy_tables: Vec<&str> = Vec::new();
+    if !stale.is_empty() {
+        copy_tables.push(LOG_TABLE);
+        if stale::touches_meta(stale) {
+            copy_tables.push(LOG_META_TABLE);
+        }
+        if stale::touches_server_time(stale) {
+            copy_tables.push(EVENT_LOCAL_TABLE);
+        }
+        tables.extend(copy_tables.iter().copied());
+    }
+    // 日志投影表与元数据表的影子要拷行：只拷存储列（`json` 是生成列）。
+    let mut copy_cols: Vec<(&str, String)> = Vec::with_capacity(copy_tables.len());
+    for table in &copy_tables {
+        let cols = texts(
+            src,
+            &format!("SELECT name FROM pragma_table_xinfo('{table}', 'main') WHERE hidden = 0"),
+            &[],
+        )
+        .map_err(Setup)?
+        .into_iter()
+        .collect::<Vec<_>>()
+        .join(", ");
+        copy_cols.push((*table, cols));
+    }
     let defs: Vec<(String, String, String)> = (|| -> Result<_, String> {
-        let marks = CACHE_TABLES.map(|t| format!("'{t}'")).join(", ");
+        let marks = tables
+            .iter()
+            .map(|t| format!("'{t}'"))
+            .collect::<Vec<_>>()
+            .join(", ");
         src.prepare(&format!(
             "SELECT type, tbl_name, sql FROM main.sqlite_schema WHERE tbl_name IN ({marks}) \
              AND type IN ('table', 'index') AND sql IS NOT NULL ORDER BY type DESC, name"
@@ -1034,7 +1134,7 @@ fn old_caches_with(
         .filter(|d| d.0 == "table")
         .map(|d| d.1.as_str())
         .collect();
-    if made.len() != CACHE_TABLES.len() {
+    if made.len() != tables.len() {
         return Err(Setup(format!(
             "gen4 dry run: the legacy library lacks cache tables (has {made:?})"
         )));
@@ -1047,6 +1147,19 @@ fn old_caches_with(
                 _ => ddl.clone(),
             };
             src.execute_batch(&ddl).map_err(|e| Setup(sql(e)))?;
+        }
+        if !copy_cols.is_empty() {
+            for (table, cols) in &copy_cols {
+                src.execute(
+                    &format!(
+                        "INSERT INTO temp.{table} ({cols}) SELECT {cols} FROM main.{table} \
+                         WHERE profile_uid = srs_id(?1)"
+                    ),
+                    [profile],
+                )
+                .map_err(|e| Setup(sql(e)))?;
+            }
+            stale::heal(src, stale).map_err(Protocol3)?;
         }
         rebuild(src, profile, &parsed).map_err(Protocol3)?;
         let olds = |cols: &[(&'static str, &'static str)]| -> Vec<&'static str> {
@@ -1080,7 +1193,7 @@ fn old_caches_with(
             .map_err(Setup)?,
         ))
     })();
-    for t in CACHE_TABLES {
+    for t in tables {
         let _ = src.execute_batch(&format!("DROP TABLE IF EXISTS temp.{t}"));
     }
     shadow
@@ -1927,9 +2040,13 @@ pub(crate) mod tests {
             p["oldSidePending"],
             json!({"replayCards": 0, "staleTagNotes": 0})
         );
+        assert_eq!(
+            p["oldSideStaleResults"],
+            json!({"logs": 0, "cards": 0, "swaps": 0, "examples": []})
+        );
         // 单设备、无改名写入者：没有按类判定的差异，报告里照样有这一节（版本 3）。
         let k = &p["knownDifferences"];
-        assert_eq!(r["version"], 4);
+        assert_eq!(r["version"], 6);
         assert_eq!(
             (&k["total"], &k["unproven"]),
             (&json!(0), &json!(0)),
@@ -2006,6 +2123,99 @@ pub(crate) mod tests {
         );
         let text = r.to_string();
         assert!(!text.contains("犬"), "examples must not carry note content");
+        // BUG-5269：笔记行也报「哪一列不同」，内容列只报字符数；例子里的笔记在 `idTrace` 里摊开两侧的笔记类型与卡。
+        let notes = p["parity"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["what"] == "notes")
+            .unwrap();
+        assert_eq!(notes["sameIdRows"], 1, "{notes:#}");
+        let cols = notes["columns"].as_object().unwrap();
+        assert!(!cols.is_empty(), "{notes:#}");
+        let example = notes["columnExamples"][0].as_str().unwrap();
+        assert!(example.starts_with(N2), "{example}");
+        assert!(
+            example.contains("chars>"),
+            "content columns are redacted: {example}"
+        );
+        assert!(example.contains("(note_type_id NT)"), "{example}");
+        let traced = p["idTrace"]["ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|v| v["id"] == N2)
+            .unwrap_or_else(|| panic!("{:#}", p["idTrace"]));
+        assert_eq!(traced["oldNote"]["noteType"]["id"], "NT", "{traced:#}");
+        assert_eq!(traced["newNote"]["noteType"]["id"], "NT", "{traced:#}");
+        assert_eq!(traced["found"], true, "{traced:#}");
+        assert!(p["aliases"]["unverifiedExamples"].is_array(), "{p:#}");
+    }
+
+    /// `idTrace` 对卡 ID 的派生反查（BUG-5269）：卡行在的给笔记 / 模板 / 序号与「行 ID 正是由这三者派生」，再在相关笔记
+    /// × 候选模板 × 序号里列出能派生出它的组合；统计行挂的卡、日志索引里挂的卡也摊开。
+    #[test]
+    fn the_id_trace_explains_where_a_card_id_comes_from() {
+        let d = library("g4drytrace");
+        let old = d._dir.0.join("srs.db");
+        let work = d._dir.0.join("work");
+        let caches = BTreeMap::from([(P.to_owned(), cfg())]);
+        let r = run(
+            &old,
+            &work,
+            Options {
+                caches: &caches,
+                batch: 3,
+                keep: true,
+                examples: DEFAULT_EXAMPLES,
+                full_examples: false,
+                stop: &Stop::new(),
+                progress: &mut |_, _| {},
+            },
+        )
+        .unwrap();
+        assert_eq!(r["verdict"], "pass", "{r:#}");
+        let conn = schema::open(&work.join(WORK_FILE)).unwrap();
+        let t = Truth::new(&conn);
+        let col = t.binding_of(P).unwrap().unwrap().col;
+        let canon = CanonMap::load(&t, col).unwrap();
+        let c1 = crate::registers::card_id(N1, "t1", 0).unwrap();
+        let log: String = conn
+            .query_row("SELECT log FROM stats WHERE col = ?1 LIMIT 1", [col], |r| {
+                r.get::<_, Ref>(0)
+            })
+            .unwrap()
+            .text();
+        let v = trace::id_trace(
+            &t,
+            col,
+            &canon,
+            None,
+            &[c1.clone(), log.clone(), c1.clone()],
+        )
+        .unwrap();
+        let ids = v["ids"].as_array().unwrap();
+        assert_eq!(ids.len(), 2, "duplicates are traced once: {v:#}");
+        let card = &ids[0];
+        assert_eq!(card["newCard"]["note"]["id"], N1, "{card:#}");
+        assert_eq!(card["newCard"]["template"]["id"], "t1", "{card:#}");
+        assert_eq!(card["newCard"]["ord"], "0", "{card:#}");
+        assert_eq!(card["newCard"]["idFromRow"], true, "{card:#}");
+        let derivations: Vec<&str> = card["derivations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d.as_str().unwrap())
+            .collect();
+        assert!(
+            derivations.contains(&format!("card({N1}, t1 [template of a card row], 0)").as_str()),
+            "{card:#}"
+        );
+        assert!(card["newStatLogs"].as_u64().unwrap() >= 1, "{card:#}");
+        let stat = &ids[1];
+        assert_eq!(stat["newStat"]["card"], c1, "{stat:#}");
+        assert_eq!(stat["newLogCard"], c1, "{stat:#}");
+        assert!(stat.get("derivations").is_none(), "{stat:#}");
     }
 
     /// 协议 3 的缓存重建整次失败（这里：一条笔记身份记录缺 `noteTypeId`，`cache.rs` 文件头「与协议 3 的差别」）：缓存层
@@ -2056,7 +2266,7 @@ pub(crate) mod tests {
     fn old_cache_errors_are_typed_by_where_they_fail() {
         let d = library("g4dryoldtyped");
         let c = open_legacy(&d._dir.0.join("srs.db")).unwrap();
-        let e = old_caches_with(&c, P, &cfg(), &mut |_, _, _| {
+        let e = old_caches_with(&c, P, &cfg(), &[], &mut |_, _, _| {
             Err("any text at all".to_owned())
         })
         .unwrap_err();
@@ -2065,7 +2275,7 @@ pub(crate) mod tests {
             .query_row("SELECT COUNT(*) FROM temp.sqlite_schema", [], |r| r.get(0))
             .unwrap();
         assert_eq!(temps, 0);
-        let e = old_caches_with(&c, P, "not json", &mut |_, _, _| Ok(())).unwrap_err();
+        let e = old_caches_with(&c, P, "not json", &[], &mut |_, _, _| Ok(())).unwrap_err();
         assert!(matches!(e, OldCachesError::Setup(_)), "{e:?}");
     }
 
@@ -2128,7 +2338,7 @@ pub(crate) mod tests {
             .unwrap()
         };
         let n = count(&c);
-        let (notes, cards, stats) = old_caches(&c, P, &cfg()).unwrap();
+        let (notes, cards, stats) = old_caches(&c, P, &cfg(), &[]).unwrap();
         assert_eq!((notes.len(), cards.len(), stats.len()), (2, 4, 2));
         assert_eq!(count(&c), n);
         let temps: i64 = c

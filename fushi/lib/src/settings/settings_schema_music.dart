@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_registry.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
@@ -12,6 +14,7 @@ import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
 import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_analysis_models_dialog.dart';
 import 'package:fushi/src/pages/implementations/music/music_quality_sheet.dart'
     show musicPluginQualityLabel;
 import 'package:fushi_music/fushi_music.dart' show MusicPluginQuality;
@@ -466,6 +469,21 @@ SettingsDestination buildMusicDestination() {
       SettingsSection(
         title: t.music_lyrics_backdrop_title,
         items: <SettingsItem>[
+          // 有 MV 默认放 MV（MusicMvBackdropController）；关掉回到下面的动画背景。
+          SettingsSwitchItem(
+            id: 'music.lyrics_mv_backdrop',
+            title: t.music_lyrics_mv_backdrop_title,
+            subtitle: t.music_lyrics_mv_backdrop_hint,
+            icon: FushiIcons.video,
+            defaultValue: true,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicLyricsMvBackdrop,
+            onChanged: (SettingsContext c, bool value) async {
+              await c.appModel.prefsRepo.setMusicLyricsMvBackdrop(value);
+              // 打开时补一轮后台匹配（只对没对过的）。
+              if (value) unawaited(c.appModel.musicVideoAutoMatch.schedule());
+            },
+          ),
           SettingsSegmentedItem<bool>(
             id: 'music.lyrics_backdrop_animate',
             title: t.music_lyrics_backdrop_motion_title,
@@ -508,9 +526,14 @@ SettingsDestination buildMusicDestination() {
                 .prefsRepo
                 .setMusicLyricsBackdropStyle(value.prefValue),
             defaultValue: MusicLyricsBackdropStyle.defaultStyle,
-            // 恢复默认 = 删行回到「跟出厂默认」，不把默认值钉成手选（BUG-5167）。
-            resetToDefault: (SettingsContext c) =>
-                c.appModel.prefsRepo.clearMusicLyricsBackdropStyle(),
+            // 恢复默认 = 删行回到「跟出厂默认」，不把默认值钉成手选（BUG-5167）；
+            // 手选回 Pixi 的显式行也能被页级恢复删掉（HBK-AUDIT-235）。
+            storedChoice: SettingsStoredChoice(
+              isStored: (SettingsContext c) =>
+                  c.appModel.prefsRepo.hasStoredMusicLyricsBackdropStyle,
+              clear: (SettingsContext c) =>
+                  c.appModel.prefsRepo.clearMusicLyricsBackdropStyle(),
+            ),
           ),
           SettingsSliderItem(
             id: 'music.lyrics_backdrop_saturation',
@@ -528,6 +551,221 @@ SettingsDestination buildMusicDestination() {
                 c.appModel.prefsRepo.musicLyricsBackdropSaturation * 100,
             onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
                 .setMusicLyricsBackdropSaturation((v / 10).round() / 10),
+          ),
+          // 全屏歌词动画（歌词页工具栏「歌词动画」进入；各样式参数在选择面板里调）。
+          SettingsSegmentedItem<LyricVisualizerMode>(
+            id: 'music.visualizer_mode',
+            dropdown: true,
+            title: t.music_visualizer_title,
+            icon: FushiIcons.animation,
+            options: <SettingsSegmentOption<LyricVisualizerMode>>[
+              for (final LyricVisualizerMode m in LyricVisualizerMode.values)
+                SettingsSegmentOption<LyricVisualizerMode>(
+                  value: m,
+                  label: lyricVisualizerEntryOf(m).label(),
+                ),
+            ],
+            selected: (SettingsContext c) => LyricVisualizerMode.fromPref(
+              c.appModel.prefsRepo.musicVisualizerMode,
+            ),
+            onChanged: (SettingsContext c, LyricVisualizerMode value) =>
+                c.appModel.prefsRepo.setMusicVisualizerMode(value.prefValue),
+            defaultValue: LyricVisualizerMode.defaultMode,
+          ),
+          SettingsSwitchItem(
+            id: 'music.visualizer_random',
+            title: t.music_visualizer_random,
+            subtitle: t.music_visualizer_random_hint,
+            icon: FushiIcons.shuffle,
+            defaultValue: false,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerRandom,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setMusicVisualizerRandom(value),
+          ),
+          // AI 主题（AiFeature.musicVisualizerTheme）：AI 模块关着整行不出现。
+          SettingsSwitchItem(
+            id: 'music.visualizer_ai_theme_auto',
+            title: t.music_visualizer_ai_theme_auto,
+            subtitle: t.music_visualizer_ai_theme_auto_hint,
+            icon: FushiIcons.aiAssistant,
+            defaultValue: false,
+            visible: (SettingsContext c) =>
+                isAiModuleEnabled(c.appModel.moduleVisibility),
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerAiThemeAuto,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setMusicVisualizerAiThemeAuto(value),
+          ),
+          SettingsSegmentedItem<LyricVisualizerIntensity>(
+            id: 'music.visualizer_intensity',
+            title: t.music_visualizer_intensity,
+            subtitle: t.music_visualizer_intensity_hint,
+            icon: FushiIcons.animation,
+            options: <SettingsSegmentOption<LyricVisualizerIntensity>>[
+              SettingsSegmentOption<LyricVisualizerIntensity>(
+                value: LyricVisualizerIntensity.calm,
+                label: t.music_visualizer_intensity_calm,
+              ),
+              SettingsSegmentOption<LyricVisualizerIntensity>(
+                value: LyricVisualizerIntensity.normal,
+                label: t.music_visualizer_intensity_normal,
+              ),
+              SettingsSegmentOption<LyricVisualizerIntensity>(
+                value: LyricVisualizerIntensity.chaotic,
+                label: t.music_visualizer_intensity_chaotic,
+              ),
+            ],
+            selected: (SettingsContext c) => LyricVisualizerIntensity.fromPref(
+              c.appModel.prefsRepo.musicVisualizerIntensity,
+            ),
+            onChanged: (SettingsContext c, LyricVisualizerIntensity value) => c
+                .appModel
+                .prefsRepo
+                .setMusicVisualizerIntensity(value.prefValue),
+            defaultValue: LyricVisualizerIntensity.defaultIntensity,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'music.visualizer_background',
+            dropdown: true,
+            title: t.music_visualizer_background,
+            subtitle: t.music_visualizer_background_hint,
+            icon: FushiIcons.image,
+            options: <SettingsSegmentOption<String>>[
+              for (final LyricVisualizerBackgroundEntry b
+                  in lyricVisualizerBackgrounds)
+                SettingsSegmentOption<String>(value: b.id, label: b.label()),
+            ],
+            selected: (SettingsContext c) => lyricVisualizerBackgroundOf(
+              c.appModel.prefsRepo.musicVisualizerBackground,
+            ).id,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.prefsRepo.setMusicVisualizerBackground(value),
+            defaultValue: lyricVisualizerFluidBackgroundId,
+          ),
+          SettingsSliderItem(
+            id: 'music.visualizer_font_scale',
+            title: t.music_visualizer_font_scale,
+            icon: FushiIcons.fontSize,
+            min: 60,
+            max: 200,
+            divisions: 14,
+            defaultValue: 100,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) => '${v.round()}%',
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerFontScale * 100,
+            onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
+                .setMusicVisualizerFontScale((v / 10).round() / 10),
+          ),
+          // 全局字幕偏好（folia subtitleContentMode / hideTranslationSubtitle / subtitleFontScale /
+          // subtitleTheme）：共享底部字幕与自己排译文的样式（静止 / 莫奈 / 时计）都读。
+          SettingsSwitchItem(
+            id: 'music.visualizer_subtitle_hide',
+            title: t.music_visualizer_subtitle_hide,
+            subtitle: t.music_visualizer_subtitle_hide_hint,
+            icon: FushiIcons.subtitlesOff,
+            defaultValue: false,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerSubtitleHide,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setMusicVisualizerSubtitleHide(value),
+          ),
+          SettingsSegmentedItem<LyricVisualizerSubtitleContent>(
+            id: 'music.visualizer_subtitle_content',
+            dropdown: true,
+            title: t.music_visualizer_subtitle_content,
+            subtitle: t.music_visualizer_subtitle_content_hint,
+            icon: FushiIcons.subtitles,
+            options: <SettingsSegmentOption<LyricVisualizerSubtitleContent>>[
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.translation,
+                label: t.music_visualizer_subtitle_content_translation,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.romanization,
+                label: t.music_visualizer_subtitle_content_romanization,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.both,
+                label: t.music_visualizer_subtitle_content_both,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.none,
+                label: t.music_visualizer_subtitle_content_none,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                LyricVisualizerSubtitleContent.fromPref(
+                  c.appModel.prefsRepo.musicVisualizerSubtitleContent,
+                ),
+            onChanged:
+                (SettingsContext c, LyricVisualizerSubtitleContent value) => c
+                    .appModel
+                    .prefsRepo
+                    .setMusicVisualizerSubtitleContent(value.prefValue),
+            defaultValue: LyricVisualizerSubtitleContent.defaultContent,
+          ),
+          SettingsSliderItem(
+            id: 'music.visualizer_subtitle_font_scale',
+            title: t.music_visualizer_subtitle_font_scale,
+            icon: FushiIcons.textFields,
+            min: 60,
+            max: 200,
+            divisions: 14,
+            defaultValue: 100,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) => '${v.round()}%',
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerSubtitleFontScale * 100,
+            onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
+                .setMusicVisualizerSubtitleFontScale((v / 10).round() / 10),
+          ),
+          SettingsSegmentedItem<LyricVisualizerSubtitleFont>(
+            id: 'music.visualizer_subtitle_font',
+            dropdown: true,
+            title: t.music_visualizer_subtitle_font,
+            icon: FushiIcons.font,
+            options: <SettingsSegmentOption<LyricVisualizerSubtitleFont>>[
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.inherit,
+                label: t.music_visualizer_subtitle_font_inherit,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.sans,
+                label: t.music_visualizer_subtitle_font_sans,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.serif,
+                label: t.music_visualizer_subtitle_font_serif,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.mono,
+                label: t.music_visualizer_subtitle_font_mono,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                LyricVisualizerSubtitleFont.fromPref(
+                  c.appModel.prefsRepo.musicVisualizerSubtitleFont,
+                ),
+            onChanged: (SettingsContext c, LyricVisualizerSubtitleFont value) =>
+                c.appModel.prefsRepo.setMusicVisualizerSubtitleFont(
+                  value.prefValue,
+                ),
+            defaultValue: LyricVisualizerSubtitleFont.defaultFont,
+          ),
+          SettingsActionItem(
+            id: 'music.visualizer_models',
+            title: t.music_visualizer_models_title,
+            subtitle: t.music_visualizer_models_hint,
+            icon: FushiIcons.download,
+            cli: const SettingsCliAction.unsupported(
+              '模型下载 / 删除只在界面里做（带下载进度与确认）',
+            ),
+            onTap: (SettingsContext c) =>
+                showMusicAnalysisModelsDialog(c.context),
           ),
         ],
       ),

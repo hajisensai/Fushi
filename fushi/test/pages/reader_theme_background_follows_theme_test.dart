@@ -23,6 +23,7 @@ void main() {
       fg: Color(0xDE000000),
       sentenceAudioHighlight: Color(0x66A8C68C),
       selection: Color(0x59C2B280),
+      selectionText: null,
       link: Color(0xFF7A6232),
       dark: false,
     ),
@@ -31,6 +32,7 @@ void main() {
       fg: Color(0xDEFFFFFF),
       sentenceAudioHighlight: Color(0x663C78AA),
       selection: Color(0x66AA8750),
+      selectionText: null,
       link: Color(0xFF5B9BD5),
       dark: true,
     ),
@@ -139,6 +141,7 @@ void main() {
         bg: Color(0xFF102030),
         fg: Color(0xFFEEEEEE),
         selection: Color(0x66445566),
+        selectionText: null,
         link: Color(0xFF778899),
       );
       final ReaderThemeColors colors = resolveReaderThemeColors(
@@ -266,6 +269,7 @@ void main() {
         bg: Color(0xFF102030),
         fg: Color(0xFFEEEEEE),
         selection: Color(0x66445566),
+        selectionText: null,
         link: Color(0xFF778899),
       );
       final ReaderThemeColors c = resolveReaderThemeColors(

@@ -37,6 +37,8 @@ const Set<String> _allowSameAsEnglishEverywhere = <String>{
 const List<String> _sources = <String>[
   'lib/src/pages/implementations/home_dashboard_page.dart',
   'lib/src/pages/implementations/home_dashboard_widgets.dart',
+  // 2026-11-23 头像右边的默认配置胶囊（拍板台 design-avatar-combo-placement）。
+  'lib/src/pages/implementations/home_profile_chip.dart',
   'lib/src/pages/implementations/home_srs_panel.dart',
   // 2026-11-15 首页小组件网格：格子内容、编辑态、添加面板。
   'lib/src/pages/implementations/home_dashboard_widget_cells.part.dart',

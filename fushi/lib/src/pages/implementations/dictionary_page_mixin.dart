@@ -16,15 +16,17 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_frame.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/stats/study_lookup_recorder.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
-import 'package:fushi/src/pages/base_source_page.dart'
+import 'package:fushi/src/lookup/lookup_match_measure.dart'
     show lookupHighlightCharCount;
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
@@ -380,10 +382,15 @@ mixin DictionaryPageMixin {
   /// [lookupContext] 是这个表面自己的查词语境（字段预填里 Sentence 的兜底句）；不给时用
   /// 宿主级的 [favoriteLookupContext]。查词页结果区的语境是源文本条那一句，只属于
   /// 结果区、不属于浮层（BUG-3216 / BUG-4209），所以按表面传，不覆写宿主级 getter。
+  ///
+  /// [sentenceSection] 同理是这个表面自己的句子分区（拍板台 rf--UcsGta：查词页结果区
+  /// 来自应用外「抓取上下文」时的前后句），页面级 [buildAdvancedMiningSections] 没给
+  /// 句子分区时补上；返回 null = 这次没有。浮层各层不传。
   @protected
   OpenAdvancedMiningCallback? advancedMiningOpenerFor(
     GlobalKey<DictionaryPopupRealmState> webViewKey, {
     FavoriteLookupContext? Function()? lookupContext,
+    AdvancedMiningSentenceSection? Function()? sentenceSection,
   }) => mixinAppModel.moduleVisibility.isEnabled(ModuleId.cardCreation)
       ? (int entryIndex, String matched, String expression, String reading) =>
             _openAdvancedMiningDialog(
@@ -393,6 +400,7 @@ mixin DictionaryPageMixin {
               expression: expression,
               reading: reading,
               lookupContext: lookupContext ?? () => favoriteLookupContext,
+              sentenceSection: sentenceSection,
             )
       : null;
 
@@ -413,6 +421,7 @@ mixin DictionaryPageMixin {
     required String expression,
     required String reading,
     required FavoriteLookupContext? Function() lookupContext,
+    AdvancedMiningSentenceSection? Function()? sentenceSection,
   }) async {
     if (!mounted) return;
     // 本 mixin 没有 State 的 mounted 语义可借（mounted 是抽象成员），按 lint 的要求
@@ -435,8 +444,9 @@ mixin DictionaryPageMixin {
               fallbackSentence: () => lookupContext()?.sentence ?? '',
             )
           : null;
-      final AdvancedMiningSections sections = await buildAdvancedMiningSections(
-        matched: matched,
+      final AdvancedMiningSections sections = withSurfaceSentenceSection(
+        await buildAdvancedMiningSections(matched: matched),
+        sentenceSection?.call(),
       );
       if (!dialogContext.mounted) {
         await sections.onClosed?.call();
@@ -687,13 +697,15 @@ mixin DictionaryPageMixin {
   Future<bool> playPopupWordAudio(
     String expression,
     String reading,
-    DictionaryPopupWebViewState? popupState, {
+    DictionaryPopupWebViewState? Function()? popupState, {
     String matched = '',
   }) => autoReadWordUnified(
     mixinAppModel,
     expression,
     reading,
-    playInWebView: popupState?.playWordAudioUrl,
+    playInWebView: popupState == null
+        ? null
+        : DictionaryPopupWebViewState.lazyWordAudioPlayer(popupState),
     matched: matched,
   );
 
@@ -763,9 +775,24 @@ mixin DictionaryPageMixin {
 
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
-      fields,
-    );
+    MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(fields);
+    // 拍板 EuOLprw_dV（选 b）：开了「制卡时框选截图」就先推出框选页，用户框好再制；
+    // 点「×」就不制这张卡（弹窗把按钮放回「+」）。高级制卡里已经选过卡图的不再弹。
+    final ScreenOcrCardImage? frameSource = miningCardImage;
+    if (frameSource != null &&
+        screenOcrCardFrameNeeded(
+          cardImageEnabled: mixinAppModel.prefsRepo.screenOcrCardImage,
+          frameOnMine: mixinAppModel.prefsRepo.screenOcrCardFrameOnMine,
+          overrides: overrides,
+        )) {
+      if (!mounted) return const MinePopupResult.cancelled();
+      // 弹窗 WebView 会盖在 Flutter 路由上（与「高级制卡」对话框同理），框选期间停靠屏外。
+      final MiningRequestOverrides? frame = await runWithLookupPopupHidden(
+        () => pickScreenOcrCardFrame(context, frameSource),
+      );
+      if (frame == null) return const MinePopupResult.cancelled();
+      overrides = mergeScreenOcrCardFrame(overrides, frame);
+    }
     final ({String path, Directory dir})? cover = await _prepareMiningCover(
       overrides,
     );
@@ -804,6 +831,8 @@ mixin DictionaryPageMixin {
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
+      term: fields['expression'],
+      reading: fields['reading'],
     );
     final outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
@@ -825,8 +854,11 @@ mixin DictionaryPageMixin {
       FushiToast.showMine(
         msg: described.message,
         status: described.status,
-        // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-        action: minedCardUndoToastAction(
+        detail: described.detail,
+        term: fields['expression'],
+        reading: fields['reading'],
+        // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
+        action: mineResultToastAction(
           repo,
           outcome,
           expression: fields['expression'],
@@ -892,6 +924,8 @@ mixin DictionaryPageMixin {
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
+      term: fields['expression'],
+      reading: fields['reading'],
     );
     final outcome = await repo.updateMinedNote(
       noteId: noteId,
@@ -902,21 +936,30 @@ mixin DictionaryPageMixin {
     final described = describeMineOutcome(outcome, overwrite: true);
     // TODO-1325 #6：覆写成功也是 added（绿），失败按状态着色。状态取自单一真相。
     if (described.success) {
-      FushiToast.showMine(msg: described.message, status: described.status);
+      FushiToast.showMine(
+        msg: described.message,
+        status: described.status,
+        detail: described.detail,
+        term: fields['expression'],
+        reading: fields['reading'],
+      );
       return MinePopupResult.mined(outcome);
     }
     return MinePopupResult.failed(outcome, message: described.message);
   }
 
-  /// Resolves and plays the audio for [expression] / [reading]. [popupState] is
-  /// the just-rendered popup WebView (when this surface renders results in a
-  /// popup): auto-read then plays through its own `<audio>` element — the unified
-  /// fast path shared with the manual ♪ button and every surface. Null (e.g. an
-  /// inline full-page view with no popup WebView) falls back to the Dart player.
+  /// Resolves and plays the audio for [expression] / [reading]. [popupState]
+  /// looks up the WebView of the popup layer this lookup rendered into (when
+  /// this surface renders results in a popup): auto-read then plays through its
+  /// own `<audio>` element — the unified fast path shared with the manual ♪
+  /// button and every surface. It is called only when the audio is resolved and
+  /// about to play, not when auto-read fires: a layer created in the same frame
+  /// may not have mounted its state yet (BUG-5278). Null (e.g. an inline
+  /// full-page view with no popup WebView) falls back to the Dart player.
   Future<void> autoReadWord(
     String expression,
     String reading, {
-    DictionaryPopupWebViewState? popupState,
+    DictionaryPopupWebViewState? Function()? popupState,
     String matched = '',
   }) async {
     await LookupAutoReadCoordinator.instance.runAutomatic(
@@ -1069,16 +1112,15 @@ mixin DictionaryPageMixin {
     try {
       final ({String? bookKey, String? title})? identity = lookupBookIdentity;
       unawaited(
-        mixinAppModel.database
-            .addLookupCount(
-              bookKey: identity?.bookKey,
-              title: identity?.title ?? '',
-              sourceType: dictionarySourceType,
-              dateKey: _statTodayKey(),
-            )
-            .catchError((Object e, StackTrace st) {
-              debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
-            }),
+        recordStudyLookup(
+          mixinAppModel.database,
+          bookKey: identity?.bookKey,
+          title: identity?.title ?? '',
+          sourceType: dictionarySourceType,
+          at: DateTime.now(),
+        ).catchError((Object e, StackTrace st) {
+          debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
+        }),
       );
     } catch (e, st) {
       debugPrint('[fushi-stats] addLookupCount failed (sync): $e\n$st');
@@ -1518,6 +1560,16 @@ mixin DictionaryPageMixin {
             query: query,
             autoRead: autoReadOnNavigate,
           ),
+          // 拍板台 Um72dWD9Cz：「查不到」时点词块 / 改查询词，同一层原地换词。
+          onRefineQuery: (String query, String source) => navigatePopupInPlace(
+            controller: controller,
+            index: index,
+            entry: entry,
+            query: query,
+            autoRead: autoReadOnNavigate,
+            refineSource: source,
+          ),
+          refineSource: entry.refineSource,
           // 制卡四个出口都先过 [miningFieldsForLayer]：宿主按层补上它知道的上下文
           // （主窗查词宿主补出自那一行原文的例句，反馈 1Mwaro8UTC）。
           onMineEntry: closePopupAfterAcceptedMine(
@@ -1805,7 +1857,7 @@ mixin DictionaryPageMixin {
           autoReadWord(
             first.word,
             first.reading,
-            popupState: entry.webViewKey.webViewState,
+            popupState: () => entry.webViewKey.webViewState,
             matched: lookupEntryMatchedText(first),
           );
         }
@@ -1880,12 +1932,17 @@ mixin DictionaryPageMixin {
   /// 身份门：查询往返期间本层可能被关掉（`entries.contains`）或已被另一次跳转 /
   /// 顶层换词换掉内容（`searchTerm` 变了）——迟到的结果一律丢弃。查询期间置
   /// [DictionaryPopupEntry.isSearching] 挡住同层 load-more 并发写入。
+  ///
+  /// [refineSource] 非 null = 从「查不到」的词块 / 修改框换词（拍板台 Um72dWD9Cz）：
+  /// 空结果**也**换，新页记下词块来源、沿用原页那一句。与
+  /// [BaseSourcePageState.navigatePopupInPlace] 同语义。
   Future<void> navigatePopupInPlace({
     required DictionaryPopupController controller,
     required int index,
     required DictionaryPopupEntry entry,
     required String query,
     bool autoRead = false,
+    String? refineSource,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty || entry.isSearching) return;
@@ -1908,12 +1965,15 @@ mixin DictionaryPageMixin {
           entry.searchTerm != termAtStart) {
         return;
       }
-      if (result.entries.isEmpty && result.kanjiResults.isEmpty) return;
-      mixinAppModel.addToSearchHistory(
-        historyKey: DictionaryMediaType.instance.uniqueKey,
-        searchTerm: trimmed,
-      );
-      mixinAppModel.addToDictionaryHistory(result: result);
+      final bool empty = result.entries.isEmpty && result.kanjiResults.isEmpty;
+      if (empty && refineSource == null) return;
+      if (!empty) {
+        mixinAppModel.addToSearchHistory(
+          historyKey: DictionaryMediaType.instance.uniqueKey,
+          searchTerm: trimmed,
+        );
+        mixinAppModel.addToDictionaryHistory(result: result);
+      }
       // navigateInPlace 自己 notify，本层经 [DictionaryPopupEntryBinding] 重建。
       controller.navigateInPlace(
         entry,
@@ -1921,6 +1981,8 @@ mixin DictionaryPageMixin {
         result: result,
         allLoaded: !result.truncated,
         scrollTop: scrollTop,
+        refineSource: refineSource ?? '',
+        contextSentence: refineSource == null ? '' : entry.contextSentence,
       );
       if (autoRead &&
           ReaderFushiSource.instance.autoReadOnLookup &&
@@ -1930,7 +1992,7 @@ mixin DictionaryPageMixin {
           autoReadWord(
             first.word,
             first.reading,
-            popupState: entry.webViewKey.webViewState,
+            popupState: () => entry.webViewKey.webViewState,
             matched: lookupEntryMatchedText(first),
           );
         }

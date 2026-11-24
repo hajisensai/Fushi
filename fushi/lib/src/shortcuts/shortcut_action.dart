@@ -1,7 +1,7 @@
 /// 声明顺序**就是**快捷键设置页的卡片顺序（页面直接遍历 `values`，不另存一份
 /// 显示顺序表）：跨页面通用（global / universal / globalExternal）→ 各页面
 /// （home / reader / audiobook / manga / video / webBrowser / music / srsReview）→ 输入设备
-/// （gamepad）→ 查词弹窗。
+/// （gamepad 焦点导航、controllerLookup 手柄查词模式）→ 查词弹窗。
 /// 没有任何地方按 index 持久化或解析 scope，调整顺序只影响显示。
 enum ShortcutScope {
   global,
@@ -44,8 +44,14 @@ enum ShortcutScope {
   // 肌肉记忆（新建 / 关闭标签页、地址栏、页内查找、缩放…），与任何其它页面都不
   // 同时激活，故自成 co-active 组。
   webBrowser,
-  // 音乐播放（播放 / 上下曲 / ±5 s）。音乐页自成 co-active 组，与视频 / 阅读器不同时激活。
+  // 音乐播放（播放 / 上下曲 / ±5 s）。曲库页与播放页（歌词页）都解析，与视频 / 阅读器
+  // 不同时激活。
   music,
+  // 音乐全屏播放页 / 歌词页**独有**的键（拍板台 vo1KPp0_Rh：裸 ←/→ ±5 秒，与视频页
+  // 习惯一致）。曲库页的裸方向键是网格焦点移动，不能被播放控制夺走，所以这组绑定单独
+  // 成 scope、只在播放页解析：播放页先解析本 scope、未命中再解析 [music]；曲库页只解析
+  // [music]。两者在播放页同时激活，故与 music 同一 co-active 组。
+  musicPlayer,
   // SRS 复习页（翻面 / 四个评分 / 重播音频 / 撤销 / 卡面缩放，反馈 itlb0djDq6 要求可改键）。
   // 复习页只解析自己这一组绑定，未命中的键（Esc / Alt+← / 手柄 B）冒泡到根上由
   // universal 的「返回上一级」兜底，故自成 co-active 组。
@@ -65,6 +71,14 @@ enum ShortcutScope {
   // 默认的裸方向键在媒体页仍是翻页 / seek / 句子导航（行为不变），用户要在这些页面
   // 移焦就给焦点导航绑一个页面没占用的键。
   gamepad,
+
+  // 手柄查词模式（`ControllerLookupMode`，2026-11-22 手柄查词统一，见
+  // docs/specs/2026-11-22-gamepad-lookup-unification-design.md）：模式激活期间
+  // 十字键挪光标、右摇杆左右调选区右端、X/Y 制卡/发音……全部按本 scope 解析，
+  // 可在设置里改键。**只在模式激活时解析**（模式在页面派发之前截键），模式关着时
+  // 这些键照常归页面，所以它不与任何页面 scope 同时解析，自成 co-active 组。
+  // 进入模式的键（按住 L1 / Select）不在这里：由偏好 `controller_lookup_style` 决定。
+  controllerLookup,
 
   // 查词弹窗内部的导航动作（Yomitan 式「上/下一个词条」）。这些动作**不经
   // resolveKeyboard / 页面派发**：弹窗内容是 WebView，输入事件先到 WebView 的
@@ -111,9 +125,12 @@ enum ShortcutScope {
       // 只扫 webBrowser（与 video / manga 同理）。
       case webBrowser:
         return const <ShortcutScope>[webBrowser];
-      // 音乐库页只解析自己的绑定（与 video / manga 同理），自成 co-active 组。
+      // 音乐：播放页（歌词页）先解析 musicPlayer、再解析 music，曲库页只解析 music
+      // （见 music_shortcuts.dart 的 MusicShortcutSurface）。两者在播放页同时激活，
+      // 冲突检测要扫整组；与 video / manga 等其它页面不同时激活。
       case music:
-        return const <ShortcutScope>[music];
+      case musicPlayer:
+        return const <ShortcutScope>[musicPlayer, music];
       // SRS 复习页只解析自己的绑定（与 music / video 同理），自成 co-active 组。
       case srsReview:
         return const <ShortcutScope>[srsReview];
@@ -121,6 +138,10 @@ enum ShortcutScope {
       // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
       case gamepad:
         return const <ShortcutScope>[gamepad];
+      // 手柄查词模式只在模式激活时、由 `ControllerLookupMode` 单独解析（它在页面
+      // 派发之前截键），与任何页面 scope 都不在同一次解析里，自成 co-active 组。
+      case controllerLookup:
+        return const <ShortcutScope>[controllerLookup];
       // globalExternal（系统级 app 外查词）是独立 co-active 组：**运行时解析**永不与
       // 任何应用内 scope 牵连（`resolveMouse` / `reverse_binding_index` 都按这里扫）。
       //
@@ -240,6 +261,11 @@ enum ShortcutScope {
           ShortcutChannel.keyboard,
           ShortcutChannel.gamepad,
         };
+      // 手柄查词模式：只有手柄。解析入口是 `ControllerLookupMode` 的
+      // `resolveGamepad(button, scope: ShortcutScope.controllerLookup)`（桌面轮询与
+      // Android 早期键处理两条路都先进模式）。键盘有自己的光标模式，不走这里。
+      case controllerLookup:
+        return const <ShortcutChannel>{ShortcutChannel.gamepad};
       // app 内浏览器：键盘 + 手柄（反馈 wegu0vewts：「浏览器里的快捷键映射只能映射
       // 键盘」）。
       //   · 键盘：浏览器页的键事件节点 `resolveKeyboard(event, scope: webBrowser)`
@@ -262,7 +288,9 @@ enum ShortcutScope {
       // 音乐：只有键盘有解析入口（曲库页 / 歌词页的键事件节点 →
       // music_shortcuts.dart 的 `resolveKeyboard(scope: music)`）；手柄 / 鼠标还没有
       // 派发点，不开通道（歌词行中键跳转复用 audiobook 的点句绑定，不走 music scope）。
+      // musicPlayer 同理：只有播放页的键事件节点解析它（`MusicShortcutSurface.player`）。
       case music:
+      case musicPlayer:
         return const <ShortcutChannel>{ShortcutChannel.keyboard};
       // SRS 复习页：键盘 + 手柄。
       //   · 键盘：srs_review_page.dart 的 `_onKey` → `resolveKeyboard(scope: srsReview)`；
@@ -375,15 +403,6 @@ enum ShortcutAction {
   // resolveKeyboard 故无枚举顺序歧义，no-shadow 守卫显式排除它；resolve 路径按
   // 声明序先命中 readerLookupAtCursor（见枚举头部排序契约，勿排到它前面）。
   readerEnterCaret(ShortcutScope.reader, 'reader_enter_caret'),
-  // 整句扫词（拍板台 5H922XeDHM，照视频页 videoLookupNextWord / videoLookupPrevWord
-  // 的契约）：不进字级光标、不弹模态，只在**当前句**里移动一个数据词游标，每停一词
-  // 就复用光标 / 点击查词的同一条链路（`fushiSelection.selectFromPosition`）弹 / 换
-  // 同一张弹窗；X=制卡 / Y=发音等弹窗动词照常可达。正文（paginated / continuous /
-  // vn）与有声书歌词视图共用这一对动作。默认**空绑定**、由用户自配（reader 组的
-  // 手柄键已占满），执行体在 `reader_fushi/word_sweep.part.dart`。必须声明在
-  // readerEnterCaret 之后（不影响 A/Enter 别名对的声明序契约）。
-  readerLookupNextWord(ShortcutScope.reader, 'reader_lookup_next_word'),
-  readerLookupPrevWord(ShortcutScope.reader, 'reader_lookup_prev_word'),
 
   // 界面
   readerToggleFurigana(ShortcutScope.reader, 'reader_toggle_furigana'),
@@ -623,27 +642,11 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_toggle_secondary_subtitle_hide',
   ),
-  // 手柄/键盘字级选词查词（对齐阅读器 readerEnterCaret）：进入后光标停在当前字幕
-  // 首个可见字符，D-pad/方向键逐字移动、A/Enter 对光标字符查词（浮层内继续用手柄
-  // 翻词条/跳词典/制卡）、B/Esc 退出。激活期的方向/确认/退出键在页面侧**先于**注册
-  // 表截获（reader caret 同款contextual 路由），见 video_fushi/subtitle_caret.part.dart。
+  // 键盘字级选词查词（对齐阅读器 readerEnterCaret）：进入后光标停在当前字幕首个可见
+  // 字符，方向键逐字移动、Enter 对光标字符查词、Esc 退出。激活期的光标键在页面侧
+  // **先于**注册表截获，见 video_fushi/subtitle_caret.part.dart。只有键盘通道（见
+  // [channels]）：手柄查词统一走 ControllerLookupMode（2026-11-22）。
   videoEnterCaret(ShortcutScope.video, 'video_enter_caret'),
-
-  // 暂停句「整句扫词」（2026-10-09）：手柄查词的无光标形态，把「选谁」与「做什么」
-  // 正交——扫词只在数据层移动一个**词游标**（暂停句分词后的词序列下标），每停一词
-  // 就复用点击查词链路弹/换同一张浮层；动词（翻词条 / 制卡 / 发音）全部交给既有
-  // dictionaryPopup 表，不新增任何模态。
-  //
-  // 与 videoEnterCaret 的关系是**互不依赖**：扫词不进 caret，故浮层的 X=制卡 /
-  // Y=发音在扫词中永远可达——进了 caret 就被 `_handleCaretGamepadButton` 的模态
-  // 路由吞掉（见 video_fushi/subtitle_caret.part.dart），这正是本动作存在的理由。
-  //
-  // 默认**空绑定**、由用户自配：video scope 内的手柄键已占满（B 另属 universal
-  // 的「返回上一级」），唯一空闲的 L3/R3 是摇杆按下键、易误触，且
-  // `video_gamepad_mapping_test` 明确断言它们保持空闲，故不设默认。二者是同一
-  // 件事的两个方向（上一词 / 下一词），句尾按用户要求**循环**回句首。
-  videoLookupNextWord(ShortcutScope.video, 'video_lookup_next_word'),
-  videoLookupPrevWord(ShortcutScope.video, 'video_lookup_prev_word'),
 
   // 字幕对轴/匹配快捷键（用户请求）：把埋在快速设置面板深处的「字幕调轴」直接搬到
   // 键盘。videoOpenSubtitleAlign 一键弹波形对轴放大视图（复用 SubtitleWaveformZoomView，
@@ -809,6 +812,16 @@ enum ShortcutAction {
   musicPreviousTrack(ShortcutScope.music, 'music_previous_track'),
   musicSeekForward(ShortcutScope.music, 'music_seek_forward'),
   musicSeekBackward(ShortcutScope.music, 'music_seek_backward'),
+  // ShortcutScope.musicPlayer：只在全屏播放页 / 歌词页解析（拍板台 vo1KPp0_Rh），
+  // 默认裸 ←/→ ±5 秒；曲库页的裸方向键仍是焦点移动。执行体同 music_shortcuts.dart。
+  musicPlayerSeekForward(
+    ShortcutScope.musicPlayer,
+    'music_player_seek_forward',
+  ),
+  musicPlayerSeekBackward(
+    ShortcutScope.musicPlayer,
+    'music_player_seek_backward',
+  ),
 
   // SRS 复习页（[ShortcutScope.srsReview]，反馈 itlb0djDq6）。执行体在
   // srs_review_page.dart 的 `_executeShortcut`；键盘 / WebView 键盘桥 / 手柄三条入口
@@ -988,7 +1001,64 @@ enum ShortcutAction {
   // 手柄重设计 P2：播放第一个可见词条的发音（点既有 `.audio-button`，与制卡同一
   // 「点按钮不另起桥」纪律，JS 入口 `fushiPopupPlayFirstAudio`）。默认只有手柄 Y
   // ——键盘上鼠标点按钮已经够近，而手柄用户没有任何非光标模式的发音入口。
-  popupPlayAudio(ShortcutScope.dictionaryPopup, 'popup_play_audio');
+  popupPlayAudio(ShortcutScope.dictionaryPopup, 'popup_play_audio'),
+
+  // 手柄查词模式（ShortcutScope.controllerLookup）。执行体是
+  // `ControllerLookupMode._runAction`：模式激活时按本 scope 解析手柄键。
+  // 默认键位：十字键挪光标 / 换行、L3 切按词 / 按字、右摇杆 ←/→ 调选区右端、
+  // X 制卡、Y 发音、RT / LT 下 / 上一词条、A 进入结果、B 关结果 / 退出模式。
+  controllerLookupCursorLeft(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_cursor_left',
+  ),
+  controllerLookupCursorRight(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_cursor_right',
+  ),
+  controllerLookupLineUp(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_line_up',
+  ),
+  controllerLookupLineDown(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_line_down',
+  ),
+  controllerLookupToggleGranularity(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_toggle_granularity',
+  ),
+  controllerLookupShrinkEnd(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_shrink_end',
+  ),
+  controllerLookupExtendEnd(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_extend_end',
+  ),
+  controllerLookupMine(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_mine',
+  ),
+  controllerLookupPlayAudio(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_play_audio',
+  ),
+  controllerLookupNextEntry(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_next_entry',
+  ),
+  controllerLookupPrevEntry(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_prev_entry',
+  ),
+  controllerLookupEnterResult(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_enter_result',
+  ),
+  controllerLookupCloseOrExit(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_close_or_exit',
+  );
 
   const ShortcutAction(this.scope, this.key);
 
@@ -1042,6 +1112,15 @@ enum ShortcutAction {
     ShortcutAction.globalExternalGalgameSpeakLine ||
     ShortcutAction.globalExternalGalgameOverlayToggle =>
       const <ShortcutChannel>{ShortcutChannel.keyboard},
+    // 手柄查词统一（2026-11-22，docs/specs/2026-11-22-gamepad-lookup-unification-design.md）：
+    // 手柄只剩 ControllerLookupMode 一套查词，光标模式的三个入口去掉手柄通道（默认
+    // 手柄绑定已删；老快照里的自定义手柄绑定在 [FushiShortcutRegistry] 装载时剥掉）。
+    // 键盘与鼠标通道照旧。
+    ShortcutAction.videoEnterCaret ||
+    ShortcutAction.readerEnterCaret ||
+    ShortcutAction.readerLookupAtCursor => scope.channels.difference(
+      const <ShortcutChannel>{ShortcutChannel.gamepad},
+    ),
     _ => scope.channels,
   };
 

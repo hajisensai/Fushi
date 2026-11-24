@@ -76,7 +76,8 @@ void main() {
     // 没有顶层 return 能把它跳过：任何一次停源都必然回收音轨刷新定时器。
     final String body = _methodBody(controllerSrc, stopAt);
     const String cancel = '_trackRefreshTimer?.cancel();';
-    final int cancelAt = body.indexOf(cancel);
+    // 只认代码里的取消：注释掉的那行不算（HBK-AUDIT-233）。
+    final int cancelAt = _codeIndexOf(body, cancel);
     expect(
       cancelAt,
       greaterThan(0),
@@ -246,6 +247,18 @@ bool _topLevelReturnBefore(String body, int at) {
     if (_braceDepthAt(body, m.start) == 1) return true;
   }
   return false;
+}
+
+/// [needle] 在 [src] 里第一次出现在代码（不在 `//` 注释或字符串字面量内）的位置，没有返回 -1。
+int _codeIndexOf(String src, String needle) {
+  for (
+    int at = src.indexOf(needle);
+    at >= 0;
+    at = src.indexOf(needle, at + 1)
+  ) {
+    if (!_isInNonCode(src, at)) return at;
+  }
+  return -1;
 }
 
 bool _isInNonCode(String src, int at) {

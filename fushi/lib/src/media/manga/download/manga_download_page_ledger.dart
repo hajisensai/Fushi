@@ -10,9 +10,13 @@
 /// 页序上，对不上 / 认不出身份 / 账本里没有的一律删掉重下。于是一章里所有的页都
 /// 出自同一份页表，而不必因为一页变了整章重下。
 ///
-/// **不变式：账本只列真实成立的（文件名, 身份）对。** 页先落盘、再进账本；删 / 挪
-/// 文件前先把它从账本里拿掉。中途被杀最坏是「盘上有文件、账本里没有」，下次续跑
-/// 把它当来历不明删掉重下——慢一点，绝不会认错页。
+/// 账本还记下这些页所属的**整份页表**（每页身份，HBK-AUDIT-206）：身份只在
+/// 那份页表里唯一时才能单凭身份认页。Mihon 懒解析的源会给几页报同一个页地址，
+/// 只落了其中一页时，单看账本里的那一条看不出它的身份原本是重复的。
+///
+/// **不变式：账本只列真实成立的（文件名, 身份）对，且每一对都是账本页表里的那一页。**
+/// 页先落盘、再进账本；删 / 挪文件前先把它从账本里拿掉。中途被杀最坏是「盘上有
+/// 文件、账本里没有」，下次续跑把它当来历不明删掉重下——慢一点，绝不会认错页。
 library;
 
 import 'dart:convert';
@@ -28,7 +32,10 @@ import 'package:path/path.dart' as p;
 const String kMangaDownloadPageLedgerFileName = '.fushi-download-pages.json';
 
 /// 账本格式版本。读到别的版本按空账本处理（盘上的页全部重下）。
-const int _kLedgerVersion = 1;
+///
+/// v2 起多记整份页表 `table`（HBK-AUDIT-206）。v1 账本没有它，判不出身份当时是否
+/// 唯一，按空账本处理：升级后那一次续跑整章重下，宁可重下，不认错页。
+const int _kLedgerVersion = 2;
 
 /// 账本里的一页：`images/` 下的文件名、它当时的页序、源端身份。
 class MangaDownloadLedgerEntry {
@@ -87,46 +94,75 @@ class MangaDownloadLedgerEntry {
   String toString() => 'MangaDownloadLedgerEntry($file, $index, $key)';
 }
 
+/// 读回来的账本：页表 [table] + 已落地的页 [pages]（每项都是 [table] 里那一页）。
+class MangaDownloadLedger {
+  const MangaDownloadLedger({required this.table, required this.pages});
+
+  static const MangaDownloadLedger empty = MangaDownloadLedger(
+    table: <String?>[],
+    pages: <MangaDownloadLedgerEntry>[],
+  );
+
+  /// 这些页落盘时所依据的整份页表：第 i 项 = 第 i 页的源端身份，认不出为 null。
+  final List<String?> table;
+
+  final List<MangaDownloadLedgerEntry> pages;
+}
+
 /// 章目录 [chapterDir] 里的账本文件。
 File mangaDownloadPageLedgerFile(Directory chapterDir) =>
     File(p.join(chapterDir.path, kMangaDownloadPageLedgerFileName));
 
-/// 读账本。文件不在、读不了、格式不对都按空账本（宁可重下，不认错页）。
-Future<List<MangaDownloadLedgerEntry>> readMangaDownloadPageLedger(
+/// 读账本。文件不在、读不了、格式不对、旧版本都按空账本（宁可重下，不认错页）。
+Future<MangaDownloadLedger> readMangaDownloadPageLedger(
   Directory chapterDir,
 ) async {
   final File file = mangaDownloadPageLedgerFile(chapterDir);
   final String source;
   try {
-    if (!await file.exists()) return const <MangaDownloadLedgerEntry>[];
+    if (!await file.exists()) return MangaDownloadLedger.empty;
     source = await readAtomicallyWrittenTextFile(file);
   } on FileSystemException {
-    return const <MangaDownloadLedgerEntry>[];
+    return MangaDownloadLedger.empty;
   }
   final Object? decoded;
   try {
     decoded = jsonDecode(source);
   } on FormatException {
-    return const <MangaDownloadLedgerEntry>[];
+    return MangaDownloadLedger.empty;
   }
   if (decoded is! Map || decoded['version'] != _kLedgerVersion) {
-    return const <MangaDownloadLedgerEntry>[];
+    return MangaDownloadLedger.empty;
   }
+  final Object? table = decoded['table'];
   final Object? pages = decoded['pages'];
-  if (pages is! List) return const <MangaDownloadLedgerEntry>[];
-  return <MangaDownloadLedgerEntry>[
-    for (final Object? page in pages) ?MangaDownloadLedgerEntry.fromJson(page),
-  ];
+  if (table is! List || pages is! List) return MangaDownloadLedger.empty;
+  final List<String?> keys = <String?>[];
+  for (final Object? key in table) {
+    if (key != null && (key is! String || key.isEmpty)) {
+      return MangaDownloadLedger.empty;
+    }
+    keys.add(key as String?);
+  }
+  return MangaDownloadLedger(
+    table: List<String?>.unmodifiable(keys),
+    pages: <MangaDownloadLedgerEntry>[
+      for (final Object? page in pages)
+        ?MangaDownloadLedgerEntry.fromJson(page),
+    ],
+  );
 }
 
-/// 原子写账本（整份覆盖）。
+/// 原子写账本（整份覆盖）：[table] 是 [entries] 所属的整份页表。
 Future<void> writeMangaDownloadPageLedger(
-  Directory chapterDir,
-  Iterable<MangaDownloadLedgerEntry> entries,
-) => writeTextFileAtomically(
+  Directory chapterDir, {
+  required List<String?> table,
+  required Iterable<MangaDownloadLedgerEntry> entries,
+}) => writeTextFileAtomically(
   mangaDownloadPageLedgerFile(chapterDir),
   jsonEncode(<String, Object?>{
     'version': _kLedgerVersion,
+    'table': table,
     'pages': <Object?>[
       for (final MangaDownloadLedgerEntry entry in entries) entry.toJson(),
     ],
@@ -156,48 +192,45 @@ class MangaDownloadResumePlan {
 /// 页定去留。
 ///
 /// - [ledger]：读回来的账本；[filesOnDisk]：`images/` 下现有的非空文件名。账本里
-///   有、盘上没有的项直接忽略；盘上有、账本里没有的文件一律删。
-/// - 一个身份在新页表里只出现一次、在账本里也只出现一次，它就认得出是哪一页：
-///   文件留给新页表里那一页（页序变了就挪）。
-/// - 身份在新页表或账本里重复（有的源给每页报同一个页地址、靠页序取图），身份
-///   就不足以认页：只有页序和身份都对得上才原地留用。
+///   有、盘上没有的项、与账本页表对不上的项直接忽略；盘上有、账本里没有的文件一律删。
+/// - 新页表与账本页表**整份**相同（页数相同、每页身份都在且相等，与
+///   `OnlineMangaChapterPageRefs.sameSourcePages` 同一判据）：每页原地留用。
+/// - 否则只认「身份在账本页表里唯一、在新页表里也唯一」的页：文件留给新页表里那
+///   一页（页序变了就挪）。身份重复的页（有的源给几页报同一个页地址、靠页序取图）
+///   在页表变了之后就认不出是哪一页——页序相同也不行（旧 [A,B] 同身份、新表删了
+///   A 只剩 B 时，第 0 页的旧文件是 A 不是 B，HBK-AUDIT-206），一律删掉重下。
 /// - 新页表里认不出身份（null）的页一个都不复用。
 MangaDownloadResumePlan planMangaDownloadResume({
   required List<String?> keys,
-  required List<MangaDownloadLedgerEntry> ledger,
+  required MangaDownloadLedger ledger,
   required Set<String> filesOnDisk,
 }) {
-  final Map<String, int> newCounts = <String, int>{};
-  final Map<String, int> newIndexOf = <String, int>{};
-  for (int index = 0; index < keys.length; index++) {
-    final String? key = keys[index];
-    if (key == null) continue;
-    newCounts[key] = (newCounts[key] ?? 0) + 1;
-    newIndexOf[key] = index;
-  }
-  final List<MangaDownloadLedgerEntry> present = <MangaDownloadLedgerEntry>[];
+  final List<String?> table = ledger.table;
+  final Map<String, int> newCounts = _counts(keys);
+  final Map<String, int> oldCounts = _counts(table);
+  final Map<String, int> newIndexOf = <String, int>{
+    for (int index = 0; index < keys.length; index++)
+      if (keys[index] case final String key) key: index,
+  };
+  final bool sameTable = _sameTable(table, keys);
+  final Map<int, MangaDownloadLedgerEntry> keep =
+      <int, MangaDownloadLedgerEntry>{};
   final Set<String> seenFiles = <String>{};
-  for (final MangaDownloadLedgerEntry entry in ledger) {
+  final Set<String> kept = <String>{};
+  for (final MangaDownloadLedgerEntry entry in ledger.pages) {
     // 同一个文件在账本里出现两次是坏账本：只认第一条，后面的当没有。
     if (!filesOnDisk.contains(entry.file) || !seenFiles.add(entry.file)) {
       continue;
     }
-    present.add(entry);
-  }
-  final Map<String, int> ledgerCounts = <String, int>{};
-  for (final MangaDownloadLedgerEntry entry in present) {
-    ledgerCounts[entry.key] = (ledgerCounts[entry.key] ?? 0) + 1;
-  }
-  final Map<int, MangaDownloadLedgerEntry> keep =
-      <int, MangaDownloadLedgerEntry>{};
-  final Set<String> kept = <String>{};
-  for (final MangaDownloadLedgerEntry entry in present) {
-    int? target;
-    if (newCounts[entry.key] == 1 && ledgerCounts[entry.key] == 1) {
-      target = newIndexOf[entry.key];
-    } else if (entry.index < keys.length && keys[entry.index] == entry.key) {
-      target = entry.index;
+    // 账本里的页必须真是账本页表里的那一页；对不上是坏账本，不认。
+    if (entry.index >= table.length || table[entry.index] != entry.key) {
+      continue;
     }
+    final int? target = sameTable
+        ? entry.index
+        : (oldCounts[entry.key] == 1 && newCounts[entry.key] == 1)
+        ? newIndexOf[entry.key]
+        : null;
     if (target == null || keep.containsKey(target)) continue;
     keep[target] = entry;
     kept.add(entry.file);
@@ -209,6 +242,24 @@ MangaDownloadResumePlan planMangaDownloadResume({
         if (!kept.contains(file)) file,
     },
   );
+}
+
+Map<String, int> _counts(List<String?> keys) {
+  final Map<String, int> counts = <String, int>{};
+  for (final String? key in keys) {
+    if (key != null) counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/// [a] 与 [b] 是否同一份页表：页数相同，逐页身份都非 null 且相等。
+bool _sameTable(List<String?> a, List<String?> b) {
+  if (a.length != b.length) return false;
+  for (int index = 0; index < a.length; index++) {
+    final String? key = a[index];
+    if (key == null || key != b[index]) return false;
+  }
+  return true;
 }
 
 /// 按新页表 [keys] 收拾章目录 [chapterDir] 里已落地的页（[planMangaDownloadResume]
@@ -245,7 +296,13 @@ reconcileMangaDownloadPages({
             in plan.keep.entries)
           if (!moves.containsKey(kept.key)) kept.key: kept.value,
       };
-  await writeMangaDownloadPageLedger(chapterDir, staying.values);
+  final List<String?> table = List<String?>.unmodifiable(keys);
+  // 原地留用的页在新旧两份页表里是同一页，先把账本整份换成新页表 + 它们。
+  await writeMangaDownloadPageLedger(
+    chapterDir,
+    table: table,
+    entries: staying.values,
+  );
   for (final String name in <String>{
     ...plan.discard,
     ...allFiles.difference(nonEmpty),
@@ -274,7 +331,11 @@ reconcileMangaDownloadPages({
         key: from.key,
       );
     }
-    await writeMangaDownloadPageLedger(chapterDir, _ordered(entries));
+    await writeMangaDownloadPageLedger(
+      chapterDir,
+      table: table,
+      entries: _ordered(entries),
+    );
   }
   return (
     kept: <int, String>{
@@ -282,7 +343,7 @@ reconcileMangaDownloadPages({
           in entries.entries)
         entry.key: entry.value.file,
     },
-    ledger: MangaDownloadPageLedgerWriter._(chapterDir, entries),
+    ledger: MangaDownloadPageLedgerWriter._(chapterDir, table, entries),
   );
 }
 
@@ -298,9 +359,12 @@ Iterable<MangaDownloadLedgerEntry> _ordered(
 /// 下载途中逐页记账：页文件落盘**之后**调 [record]。并发的记账排队整份重写，
 /// 账本始终是某一时刻的完整快照。
 class MangaDownloadPageLedgerWriter {
-  MangaDownloadPageLedgerWriter._(this._chapterDir, this._entries);
+  MangaDownloadPageLedgerWriter._(this._chapterDir, this._table, this._entries);
 
   final Directory _chapterDir;
+
+  /// 本轮取页所依据的页表（记进账本，续跑时判身份是否唯一）。
+  final List<String?> _table;
   final Map<int, MangaDownloadLedgerEntry> _entries;
   Future<void> _tail = Future<void>.value();
 
@@ -322,7 +386,11 @@ class MangaDownloadPageLedgerWriter {
       );
     }
     final Future<void> write = _tail.then(
-      (void _) => writeMangaDownloadPageLedger(_chapterDir, _ordered(_entries)),
+      (void _) => writeMangaDownloadPageLedger(
+        _chapterDir,
+        table: _table,
+        entries: _ordered(_entries),
+      ),
     );
     // 一次写失败不卡住后面的记账；失败由这次调用方收到。
     _tail = write.catchError((Object _) {});

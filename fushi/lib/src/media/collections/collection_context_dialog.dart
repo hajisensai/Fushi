@@ -113,6 +113,7 @@ Future<void> showCollectionContextDialog({
           icon: action.icon,
           subtitle: action.subtitle,
           loadStatus: action.loadStatus,
+          emphasized: action.emphasized,
           onPressed: () => closeThen(action.onPressed),
           children: <DialogListAction>[
             for (final DialogListAction child in action.children) wrap(child),

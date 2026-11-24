@@ -82,6 +82,13 @@ const String kSrsDayRolloverSeenPrefKeyPrefix = 'srs_day_rollover_seen::';
 const String kMusicScanParserRevisionPrefKeyPrefix =
     'music_scan_parser_revision::';
 
+/// 在线源条目同步的本机账本（JSON：`<种类>:<身份>` → 本机见过的最大 addedAt，拍板台
+/// mY5VWg1nD-，`online_library_items.dart`）：区分「对端新加的」与「本机删掉的」。描述的是
+/// **这台设备的库**见过哪些条目：设备本地（`SyncRepository.deviceLocalPrefKeys`），不进
+/// Profile 快照 / 备份 / 设置同步——切 Profile 时被快照剪掉或换回旧值，本机「仅本机删除」
+/// 过的条目会被对端清单建回来；合并导入接管别的设备的账本，则对端新加的条目永远建不出来。
+const String kOnlineLibraryLedgerPrefKey = 'sync_online_library_known_v1';
+
 /// 库页「手动」排序的顺序（排序模式里拖出来的），后缀 = 库（`book` / `manga` /
 /// `video` / `game`），值是换行分隔的单元 tieKey（`encodeShelfManualOrder`）。
 /// 与页签顺序同族：设备本地，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
@@ -221,6 +228,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 字幕/正文文件，下载完成后据此自动配齐「正文 + 字幕 + 音频」。见
   // media/audiobook/audiobook_material_library.dart。
   'audiobook_material_dirs',
+  // String（'page_edge' | 'next_sentence'，默认 'page_edge'）：分页模式「跟随音频」
+  // 遇到跨页句子时何时翻页（反馈 tUJsiLpL9d）。见 media/audiobook/audiobook_follow_style.dart。
+  'audiobook_page_split_follow',
+  // String（'line_align' | 'margin'，默认 'line_align'）：连续模式「跟随音频」的滚动
+  // 方式（反馈 tUJsiLpL9d）。见 media/audiobook/audiobook_follow_style.dart。
+  'audiobook_scroll_follow',
   // bool（默认 false）：是否把 Audiobookshelf 收听中条目混排进首页「继续」（显式
   // opt-in，与 jellyfin_show_in_library 同原则，同样是普通偏好）。
   'audiobookshelf_show_in_home',
@@ -237,6 +250,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：NSFW 作品的封面在库页 / 继续卡等处打模糊。见
   // media/nsfw/nsfw_cover_blur.dart。
   'blur_nsfw_covers',
+  // JSON 字符串数组：待确认身份队列里被用户「忽略」的书 / 漫画刮削单元键
+  // （`collection:<id>` / `book:<bookKey>`，BUG-5283，引擎
+  // media/identity/pending_identity.dart）。键里是本机合集自增 id，设备本地。
+  'book_scrape_ignored_works',
   // string（默认空）：楽天ブックス书籍检索的 accessKey / applicationId（楽天ウェブ
   // サービス注册应用后拿到）。两者都填了书籍刮削才出现「楽天ブックス」源。凭据 →
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys 与
@@ -408,6 +425,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'galgame_library_view',
   // bool：第三方游戏资源站下载前的风险说明勾了「不再提示」（download_notice.dart）。
   'game_resource_notice_dismissed',
+  // JSON 字符串数组：待确认身份队列里被用户「忽略」的游戏（`game:<id>`，
+  // BUG-5283，引擎 media/identity/pending_identity.dart）。本机自增 id，设备本地。
+  'game_scrape_ignored_works',
   'games_collapsed_collection_ids',
   // String（默认 'grid'）：游戏库主体布局，'grid' 海报网格 / 'list' 分段卡列表。
   // 页头切换钮写入，跨会话记住。
@@ -477,6 +497,12 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'last_selected_deck',
   'last_selected_dictionary_format',
   'last_selected_model',
+  // bool（默认 true，所有者 2026-11-22 拍板）：AI 管库自动复查——库管家自动路径跑完
+  // 后起一场无人值守的 AI 助手会话（library_agent_review.dart）。设备本地。
+  'library_agent_review_auto',
+  // String（JSON：lastReviewAt / lastFullAt / itemsSinceFull）：自动复查的本机水位
+  // （LibraryAgentReviewState）。设备本地，丢了只是下次按首次全库复查。
+  'library_agent_review_state',
   // bool（默认 true，所有者 2026-11-18 拍板）：AI 库管家自动路径（入库 / 扫描后去抖
   // 跑一趟）。开着时取代 library_organize_auto。设备本地（按量计费只对这台设备成立）。
   'library_curate_auto',
@@ -530,6 +556,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true = 原行为）：查词结果滚到顶后继续下拉 = 清空查询、回到搜索
   // 历史（反馈 3D-JH966Kr）。关掉后下拉不再清空。
   'lookup_page_pull_to_clear',
+  // int（默认 16，夹到 8..32）：词典扫描窗口长度（码点），查词与分词共用
+  // （`FushiDicts.scanLength`，反馈 ezCjUoU2QM）。
+  'lookup_scan_length',
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',
@@ -576,9 +605,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（`MangaResumeTarget.key`，默认 `furthest`）：在线漫画重新打开时回到
   // 进度（读完过的章跳过）还是最后停下的那一页（`last`）。
   'manga_resume_target',
+  // bool（默认 false）：漫画「反转方向键翻页」——键盘裸 ← / → 在跨页方向校正后整体
+  // 对调；与小说的 `reverse_arrow_page_turn` 分开（反馈 uz_2m0E_Eu ④）。
+  'manga_reverse_arrow_page_turn',
   // int（默认 1）：跨页配对的整体偏移，用来把「封面独占一页」这类错位掰回来。
   'manga_spread_offset',
   'manga_spread_preference',
+  // double（默认 1.0，0.5–3.0，越大越灵敏）：漫画滑动翻页灵敏度（R721ZgWVSB），
+  // 缩放跟手与不跟手两组提交阈值，见 manga_swipe_thresholds.dart。
+  'manga_swipe_page_turn_sensitivity',
   // String（`MangaTapZoneLayout.key`，默认 `left_right`）：点击翻页热区布局。
   'manga_tap_zone_layout',
   'manga_tap_zone_paging',
@@ -610,6 +645,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'mining_app_audio_capture_desktop',
   // 有声书倍速制卡：句子音频跟随播放倍速（默认开）。
   'mining_audio_follow_playback_speed',
+  // 制卡句子音频跟随播放音量（歌曲 ReplayGain + 音量、有声书音量；默认开，d7mXlstcv9）。
+  'mining_audio_follow_playback_volume',
   // #1447：制卡句子音频头/尾 padding（asbplayer 式），两条链共用。
   'mining_audio_head_pad_ms',
   'mining_audio_quality',
@@ -705,6 +742,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_lookup_pause',
   // bool（默认 true）：锁屏 / 媒体通知副标题显示当前歌词行（设计 §6.2）。
   'music_lyrics_media_session',
+  // bool（默认 true）：曲目有本机 MV 时歌词页 / 全屏歌词动画背景放 MV 画面；false = 始终
+  // 动画背景。设备本地观感偏好（MusicMvBackdropController）。
+  'music_lyrics_mv_backdrop',
   // bool（默认 true）：本地没有歌词时去 LRCLIB 精确匹配（设计 §5.4 / D3）。
   'music_lyrics_online',
   // String（JSON 数组 [{id, enabled}]）：歌词插件来源的顺序与启停；LRCLIB 结构上固定在最前、不存。
@@ -732,8 +772,43 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // base64 的密码 / API key → 同时登记在 kCredentialPreferenceKeys、
   // PrefRedactionPolicy.sensitiveKeys 与 deviceLocalPrefKeys。
   'music_subsonic_servers',
+  // String（JSON map `{条目身份: bool}`，默认空 = 全部按默认开）：音乐库生成字幕前
+  // 「先分离人声」按条目记住的选择（拍板 W_wrz-ZPU8；身份是 `music:track:<uid>` /
+  // `music:album:<uid>` / `music:source:<本库 id>`）。键含本库自增 id 与本机曲库身份：
+  // 设备本地（deviceLocalPrefKeys）。
+  'music_subtitle_vocal_separation',
   // bool（默认 false）：VGMdb 补充（社区镜像 vgmdb.info，无官方 API，频率保守、可关）。
   'music_vgmdb_enabled',
+  // bool（默认 false）：打开全屏歌词动画时给还没有 AI 主题的歌自动生成一份
+  // （AiFeature.musicVisualizerTheme；没指派提供商时不发请求）。
+  'music_visualizer_ai_theme_auto',
+  // String（默认 'fluid'）：全屏歌词动画的共享背景（LyricVisualizerBackgroundEntry.id）。
+  // 背景自己的参数存在 music_visualizer_tunings 的 'background:<id>' 项里。
+  'music_visualizer_background',
+  // double（默认 1.0，0.6–2.0）：全屏歌词动画字号倍数。
+  'music_visualizer_font_scale',
+  // String（默认 'normal'）：全屏歌词动画强度（LyricVisualizerIntensity.prefValue：
+  // calm / normal / chaotic）；AI 主题可按歌曲覆盖。
+  'music_visualizer_intensity',
+  // String（默认 'classic'）：全屏歌词动画样式（LyricVisualizerMode.prefValue，
+  // 与 folia-major 的模式 id 同名）。设备本地观感偏好。
+  'music_visualizer_mode',
+  // bool（默认 false）：每首歌随机换一个全屏歌词动画样式。
+  'music_visualizer_random',
+  // String（默认 'translation'）：全屏歌词动画的副字幕内容
+  // （LyricVisualizerSubtitleContent.prefValue：translation / romanization / both / none，
+  // 与 folia subtitleContentMode 同名）。
+  'music_visualizer_subtitle_content',
+  // String（默认 'inherit'）：全屏歌词动画副字幕字体（LyricVisualizerSubtitleFont.prefValue：
+  // inherit = 跟随歌词 / sans / serif / mono；folia subtitleTheme）。
+  'music_visualizer_subtitle_font',
+  // double（默认 1.0，0.6–2.0）：全屏歌词动画副字幕字号倍数（folia subtitleFontScale）。
+  'music_visualizer_subtitle_font_scale',
+  // bool（默认 false）：全屏歌词动画隐藏副字幕（folia hideTranslationSubtitle）。
+  'music_visualizer_subtitle_hide',
+  // String（JSON，默认空）：各全屏歌词动画样式的可调参数
+  // {样式 prefValue: {参数 key: 值}}，只存改过的项。
+  'music_visualizer_tunings',
   // double（默认 100）：音乐软件音量（100 = 不改样本）。
   'music_volume',
   // bool（默认 false）：在线来源里显示 YouTube 内置音源（反馈 0tRY-D2JgG，显式 opt-in；
@@ -875,6 +950,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'sandbox_last_support_root',
   'saved_tags',
   'scan_non_japanese_text',
+  // bool：截屏识字制卡前先推出截图框选页（默认 false，拍板 EuOLprw_dV）。
+  'screen_ocr.card_frame_on_mine',
   // bool：截屏识字 / 拍照查词制卡带所点文本块的截图（默认 true）。
   'screen_ocr.card_image',
   // String：桌面截屏识字的 OCR 引擎（'' 跟随全局 / local_onnx / system_ocr /
@@ -1017,6 +1094,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // （embedded_reference_subtitle_sync.dart）。
   'subtitle_reference_sync_enabled',
   'sync_backend_type',
+  // bool，默认 false：捕获工作台「新句自动查词」（反馈 q9Jcu_Zr2_，texthooker_page.dart）。
+  'texthooker_auto_lookup_new_lines',
   'texthooker_enabled',
   'texthooker_urls',
   'torrent_upload_intro_shown',
@@ -1031,6 +1110,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // JSON：本机一键部署的官方 Irodori-TTS-Server（IrodoriLocalEngine）：专属目录 / 端口 /
   // 下载源 / 后端 / 模型 / 是否 app 所装。只对这台电脑成立，设备本地。
   'tts_irodori_local',
+  // JSON：朗读声音按作品记（TtsMediaVoices）：`{"books":{bookKey:presetId},
+  // "series":{seriesKey:{语言:presetId}}}`。指向本机预设，设备本地。
+  'tts_media_voices',
   // JSON：TTS 识别后替换（TtsTextRulesStore / TtsTextRuleKind.postRecognition）：
   // 制作有声书语音识别校对时把识别结果改回原文写法再比对。
   'tts_post_recognition_rules',
@@ -1129,6 +1211,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true）：后台为媒体库里的在线视频作品（在线视频源 / 媒体服务器的剧）
   // 补新集（video_library_update_probe.dart）；与「番剧新集提醒」开关分开。
   'video_library_auto_update',
+  // bool（拍板台 zTedU_pOQF）：auto_open 默认 false = YouTube 直播回放带聊天回放时，开始
+  // 播放就打开聊天栏；show_author 默认 true = 聊天栏每条消息上方显示发送者。
+  'video_live_chat_auto_open',
+  'video_live_chat_show_author',
   'video_lock_window_aspect_ratio',
   // int（默认 -1 = 自动）：媒体服务器（Jellyfin/Emby）串流画质档在
   // JellyfinVideoClient.kQualityPresets 里的下标；选档 = 向服务器声明码率 / 宽度上限，
@@ -1355,13 +1441,27 @@ const List<String> kKnownPreferenceKeyPrefixes = <String>[
   // （BUG-2816）与 app 漫画来源扫描（BUG-3574）共用（引擎 book_library_prune.dart）；
   // 设备本地状态，不进 Profile 快照（ProfileKeys._excludedPrefPrefixes）。
   'media_source_scan_index_',
+  // JSON：`music_lyric_coverage_<trackUid>`——这首歌已计过字数的歌词句的曲目时间窗并集
+  // （IntervalCoverage，music_study_tracker.dart 的 kMusicLyricCoveragePrefPrefix，拍板台
+  // qQTh1Q3G9U）。与视频 `video_watch_coverage_<uid>` 同一存放形态；跨设备同步缺口见 BUG-5289。
+  'music_lyric_coverage_',
   kSectionTabOrderPrefKeyPrefix,
   kLibraryManualOrderPrefKeyPrefix,
   kSrsDayRolloverPendingPrefKeyPrefix,
   kSrsDayRolloverSeenPrefKeyPrefix,
   kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
+  // 各配置停放的页面背景图片 / 取色缓存（后缀 = profile uid，
+  // page_backdrop_style.dart 的 kPageBackdropProfileParkedPrefKeyPrefixes）。设备本地。
+  'page_backdrop_image_landscape::',
+  'page_backdrop_image_portrait::',
+  'page_backdrop_module_images::',
+  'page_backdrop_seed_cache::',
   kMusicScanParserRevisionPrefKeyPrefix,
   'src:',
+  // JSON：`sync_online_library_peer:<设备 id>`——互联 host 的在线源条目清单信箱
+  // （`OnlineLibraryMailbox.keyPrefix`，fushi_engine `online_library_sync.dart`，拍板台
+  // mY5VWg1nD-）。设备本地（PrefRedactionPolicy.deviceLocalKeyPrefixes）。
+  'sync_online_library_peer:',
   // string：`sync_remote_account__<通道槽位>`——云后端最近一次取到的账号（规整后的
   // 小写邮箱 / 用户名，BUG-4434），文件箱进度基线按它分槽。设备本地
   // （SyncRepository.deviceLocalPrefKeys），不进备份 / 设置同步。

@@ -137,7 +137,7 @@ void main() {
       return f.readAsStringSync();
     }
 
-    test('google_drive_auth 三处 client 全部经 createSyncHttpClient', () {
+    test('google_drive_auth 的 client 全部经 createSyncHttpClient（刷新复用会话连接）', () {
       final String source = read('lib/src/sync/google_drive_auth.dart');
 
       // 裸 http.Client() 就是 BUG-1348 的字面根因：它不带代理也不带连接超时。
@@ -146,11 +146,29 @@ void main() {
         isFalse,
         reason: '裸 http.Client() 不走代理 —— 必须用 createSyncHttpClient()',
       );
-      // 登录 / 启动恢复 / 刷新，三条路径都要走代理出口，漏一条就是「登录成功但重启掉线」。
+      // 登录 / 启动恢复各建一条会话底层连接，都要走代理出口，漏一条就是「登录成功但重启
+      // 掉线」。刷新令牌不再新建 client（BUG-5169：并发刷新互相关掉对方的连接），复用
+      // 会话那条已经走代理的底层连接——所以出口只有这两处。
       expect(
         'createSyncHttpClient()'.allMatches(source).length,
-        equals(3),
-        reason: 'authenticate / restoreDesktopAuth / refreshAuth 各一处',
+        equals(2),
+        reason: 'authenticate / restoreDesktopAuth 各一处',
+      );
+      // 刷新路径只能拿会话底层连接（[_desktopBaseClient]，来自上面两处之一）换令牌。
+      final int refreshStart = source.indexOf('Future<void> _refreshDesktop()');
+      final int refreshEnd = source.indexOf('Future<void> signOut(');
+      expect(refreshStart, isNonNegative, reason: '找不到 _refreshDesktop');
+      expect(refreshEnd, greaterThan(refreshStart), reason: '找不到 signOut');
+      final String refresh = source.substring(refreshStart, refreshEnd);
+      expect(
+        refresh,
+        contains('final http.Client? baseClient = _desktopBaseClient;'),
+        reason: '刷新必须复用会话底层连接（它经 createSyncHttpClient 建）',
+      );
+      expect(
+        RegExp(r'refreshCredentials\([^;]*baseClient').hasMatch(refresh),
+        isTrue,
+        reason: 'refreshCredentials 要用会话底层连接发请求',
       );
     });
 

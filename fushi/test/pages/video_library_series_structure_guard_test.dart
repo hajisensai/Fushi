@@ -141,8 +141,10 @@ void main() {
       );
     }
 
+    // BUG-5197 起 ordered 按输入记忆（[_orderedMemo]），派生体在 deriveOrdered 里：
+    // 从派生体开头到 `_visibleVideos = ordered;` 这一段必须仍经 _passesLocalFilters。
     final int orderedStart = page.indexOf(
-      'final List<VideoBookRow> ordered = <VideoBookRow>[',
+      'List<VideoBookRow> deriveOrdered() {',
     );
     final int orderedEnd = page.indexOf(
       '_visibleVideos = ordered;',
@@ -186,7 +188,18 @@ void main() {
       effectiveCollectionStart,
       effectiveCollectionEnd,
     );
-    expect(effectiveCollection, contains('_primaryCollectionByEntry['));
+    // BUG-5197 起按 bookUid 建的索引（[_collectionIdByUid]）替掉逐条拼复合键；
+    // 索引只由 _primaryCollectionByEntry 派生，单一口径不变。
+    expect(effectiveCollection, contains('_collectionIdByUid['));
+    expect(
+      compactCode(page),
+      contains(
+        'Map<String,int>get_collectionIdByUid=>_collectionIdByUidMemo.of('
+        '<Object?>[_primaryCollectionByEntry],'
+        '()=>entriesOfKind<int>(_primaryCollectionByEntry,MediaKind.video),);',
+      ),
+      reason: '归属索引必须只由 _primaryCollectionByEntry 派生',
+    );
     expect(
       effectiveCollection,
       isNot(contains('VideoLibrarySection.series')),

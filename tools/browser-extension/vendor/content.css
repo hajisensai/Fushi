@@ -2368,6 +2368,15 @@
     margin: 4px 0 6px;
 }
 
+/* 拍板台 6uasoIUvSR：汉字区块是一张 <details class="kanji-card-section glossary-group">，
+   默认折叠成一行（卡片皮肤 / 箭头 / 标题行沿用词典卡 .glossary-group / .dict-label）。
+   标题行 = 「汉字 · 粉」+ 区块里的汉字词典名。 */
+.kanji-card-summary-dicts {
+    margin-left: 6px;
+    font-weight: normal;
+    overflow-wrap: anywhere;
+}
+
 .kanji-card {
     margin-top: 4px;
     padding: 8px 10px;
@@ -3444,6 +3453,30 @@
     border-radius: var(--md-sys-shape-corner-large-increased);
     padding: 12px 14px;
     background: var(--md-sys-color-surface-container-high);
+}
+
+/* 汉字区块单独成卡（不在词典分段列表里）：四角都是分段列表首尾的 24 圆角，标题行的
+   按压层跟着卡片圆角走（同 .glossary-group:first-child / :last-child 的标题行规则）。 */
+:where(#entries-container).fushi-m3e .kanji-card-section.glossary-group {
+    border-radius: 24px;
+}
+
+:where(#entries-container).fushi-m3e .kanji-card-section.glossary-group > .dict-label {
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+}
+
+:where(#entries-container).fushi-m3e .kanji-card-section.glossary-group:not([open]) > .dict-label {
+    border-bottom-left-radius: 24px;
+    border-bottom-right-radius: 24px;
+}
+
+:where(#entries-container).fushi-m3e .kanji-card-summary-dicts {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: 0;
+    font-size: var(--md-sys-typescale-body-small-size);
+    line-height: var(--md-sys-typescale-body-small-line-height);
 }
 
 :where(#entries-container).fushi-m3e .kanji-card-char {
@@ -5834,6 +5867,38 @@
     gap: 12px;
     min-height: 48px;
     padding: 4px 12px;
+}
+
+/* 快捷面板里的开关行（自适应缩放）：整行可点，状态层与主页面开关行一致。 */
+#fushi-player-controls .fushi-pc-style-row.is-switch {
+    border-radius: var(--md-sys-shape-corner-medium);
+    outline: none;
+    cursor: pointer;
+    transition: background-color var(--fushi-dur-short) var(--md-sys-motion-spring-default-effects);
+}
+
+#fushi-player-controls .fushi-pc-style-row.is-switch:hover {
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-hover-opacity), transparent);
+}
+
+#fushi-player-controls .fushi-pc-style-row.is-switch:focus-visible {
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-focus-opacity), transparent);
+    box-shadow: inset 0 0 0 2px var(--md-sys-color-primary);
+}
+
+#fushi-player-controls .fushi-pc-style-row.is-switch:active {
+    background: color-mix(in oklch, var(--md-sys-color-on-surface) var(--md-sys-state-pressed-opacity), transparent);
+}
+
+#fushi-player-controls .fushi-pc-style-row.is-switch:active .fushi-pc-switch::after {
+    top: 0;
+    left: 0;
+    width: 28px;
+    height: 28px;
+}
+
+#fushi-player-controls .fushi-pc-style-row.is-switch:active .fushi-pc-switch[data-on="1"]::after {
+    left: 20px;
 }
 
 #fushi-player-controls .fushi-pc-style-label {

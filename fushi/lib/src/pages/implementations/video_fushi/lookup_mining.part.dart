@@ -337,15 +337,22 @@ extension _VideoLookupMining on _VideoFushiPageState {
     );
     final int queuedEpisode = _currentEpisode;
     final AudioCue? historyCue = _lastLookupCue;
+    // 制卡历史的回跳锚点按句子所属那一行的时间轴记（原盘「全部播放」= 那一集，
+    // BUG-5356），与收藏句同一口径。
+    final ({String bookUid, int ms})? historyAnchor = historyCue == null
+        ? null
+        : _libraryAnchorAt(historyCue.startMs);
     final VideoMiningHistorySnapshot historySnapshot =
         VideoMiningHistorySnapshot.capture(
           fields: fields,
           sentence: range.sentence,
           documentTitle: _title ?? _activeBookUid,
-          bookKey: _activeBookUid,
+          bookKey: historyAnchor?.bookUid ?? _activeBookUid,
           sectionIndex: _favoriteSectionIndex,
-          cueStartMs: historyCue?.startMs,
-          cueEndMs: historyCue?.endMs,
+          cueStartMs: historyAnchor?.ms,
+          cueEndMs: historyCue == null || historyAnchor == null
+              ? null
+              : historyAnchor.ms + (historyCue.endMs - historyCue.startMs),
           dateKey: statTodayKey(),
         );
 
@@ -725,6 +732,14 @@ extension _VideoLookupMining on _VideoFushiPageState {
     );
     final int? audioStreamIndex = audioPlan.audioStreamIndex;
     final int audioStreamCount = controller.realAudioStreamCount;
+    // 句子音频跟随播放音量（d7mXlstcv9，与歌曲 / 有声书卡同一开关同一套换算）：点击当下
+    // 播放器的音量（静音按 0 算 → 不跟随，截一段无声的卡没有意义）；开关关 → null，
+    // 原始电平、ffmpeg 参数与现状逐字节相同。
+    final double? audioGainDb = videoMiningClipGainDb(
+      followPlayback: appModel.miningAudioFollowPlaybackVolume,
+      volume: controller.muted ? 0 : controller.requestedVolume,
+      webBackend: controller.isWebBackend,
+    );
     final int episode = _currentEpisode;
     final SourceReviewSession? reviewSession = _sourceReviewSession;
     final (String sourceUid, int sourceEpisode) = _isRemote
@@ -1070,6 +1085,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         audioStreamCount: audioStreamCount,
         audioFrontCenter: audioPlan.frontCenter,
         audioFrontCenterNeedsProbe: audioPlan.frontCenterNeedsProbe,
+        audioGainDb: audioGainDb,
         // TODO-115：视频来源 → 卡片追加 `video` 分类标签。
         source: AnkiMiningSource.video,
         sourceLinkResolver: resolveSourceLink,
@@ -1255,7 +1271,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
         );
         // 不陪等的制卡（[retry] 非空）：弹窗早关了，结果卡带「重试」。
         if (retry != null) {
-          _showMineOsd(message, MineToastStatus.failed, null, retry);
+          _showMineOsd(
+            message,
+            MineToastStatus.failed,
+            retry: retry,
+            term: expression,
+          );
         } else {
           _showOsd(message, severity: ToastSeverity.error);
         }
@@ -1317,8 +1338,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
     _showMineOsd(
       described.message,
       described.status,
-      undo,
-      described.status == MineToastStatus.failed ? retry : null,
+      undo: undo,
+      retry: described.status == MineToastStatus.failed ? retry : null,
+      term: expression,
+      detail: described.detail,
+      fallbackAction:
+          mineFailureToastAction(outcome) ?? mineQueuedToastAction(outcome),
     );
     return result;
   }

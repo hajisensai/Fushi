@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:args/args.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_cli/src/commands/library_commands.dart';
@@ -83,6 +85,81 @@ void main() {
     });
   });
 
+  group('library map / apply-changes（AI 管库 v3）', () {
+    test('map：默认不带参数，各选项进 query', () {
+      final CtlRequestSpec bare = _build('map', <String>[]);
+      expect(bare.method, 'GET');
+      expect(bare.path, '/api/admin/library/agent/map');
+      expect(bare.query, isEmpty);
+      final CtlRequestSpec r = _build('map', <String>[
+        '--view',
+        'video',
+        '--q',
+        ' 進撃 ',
+        '--added-since',
+        '1700000000000',
+        '--offset',
+        '400',
+        '--limit',
+        '200',
+      ]);
+      expect(r.query, <String, String>{
+        'view': 'video',
+        'q': '進撃',
+        'addedSince': '1700000000000',
+        'offset': '400',
+        'limit': '200',
+      });
+    });
+
+    group('apply-changes', () {
+      late Directory tmp;
+      setUp(() => tmp = Directory.systemTemp.createTempSync('cli_lib_agent_'));
+      tearDown(() => tmp.deleteSync(recursive: true));
+
+      String write(String name, String text) {
+        final File f = File(p.join(tmp.path, name))..writeAsStringSync(text);
+        return f.path;
+      }
+
+      test('读文件原样提交，--dry-run 加 dryRun', () {
+        final String path = write(
+          'cs.json',
+          '{"changes": [{"op": "rename_collection", "id": 1, "name": "x"}]}',
+        );
+        final CtlRequestSpec r = _build('apply-changes', <String>[path]);
+        expect(r.method, 'POST');
+        expect(r.path, '/api/admin/library/agent/changes');
+        expect(r.body!['changes'], hasLength(1));
+        expect(r.body!.containsKey('dryRun'), isFalse);
+        final CtlRequestSpec dry = _build('apply-changes', <String>[
+          path,
+          '--dry-run',
+        ]);
+        expect(dry.body!['dryRun'], isTrue);
+      });
+
+      test('缺文件 / 坏 JSON / 形状不对都是用法错误', () {
+        expect(
+          () => _build('apply-changes', <String>[]),
+          throwsA(isA<CtlUsageError>()),
+        );
+        expect(
+          () => _build('apply-changes', <String>[p.join(tmp.path, 'nope')]),
+          throwsA(isA<CtlUsageError>()),
+        );
+        expect(
+          () => _build('apply-changes', <String>[write('bad.json', '{')]),
+          throwsA(isA<CtlUsageError>()),
+        );
+        expect(
+          () => _build('apply-changes', <String>[write('arr.json', '[]')]),
+          throwsA(isA<CtlUsageError>()),
+        );
+      });
+    });
+  });
+
   group('library curate（AI 库管家）', () {
     test('curate-links / curate-music 的路径与 body', () {
       final CtlRequestSpec l = _build('curate-links', <String>[
@@ -144,6 +221,22 @@ void main() {
         _build('curate-pending', <String>[]).path,
         '/api/admin/library/curate/pending',
       );
+      final CtlRequestSpec r = _build('curate-retry', <String>[
+        'books',
+        'epub:abc',
+        '--yes',
+      ]);
+      expect(r.method, 'POST');
+      expect(r.path, '/api/admin/library/curate/scrape/retry');
+      expect(r.body, <String, Object?>{
+        'stage': 'books',
+        'ref': 'epub:abc',
+        'yes': true,
+      });
+      expect(
+        () => _build('curate-retry', <String>['video', 'x']),
+        throwsA(isA<CtlUsageError>()),
+      );
     });
   });
 
@@ -175,6 +268,8 @@ void main() {
         'organize-proposals',
         'organize-accept',
         'organize-reject',
+        'map',
+        'apply-changes',
         'curate',
         'curate-status',
         'curate-runs',
@@ -182,6 +277,7 @@ void main() {
         'curate-links',
         'curate-music',
         'curate-pending',
+        'curate-retry',
         'source-add',
         'source-rename',
         'source-rm',

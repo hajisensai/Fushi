@@ -25,19 +25,34 @@
 > - 守卫 / 测试：`test/shortcuts/portal_global_hotkey_backend_test.dart`、`fallback_global_hotkey_backend_test.dart`、`global_shortcuts_portal_dbus_test.dart`（仅 Linux）、
 >   `test/lookup/global_hotkey_backend_wiring_test.dart`、`test/pages/global_hotkey_portal_panel_test.dart`。
 
-> **2026-11-08 增补（手柄查词模式 / 副屏面板驱动，副屏 S6）：**
+> **2026-11-08 增补（手柄查词模式 / 副屏面板驱动，副屏 S6；键位以 2026-11-22 统一为准）：**
 >
 > - `ControllerLookupMode`（`lib/src/second_screen/input/`）排在**一切页面分派之前**：桌面在
 >   `GamepadService._dispatchButton`，Android 在 `FocusManager` 早期按键处理器
->   （`interceptNativeControllerLookupKey`）。不进注册表，开启方式是设备本地偏好
->   `controller_lookup_style`（设置「通用 › 键盘与手柄」：按住 L1 / Select 切换 / 关）。**未设时：副屏伴侣在用 =
->   按住 L1，否则关**——单屏手柄行为在用户自己打开前完全不变。
-> - 查词模式内（阅读器 / 视频字幕 / 漫画 OCR / 歌词页挂了目标时）：十字键 / 左摇杆左右 = 按词（Y 切按字）
->   移光标，上下 = 上 / 下一行；A 查词（有查词结果时 A = 制卡）；X 发音；RT / LT 下 / 上一词条；右摇杆
->   滚结果；B 先关查词、再退出模式。结果去副屏「查词」页，副屏不在时走页内弹窗。
+>   （`interceptNativeControllerLookupKey`）。进入方式是设备本地偏好 `controller_lookup_style`
+>   （设置「通用 › 键盘与手柄」：按住 L1 / Select 切换 / 关）。**未设时一律按住 L1**（单屏也是，
+>   原来单屏默认关）。
+> - 查词模式内的键位是 `controllerLookup` scope 的注册表动作，**全部可在快捷键设置里改键**（进入模式的键
+>   不进注册表）。默认：十字键 ←/→ 按词 / 字、↑/↓ 换行；L3 切换按词 / 按字；右摇杆 ←/→ 选区右端 −1/+1 字；
+>   X 制卡；Y 发音；RT / LT 下 / 上一词条；A 进入结果；B 先关结果、再退出模式。**停下即查**（光标停到新位置
+>   自动查词，不再先按 A）。结果去副屏「查词」页，副屏不在时走页内弹窗。
+> - 右摇杆左 / 右是新的可绑定虚拟键 `RS←` / `RS→`（`gameButton15` / `gameButton16`），桌面由轮询器横轴
+>   边沿检测，Android 由 `GamepadTriggerKeySynthesizer` 合成；只有查词模式消费。
 > - 副屏伴侣在用时**按住 R1** = 十字键 / 左摇杆 / A / B 驱动副屏面板的焦点（其它键吞掉），松开回到上屏。
-> - 行为变化（仅副屏伴侣在用、或用户打开了查词模式时）：L1（有查词目标时）与 R1 的**轻点**改在**松开**时
->   按原绑定补发（按住期间没有别的输入才算轻点）。阅读器 RB/LB 翻页等因此在松开时触发。
+> - 行为变化：L1（有查词目标时）与 R1 的**轻点**改在**松开**时按原绑定补发（按住期间没有别的输入才算轻点）。
+>   阅读器 RB/LB 翻页等因此在松开时触发。
+
+> **2026-11-22 增补（手柄查词统一）：** 设计见 `docs/specs/2026-11-22-gamepad-lookup-unification-design.md`。
+>
+> - 删掉视频整句扫词动作 `videoLookupNextWord` / `videoLookupPrevWord`（旧持久化 key
+>   `video_lookup_next_word` / `video_lookup_prev_word` 加载时忽略）。
+> - `videoEnterCaret` / `readerEnterCaret` / `readerLookupAtCursor` 去掉手柄通道，只剩键盘（已存的自定义手柄
+>   绑定失效且不再显示）。手柄查词只有查词模式这一条路。
+> - 单屏默认按住 L1 带来的行为变化见上条：L1 轻点改在松开时补发。不想要的用户改成「Select 切换」或「关」。
+>
+> **2026-11-23 增补（拍板台 pr4141a）：** 阅读器整句扫词 `readerLookupNextWord` / `readerLookupPrevWord`（拍板台
+> 5H922XeDHM，PR #4130）同样删除，键盘 / 手柄 / 鼠标 / 弹窗回传 / 歌词键桥通道一并去掉；旧持久化 key
+> `reader_lookup_next_word` / `reader_lookup_prev_word` 加载时忽略（`kRetiredShortcutActionKeys`）。
 
 > **2026-11-08 增补（视频页逐句学习工具，副屏 S6）：**
 >
@@ -68,6 +83,8 @@
 >   页面没占用的备选键。
 > - 设置页「焦点导航」分组顶部有两个**默认关闭**的一键预设开关：WASD、Shift+方向键（追加为
 >   备选键，不替换方向键）。W/A/S/D 在视频页仍是 seek / 截图，Shift+←/→ 在音乐页仍是 ±5 秒。
+>   音乐全屏播放页 / 歌词页另有 `musicPlayer` scope（拍板台 vo1KPp0_Rh）：裸 ←/→ 默认 ±5 秒，
+>   页面键先于焦点导航解析；曲库页只解析 `music`，裸方向键仍是网格移焦。
 > - 文本框持焦时，用户另加的移焦 / 确认键一律放行（WASD 照常打字、Shift+方向键照常扩选）；
 >   裸方向键仍是既有契约（实验焦点导航关 → 框架 `DirectionalFocusIntent`；开 → 受管控件门 +
 >   单行框逃逸）。裸 Enter / 手柄 A 的确认仍由框架完成（wrapper 不重复激活）。
@@ -128,7 +145,6 @@
 | globalBack（universal） | Esc / Alt+← | B | 返回上一级：有弹窗关弹窗，否则退出书 |
 | readerToggleBookmark | Ctrl+D | X | 切换书签 |
 | readerToggleFurigana | （无键盘默认） | R3 | 切换振假名 |
-| readerLookupNextWord / readerLookupPrevWord | （无默认，用户自配） | （无默认） | 整句扫词：不进光标，在当前句里按词前进 / 后退并复用点词查词换同一张弹窗（句尾循环；光标激活时让位；正文三种视图 + 歌词视图共用；执行体 `reader_fushi/word_sweep.part.dart`，拍板台 5H922XeDHM） |
 
 ### home scope（首页解析 home + global）
 
@@ -234,6 +250,26 @@
 | 竖排 RTL（日文默认）+ 无修饰 ← | readerPageForward（下一页在左） |
 | 竖排 RTL + 无修饰 → | readerPageBackward |
 | 横排 LTR + 无修饰 ←/→ | 后退 / 前进（默认方向） |
+| 有声书激活 + 弹窗不可见 + 无修饰 ←/→ | 上述页序再改作上一句 / 下一句（见 2d+） |
+
+### 2d+. 小说 / 漫画左右键统一（反馈 uz_2m0E_Eu，2026-11 拍板「做」）
+
+两个阅读器的裸 ← → 走同一套原语（`shortcuts/directional_page_turn.dart`）：
+`resolveDirectionalPageTurn`（只接管出厂翻页绑定，`leftIsForward = rtl ^ reverse`）→
+`resolveAudioArrowTakeover`（有声在场切句）。
+
+| 条件 | 小说（reader） | 漫画（manga） |
+|---|---|---|
+| 裸 ← →，无有声 | 按阅读方向翻页 | 按跨页方向翻页 |
+| 裸 ← →，有声在场、弹窗不可见 | 上一句 / 下一句（audiobookPrev/NextSentence） | 上一句 / 下一句（mangaAudioPrevious/NextLine） |
+| PageUp / PageDown / ↑ / ↓，有声在场 | 照旧翻页 | 照旧翻页 |
+| 裸空格，有声在场 | 播放 / 暂停 | 播放 / 暂停 |
+| 长按 ← →（翻页） | 连发（BUG-687 / TODO-1370） | 连发，但等上一页翻页动画落定才翻下一页（`MangaHeldTurnGate`） |
+| 查词弹窗开着时 ← → | 关弹窗并翻页（正文持焦 / 弹窗持焦两条路都接） | 关弹窗并翻页 |
+| 「反转方向键翻页」开关 | 阅读控制 · `reverse_arrow_page_turn`（冻结键名） | 漫画 · 翻页 · `manga_reverse_arrow_page_turn`（两边分开） |
+
+用户改绑 / 解绑过左右键时上表全部让路，交回注册表的真实绑定。手柄 D-pad 跟随阅读方向，
+但不受「反转方向键翻页」与有声切句影响。
 
 ### 2e. 查词弹窗
 

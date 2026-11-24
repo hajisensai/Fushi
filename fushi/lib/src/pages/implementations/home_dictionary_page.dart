@@ -14,8 +14,16 @@ import 'package:fushi/src/media/media_type.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/types/dictionary_media_type.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/base_source_page.dart';
+import 'package:fushi/src/lookup/lookup_match_measure.dart'
+    show lookupHighlightCharCount;
 import 'package:fushi/src/pages/base_tab_page.dart';
+import 'package:fushi/src/lookup/advanced_mining_handoff.dart';
+import 'package:fushi/src/lookup/advanced_mining_handoff_gate.dart';
+import 'package:fushi/src/lookup/captured_context_sentences.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart'
+    show AdvancedMiningSentenceSection;
 import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/lookup/source_lookup_sentence.dart';
 import 'package:fushi/src/lookup/lookup_audio_playback.dart'
@@ -231,6 +239,35 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   Timer? _debounceTimer;
   String _sourceLookupText = '';
   int _searchGeneration = 0;
+
+  /// 拍板台 rf--UcsGta：应用外热键查词开了「抓取上下文」时随请求带来的当前句与前后句
+  /// （[DesktopLookupRequest.capturedContext]），以及它对应的源文本。只在源文本条仍是
+  /// 那次请求的文本时生效（[_activeCapturedContext]）——用户改查别的词就不再属于它。
+  CapturedSentenceContext? _capturedContext;
+  String _capturedSourceText = '';
+
+  /// 结果区高级制卡选的前后句（与阅读器 / 视频同一份草稿语义），每次新请求清空。
+  final MiningSentenceDraft _capturedDraft = MiningSentenceDraft();
+
+  /// 拍板台 rf--UcsGta-overlay：应用外查词覆盖窗点「高级制卡」转交过来的词条。结果区
+  /// 画完**这次请求**的结果后为它打开高级制卡对话框；用户先改查了别的词就作废——
+  /// 铸新查词代（[_mintSearchGeneration]）时立刻撤销，在途的定位回包也会被闸门挡下
+  /// （HBK-AUDIT-003）。状态机见 [AdvancedMiningHandoffGate]。
+  late final AdvancedMiningHandoffGate<
+    DictionarySearchResult,
+    DictionaryPopupWebViewState
+  >
+  _advancedMiningGate =
+      AdvancedMiningHandoffGate<
+        DictionarySearchResult,
+        DictionaryPopupWebViewState
+      >(
+        currentGeneration: () => _searchGeneration,
+        renderedTarget: _advancedMiningRenderTarget,
+        locate: _locateHandedOffEntry,
+        open: _openHandedOffAdvancedMining,
+        onNotFound: _onHandedOffEntryNotFound,
+      );
 
   /// 源文本条上「这次查的是哪几个字」的 Yomitan 式扫描高亮。
   ///
@@ -465,6 +502,11 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     if (request == null) return;
     DesktopLookupService.instance.clearPending();
     _sourceLookupText = request.text;
+    _capturedContext = request.capturedContext;
+    _capturedSourceText = request.text;
+    _capturedDraft.clear();
+    // 新的外部查词请求取代之前等着的转交；这次带来的转交在它的查词铸代后才挂上。
+    _advancedMiningGate.revoke();
     if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
       _runDesktopLookup(request);
     } else {
@@ -480,6 +522,77 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
     // force——显式查词意图，即便与上次同词也要重查，页面不叠加「同词不重查」去重。
     _search(request.text, autoRead: false, force: true);
+    // 转交来的高级制卡只认这一次查词的结果（_search 已同步铸出它的查词代，铸代时
+    // 撤销的是旧转交，这里才挂上本次的）。
+    _advancedMiningGate.arm(
+      request.advancedMining,
+      generation: _searchGeneration,
+    );
+  }
+
+  /// 铸新查词代。一次新查词 / 清空都意味着之前等着的转交不再属于眼下的结果，
+  /// 当场撤销（HBK-AUDIT-003），不留到下一次渲染或在途回包才发现。
+  int _mintSearchGeneration() {
+    _advancedMiningGate.revoke();
+    return ++_searchGeneration;
+  }
+
+  /// 结果区 WebView 每画完一次（`popupRendered`）都会来；有转交来的高级制卡在等时，
+  /// 由闸门确认画好的是那次请求的结果，再去定位词条、打开对话框。
+  void _onResultRendered() {
+    unawaited(_advancedMiningGate.onRendered());
+  }
+
+  /// 结果区此刻画好的是当前结果时回它与承载它的 WebView；还在查 / 没画完回 null。
+  AdvancedMiningRenderTarget<
+    DictionarySearchResult,
+    DictionaryPopupWebViewState
+  >?
+  _advancedMiningRenderTarget() {
+    if (!mounted || _isSearching) return null;
+    final DictionarySearchResult? result = _result;
+    final DictionaryPopupWebViewState? webView = _resultWebViewKey.currentState;
+    if (result == null ||
+        webView == null ||
+        !webView.hasRenderedResult(result)) {
+      return null;
+    }
+    return (result: result, view: webView);
+  }
+
+  Future<int> _locateHandedOffEntry(
+    AdvancedMiningRenderTarget<
+      DictionarySearchResult,
+      DictionaryPopupWebViewState
+    >
+    target,
+    AdvancedMiningHandoff handoff,
+  ) => target.view.entryDomIndexFor(
+    expression: handoff.expression,
+    reading: handoff.reading,
+    matched: handoff.matched,
+  );
+
+  Future<void> _openHandedOffAdvancedMining(
+    int index,
+    AdvancedMiningHandoff handoff,
+  ) async {
+    if (!mounted) return;
+    await advancedMiningOpenerFor(
+      _resultWebViewKey,
+      lookupContext: () => _resultLookupContext,
+      sentenceSection: _capturedSentenceSection,
+    )?.call(index, handoff.matched, handoff.expression, handoff.reading);
+  }
+
+  /// 主窗结果里没有这个词条（两边词典配置不同步、读音对不上之类）。结果已经摆在
+  /// 眼前，用户可以自己点；不猜下标，猜错就是制错卡。
+  void _onHandedOffEntryNotFound(AdvancedMiningHandoff handoff) {
+    ErrorLogService.instance.log(
+      'HomeDictionaryPage.advancedMiningHandoff',
+      'entry not found in the main-window result: $handoff',
+      StackTrace.current,
+    );
   }
 
   void _onFocusChanged() {
@@ -581,6 +694,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   @override
   void dispose() {
+    _advancedMiningGate.dispose();
     _sourceScrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     widget.focusSignal?.removeListener(_consumeFocusRequest);
@@ -661,7 +775,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 清掉查询串、结果与扫描状态（不碰焦点）。[_clearSearch] 清完把用户送回
   /// 搜索框；Apple 搜索栏的「取消」（[_cancelSearch]）清完交出焦点。
   void _resetQuery() {
-    _searchGeneration++;
+    _mintSearchGeneration();
     _debounceTimer?.cancel();
     _debounceTimer = null;
     _controller.clear();
@@ -1841,7 +1955,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     }
 
     if (mounted) {
-      final int searchGeneration = ++_searchGeneration;
+      final int searchGeneration = _mintSearchGeneration();
       setState(() {
         _isSearching = true;
         if (replaceSourceLookupText) _sourceLookupText = trimmed;
@@ -1930,7 +2044,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
             autoReadWord(
               entry.word,
               entry.reading,
-              popupState: _resultWebViewKey.currentState,
+              popupState: () => _resultWebViewKey.currentState,
               matched: lookupEntryMatchedText(entry),
             );
           }
@@ -2188,9 +2302,11 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                         onOpenAdvancedMining: advancedMiningOpenerFor(
                           _resultWebViewKey,
                           lookupContext: () => _resultLookupContext,
+                          sentenceSection: _capturedSentenceSection,
                         ),
                         onScrolledToBottom: _allLoaded ? null : _loadMore,
                         onTopPullReleased: _clearSearchFromResultPull,
+                        onRendered: _onResultRendered,
                         // BUG-3064：结果正文在 WebView 里滚，Flutter 收不到滚动通知；
                         // 转发给外壳，底栏随下滑收起与库页 ListView 同一台状态机。
                         forwardScrollToHost: true,
@@ -2373,6 +2489,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 里的词语境是被点处那一句（[miningFieldsForLayer]），所以不覆写宿主级的
   /// [favoriteLookupContext]。
   FavoriteLookupContext? get _resultLookupContext {
+    final String? captured = _capturedMiningSentence;
+    if (captured != null) return FavoriteLookupContext(sentence: captured);
     final String sentence = sourceLookupMiningSentence(
       sourceText: _sourceLookupText,
       highlight: _sourceHighlight,
@@ -2381,9 +2499,44 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     return sentence.isEmpty ? null : FavoriteLookupContext(sentence: sentence);
   }
 
-  /// 结果区制卡字段：JS 没带例句时补上 [_resultLookupContext] 那一句。
-  Map<String, String> _withSourceSentence(Map<String, String> fields) =>
-      withFallbackMiningSentence(fields, _resultLookupContext?.sentence ?? '');
+  /// 结果区制卡字段：JS 没带例句时补上 [_resultLookupContext] 那一句。高级制卡里
+  /// 选过前后句 / 改过句子（[_capturedDraft] 非空或有手改）时那就是用户对这张卡的
+  /// 明确选择，直接写进例句。
+  Map<String, String> _withSourceSentence(Map<String, String> fields) {
+    final String? captured = _capturedMiningSentence;
+    if (captured != null &&
+        (!_capturedDraft.isEmpty || _capturedDraft.hasEdits)) {
+      return <String, String>{...fields, 'sentence': captured};
+    }
+    return withFallbackMiningSentence(
+      fields,
+      _resultLookupContext?.sentence ?? '',
+    );
+  }
+
+  /// 源文本条仍是那次应用外请求的文本时，请求带来的抓取上下文；否则 null。
+  CapturedSentenceContext? get _activeCapturedContext =>
+      _capturedContext != null && _sourceLookupText == _capturedSourceText
+      ? _capturedContext
+      : null;
+
+  /// 抓取上下文合成的例句（当前句 + 草稿里选的前后句）；没有抓取上下文时 null。
+  String? get _capturedMiningSentence {
+    final CapturedSentenceContext? context = _activeCapturedContext;
+    if (context == null || context.current.isEmpty) return null;
+    return _capturedDraft.composeText(context.current);
+  }
+
+  /// 结果区高级制卡的句子分区：抓取上下文切出了前后句才有，否则 null（对话框照旧
+  /// 没有句子分区；手输查词没有来源，拍板台 rf--UcsGta 明确不做）。
+  AdvancedMiningSentenceSection? _capturedSentenceSection() {
+    final CapturedSentenceContext? context = _activeCapturedContext;
+    if (context == null || !context.hasNeighbours) return null;
+    return capturedContextSentenceSection(
+      draft: _capturedDraft,
+      context: context,
+    );
+  }
 
   Future<int> _pushNestedPopup(
     String query,

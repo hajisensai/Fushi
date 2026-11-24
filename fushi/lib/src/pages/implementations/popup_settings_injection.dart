@@ -1025,6 +1025,8 @@ class _PopupStaticSettingsMemo {
     required this.autoExpandRows,
     required this.collapsedNames,
     required this.expandedNames,
+    required this.kanjiCollapsedNames,
+    required this.kanjiExpandedNames,
     required this.hiddenNames,
     required this.dictionaryDisplayNames,
     required this.stylesJson,
@@ -1060,6 +1062,8 @@ class _PopupStaticSettingsMemo {
   final int autoExpandRows;
   final String collapsedNames;
   final String expandedNames;
+  final String kanjiCollapsedNames;
+  final String kanjiExpandedNames;
   final String hiddenNames;
   final String dictionaryDisplayNames;
   final String stylesJson;
@@ -1159,6 +1163,20 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final String expandedNames = jsonEncode(
     popupExpandedDictionaryNames(appModel),
   );
+  // 拍板台 6uasoIUvSR：汉字卡（默认折叠成一行）的逐本三态。混合词典的汉字部分有自己
+  // 的一份（BUG-3573），不能复用上面两个按术语部分算的名单。
+  final String kanjiCollapsedNames = jsonEncode(
+    popupKanjiCardNamesIn(
+      appModel.lookupViewDictionaries,
+      DictionaryCollapseState.collapsed,
+    ),
+  );
+  final String kanjiExpandedNames = jsonEncode(
+    popupKanjiCardNamesIn(
+      appModel.lookupViewDictionaries,
+      DictionaryCollapseState.expanded,
+    ),
+  );
   // 与 popupJson 生成期共用同一个真相源，别再抄第二份表达式。
   final String hiddenNames = jsonEncode(
     appModel.hiddenDictionaryNames.toList(),
@@ -1238,6 +1256,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       // persistDictionary 顺带让 stylesJson 换了新实例（每次点击整个重载 native
       // 词典引擎），一旦那条被优化掉就静默失效。
       cached.expandedNames == expandedNames &&
+      cached.kanjiCollapsedNames == kanjiCollapsedNames &&
+      cached.kanjiExpandedNames == kanjiExpandedNames &&
       cached.hiddenNames == hiddenNames &&
       cached.dictionaryDisplayNames == dictionaryDisplayNames &&
       identical(cached.stylesJson, stylesJson) &&
@@ -1261,6 +1281,13 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final String crossAppAudioHostJs = options.globalLookup
       ? 'window.__fushiCrossAppAudioHost = '
             '${CrossAppAudioCapture.instance.isDesktop};'
+      : '';
+  // 拍板台 rf--UcsGta-overlay：app 外覆盖窗的「高级制卡」是转交主窗（点了会切到 Fushi
+  // 主窗口打开对话框），提示文案照实说。按钮门控 `window.advancedMiningEnabled` 按表面
+  // 走每帧 renderJs（global_lookup_render.dart），这里只给文案；app 内表面由
+  // dictionary_popup_webview 的固定块写自己的 i18nCtx。
+  final String advancedMiningTipJs = options.globalLookup
+      ? 'window.i18nCtx = ${jsonEncode(<String, String>{'advancedMining': t.popup_advanced_mining_open_in_app})};'
       : '';
   // BUG-1139：Ctrl+滚轮内容缩放只装给 app 外裸 WebView2 表面。in-app 三个表面由
   // dictionary_popup_webview 的 _zoomWheelJs 在 onLoadStop 装同名 guard 的另一套
@@ -1358,8 +1385,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 跨应用语音缓存「调整句子音频」面板（拍板 design-cross-app-audio-trim-ui）的文案。
     // 入口门控 window.__fushiCrossAppAudioHost：app 外覆盖窗在下面按平台能力注入，
     // Android 查词窗由 dictionary_popup_webview 的 in-app 固定块注入，其余宿主不注入。
-    window.i18nCrossAppAudio = ${jsonEncode(<String, String>{'button': t.popup_cross_app_audio_button, 'title': t.popup_advanced_mining_audio_section, 'hint': t.popup_cross_app_audio_hint, 'loading': t.popup_cross_app_audio_loading, 'unavailable': t.popup_cross_app_audio_unavailable, 'play': t.popup_ctx_preview_audio, 'stop': t.popup_ctx_preview_stop, 'reset': t.popup_advanced_mining_reset, 'start': t.popup_advanced_mining_audio_start, 'end': t.popup_advanced_mining_audio_end, 'cancel': t.dialog_cancel, 'mine': t.popup_cross_app_audio_mine})};
+    window.i18nCrossAppAudio = ${jsonEncode(<String, String>{'button': t.popup_cross_app_audio_button, 'title': t.popup_advanced_mining_audio_section, 'hint': t.popup_cross_app_audio_hint, 'loading': t.popup_cross_app_audio_loading, 'unavailable': t.popup_cross_app_audio_unavailable, 'play': t.popup_ctx_preview_audio, 'stop': t.popup_ctx_preview_stop, 'reset': t.popup_advanced_mining_reset, 'start': t.popup_advanced_mining_audio_start, 'end': t.popup_advanced_mining_audio_end, 'cancel': t.dialog_cancel, 'mine': t.popup_cross_app_audio_mine, 'skip': t.popup_cross_app_audio_skip})};
     $crossAppAudioHostJs
+    $advancedMiningTipJs
     // 制卡模块开关（见上方 miningEnabled 的注释）。false ⇒ popup.js 的
     // createEntryHeader 不 append「+」制卡按钮 / ↗ 在 Anki 中打开按钮，也不发查重探测。
     // 浏览器扩展没有本注入通道 → undefined ⇒ popup.js 按 `!== false` 照旧渲染。
@@ -1396,6 +1424,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.autoExpandRows = ${appModel.popupAutoExpandDictionaries};
     window.collapsedDictionaryNames = $collapsedNames;
     window.expandedDictionaryNames = $expandedNames;
+    window.kanjiCollapsedDictionaryNames = $kanjiCollapsedNames;
+    window.kanjiExpandedDictionaryNames = $kanjiExpandedNames;
+    window.i18nKanjiSection = ${jsonEncode(t.dict_category_kanji)};
     window.hiddenDictionaryNames = $hiddenNames;
     window.dictionaryDisplayNames = $dictionaryDisplayNames;
 ''';
@@ -1438,6 +1469,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     autoExpandRows: appModel.popupAutoExpandDictionaries,
     collapsedNames: collapsedNames,
     expandedNames: expandedNames,
+    kanjiCollapsedNames: kanjiCollapsedNames,
+    kanjiExpandedNames: kanjiExpandedNames,
     hiddenNames: hiddenNames,
     dictionaryDisplayNames: dictionaryDisplayNames,
     stylesJson: stylesJson,
@@ -1456,6 +1489,19 @@ List<String> popupCollapsedDictionaryNames(AppModel appModel) => appModel
     .where((d) => d.isCollapsed(JapaneseLanguage.instance))
     .map((d) => d.name)
     .toList();
+
+/// 汉字卡折叠态为 [state] 的词典名（拍板台 6uasoIUvSR）：查词弹窗
+/// （`kanjiCollapsedDictionaryNames` / `kanjiExpandedDictionaryNames`）与浏览器扩展
+/// theme 通道共用这一个判据（[Dictionary.kanjiCardCollapseStateFor]）。
+List<String> popupKanjiCardNamesIn(
+  Iterable<Dictionary> dictionaries,
+  DictionaryCollapseState state,
+) => <String>[
+  for (final Dictionary d in dictionaries)
+    if (d.isInKanjiSection &&
+        d.kanjiCardCollapseStateFor(JapaneseLanguage.instance) == state)
+      d.name,
+];
 
 /// 词典管理里逐本设成「展开」的词典名（BUG-2158 三态里优先级最高的一档）：查词弹窗
 /// （`expandedDictionaryNames`）与复习卡面释义页共用这一个真相源。

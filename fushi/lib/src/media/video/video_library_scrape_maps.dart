@@ -127,15 +127,15 @@ class VideoLibraryScrapeMaps {
     final _MediaImageBuckets buckets = _bucketMediaImages(mediaImages);
     return VideoLibraryScrapeMaps(
       airYearByUid: _buildAirYears(scrapeMeta),
-      collectionScrapeMetaById: _buildCollectionScrapeMeta(
+      collectionScrapeMetaById: buildCollectionScrapeMetaById(
         collectionScrapeMeta,
       ),
-      metadataWorkByCollection: _buildWorksByCollection(works),
+      metadataWorkByCollection: buildVideoWorksByCollection(works),
       metadataWorkByBook: _buildWorksByBook(works),
       metadataImagesByWork: _buildImagesByWork(workImages),
       fileEpisodesByBook: fileEpisodes.byBook,
       runtimeMinutesByBookUid: fileEpisodes.runtimeMinutes,
-      localExtraBookUids: _buildLocalExtras(extras),
+      localExtraBookUids: videoLocalExtraBookUids(extras),
       mediaImagesByCollection: buckets.byCollection,
       mediaImagesByBookUid: buckets.byBook,
     );
@@ -161,12 +161,12 @@ class VideoLibraryScrapeMaps {
       collectionScrapeMetaById: _replaceKeys(
         collectionScrapeMetaById,
         collections,
-        () => _buildCollectionScrapeMeta(rows.collectionScrapeMeta),
+        () => buildCollectionScrapeMetaById(rows.collectionScrapeMeta),
       ),
       metadataWorkByCollection: _replaceKeys(
         metadataWorkByCollection,
         collections,
-        () => _buildWorksByCollection(rows.works),
+        () => buildVideoWorksByCollection(rows.works),
       ),
       metadataWorkByBook: _replaceKeys(
         metadataWorkByBook,
@@ -192,7 +192,7 @@ class VideoLibraryScrapeMaps {
           ? localExtraBookUids
           : <String>{
               ...localExtraBookUids.where((String uid) => !books.contains(uid)),
-              ..._buildLocalExtras(
+              ...videoLocalExtraBookUids(
                 rows.extras,
               ).where((String uid) => books.contains(uid)),
             },
@@ -248,13 +248,15 @@ Map<String, int> _buildAirYears(List<VideoScrapeMetaRow> rows) => <String, int>{
     if (videoAirYear(r.airDate) case final int year) r.bookUid: year,
 };
 
-Map<int, CollectionScrapeMetaRow> _buildCollectionScrapeMeta(
+/// 合集刮削元数据按合集 id 索引。
+Map<int, CollectionScrapeMetaRow> buildCollectionScrapeMetaById(
   List<CollectionScrapeMetaRow> rows,
 ) => <int, CollectionScrapeMetaRow>{
   for (final CollectionScrapeMetaRow r in rows) r.collectionId: r,
 };
 
-Map<int, VideoMetadataWorkRow> _buildWorksByCollection(
+/// 刮削作品按所属合集 id 索引（只收挂在合集上的作品）。
+Map<int, VideoMetadataWorkRow> buildVideoWorksByCollection(
   List<VideoMetadataWorkRow> works,
 ) => <int, VideoMetadataWorkRow>{
   for (final VideoMetadataWorkRow work in works)
@@ -281,11 +283,6 @@ Map<int, List<VideoMetadataImageRow>> _buildImagesByWork(
   return out;
 }
 
-Set<String> _buildLocalExtras(List<VideoMetadataExtraRow> extras) => <String>{
-  for (final VideoMetadataExtraRow extra in extras)
-    if (extra.bookUid case final String bookUid) bookUid,
-};
-
 class _FileEpisodes {
   const _FileEpisodes(this.byBook, this.runtimeMinutes);
 
@@ -296,6 +293,12 @@ class _FileEpisodes {
   final Map<String, List<VideoFileEpisodeStills>> byBook;
   final Map<String, int> runtimeMinutes;
 }
+
+/// [VideoFileEpisodeRows] 聚合成「文件 → 分集与各集剧照」（与库页主卡同一套聚合，
+/// 合集选集页按文件挑剧照用；拍板 GLMHiavo0y）。没有任何一集带图的文件不进表。
+Map<String, List<VideoFileEpisodeStills>> videoFileEpisodeStillsByBook(
+  VideoFileEpisodeRows rows,
+) => _buildFileEpisodes(rows.episodes, rows.seasons, rows.episodeImages).byBook;
 
 /// 每个文件绑定的全部分集（含没有剧照的——一文件多集时按片长定位续播点要完整
 /// 的集序），主卡渲染时按续播点挑那一集的剧照；没有任何一集带图的文件不进表。
@@ -364,3 +367,21 @@ _MediaImageBuckets _bucketMediaImages(List<MediaImageRow> rows) {
   }
   return _MediaImageBuckets(byCollection, byBook);
 }
+
+/// 刮削认定为特典的本地视频（不进继续观看）。
+Set<String> videoLocalExtraBookUids(List<VideoMetadataExtraRow> extras) =>
+    <String>{
+      for (final VideoMetadataExtraRow extra in extras)
+        if (extra.bookUid case final String bookUid) bookUid,
+    };
+
+/// 合集卡 / 继续观看上显示的作品名：刮削作品标题 → 合集刮削元数据标题 → 合集名。
+/// 视频首页与侧栏速览同一条回落链（BUG-5330）。
+String videoCollectionWorkTitle(
+  MediaCollectionRow collection, {
+  required Map<int, VideoMetadataWorkRow> metadataWorkByCollection,
+  required Map<int, CollectionScrapeMetaRow> collectionScrapeMetaById,
+}) =>
+    metadataWorkByCollection[collection.id]?.title ??
+    collectionScrapeMetaById[collection.id]?.title ??
+    collection.name;

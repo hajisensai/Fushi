@@ -9,11 +9,13 @@ import 'package:fushi/src/media/manga/audio/manga_audio_playback_plan.dart';
 import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/audiobook_volume_slider.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_bar.dart';
 import 'package:fushi/src/media/manga/reader/manga_read_aloud_controller.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_chrome.dart'
     show kMangaChromeToolbarHeight;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
@@ -85,6 +87,9 @@ class _AudioPlayer extends ChangeNotifier implements MangaAudioPlayerPort {
   bool get isPlaying => playing;
   @override
   double get speed => 1.0;
+  double vol = 1.0;
+  @override
+  double get volume => vol;
   @override
   Future<void> play() async {
     playing = true;
@@ -109,6 +114,12 @@ class _AudioPlayer extends ChangeNotifier implements MangaAudioPlayerPort {
 
   @override
   Future<void> setSpeed(double speed) async {}
+
+  @override
+  Future<void> setVolume(double volume) async {
+    vol = volume;
+    notifyListeners();
+  }
 }
 
 MangaAudioPlaybackDriver _audioDriver(_AudioPlayer player) =>
@@ -178,6 +189,11 @@ void main() {
       ]) {
         expect(find.byKey(ValueKey<String>(key)), findsOneWidget, reason: key);
       }
+      // 现场合成的播放器没有音量口径，不出音量按钮。
+      expect(
+        find.byKey(const ValueKey<String>('manga_audio_volume')),
+        findsNothing,
+      );
       for (final String label in <String>[
         t.manga_read_aloud_previous,
         t.pause,
@@ -258,6 +274,7 @@ void main() {
         'manga_audio_next',
         'manga_audio_follow_page',
         'manga_audio_speed',
+        'manga_audio_volume',
         'manga_audio_stop',
         'manga_audio_progress',
       ]) {
@@ -323,9 +340,33 @@ void main() {
       );
       expect(slider, findsOneWidget);
       expect(tester.getRect(slider).bottom, lessThan(bar.top));
+      // 弹层按内容定高：浮层给的高度上限是整屏，Material Slider 有界就取
+      // maxHeight——此前倍速面板从按钮上方一路撑到屏顶（BUG-5349）。
+      expect(
+        tester.getRect(slider).height,
+        lessThanOrEqualTo(kMangaChromeToolbarHeight),
+      );
       await tester.tap(find.byKey(const ValueKey<String>('manga_audio_speed')));
       await tester.pump();
       expect(slider, findsNothing);
+      // 音量弹层共用同一个弹层按钮，同一判据。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_audio_volume')),
+      );
+      await tester.pump();
+      final Finder volume = find.byKey(
+        const ValueKey<String>('manga_audio_volume_slider'),
+      );
+      expect(volume, findsOneWidget);
+      expect(
+        tester.getRect(volume).height,
+        lessThanOrEqualTo(kMangaChromeToolbarHeight),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('manga_audio_volume')),
+      );
+      await tester.pump();
+      expect(volume, findsNothing);
 
       // 底边进度线：点中点 = 跳到整卷一半。
       final Rect line = tester.getRect(
@@ -347,5 +388,122 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       d.dispose();
     });
+  }
+
+  for (final bool apple in <bool>[false, true]) {
+    testWidgets(
+      '${apple ? 'Apple' : 'MD3'}：成品音频播放条的音量按钮弹出有声书同口径音量条（SDfRadAtkL）',
+      (WidgetTester tester) async {
+        final SemanticsHandle semantics = tester.ensureSemantics();
+        final _AudioPlayer player = _AudioPlayer();
+        final MangaAudioPlaybackDriver d = _audioDriver(player);
+        await tester.pumpWidget(
+          _app(
+            MangaAudioPlaybackBar(driver: d, onStop: () {}),
+            apple: apple,
+          ),
+        );
+        await tester.pump();
+        final Finder button = find.byKey(
+          const ValueKey<String>('manga_audio_volume'),
+        );
+        expect(button, findsOneWidget);
+        expect(
+          find.bySemanticsLabel(RegExp('^${RegExp.escape(t.audio_volume)}')),
+          findsWidgets,
+        );
+        final Rect bar = tester.getRect(
+          find.byKey(const ValueKey<String>('manga_read_aloud_bar')),
+        );
+        final Finder slider = find.byKey(
+          const ValueKey<String>('manga_audio_volume_slider'),
+        );
+        expect(slider, findsNothing);
+
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        expect(slider, findsOneWidget);
+        expect(tester.getRect(slider).bottom, lessThan(bar.top));
+        expect(find.text('100%'), findsOneWidget);
+
+        // 滑条回调 → 驱动 → 播放器（生产端由 AudiobookPlayerController 按书持久化）。
+        tester.widget<AudiobookVolumeSlider>(slider).onChanged(0.5);
+        await tester.pump();
+        expect(player.vol, 0.5);
+        expect(find.text('50%'), findsOneWidget);
+
+        // 再点按钮收起。
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        expect(slider, findsNothing);
+
+        await tester.pumpWidget(const SizedBox());
+        d.dispose();
+        semantics.dispose();
+      },
+    );
+  }
+
+  for (final bool apple in <bool>[false, true]) {
+    testWidgets(
+      '${apple ? 'Apple' : 'MD3'}：成品音频播放条的「导出片段视频」按钮导出框着的那句（pZhONQTAap）',
+      (WidgetTester tester) async {
+        final _AudioPlayer player = _AudioPlayer();
+        final MangaAudioPlaybackDriver d = _audioDriver(player);
+        int exports = 0;
+        Widget bar({required bool busy}) => _app(
+          MangaAudioPlaybackBar(
+            driver: d,
+            onStop: () {},
+            onExportClip: () => exports++,
+            exportingClip: busy,
+          ),
+          apple: apple,
+        );
+        await tester.pumpWidget(bar(busy: false));
+        player.pos = d.plan.lineStartMs(0) + 10;
+        player.notifyListeners();
+        await tester.pump();
+        expect(d.displayedLineIndex, 0);
+        final Finder button = find.byKey(
+          const ValueKey<String>('manga_audio_export_clip'),
+        );
+        expect(button, findsOneWidget);
+        expect(
+          find.byWidgetPredicate(
+            (Widget w) =>
+                w is FushiIconButton && w.tooltip == t.audiobook_export_clip,
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(button);
+        await tester.pump();
+        expect(exports, 1);
+
+        // 导出中：按钮转圈。
+        await tester.pumpWidget(bar(busy: true));
+        expect(tester.widget<FushiIconButton>(button).busy, isTrue);
+
+        // 框着的是没配上音的占位句：没有可导出的声音，按钮置灰。
+        await tester.pumpWidget(bar(busy: false));
+        player.pos = d.plan.lineStartMs(1) + 10;
+        player.notifyListeners();
+        await tester.pump();
+        expect(d.displayedLineIndex, 1);
+        expect(tester.widget<FushiIconButton>(button).enabled, isFalse);
+
+        // 不传回调（现场合成等）就不画这颗按钮。
+        await tester.pumpWidget(
+          _app(
+            MangaAudioPlaybackBar(driver: d, onStop: () {}),
+            apple: apple,
+          ),
+        );
+        expect(button, findsNothing);
+
+        await tester.pumpWidget(const SizedBox());
+        d.dispose();
+      },
+    );
   }
 }

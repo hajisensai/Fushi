@@ -149,6 +149,16 @@ class FakeElement {
     return child;
   }
 
+  // 「调整句子音频」面板把波形 / 试听按钮插在动作行之前（openCrossAppAudioPanel）。
+  insertBefore(child, reference) {
+    const at = reference ? this.children.indexOf(reference) : -1;
+    if (at < 0) return this.appendChild(child);
+    this.children.splice(at, 0, child);
+    child.parentElement = this;
+    child.parentNode = this;
+    return child;
+  }
+
   append(...children) {
     for (const child of children) {
       // 真 DOM 的 append 接受字符串（建文本节点）；注音 <ruby> 的读音片段就是这么塞的。
@@ -2361,7 +2371,9 @@ function testKanjiCardRendersAllFields() {
 
   const section = context.buildKanjiCards();
   assert.ok(section, 'kanji section should render for a non-empty payload');
-  assert.equal(section.className, 'kanji-card-section');
+  // 拍板台 6uasoIUvSR：根是可折叠的 <details>，沿用词典卡皮肤（glossary-group）。
+  assert.equal(section.className, 'kanji-card-section glossary-group');
+  assert.equal(section.tagName, 'DETAILS');
 
   const card = findByClass(section, 'kanji-card');
   assert.ok(card, 'a kanji card should be produced');
@@ -3798,9 +3810,39 @@ async function testQueueFailureKeepsPlusAndAllowsRetry() {
   assert.equal(calls, 2);
 }
 
+// 拍板 EuOLprw_dV：截屏识字「制卡时框选截图」页点了「×」，宿主回 cancelled——用户自己
+// 放弃了这张卡，不是失败：按钮放回可点的「+」，不说「制卡失败」，也不回查 Anki。
+async function testCancelledMineRestoresPlusSilently() {
+  const context = loadPopup();
+  let mines = 0;
+  let duplicates = 0;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') { duplicates++; return Promise.resolve(false); }
+    if (name === 'mineEntry') {
+      mines++;
+      return Promise.resolve({ ankiConnect: false, noteId: null, cancelled: true });
+    }
+    if (name === 'mineFailureUnseen') throw new Error('cancel must not be reported as a failure');
+    return Promise.resolve(null);
+  };
+  const button = buildMineHeaderFor(context, '猫');
+  await flush();
+  const before = duplicates;
+  await button.onclick();
+  await flush();
+  assert.equal(button.textContent, '+', 'cancelled mine goes back to a clickable +');
+  assert.notEqual(button.dataset.mined, '1');
+  assert.notEqual(button.dataset.queued, '1');
+  assert.equal(inlineHintText(context), null, 'cancel is not a failure: no inline hint');
+  assert.equal(duplicates, before, 'cancel must not probe Anki');
+  await button.onclick();
+  assert.equal(mines, 2, 'the user can click + again right away');
+}
+
 Promise.all([
   testQueuedMineStateTracksQueueWithoutAnkiRefresh(),
   testQueueFailureKeepsPlusAndAllowsRetry(),
+  testCancelledMineRestoresPlusSilently(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
 // BUG-3492：app 内（在线视频后台制卡）没有宿主队列，「已加入」只是本弹窗的一个标记。
@@ -4525,6 +4567,48 @@ async function testMineButtonShowsShortcutHint() {
   }
 }
 
+// 拍板台 rf--UcsGta-overlay：覆盖窗的「高级制卡」转交主窗后，主窗按词条身份在自己的结果里
+// 找回 DOM 序（不沿用覆盖窗下标）。钉住：三档匹配（表记+读音+命中 → 表记+读音 → 表记）、
+// 被过滤掉没有 DOM 的词条跳过、尾批还在画时回 -2、找不到回 -1。
+async function testEntryDomIndexForHandoff() {
+  const context = loadPopup();
+  context.window._renderInProgress = false;
+  context.window.lookupEntries = [
+    { expression: '辞書', reading: 'じしょ', matched: '辞書' },
+    { expression: '事典', reading: 'じてん', matched: '事典' },
+    { expression: '事典', reading: 'ことてん', matched: '事典' },
+    { expression: '自体', reading: 'じたい', matched: '自体' },
+  ];
+  // 第 0 条被隐藏词典过滤掉（没有 DOM），后面的 DOM 序因此前移一位。
+  context.window._entryDomIndex = [-1, 0, 1, 2];
+  const find = context.window.fushiPopupEntryDomIndexFor;
+  assert.equal(find('事典', 'ことてん', '事典'), 1, 'exact identity wins over the first same-expression entry');
+  assert.equal(find('事典', 'じてん', '事'), 0, 'expression + reading when the matched span differs');
+  // HBK-AUDIT-005：带了读音就必须表记 + 读音都对上，同表记异读音不是同一个词条。
+  assert.equal(find('自体', 'ちがう', ''), -1, 'a different reading is a different entry, never the expression-only fallback');
+  assert.equal(find('自体', '', ''), 2, 'expression alone only when the handoff carries no reading');
+  assert.equal(find('辞書', 'じしょ', '辞書'), -1, 'an entry without DOM is never targeted');
+  assert.equal(find('無い', '', ''), -1, 'unknown entry → -1, never a guessed index');
+  context.window._renderInProgress = true;
+  assert.equal(find('自体', 'じたい', '自体'), -2, 'tail still rendering → ask again later');
+
+  // 覆盖窗选的是 生（なま），主窗结果已完整加载、只剩 生（せい）：不得回后者的下标。
+  context.window._renderInProgress = false;
+  context.window.lookupEntries = [
+    { expression: '生', reading: 'せい', matched: '生' },
+  ];
+  context.window._entryDomIndex = [0];
+  assert.equal(find('生', 'なま', '生'), -1, 'nama handoff must not land on sei');
+  assert.equal(find('生', 'せい', '生'), 0, 'same reading still resolves');
+  // なま 那条被隐藏词典过滤掉（无 DOM），只剩 せい 有 DOM：同样找不到，不落到 せい。
+  context.window.lookupEntries = [
+    { expression: '生', reading: 'なま', matched: '生' },
+    { expression: '生', reading: 'せい', matched: '生' },
+  ];
+  context.window._entryDomIndex = [-1, 0];
+  assert.equal(find('生', 'なま', '生'), -1, 'hidden nama entry is not replaced by visible sei');
+}
+
 Promise.all([
   testShortcutMineFollowsFocusedEntry(),
   testShortcutMineNeverFallsBackFromFocusedEntry(),
@@ -4534,6 +4618,7 @@ Promise.all([
   testAdjustContextButtonSnapshotsSelectionForConfirm(),
   testAdvancedMiningButtonOpensHostDialog(),
   testAdvancedMiningButtonGating(),
+  testEntryDomIndexForHandoff(),
   testShortcutMineUsesLiveSelection(),
   testShortcutMineCapturesLiveSelection(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
@@ -5120,9 +5205,8 @@ async function testCrossAppAudioPanelGeometryAndProbe() {
   assert.deepStrictEqual(plain(overrides(base, {startMs: 1250, endMs: 2400})),
     {audioStartDeltaMs: 250, audioEndDeltaMs: 400});
 
-  const payload = context.__fushiApplyPendingMineOverrides({expression: '猫'});
-  assert.equal(payload.miningOverrides, undefined,
-    'with no confirmed panel the mine payload carries no overrides');
+  assert.equal(fs.readFileSync(popupPath, 'utf8').includes('__fushiPendingMineOverrides'), false,
+    'HBK-AUDIT-211: trim overrides travel with their own mine request, never through a page global');
 
   const calls = [];
   context.window.flutter_inappwebview.callHandler = (name) => {
@@ -5146,7 +5230,271 @@ async function testCrossAppAudioPanelGeometryAndProbe() {
     'a failing probe hides the entry instead of throwing');
 }
 
-testCrossAppAudioPanelGeometryAndProbe().then(
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return {promise, resolve};
+}
+
+const CROSS_APP_PREVIEW = {
+  totalMs: 5000,
+  startMs: 1000,
+  endMs: 2000,
+  minClipMs: 100,
+  peaks: [0.2, 0.6, 0.4],
+  audio: 'data:audio/wav;base64,AAAA',
+};
+
+// 打开第 idx 个词条的「调整句子音频」面板并等编辑器建好，回各控件。
+async function openCrossAppAudioPanelForTest(context, idx) {
+  // 替身 DOM 没有布局：波形画布量出 0 宽，drawCrossAppAudioWave 直接跳过绘制。
+  const createElement = context.document.createElement;
+  context.document.createElement = (tagName) => {
+    const element = createElement.call(context.document, tagName);
+    if (String(tagName).toLowerCase() === 'canvas') {
+      element.clientWidth = 0;
+      element.clientHeight = 0;
+    }
+    return element;
+  };
+  context.openCrossAppAudioPanel(idx);
+  await flush();
+  const host = context.window.__fushiRoot || context.document.body;
+  const panel = findByClass(host, 'crossapp-audio-panel');
+  assert.ok(panel, 'cross-app audio panel must mount');
+  const controls = {
+    panel,
+    play: findByClass(panel, 'crossapp-audio-play'),
+    mine: findByClass(panel, 'crossapp-audio-mine'),
+    startHandle: findByClass(panel, 'start'),
+    endHandle: findByClass(panel, 'end'),
+    cancel: findByClass(panel, 'mined-action-actions').children
+      .find((child) => child.className === 'mined-action-btn ghost'),
+  };
+  assert.ok(controls.play && controls.mine && controls.startHandle && controls.endHandle,
+    'the editor must be built from the preview');
+  return controls;
+}
+
+function pressKey(target, key, extra = {}) {
+  target.dispatchEvent({
+    type: 'keydown',
+    key,
+    ...extra,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+}
+
+// HBK-AUDIT-211（#4137）：裁剪偏移只属于确认它的那一笔制卡。以前面板把偏移写进页面全局
+// 再回点「+」，裁剪制卡还在等取音时，另一个词条的普通「+」组包也读到同一份偏移——两张卡
+// 都带了裁剪。这里让裁剪那笔卡在取音上，期间点别的词条的「+」。
+async function testCrossAppAudioTrimOffsetStaysWithItsOwnRequest() {
+  const context = loadPopup();
+  context.window.audioSources = ['https://audio.example/?term={term}'];
+  context.window.needsAudio = true;
+  const slowAudio = deferred();
+  const mined = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'crossAppAudioPreview') return Promise.resolve(CROSS_APP_PREVIEW);
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'resolveWordAudio') {
+      return payload.expression === '猫'
+        ? slowAudio.promise
+        : Promise.resolve(`audio://${payload.expression}`);
+    }
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve({ankiConnect: true, noteId: mined.length});
+    }
+    return Promise.resolve(null);
+  };
+  const mineButtons = mountEntriesWith(context, ['猫', '犬']);
+  await flush();
+
+  const panel = await openCrossAppAudioPanelForTest(context, 0);
+  // Shift + ← 把起点往前挪 500ms。
+  pressKey(panel.startHandle, 'ArrowLeft', {shiftKey: true});
+  const trimmed = panel.mine.onclick();
+  await flush();
+  assert.equal(mined.length, 0, 'the trimmed request is still waiting for its word audio');
+
+  // 裁剪那笔还卡在取音上时，用户点另一个词条的普通「+」。
+  await mineButtons[1].onclick();
+  await flush();
+  slowAudio.resolve('audio://猫');
+  await trimmed;
+  await flush();
+
+  const byExpression = new Map(mined.map((p) => [p.expression, p]));
+  assert.equal(mined.length, 2, 'both cards are mined');
+  assert.equal(byExpression.get('犬').miningOverrides, undefined,
+    'a plain + on another entry must not inherit the trim offset');
+  assert.deepStrictEqual(JSON.parse(byExpression.get('猫').miningOverrides),
+    {audioStartDeltaMs: -500}, 'the trimmed card carries exactly the confirmed offset');
+
+  // 之后同一词条再点一次普通「+」也不能沾上那次的偏移。
+  mineButtons[0].dataset.mined = '';
+  await mineButtons[0].onclick();
+  await flush();
+  assert.equal(mined[mined.length - 1].miningOverrides, undefined,
+    'a later plain + on the trimmed entry mines without overrides');
+}
+
+// HBK-AUDIT-212（#4137）：试听要等解码。以前播放对象在解码完成后才登记，解码期间换了范围
+// 再点试听会排进第二个 BufferSource，两段一起响，「停止」只停得掉后一个。试听请求必须在
+// 等待前登记、可被停止 / 换范围 / 关面板取消，解码回来时核对自己仍是当前请求。
+async function testCrossAppAudioPreviewSupersedesPendingDecode() {
+  const starts = [];
+  const decodes = [];
+  class FakeAudioContext {
+    constructor() {
+      this.state = 'running';
+      this.currentTime = 0;
+      this.destination = {};
+    }
+    decodeAudioData() {
+      const d = deferred();
+      decodes.push(d);
+      return d.promise;
+    }
+    createBufferSource() {
+      const node = {
+        stopped: false,
+        connect() {},
+        start(when, offset, duration) {
+          starts.push({node, offset, duration});
+        },
+        stop() {
+          node.stopped = true;
+        },
+      };
+      return node;
+    }
+    createGain() {
+      return {gain: {value: 1}, connect() {}};
+    }
+    resume() {
+      return Promise.resolve();
+    }
+    close() {}
+  }
+  const configure = (context) => {
+    // 面板播放时逐帧推播放头；同步回调的 rAF 替身会无限递归，这里只登记不回调。
+    context.requestAnimationFrame = () => 1;
+    context.cancelAnimationFrame = () => {};
+    context.atob = (s) => Buffer.from(s, 'base64').toString('binary');
+    context.window.AudioContext = FakeAudioContext;
+    context.window.flutter_inappwebview.callHandler = (name) =>
+      Promise.resolve(name === 'crossAppAudioPreview' ? CROSS_APP_PREVIEW : null);
+  };
+
+  // ① 解码中换了范围再点试听：只播新范围一段。
+  let context = loadPopup(configure);
+  let panel = await openCrossAppAudioPanelForTest(context, 0);
+  panel.play.onclick();
+  await flush();
+  pressKey(panel.endHandle, 'ArrowRight', {shiftKey: true});
+  panel.play.onclick();
+  await flush();
+  assert.equal(decodes.length, 1, 'the snapshot is decoded once and shared');
+  decodes[0].resolve({duration: 5});
+  await flush();
+  assert.equal(starts.length, 1,
+    'a preview superseded while decoding must never start its own BufferSource');
+  assert.equal(starts[0].offset, 1);
+  assert.equal(starts[0].duration, 1.5, 'only the range chosen last is auditioned');
+  // 「停止」停的正是在响的那一段。
+  panel.play.onclick();
+  assert.equal(starts[0].node.stopped, true, 'stop reaches the only playing source');
+
+  // ② 解码中只换范围（没再点试听）：旧范围那次试听作废，不出声。
+  starts.length = 0;
+  decodes.length = 0;
+  context = loadPopup(configure);
+  panel = await openCrossAppAudioPanelForTest(context, 0);
+  panel.play.onclick();
+  await flush();
+  pressKey(panel.startHandle, 'ArrowLeft');
+  decodes[0].resolve({duration: 5});
+  await flush();
+  assert.equal(starts.length, 0, 'changing the range cancels a preview that is still decoding');
+
+  // ③ 解码中关面板：不出声。
+  decodes.length = 0;
+  context = loadPopup(configure);
+  panel = await openCrossAppAudioPanelForTest(context, 0);
+  panel.play.onclick();
+  await flush();
+  panel.cancel.onclick();
+  decodes[0].resolve({duration: 5});
+  await flush();
+  assert.equal(starts.length, 0, 'closing the panel cancels a preview that is still decoding');
+}
+
+// 拍板 Z0DtSVYC7A（方案 b）：查的词本来没有句子语音时，面板里「不带句子音频制卡」按次跳过——
+// 这一笔带 omitAudio，宿主不截录环；不必等试听数据（读取中就能点），也不沾到之后的普通「+」。
+async function testCrossAppAudioSkipSentenceAudioForThisCard() {
+  const context = loadPopup();
+  const preview = deferred();
+  const mined = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'crossAppAudioPreview') return preview.promise;
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve({ankiConnect: true, noteId: mined.length});
+    }
+    return Promise.resolve(null);
+  };
+  assert.equal(JSON.stringify(context.crossAppAudioSkipOverrides()), JSON.stringify({omitAudio: true}));
+  const mineButtons = mountEntriesWith(context, ['猫', '犬']);
+  await flush();
+
+  // ① 试听数据还在读：跳过按钮已经在，点了直接制卡、关面板。
+  context.openCrossAppAudioPanel(1);
+  await flush();
+  const host = context.window.__fushiRoot || context.document.body;
+  let panel = findByClass(host, 'crossapp-audio-panel');
+  const skip = findByClass(panel, 'crossapp-audio-skip');
+  assert.ok(skip, 'the skip button is available before the preview loads');
+  assert.equal(findByClass(panel, 'crossapp-audio-mine'), null,
+    'the trim editor is not built yet');
+  await skip.onclick();
+  await flush();
+  assert.equal(findByClass(host, 'crossapp-audio-panel'), null, 'skipping closes the panel');
+  assert.equal(mined.length, 1);
+  assert.equal(mined[0].expression, '犬');
+  assert.deepStrictEqual(JSON.parse(mined[0].miningOverrides), {omitAudio: true},
+    'the skipped card asks the host to omit the sentence audio');
+  preview.resolve(CROSS_APP_PREVIEW);
+  await flush();
+
+  // ② 编辑器建好后照样能跳过（拖过的起止不带上）。
+  const controls = await openCrossAppAudioPanelForTest(context, 0);
+  pressKey(controls.startHandle, 'ArrowLeft', {shiftKey: true});
+  panel = controls.panel;
+  await findByClass(panel, 'crossapp-audio-skip').onclick();
+  await flush();
+  assert.equal(mined.length, 2);
+  assert.deepStrictEqual(JSON.parse(mined[1].miningOverrides), {omitAudio: true},
+    'skip ignores the dragged range: no audio at all');
+
+  // ③ 之后的普通「+」照常带句子音频（跳过只管那一笔）。
+  mineButtons[0].dataset.mined = '';
+  await mineButtons[0].onclick();
+  await flush();
+  assert.equal(mined[mined.length - 1].miningOverrides, undefined,
+    'a later plain + is not affected by an earlier skip');
+}
+
+testCrossAppAudioPanelGeometryAndProbe()
+  .then(testCrossAppAudioTrimOffsetStaysWithItsOwnRequest)
+  .then(testCrossAppAudioPreviewSupersedesPendingDecode)
+  .then(testCrossAppAudioSkipSentenceAudioForThisCard)
+  .then(
   () => console.log('cross-app audio panel tests passed'),
   (error) => {
     console.error(error);

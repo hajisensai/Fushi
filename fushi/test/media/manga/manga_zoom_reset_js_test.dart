@@ -51,7 +51,8 @@ var ZOOM_MIN=0.5, ZOOM_MAX=4, ZOOM=1, PAN_X=0, PAN_Y=0, IS_WEBTOON=false;
 const window={innerWidth:412,innerHeight:860,scrollY:0,scrollTo(){}};
 let reported=[];
 function _bridge(){ return {callHandler:(n,v)=>{ if(n==='onMangaZoomChanged') reported.push(v); }}; }
-function _applyCanvas(){}
+let frames=[];
+function _applyCanvas(){ frames.push([ZOOM,PAN_X,PAN_Y]); }
 function _recenterPan(){ PAN_X=window.innerWidth*(1-ZOOM)/2; PAN_Y=window.innerHeight*(1-ZOOM)/2; }
 let rafQueue=[], rafTime=0;
 function requestAnimationFrame(cb){ rafQueue.push(cb); return rafQueue.length; }
@@ -60,6 +61,14 @@ function flushFrames(){ while(rafQueue.length){ const cb=rafQueue.shift(); rafTi
 $vars
 $zoom
 function setZoom(z){ ZOOM=z; _recenterPan(); }
+// 缩放动画的每一帧（含落定那一帧）都要在同一条「以某个不动点缩放」的路径上：
+// 平移的增量与倍率的增量成正比。落定后再回中 / 摆正的旧实现在最后一帧折出去。
+function assertOnePath(z0,p0,axis,label){
+  const ks=frames.filter(f=>Math.abs(f[0]-z0)>1e-6).map(f=>(f[axis]-p0)/(f[0]-z0));
+  assert.ok(ks.length>=1,label+'：没有缩放帧');
+  for (const k of ks) assert.ok(Math.abs(k-ks[0])<1e-6,label+'：缩放路径在第 '+ks.indexOf(k)+' 帧折了 '+JSON.stringify(ks));
+}
+const near=(a,b,msg)=>assert.ok(Math.abs(a-b)<1e-6,msg+': '+a+' vs '+b);
 $body
 ''';
   }
@@ -107,6 +116,66 @@ assert.equal(ZOOM,1);
 _doubleTapZoom(100,300);
 flushFrames();
 assert.equal(ZOOM,2);
+'''),
+      );
+    });
+
+    // BUG-5351（反馈 5VHASFiDKy）：放大与缩回的双击点不在同一处时，旧实现缩回动画以
+    // 第二击为锚停在偏位，落定那一帧才跳回中间（录屏里最后一帧跳 15px）。
+    test('$label：双击点不同处缩回，动画直接落到回中位置，最后一帧不跳', () async {
+      await runJs(
+        harness(document, '''
+setZoom(1);
+_doubleTapZoom(100,300);
+flushFrames();
+assert.equal(ZOOM,2);
+near(PAN_X,-100,'放大以双击点为锚'); near(PAN_Y,-300,'放大以双击点为锚');
+frames=[];
+_doubleTapZoom(320,700);
+flushFrames();
+assert.equal(ZOOM,1);
+assert.equal(PAN_X,0); assert.equal(PAN_Y,0);
+if ($animate) { assertOnePath(2,-100,1,'横向'); assertOnePath(2,-300,2,'纵向'); }
+'''),
+      );
+    });
+
+    test('$label：放大后拖动过再双击缩回，同样一条路径落到回中', () async {
+      await runJs(
+        harness(document, '''
+setZoom(2);
+PAN_X=-380; PAN_Y=-40;
+frames=[];
+_doubleTapZoom(50,800);
+flushFrames();
+assert.equal(ZOOM,1);
+assert.equal(PAN_X,0); assert.equal(PAN_Y,0);
+if ($animate) { assertOnePath(2,-380,1,'横向'); assertOnePath(2,-40,2,'纵向'); }
+'''),
+      );
+    });
+
+    test('$label：条漫缩回横向回中、纵向保住第二击下的内容', () async {
+      await runJs(
+        harness(document, '''
+IS_WEBTOON=true;
+var lastReaderScroll=0;
+const scrolls=[];
+window.scrollY=1000;
+window.scrollTo=(x,y)=>{ window.scrollY=y; scrolls.push([ZOOM,y]); };
+setZoom(1); PAN_Y=0;
+_doubleTapZoom(100,300);
+flushFrames();
+assert.equal(ZOOM,2);
+near(PAN_X,-100,'横向以双击点为锚'); near(window.scrollY,2300,'纵向以双击点为锚');
+frames=[]; scrolls.length=0;
+_doubleTapZoom(300,500);
+flushFrames();
+assert.equal(ZOOM,1);
+assert.equal(PAN_X,0); assert.equal(PAN_Y,0);
+near(window.scrollY,900,'第二击下的内容不动');
+for (const [z,y] of scrolls) near((y+500)/z,1400,'每帧纵向锚点不动');
+if ($animate) assertOnePath(2,-100,1,'横向');
 '''),
       );
     });

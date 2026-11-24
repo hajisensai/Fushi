@@ -82,6 +82,29 @@ void main() {
     expect(tracker.feedText('はい').kind, FfcOcrLineTextKind.newLine);
   });
 
+  test('preprocess: small text upscaled, configure(binarize) re-offers', () {
+    final FfcOcrLineTracker tracker = FfcOcrLineTracker();
+    addTearDown(tracker.close);
+    // 8 px 高的一行小字：放 3 倍（BUG-5141 ③）。
+    final Uint8List small = _png(200, 40, textRows: (16, 24));
+    FfcOcrLineFrame feed() =>
+        tracker.feedPng(small, left: 0, top: 0, width: 1, height: 1);
+    expect(feed().action, FfcOcrLineFrameAction.settling);
+    final FfcOcrLineFrame up = feed();
+    expect(up.action, FfcOcrLineFrameAction.ocr);
+    expect((up.width, up.height), (600, 120));
+    expect(up.rgba!.length, 600 * 120 * 4);
+    expect(feed().action, FfcOcrLineFrameAction.idle);
+    tracker.configure(binarize: true);
+    final FfcOcrLineFrame again = feed();
+    expect(again.action, FfcOcrLineFrameAction.ocr);
+    expect(
+      again.rgba!.every((int v) => v == 0 || v == 255),
+      isTrue,
+      reason: 'binarized frame is pure black / white',
+    );
+  });
+
   test('closed tracker refuses calls', () {
     final FfcOcrLineTracker tracker = FfcOcrLineTracker()..close();
     tracker.close();

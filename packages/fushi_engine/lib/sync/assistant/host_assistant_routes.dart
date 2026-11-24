@@ -23,6 +23,7 @@ library;
 import 'dart:convert';
 
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart'
     show readBoundedBodyString;
 import 'package:shelf/shelf.dart' as shelf;
@@ -178,4 +179,42 @@ Future<shelf.Response> _handleHistory(
     default:
       return shelf.Response(405);
   }
+}
+
+/// AI 助手会话（手机把一句话交给电脑的 AI 去办）的互联模块（`/api/assistant*` + 能力位 `assistant`）。
+class HostAssistantInterconnectModule extends InterconnectHostModule {
+  HostAssistantInterconnectModule(HostAssistantProvider? provider)
+    : sessions = provider == null ? null : HostAssistantSessions(provider);
+
+  final HostAssistantSessions? sessions;
+
+  @override
+  String get capabilityKey => 'assistant';
+
+  @override
+  Future<Object?> capability() async => sessions?.capability();
+
+  @override
+  List<String> get routePrefixes => const <String>['/api/assistant'];
+
+  @override
+  Future<shelf.Response> handle(InterconnectRequest request) async {
+    final HostAssistantSessions? s = sessions;
+    if (s == null) return shelf.Response.notFound('Host assistant off');
+    // 会话归属（BUG-4067）：认得出的 per-peer 口令才算「哪台设备」；共享口令 / 老 client 是匿名
+    // 调用方——能开会话，但看不到任何会话历史。
+    final String? peerToken = await request.pairedPeerToken();
+    return handleHostAssistantRequest(
+      s,
+      request.raw,
+      request.method.toUpperCase(),
+      request.path,
+      caller: peerToken != null
+          ? HostAssistantCaller(peerToken: peerToken)
+          : HostAssistantCaller.anonymous,
+    );
+  }
+
+  @override
+  Future<void> dispose() async => sessions?.dispose();
 }

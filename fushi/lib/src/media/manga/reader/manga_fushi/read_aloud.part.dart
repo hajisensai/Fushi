@@ -41,6 +41,14 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   (int, List<int>)? _speaking;
   bool _starting = false;
 
+  /// 本页已进入退出流程（返回路径 / 拆栈，见 [stopAudioUnlessBackground]）。此后
+  /// 不再起新的成品会话，起到一半的那份也不接管（HBK-AUDIT-215）。返回路径先于
+  /// `dispose` 走，这段时间 `mounted` 还是 true，所以不能只看 `mounted`。
+  bool _leaving = false;
+
+  /// 起成品音频这件事还归不归本页：页面还在、也没开始退出。
+  bool get _wantsAudioStart => _s.mounted && !_leaving;
+
   bool get active => (controller?.isActive ?? false) || audio != null;
 
   // ── MangaReadAloudHost ────────────────────────────────────────────────
@@ -205,6 +213,20 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
 
   TtsServices get _tts => TtsServices.of(_s.appModel.prefsRepo);
 
+  /// 这部漫画朗读的作品身份（书键 + 系列 + 语言），声音按它记（[TtsMediaVoices]）。
+  Future<TtsMediaVoiceScope> _voiceScope() async {
+    final String bookKey = _s.widget.bookKey;
+    return resolveTtsMediaVoiceScope(
+      _s.appModel,
+      bookKey,
+      language: await ttsMediaContentLanguage(
+        _s.appModel.database,
+        bookKey,
+        globalDefault: _s.appModel.prefsRepo.defaultContentLanguage,
+      ),
+    );
+  }
+
   /// 工具栏「朗读」：没在读就从当前页开始，在读就停。登记过成品音频的卷播成品，
   /// 否则现场合成。
   Future<void> toggle() async {
@@ -299,7 +321,7 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
       db,
       _s.widget.bookKey,
     );
-    if (registration == null || !_s.mounted) return false;
+    if (registration == null || !_wantsAudioStart) return false;
     final MangaAudioImportResult? mismatch = _audioMismatch(
       registration.manifest,
     );
@@ -324,26 +346,35 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
               overrideTitleOf:
                   ReaderFushiSource.instance.overrideTitleForBookKey,
             );
-        await _session.start(
-          info: req.info,
-          audioFiles: req.audioFiles,
-          prefs: req.prefs,
-          persist: req.persist,
-          cues: req.cues,
-          companion: req.companion,
-        );
+        // 会话归属绑在本页去留上：起到一半本页退出了，就不起 / 停掉这次装上的那份，
+        // 不留没人接管的暂停会话（HBK-AUDIT-215）。
+        final AudiobookSessionCompanion? created =
+            await startMangaAudioSessionOwned(
+              _session,
+              req,
+              wanted: () => _wantsAudioStart,
+            );
+        if (!_wantsAudioStart) return true;
         driver = _activeDriver();
-        if (driver == null || !_s.mounted) return true;
+        if (driver == null) return true;
         // 续播点不在读者眼前这一屏：从眼前这页的页段起点开始（与现场朗读「从当前页
         // 开始」一致）；就在这一屏则接着上次听到的地方。
         if (!isSameSpread(driver.currentPage, visiblePage)) {
           await driver.seekTo(driver.plan.pageStartMs(visiblePage));
+        }
+        // seek 期间本页退出：这次装上的会话还没被接管，同样不留。
+        if (!_wantsAudioStart) {
+          if (created != null && identical(_session.companion, created)) {
+            unawaited(_session.stop());
+          }
+          return true;
         }
       }
       _attachAudio(driver);
       await driver.play();
     } catch (error, stack) {
       ErrorLogService.instance.log('MangaFushiPage.mangaAudio', error, stack);
+      if (!_wantsAudioStart) return true;
       FushiToast.show(
         msg: t.manga_audio_start_failed,
         severity: ToastSeverity.error,
@@ -391,6 +422,119 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
         unawaited(clearHighlight());
         _rebuild();
       }
+    }
+  }
+
+  // ── 导出片段视频（反馈 pZhONQTAap）────────────────────────────────────
+
+  /// 正在导出（播放条上的按钮转圈、再点只提示进行中）。
+  bool clipExporting = false;
+
+  /// 把阅读器此刻框着的那句（[MangaAudioPlaybackDriver.displayedLineIndex]）导出成
+  /// 片段视频：画面 = 那句所在的漫画页，音频 = 那句的成品音频（留白同制卡）。合成走
+  /// 与小说有声书同一条管线（[synthMangaAudioClipVideo]），交付走
+  /// [deliverAudiobookClipVideo]。任何一步失败都提示并记日志，绝不抛。
+  Future<void> exportClip() async {
+    if (clipExporting) {
+      FushiToast.show(
+        msg: t.audiobook_export_clip_in_progress,
+        severity: ToastSeverity.info,
+      );
+      return;
+    }
+    final MangaAudioPlaybackDriver? driver = audio;
+    final MangaReaderSession? session = _s._pageSession;
+    if (driver == null || session == null) return;
+    final int? lineIndex = driver.displayedLineIndex;
+    if (lineIndex == null || driver.manifest.lines[lineIndex].placeholder) {
+      FushiToast.show(
+        msg: t.manga_audio_export_clip_no_line,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final String lineId = driver.manifest.lines[lineIndex].lineId;
+    final bool isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    final String bookKey = _s.widget.bookKey;
+    clipExporting = true;
+    _rebuild();
+    Directory? workDir;
+    bool keepWorkDir = false;
+    try {
+      FushiToast.show(
+        msg: t.audiobook_export_clip_in_progress,
+        severity: ToastSeverity.info,
+      );
+      final MangaMiningAudioClip? clip = resolveMangaLineAudioClip(
+        registration: await loadMangaAudio(_s.appModel.database, bookKey),
+        lineIndex: lineIndex,
+        lineId: lineId,
+        headPadMs: _s.appModel.miningAudioHeadPadMs,
+        tailPadMs: _s.appModel.miningAudioTailPadMs,
+      );
+      if (clip == null || !await File(clip.inputPath).exists()) {
+        ErrorLogService.instance.log(
+          'MangaReadAloud.exportClip',
+          'no rendered audio for line $lineId (index=$lineIndex, '
+              'resolved=${clip != null})',
+          StackTrace.current,
+        );
+        if (_s.mounted) {
+          FushiToast.show(
+            msg: t.audiobook_export_clip_failed,
+            severity: ToastSeverity.error,
+          );
+        }
+        return;
+      }
+      final Uint8List? pageBytes = await _s._loadMiningPageBytes(
+        session,
+        clip.line.page,
+      );
+      workDir = await Directory.systemTemp.createTemp('fushi_manga_clip_');
+      final MangaAudioClipExportResult result = pageBytes == null
+          ? const MangaAudioClipExportResult.failure(
+              MangaAudioClipExportFailure.pageImage,
+            )
+          : await synthMangaAudioClipVideo(
+              pageBytes: pageBytes,
+              clip: clip,
+              workDir: workDir,
+            );
+      final String? videoPath = result.videoPath;
+      if (videoPath == null) {
+        if (_s.mounted) {
+          FushiToast.show(
+            msg: t.audiobook_export_clip_failed,
+            severity: ToastSeverity.error,
+          );
+        }
+        return;
+      }
+      // 移动端系统分享异步读原文件：成品留在工作目录里，不删。
+      keepWorkDir = !isDesktop;
+      final AudiobookClipDeliveryOutcome delivered =
+          await deliverAudiobookClipVideo(
+            videoPath: videoPath,
+            fileName: 'manga_clip_${DateTime.now().millisecondsSinceEpoch}.mp4',
+            subject: clip.line.text,
+            isDesktop: isDesktop,
+          );
+      if (_s.mounted) toastAudiobookClipDelivery(delivered);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log('MangaReadAloud.exportClip', error, stack);
+      if (_s.mounted) {
+        FushiToast.show(
+          msg: t.audiobook_export_clip_failed,
+          severity: ToastSeverity.error,
+        );
+      }
+    } finally {
+      clipExporting = false;
+      final Directory? dir = workDir;
+      if (dir != null && !keepWorkDir) unawaited(_s._deleteTempDir(dir));
+      if (_s.mounted) _rebuild();
     }
   }
 
@@ -471,13 +615,65 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     }
   }
 
+  // ── 从此句播放 ──────────────────────────────────────────────────────
+
+  /// 「从此句播放」能不能接到 [sentence]（右键菜单 / 长按面板据此列不列这一项）：
+  /// 成品音频在播时要这句在清单里（与制卡取句子音频同一判据
+  /// [mangaMiningAudioLineIndex]）；现场合成朗读进行中时任何 OCR 句都能读。都没在
+  /// 播时为 false——与小说有声书一样，没有音频会话就没有「跳到这句」。
+  bool canPlayFromSentence(MangaLookupSentence sentence) {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver != null && !driver.isDisposed) {
+      return _driverLineOf(driver, sentence) != null;
+    }
+    return controller?.isActive ?? false;
+  }
+
+  /// 从 [sentence] 句首接着播（小说有声书「从本句播放」/ 中键「跳到点击句」的漫画
+  /// 版）。返回是否真的跳了：成品清单里没有这句时提示「这句没有对应的音频」，不静默
+  /// 无反应；没有任何音源在播时返回 false。
+  bool playFromSentence(MangaLookupSentence sentence) {
+    final MangaAudioPlaybackDriver? driver = audio;
+    if (driver != null && !driver.isDisposed) {
+      final int? line = _driverLineOf(driver, sentence);
+      if (line == null) {
+        FushiToast.show(
+          msg: t.audiobook_play_from_selection_no_cue,
+          severity: ToastSeverity.error,
+        );
+        return false;
+      }
+      // 查词按住的标记作废：用户已经明确要从这句播。
+      _lookupPause.drop();
+      unawaited(driver.playFromLine(line));
+      return true;
+    }
+    final MangaReadAloudController? c = controller;
+    if (c == null || !c.isActive) return false;
+    _lookupPause.drop();
+    c.playFromSentence(sentence.pageIndex, sentence.blocks);
+    return true;
+  }
+
+  int? _driverLineOf(
+    MangaAudioPlaybackDriver driver,
+    MangaLookupSentence sentence,
+  ) => mangaMiningAudioLineIndex(
+    driver.manifest,
+    pageIndex: sentence.pageIndex,
+    blocks: sentence.blocks,
+  );
+
   Future<void> start() async {
     if (_starting || !_s.mounted || _s._payload == null) return;
     _starting = true;
     try {
       final _MangaReadAloudServicesRig rig;
       try {
-        rig = await _MangaReadAloudServicesRig.create(_tts);
+        rig = await _MangaReadAloudServicesRig.create(
+          _tts,
+          await _voiceScope(),
+        );
       } on _MangaReadAloudVoiceMissing catch (missing) {
         FushiToast.show(
           msg: missing.incomplete
@@ -562,25 +758,28 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     audio?.onPageChanged(page);
   }
 
-  /// 朗读中快速切换声音：选中即设为使用中，用新声音从当前句重读。
+  /// 朗读中快速切换声音：选中的声音记到这部漫画（有系列记到「系列 + 语言」），
+  /// 「使用默认声音」清掉它；用新声音从当前句重读。
   Future<void> switchVoice() async {
     final TtsServices tts = _tts;
+    final TtsMediaVoiceScope scope = await _voiceScope();
+    if (!_s.mounted) return;
     final TtsVoiceQuickSwitchChoice? choice = await showTtsVoiceQuickSwitch(
       _s.context,
       tts,
+      scope: scope,
     );
     if (choice == null || !_s.mounted) return;
-    final String? presetId = choice.presetId;
-    if (presetId == null) {
+    if (choice.isManage) {
       controller?.pause();
       await openTtsVoiceSettingsPage(_s.context, tts);
       return;
     }
-    await tts.store.setActivePresetId(presetId);
+    await applyTtsVoiceQuickSwitchChoice(tts, choice, scope: scope);
     final MangaReadAloudController? c = controller;
     if (c == null) return;
     try {
-      await c.replaceRig(await _MangaReadAloudServicesRig.create(tts));
+      await c.replaceRig(await _MangaReadAloudServicesRig.create(tts, scope));
     } on _MangaReadAloudVoiceMissing catch (missing) {
       FushiToast.show(
         msg: missing.incomplete
@@ -598,7 +797,10 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
   /// 返回路径（[_MangaFushiPageState.onSourcePagePop]）先调一次，让书架迷你条从首帧
   /// 就见空会话；[dispose] 再调一次兜异常拆栈。fire-and-forget：stop 的同步首段已
   /// 清空会话，等 native 释放只会把返回挂住（BUG-1273）。
+  ///
+  /// 这也是本页「开始退出」的标记：此后起到一半的成品会话不再归本页（[_leaving]）。
   void stopAudioUnlessBackground(String logTag) {
+    _leaving = true;
     final MangaAudioPlaybackDriver? driver = audio;
     if (driver == null || _s.appModelNoUpdate.audiobookBackgroundPlay) return;
     if (!identical(_session.companion, driver)) return;
@@ -692,8 +894,8 @@ class _MangaReadAloudVoiceMissing implements Exception {
   final bool incomplete;
 }
 
-/// 生产声音：当前朗读声音 + 全应用共用的 [TtsAudioCache]（同句同音色只合一次，
-/// 与小说朗读 / 制作台共用）。
+/// 生产声音：这部漫画该用的朗读声音（本书 → 系列 + 语言 → 全局使用中）+ 全应用
+/// 共用的 [TtsAudioCache]（同句同音色只合一次，与小说朗读 / 制作台共用）。
 class _MangaReadAloudServicesRig implements MangaReadAloudVoiceRig {
   _MangaReadAloudServicesRig._({
     required TtsProvider provider,
@@ -704,11 +906,13 @@ class _MangaReadAloudServicesRig implements MangaReadAloudVoiceRig {
        _cache = cache,
        _audioIdentity = audioIdentity;
 
-  static Future<_MangaReadAloudServicesRig> create(TtsServices tts) async {
+  static Future<_MangaReadAloudServicesRig> create(
+    TtsServices tts,
+    TtsMediaVoiceScope scope,
+  ) async {
     // 从没配过声音时与「朗读声音」页同一份开箱默认（微软 Edge）。
     await tts.seedBuiltinVoiceIfUnset();
-    final ({TtsVoicePreset preset, TtsProviderDescriptor descriptor})? voice =
-        tts.activeVoice();
+    final TtsMediaVoice? voice = tts.voiceForMedia(scope);
     if (voice == null) {
       throw const _MangaReadAloudVoiceMissing(incomplete: false);
     }

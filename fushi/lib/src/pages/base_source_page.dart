@@ -18,8 +18,10 @@ import 'package:fushi_anki/fushi_anki.dart'
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/lookup/lookup_match_measure.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
+import 'package:fushi/src/stats/study_lookup_recorder.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/models/module_id.dart';
@@ -49,35 +51,6 @@ import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
-
-/// Number of characters of the body text that the looked-up word actually
-/// occupies, used to drive the in-text lookup highlight (`fushiSelection
-/// .highlightSelection`).
-///
-/// BUG-206: this must be the length of the **inflected surface form as it
-/// appears in the body** (the deinflection's matched source), NOT the length of
-/// the dictionary headword. For 「うやうやしく」(6 chars in the body) the dictionary
-/// entry's [DictionaryEntry.word] is the headword 「恭しい」(3 runes); highlighting
-/// 3 chars covers only part of the word and — when the word is split across DOM
-/// text nodes on Android — renders as two misaligned bands ("multi-select").
-///
-/// [DictionarySearchResult.bestLength] already carries the matched source length
-/// (the FFI deinflection's `matched`, mirrored as Yomitan's `originalTextLength`)
-/// and [Language.getFinalHighlightLength] is the canonical way to read it
-/// (handling the space-delimited / non-space-delimited split). We only highlight
-/// when there is at least one term entry, preserving the previous "no entries →
-/// no highlight" behavior.
-int lookupHighlightCharCount({
-  required DictionarySearchResult result,
-  required String searchTerm,
-  required Language language,
-}) {
-  if (result.entries.isEmpty) return 0;
-  return language.getFinalHighlightLength(
-    result: result,
-    searchTerm: searchTerm,
-  );
-}
 
 /// 一次查词是怎么发起的。嵌套层不开新的查词诊断流水（见
 /// [BaseSourcePageState.searchDictionaryResult]）。
@@ -445,19 +418,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   Future<int> lookupMatchedCharCount(
     String term,
     List<FushiRubySpan> rubySpans,
-  ) async {
-    final DictionarySearchResult result = await appModel
-        .searchDictionaryWithRuby(
-          searchTerm: term,
-          rubySpans: rubySpans,
-          overrideMaximumTerms: appModel.maximumTerms,
-        );
-    return lookupHighlightCharCount(
-      result: result,
-      searchTerm: term,
-      language: JapaneseLanguage.instance,
-    );
-  }
+  ) => measureLookupMatchUnits(appModel, term, rubySpans: rubySpans);
 
   Future<int> searchDictionaryResult({
     required String searchTerm,
@@ -572,6 +533,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         final reading = entry.reading;
         if (expression.isNotEmpty) {
           _autoReadWord(
+            item,
             expression,
             reading,
             matched: lookupEntryMatchedText(entry),
@@ -652,10 +614,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
   /// 身份门：查询往返期间本层可能被关掉（`entries.contains`）或已被另一次跳转 /
   /// 顶层换词换掉内容（`searchTerm` 变了）——迟到的结果一律丢弃，不灌进别的词。
   /// 查询期间置 [DictionaryPopupEntry.isSearching] 挡住同层 load-more 并发写入。
+  ///
+  /// [refineSource] 非 null = 从「查不到」的词块 / 修改框换词（拍板台 Um72dWD9Cz）：
+  /// 空结果**也**换（新页显示「X 也查不到」并留着词块可接着点），新页记下词块来源、
+  /// 沿用原页那一句（见 [DictionaryPopupController.navigateInPlace]）。
   Future<void> navigatePopupInPlace({
     required int index,
     required DictionaryPopupEntry item,
     required String query,
+    String? refineSource,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty || item.isSearching) return;
@@ -677,20 +644,24 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           item.searchTerm != termAtStart) {
         return;
       }
-      if (result.entries.isEmpty && result.kanjiResults.isEmpty) return;
-      appModel.addToDictionaryHistory(result: result);
+      final bool empty = result.entries.isEmpty && result.kanjiResults.isEmpty;
+      if (empty && refineSource == null) return;
+      if (!empty) appModel.addToDictionaryHistory(result: result);
       _popup.navigateInPlace(
         item,
         term: trimmed,
         result: result,
         allLoaded: !result.truncated,
         scrollTop: scrollTop,
+        refineSource: refineSource ?? '',
+        contextSentence: refineSource == null ? '' : item.contextSentence,
       );
       if (ReaderFushiSource.instance.autoReadOnLookup &&
           result.entries.isNotEmpty) {
         final DictionaryEntry entry = result.entries.first;
         if (entry.word.isNotEmpty) {
           _autoReadWord(
+            item,
             entry.word,
             entry.reading,
             matched: lookupEntryMatchedText(entry),
@@ -874,9 +845,11 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     _pendingSelectionRect = null;
   }
 
-  /// Resolve audio exactly like Hoshi: enabled sources only, no TTS fallback.
-  /// [matched] 是查词命中原文：词头带替换写法时 TTS 兜底念它（反馈 WJFhjUGaTn）。
+  /// 查词自动发音：解析启用的音频源（[autoReadWordUnified]），优先交给**本次查词
+  /// 那一层** [item] 自己的弹窗 WebView 用 `<audio>` 播。[matched] 是查词命中原文：
+  /// 词头带替换写法时 TTS 兜底念它（反馈 WJFhjUGaTn）。
   Future<void> _autoReadWord(
+    DictionaryPopupEntry item,
     String expression,
     String reading, {
     String matched = '',
@@ -884,24 +857,30 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     await LookupAutoReadCoordinator.instance.runAutomatic(
       expression: expression,
       reading: reading,
-      play: () => _playAutoReadWord(expression, reading, matched: matched),
+      play: () =>
+          _playAutoReadWord(item, expression, reading, matched: matched),
     );
   }
 
+  /// 播放目标是 [item] 自己的 WebView，**不是** [topPopupState]（BUG-5278）：自动发音在
+  /// 查词结果一到就触发，这时本层还挂在「等首帧渲染再翻出」上、尚不可见，而
+  /// [topPopupState] 只认可见层——顶层查词拿到 null，嵌套查词拿到下面那层旧弹窗，
+  /// 自动发音从来没走上弹窗 `<audio>` 快路径。state 在真正要播时才取，见
+  /// [DictionaryPopupWebViewState.lazyWordAudioPlayer]；层已被关时回落 Dart 播放器。
   Future<bool> _playAutoReadWord(
+    DictionaryPopupEntry item,
     String expression,
     String reading, {
     String matched = '',
   }) {
-    // Prefer the popup's own <audio> (unified fast path); fall back to the Dart
-    // player when the popup WebView is not ready. Capture the state once so the
-    // callback does not re-evaluate the getter mid-play.
-    final DictionaryPopupWebViewState? popup = topPopupState;
     return autoReadWordUnified(
       appModel,
       expression,
       reading,
-      playInWebView: popup?.playWordAudioUrl,
+      playInWebView: DictionaryPopupWebViewState.lazyWordAudioPlayer(
+        () =>
+            _popup.entries.contains(item) ? item.webViewKey.webViewState : null,
+      ),
       matched: matched,
     );
   }
@@ -1338,6 +1317,14 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
         // 仍叠子层，也与 Hoshi 一致（那边 `textSelected` 走 `popups.append`）。
         onLinkClick: (query, localRect) =>
             navigatePopupInPlace(index: index, item: item, query: query),
+        // 拍板台 Um72dWD9Cz：「查不到」时点词块 / 改查询词，同一层原地换词。
+        onRefineQuery: (String query, String source) => navigatePopupInPlace(
+          index: index,
+          item: item,
+          query: query,
+          refineSource: source,
+        ),
+        refineSource: item.refineSource,
         historyNav: item.hasNavigationHistory
             ? DictionaryPopupHistoryNav(
                 canGoBack: item.canGoBack,
@@ -2024,16 +2011,15 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     try {
       final ({String? bookKey, String? title})? identity = lookupBookIdentity;
       unawaited(
-        appModel.database
-            .addLookupCount(
-              bookKey: identity?.bookKey,
-              title: identity?.title ?? '',
-              sourceType: dictionarySourceType,
-              dateKey: statTodayKey(),
-            )
-            .catchError((Object e, StackTrace st) {
-              debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
-            }),
+        recordStudyLookup(
+          appModel.database,
+          bookKey: identity?.bookKey,
+          title: identity?.title ?? '',
+          sourceType: dictionarySourceType,
+          at: DateTime.now(),
+        ).catchError((Object e, StackTrace st) {
+          debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
+        }),
       );
     } catch (e, st) {
       debugPrint('[fushi-stats] addLookupCount failed (sync): $e\n$st');

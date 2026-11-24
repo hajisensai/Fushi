@@ -22,7 +22,10 @@
 /// 5 卷起「～ふたりの秘密は一つ屋根の下～」），带着副标题比就永远凑不成一组。
 library;
 
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show naturalCompare;
 import 'package:fushi_engine/media/collections/store_series_annotation.dart';
+import 'package:fushi_engine/media/titles/media_title_clean.dart';
 
 /// 一个分卷标题解析出的系列身份。
 class BookSeriesKey {
@@ -101,6 +104,40 @@ int compareBookSeriesPositionParts({
   return (bonusA ? 1 : 0).compareTo(bonusB ? 1 : 0);
 }
 
+/// 「按卷号」排序用的预解析键：原书名 + [parseBookSeriesKey] 的结果（解析不出为
+/// null）。排序前对每个成员算一次（[bookVolumeSortKey]），比较器里不再跑正则。
+typedef BookVolumeSortKey = ({String title, BookSeriesKey? series});
+
+/// [title] 的「按卷号」排序键。
+BookVolumeSortKey bookVolumeSortKey(String title) =>
+    (title: title, series: parseBookSeriesKey(title));
+
+/// 合集成员「按卷号」的先后（合集详情页「按卷号」、一键整理 / 存为手动顺序、
+/// 组合成合集落盘共用这一份）：系列键 natural → 系列内位置
+/// （[compareBookSeriesPositionParts]：卷号 → 话号 → 分段 → 正篇先于同卷特典册）
+/// → 书名 natural。解析不出系列的书名以整串当系列键、位置当第 0 卷——每个书名
+/// 都映射成同一形状的元组逐位比，是全序（`List.sort` 不会因不传递而乱序）。
+///
+/// 此前「按卷号」只是显示名 natural：`『週に一度クラスメイトを買う話２　～…～』
+/// BOOK☆WALKER限定…` 九本特典册的 `『`（U+300E）码元小于正篇的 `週`（U+9031），
+/// 整组排到第 1 卷前面（反馈 WiApB3TljP）。
+int compareBookVolumeSortKeys(BookVolumeSortKey a, BookVolumeSortKey b) {
+  final BookSeriesKey? sa = a.series;
+  final BookSeriesKey? sb = b.series;
+  final int g = naturalCompare(sa?.key ?? a.title, sb?.key ?? b.title);
+  if (g != 0) return g;
+  final int p = compareBookSeriesPositionParts(
+    volumeA: sa?.volume,
+    episodeA: sa?.episode,
+    bonusA: sa?.bonus ?? false,
+    volumeB: sb?.volume,
+    episodeB: sb?.episode,
+    bonusB: sb?.bonus ?? false,
+  );
+  if (p != 0) return p;
+  return naturalCompare(a.title, b.title);
+}
+
 /// [key] 在系列里的位置，供「同系列各卷位置互不重复」判定；书名里既无卷号也无
 /// 话号、又不是特典册时 null（无卷号的特典册挂在无卷号的正篇后面，位置确定）。
 BookSeriesPosition? bookSeriesPosition(BookSeriesKey key) =>
@@ -125,9 +162,10 @@ BookSeriesPosition? bookSeriesPositionOf({
   );
 }
 
-/// 发布文件名里的 8 位十六进制 CRC 标签（`志乃と恋 [3574f94a].cbz`，导入时
-/// 文件名原样成了书名）。
-final RegExp _hashSuffix = RegExp(r'\s*\[[0-9a-fA-F]{8}\]\s*$');
+/// 发布文件名末尾的 8 位十六进制 CRC 标签（`志乃と恋 [3574f94a].cbz`，导入时
+/// 文件名原样成了书名）。判据是全媒体共用的 [trailingCrcTagsPattern]（方括号 /
+/// 圆括号、大小写都认、可连续多段；此前这里只认一段方括号）。
+final RegExp _hashSuffix = trailingCrcTagsPattern;
 
 /// 结尾卷号：`2` / `第2巻` / `2巻` / `Vol.2` / `Vol-2` / `Volume 2` / `v02` /
 /// `(2)` / `#2`、连字符 / 下划线卷号 `Karakai-Jouzu-Takagi-san-02` / `Series_02`，

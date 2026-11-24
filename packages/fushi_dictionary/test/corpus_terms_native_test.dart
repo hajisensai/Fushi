@@ -127,6 +127,7 @@ void main() {
                 () => FushiDicts.corpusTermsBorrowed(
                   address,
                   libraryPath,
+                  FushiDicts.defaultScanLength,
                   <String>['猫が食べた', 'We went home', ''],
                 ),
               ),

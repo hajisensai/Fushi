@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "背景の高さ",
   "opt_subtitleStyleBoxHeight_desc": "動画の高さに対する %（5–60）。0 で文字に合わせます。",
   "opt_subtitleStyleBoxAutoFit_title": "自動フィット",
-  "opt_subtitleStyleBoxAutoFit_desc": "高さ固定の背景に収まるよう文字を拡縮します。",
+  "opt_subtitleStyleBoxAutoFit_desc": "高さ固定の背景に収まらない字幕だけを縮小します（拡大はしません）。",
   "opt_subtitleStyle_auto": "文字に合わせる",
   "opt_resetSubtitleStyle_title": "外観を既定に戻す",
   "opt_resetSubtitleStyle_desc": "このセクションをリセットします（位置と背景スイッチは保持）。",

@@ -169,6 +169,12 @@ kCoverPathDerivers = <String, (CoverDeriverRole, String)>{
     CoverDeriverRole.writesViaService,
     '成员封面清理/重取，重取那半走 applyCover*。',
   ),
+  'lib/src/pages/implementations/media_collection_detail_page.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '合集详情页（GLMHiavo0y 选集页剧照优先，#4312）：派生 VideoStorage.coversDir 只为'
+        '读 CoverMetaStore 的封面来源（手动封面排在分集剧照前），不落盘；合集封面改图'
+        '交给 MediaCoverService.applyCollectionCover，本文件一个字节都不写。',
+  ),
   'lib/src/media/video/cover_ui/video_scrape_actions.dart': (
     CoverDeriverRole.derivesPathOnly,
     '运行时依赖组装层只派生 coversDir，并把封面目录注入 CoverMetaStore 与 '
@@ -196,6 +202,12 @@ kCoverPathDerivers = <String, (CoverDeriverRole, String)>{
     '网页站点集的书（Netflix / YouTube 每集一本）补封面：派生 videoCoverFileName '
         '目的地后交给 downloadVideoCoverToPath（video_cover_extractor）落盘，'
         '本文件自己不写。',
+  ),
+  'lib/src/sync/online_library_items.dart': (
+    CoverDeriverRole.derivesPathOnly,
+    '书库在线源条目跨设备同步（mY5VWg1nD-）：对端建来的在线视频条目补封面，派生 '
+        'videoCoverFileName 目的地后交给 downloadVideoCoverToPath（video_cover_extractor）'
+        '或 backfillStreamVideoThumbnailCover 落盘，本文件自己不写。',
   ),
   'lib/src/media/video/video_import_dialog.dart': (
     CoverDeriverRole.writesViaService,

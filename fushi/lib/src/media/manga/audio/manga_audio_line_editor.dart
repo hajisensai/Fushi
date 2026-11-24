@@ -3,7 +3,8 @@
 /// 撤回」也与制作台同一份流程。
 ///
 /// 阅读页入口（拍板 bnAC_eferQ：「直接在右键里面标记」）就地弹对话框改，不离开阅读页、
-/// 不跳到复核页：右键命中的气泡 → 用到这些块的那一句 → 改说话人 / 类型 / 一拍 / 念法；
+/// 不跳到复核页：右键命中的气泡 → 用到这些块的那一句 → 改说话人 / 类型 / 一拍 / 语气与
+/// 强度（拍板 bnAC_eferQ-2）/ 念法；
 /// 这句已经生成过时，改了会影响读法的字段（说话人 / 类型 / 念法）就只重新生成这一句，
 /// 候选可试听、保留或撤回，其它句子不动。
 library;
@@ -11,6 +12,7 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart' show castToneOf;
 import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_renderer.dart';
 import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
@@ -42,15 +44,18 @@ enum MangaLineEditAction {
   speaker,
   kind,
   beat,
+  emotion,
+  tone,
   say,
   clearSay,
   up,
   down,
   regenerate;
 
-  /// 改了会影响这一句读出来的声音（换人 / 换类型 / 换念法）；一拍与调序只动时间表。
+  /// 改了会影响这一句读出来的声音（换人 / 换类型 / 换念法 / 换情绪或语气说明——
+  /// 2026-11-23 起演法进合成，设计 §5）；一拍与调序只动时间表。
   bool get changesVoice => switch (this) {
-    speaker || kind || say || clearSay => true,
+    speaker || kind || emotion || tone || say || clearSay => true,
     beat || up || down || regenerate => false,
   };
 }
@@ -128,6 +133,19 @@ Future<MangaLineEditAction?> showMangaLineEditDialog(
             icon: FushiIcons.timer,
           ),
           FushiChoiceOption<MangaLineEditAction>(
+            value: MangaLineEditAction.emotion,
+            label: t.manga_audio_line_emotion,
+            subtitle:
+                mangaLineEmotionLabel(line) ?? mangaEmotionLabel(line.emotion),
+            icon: FushiIcons.voice,
+          ),
+          FushiChoiceOption<MangaLineEditAction>(
+            value: MangaLineEditAction.tone,
+            label: t.manga_audio_line_tone,
+            subtitle: line.tone ?? t.manga_audio_line_tone_none,
+            icon: FushiIcons.mic,
+          ),
+          FushiChoiceOption<MangaLineEditAction>(
             value: MangaLineEditAction.say,
             label: t.manga_audio_line_say,
             icon: FushiIcons.edit,
@@ -198,6 +216,23 @@ Future<MangaLineEditAction?> showMangaLineEditDialog(
           source: TtsCastSource.user,
         ),
       );
+    case MangaLineEditAction.emotion:
+      final MangaScriptLine? next = await _pickTone(context, line, text);
+      if (next == null) return null;
+      replace(next.copyWith(source: TtsCastSource.user));
+    case MangaLineEditAction.tone:
+      final String? typed = await showFushiTextInputDialog(
+        context: context,
+        title: t.manga_audio_line_tone,
+        message: '$text\n\n${t.manga_audio_line_tone_hint}',
+        initialValue: line.tone ?? '',
+        allowEmpty: true,
+        icon: FushiIcons.mic,
+      );
+      if (typed == null) return null;
+      final MangaScriptLine? next = mangaLineWithTone(line, typed);
+      if (next == null) return null;
+      replace(next.copyWith(source: TtsCastSource.user));
     case MangaLineEditAction.say:
       final String? typed = await showFushiTextInputDialog(
         context: context,
@@ -230,6 +265,74 @@ Future<MangaLineEditAction?> showMangaLineEditDialog(
   }
   return action;
 }
+
+/// 「不标语气」在选项里的占位（[CastEmotion] 本身没有「无」）。
+enum _ToneChoice { none }
+
+/// 选语气，再填强度（留空 = 不标强度；选「不标」时强度一并清掉）。返回改好的行；
+/// 取消或没改返回 null。
+Future<MangaScriptLine?> _pickTone(
+  BuildContext context,
+  MangaScriptLine line,
+  String text,
+) async {
+  final Object? picked = await showFushiChoiceDialog<Object>(
+    context: context,
+    title: t.manga_audio_line_emotion,
+    message: '$text\n\n${t.manga_audio_line_emotion_synth_hint}',
+    selected: line.emotion ?? _ToneChoice.none,
+    icon: FushiIcons.voice,
+    options: <FushiChoiceOption<Object>>[
+      FushiChoiceOption<Object>(
+        value: _ToneChoice.none,
+        label: mangaEmotionLabel(null),
+      ),
+      for (final CastEmotion e in CastEmotion.values)
+        FushiChoiceOption<Object>(value: e, label: mangaEmotionLabel(e)),
+    ],
+  );
+  if (picked == null || !context.mounted) return null;
+  if (picked is! CastEmotion) {
+    return line.emotion == null ? null : line.copyWith(clearEmotion: true);
+  }
+  final String? typed = await showFushiTextInputDialog(
+    context: context,
+    title: t.manga_audio_line_intensity,
+    message: t.manga_audio_line_intensity_hint,
+    initialValue: line.emotion == null ? '' : line.intensity?.toString() ?? '',
+    keyboardType: TextInputType.number,
+    allowEmpty: true,
+    icon: FushiIcons.speed,
+  );
+  if (typed == null) return null;
+  final int? intensity = mangaToneIntensityFrom(typed);
+  if (typed.trim().isNotEmpty && intensity == null) {
+    FushiToast.show(
+      msg: t.manga_audio_line_intensity_hint,
+      severity: ToastSeverity.warning,
+    );
+    return null;
+  }
+  final MangaScriptLine next = intensity == null
+      ? line.copyWith(emotion: picked, clearIntensity: true)
+      : line.copyWith(emotion: picked, intensity: intensity);
+  return next.emotion == line.emotion && next.intensity == line.intensity
+      ? null
+      : next;
+}
+
+/// 语气说明输入 → 改好的行（空 = 清掉；超长截断，同 [castToneOf]）；没变返回 null。
+MangaScriptLine? mangaLineWithTone(MangaScriptLine line, String typed) {
+  final String? tone = castToneOf(typed);
+  if (tone == line.tone) return null;
+  return tone == null
+      ? line.copyWith(clearTone: true)
+      : line.copyWith(tone: tone);
+}
+
+/// 强度输入 → 0..100（越界夹到范围）；空或不是整数返回 null。
+int? mangaToneIntensityFrom(String typed) =>
+    int.tryParse(typed.trim())?.clamp(0, CastLineLimits.maxIntensity);
 
 Future<String?> _pickSpeaker(
   BuildContext context,
@@ -355,7 +458,7 @@ Future<bool> _reviewCandidate(
 ) async {
   final AudiobookPlayerController? playing = host.audiobookSession.controller;
   if (playing != null && playing.isPlaying) await playing.pause();
-  final String path = mangaCandidatePath(host, volume.bookKey, candidate);
+  final String path = await mangaCandidatePath(host, volume.bookKey, candidate);
   final AudioPlayer player = AudioPlayer();
   Future<void> play() async {
     try {
@@ -403,11 +506,19 @@ Future<bool> _reviewCandidate(
       }
       await player.stop();
       if (action == 'keep') {
-        kept = await keepMangaCandidate(
-          host,
-          volume: volume,
-          candidate: candidate,
-        );
+        try {
+          kept = await keepMangaCandidate(
+            host,
+            volume: volume,
+            candidate: candidate,
+          );
+        } on TtsRenderFailure catch (e) {
+          // 试听期间这卷登记成了广播剧：候选已撤回，什么都没写。
+          FushiToast.show(
+            msg: ttsRenderFailureText(e.code),
+            severity: ToastSeverity.warning,
+          );
+        }
       } else {
         await discardMangaCandidate(host, volume.bookKey, candidate);
       }
@@ -481,7 +592,7 @@ Future<void> editMangaAudioLineInPlace(
     return;
   }
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
-    mangaRenderManifestFile(host, bookKey),
+    (await mangaAudioEditTarget(host, bookKey)).manifestFile,
   );
   final bool rendered =
       manifest?.lines.any((MangaRenderedLine l) => l.lineId == line.lineId) ??
@@ -510,6 +621,33 @@ Future<void> editMangaAudioLineInPlace(
       FushiToast.show(msg: t.manga_audio_line_saved);
       return;
     }
+  }
+  // 这句是「不读」类型（刚改成的，或早就是、清单还没跟上）：不再出声，从成品里拿掉，
+  // 不重新合成（与整卷生成同一判据，HBK-AUDIT-214）。这卷正在生成时由那个任务持有
+  // 清单，这里不写，提示等它结束。
+  final MangaScriptLine? edited = session.script.lineById(line.lineId);
+  if (!(edited?.kind.isAudible ?? false)) {
+    if (mangaRenderBusy(host, bookKey)) {
+      FushiToast.show(msg: t.manga_audio_line_not_read_render_busy);
+      return;
+    }
+    try {
+      await dropMangaUnreadLines(
+        host,
+        bookKey: bookKey,
+        script: session.script,
+        lineIds: <String>[line.lineId],
+      );
+    } on TtsRenderFailure catch (e) {
+      // 登记的是广播剧：演出稿已存，成品不动，提示先整卷生成。
+      FushiToast.show(
+        msg: ttsRenderFailureText(e.code),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    FushiToast.show(msg: t.manga_audio_line_not_read_dropped);
+    return;
   }
   if (!context.mounted) return;
   if (mangaRenderBusy(host, bookKey)) {

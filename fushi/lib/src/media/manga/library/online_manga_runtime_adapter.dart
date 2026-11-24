@@ -233,14 +233,22 @@ class InterconnectMangaPageRef extends OnlineMangaPageRef {
     required this.bookKey,
     required this.remoteIndex,
     this.chapterDigest,
-    this.pageKey,
+    this.remotePageKey,
   });
 
   final String bookKey;
 
-  /// 对端页表报的源端页身份（`RemoteMangaPageInfo.key`）；旧对端不报 = null。
+  /// 对端页表报的这一页身份（`RemoteMangaPageInfo.key`，原样）；旧对端不报 = null。
+  /// 取页时把它的摘要带给对端核对（HBK-AUDIT-205）。
+  final String? remotePageKey;
+
+  /// [remotePageKey] 前缀上 host 侧 bookKey + 章摘要：同一个源端身份在不同的书 /
+  /// 章里不是同一页。
   @override
-  final String? pageKey;
+  String? get pageKey => switch (remotePageKey) {
+    final String key => '$bookKey\u0000${chapterDigest ?? ''}\u0000$key',
+    null => null,
+  };
 
   /// 对端页表里的 `index`（通常与 [index] 相同，但以对端报的为准）。
   final int remoteIndex;

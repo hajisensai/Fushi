@@ -504,10 +504,13 @@ Future<Object?> _resetSetting(OpContext context, CtlCall call) async {
     throw CtlFailure.badRequest('设置项「${entry.key}」没有声明默认值，不能恢复默认');
   }
   final bool wasModified = spec.modified;
-  if (wasModified) await spec.reset();
+  // 值等于默认但显式存着的（HBK-AUDIT-235）也删值，与页级恢复同口径。
+  final bool wasPinned = spec.pinnedAtDefault;
+  if (spec.resettable) await spec.reset();
   return <String, Object?>{
     ...settingsIndexEntryJson(entry, settings),
     'wasModified': wasModified,
+    if (wasPinned) 'wasPinnedAtDefault': true,
   };
 }
 
@@ -785,6 +788,10 @@ Future<Object?> _deleteProfile(OpContext context, CtlCall call) async {
   final ProfileDeletionOutcome? outcome;
   try {
     outcome = await viewModel.deleteProfile(target.id);
+  } on ProfileDeletionSrsUnavailableException catch (e) {
+    throw CtlFailure.rejected(
+      '复习库打不开（先到复习页完成升级或查看原因），没法先备份复习数据，未删除「${target.name}」：${e.cause}',
+    );
   } on ProfileDeletionBackupException catch (e) {
     throw CtlFailure.rejected('复习数据备份失败，未删除「${target.name}」：${e.cause}');
   }

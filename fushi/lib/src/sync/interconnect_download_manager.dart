@@ -641,8 +641,9 @@ class InterconnectDownloadManager extends ChangeNotifier {
     ),
   );
 
-  /// 启动一个在线音源插件曲目下载（键 = `music-plugin:<曲目播放身份>`，
-  /// music_plugin_download.dart）。与视频任务同一套生命周期：可暂停 / 继续 / 取消、失败可重试；
+  /// 启动一个音乐曲目下载：在线音源插件（键 = `music-plugin:<曲目播放身份>`，[origin] 缺省）
+  /// 或服务器曲目离线副本（`music-server:<uid>`，[origin] = 自己的服务器；
+  /// music_plugin_download.dart / music_server_downloads.dart）。与视频任务同一套生命周期：可暂停 / 继续 / 取消、失败可重试；
   /// [discard] 放弃任务时清掉暂存字节与没导入成功的成品。
   Future<InterconnectDownloadTask> startMusicDownload({
     required String id,
@@ -651,6 +652,7 @@ class InterconnectDownloadManager extends ChangeNotifier {
     required InterconnectVideoDownloadRunner run,
     required Future<bool> Function() discard,
     InterconnectDownloadComplete? onComplete,
+    InterconnectDownloadOrigin origin = InterconnectDownloadOrigin.musicPlugin,
   }) => _startDownload(
     id,
     _DownloadSpec(
@@ -660,7 +662,7 @@ class InterconnectDownloadManager extends ChangeNotifier {
       run: run,
       onComplete: onComplete,
       pausable: true,
-      origin: InterconnectDownloadOrigin.musicPlugin,
+      origin: origin,
       discardLeftovers: discard,
     ),
   );

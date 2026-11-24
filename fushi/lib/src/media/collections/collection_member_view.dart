@@ -11,8 +11,10 @@ library;
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/collections/book_series_key.dart'
+    show BookVolumeSortKey, bookVolumeSortKey, compareBookVolumeSortKeys;
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
-    show ShelfReadStatus, naturalCompare;
+    show ShelfReadStatus;
 
 /// 成员区的排序方式。[manual] = 合集自身的 sortIndex（可拖排）；其余是**视图排序**，
 /// 不落库（菜单「存为手动顺序」才写穿）。
@@ -87,7 +89,8 @@ class CollectionMemberEntry {
 
 /// 按排序方式与筛选条件排出可见成员（[entries] 是合集手动序）。
 ///
-/// - [CollectionMemberSort.volume]：显示名 natural（卷1 < 卷2 < 卷10），平局手动序；
+/// - [CollectionMemberSort.volume]：显示名按卷号（[compareBookVolumeSortKeys]：系列 →
+///   卷号 → 话号 → 正篇先于同卷特典册 → natural 书名），平局手动序；
 /// - [CollectionMemberSort.added]：导入时刻旧→新，平局手动序；
 /// - [CollectionMemberSort.read]：最后阅读时刻新→旧，没读过的排后面（保持手动序）；
 /// - 筛选：[query] 按 [matchesMediaSearch] 匹配显示名与原名；[tagIds] 要求成员挂着
@@ -113,10 +116,14 @@ List<CollectionMemberEntry> arrangeCollectionMembers(
     case CollectionMemberSort.manual:
       break;
     case CollectionMemberSort.volume:
+      final Map<String, BookVolumeSortKey> keys = <String, BookVolumeSortKey>{
+        for (final ({CollectionMemberEntry entry, int index}) d in decorated)
+          d.entry.displayTitle: bookVolumeSortKey(d.entry.displayTitle),
+      };
       decorated.sort((a, b) {
-        final int c = naturalCompare(
-          a.entry.displayTitle,
-          b.entry.displayTitle,
+        final int c = compareBookVolumeSortKeys(
+          keys[a.entry.displayTitle]!,
+          keys[b.entry.displayTitle]!,
         );
         return c != 0 ? c : byIndex(a, b);
       });

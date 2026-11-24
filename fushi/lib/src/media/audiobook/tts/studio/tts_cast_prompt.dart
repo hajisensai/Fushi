@@ -7,8 +7,10 @@
 /// 2. **逐句归属**：每块句子从 1 编号，给出角色表（规范名 + 别名）与上一块已归属
 ///    的最近几句台词（滚动上下文，保持对话轮次连贯）；模型只能从角色表里选人或回
 ///    `unknown`。回了别名映射到规范名，角色表外的名字一律 [kTtsUnknown]——第二遍
-///    不许造名字。没回的行是旁白；但台词行（引号开头或引号未闭合的续行）没回记
-///    [kTtsUnknown] + 零把握，留给人复核，而不是悄悄算成旁白。
+///    不许造名字。台词行（引号开头或引号未闭合的续行）在提示词里带 `*` 标记，模型
+///    必须逐条回：说话人、`unknown`，或括弧里不是人说出口的话（书名、标牌、引用的
+///    词）显式回 `narrator`——这一判断只交给模型，本地不猜。没回的普通行是旁白；
+///    没回的 `*` 行记 [kTtsUnknown] + 零把握，留给人复核，而不是悄悄算成旁白。
 ///    同一遍顺带给台词标演出字段（类型 / 一拍 / 情绪 + 强度，与漫画演出稿同一词表与
 ///    取值范围，见 `cast_line_direction.dart`），本地按词表校验、数值夹到范围。
 library;
@@ -470,20 +472,23 @@ String get kTtsCastLinesSystemPrompt =>
 You attribute dialogue in a novel to speakers so an audiobook can give each character a different voice, and give each line a little direction.
 
 You get the cast list, the last few lines already attributed (for turn-taking), and numbered lines from one chapter (lines marked "context" only help you infer speakers; never label them). Return ONLY a JSON array, no prose, no code fence:
-[{"i":3,"s":"エミリア","k":"shout","e":"anger","ei":70,"c":0.95,"ev":"explicit"},{"i":5,"s":"スバル","k":"thought","beat":400,"c":0.6,"ev":"implicit"},{"i":8,"s":"unknown","c":0.2,"ev":"implicit"}]
+[{"i":3,"s":"エミリア","k":"shout","e":"anger","ei":70,"tone":"必死に食い下がる","c":0.95,"ev":"explicit"},{"i":5,"s":"スバル","k":"thought","beat":400,"c":0.6,"ev":"implicit"},{"i":8,"s":"unknown","c":0.2,"ev":"implicit"},{"i":11,"s":"narrator"}]
 - "i": the line number.
-- "s": who speaks the line: EXACTLY one canonical name from the cast list, or "unknown" when it is dialogue but you cannot tell who says it. Never use a name that is not in the cast list; never use an alias.
+- "s": who speaks the line: EXACTLY one canonical name from the cast list; "unknown" when it is dialogue but you cannot tell who says it; or "narrator" for a starred line that nobody says aloud (see Rules). Never use a name that is not in the cast list; never use an alias.
 - "k": optional, one of ${kTtsCastDialogueKinds.map((CastLineKind k) => '"${k.wire}"').join(' | ')}. "spoken" = normal speech (the default); "shout"; "mutter" = quiet talking to oneself; "thought" = inner voice written as a quoted thought, e.g. （…）; "monologue" = a longer first-person inner passage set off like dialogue.
 - "beat": optional extra pause after the line in milliseconds (0..${CastLineLimits.maxBeatMs}), only for dramatic timing.
 - "e": optional emotion, one of ${CastEmotion.values.map((CastEmotion e) => '"${e.wire}"').join(' | ')}; "ei": its intensity 0..100. Omit both when neutral.
+- "tone": optional short Japanese acting note (at most 20 characters, e.g. "おずおずと", "必死に食い下がる", "声を落として") saying HOW the line is delivered — the nuance the emotion word cannot carry.
 - "c": your confidence from 0 to 1.
 - "ev": "explicit" (an attribution like 「…」とスバルは言った names the speaker), "anaphoric" (a pronoun, title or description refers to them, e.g. と彼女は言った, 少女が呟いた), or "implicit" (no tag; inferred from turn-taking, address terms, speech style).
 
 Rules:
-- Include ONLY lines that are spoken (or clearly voiced aloud) by a character: dialogue, usually inside 「」 or 『』 (or “” / "" in Western text). Narration, descriptions, inner monologue written as narration and titles are the narrator: do NOT include them.
+- Include the lines that are spoken (or clearly voiced aloud) by a character: dialogue, usually inside 「」 or 『』 (or “” / "" in Western text). Unstarred narration, descriptions, inner monologue written as narration and titles are the narrator: do NOT include them.
+- Lines numbered with a "*" (e.g. "7*: 『…』") open or continue a quotation. Give EVERY starred line an entry: its speaker, "unknown", or {"i":N,"s":"narrator"} when the quoted text is not said by anyone — a book, song or work title (『書名』), a sign or notice (「立ち入り禁止」), a quoted word or phrase, a written message read silently. A starred line you leave out goes to a human for review, so decide it yourself; when it could be either, prefer "unknown" over "narrator".
 - A long utterance may be split across several consecutive lines; label every line of it with the same speaker.
 - Use the attribution tags, turn-taking (in a two-person exchange speakers usually alternate), how characters address each other, their speech style and gender, and the surrounding narration (including context lines and the already-attributed lines).
 - Prefer "unknown" with a low "c" over guessing.
+- Direct each line's delivery on its own. When the same speaker says several lines in a row, do NOT copy one direction across all of them: read each line's sentence-final particles and what the line does (apology, excuse, empathy, promise, plea, emotional appeal, …) and give each line its own "e" / "ei" / "tone", so the delivery changes from line to line the way a real actor's would.
 ''';
 
 /// 滚动上下文里的一句已归属台词。
@@ -504,7 +509,9 @@ String buildTtsCastLinesUserPrompt(
   final StringBuffer b = StringBuffer();
   b.writeln('[cast list]');
   if (roster.isEmpty) {
-    b.writeln('(empty: use "unknown" for every dialogue line)');
+    b.writeln(
+      '(empty: use "unknown" for every spoken line, "narrator" for starred lines nobody says aloud)',
+    );
   } else {
     for (final TtsCastCharacter c in view.characters.take(
       kTtsCastMaxRosterInPrompt,
@@ -536,7 +543,7 @@ String buildTtsCastLinesUserPrompt(
   b.writeln('[lines to label]');
   for (int i = 0; i < chunk.sentences.length; i++) {
     b.writeln(
-      '${i + 1}: ${_oneLine(applyCastSubstitutions(chunk.sentences[i].text, substitutions))}',
+      '${i + 1}${chunk.dialogue[i] ? '*' : ''}: ${_oneLine(applyCastSubstitutions(chunk.sentences[i].text, substitutions))}',
     );
   }
   if (chunk.after.isNotEmpty) {
@@ -654,18 +661,20 @@ CastLineKind? ttsCastDialogueKind(Object? raw) {
   return kTtsCastDialogueKinds.contains(kind) ? kind : null;
 }
 
-/// AI 给的演出字段：只收一拍与情绪 + 强度（夹取规则与漫画共用
+/// AI 给的演出字段：只收一拍、情绪 + 强度与语气说明（夹取规则与漫画共用
 /// [CastLineDirection.fromJson]）；种子 / 语速 / 音高 / 音量不归 AI 定。
 CastLineDirection ttsCastAiDirection(Map<Object?, Object?> entry) {
   return CastLineDirection.fromJson(<Object?, Object?>{
     'beat': entry['beat'],
     'e': entry['e'],
     'ei': entry['ei'],
+    'tone': entry['tone'],
   });
 }
 
-/// 一块的整套行标注：模型回了的行按回复；没回的台词行记 [kTtsUnknown] + 零把握
-/// （进复核），其余没回的行记旁白。全部是 llm 来源，重新标注时口径一致。
+/// 一块的整套行标注：模型回了的行按回复（含模型对 `*` 行显式回的旁白，不进复核）；
+/// 没回的台词行记 [kTtsUnknown] + 零把握（进复核），其余没回的行记旁白。全部是
+/// llm 来源，重新标注时口径一致。
 Map<String, TtsCastLine> ttsCastLinesForChunk(
   TtsCastChunk chunk,
   List<TtsCastLabel> labels,
@@ -686,6 +695,7 @@ Map<String, TtsCastLine> ttsCastLinesForChunk(
           beatMs: l.direction.beatMs,
           emotion: l.direction.emotion,
           intensity: l.direction.intensity,
+          tone: l.direction.tone,
           confidence: l.confidence,
           evidence: l.evidence,
         ),

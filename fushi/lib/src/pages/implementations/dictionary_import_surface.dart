@@ -18,7 +18,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
-    show kDragDictionaryExtensions;
+    show kDictionarySurfaceDropExtensions;
 import 'package:fushi/src/media/import/import_collage_page.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/pages/implementations/dictionary_import_action.dart';
@@ -27,7 +27,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 export 'package:fushi/src/pages/implementations/dictionary_import_action.dart';
 
 /// 只有选文件时另外认的词典格式：词典管理页文件选择器在拖放集合
-/// （[kDragDictionaryExtensions]）之外还收 StarDict 的 `.ifo`（`.css` 是随词典的
+/// （[kDictionarySurfaceDropExtensions]）之外还收 StarDict 的 `.ifo`（`.css` 是随词典的
 /// 样式附件，不算格式）。气泡里按格式名写作 STARDICT（稿「气泡 · 查词」）。
 const List<String> kDictionaryPickOnlyFormatLabels = <String>['STARDICT'];
 
@@ -80,7 +80,9 @@ ImportSurfaceSpec dictionaryImportSurfaceSpec({
   formatGroups: <ImportFormatGroup>[
     ImportFormatGroup(
       title: desktopDrop ? t.import_format_group_droppable : t.nav_lookup,
-      labels: importFormatLabels(<Iterable<String>>[kDragDictionaryExtensions]),
+      labels: importFormatLabels(<Iterable<String>>[
+        kDictionarySurfaceDropExtensions,
+      ]),
     ),
   ],
   pickOnlyFormatGroups: <ImportFormatGroup>[

@@ -69,6 +69,7 @@ class SyncCompareEntry {
     required this.bookKey,
     this.remoteFolderId,
     this.remoteLiveTitle,
+    this.syncsBookProgress = true,
     this.remoteHasContent = true,
     this.remoteAudioBookId,
     this.remoteLiveAudiobookKey,
@@ -101,6 +102,13 @@ class SyncCompareEntry {
   /// Fushi 互联 live library 里的书名。它没有 WebDAV 书文件夹，下载必须走
   /// `/api/library/books/<title>`，不能交给 [importRemoteBookFolder]。
   final String? remoteLiveTitle;
+
+  /// 这一行的书级进度是否参与同步（BUG-5359）。互联通道上与 sweep / 退出书同步
+  /// 同一个判据 [InterconnectBookProgressSync.syncsBookProgress]：章节式互联漫画的
+  /// `reader_positions` 只是「当前章第几页」，没有可与 host 对齐的书级进度。为
+  /// false 时书级进度不判方向、不报冲突（[hasConflict] / [isSynced] /
+  /// [autoDirection]），「应用」也不碰书级端点；有声书断点照常走它自己的维度。
+  final bool syncsBookProgress;
 
   /// 该远端文件夹是否含可下载的书内容（`.epub` / `.manga.zip`）。仅对「远端独有」书有意义：为 false
   /// 时是只剩同步元数据的孤儿，不能当可下载书（避免 BUG-049 幽灵下载），但条目保留
@@ -171,19 +179,24 @@ class SyncCompareEntry {
   /// 冲突 = 双边都偏离共同祖先 base（真分叉），不再是简单的时间戳不等。
   /// 单边改动（一边等于 base）由 [resolveProgressSync] 判为自动方向，不算冲突。
   /// 互联 live 行按位置基线三方判定（[liveAction]，BUG-2506）。
-  bool get hasConflict => liveAction != null
+  bool get hasConflict => !syncsBookProgress
+      ? false
+      : liveAction != null
       ? liveAction == BookProgressSyncAction.conflict
       : resolveProgressSync(
           local: localUpdatedAt,
           remote: remoteUpdatedAt,
           base: base,
         ).isConflict;
-  bool get isSynced => liveAction != null
+  bool get isSynced => !syncsBookProgress
+      ? true
+      : liveAction != null
       ? liveAction == BookProgressSyncAction.synced
       : hasLocal && hasRemote && localUpdatedAt == remoteUpdatedAt;
   bool get needsManualChoice => hasConflict;
 
   SyncDirection get autoDirection {
+    if (!syncsBookProgress) return SyncDirection.synced;
     switch (liveAction) {
       case BookProgressSyncAction.synced:
         return SyncDirection.synced;
@@ -374,7 +387,9 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final List<EpubBookRow> liveJobs = <EpubBookRow>[
       if (bound)
         for (final EpubBookRow b in localBooks)
-          if (liveByTitle.containsKey(b.title)) b,
+          if (liveByTitle.containsKey(b.title) &&
+              _rowSyncsBookProgress(backend, b))
+            b,
     ];
     for (var i = 0; i < liveJobs.length; i += batchSize) {
       final List<EpubBookRow> batch = liveJobs.skip(i).take(batchSize).toList();
@@ -535,6 +550,8 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
         bookKey: local?.bookKey,
         remoteFolderId: remote?.id,
         remoteLiveTitle: live?.title,
+        syncsBookProgress:
+            local == null || _rowSyncsBookProgress(backend, local),
         remoteHasContent: remoteHasContent,
         remoteAudioBookId: remoteData?.audioBookId,
         remoteLiveAudiobookKey: local == null
@@ -1208,6 +1225,13 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
   });
 }
 
+/// 对比表这一行的书级进度是否参与同步：加载（live 探测、方向 / 冲突判定）与「应用」
+/// 共用这一个判据（BUG-5359）。互联通道按 [InterconnectBookProgressSync.syncsBookProgress]
+/// （sweep / 退出书同步同一判据）；云通道恒参与。
+bool _rowSyncsBookProgress(SyncBackend backend, EpubBookRow book) =>
+    backend is! InterconnectSyncBackend ||
+    InterconnectBookProgressSync.syncsBookProgress(book);
+
 /// 互联通道上应用一本书的选择：书进度按选择经 live 端点落地；有声书断点走它自己的
 /// 三方判定（[_applyLiveAudioChoice]，BUG-4433），不跟随书的选择。
 ///
@@ -1224,7 +1248,10 @@ Future<SyncApplyOutcome> _applyLiveChoice({
   required bool syncAudioBook,
 }) async {
   bool wrote = false;
-  if (entry.liveAction != null || entry.remoteLiveTitle != null) {
+  // 书级进度资格与加载期同一个判据（[_rowSyncsBookProgress]，BUG-5359）：章节式
+  // 互联漫画没有书级进度，走到 host 读写会抛 ArgumentError，连带短路下面的有声书。
+  if (_rowSyncsBookProgress(backend, book) &&
+      (entry.liveAction != null || entry.remoteLiveTitle != null)) {
     wrote = await _applyLiveProgressChoice(
       db: db,
       backend: backend,
@@ -1872,6 +1899,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         bookKey: e.bookKey,
         remoteFolderId: e.remoteFolderId,
         remoteLiveTitle: e.remoteLiveTitle,
+        syncsBookProgress: e.syncsBookProgress,
         // Carry the content flag: dropping it would reset to the default true
         // and re-expose the phantom download on a content-less orphan after its
         // remote audiobook is deleted (BUG-049 regression).

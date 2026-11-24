@@ -86,6 +86,13 @@ function Set-Toolchain {
     $env:LIB = Join-Path $AtlDir 'lib\x64'
   }
   if ($Proxy) { $env:HTTPS_PROXY = $Proxy; $env:HTTP_PROXY = $Proxy }
+  # flutter/flutter has paths past MAX_PATH (ios_scenario_app goldens): without
+  # core.longpaths a fresh clone fails at checkout on a machine whose global git
+  # config does not set it. Passed through the environment so it also reaches
+  # the gits gclient spawns, without touching the user's git config.
+  $env:GIT_CONFIG_COUNT = '1'
+  $env:GIT_CONFIG_KEY_0 = 'core.longpaths'
+  $env:GIT_CONFIG_VALUE_0 = 'true'
 }
 
 function Set-WindowsSdk {
@@ -175,6 +182,15 @@ if ($Steps -contains 'patch') {
   # window resize before any frame was presented no longer blocks the platform
   # thread for the 100 ms resize timeout (startup window placement).
   Invoke-Patch $flutter (Join-Path $patchDir 'engine-resize-before-first-frame.patch')
+  # Applies on top of all of the above (embedder API + Windows texture
+  # registrar): external texture frames are marked and redrawn on the raster
+  # thread instead of waiting for the merged platform / UI thread (BUG-5200).
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-texture-frame-raster-thread.patch')
+  # Independent of the Windows patches (lib/gpu + DlImageImpeller): Flutter GPU
+  # Texture.fromImage stops building a throwaway ContentContext on the UI
+  # thread, whose never-completing GLES submission stalled HostBuffer recycling
+  # and leaked an arena per frame for the rest of the process.
+  Invoke-Patch $flutter (Join-Path $patchDir 'engine-gpu-texture-from-image.patch')
   Invoke-Patch (Join-Path $src 'flutter\third_party\angle') (Join-Path $patchDir 'angle-scrgb-swapchain.patch')
 }
 

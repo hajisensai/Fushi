@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/playback_position_conflict_dialog.dart';
@@ -63,8 +64,12 @@ class _FakeInterconnectBackend extends InterconnectSyncBackend
       RemoteBookInfo(title: key, hasContent: true, bookKey: key),
   ];
 
+  /// 书级进度 GET 的次数（不参与书级同步的行不得碰书级端点，BUG-5359）。
+  int bookProgressReads = 0;
+
   @override
   Future<RemoteBookProgress> remoteBookProgress(String bookKey) async {
+    bookProgressReads++;
     if (failRemoteProgressReads > 0) {
       failRemoteProgressReads -= 1;
       throw StateError('host unreachable');
@@ -663,6 +668,109 @@ void main() {
     expect(result.errors, isEmpty);
     expect(fake.putAudioPositions['BookA']?.positionMs, 15000);
     expect(fake.exportedByFolder, isEmpty, reason: '文件箱一次都没写');
+  });
+
+  // BUG-5359：章节式互联漫画没有书级进度（加载期已不做 live 探测），但条目仍带
+  // remoteLiveTitle；「应用」此前照样走书级进度 → `_hostKey` 抛 ArgumentError，这本书
+  // 记失败，后面的有声书断点同步也被短路。
+  test('章节式互联漫画：对比不判书级方向，「应用」不碰书级端点，有声书照常', () async {
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    const String peerKey = 'peer-chaptered';
+    final String localKey = InterconnectMangaCatalog.localBookKeyFor(peerKey);
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: localKey,
+        title: 'BookA',
+        epubPath: '',
+        extractDir: '',
+        chapterCount: 0,
+        chaptersJson: '[]',
+        importedAt: 1,
+        format: const Value<String>('manga'),
+        sourceMetadata: Value<String?>(
+          InterconnectMangaCatalog.entryFor(
+            const RemoteBookInfo(
+              title: 'BookA',
+              hasContent: false,
+              bookKey: peerKey,
+              format: 'manga',
+              hasMangaChapters: true,
+            ),
+          ).encode(),
+        ),
+      ),
+    );
+    final EpubBookRow book = (await db.getEpubBook(localKey))!;
+    expect(InterconnectBookProgressSync.syncsBookProgress(book), isFalse);
+    // 本机留着「当前章第 6 页」：此前被当成书级进度推断为「推向远端」。
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion(
+        bookUid: Value(book.uid),
+        sectionIndex: const Value(5),
+        normCharOffset: const Value(0),
+        charOffset: const Value(0),
+        updatedAt: const Value(3000),
+      ),
+    );
+    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+      hostProgress: <String, RemoteBookProgress>{'BookA': _host(0, 1000)},
+    );
+    fake.hostAggregate = const AggregateSnapshot();
+    fake.hostAudiobooks.add(
+      RemoteAudiobookInfo(bookKey: localKey, title: 'BookA'),
+    );
+    fake.hostAudioPositions[localKey] = (positionMs: 9000, updatedAtMs: 5000);
+
+    final List<SyncCompareEntry> entries = await fetchCompareDataForTest(
+      db,
+      fake,
+    );
+    final SyncCompareEntry row = entries.single;
+    expect(row.remoteLiveTitle, 'BookA');
+    expect(row.syncsBookProgress, isFalse);
+    expect(row.hasConflict, isFalse);
+    expect(row.autoDirection, SyncDirection.synced);
+    expect(defaultSyncCompareChoices(entries)['BookA'], SyncChoice.skip);
+    expect(fake.bookProgressReads, 0);
+
+    final Directory tmp = Directory.systemTemp.createTempSync('cmp_live_ch_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    // 用户显式点了「用远端」：书级零调用，有声书按它自己的三方结论落回本机。
+    SyncCompareApplyResult result = await applySyncCompareChoices(
+      db: db,
+      backend: fake,
+      actionable: entries,
+      choices: <String, SyncChoice>{'BookA': SyncChoice.useRemote},
+      tempDir: tmp,
+    );
+    expect(result.errors, isEmpty, reason: result.describeFailures());
+    expect(fake.bookProgressReads, 0);
+    expect(fake.putProgress, isEmpty);
+    expect(
+      await db.getPrefTyped<int>(audiobookPositionPrefKey(localKey), 0),
+      9000,
+    );
+
+    // 「全部用本地」：同样不碰书级端点，有声书断点推给 host。
+    await db.setPrefTyped<int>(audiobookPositionPrefKey(localKey), 15000);
+    await db.setPrefTyped<int>(audiobookPositionAtPrefKey(localKey), 9000);
+    result = await applySyncCompareChoices(
+      db: db,
+      backend: fake,
+      actionable: entries,
+      choices: <String, SyncChoice>{'BookA': SyncChoice.useLocal},
+      tempDir: tmp,
+    );
+    expect(result.errors, isEmpty, reason: result.describeFailures());
+    expect(fake.bookProgressReads, 0);
+    expect(fake.putProgress, isEmpty);
+    expect(fake.putAudioPositions[localKey]?.positionMs, 15000);
+    expect(
+      (await db.getReaderPosition(book.uid))!.sectionIndex,
+      5,
+      reason: '章内页码不被书级同步改写',
+    );
   });
 
   testWidgets('Apply "use remote" lands host DB progress locally and records '

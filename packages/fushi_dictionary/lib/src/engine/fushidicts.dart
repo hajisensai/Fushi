@@ -738,11 +738,13 @@ class FushiDicts {
   /// native/fushi_corpus 直接解析，Dart 不解码。
   ///
   /// 给**后台 isolate** 用：[address] / [libraryPath] 来自 [borrowForBackground]，调用期间
-  /// 借用必须未归还。随包原生库没有这个导出时抛 [UnsupportedError]；原生失败抛
+  /// 借用必须未归还。[scanLength] 由提交方在宿主 isolate 上取（[FushiDicts.scanLength]，
+  /// 后台 isolate 读不到偏好）。随包原生库没有这个导出时抛 [UnsupportedError]；原生失败抛
   /// [StateError]。
   static Uint8List corpusTermsBorrowed(
     int address,
     String? libraryPath,
+    int scanLength,
     List<String> sentences,
   ) {
     FushidictsFfiBindings.libraryPathOverride = libraryPath;
@@ -777,7 +779,7 @@ class FushiDicts {
         Pointer<Void>.fromAddress(address),
         input,
         total,
-        defaultScanLength,
+        scanLength,
         out,
         outLen,
       );
@@ -1156,7 +1158,35 @@ class FushiDicts {
   }
 
   static const int defaultMaxResults = 16;
+
+  // ── 扫描窗口长度（反馈 ezCjUoU2QM） ──────────────────────────────
+  //
+  // 一次查词 / 分词最多从查询串开头取几个码点当最长候选（原生 `scan_candidates` 的
+  // scan_length）。查词、匹配长度、分词、语料词元全读同一个值；后台 isolate 不读
+  // [scanLengthReader]（它是 isolate 局部的），由提交方在本 isolate 上取好值带过去。
+
+  /// 出厂值，也是此前写死的常量。
   static const int defaultScanLength = 16;
+
+  /// 下限：再短会把常见长词（片假名外来语、复合词接活用）切断，省下的开销也有限。
+  static const int minScanLength = 8;
+
+  /// 上限：查词与分词在每个位置的候选数随窗口线性增长（每个候选都要过一遍变形还原
+  /// 与索引探查），32 = 出厂值两倍的开销封顶；词典里超过 32 个码点的词条极少。
+  static const int maxScanLength = 32;
+
+  /// 把任意整数收进 [minScanLength]..[maxScanLength]。
+  static int clampScanLength(int value) =>
+      value.clamp(minScanLength, maxScanLength);
+
+  /// 宿主装配点：读用户设置的扫描窗口长度（app 在偏好可读时绑到偏好上）。没装配的
+  /// 宿主（服务端、测试）读出厂值。isolate 局部。
+  static int Function() scanLengthReader = _defaultScanLengthReader;
+
+  static int _defaultScanLengthReader() => defaultScanLength;
+
+  /// 当前生效的扫描窗口长度（已夹到合法区间）。
+  static int get scanLength => clampScanLength(scanLengthReader());
 
   // ── lookup (with deinflection) ──────────────────────────────────
   //
@@ -1176,10 +1206,12 @@ class FushiDicts {
   // 结果之前就摘掉它们的释义、频率与音调，所以不占 [maxResults] 名额、也不影响排序
   // （见 lookup.hpp 的 LookupOptions::excluded_dictionaries）。服务端常驻全部词典、按
   // 请求的启用集合查词用。默认空集 = 行为逐字不变。
+  //
+  // [scanLength]：null = 当前设置（[FushiDicts.scanLength]）。
   List<FushiLookupResult> lookup(
     String text, {
     int maxResults = defaultMaxResults,
-    int scanLength = defaultScanLength,
+    int? scanLength,
     String? frequencyDictionary,
     FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
     String? primaryReading,
@@ -1191,7 +1223,7 @@ class FushiDicts {
     _handle!,
     text,
     maxResults: maxResults,
-    scanLength: scanLength,
+    scanLength: scanLength ?? FushiDicts.scanLength,
     frequencyDictionary: frequencyDictionary,
     frequencyOrder: frequencyOrder,
     primaryReading: primaryReading,
@@ -1205,8 +1237,8 @@ class FushiDicts {
     FushidictsFfiBindings bindings,
     Pointer<Void> handle,
     String text, {
+    required int scanLength,
     int maxResults = defaultMaxResults,
-    int scanLength = defaultScanLength,
     String? frequencyDictionary,
     FushiLookupFrequencyOrder frequencyOrder = FushiLookupFrequencyOrder.auto,
     String? primaryReading,
@@ -1377,7 +1409,7 @@ class FushiDicts {
   String lookupPopupJson(
     String text, {
     int maxResults = defaultMaxResults,
-    int scanLength = defaultScanLength,
+    int? scanLength,
     int maxTerms = 100,
   }) {
     final tp = text.toNativeUtf8(allocator: calloc);
@@ -1386,7 +1418,7 @@ class FushiDicts {
         _handle!,
         tp,
         maxResults,
-        scanLength,
+        scanLength ?? FushiDicts.scanLength,
         maxTerms,
       );
       if (ptr == nullptr) return '[]';
@@ -1416,7 +1448,13 @@ class FushiDicts {
   ({List<int> lengths, List<String> readings})? _tokenize(
     String text, {
     required bool withReadings,
-  }) => _tokenizeWith(_bindings!, _handle!, text, withReadings: withReadings);
+  }) => _tokenizeWith(
+    _bindings!,
+    _handle!,
+    text,
+    scanLength: FushiDicts.scanLength,
+    withReadings: withReadings,
+  );
 
   /// 批量分词 + 每段读音（每段再查一次 `lookup(段, 1)` 的首条读音，未命中为空串），
   /// 切分与 [tokenizeLengths] 逐位相同。原生分词（浏览器扩展整页分词实测约 177 ms）
@@ -1447,17 +1485,20 @@ class FushiDicts {
       work: () => _runBorrowedTokenize(
         handle.address,
         FushidictsFfiBindings.libraryPathOverride,
+        // 扫描窗口在本 isolate 上取好带过去：读偏好的装配点是 isolate 局部的。
+        FushiDicts.scanLength,
         texts,
       ),
     );
   }
 
-  /// 单独成静态函数：交给 `Isolate.run` 的闭包只捕获地址 / 库路径 / 文本这三样
-  /// 可发送的值，不把实例（与它的 Pointer）拖过 isolate 边界。
+  /// 单独成静态函数：交给 `Isolate.run` 的闭包只捕获地址 / 库路径 / 扫描窗口 / 文本
+  /// 这几样可发送的值，不把实例（与它的 Pointer）拖过 isolate 边界。
   static Future<List<({List<int> lengths, List<String> readings})?>>
   _runBorrowedTokenize(
     int address,
     String? libraryPath,
+    int scanLength,
     List<String> texts,
   ) async {
     final ({
@@ -1465,7 +1506,7 @@ class FushiDicts {
       String isolateName,
     })
     out = await Isolate.run(
-      () => _tokenizeBorrowedBatch(address, libraryPath, texts),
+      () => _tokenizeBorrowedBatch(address, libraryPath, scanLength, texts),
       debugName: kBackgroundTokenizeIsolateName,
     );
     debugLastBackgroundTokenizeIsolate = out.isolateName;
@@ -1479,14 +1520,25 @@ class FushiDicts {
     List<({List<int> lengths, List<String> readings})?> results,
     String isolateName,
   })
-  _tokenizeBorrowedBatch(int address, String? libraryPath, List<String> texts) {
+  _tokenizeBorrowedBatch(
+    int address,
+    String? libraryPath,
+    int scanLength,
+    List<String> texts,
+  ) {
     FushidictsFfiBindings.libraryPathOverride = libraryPath;
     final FushidictsFfiBindings bindings = FushidictsFfiBindings();
     final Pointer<Void> handle = Pointer<Void>.fromAddress(address);
     return (
       results: <({List<int> lengths, List<String> readings})?>[
         for (final String text in texts)
-          _tokenizeWith(bindings, handle, text, withReadings: true),
+          _tokenizeWith(
+            bindings,
+            handle,
+            text,
+            scanLength: scanLength,
+            withReadings: true,
+          ),
       ],
       isolateName: Isolate.current.debugName ?? '',
     );
@@ -1497,6 +1549,7 @@ class FushiDicts {
     FushidictsFfiBindings bindings,
     Pointer<Void> handle,
     String text, {
+    required int scanLength,
     required bool withReadings,
   }) {
     // 带长传入（HBK-AUDIT-007）：`toNativeUtf8` 产出的是 C 串，原生按 NUL 定界会在
@@ -1511,7 +1564,7 @@ class FushiDicts {
         handle,
         tp,
         bytes.length,
-        defaultScanLength,
+        scanLength,
         withReadings ? 1 : 0,
       );
       final rPtr = calloc<FfiTokenizeResult>();
@@ -1543,23 +1596,30 @@ class FushiDicts {
 
   /// [text] 开头的最长匹配长度（UTF-16 码元；0 = 未命中）。
   ///
-  /// 引擎只看前 [defaultScanLength] + 1 个码点（见 tokenize.hpp），这里先按码点截好
+  /// 引擎只看前 [scanLength] + 1 个码点（见 tokenize.hpp），这里先按码点截好
   /// 再编码——wordFromIndex 一类调用传进来的是整段余文，没必要整段转 UTF-8。
   int matchedLength(String text) {
-    final tp = scanWindowOf(text).toNativeUtf8(allocator: calloc);
+    final int scanLength = FushiDicts.scanLength;
+    final tp = scanWindowOf(
+      text,
+      scanLength: scanLength,
+    ).toNativeUtf8(allocator: calloc);
     try {
-      return _bindings!.matchLength(_handle!, tp, defaultScanLength);
+      return _bindings!.matchLength(_handle!, tp, scanLength);
     } finally {
       calloc.free(tp);
     }
   }
 
-  /// [text] 的前 [defaultScanLength] + 1 个码点（引擎结果只依赖这一段）。
+  /// [text] 的前 [scanLength] + 1 个码点（引擎结果只依赖这一段）。
   @visibleForTesting
-  static String scanWindowOf(String text) {
+  static String scanWindowOf(
+    String text, {
+    int scanLength = defaultScanLength,
+  }) {
     int units = 0;
     int codePoints = 0;
-    while (units < text.length && codePoints <= defaultScanLength) {
+    while (units < text.length && codePoints <= scanLength) {
       final int unit = text.codeUnitAt(units);
       final bool surrogatePair =
           unit >= 0xD800 &&

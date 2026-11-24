@@ -696,6 +696,106 @@ fn a_cache_built_under_older_rules_is_rebuilt_once_on_open() {
     }
 }
 
+/// HBK-AUDIT-203：卡片标志按血统继承的规则改过（BUG-5190：同一层几张前身都有记录时取生效写入最新的，之前取卡 ID
+/// 序在前的）之后，按上一版口径（`CACHE_RULES` 4）物化过的新代库开库时整层重建一次：原地重开与显式重建相同，不留
+/// 旧规则算出的标志。后继卡的两张前身同一层、`flag` 不同，ID 序在前的那张先写：旧口径继承它的 1，新口径继承 2。
+#[test]
+fn a_cache_with_card_flags_inherited_by_the_old_layer_rule_is_rebuilt_on_open() {
+    use crate::store::gen4::cache::{CACHE_RULES, RULES_KEY};
+    let mut a = Dev::new("k3layer");
+    let (mut lo, mut hi) = (card(N1, "t1"), card(N1, "t2"));
+    if crate::ordering::cmp_utf16(&hi, &lo).is_lt() {
+        std::mem::swap(&mut lo, &mut hi);
+    }
+    let tail = card(N1, "t3");
+    let fdef = json!({"name": "Expression", "ord": 0});
+    let tdef = |name: &str, ord: i64| json!({"name": name, "ord": ord, "front": "{{Expression}}"});
+    let item = |e: Value| json!({"e": e, "note": N1});
+    write_items(
+        &a,
+        "apply",
+        T1,
+        vec![
+            item(
+                json!({"t": "entity", "x": {"id": "NT", "p": P, "k": "notetype", "d": {"createdAt": 1, "ntKind": "standard"}}}),
+            ),
+            item(edit("notetype", "NT", "fieldDef/fa", fdef)),
+            item(edit("notetype", "NT", "tmplDef/t1", tdef("A", 0))),
+            item(edit("notetype", "NT", "tmplDef/t2", tdef("B", 1))),
+            item(edit("notetype", "NT", "tmplDef/t3", tdef("C", 2))),
+            item(note(N1, "NT", 10)),
+            item(edit("note", N1, "f/fa", json!("猫"))),
+        ],
+    );
+    write_items(
+        &a,
+        "apply",
+        T1 + 1,
+        vec![item(edit("card", &lo, "flag", json!(1)))],
+    );
+    write_items(
+        &a,
+        "apply",
+        T1 + 2,
+        vec![item(edit("card", &hi, "flag", json!(2)))],
+    );
+    write_items(
+        &a,
+        "apply",
+        T1 + 3,
+        vec![
+            item(edit(
+                "card",
+                &tail,
+                &format!("historyFrom/{lo}"),
+                json!(true),
+            )),
+            item(edit(
+                "card",
+                &tail,
+                &format!("historyFrom/{hi}"),
+                json!(true),
+            )),
+        ],
+    );
+    let flags = |t: &Truth<'_>, col: i64| -> Result<Vec<i64>, String> {
+        let mut stmt = t
+            .conn()
+            .prepare("SELECT flag FROM cards WHERE col = ?1 ORDER BY id")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([col], |r| r.get(0))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<i64>, _>>()
+            .map_err(|e| e.to_string());
+        rows
+    };
+    let built = a.direct(|t, col| {
+        let built = flags(t, col)?;
+        // 新口径：前身 1、2，后继 2（最新写的那张）。
+        let mut sorted = built.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, vec![1, 2, 2], "{built:?}");
+        // 上一版口径物化的库：后继卡继承的是 ID 序在前那张的 1，记的口径是 4。
+        t.conn()
+            .execute(
+                "UPDATE cards SET flag = 1 WHERE col = ?1 AND flag = 2",
+                [col],
+            )
+            .map_err(|e| e.to_string())?;
+        t.set_derive_cfg(col, RULES_KEY, Some("4"))?;
+        Ok(built)
+    });
+    let v = g4(a.h, "cache_config_set", T1 + 4, json!({"caches": cfg()}));
+    assert_eq!(v["changed"], json!(true), "{v}");
+    a.direct(|t, col| {
+        assert_eq!(flags(t, col)?, built);
+        assert_eq!(t.derive_cfg(col, RULES_KEY)?, Some(CACHE_RULES.to_string()));
+        assert_rebuild_is_identity(t, col);
+        Ok(())
+    });
+}
+
 /// 两台全新设备经同一个文件夹位置互相同步：各写各的 → 两轮之后都看得到对方写的；派生层逐行相同、增量 == 重建。第二轮
 /// 什么都没变时（带 `skipUnchangedMs`）不重写 head；位置上只留每台设备最新两代 head。
 #[test]

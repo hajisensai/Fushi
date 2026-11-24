@@ -669,6 +669,8 @@ class _ItemWorkbenchRowState extends State<_ItemWorkbenchRow> {
     final List<DialogAction> children = action is DialogWorkbenchAction
         ? action.children
         : const <DialogAction>[];
+    final bool emphasized =
+        action is! DialogWorkbenchAction || action.emphasized;
     if (children.isNotEmpty) {
       return _ItemSubmenuRow(
         key: const ValueKey<String>('item_menu_workbench'),
@@ -679,6 +681,7 @@ class _ItemWorkbenchRowState extends State<_ItemWorkbenchRow> {
         flyout: widget.flyout,
         onOpenPage: widget.onOpenPage,
         workbench: true,
+        workbenchEmphasized: emphasized,
       );
     }
     return _ItemWorkbenchTile(
@@ -686,18 +689,21 @@ class _ItemWorkbenchRowState extends State<_ItemWorkbenchRow> {
       icon: action.icon,
       label: action.label,
       status: _status,
+      emphasized: emphasized,
       onPressed: action.onPressed,
     );
   }
 }
 
-/// 工作台行的外观（主色调容器）。子菜单形态与直达形态共用。
+/// 工作台行的外观（主色调容器；[emphasized] 为 false 时是中性底色的同级次要行，
+/// 见 [DialogWorkbenchAction.emphasized]）。子菜单形态与直达形态共用。
 class _ItemWorkbenchTile extends StatelessWidget {
   const _ItemWorkbenchTile({
     required this.icon,
     required this.label,
     required this.status,
     required this.onPressed,
+    this.emphasized = true,
     this.focusNode,
     this.onHover,
     super.key,
@@ -707,6 +713,7 @@ class _ItemWorkbenchTile extends StatelessWidget {
   final String label;
   final String? status;
   final VoidCallback onPressed;
+  final bool emphasized;
   final FocusNode? focusNode;
   final ValueChanged<bool>? onHover;
 
@@ -715,12 +722,17 @@ class _ItemWorkbenchTile extends StatelessWidget {
     final bool apple = isGlassDesign(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final FushiAppleColors? palette = apple ? appleColorsOf(context) : null;
-    final Color background =
-        palette?.accent.withValues(alpha: 0.14) ?? scheme.primaryContainer;
-    final Color foreground = palette?.label ?? scheme.onPrimaryContainer;
+    final Color background = emphasized
+        ? palette?.accent.withValues(alpha: 0.14) ?? scheme.primaryContainer
+        : palette?.fill ?? scheme.surfaceContainerHighest;
+    final Color foreground =
+        palette?.label ??
+        (emphasized ? scheme.onPrimaryContainer : scheme.onSurface);
     final Color secondary =
         palette?.secondaryLabel ??
-        scheme.onPrimaryContainer.withValues(alpha: 0.78);
+        (emphasized
+            ? scheme.onPrimaryContainer.withValues(alpha: 0.78)
+            : scheme.onSurfaceVariant);
     final TextTheme text = Theme.of(context).textTheme;
     final String? status = this.status;
     return FushiPressScale(
@@ -917,6 +929,7 @@ class _ItemSubmenuRow extends StatefulWidget {
     required this.flyout,
     required this.onOpenPage,
     this.workbench = false,
+    this.workbenchEmphasized = true,
     super.key,
   });
 
@@ -929,6 +942,9 @@ class _ItemSubmenuRow extends StatefulWidget {
 
   /// 画成工作台外观（[_ItemWorkbenchTile]）而不是普通菜单行。
   final bool workbench;
+
+  /// [workbench] 时传给 [_ItemWorkbenchTile.emphasized]。
+  final bool workbenchEmphasized;
 
   @override
   State<_ItemSubmenuRow> createState() => _ItemSubmenuRowState();
@@ -1028,6 +1044,7 @@ class _ItemSubmenuRowState extends State<_ItemSubmenuRow> {
             icon: widget.icon,
             label: widget.label,
             status: widget.subtitle,
+            emphasized: widget.workbenchEmphasized,
             onPressed: _activate,
             focusNode: _rowFocus,
             onHover: _onHoverRow,

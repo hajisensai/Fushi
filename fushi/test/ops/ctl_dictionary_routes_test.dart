@@ -567,12 +567,16 @@ void main() {
       expect(fields['frequenciesHtml'], contains('JPDB: 500'));
       expect(fields['pitchCategories'], 'nakadaka');
       expect(fields['pitchPositions'], contains('<svg'));
+      // {pitch-accent-positions-inline}（反馈 iTMx1pCb2V）：无头的音调位本来就没有
+      // 列表外壳，单行变体与默认字段同值，CLI 制卡不留空字段。
+      expect(fields['pitchPositionsInline'], fields['pitchPositions']);
 
       final Map<String, String> plain = buildCtlMineFields(
         word: '生',
         lookup: lookup,
       );
       expect(plain.containsKey('pitchPositions'), isFalse);
+      expect(plain.containsKey('pitchPositionsInline'), isFalse);
       expect(plain.containsKey('frequenciesHtml'), isFalse);
       expect(plain.containsKey('singleFrequencyNumbers'), isFalse);
       expect(plain.containsKey('singleFrequenciesHtml'), isFalse);

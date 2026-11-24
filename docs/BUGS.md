@@ -33,14 +33,157 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4521 条。点号进各自文件。
+> 共 4666 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5364](bugs/BUG-5364-manga-popup-forwarded-keys-block-scroll.md) | ✅ | ✅ | manga-popup-forwarded-keys-block-scroll |
+| [BUG-5363](bugs/BUG-5363-srs-visible-sounds-zero-opacity-animation.md) | ✅ | ✅ | 整面卡面：关键帧 opacity 始终为 0 的动画被当淡入，隐藏发音进自动播放 |
+| [BUG-5362](bugs/BUG-5362-overlay-handoff-reading-mismatch.md) | ✅ | ✅ | 覆盖窗转交高级制卡：同表记异读音时定位到错词条 |
+| [BUG-5361](bugs/BUG-5361-overlay-handoff-stale-locate-reply.md) | ✅ | ✅ | 覆盖窗转交高级制卡：定位往返途中手动查别的词，旧回包仍开对话框 |
+| [BUG-5360](bugs/BUG-5360-jimaku-mixed-numbering-server-fallback.md) | ✅ | ✅ | Jimaku 混合编号：本地集号命中挡住服务端按集回退，要的语言 / 版本整个漏掉 |
+| [BUG-5359](bugs/BUG-5359-sync-compare-chaptered-manga-apply-throws.md) | ✅ | ✅ | 对比弹窗「应用」章节式互联漫画时书级进度抛 ArgumentError，并短路有声书断点 |
+| [BUG-5358](bugs/BUG-5358-interconnect-manga-volume-progress-landing-not-atomic.md) | ✅ | ✅ | 单卷互联漫画同步落地书级 / 章级分两次写，夹着翻页时章级退回 host 旧页 |
+| [BUG-5357](bugs/BUG-5357-manga-novel-arrow-direction-parity.md) | ✅ | ✅ | 小说与漫画左右翻页方向判据不一致 |
+| [BUG-5356](bugs/BUG-5356-bluray-playall-episode-axis-anchors.md) | ✅ | ✅ | 原盘「全部播放」按集换库身份后，时间锚点仍在整条播放列表时间轴上 |
+| [BUG-5355](bugs/BUG-5355-music-visualizer-top-band-and-picker-clip.md) | ✅ | ✅ | music-visualizer-top-band-and-picker-clip |
+| [BUG-5354](bugs/BUG-5354-video-extras-subfolder-not-attached.md) | ✅ | ✅ | video-extras-subfolder-not-attached |
+| [BUG-5353](bugs/BUG-5353-srs-web-face-autoplay-visibility-race.md) | ✅ | ✅ | srs-web-face-autoplay-visibility-race |
+| [BUG-5352](bugs/BUG-5352-interconnect-manga-progress-key-mismatch.md) | ✅ | ✅ | interconnect-manga-progress-key-mismatch |
+| [BUG-5351](bugs/BUG-5351-manga-double-tap-zoom-flash-offset.md) | ✅ | ✅ | 漫画双击放大 / 缩回落定后黑屏闪一帧，缩回最后一帧位置跳动 |
+| [BUG-5350](bugs/BUG-5350-android-330-java-crash-mihon.md) | ✅ | ✅ | Android 用 Mihon 在线源时闪退：扩展抛 Error（LinkageError 等）漏过宿主拦截器，经 OkHttp 异步线程重抛带崩进程 |
+| [BUG-5349](bugs/BUG-5349-manga-speed-popover-full-height.md) | ✅ | ✅ | 漫画播放条倍速 / 音量弹层撑满屏高 |
+| [BUG-5348](bugs/BUG-5348-music-mv-backdrop-toggle-off.md) | ✅ | ✅ | 歌词页开着时关掉「有 MV 时背景放 MV」，MV 照放不停 |
+| [BUG-5347](bugs/BUG-5347-overlay-card-advanced-mining-sentence.md) | ✅ | ✅ | 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上 |
+| [BUG-5340](bugs/BUG-5340-manga-audio-ui-line-edit-hijacks-drama-registration.md) | ✅ | ✅ | 登记的是广播剧 / 动画音轨时，app 内单句补回 / 保留候选会把登记悄悄换回合成成品 |
+| [BUG-5338](bugs/BUG-5338-music-visualizer-gpu-fromimage-commit-leak.md) | ✅ | ✅ | music-visualizer-gpu-fromimage-commit-leak |
+| [BUG-5337](bugs/BUG-5337-manga-audio-package-import-busy.md) | ✅ | ✅ | manga-audio-package-import-busy |
+| [BUG-5336](bugs/BUG-5336-music-peek-remote-now-playing.md) | ✅ | ✅ | 音乐速览：播放服务器 / 插件 / Apple Music 曲目时「继续」为空 |
+| [BUG-5335](bugs/BUG-5335-games-peek-running-game.md) | ✅ | ✅ | 游戏速览「继续」不认正在运行的游戏 |
+| [BUG-5334](bugs/BUG-5334-games-peek-hide-nsfw.md) | ✅ | ✅ | 游戏速览无视「隐藏成人向」偏好 |
+| [BUG-5333](bugs/BUG-5333-downloads-peek-sources.md) | ✅ | ✅ | 下载速览只看视频任务：漫画 / 转录 / 直链 / 旧番剧 / 远端 / 互联任务都不在 |
+| [BUG-5332](bugs/BUG-5332-book-peek-continue-mismatch.md) | ✅ | ✅ | 书 / 漫画的侧栏速览、库页「继续阅读」、首页「继续」三处给出三个不同的续读项 |
+| [BUG-5331](bugs/BUG-5331-home-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏「首页」悬停速览与首页「继续」区不是同一份：缺远端书 / 服务器条目，游戏不按合集折叠 |
+| [BUG-5330](bugs/BUG-5330-video-peek-continue-mismatch.md) | ✅ | ✅ | 侧栏视频速览说「还没有可继续的」，同屏视频首页却有「☁ 下一集 · 第 1 集」 |
+| [BUG-5312](bugs/BUG-5312-bluray-menu-playall-phantom-row.md) | ✅ | ✅ | 原盘菜单「全部播放」凭空多出一集整卷行，加密剧集盘各集没有封面 |
+| [BUG-5311](bugs/BUG-5311-music-disc-art-cold-start-cache.md) | ✅ | ✅ | music-disc-art-cold-start-cache |
+| [BUG-5310](bugs/BUG-5310-overlay-card-selection-hotkey-nested-lookup.md) | ✅ | ✅ | 应用外查词卡片里选中文字再按查词热键，卡片收起后在鼠标处重弹原词，不做嵌套查词 |
+| [BUG-5309](bugs/BUG-5309-collection-volume-sort-bonus-first.md) | ✅ | ✅ | 合集「按卷号」排序把『』开头的特典册排到第 1 卷前面 |
+| [BUG-5308](bugs/BUG-5308-manga-read-aloud-highlight-not-rotated.md) | ✅ | ✅ | manga-read-aloud-highlight-not-rotated |
+| [BUG-5307](bugs/BUG-5307-imusic-offline-download.md) | ✅ | ✅ | 互联音乐库：把 host 曲目下载到本机离线听（design-imusic-q12） |
+| [BUG-5306](bugs/BUG-5306-imusic-remote-mv-rematch.md) | ✅ | ✅ | 互联音乐库：客户端请 host 重新匹配 / 手动绑定 MV（design-imusic-q9） |
+| [BUG-5305](bugs/BUG-5305-imusic-host-transcode.md) | ✅ | ✅ | 互联音乐库：客户端设码率上限时 host 转码（design-imusic-q6） |
+| [BUG-5304](bugs/BUG-5304-imusic-disc-cdda-share.md) | ✅ | ✅ | 互联音乐库：光盘标题与 CDDA 曲目共享（design-imusic-q5） |
+| [BUG-5303](bugs/BUG-5303-imusic-relay-network-source.md) | ✅ | ✅ | 互联音乐库：host 网络来源曲目经 host 中继（design-imusic-q4） |
+| [BUG-5302](bugs/BUG-5302-imusic-mv-remote-client.md) | ✅ | ✅ | 互联音乐库：客户端歌词页 / 卡拉 OK 页放 host 的 MV（依赖 #4249） |
+| [BUG-5301](bugs/BUG-5301-imusic-server-scan-packaging.md) | 🚧 | 🚧 | 互联音乐库第 3 期：服务端扫描音乐与随包 fushi_music |
+| [BUG-5300](bugs/BUG-5300-imusic-engine-read-layer.md) | ✅ | ✅ | 互联音乐库第 1 期余项：歌词本地层与封面选取搬进引擎 |
+| [BUG-5299](bugs/BUG-5299-game-ocr-mode-phase3.md) | 🚧 | 🚧 | OCR 游戏模式第三期：持续截窗直出框内像素、OCR 行的游戏内嵌查词 |
+| [BUG-5298](bugs/BUG-5298-imusic-legacy-library-modules.md) | 🚧 | 🚧 | 互联老库类迁入统一模块层（design-imusic-q0） |
+| [BUG-5297](bugs/BUG-5297-listening-preset-unrecognized-layout.md) | ✅ | ✅ | 新加的「听力」模板一打开就报「区块以外的代码被改过」，复习走 WebView 卡面 |
+| [BUG-5296](bugs/BUG-5296-gen4-duplicate-log-representative.md) | ✅ | ✅ | gen4 迁移对拍：重复日志在协议 3 停在先到的副本上、新代取最小操作号，两份副本任何一处不同都整份撤回 |
+| [BUG-5295](bugs/BUG-5295-gen4-register-winners-note-source-deleted.md) | ✅ | ✅ | gen4 迁移对拍：笔记 `source` / `deleted` 寄存器两侧胜者不同（协议 3 多出 1049 条活着的修改记录），整份撤回 |
+| [BUG-5294](bugs/BUG-5294-gen4-parity-secondary-profile-builtins-missing.md) | ✅ | ✅ | gen4 迁移对拍：第二个 profile 的三个加盐内置实体协议 3 一侧哪儿都没有，`entities` 判新代多出、整份撤回 |
+| [BUG-5293](bugs/BUG-5293-music-replaygain-over-12db-rejected.md) | ✅ | ✅ | ReplayGain 超过 +12 dB 的曲目按 0 dB 播 |
+| [BUG-5292](bugs/BUG-5292-song-asr-download-refetches-recognizer.md) | ✅ | ✅ | 歌曲字幕补分离模型时按推荐变体重下整套识别模型 |
+| [BUG-5291](bugs/BUG-5291-music-play-source-host-slash.md) | ✅ | ✅ | music-play-source-host-slash |
+| [BUG-5290](bugs/BUG-5290-music-history-server-credentials.md) | ✅ | ✅ | music-history-server-credentials |
+| [BUG-5289](bugs/BUG-5289-music-lyric-coverage-sync.md) | 🚧 | 🚧 | 音乐歌词「已计句子」并集不跨设备同步 |
+| [BUG-5288](bugs/BUG-5288-media-server-grid-stale-watched.md) | ✅ | ✅ | 媒体服务器网格 / 首页在标记未看后仍显示旧的已看状态 |
+| [BUG-5287](bugs/BUG-5287-book-art-scrape-ignores-edition-language.md) | ✅ | ✅ | Cover scraping uses Japanese MangaBaka covers for non-Japanese editions |
+| [BUG-5286](bugs/BUG-5286-series-grouper-merges-language-editions.md) | ✅ | ✅ | Book series grouper merges same-title editions in different languages into one collection |
+| [BUG-5285](bugs/BUG-5285-legacy-disc-stream-rows-not-converted.md) | ✅ | ✅ | 修复前逐个入库的蓝光流文件行（00000.m2ts）一直留在视频库，不会换成原盘合集 |
+| [BUG-5284](bugs/BUG-5284-media-title-crc-suffix-not-cleaned.md) | ✅ | ✅ | media-title-crc-suffix-not-cleaned |
+| [BUG-5283](bugs/BUG-5283-book-game-pending-identity-invisible.md) | ✅ | ✅ | book-game-pending-identity-invisible |
+| [BUG-5282](bugs/BUG-5282-ai-identity-candidate-type-mislabeled.md) | ✅ | ✅ | AI 识别作品时候选类型被标成本地搜索类型，正确候选被压低置信度不采用 |
+| [BUG-5281](bugs/BUG-5281-anidb-same-name-character-credit-fk-failure.md) | ✅ | ✅ | 同一声优配两个同名角色时写角色外部 id 撞外键，整部作品刮削失败 |
+| [BUG-5280](bugs/BUG-5280-disc-stream-files-counted-as-pending-works.md) | ✅ | ✅ | 逐个入库的原盘流文件（BDMV/STREAM/*.m2ts）被当成作品，挂满「待确认身份」 |
+| [BUG-5279](bugs/BUG-5279-continuous-subtitle-bounce.md) | ✅ | ✅ | 连续对白字幕交接时一句贴基线、下一句被抬高，上下跳动 |
+| [BUG-5278](bugs/BUG-5278-reader-auto-read-misses-popup-webview.md) | ✅ | ✅ | 阅读器等页面的查词自动发音从未走弹窗 `<audio>`，第一次要等一会 |
+| [BUG-5277](bugs/BUG-5277-interconnect-manga-page-id-download-transition.md) | ✅ | ✅ | 互联漫画读到一半 host 下完这章：页身份由源端身份变成文件身份，取页 409、对端整章重下 |
+| [BUG-5276](bugs/BUG-5276-settings-reset-pinned-default.md) | ✅ | ✅ | 「恢复本页默认」删不掉与默认同值的显式选择，跟别的设置走的行恢复后反被钉死 |
+| [BUG-5275](bugs/BUG-5275-profile-delete-silent-when-srs-unopenable.md) | ✅ | ✅ | 复习库打不开（升级失败等）时删 Profile 点了没反应 |
+| [BUG-5274](bugs/BUG-5274-srs-apkg-reimport-moves-cards-to-new-deck.md) | ✅ | ✅ | 重导新版 apkg 把已有卡整批挪进新建的同源牌组，删掉新牌组连带删光旧牌组的卡和笔记 |
+| [BUG-5273](bugs/BUG-5273-mihon-desugar-kotlin-abi.md) | ✅ | ✅ | Mihon / Aniyomi 扩展调宿主 kotlin-stdlib 等 java.time 签名 NoSuchMethodError（minSdk 24 脱糖改写成 j$.time） |
+| [BUG-5272](bugs/BUG-5272-jitendex-redirect-not-followed.md) | ✅ | ✅ | jitendex-redirect-not-followed |
+| [BUG-5271](bugs/BUG-5271-manga-audio-name-reading-phase3.md) | 🚧 | 🚧 | 漫画有声人名读法第三期：AI 抄原页振假名 / 查官方资料记出处；同一写法按角色区分读音 |
+| [BUG-5270](bugs/BUG-5270-webview-wgc-worker-occluded-join-hang.md) | ✅ | ✅ | 显示器关着时关掉带 WebView 的页面，Windows app 整个卡死（WGC 取帧线程 join 不回） |
+| [BUG-5269](bugs/BUG-5269-srs4-parity-unverified-card-stats.md) | 🚧 | 🚧 | srs4-parity-unverified-card-stats |
+| [BUG-5268](bugs/BUG-5268-windows-display-off-black-screen.md) | 🚧 | 🚧 | windows-display-off-black-screen |
+| [BUG-5267](bugs/BUG-5267-gen4-parity-cross-profile-entities.md) | ✅ | ✅ | gen4 迁移对拍：同库另一个 profile 占走了 `srs_entities` 行的实体，`entities` 判新代多出、整份撤回 |
+| [BUG-5266](bugs/BUG-5266-manga-audio-no-volume-control.md) | ✅ | ✅ | manga-audio-no-volume-control |
+| [BUG-5265](bugs/BUG-5265-manga-audio-previous-replays-current.md) | ✅ | ✅ | manga-audio-previous-replays-current |
+| [BUG-5264](bugs/BUG-5264-srs-trusted-clock-carried-offset.md) | ✅ | ✅ | SRS 可信时钟把「可信时间 − 墙钟」偏移带到下一个进程，改过系统时间后「今天」一直多 1 天 |
+| [BUG-5263](bugs/BUG-5263-import-dialog-pops-page-above.md) | ✅ | ✅ | import-dialog-pops-page-above |
+| [BUG-5262](bugs/BUG-5262-interconnect-offline-log-noise.md) | ✅ | ✅ | interconnect-offline-log-noise |
+| [BUG-5261](bugs/BUG-5261-interconnect-profile-403-english-reason.md) | ✅ | ✅ | interconnect-profile-403-english-reason |
+| [BUG-5260](bugs/BUG-5260-video-menu-cm-extra-filename.md) | ✅ | ✅ | video-menu-cm-extra-filename |
+| [BUG-5259](bugs/BUG-5259-music-continue-card-no-player-page.md) | ✅ | ✅ | music-continue-card-no-player-page |
+| [BUG-5258](bugs/BUG-5258-status-monitor-overlay-section-last.md) | ✅ | ✅ | status-monitor-overlay-section-last |
+| [BUG-5257](bugs/BUG-5257-retheme-drops-shell-theme.md) | ✅ | ✅ | retheme-drops-shell-theme |
+| [BUG-5256](bugs/BUG-5256-glass-settings-sidebar-scroll-black-band.md) | ✅ | ✅ | glass-settings-sidebar-scroll-black-band |
+| [BUG-5255](bugs/BUG-5255-kanji-card-labels-never-localized.md) | 🚧 | 🚧 | kanji-card-labels-never-localized |
+| [BUG-5254](bugs/BUG-5254-windows-apple-music-headless-webview-muted.md) | ✅ | ✅ | Windows Apple Music 网页桥完全无声（无头 WebView2 被一刀切静音） |
+| [BUG-5253](bugs/BUG-5253-cover-block-sliver-scroll-rebuild.md) | ✅ | ✅ | 色块布局 sliver 每个滚动帧重建视口内全部卡片（媒体库页滚动卡顿） |
+| [BUG-5252](bugs/BUG-5252-home-cover-block-logo-size-class.md) | ✅ | ✅ | home-cover-block-logo-size-class |
+| [BUG-5251](bugs/BUG-5251-bluray-volume-wrapper-dir-split-collections.md) | ✅ | ✅ | bluray-volume-wrapper-dir-split-collections |
+| [BUG-5250](bugs/BUG-5250-srs-gen4-migration-stale-legacy-results.md) | ✅ | ✅ | gen4 迁移对拍：协议 3 一侧旧日志的结果被第一版协议 3 的重放改写过，卡与统计整片判不同、回滚 |
+| [BUG-5249](bugs/BUG-5249-manga-audio-not-read-line-still-plays.md) | ✅ | ✅ | manga-audio-not-read-line-still-plays |
+| [BUG-5248](bugs/BUG-5248-manga-audio-batch-cancel-overwrites-live.md) | ✅ | ✅ | manga-audio-batch-cancel-overwrites-live |
+| [BUG-5247](bugs/BUG-5247-manga-audio-local-rebind-rollback-deletes-live.md) | ✅ | ✅ | manga-audio-local-rebind-rollback-deletes-live |
+| [BUG-5246](bugs/BUG-5246-dist-shader-warning-false-red.md) | ✅ | ✅ | Flutter 3.50 的着色器警告让 dist 把绿批次判红（「no done event」） |
+| [BUG-5245](bugs/BUG-5245-music-media-session-blur-toggle-stale-art.md) | ✅ | ✅ | 暂停时切换「模糊 NSFW 封面」，锁屏 / 媒体卡不更新，仍显示原图 |
+| [BUG-5244](bugs/BUG-5244-music-dlsite-library-cancel-cached.md) | ✅ | ✅ | DLsite 整库识别取消后，缓存命中的专辑仍继续下载主图、写封面和 NSFW |
+| [BUG-5243](bugs/BUG-5243-music-dlsite-adult-mark-race.md) | ✅ | ✅ | DLsite 整库识别的 R-18 自动标记与并发取消有空档，取消可被盖回 NSFW |
+| [BUG-5242](bugs/BUG-5242-wait-slice-chain-wait-limit.md) | ✅ | ✅ | subagent_wait_slice：链式命令里一条 heavy 自带 --wait-max-min，其余 heavy 都拿不到默认时限 |
+| [BUG-5241](bugs/BUG-5241-gal-track-refresh-guard-reads-comments.md) | ✅ | ✅ | 音轨刷新定时器守卫从注释里也能找到 cancel，行为测试看不到存活的定时器 |
+| [BUG-5240](bugs/BUG-5240-chrome-tag-guard-misses-node-runtime-probe.md) | ✅ | ✅ | Chrome 标签守卫漏掉 `NodeTestRuntime.probe(needsChrome: true)`，7 个 SRS 卡面套件可被派到无 Chrome 机器 |
+| [BUG-5239](bugs/BUG-5239-heavy-wait-prediction-ignores-light-holders.md) | ✅ | ✅ | heavy.dart 排队预测不计轻槽持有者的内存，误判「等不完」提前 exit 75 |
+| [BUG-5238](bugs/BUG-5238-manga-download-ledger-duplicate-key-ambiguity.md) | ✅ | ✅ | 章下载续跑账本只记已落地页：共享页地址的旧页被当成新页表里的另一页复用 |
+| [BUG-5237](bugs/BUG-5237-interconnect-manga-page-fetch-identity.md) | ✅ | ✅ | 互联漫画按页序取图不核页身份：host 重解析出换了页的页表后端出另一页 |
+| [BUG-5236](bugs/BUG-5236-srs-gen4-restore-sort-key-single-copy.md) | ✅ | ✅ | gen4 时间线恢复比同层前身先后时只看胜出 dot 的一份副本，与缓存层的钳位证据不同（HBK-AUDIT-204） |
+| [BUG-5235](bugs/BUG-5235-srs-gen4-cache-rules-not-bumped-for-layer-inheritance.md) | ✅ | ✅ | gen4 缓存推导口径没随 BUG-5190 升级：已物化的新代库原地重开留着按卡 ID 序继承的卡片标志（HBK-AUDIT-203） |
+| [BUG-5234](bugs/BUG-5234-srs-icon-lookup-link-as-illustration.md) | ✅ | ✅ | 复习卡面上带图标的相对查词链接被认成词典插图，点了不再查词 |
+| [BUG-5233](bugs/BUG-5233-lapis-backfill-preview-retains-text.md) | ✅ | ✅ | 旧 Lapis 补迁预演把每条待补字段的全文攒在迁移页里 |
+| [BUG-5232](bugs/BUG-5232-legacy-writer-media-case-fold.md) | ✅ | ✅ | v3.0.x 写入者目录的媒体只差大小写时被当成没人引用删掉 |
+| [BUG-5231](bugs/BUG-5231-update-check-reveal-other-channel-download.md) | ✅ | ✅ | 手动检查更新先唤回任意在途下载：stable 下载在途时，调试版面板按 debug 查被 stable 浮层截走 |
+| [BUG-5230](bugs/BUG-5230-ios-inbox-prefix-stem-cross-subtitle.md) | ✅ | ✅ | iOS 收件箱搬入根上文件：stem 互为前缀时放行交叉配对，较短 stem 的视频选上别人的日语字幕 |
+| [BUG-5229](bugs/BUG-5229-popup-trim-preview-double-source.md) | ✅ | ✅ | 「调整句子音频」试听在解码期间换范围再试听会同时响两段，停止只停后一段 |
+| [BUG-5228](bugs/BUG-5228-reading-stats-month-goal-week-facts.md) | ✅ | ✅ | 阅读统计页字数环回退到月目标时只读本周数据，漏掉本月更早的字数 |
+| [BUG-5227](bugs/BUG-5227-popup-trim-offset-page-global.md) | ✅ | ✅ | 应用外查词卡「调整句子音频」的裁剪偏移是页面全局，并发的普通制卡也带上裁剪 |
+| [BUG-5226](bugs/BUG-5226-pdf-progressive-search-unloaded-pages.md) | ✅ | ✅ | PDF 逐步加载时搜索 / 查词 / 有声书高亮把未加载的页当成空白页 |
+| [BUG-5225](bugs/BUG-5225-sync-bytes-asset-cap-unenforced.md) | ✅ | ✅ | 同步字节资产 256 MiB 读取上限在 OneDrive / Dropbox / SFTP / FTP / 本机目录上没生效 |
+| [BUG-5224](bugs/BUG-5224-stream-video-push-deleted-during-host-get.md) | ✅ | ✅ | 互联流媒体书：等 host 清单期间本机删掉的仍被注册给 host |
+| [BUG-5223](bugs/BUG-5223-browser-ext-popup-scan-delay-stale-timer.md) | ✅ | ✅ | 浏览器扩展弹窗内延迟扫词：关窗 / 换设置后排着的扫描照样触发 |
+| [BUG-5222](bugs/BUG-5222-manga-audio-start-outlives-reader.md) | ✅ | ✅ | 漫画阅读器起播成品音频期间退出，迟到的加载留下没人接管的会话（可能顶掉别的书） |
+| [BUG-5221](bugs/BUG-5221-word-sweep-first-visible-unfiltered.md) | ✅ | ✅ | 只查日文时整句扫词卡在屏首英文段落，同屏日文扫不到 |
+| [BUG-5220](bugs/BUG-5220-manga-audio-undo-clobbers-line-edits.md) | ✅ | ✅ | 漫画有声「换音」类操作撤销时整句放回旧稿，抹掉之后独立改的停顿 / 说话人 / 念的文字 |
+| [BUG-5219](bugs/BUG-5219-lyrics-word-sweep-input-dispatch.md) | ✅ | ✅ | 有声书歌词视图里整句扫词键 / 鼠标侧键失效（键桥漏动作、非 Windows 鼠标回调只认跳句） |
+| [BUG-5218](bugs/BUG-5218-lyrics-sleeve-disc-group-tilt.md) | ✅ | ✅ | lyrics-sleeve-disc-group-tilt |
+| [BUG-5217](bugs/BUG-5217-music-sources-switch-away-notify.md) | ✅ | ✅ | music-sources-switch-away-notify |
+| [BUG-5216](bugs/BUG-5216-manga-ruby-reading-ignored-in-tts.md) | ✅ | ✅ | manga-ruby-reading-ignored-in-tts |
+| [BUG-5214](bugs/BUG-5214-srs4-migration-failure-reason-kernel.md) | ✅ | ✅ | 复习库升级失败页：失败原因由 Dart 另读报告判、与内核不一致，三种中止都说成没通过核对 |
+| [BUG-5212](bugs/BUG-5212-resume-missing-host-torrent.md) | ✅ | ✅ | resume-missing-host-torrent |
+| [BUG-5211](bugs/BUG-5211-srs-template-save-pop-discard.md) | ✅ | ✅ | 卡片模板保存在途时按返回误报「放弃修改」，途中再改的被记成已保存 |
+| [BUG-5210](bugs/BUG-5210-srs4-migration-report-unreachable.md) | ✅ | ✅ | 复习库升级没过核对：报告手机上拿不到，恢复页同时说两种失败 |
+| [BUG-5209](bugs/BUG-5209-srs-default-deck-deleted-via-ancestor.md) | ✅ | ✅ | 浏览牌组空断言：默认牌组随祖先牌组被删，树里缺默认牌组 |
+| [BUG-5208](bugs/BUG-5208-apple-dark-tier-drops-shell-theme.md) | ✅ | ✅ | Apple 深色档与书内查词弹窗重建主题时丢掉用户外壳样式 |
+| [BUG-5207](bugs/BUG-5207-ankidroid-kuma3-fork-package.md) | ✅ | ✅ | 装了改版 AnkiDroid（kuma3 Anki）时设置里一直显示「未安装 AnkiDroid」、权限框也不弹 |
+| [BUG-5206](bugs/BUG-5206-home-edit-exit-button-double-click-restore.md) | ✅ | ✅ | 首页编辑态页头「恢复默认」接住连点「编辑首页」的第二下，布局被换回默认 |
+| [BUG-5205](bugs/BUG-5205-tooltip-ticker-error-filter-hides-leaks.md) | ✅ | ✅ | main.dart 吞 RawTooltip ticker 错误的过滤会藏掉真实 ticker 泄漏断言 |
+| [BUG-5204](bugs/BUG-5204-dart314-aot-deferred-final-switch-capture.md) | ✅ | ✅ | Dart 3.14.0 AOT 编译推迟 final + switch 赋值 + 闭包捕获时崩溃（全平台 release 红） |
+| [BUG-5203](bugs/BUG-5203-home-activity-rows-main-isolate-merge.md) | ✅ | ✅ | 首页活动流 `StatFacts.activityRows` 在读方 isolate 上把全部段映射 + 排序 |
+| [BUG-5202](bugs/BUG-5202-remote-download-register-cover-delete-flake-windows.md) | 🚧 | 🚧 | 远端下载登记测试在 Windows 上间歇红：删除被占用的封面文件失败 |
+| [BUG-5201](bugs/BUG-5201-drift-row-mapping-on-ui-isolate.md) | 🚧 | 🚧 | drift 行映射（`$Table.map`）仍在 UI isolate 上，大库查询回来逐行构造数据类卡帧 |
+| [BUG-5200](bugs/BUG-5200-windows-video-frames-wait-main-thread.md) | ✅ | ✅ | Windows 视频每一帧都要等主线程，主线程一忙就被下一帧覆盖丢掉（平移镜头一卡一卡） |
 | [BUG-5199](bugs/BUG-5199-media-lock-desktop-system-auth.md) | 🚧 | 🚧 | 上锁作品：Windows / Linux 没有系统验证（只有口令） |
 | [BUG-5198](bugs/BUG-5198-media-lock-remaining-consumers.md) | 🚧 | 🚧 | 上锁作品：剩余列出作品标题的次要消费端未接 MediaVisibility |
+| [BUG-5197](bugs/BUG-5197-video-collection-scroll-tab-switch-jank.md) | ✅ | ✅ | 视频合集滚动逐帧离屏重烘、切页派生数据每次 build 全量重算（合集滚动与切页卡顿） |
+| [BUG-5196](bugs/BUG-5196-mine-notice-refetch-audio-action.md) | 🚧 | 🚧 | mine-notice-refetch-audio-action |
+| [BUG-5195](bugs/BUG-5195-mine-notice-chrome-placement.md) | ✅ | ✅ | mine-notice-chrome-placement |
 | [BUG-5194](bugs/BUG-5194-encrypted-archive-mokuro-layer.md) | 🚧 | 🚧 | 加密 CBZ / CB7 / CBR 导入丢掉 `.mokuro` 文字层 |
 | [BUG-5193](bugs/BUG-5193-home-today-main-goal-filtered-by-swipe-scope.md) | ✅ | ✅ | 首页「今日」格选了周 / 月主目标却显示第一条每日目标 |
+| [BUG-5192](bugs/BUG-5192-video-highlight-utf16-as-runes.md) | 🚧 | 🚧 | 视频字幕查词高亮把 UTF-16 匹配长度当码点折算 |
 | [BUG-5191](bugs/BUG-5191-manga-audio-ctl-write-races-render-job.md) | 🚧 | 🚧 | 漫画有声控制通道写操作与整卷生成任务之间没有互斥，期间排上的任务会盖掉改动 |
 | [BUG-5190](bugs/BUG-5190-srs-gen4-migration-card-row-parity.md) | ✅ | ✅ | gen4 迁移对拍：同一张卡的行只差继承来的卡片标志，整体回滚（多前身按卡 ID 排先后） |
 | [BUG-5189](bugs/BUG-5189-shortcut-inline-record-esc-pops-page.md) | ✅ | ✅ | shortcut-inline-record-esc-pops-page |
@@ -80,16 +223,18 @@
 | [BUG-5155](bugs/BUG-5155-music-plugin-search-artist-empty-page-stops-paging.md) | 🚧 | 🚧 | music-plugin-search-artist-empty-page-stops-paging |
 | [BUG-5154](bugs/BUG-5154-manga-render-backfill-overwrites-script-edits.md) | 🚧 | 🚧 | manga-render-backfill-overwrites-script-edits |
 | [BUG-5153](bugs/BUG-5153-subtitle-glossary-host-runner-unguarded-writer.md) | 🚧 | 🚧 | subtitle-glossary-host-runner-unguarded-writer |
+| [BUG-5152](bugs/BUG-5152-windows-shader-multi-return-angle-crash.md) | 🚧 | 🚧 | Windows Impeller(ANGLE) 下带采样器且 main() 多处 return 的片元着色器可能让 d3dcompiler_47 崩溃（flutter#190809） |
 | [BUG-5151](bugs/BUG-5151-torrent-offline-mountpoint-resume-freeze.md) | ✅ | ✅ | 空挂载点目录还在而数据不可达时仍开跑清零续传；离线期间写出的空位图让下次启动把种子放出来；上传闸登记表每加一颗种子清扫全表 |
 | [BUG-5150](bugs/BUG-5150-loopback-dead-capture-stale-ring-pinned.md) | ✅ | ✅ | loopback 采集线程自行退出后，环里的旧声音仍被当成「最近 N 秒」交出去；常驻的跨应用语音缓存从此再也起不来 |
 | [BUG-5149](bugs/BUG-5149-aggregate-live-snapshot-copy-materialize-on-caller.md) | ✅ | ✅ | aggregate-live-snapshot-copy-materialize-on-caller |
+| [BUG-5148](bugs/BUG-5148-android-agp9-followup.md) | 🚧 | 🚧 | Flutter 3.50 下 Android 构建仍用即将停支持的 Gradle 9.3.1 / AGP 9.1.1 / KGP 2.4.10，且关着 built-in Kotlin / newDsl |
 | [BUG-5147](bugs/BUG-5147-music-album-regroup-provenance-lost.md) | ✅ | ✅ | 专辑补归组后丢失原始归属，后续增量扫描无法纠正；收尾零变化也整源重读 |
 | [BUG-5146](bugs/BUG-5146-batch-seeding-toggle-relists-backend.md) | ✅ | ✅ | 下载页批量停 / 续做种（及批量继续）每条重列整个后端、每条各刷新一次面板 |
 | [BUG-5145](bugs/BUG-5145-manga-review-stale-session-overwrite.md) | ✅ | ✅ | manga-review-stale-session-overwrite |
 | [BUG-5144](bugs/BUG-5144-music-plugin-empty-page-stops-paging.md) | ✅ | ✅ | music-plugin-empty-page-stops-paging |
 | [BUG-5143](bugs/BUG-5143-video-section-undo-overwrites-concurrent-edit.md) | ✅ | ✅ | video-section-undo-overwrites-concurrent-edit |
 | [BUG-5142](bugs/BUG-5142-favorite-sentence-refavorite-lost-under-tombstone.md) | 🚧 | 🚧 | 同键收藏句合并只留最早 createdAt：删了重收藏后遇到墓碑会被整条压掉 |
-| [BUG-5141](bugs/BUG-5141-game-ocr-mode-phase2.md) | 🚧 | 🚧 | OCR 游戏模式第二期：持续截窗、按游戏记区域、小字预处理、游戏内嵌查词、AI 操作路由 |
+| [BUG-5141](bugs/BUG-5141-game-ocr-mode-phase2.md) | ✅ | ✅ | OCR 游戏模式第二期：等待动画卡死稳定判据、按游戏记区域、小字预处理、AI 操作路由 |
 | [BUG-5140](bugs/BUG-5140-favorite-sentence-recolor.md) | ✅ | ✅ | 收藏句改色：已收藏的书摘不能改颜色（同步缺颜色更新时间） |
 | [BUG-5139](bugs/BUG-5139-cross-app-audio-preview-trim.md) | ✅ | ✅ | 跨应用语音缓存：制卡前试听 + 调起止（波形选区）两端都还没有 |
 | [BUG-5138](bugs/BUG-5138-decision-api-key-leaks-feedback.md) | ✅ | ✅ | 拍板台个人密钥 API 带出关联反馈原文 / 附件与账户 id |
@@ -119,8 +264,8 @@
 | [BUG-5114](bugs/BUG-5114-local-audio-identity-ignores-recordings.md) | ✅ | ✅ | local-audio-identity-ignores-recordings |
 | [BUG-5113](bugs/BUG-5113-upscale-cache-io-under-state-lock.md) | ✅ | ✅ | 漫画超分：工作线程持状态锁写磁盘缓存，UI isolate 的同步 FFI 跟着排队 |
 | [BUG-5112](bugs/BUG-5112-upscale-stale-generation-models-failed.md) | ✅ | ✅ | 漫画超分：旧档迟到的模型加载失败能关掉新档、清掉新档的队列 |
-| [BUG-5111](bugs/BUG-5111-book-manual-summary-fill.md) | 🚧 | 🚧 | 书的简介没有手填入口（BUG-5082 书侧剩余项） |
-| [BUG-5110](bugs/BUG-5110-video-work-locks-lost-on-collection-promotion.md) | 🚧 | 🚧 | 单集作品长成多集合集后重刮，挂在那一集上的手填值 / 字段锁丢失 |
+| [BUG-5111](bugs/BUG-5111-book-manual-summary-fill.md) | ✅ | ✅ | 书的简介没有手填入口（BUG-5082 书侧剩余项） |
+| [BUG-5110](bugs/BUG-5110-video-work-locks-lost-on-collection-promotion.md) | ✅ | ✅ | 单集作品长成多集合集后重刮，挂在那一集上的手填值 / 字段锁丢失 |
 | [BUG-5109](bugs/BUG-5109-manga-series-page-other-book-progress-refresh.md) | ✅ | ✅ | manga-series-page-other-book-progress-refresh |
 | [BUG-5108](bugs/BUG-5108-manga-download-pause-waits-verify.md) | ✅ | ✅ | manga-download-pause-waits-verify |
 | [BUG-5107](bugs/BUG-5107-tts-silence-not-at-shared-entry.md) | ✅ | ✅ | 纯标点句判定只接了部分合成入口：漫画配音 / Galgame 朗读 / 试听仍把「……」「！」送引擎 |
@@ -147,7 +292,7 @@
 | [BUG-5086](bugs/BUG-5086-dist-test-verdict-coverage-shared-log.md) | ✅ | ✅ | 「dist 请求 7 个测试文件只跑 2 个仍判 PASSED」是并发代理共用日志名读串了；dist_test 判绿改为逐个核对请求的 suite |
 | [BUG-5085](bugs/BUG-5085-srs-mining-generation-blocked-message.md) | ✅ | ✅ | 复习库在换代途中时制卡只报「Fushi review is not available.」，不提示去升级 |
 | [BUG-5084](bugs/BUG-5084-interconnect-client-collection-sections-ignore-host-override.md) | ✅ | ✅ | 互联客户端看 host 合集时分栏不认 host 上的手动分栏 |
-| [BUG-5083](bugs/BUG-5083-game-sentence-mining-all-games.md) | 🚧 | 🚧 | GSM 式全游戏台词制卡：非 Hook 游戏没有连续台词流可制卡 |
+| [BUG-5083](bugs/BUG-5083-game-sentence-mining-all-games.md) | ✅ | ✅ | GSM 式全游戏台词制卡：非 Hook 游戏没有连续台词流可制卡 |
 | [BUG-5082](bugs/BUG-5082-anime-manual-metadata-fill.md) | ✅ | ✅ | 手动填元数据：刮削全失败的动画 / 非 EPUB 书无法手填简介、年份、作者等 |
 | [BUG-5081](bugs/BUG-5081-video-fullscreen-blank.md) | ✅ | ✅ | video-fullscreen-blank |
 | [BUG-5080](bugs/BUG-5080-srs-gen4-conflict-badge-minutes.md) | ✅ | ✅ | SRS 牌组列表冲突角标的 `conflict_edits` 在迁移库上跑几分钟 |
@@ -270,8 +415,8 @@
 | [BUG-4963](bugs/BUG-4963-anidb-encrypted-stale-tag-reply-key-mismatch.md) | ✅ | ✅ | AniDB 加密会话里迟到的旧 tag 回包被误判成 Key 不一致，哈希识别整轮停用 |
 | [BUG-4962](bugs/BUG-4962-bound-session-lookup-switch.md) | ✅ | ✅ | 关掉 host 的「用这台服务器查词典」后，游戏串流 / 视频遥控查词恒无结果 |
 | [BUG-4961](bugs/BUG-4961-ambient-animation-full-refresh-rate-gpu-cost.md) | ✅ | ✅ | 常驻装饰动画按屏幕刷新率逐帧重画：吉祥物光晕 / 主页背景开着时 4K 144 Hz 整窗持续合成，GPU 占用高 |
-| [BUG-4960](bugs/BUG-4960-stats-overview-main-isolate-rust-core.md) | 🚧 | 🚧 | 统计中心「总览」页签在主 isolate 上有 90～250 ms 的同步段（大库） |
-| [BUG-4959](bugs/BUG-4959-favorite-sentence-change-watch-rereads-on-any-pref-write.md) | 🚧 | 🚧 | 收藏句变更通知靠偏好表整表更新流，任何偏好写入都让播放页重读整串收藏 |
+| [BUG-4960](bugs/BUG-4960-stats-overview-main-isolate-rust-core.md) | ✅ | ✅ | 统计中心「总览」页签在主 isolate 上有 90～250 ms 的同步段（大库） |
+| [BUG-4959](bugs/BUG-4959-favorite-sentence-change-watch-rereads-on-any-pref-write.md) | ✅ | ✅ | 收藏句变更通知靠偏好表整表更新流，任何偏好写入都让播放页重读整串收藏 |
 | [BUG-4958](bugs/BUG-4958-aggregate-sync-ui-isolate-anr.md) | ✅ | ✅ | 互联/云聚合同步在 UI isolate 上同步跑整份快照折叠与指纹，慢设备 ANR |
 | [BUG-4957](bugs/BUG-4957-audiobook-concat-shuffle-order-quadratic.md) | ✅ | ✅ | TTS 朗读 / 多文件有声书建 ConcatenatingAudioSource 时 just_audio 默认 ShuffleOrder 逐个随机 List.insert，O(n²) 占满主线程到 ANR |
 | [BUG-4956](bugs/BUG-4956-ios-popup-entries-fetch-status-zero-oom.md) | ✅ | ✅ | iOS 阅读器查词时 Out of Memory 闪退（词条拦截投递在 iOS 上恒失败 + 历史整表重写） |

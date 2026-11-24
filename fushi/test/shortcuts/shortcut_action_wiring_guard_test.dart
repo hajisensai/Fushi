@@ -43,9 +43,6 @@ void main() {
     const List<String> executorFiles = <String>[
       'lib/src/pages/implementations/reader_fushi_page.dart',
       'lib/src/pages/implementations/reader_fushi/caret.part.dart',
-      // 阅读器整句扫词（拍板台 5H922XeDHM）：键盘 / 手柄 / 鼠标 / 弹窗 token 四条通道
-      // 的唯一派发点 `_runReaderWordSweepAction` 在这里。
-      'lib/src/pages/implementations/reader_fushi/word_sweep.part.dart',
       'lib/src/pages/implementations/home_page.dart',
       'lib/src/media/video/video_player_shortcuts.dart',
       // BUG-1995：视频页的**鼠标绑定通道**执行体（`_handleVideoPointerDown`）。
@@ -100,6 +97,9 @@ void main() {
       // SRS 复习页（ShortcutScope.srsReview）的执行体：_onKey / 卡面键盘桥 /
       // _handleGamepadButton → _executeShortcut。
       'lib/src/pages/implementations/srs/srs_review_page.dart',
+      // 手柄查词模式（ShortcutScope.controllerLookup）的执行体：模式激活时
+      // `resolveGamepad(scope: controllerLookup)` → `_runAction`。
+      'lib/src/second_screen/input/controller_lookup_mode.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

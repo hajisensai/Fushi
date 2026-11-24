@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_ocr_line_source.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -321,6 +322,34 @@ class _GameHost implements GameCtlHost {
       state = state.copyWith(audioFallbackPolicy: policy);
 
   @override
+  ({GalOcrRegion region, bool binarize}) ocrDefaultsFor(
+    ExternalWindowInfo window,
+  ) => (region: GalOcrRegion.defaultDialogue, binarize: false);
+
+  @override
+  Future<String?> startOcr(
+    ExternalWindowInfo window, {
+    required GalOcrRegion region,
+    required bool binarize,
+  }) async {
+    state = state.copyWith(
+      boundWindow: window,
+      externalWindowMode: true,
+      ocrRegion: region,
+      ocrBinarize: binarize,
+    );
+    return null;
+  }
+
+  @override
+  void setOcrRegion(GalOcrRegion region) =>
+      state = state.copyWith(ocrRegion: region);
+
+  @override
+  void setOcrBinarize(bool binarize) =>
+      state = state.copyWith(ocrBinarize: binarize);
+
+  @override
   Future<List<GalAudioTrack>> tracksForLine(String lineId) async =>
       const <GalAudioTrack>[_trackA, _trackB];
 
@@ -436,10 +465,16 @@ void main() {
     ]);
     host = _GameHost(app.repo);
     final OpContext context = OpContext(ref: _Ref(app));
+    // 只把 buildGameCtlRoutes 那一组换成绑假宿主的版本；同在 /api/admin/game/ 下、
+    // 但由别的构造器提供的路由（如 Hook Code 配置）照常保留，否则它们的操作描述挂不上。
+    final List<CtlRoute> gameRoutes = buildGameCtlRoutesWith(host);
+    final Set<String> replaced = <String>{
+      for (final CtlRoute r in gameRoutes) '${r.method} ${r.pattern}',
+    };
     final List<CtlRoute> routes = <CtlRoute>[
       for (final CtlRoute r in buildDomainOpRoutes(context))
-        if (!r.pattern.startsWith('/api/admin/game/')) r,
-      ...buildGameCtlRoutesWith(host),
+        if (!replaced.contains('${r.method} ${r.pattern}')) r,
+      ...gameRoutes,
     ];
     catalog = buildAppOpCatalog(context, routes);
     invoker = OpInvoker(catalog);
@@ -585,6 +620,31 @@ void main() {
       host.setTrackExcluded(88, false);
       expect(await undo('game.track.exclude', ex2), OpUndoStatus.superseded);
       expect(host.state.excludedAudioSourcePtrs, isEmpty);
+    });
+
+    test('game.ocr.region.set：撤销写回原框与开关', () async {
+      const GalOcrRegion original = GalOcrRegion(
+        left: 0.05,
+        top: 0.7,
+        width: 0.9,
+        height: 0.25,
+      );
+      host.state = host.state.copyWith(
+        externalWindowMode: true,
+        ocrRegion: original,
+      );
+      final OpUndoRecord r = await run('game.ocr.region.set', <String, Object?>{
+        'left': 0.1,
+        'top': 0.5,
+        'width': 0.8,
+        'height': 0.4,
+        'binarize': true,
+      });
+      expect(host.state.ocrRegion?.top, 0.5);
+      expect(host.state.ocrBinarize, isTrue);
+      expect(await undo('game.ocr.region.set', r), OpUndoStatus.done);
+      expect(host.state.ocrRegion, original);
+      expect(host.state.ocrBinarize, isFalse);
     });
 
     test('game.audio-policy.set', () async {

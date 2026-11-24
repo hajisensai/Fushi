@@ -244,6 +244,74 @@ class VideoMpvStatsSnapshot {
       v == null ? '-' : v.toStringAsFixed(digits);
 }
 
+/// BUG-5200：Windows 原生视频纹理层的累计出帧计数（`media_kit_video`
+/// `VideoOutputManager.FrameStats`）。`published` = libmpv 画进共享纹理并通知了的帧，
+/// `shown` = 其中被 Flutter raster 线程取走的帧，`lost` = 没被取走就被下一帧覆盖的帧，
+/// `latencySumUs` / `latencyMaxUs` = 出帧到取走的延迟（总和按 `shown` 计）。
+class VideoPresentStats {
+  const VideoPresentStats({
+    required this.published,
+    required this.shown,
+    required this.lost,
+    required this.latencySumUs,
+    required this.latencyMaxUs,
+  });
+
+  factory VideoPresentStats.fromMap(Map<String, int> map) => VideoPresentStats(
+    published: map['published'] ?? 0,
+    shown: map['shown'] ?? 0,
+    lost: map['lost'] ?? 0,
+    latencySumUs: map['latencySumUs'] ?? 0,
+    latencyMaxUs: map['latencyMaxUs'] ?? 0,
+  );
+
+  final int published;
+  final int shown;
+  final int lost;
+  final int latencySumUs;
+
+  /// 累计最大值（原生侧不分窗口），增量里原样带出。
+  final int latencyMaxUs;
+
+  /// 相对 [previous] 的增量。原生计数随视频输出重建而归零（换片 / 重建播放器）：
+  /// 任一计数比基线小就当基线是 0。
+  VideoPresentStats since(VideoPresentStats previous) {
+    final bool reset =
+        published < previous.published ||
+        shown < previous.shown ||
+        lost < previous.lost ||
+        latencySumUs < previous.latencySumUs;
+    final VideoPresentStats base = reset
+        ? const VideoPresentStats.zero()
+        : previous;
+    return VideoPresentStats(
+      published: published - base.published,
+      shown: shown - base.shown,
+      lost: lost - base.lost,
+      latencySumUs: latencySumUs - base.latencySumUs,
+      latencyMaxUs: latencyMaxUs,
+    );
+  }
+
+  const VideoPresentStats.zero()
+    : published = 0,
+      shown = 0,
+      lost = 0,
+      latencySumUs = 0,
+      latencyMaxUs = 0;
+
+  /// 平均出帧→取走延迟（毫秒）；本窗口没取走任何帧时为 null。
+  double? get averageLatencyMs =>
+      shown == 0 ? null : latencySumUs / shown / 1000.0;
+
+  String describe() {
+    final double? avg = averageLatencyMs;
+    return 'published=$published shown=$shown lost=$lost '
+        'latency_avg=${avg == null ? '-' : avg.toStringAsFixed(1)}ms '
+        'latency_max_total=${(latencyMaxUs / 1000.0).toStringAsFixed(1)}ms';
+  }
+}
+
 /// 一帧的耗时三元组（微秒）。从 `FrameTiming` 抄出来，避免本文件依赖 `dart:ui`。
 class VideoFrameSample {
   const VideoFrameSample({

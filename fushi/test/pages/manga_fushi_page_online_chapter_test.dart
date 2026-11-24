@@ -16,6 +16,7 @@ import 'package:fushi/src/media/manga/library/online_manga_library_service.dart'
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
@@ -103,6 +104,11 @@ class _MangaTestAppModel extends AppModel {
   @override
   Directory get temporaryDirectory => _temp;
 
+  /// 朗读起播先解析这部漫画的作品身份（`resolveTtsMediaVoiceScope` → 系列选角档案
+  /// `<databaseDirectory>/tts_cast`），真实 AppModel 启动时一定设好这个目录。
+  @override
+  Directory get databaseDirectory => _temp;
+
   @override
   FushiDatabase get database => _db;
 
@@ -148,6 +154,10 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   bool get mangaPageTurnFollowDrag => kMangaPageTurnFollowDragDefault;
+
+  @override
+  double get mangaSwipePageTurnSensitivity =>
+      kMangaSwipePageTurnSensitivityDefault;
   @override
   bool get mangaTapZonePaging => true;
 

@@ -38,6 +38,7 @@ void main() {
           bg: const Color(0xFFFFF8E1),
           fg: null,
           selection: const Color(0x5500AA00),
+          selectionText: null,
           link: null,
         ),
       );
@@ -56,6 +57,7 @@ void main() {
           bg: const Color(0xFFFFFFFF),
           fg: null,
           selection: null,
+          selectionText: null,
           link: null,
         ),
       );
@@ -69,7 +71,13 @@ void main() {
         themeKey: 'custom-theme:ct-1',
         presetMap: presetMap,
         scheme: darkScheme(),
-        customOverrides: (bg: null, fg: null, selection: null, link: null),
+        customOverrides: (
+          bg: null,
+          fg: null,
+          selection: null,
+          selectionText: null,
+          link: null,
+        ),
       );
       final ReaderThemeColors system = resolveReaderThemeColors(
         themeKey: 'system-theme',
@@ -88,6 +96,7 @@ void main() {
           bg: const Color(0xFF123456),
           fg: null,
           selection: null,
+          selectionText: null,
           link: null,
         ),
       );

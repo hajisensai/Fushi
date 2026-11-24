@@ -11,13 +11,16 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiModalSheetFrame;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
+import 'package:fushi_asr_core/asr_core.dart'
+    show AsrAudioProfile, ModelDownloadEvent;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show VideoSubtitleEpisodeResult;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:material_ui/material_ui.dart';
@@ -92,11 +95,13 @@ class _DownloadingAsr implements VideoSubtitleAsrModelPort {
   @override
   Future<bool> isReady({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) async => false;
 
   @override
   Stream<ModelDownloadEvent> download({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) {
     downloads++;
     return running.stream;
@@ -105,6 +110,7 @@ class _DownloadingAsr implements VideoSubtitleAsrModelPort {
   @override
   Stream<ModelDownloadEvent>? resumeDownload({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => running.isClosed ? null : running.stream;
 }
 
@@ -116,11 +122,13 @@ class _PerLanguageAsr implements VideoSubtitleAsrModelPort {
   @override
   Future<bool> isReady({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) async => false;
 
   @override
   Stream<ModelDownloadEvent> download({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => language == VideoSubtitleLanguage.japanese
       ? japanese.stream
       : const Stream<ModelDownloadEvent>.empty();
@@ -128,6 +136,7 @@ class _PerLanguageAsr implements VideoSubtitleAsrModelPort {
   @override
   Stream<ModelDownloadEvent>? resumeDownload({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => language == VideoSubtitleLanguage.japanese && !japanese.isClosed
       ? japanese.stream
       : null;
@@ -189,8 +198,11 @@ void main() {
           required VideoSubtitleSegmenterMode mode,
           MossBackendPreference mossBackend = MossBackendPreference.auto,
           VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+          AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
         }) async =>
             VideoSubtitleRecognizerChoice(recognizer: FakeVideoRecognizer()),
+    // 音乐的歌曲档判定（真实现会探内存、建 ASR 服务）：测试里固定按歌曲。
+    musicAudioProfile: (VideoSubtitleLanguage _) async => AsrAudioProfile.song,
     completerFactory: (AiProviderConfig _) =>
         (completer: completer, close: () {}),
     // widget 测试里不起真 ffmpeg：画面一律取不到（开关与选项照常走）。
@@ -1001,4 +1013,116 @@ void main() {
     expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
     expect(languageHint(tester), t.video_subtitle_ai_language_from_default);
   });
+
+  group('音乐「先分离人声」开关（拍板 W_wrz-ZPU8）', () {
+    Finder byKey(String key) => find.byKey(ValueKey<String>(key));
+
+    AppVideoSubtitleTarget musicTarget() {
+      final File song = File(p.join(tmp.path, 'news.flac'))
+        ..writeAsBytesSync(List<int>.filled(32, 1));
+      return AppVideoSubtitleTarget(
+        title: 'NHK ニュース',
+        work: const SubtitleWorkContext(workKey: 'album:nhk', title: 'NHK'),
+        episodes: <AppVideoSubtitleEpisode>[
+          AppVideoSubtitleEpisode(videoPath: song.path, title: 'NHK ニュース'),
+        ],
+        sink: _MusicSink(),
+        key: 'music:track:n1',
+        settingScopes: const <String>['music:track:n1', 'music:album:nhk'],
+      );
+    }
+
+    bool switchValue(WidgetTester tester) => tester
+        .widget<Switch>(
+          find.descendant(
+            of: byKey('music-subtitle-vocal-separation'),
+            matching: find.byType(Switch),
+          ),
+        )
+        .value;
+
+    testWidgets('歌曲默认开：按歌曲档；关掉后按原音频档跑、记在条目上', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      target = musicTarget();
+      final AppVideoSubtitleService service = buildService();
+      await pumpSheet(tester, service, _FakePrefs());
+      expect(switchValue(tester), isTrue);
+      expect(byKey('music-subtitle-vocal-separation-on'), findsOneWidget);
+
+      await tester.tap(byKey('music-subtitle-vocal-separation'));
+      await tester.pumpAndSettle();
+      expect(switchValue(tester), isFalse);
+      expect(byKey('music-subtitle-vocal-separation-off'), findsOneWidget);
+      expect(settings.vocalSeparation, <String, bool>{'music:track:n1': false});
+
+      await tester.tap(byKey('video-subtitle-ai-start'));
+      await tester.pump();
+      final AppVideoSubtitleJob job = service.latestJobFor(target)!;
+      expect(job.options.audioProfile, AsrAudioProfile.mixedAudio);
+    });
+
+    testWidgets('整张专辑上关过：单曲打开时沿用（关着），开回来只记在单曲上', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      target = musicTarget();
+      settings.vocalSeparation['music:album:nhk'] = false;
+      await pumpSheet(tester, buildService(), _FakePrefs());
+      expect(switchValue(tester), isFalse);
+      expect(byKey('music-subtitle-vocal-separation-off'), findsOneWidget);
+
+      await tester.tap(byKey('music-subtitle-vocal-separation'));
+      await tester.pumpAndSettle();
+      expect(switchValue(tester), isTrue);
+      expect(settings.vocalSeparation, <String, bool>{
+        'music:album:nhk': false,
+        'music:track:n1': true,
+      });
+    });
+
+    testWidgets('视频目标没有这个开关', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpSheet(tester, buildService(), _FakePrefs());
+      expect(byKey('music-subtitle-vocal-separation'), findsNothing);
+    });
+  });
+}
+
+/// 音乐库落点替身：面板只看 [domain]（音乐），任务登记什么都不写。
+class _MusicSink implements AppSubtitleOutputSink {
+  @override
+  AppSubtitleTargetDomain get domain => AppSubtitleTargetDomain.music;
+
+  @override
+  Directory? exportDirFor(String mediaPath) => null;
+
+  @override
+  bool get usesStyleReference => false;
+
+  @override
+  VideoRemoteJobKind get mirrorKind => VideoRemoteJobKind.subtitleGenerate;
+
+  @override
+  String mirrorSubject(AppVideoSubtitleTarget target) => target.key;
+
+  @override
+  Future<List<String>> extraEvidenceFiles(
+    AppVideoSubtitleEpisode episode,
+  ) async => const <String>[];
+
+  @override
+  bool get registersSkippedExisting => false;
+
+  @override
+  Future<List<String>> register(
+    AppVideoSubtitleEpisode episode,
+    VideoSubtitleEpisodeResult result,
+  ) async => const <String>[];
 }

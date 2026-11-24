@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -86,6 +87,12 @@ void main() {
   /// product.json 的 `age_category`（1 全年龄 / 2 R-15 / 3 成人向）。
   late int age;
 
+  /// 每次下载主图时回调（测试在「在途」时插入取消等动作）。
+  late void Function(String url)? onDownload;
+
+  /// 每次取时钟时回调（测试在「判定之后、写入之前」插入并发落库）。
+  late void Function()? onClock;
+
   MusicDlsiteScraper scraper() => MusicDlsiteScraper(
     database: () => db,
     locale: () => 'ja_JP',
@@ -108,6 +115,7 @@ void main() {
       }),
     ),
     downloadImage: (String url) async {
+      onDownload?.call(url);
       if (coverFails) {
         throw const ImageDownloadException('image download HTTP 404');
       }
@@ -117,7 +125,10 @@ void main() {
       return f;
     },
     coverDirectory: () async => Directory('${tmp.path}/covers'),
-    clock: () => 42,
+    clock: () {
+      onClock?.call();
+      return 42;
+    },
   );
 
   setUp(() async {
@@ -127,6 +138,8 @@ void main() {
     notFound = false;
     coverFails = false;
     age = 1;
+    onDownload = null;
+    onClock = null;
     await db.writeMusicScanBatch(
       MusicScanBatchWrite(
         tracks: <MusicTracksCompanion>[
@@ -276,6 +289,49 @@ void main() {
       expect(await nsfw('asmr'), isFalse);
     });
 
+    test('自动标记与并发取消：取消在判定之后落库，自动标记不得凭更晚的戳盖回去（HBK-AUDIT-216）', () async {
+      age = 3;
+      await scraper().scrapeAlbum('embedded');
+      // 回到「从没决定过」：资料已缓存，整库识别时走缓存命中补标。
+      await db.delete(db.mediaNsfwFlags).go();
+      bool fired = false;
+      onClock = () {
+        if (fired) return;
+        fired = true;
+        // 用户 / 互联在自动标记取时钟的同一刻落库取消（戳 10 早于自动标记的 42）。
+        unawaited(
+          db.setMediaNsfw(TagHostKind.musicAlbum, 'embedded', false, at: 10),
+        );
+      };
+      await scraper().scrapeLibrary();
+      expect(fired, isTrue);
+      expect(await nsfw('embedded'), isFalse);
+      expect(await db.mediaNsfwClock(TagHostKind.musicAlbum, 'embedded'), (
+        nsfwAt: null,
+        clearedAt: 10,
+      ));
+    });
+
+    test('markMediaNsfwIfUndecided：只写从没决定过的宿主，设过 / 取消过的原样不动', () async {
+      await db.markMediaNsfwIfUndecided(TagHostKind.musicAlbum, 'new', at: 5);
+      expect(await db.mediaNsfwClock(TagHostKind.musicAlbum, 'new'), (
+        nsfwAt: 5,
+        clearedAt: null,
+      ));
+      await db.markMediaNsfwIfUndecided(TagHostKind.musicAlbum, 'new', at: 9);
+      expect(
+        (await db.mediaNsfwClock(TagHostKind.musicAlbum, 'new')).nsfwAt,
+        5,
+        reason: '已标过不再推进戳',
+      );
+      await db.setMediaNsfw(TagHostKind.musicAlbum, 'off', false, at: 3);
+      await db.markMediaNsfwIfUndecided(TagHostKind.musicAlbum, 'off', at: 9);
+      expect(await db.mediaNsfwClock(TagHostKind.musicAlbum, 'off'), (
+        nsfwAt: null,
+        clearedAt: 3,
+      ));
+    });
+
     test('整库：同一部作品的几张专辑都标；已取过资料的专辑在整库识别时补标', () async {
       age = 3;
       // 先只取一张，模拟「早先取过资料、那时还不会标」：清掉它的标记行。
@@ -342,6 +398,52 @@ void main() {
         reason: '$uid 没有自己的封面，补 DLsite 主图',
       );
     }
+  });
+
+  test('整库：缓存命中的第一张补图在途时取消，第二张不再下载、不补图、不标 NSFW（HBK-AUDIT-229）', () async {
+    const String rj2 = 'RJ01000001';
+    await db.writeMusicScanBatch(
+      MusicScanBatchWrite(
+        tracks: <MusicTracksCompanion>[
+          _track('t6', 'asmr2', '/asmr/$rj2 囁き/01.mp3'),
+        ],
+        albums: <MusicAlbumsCompanion>[_album('asmr2', '囁き')],
+        artists: const <MusicArtistsCompanion>[],
+        credits: const <MusicTrackCreditsCompanion>[],
+      ),
+    );
+    age = 3;
+    // 先把两部作品的资料取进缓存，主图那次下不来；再清掉标记，回到「待补」状态。
+    coverFails = true;
+    await scraper().scrapeAlbum('asmr');
+    await scraper().scrapeAlbum('asmr2');
+    coverFails = false;
+    await db.delete(db.mediaNsfwFlags).go();
+    requests.clear();
+
+    bool cancelled = false;
+    final List<String> downloads = <String>[];
+    onDownload = (String url) {
+      downloads.add(url);
+      cancelled = true; // 第一张主图还在下载时用户点了取消。
+    };
+    final MusicDlsiteLibraryReport r = await scraper().scrapeLibrary(
+      cancelled: () => cancelled,
+    );
+    expect(r.total, 1, reason: '只有 embedded（RJ299717）没取过资料');
+    expect(requests, isEmpty, reason: '取消之后也不再联网取 embedded');
+    expect(downloads, hasLength(1), reason: '取消之后不再下载第二张主图');
+    final List<String> covered = <String>[
+      for (final String uid in <String>['asmr', 'asmr2'])
+        if ((await db.getMusicAlbum(uid))!.coverPath != null) uid,
+    ];
+    final List<String> marked = <String>[
+      for (final String uid in <String>['asmr', 'asmr2'])
+        if (await db.isMediaNsfw(TagHostKind.musicAlbum, uid)) uid,
+    ];
+    expect(covered, hasLength(1), reason: '只有在途的那张落地');
+    expect(marked, hasLength(1), reason: '取消后不再写 NSFW');
+    expect(marked, covered, reason: '落地的那张先标后补');
   });
 
   test('整库：DLsite 网络失败只记 failed，不抛出', () async {

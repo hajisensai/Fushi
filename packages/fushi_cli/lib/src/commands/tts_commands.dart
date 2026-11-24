@@ -9,7 +9,7 @@ const List<CtlCommandGroup> ttsCommandGroups = <CtlCommandGroup>[
   CtlCommandGroup(
     name: 'tts',
     summary:
-        '漫画有声：演出稿 / AI 标注 / 改句改角色 / 单句或按角色重生成 / 按句换本地音频 / '
+        '漫画有声：演出稿 / AI 标注 / 改句改角色 / 单句或按角色重生成 / 按句换本地音频 / 导出导入有声漫画包 / '
         '整卷生成 / 导入成品',
     commands: <CtlCommandSpec>[
       CtlCommandSpec(
@@ -55,7 +55,7 @@ const List<CtlCommandGroup> ttsCommandGroups = <CtlCommandGroup>[
       ),
       CtlCommandSpec(
         name: 'line',
-        summary: '改一句：说话人 / 类型 / 一拍 / 页内位置 / 手填文字 / 错字修正',
+        summary: '改一句：说话人 / 类型 / 一拍 / 语气与强度 / 页内位置 / 手填文字 / 错字修正',
         usage: '<key> <行 id>',
         configure: _configureLine,
         build: _buildLine,
@@ -112,9 +112,46 @@ const List<CtlCommandGroup> ttsCommandGroups = <CtlCommandGroup>[
         build: _buildImport,
         render: _renderImport,
       ),
+      CtlCommandSpec(
+        name: 'export',
+        summary:
+            '导出有声漫画包（.fushi-manga-audio：页图 / OCR / 演出稿 / 成品 / 系列选角），'
+            '另一台导入就能直接播放；默认等写完',
+        usage: '<key>... --out <文件>  或  --series <系列> --out <文件>',
+        configure: _configureExport,
+        build: _buildExport,
+        render: _renderPackageTask,
+      ),
+      CtlCommandSpec(
+        name: 'import-package',
+        summary:
+            '导入有声漫画包：按页数 + OCR 认本机同一卷（没有就作为新卷导入），复制演出稿与'
+            '成品并登记、合并系列选角；--dry-run 只列计划；默认等导入完',
+        usage: '<文件.fushi-manga-audio>',
+        configure: _configureImportPackage,
+        build: _buildImportPackage,
+        render: _renderPackageTask,
+      ),
+      CtlCommandSpec(
+        name: 'package-task',
+        summary: '有声漫画包导出 / 导入任务的状态（--wait 等它结束）',
+        usage: '<任务 id>',
+        configure: _configurePackageTask,
+        build: _buildPackageTask,
+        render: _renderPackageTask,
+      ),
+      CtlCommandSpec(
+        name: 'package-cancel',
+        summary: '取消有声漫画包导出（删半成品）/ 还没开始落库的导入',
+        usage: '<任务 id>',
+        build: _buildPackageCancel,
+        render: _renderPackageTask,
+      ),
     ],
   ),
 ];
+
+const String _packageRoot = '/api/admin/tts/manga-packages';
 
 const String _root = '/api/admin/tts/manga';
 
@@ -182,11 +219,44 @@ const List<String> _kinds = <String>[
   'skip',
 ];
 
+/// 语气词表（线上 wire 名，none = 不标）。CLI 不依赖 fushi_engine，所以这里手写；
+/// 与引擎 `CastEmotion` 的一致性由 app 侧测试
+/// `tts_manga_line_emotion_parity_test.dart` 钉住，操作目录描述也直接引用这份。
+const List<String> kTtsMangaLineEmotions = <String>[
+  'none',
+  'neutral',
+  'joy',
+  'sadness',
+  'anger',
+  'surprise',
+  'fear',
+  'disgust',
+  'embarrassment',
+  'tenderness',
+  'tension',
+];
+
+/// `--intensity`：整数，或 none（清掉强度，线上是 -1）。
+MapEntry<String, Object?>? _intensityOption(CtlCommandContext c) {
+  final String? raw = c.option('intensity');
+  if (raw == null) return null;
+  if (raw.trim() == 'none')
+    return const MapEntry<String, Object?>('intensity', -1);
+  return MapEntry<String, Object?>('intensity', _intOption(c, 'intensity'));
+}
+
 void _configureLine(ArgParser parser) => parser
   ..addOption('speaker', help: '说话人：角色名 / narrator / unknown')
   ..addFlag('new-character', negatable: false, help: '--speaker 是新角色，加进角色表')
   ..addOption('kind', allowed: _kinds, help: '台词类型')
   ..addOption('beat', help: '句后额外停顿（毫秒，0-10000）')
+  ..addOption(
+    'emotion',
+    allowed: kTtsMangaLineEmotions,
+    help: '语气（none = 不标，强度一并清掉）',
+  )
+  ..addOption('intensity', help: '语气强度 0-100（none = 不标强度）')
+  ..addOption('tone', help: '语气说明（自由文本演技指令，如「おずおずと」；空串 = 清掉）')
   ..addOption('position', help: '移到本页第几句（1 起）')
   ..addOption('say', help: '整句手填要念的文字（空串 = 清掉）')
   ..addMultiOption('fix', help: 'OCR 错字修正：<块下标>=<文字>（文字为空 = 删掉这处修正）');
@@ -216,13 +286,18 @@ CtlRequestSpec _buildLine(CtlCommandContext c) {
     if (c.flag('new-character')) 'newCharacter': true,
     if (c.option('kind') case final String kind) 'kind': kind,
     if (_intOption(c, 'beat') case final int beat) 'beat': beat,
+    if (c.option('emotion') case final String emotion) 'emotion': emotion,
+    if (_intensityOption(c) case final MapEntry<String, Object?> e)
+      e.key: e.value,
+    if (c.args.wasParsed('tone')) 'tone': '${c.args['tone']}',
     if (_intOption(c, 'position') case final int position) 'position': position,
     if (say != null) 'say': '$say',
     if (fixes.isNotEmpty) 'fixes': fixes,
   };
   if (body.isEmpty) {
     throw const CtlUsageError(
-      '至少给一个要改的：--speaker / --kind / --beat / --position / --say / --fix',
+      '至少给一个要改的：--speaker / --kind / --beat / --emotion / --intensity / '
+      '--tone / --position / --say / --fix',
     );
   }
   return CtlRequestSpec.put(path, body: body);
@@ -353,6 +428,87 @@ CtlRequestSpec _buildImport(CtlCommandContext c) => CtlRequestSpec.post(
   },
 );
 
+void _configureExport(ArgParser parser) => parser
+  ..addOption('out', help: '写到这个文件（没带扩展名自动补 .fushi-manga-audio）')
+  ..addOption(
+    'series',
+    help: '导出整个系列：book:<系列里任一卷> / 系列身份（collection:<id>）/ 合集名',
+  )
+  ..addOption('volumes', help: '和 --series 一起用：只导这几卷（book:<key>，逗号分隔）')
+  ..addFlag('script-only', negatable: false, help: '只带演出稿（不带成品），给另一台接着生成')
+  ..addFlag(
+    'no-wait',
+    negatable: false,
+    help: '起了任务就返回（之后用 tts package-task 查）',
+  );
+
+CtlRequestSpec _buildExport(CtlCommandContext c) {
+  final String? out = c.option('out');
+  if (out == null) throw const CtlUsageError('缺少 --out <文件>');
+  final String? series = c.option('series');
+  final List<String> keys = <String>[
+    for (final String raw in c.rest)
+      if (raw.trim().isNotEmpty) raw.trim(),
+  ];
+  if ((series == null) == keys.isEmpty) {
+    throw const CtlUsageError('给要导出的卷 <key>...，或 --series <系列>，二选一');
+  }
+  final String? volumes = c.option('volumes');
+  if (volumes != null && series == null) {
+    throw const CtlUsageError('--volumes 只能和 --series 一起用');
+  }
+  return CtlRequestSpec.post(
+    '$_packageRoot/export',
+    body: <String, Object?>{
+      if (keys.isNotEmpty) 'keys': keys,
+      'series': ?series,
+      if (volumes != null)
+        'volumes': <String>[
+          for (final String v in volumes.split(','))
+            if (v.trim().isNotEmpty) v.trim(),
+        ],
+      'out': ctlAbsolutePath(out),
+      if (c.flag('script-only')) 'scriptOnly': true,
+      if (!c.flag('no-wait')) 'wait': true,
+    },
+  );
+}
+
+void _configureImportPackage(ArgParser parser) => parser
+  ..addFlag('dry-run', negatable: false, help: '只读包、列出每卷会怎么处理，不写任何东西')
+  ..addFlag('as-new', negatable: false, help: '与本机同名卷冲突（页数 / OCR 不一致）的卷作为新卷导入')
+  ..addFlag('yes', negatable: false, help: '本机已有演出稿 / 成品时确认替换')
+  ..addFlag(
+    'no-wait',
+    negatable: false,
+    help: '起了任务就返回（之后用 tts package-task 查）',
+  );
+
+CtlRequestSpec _buildImportPackage(CtlCommandContext c) => CtlRequestSpec.post(
+  '$_packageRoot/import',
+  body: <String, Object?>{
+    'file': ctlAbsolutePath(c.positional(0, '文件.fushi-manga-audio')),
+    if (c.flag('dry-run')) 'dryRun': true,
+    if (c.flag('as-new')) 'asNew': true,
+    if (c.flag('yes')) 'confirm': true,
+    if (!c.flag('no-wait') && !c.flag('dry-run')) 'wait': true,
+  },
+);
+
+void _configurePackageTask(ArgParser parser) =>
+    parser.addFlag('wait', negatable: false, help: '等任务结束再返回');
+
+String _packageTaskPath(CtlCommandContext c) =>
+    '$_packageRoot/tasks/${Uri.encodeComponent(c.positional(0, '任务 id').trim())}';
+
+CtlRequestSpec _buildPackageTask(CtlCommandContext c) => CtlRequestSpec.get(
+  _packageTaskPath(c),
+  query: <String, String>{if (c.flag('wait')) 'wait': 'true'},
+);
+
+CtlRequestSpec _buildPackageCancel(CtlCommandContext c) =>
+    CtlRequestSpec.post('${_packageTaskPath(c)}/cancel');
+
 // ── render ──────────────────────────────────────────────────────────────
 
 String _renderVoices(Object? data) => renderCtlTable(
@@ -473,4 +629,85 @@ String _renderImport(Object? data) {
       '${data['pages']} 页 ${data['lines']} 句，'
       '共 ${((data['durationMs'] as num? ?? 0) / 1000).toStringAsFixed(1)} 秒'
       '${data['replaced'] == true ? '（原成品：${data['previous']}）' : ''}';
+}
+
+const Map<String, String> _packageActions = <String, String>{
+  'useExisting': '用本机已有的同一卷',
+  'create': '作为新卷导入',
+  'skip': '跳过（与本机同名卷冲突）',
+};
+
+const Map<String, String> _packageStatuses = <String, String>{
+  'running': '进行中',
+  'done': '完成',
+  'failed': '失败',
+  'cancelled': '已取消',
+  'imported': '已导入',
+  'skipped': '已跳过',
+};
+
+String _seconds(Object? ms) =>
+    '${((ms as num? ?? 0) / 1000).toStringAsFixed(1)} 秒';
+
+/// 导入计划（--dry-run）、导出 / 导入任务（含结束后的逐卷结果）的人类可读输出。
+String _renderPackageTask(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  if (data['dryRun'] == true) {
+    final StringBuffer out = StringBuffer('导入计划（${data['path']}，不写任何东西）：\n');
+    final Object? volumes = data['volumes'];
+    if (volumes is List) {
+      for (final Object? v in volumes) {
+        if (v is! Map) continue;
+        out.write(
+          '  ${v['id']} ${v['title']}（${v['pages']} 页）：'
+          '${_packageActions['${v['action']}'] ?? v['action']}'
+          '${v['key'] == null ? '' : ' ${v['key']}'}'
+          '${v['hasAudio'] == true ? '，${v['lines']} 句 ${_seconds(v['durationMs'])}' : '，仅演出稿'}'
+          '${v['replacesScript'] == true || v['replacesAudio'] == true ? '，会替换本机已有的演出稿 / 成品（要 --yes）' : ''}'
+          '${v['busy'] == null ? '' : '，${v['busy']}'}'
+          '${v['missingVoices'] is List ? '，本机缺声音：${(v['missingVoices'] as List).join('、')}' : ''}\n',
+        );
+      }
+    }
+    return out.toString().trimRight();
+  }
+  final String status =
+      _packageStatuses['${data['status']}'] ?? '${data['status']}';
+  final String kind = data['kind'] == 'export' ? '导出' : '导入';
+  final StringBuffer out = StringBuffer('$kind$status：${data['taskId']}');
+  if (data['status'] == 'running') {
+    out.write(
+      '（${data['phase'] ?? ''}'
+      '${data['progress'] == null ? '' : ' ${data['progress']}%'}）',
+    );
+  }
+  if (data['error'] != null) out.write('\n${data['error']}');
+  final Object? result = data['result'];
+  if (result is Map) {
+    if (data['kind'] == 'export') {
+      out.write(
+        '\n${result['path']}（${((result['bytes'] as num? ?? 0) / 1048576).toStringAsFixed(1)} MB）',
+      );
+    }
+    final Object? volumes = result['volumes'];
+    if (volumes is List) {
+      for (final Object? v in volumes) {
+        if (v is! Map) continue;
+        final String state = v['status'] == null
+            ? (v['scriptOnly'] == true
+                  ? '仅演出稿'
+                  : '${v['lines']} 句 ${_seconds(v['durationMs'])}')
+            : '${_packageStatuses['${v['status']}'] ?? v['status']}'
+                  '${v['created'] == true ? '（新卷）' : ''}'
+                  '${v['reason'] == null ? '' : '：${v['reason']}'}';
+        out.write(
+          '\n  ${v['id']} ${v['title']}'
+          '${v['key'] == null ? '' : ' ${v['key']}'}：$state'
+          '${v['missingVoices'] is List ? '；本机缺声音：${(v['missingVoices'] as List).join('、')}（继续重配前先装）' : ''}'
+          '${v['scriptStale'] == true ? '；演出稿要重新标注' : ''}',
+        );
+      }
+    }
+  }
+  return out.toString();
 }

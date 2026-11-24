@@ -22,6 +22,7 @@ import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/derived_value_listenable.dart';
 import 'package:fushi/src/updates/host_self_update_service.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_check_scheduler.dart';
@@ -39,6 +40,7 @@ import 'package:fushi_engine/media/video/media_server_video_path.dart'
     show isMediaServerVideoPath;
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
+import 'package:fushi_engine/media/video/disc/legacy_disc_stream_rows.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi/src/media/video/video_resume.dart';
 import 'package:fushi_engine/media/video/video_local_files.dart'
@@ -211,7 +213,8 @@ import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
     show
         ExtensionDictionaryFont,
         browserExtensionDictionaryFont,
-        browserExtensionDictionaryFontForView;
+        browserExtensionDictionaryFontForView,
+        popupKanjiCardNamesIn;
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_settings_drift_store.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
@@ -235,6 +238,8 @@ import 'package:fushi/src/reader/eink_full_refresh.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/media/manga/reader/manga_control_layout.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/lookup/advanced_mining_handoff.dart';
+import 'package:fushi/src/lookup/captured_context_sentences.dart';
 import 'package:fushi/src/lookup/browser_extension_installer.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/lookup_edge_punctuation.dart';
@@ -243,6 +248,8 @@ export 'package:fushi/src/lookup/lookup_edge_punctuation.dart'
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/lookup_ime_language.dart';
+import 'package:fushi/src/lookup/lookup_match_measure.dart'
+    show LookupMatchSearchHost;
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
@@ -402,6 +409,9 @@ import 'package:fushi_engine/media/video/metadata/anime_identity_mapping.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
     show VideoSourceScrapeTaskController;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
+import 'package:fushi_engine/sync/music_library_host_module.dart';
+import 'package:fushi_engine/media/music/host/engine_music_library_host.dart';
 import 'package:fushi/src/asr_host/asr_host.dart'
     show
         MossBackendPreference,
@@ -426,6 +436,8 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
         isDuplicateDiscoveryAudiobookContent;
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi/src/sync/app_download_host.dart';
+import 'package:fushi/src/sync/online_library_items.dart'
+    show AppOnlineLibraryParticipant;
 import 'package:fushi/src/sync/interconnect_host_channel.dart'
     show InterconnectHostRef;
 import 'package:fushi/src/sync/app_peer_torrent_engine.dart';
@@ -492,7 +504,27 @@ import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart'
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart'
-    show appleMusicTokenSource, loadMusicServerBindings;
+    show
+        appleMusicTokenSource,
+        loadMusicServerBindings,
+        musicServerBitrateLimit;
+import 'package:fushi/src/media/music/server/music_server_playback_reporter.dart';
+import 'package:fushi/src/media/music/server/music_server_track_ref.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show
+        MusicServerBrowser,
+        MusicServerItemKind,
+        MusicHostLyrics,
+        MusicServerLyrics,
+        MusicServerLyricsProvider;
+import 'package:fushi/src/media/music/server/music_server_favorites.dart'
+    show MusicServerFavoriteStore, MusicServerTrackFavorites;
+import 'package:fushi/src/media/music/server/music_server_loudness_measurer.dart'
+    show MusicServerLoudnessMeasurer, musicServerMeasuredLoudness;
+import 'package:fushi/src/media/music/server/music_server_offline_queue.dart'
+    show MusicServerOfflineQueue, musicServerUnreachable;
+import 'package:fushi/src/sync/jellyfin_video_client.dart'
+    show JellyfinTransportException;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
     show AppleMusicCatalogClient;
 import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart'
@@ -519,6 +551,7 @@ import 'package:fushi/src/media/music/video_audio_to_music_migration.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
     show defaultVideoSubtitleJobsRoot;
 import 'package:fushi/src/media/music/music_loudness_scanner.dart';
+import 'package:fushi/src/media/music/metadata/music_video_auto_match.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
@@ -532,8 +565,17 @@ import 'package:fushi/src/media/favorites/web_video_favorite.dart'
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart'
+    show InterconnectMusicHostLyrics, InterconnectMusicHosts;
 import 'package:fushi/src/media/music/music_remote_tracks.dart'
-    show musicServerBindingLoader;
+    show MusicServerBinding, musicServerBindingLoader;
+import 'package:fushi/src/media/music/server/music_server_download_index.dart';
+import 'package:fushi/src/media/music/metadata/music_video_service.dart'
+    show AppMusicHostVideoMatcher, MusicVideoService;
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart'
+    show isYoutubeMusicSourceAvailable;
+import 'package:fushi/src/media/music/server/music_server_loudness_resolver.dart'
+    show BindingMusicServerLoudnessResolver, musicServerLoudnessResolver;
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
 import 'package:fushi/src/media/audiobook/audiobook_material_service.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -840,14 +882,21 @@ String normalizeSearchTerm(
 /// 词典搜索结果缓存键的单一真相，逐字不变（变=缓存击穿/旧条目命中不了）。格式：
 /// `<term.length>:<term>/<maxTerms>/<maxResults>`。此前是 [AppModel.searchDictionary]
 /// 内联插值，无法独立断言「键格式不漂移」。
+///
+/// [scanLength]：本次查词交给引擎的扫描窗口（[FushiDicts.scanLength]，反馈
+/// ezCjUoU2QM）。同一个查询串在不同窗口下最长匹配不同，键必须带它；出厂值时后缀为空，
+/// 键与此前逐字相同（[scanLengthCacheSuffix]）。
 @visibleForTesting
 String buildSearchCacheKey({
   required String term,
   required int maxTerms,
   required int maxResults,
+  required int scanLength,
   bool chineseSimpToTrad = false,
 }) {
-  return '${term.length}:$term/$maxTerms/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
+  return '${term.length}:$term/$maxTerms/$maxResults'
+      '${scanLengthCacheSuffix(scanLength)}'
+      '${chineseSimpToTrad ? '/zh' : ''}';
 }
 
 /// 「按中文处理（引擎双向展开简体 ↔ 繁體拼写）」的唯一判据（反馈 3FY6vTqwV-）。
@@ -1017,6 +1066,7 @@ class AppModel
         MusicPluginQualityHost,
         AudioProductionHost,
         ExternalStorageAccess,
+        LookupMatchSearchHost,
         StudyGoalHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
@@ -1227,6 +1277,38 @@ class AppModel
     // 搜索 / 下载管线办（装配与首页对话页入口同一份）；另有整场 AI 助手会话
     // （feature `agent`，工具集是本机的操作目录，记账与撤销落本机）。
     assistantFactory: () => createAppAssistantHost(this),
+    // 互联共享音乐库（设计 2026-11-23，拍板 design-imusic-q2：与视频库 / 书库同级，跟着互联总开关走，
+    // 不另设开关）：与无头服务端同一个引擎实现。
+    modulesFactory: () => <InterconnectHostModule>[
+      MusicLibraryHostModule(
+        EngineMusicLibraryHost(
+          database: () => isDatabaseReady ? database : null,
+          // 网络来源（SFTP / WebDAV / AList）曲目由 host 用自己的来源解析器代读（design-imusic-q4），
+          // 与本机播放同一个解析器（按来源缓存连接）。
+          networkSource: (MusicTrackRow row) async {
+            final MusicRemoteMediaResolver? resolver = musicRemoteMediaResolver;
+            if (resolver == null) return null;
+            final MusicRemoteStream? s = await resolver.resolve(
+              MusicPlayItem(
+                trackUid: row.trackUid,
+                path: row.path,
+                title: row.title,
+                sourceId: row.sourceId,
+              ),
+            );
+            return s == null
+                ? null
+                : (url: Uri.parse(s.url), headers: s.headers);
+          },
+          // 客户端请这台 host 重新匹配 / 绑定 MV（design-imusic-q9）：host 用自己的 MV 服务对自己的
+          // 文件跑；在线搜索受这台 host 自己的 YouTube 合规门约束。
+          videoMatcher: AppMusicHostVideoMatcher(
+            () => MusicVideoService(database: database),
+            online: () => isYoutubeMusicSourceAvailable,
+          ),
+        ),
+      ),
+    ],
     // 对端点名「给这个视频补字幕」：与刮削后自动补同一个服务（运行时随下载管线
     // 起停，每次现取）。
     videoSubtitleBackfill: (String videoId, {String? language}) =>
@@ -1311,6 +1393,9 @@ class AppModel
       onlineMangaReader: InterconnectOnlineMangaHostReader(
         onlineMangaLibraryService,
       ),
+      // 在线源条目跨设备同步（拍板台 mY5VWg1nD-）：对端交来的清单并进本机库，
+      // GET 时附上本机自己的清单。
+      onlineLibraryParticipant: AppOnlineLibraryParticipant(database),
       refreshDictionaryCache: () async {
         // host 侧（互联对端上传/删除词典）直接改 DB，Dart 侧内存 cache 不会自己
         // 跟上：不先 loadFromDb，_rebuildDictPathsCacheAsync 读的还是旧列表，刚被
@@ -2379,7 +2464,8 @@ class AppModel
               );
             }());
           },
-          // 媒体会话与音乐互斥（音乐模块 §7.5）：音乐持有会话时，锁屏 / 耳机键不发给有声书。
+          // 媒体会话与音乐 / 后台视频互斥（音乐模块 §7.5、拍板台 42UUu_kcwD-media）：
+          // 会话归别人时，锁屏 / 耳机键不发给有声书。
           controlStreams: AudioControlStreams(
             playIntentStream: audioCtrl.streamFor(
               audioCtrl.playIntentStream,
@@ -2404,6 +2490,8 @@ class AppModel
           // 库没开时给 null（会话按「不记统计 / 不监听 cue 表」降级），不去碰 late 字段。
           database: () => isDatabaseReady ? database : null,
           studyIdleTimeout: () => readingIdleTimeout,
+          // 与音乐 / 后台视频争同一个系统媒体会话：后开播的认领，被抢的暂停。
+          mediaSeat: audioCtrl.seat(MediaSessionOwner.audiobook),
         )
         ..skipActionSeconds = (() =>
             ReaderFushiSource.instance.skipActionSeconds)
@@ -2441,6 +2529,21 @@ class AppModel
     musicRemoteMediaResolver ??= SourceMusicRemoteMediaResolver(() => database);
     // 曲库 / 本地歌单里的服务器曲目（v149）：起播 / 取封面的地址按当前服务器配置现算。
     musicServerBindingLoader ??= () => loadMusicServerBindings(this);
+    // 互联共享音乐库（设计 2026-11-23）：已配对 host 的曲库按服务器接进来；host 曲目起播时才
+    // 签票取流，封面经同一条钉扎通道取。
+    final InterconnectMusicHosts musicHosts =
+        InterconnectMusicHosts.instance ??= InterconnectMusicHosts(
+          () => SyncRepository(database),
+          // 与服务器曲库同一个「码率上限」设置：设了就请 host 转码（design-imusic-q6）。
+          maxBitrateKbps: () => musicServerBitrateLimit(
+            isPreferencesReady ? prefsRepo.musicServerMaxBitrate : 0,
+          ),
+        );
+    musicFushiHostTrackOpener ??= musicHosts.openTrackPath;
+    // 服务器曲目没随播放项带来的响度（音乐库 / 歌单还原的、Jellyfin 的专辑增益）起播时补查。
+    // 服务器也没有时用客户端测的（离线副本的 sidecar / v176 测量列，见
+    // music_server_loudness_measurer.dart）。
+    musicServerLoudnessResolver ??= _musicServerLoudness;
     // 由专用后端播放的曲目（托管播放）；其余走默认链路（docs/specs/2026-10-31-apple-music-musickit.md
     // §3.3）。Apple Music 整曲：本平台有 MusicKit 播放器才装（Linux / macOS 13 没有，这类曲目
     // 落到 mpv 打不开、按单曲失败）。
@@ -2472,8 +2575,13 @@ class AppModel
       database: () => isDatabaseReady ? database : null,
       showMediaNotification: () => showMediaNotification,
       // NSFW 专辑的封面不进系统媒体控件 / 锁屏；偏好未就绪时按开关默认（开）处理。
+      // 从 AppModel 自身派生：它转发当前偏好仓库的每次变化（换档案换仓库也跟得上），
+      // 开关值真的变了才通知会话重发媒体卡（HBK-AUDIT-217）。
       watchNsfw: watchMediaNsfwSnapshot,
-      blurNsfwCovers: () => !isPreferencesReady || prefsRepo.blurNsfwCovers,
+      blurNsfwCovers: DerivedValueListenable<bool>(
+        this,
+        () => !isPreferencesReady || prefsRepo.blurNsfwCovers,
+      ),
       resumeMode: () => isPreferencesReady
           ? prefsRepo.musicResumeMode
           : MusicResumeMode.longTracks,
@@ -2589,12 +2697,69 @@ class AppModel
     // Android 的早返回）。会话是进程级的，两处登记不注销。
     ExitFlushRegistry.instance.register(session.flushResumePoint);
     AppLifecycleListener(onPause: () => unawaited(session.flushResumePoint()));
+    // 服务器曲目的播放上报（播放次数 / 最近播放回写到 Jellyfin / Subsonic）；退出时把正在
+    // 播的这一首报停止。
+    final MusicServerPlaybackReporter serverReporting =
+        MusicServerPlaybackReporter(
+          engine: engine,
+          lookup: musicServerTracks.resolveItem,
+          onTargetFailure: musicServerTracks.invalidate,
+          onError: (Object e, StackTrace st) => ErrorLogService.instance.log(
+            'MusicServerPlaybackReporter',
+            e,
+            st,
+          ),
+          isUnreachable: (Object e) => musicServerUnreachable(e),
+          // 听够门槛却没送达（连不上 / 配置删了）的播放：记进离线补发队列。
+          onUndelivered: (ref, int playedAtMs) => MusicServerOfflineQueue
+              .instance
+              .enqueuePlay(ref, playedAtMs: playedAtMs),
+          // 那台服务器此刻连得通：顺带补发它积压的离线条目。
+          onDelivered: (MusicServerBrowser b) =>
+              unawaited(MusicServerOfflineQueue.instance.flushServer(b)),
+        );
+    session.serverReporting = serverReporting;
+    // 服务器没给响度的服务器曲目：播过之后在后台测一次（与本地曲库同一个「自动测量」开关）。
+    session.serverLoudnessMeasurer = MusicServerLoudnessMeasurer(
+      database: () => isDatabaseReady ? database : null,
+      serverLoudness: _musicServerLoudness.serverLoudness,
+      enabled: () => isDatabaseReady && prefsRepo.musicLoudnessScan,
+    );
+    // 「正在播放」里服务器曲目的收藏。
+    session.serverFavorites = MusicServerTrackFavorites(
+      resolve: musicServerTracks.resolveItem,
+    );
+    // 下载离线副本时顺带把服务器歌词存进歌词缓存（离线照样有歌词）。
+    musicServerDownloadLyricsSaver ??=
+        ({
+          required String trackUid,
+          required int? durationMs,
+          required MusicServerLyrics? lyrics,
+        }) => musicLyrics.storeServerLyrics(
+          trackUid: trackUid,
+          durationMs: durationMs,
+          lyrics: lyrics,
+        );
+    // 互联 host 曲目的离线副本：host 上生效的那份歌词（design-imusic-q12）。
+    musicServerDownloadHostLyricsSaver ??=
+        ({
+          required String trackUid,
+          required int? durationMs,
+          required MusicHostLyrics? lyrics,
+        }) => musicLyrics.storeHostLyrics(
+          trackUid: trackUid,
+          durationMs: durationMs,
+          lyrics: lyrics,
+        );
+    ExitFlushRegistry.instance.register(serverReporting.flush);
     _musicStudy = MusicStudyTracker(
       engine: engine,
       database: () => isDatabaseReady ? database : null,
       listeningCountsAsStudy: () =>
           isDatabaseReady && prefsRepo.musicListeningCountsAsStudy,
       idleTimeout: () => readingIdleTimeout,
+      lyricsFor: live.timelineFor,
+      setLyricsWanted: live.setStudyWanted,
     );
     return session;
   }
@@ -2654,10 +2819,37 @@ class AppModel
     await musicSession.engine.reapplySettings();
   }
 
-  /// 音乐歌词来源解析与落库（设计 §5.4）：sidecar → 内嵌 → 插件自带 → LRCLIB。
+  /// 服务器曲目的响度补查：服务器的优先，服务器没有曲目增益时用客户端测的。
+  late final BindingMusicServerLoudnessResolver _musicServerLoudness =
+      BindingMusicServerLoudnessResolver(
+        () => loadMusicServerBindings(this),
+        measured: (ref) => musicServerMeasuredLoudness(
+          ref,
+          db: isDatabaseReady ? database : null,
+        ),
+      );
+
+  /// 播放项 → 服务器曲目（播放上报、服务器歌词）：按当前配置的 Jellyfin / Subsonic 现建
+  /// 客户端，缓存到认不出或上报失败为止。
+  late final MusicServerTrackResolver musicServerTracks =
+      MusicServerTrackResolver(
+        () async => <MusicServerBrowser>[
+          for (final MusicServerBinding b
+              in (await (musicServerBindingLoader ??
+                      () => loadMusicServerBindings(this))())
+                  .values)
+            b.browser,
+        ],
+      );
+
+  /// 音乐歌词来源解析与落库（设计 §5.4）：sidecar → 内嵌 → 服务器歌词 / 插件自带 → LRCLIB。
   late final MusicLyricsService musicLyrics = MusicLyricsService(
     database: () => isDatabaseReady ? database : null,
     lrclib: LrclibClient(),
+    // 互联 host 曲目：host 上生效的歌词为准，修改写回（design-imusic-q3）。
+    hostLyrics: InterconnectMusicHostLyrics(
+      () => InterconnectMusicHosts.instance,
+    ),
     // 视频库字幕管线以前写在音频旁的 `<主名>.ja.srt`：有 asr 行时不当 sidecar。
     isGeneratedSidecar: (String audioPath, String path) async =>
         isDefaultVideoSubtitlePipelineOutput(
@@ -2666,6 +2858,17 @@ class AppModel
           path: path,
         ),
     onlineEnabled: () => isDatabaseReady && prefsRepo.musicLyricsOnline,
+    serverLyrics: (String trackUid, String path) async {
+      final MusicServerResolvedTrack? ref = await musicServerTracks.resolve(
+        trackUid: trackUid,
+        path: path,
+      );
+      final MusicServerBrowser? b = ref?.browser;
+      if (ref == null || b is! MusicServerLyricsProvider) return null;
+      return (
+        lyrics: await (b as MusicServerLyricsProvider).lyricsFor(ref.trackId),
+      );
+    },
     pluginLyrics: isMusicPluginSourcesUsable
         ? (String pluginId, String trackId) =>
               musicPluginManager.source(pluginId).lyrics(trackId)
@@ -2799,6 +3002,12 @@ class AppModel
   bool get musicLyricsBlurInactive => prefsRepo.musicLyricsBlurInactive;
   Future<void> setMusicLyricsBlurInactive(bool value) =>
       prefsRepo.setMusicLyricsBlurInactive(value);
+
+  /// 本地 MV 后台自动匹配（音乐来源扫完后跑；「有 MV 时背景放 MV」关着不跑）。
+  late final MusicVideoAutoMatcher musicVideoAutoMatch = MusicVideoAutoMatcher(
+    database: () => isDatabaseReady ? database : null,
+    enabled: () => isDatabaseReady && prefsRepo.musicLyricsMvBackdrop,
+  );
 
   /// 后台响度扫描（缺 ReplayGain 标签的曲目，设计 §7.3）。
   late final MusicLoudnessScanner musicLoudness = MusicLoudnessScanner(
@@ -3503,8 +3712,22 @@ class AppModel
   /// 只排队不切 tab 时，词会一直挂在 [DesktopLookupService.pendingText] 上——唯一的
   /// 消费者 [HomeDictionaryPage] 不保活，用户不在查词 tab 上就什么都看不到（BUG-4117）。
   /// 唤前台由调用方负责（深链由原生层前置主窗，ctl 先调 `_focusMainWindowForCtl`）。
-  void queueExternalLookup(String text) {
-    if (DesktopLookupService.instance.triggerLookup(text)) {
+  ///
+  /// [capturedContext]：应用外热键查词开了「抓取上下文」时切好的前后句（拍板台
+  /// rf--UcsGta），查词页据此给高级制卡的句子分区；其它来源为 null。
+  ///
+  /// [advancedMining]：应用外查词覆盖窗点「高级制卡」转交过来的词条（拍板台
+  /// rf--UcsGta-overlay），查词页渲染完结果后为它打开高级制卡对话框。
+  void queueExternalLookup(
+    String text, {
+    CapturedSentenceContext? capturedContext,
+    AdvancedMiningHandoff? advancedMining,
+  }) {
+    if (DesktopLookupService.instance.triggerLookup(
+      text,
+      capturedContext: capturedContext,
+      advancedMining: advancedMining,
+    )) {
       requestHomeDictionaryTab();
     }
   }
@@ -4131,6 +4354,27 @@ class AppModel
 
   /// 见 [migrateAudioOnlyVideoBooksToMusic]。失败（原生库缺失、视频库正在清理刮削
   /// 资料）只记错误日志：数据原样保留，下次启动按同一判据重来。
+  Future<void> _migrateLegacyDiscStreamRows() async {
+    try {
+      final LegacyDiscStreamMigrationReport report =
+          await migrateLegacyDiscStreamRows(_database);
+      if (report.candidates == 0) return;
+      debugPrint(
+        '[Fushi] legacy disc stream rows -> disc collections: '
+        'reclaimed ${report.reclaimed}/${report.candidates}, '
+        'discs ${report.discs}, memberships ${report.membershipsCarried}, '
+        'unreadable ${report.unreadableRoots.length}',
+      );
+      if (report.discs > 0) notifyListeners();
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'AppModel.migrateLegacyDiscStreamRows',
+        e,
+        stack,
+      );
+    }
+  }
+
   Future<void> _migrateAudioOnlyVideosToMusic() async {
     try {
       final VideoAudioMigrationReport report =
@@ -5238,7 +5482,7 @@ class AppModel
         failure,
       );
     }
-    // iOS 收件箱的分类子目录（「文件」App 里的 Books / Video / Manga）开机即建好，
+    // iOS 收件箱的子目录（「文件」App 里的 Books / Video / Manga 与预留的 Games）开机即建好，
     // 用户第一次打开「我的 iPhone › Fushi」就知道往哪拖。best-effort：建不出来只是
     // 少了引导，导入时会再建。
     if (ImportInbox.isSupported) {
@@ -5342,8 +5586,35 @@ class AppModel
         mediaServerRouteFailoverForRepository(() => SyncRepository(_database)),
       );
       await _resetSrsStorageHost(isMainProcess: true);
+      // 服务器曲目的离线副本（v175）：进程内索引跟着表走，播放项据此换成本地文件。
+      MusicServerDownloadIndex.instance.attach(_database);
+      // 服务器曲目离线 / 配置删了时没送达的播放与收藏（v176 补发队列）：「连不上」的判据补上
+      // Jellyfin 传输层自己的异常；补发时找当前配置的 Jellyfin / Subsonic。
+      musicServerUnreachable = (Object e) =>
+          e is JellyfinTransportException || musicServerReportUnreachable(e);
+      MusicServerOfflineQueue.instance
+        ..attach(
+          _database,
+          browsers: () async => <MusicServerBrowser>[
+            for (final MusicServerBinding b in (await loadMusicServerBindings(
+              this,
+            )).values)
+              b.browser,
+          ],
+        )
+        ..onFavoriteApplied = (String serverId, String itemId, bool fav) =>
+            MusicServerFavoriteStore.instance.confirm(
+              serverId,
+              MusicServerItemKind.track,
+              itemId,
+              fav,
+            );
       // 音乐来源扫完 → 缺 ReplayGain 标签的曲目进后台 EBU R128 测量（设计 §7.3）。
-      onMusicSourceScanned = () => unawaited(musicLoudness.schedule());
+      // 同时把还没有 MV 的本机曲目和附近的视频 / 蓝光流做一轮声纹匹配（只对没对过的）。
+      onMusicSourceScanned = () {
+        unawaited(musicLoudness.schedule());
+        unawaited(musicVideoAutoMatch.schedule());
+      };
       // 游戏来源扫完 → 游戏库缓存重载 + 新游戏后台补封面（反馈 9Rm_8JEkGM）。
       onGameSourceScanned = (List<String> created) =>
           unawaited(adoptSourceScannedGames(galgameRepo, created));
@@ -5800,6 +6071,9 @@ class AppModel
       // 旧版按「无画面视频」收进视频库的纯音频搬到音乐库（反馈 QAondMh4M5）。按数据
       // 幂等：没有这类行就什么都不做；搬不动的行原样留在视频库，下次启动再试。
       unawaited(_migrateAudioOnlyVideosToMusic());
+      // BUG-4245 修复前逐个入库的蓝光流文件行（`BDMV/STREAM/00002.m2ts`）换成正规盘
+      // 合集（BUG-5285）。按数据幂等：没有这类行就什么都不做；盘读不出的行留到下次。
+      unawaited(_migrateLegacyDiscStreamRows());
       // 上个进程被杀 / 崩溃留在书库根的导入残留（`.tmp-*` 暂存、`.bak-*` 让位旧树、
       // 拷到一半的半成品）：开库后清一次，不等下一次导入才清（BUG-4841，#3722 c07
       // 遗留）。Android 就地重建拷贝回退期间被杀时，这一步把 bak 还原成完整的书。
@@ -5808,6 +6082,9 @@ class AppModel
       // 启动关键路径上的查询都发完了：这时才读查词历史整表（见
       // DictionaryRepository.loadFromDb 的 deferHistory）。
       dictRepo.startDeferredHistoryLoad();
+      // 上次离线时没送达服务器的播放 / 收藏：偏好（Subsonic 配置）已就绪，补发一轮（连不上
+      // 的条目留着，打开服务器页 / 下一次请求成功时再发）。
+      unawaited(MusicServerOfflineQueue.instance.flushAll());
 
       StartupTimeline.mark('post-init-kicks');
       debugPrint('[Fushi] init: DONE');
@@ -6358,9 +6635,18 @@ class AppModel
   ThemeAccentOverrideSource? get activeAccentOverrideSource =>
       themeNotifier.activeAccentOverrideSource;
 
-  /// 阅读器纸色用的主题键：偏好原值（可能是已删的旧预设 id，如 ecru-theme），
-  /// 让存量用户的阅读器纸色照旧生效（2026-10 预设精简时阅读器纸色不动）。
-  String get readerThemeKey => themeNotifier.storedAppThemeKey;
+  /// 阅读器纸色用的主题键：当前明暗下显式选的纸色优先，否则跟随 app 主题偏好
+  /// 原值（见 [ThemeNotifier.readerThemeKey]）。
+  String get readerThemeKey => themeNotifier.readerThemeKey;
+
+  /// 「跟随主题」时阅读器纸色所跟的主题键（偏好原值，可能是旧纸色 id）。
+  String get readerFollowThemeKey => themeNotifier.storedAppThemeKey;
+
+  /// 阅读器纸色（拍板台 vJSj4RsKFt）：浅色 / 深色各一份，null = 跟随 app 主题。
+  String? readerPaperFor({required bool dark}) =>
+      themeNotifier.readerPaperFor(dark: dark);
+  Future<void> setReaderPaper({required bool dark, String? key}) =>
+      themeNotifier.setReaderPaper(dark: dark, key: key);
 
   /// 「纯黑深色背景」开关（原「纯黑」预设的语义）。
   bool get pureBlackDark => themeNotifier.pureBlackDark;
@@ -6585,6 +6871,14 @@ class AppModel
     autoExpandRows: popupAutoExpandDictionaries,
     collapsedDictionaryNames: _popupCollapsedNamesOf(lookupViewDictionaries),
     expandedDictionaryNames: _popupExpandedNamesOf(lookupViewDictionaries),
+    kanjiCollapsedDictionaryNames: popupKanjiCardNamesIn(
+      lookupViewDictionaries,
+      DictionaryCollapseState.collapsed,
+    ),
+    kanjiExpandedDictionaryNames: popupKanjiCardNamesIn(
+      lookupViewDictionaries,
+      DictionaryCollapseState.expanded,
+    ),
   );
 
   /// 词典管理里逐本「折叠」/「展开」的词典名（BUG-2158 三态），与 in-app 弹窗注入的
@@ -6635,6 +6929,14 @@ class AppModel
         autoExpandRows: p.popupAutoExpandDictionaries,
         collapsedDictionaryNames: _popupCollapsedNamesOf(view.dictionaries),
         expandedDictionaryNames: _popupExpandedNamesOf(view.dictionaries),
+        kanjiCollapsedDictionaryNames: popupKanjiCardNamesIn(
+          view.dictionaries,
+          DictionaryCollapseState.collapsed,
+        ),
+        kanjiExpandedDictionaryNames: popupKanjiCardNamesIn(
+          view.dictionaries,
+          DictionaryCollapseState.expanded,
+        ),
       ),
       einkMode: theme.einkMode,
     ));
@@ -6827,6 +7129,8 @@ class AppModel
       themeNotifier.activeCustomThemeBackgroundColor;
   Color? get activeCustomThemeSelectionColor =>
       themeNotifier.activeCustomThemeSelectionColor;
+  Color? get activeCustomThemeSelectionTextColor =>
+      themeNotifier.activeCustomThemeSelectionTextColor;
   Color? get activeCustomThemeLinkColor =>
       themeNotifier.activeCustomThemeLinkColor;
   Color? get activeCustomThemeSurfaceColor =>
@@ -7290,6 +7594,18 @@ class AppModel
 
   Future<void> setVideoPortraitSubtitleList(bool value) =>
       prefsRepo.setVideoPortraitSubtitleList(value);
+
+  /// YouTube 直播回放带聊天回放时开始播放就打开聊天栏，默认关（拍板台 zTedU_pOQF）。
+  bool get videoLiveChatAutoOpen => prefsRepo.videoLiveChatAutoOpen;
+
+  Future<void> setVideoLiveChatAutoOpen(bool value) =>
+      prefsRepo.setVideoLiveChatAutoOpen(value);
+
+  /// 聊天栏显示发送者，默认开（拍板台 zTedU_pOQF）。
+  bool get videoLiveChatShowAuthor => prefsRepo.videoLiveChatShowAuthor;
+
+  Future<void> setVideoLiveChatShowAuthor(bool value) =>
+      prefsRepo.setVideoLiveChatShowAuthor(value);
 
   /// 手机 / 平板切出 app 或锁屏后视频声音继续播，默认关（拍板台 42UUu_kcwD）。
   bool get videoBackgroundPlay => prefsRepo.videoBackgroundPlay;
@@ -10616,6 +10932,15 @@ class AppModel
     bool hidden,
   ) => dictRepo.setDictionaryKanjiPartHidden(dictionary, hidden);
 
+  /// 汉字卡的折叠三态（拍板台 6uasoIUvSR，「汉字」分区里的折叠控件）：混合词典写它
+  /// 汉字部分自己的键，纯 kanji 词典就是它自己的三态（它没有术语部分）。
+  Future<void> setDictionaryKanjiCardCollapseState(
+    Dictionary dictionary,
+    DictionaryCollapseState state,
+  ) => dictionary.hasEmbeddedKanji
+      ? dictRepo.setDictionaryKanjiPartCollapseState(dictionary, state)
+      : setDictionaryCollapseState(dictionary, state);
+
   Future<void> toggleDictionaryHidden(Dictionary dictionary) async {
     await dictRepo.toggleDictionaryHidden(
       dictionary,
@@ -10787,6 +11112,7 @@ class AppModel
   /// 单独一个入口而不是给 [searchDictionary] 加参数：后者是测试替身普遍覆写的面。
   /// [rubySpans] 为空时与 [searchDictionary] 完全等价。远端查词（remote-first）把对齐后的
   /// 区间随请求带给对端（`ruby` 字段），认识它的对端同样按读音排序。
+  @override
   Future<DictionarySearchResult> searchDictionaryWithRuby({
     required String searchTerm,
     required List<FushiRubySpan> rubySpans,
@@ -11005,6 +11331,8 @@ class AppModel
       filters: filtersOverride ?? profileView?.lookupFilters,
       requestedScriptVariants: requestedScriptVariants,
     );
+    // 扫描窗口只取一次：缓存键与交给引擎的是同一个值（反馈 ezCjUoU2QM）。
+    final int scanLength = FushiDicts.scanLength;
     // 原文振假名改变同长度候选的先后：带 ruby 的查询单独成键（无 ruby 时后缀为空，
     // 键与此前逐字相同）。
     final String cacheKey =
@@ -11014,6 +11342,7 @@ class AppModel
           term: searchTerm,
           maxTerms: effectiveMaxTerms,
           maxResults: effectiveMaxTerms,
+          scanLength: scanLength,
           chineseSimpToTrad: simpToTrad,
         ) +
         rubySpansCacheSuffix(rubySpans);
@@ -11035,6 +11364,7 @@ class AppModel
           FushiLookupRequest(
             text: searchTerm,
             maxResults: effectiveMaxTerms,
+            scanLength: scanLength,
             includeKanji: isSingleKanji(searchTerm),
             hiddenDictionaries: filters.hiddenDictionaryNames,
             // 纯汉字词典的排除单独一个集合：hiddenDictionaries 是术语开关，混合
@@ -11913,7 +12243,7 @@ class AppModel
   String? _mirroredWorkSession;
 
   /// 弹窗进程：按主进程发布的作品会话（[kWorkProfileSessionPrefKey]，读自刚重载的偏好缓存）
-  /// 装上 / 换掉 / 撤下本 isolate 的作品会话覆盖层——与主进程同一条 [WorkProfileScope.enterProfile]，
+  /// 装上 / 换掉 / 撤下本 isolate 的作品会话覆盖层——与主进程同一条 [WorkProfileScope.enterCombos]，
   /// 不另写一份作品配置逻辑。返回时按新会话重读的缓存已就绪。
   Future<void> mirrorMainProcessWorkSession() async {
     final String published = prefsRepo.workProfileSession;
@@ -11950,7 +12280,7 @@ class AppModel
       );
 
   /// 悬浮字幕字体（`FontTarget.floatingLyric` 第一条可用 ttf/otf/ttc）。只有
-  /// 桌面原生窗（Windows / macOS）吃字体；阅读器设置尚未加载时返回 null（原生用
+  /// 桌面原生窗（Windows / macOS / Linux）吃字体；阅读器设置尚未加载时返回 null（原生用
   /// 默认字族）。
   ({String family, String? path})? _floatingLyricNativeFont() {
     if (!isFontTargetAvailableOnPlatform(FontTarget.floatingLyric)) return null;
@@ -12375,8 +12705,15 @@ class AppModel
   Future<void> setBrowseMovedNoticeHandled() =>
       prefsRepo.setBrowseMovedNoticeHandled();
 
+  @override
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
+
+  /// 词典扫描窗口长度（码点，反馈 ezCjUoU2QM）；引擎经 [FushiDicts.scanLengthReader]
+  /// 直接读同一个偏好，这里只给设置页用。
+  int get lookupScanLength => prefsRepo.lookupScanLength;
+  Future<void> setLookupScanLength(int value) =>
+      prefsRepo.setLookupScanLength(value);
 
   void addToDictionaryHistory({required DictionarySearchResult result}) {
     MediaType mediaType = mediaTypes.values.toList()[currentHomeTabIndex];
@@ -13025,6 +13362,12 @@ class AppModel
       prefsRepo.miningAudioFollowPlaybackSpeed;
   void toggleMiningAudioFollowPlaybackSpeed() =>
       prefsRepo.toggleMiningAudioFollowPlaybackSpeed();
+
+  /// 制卡句子音频跟随播放音量（默认开，d7mXlstcv9）。
+  bool get miningAudioFollowPlaybackVolume =>
+      prefsRepo.miningAudioFollowPlaybackVolume;
+  void toggleMiningAudioFollowPlaybackVolume() =>
+      prefsRepo.toggleMiningAudioFollowPlaybackVolume();
 
   bool get deduplicatePitchAccents => prefsRepo.deduplicatePitchAccents;
   void toggleDeduplicatePitchAccents() =>
@@ -15063,17 +15406,18 @@ class AppModel
             bool success,
             bool record,
             MineToastStatus status,
+            String? detail,
           })
           described = describeMineOutcome(outcome);
           // 制卡结果走 showMine：过「制卡提示」开关。
           FushiToast.showMine(
             msg: described.message,
             status: described.status,
-            // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-            action:
-                minedCardUndoToastAction(repo, outcome, expression: word) ??
-                // BUG-5085：复习库要升级时带「打开复习」。
-                mineFailureToastAction(outcome),
+            detail: described.detail,
+            term: word,
+            reading: reading,
+            // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
+            action: mineResultToastAction(repo, outcome, expression: word),
           );
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
@@ -15266,6 +15610,15 @@ class AppModel
   bool get mangaPageTurnFollowDrag => prefsRepo.mangaPageTurnFollowDrag;
   Future<void> setMangaPageTurnFollowDrag(bool value) =>
       prefsRepo.setMangaPageTurnFollowDrag(value);
+
+  double get mangaSwipePageTurnSensitivity =>
+      prefsRepo.mangaSwipePageTurnSensitivity;
+  Future<void> setMangaSwipePageTurnSensitivity(double value) =>
+      prefsRepo.setMangaSwipePageTurnSensitivity(value);
+
+  bool get mangaReverseArrowPageTurn => prefsRepo.mangaReverseArrowPageTurn;
+  Future<void> setMangaReverseArrowPageTurn(bool value) =>
+      prefsRepo.setMangaReverseArrowPageTurn(value);
 
   bool get mangaVolumeKeyPaging => prefsRepo.mangaVolumeKeyPaging;
   Future<void> setMangaVolumeKeyPaging(bool value) =>
@@ -16426,7 +16779,8 @@ class _AppModelRemoteLookupService
       );
       // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）；
       // 按配置视图查时带它的命名空间（App 自己的键不变），按请求方词典选择查时再加
-      // 它的指纹命名空间。
+      // 它的指纹命名空间。扫描窗口只取一次，键与交给引擎的是同一个值。
+      final int scanLength = FushiDicts.scanLength;
       final String searchCacheKey =
           (view?.lookupCacheNamespace ?? '') +
           AppModel._requesterFiltersNamespace(requesterFilters) +
@@ -16434,6 +16788,7 @@ class _AppModelRemoteLookupService
             term: searchTerm,
             maxTerms: maximumTerms,
             maxResults: maximumTerms,
+            scanLength: scanLength,
             chineseSimpToTrad: simpToTrad,
           ) +
           rubySpansCacheSuffix(alignedRuby);
@@ -16487,6 +16842,7 @@ class _AppModelRemoteLookupService
             FushiLookupRequest(
               text: searchTerm,
               maxResults: maximumTerms,
+              scanLength: scanLength,
               popupOnly: true,
               hiddenDictionaries: filters.hiddenDictionaryNames,
               dictionaryOrder: filters.termDictionaryOrder,

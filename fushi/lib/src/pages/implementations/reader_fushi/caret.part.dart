@@ -296,12 +296,10 @@ extension _ReaderCaret on _ReaderFushiPageState {
           scope: ShortcutScope.audiobook,
           physicalKey: imeFallbackPhysicalKey,
         );
-    final ShortcutAction? arrowOverride = resolveReaderArrowPageTurn(
-      key: event.logicalKey,
+    final ShortcutAction? arrowOverride = _resolveReaderArrowKey(
+      event.logicalKey,
       modifiers: modifiers,
-      rtl: _isRtlReading,
       boundAction: bareArrowBinding,
-      reverse: ReaderFushiSource.instance.reverseArrowPageTurn,
     );
     return spaceOverride ??
         arrowOverride ??
@@ -327,6 +325,42 @@ extension _ReaderCaret on _ReaderFushiPageState {
           scope: ShortcutScope.universal,
           physicalKey: imeFallbackPhysicalKey,
         );
+  }
+
+  /// 裸 ← / → 的阅读器语义，键盘焦点路径与 spread 文档键桥、查词弹窗回传共用一份：
+  ///
+  ///  1. [resolveReaderArrowPageTurn] 按阅读方向（竖排下一页在左）与「反转方向键翻页」
+  ///     开关把出厂翻页绑定校正成页序动作；用户改绑 / 解绑过就返回 null 让路；
+  ///  2. 有声书在场且查词弹窗不可见时，校正后的「下一页 / 上一页」改作「下一句 /
+  ///     上一句」（[resolveAudioArrowTakeover]，反馈 uz_2m0E_Eu ①，与漫画同一判据）。
+  ///     PageUp / PageDown / ↑ / ↓ 不受影响，照旧翻页。
+  ///
+  /// [boundAction] = 该键在 reader → audiobook co-active 组里解析出的真实绑定。
+  /// 非裸 ← / → 一律返回 null。
+  ShortcutAction? _resolveReaderArrowKey(
+    LogicalKeyboardKey key, {
+    required Set<ModifierKey> modifiers,
+    required ShortcutAction? boundAction,
+  }) {
+    final ShortcutAction? pageTurn = resolveReaderArrowPageTurn(
+      key: key,
+      modifiers: modifiers,
+      rtl: _isRtlReading,
+      boundAction: boundAction,
+      reverse: ReaderFushiSource.instance.reverseArrowPageTurn,
+    );
+    return resolveAudioArrowTakeover(
+          key: key,
+          modifiers: modifiers,
+          pageAction: pageTurn,
+          pageForward: ShortcutAction.readerPageForward,
+          pageBackward: ShortcutAction.readerPageBackward,
+          nextLine: ShortcutAction.audiobookNextSentence,
+          previousLine: ShortcutAction.audiobookPrevSentence,
+          audioActive: _hasActiveAudiobook,
+          dictionaryShown: isDictionaryShown,
+        ) ??
+        pageTurn;
   }
 
   /// TODO-1078：WebView 内容层捕获的裸 Space（Windows WebView2 抢走 OS 键盘焦点后
@@ -360,11 +394,24 @@ extension _ReaderCaret on _ReaderFushiPageState {
     }
   }
 
+  /// Android delivers controller A as key events: while the caret is active
+  /// (on the popup after the controller lookup mode's "enter result", or a
+  /// keyboard caret) a short A activates at the caret and holding it 500 ms
+  /// long-presses (the desktop poller sends the long press as its own intent,
+  /// [_handleGamepadLongPress]). With no caret A is not consumed here and
+  /// resolves like any other button.
   KeyEventResult? _handleGamepadAKeyEvent(KeyEvent event) {
     if (event.logicalKey != LogicalKeyboardKey.gameButtonA) return null;
-    final ShortcutAction? resolvedAction = appModel.shortcutRegistry
-        .resolveGamepad(GamepadButton.a, scope: ShortcutScope.reader);
-    if (resolvedAction != ShortcutAction.readerLookupAtCursor) return null;
+    // Only a press that went down here is finished here (timer running / long
+    // press fired), even when the caret left meanwhile; a new press needs the
+    // caret, and a stray repeat / release (its press went elsewhere) is not
+    // ours.
+    final bool pressInFlight = _gamepadAHoldTimer != null || _gamepadALongFired;
+    if (event is KeyDownEvent) {
+      if (!_caretActive) return null;
+    } else if (!pressInFlight) {
+      return null;
+    }
     if (event is KeyDownEvent) {
       if (_gamepadAHoldTimer != null) return KeyEventResult.handled;
       _gamepadALongFired = false;
@@ -380,11 +427,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
     if (event is KeyUpEvent) {
       final bool longFired = _gamepadALongFired;
       _clearGamepadAHold();
-      if (longFired) return KeyEventResult.handled;
-      return _executeShortcutAction(
-        ShortcutAction.readerLookupAtCursor,
-        gamepadTriggerButton: GamepadButton.a,
-      );
+      if (longFired || !_caretActive) return KeyEventResult.handled;
+      unawaited(_runCaretAction(CaretAction.activate));
+      return KeyEventResult.handled;
     }
     return KeyEventResult.handled;
   }
@@ -490,14 +535,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
         unawaited(_runCaretAction(caretAction));
         return true;
       }
-    } else if (ReaderCaretRouter.isEnterTriggerGamepad(
-      button,
-      focusNavEnabled: _focusNavEnabled,
-      enterButtons: _readerEnterCaretButtons(),
-    )) {
-      unawaited(_enterCaret());
-      return true;
     }
+    // 手柄不再有「进光标」入口（2026-11-22 手柄查词统一：手柄查词只走查词模式，
+    // 光标只在查词模式按「进入结果」后落在弹窗上时由上面的分支驱动）；键盘进光标不变。
     // 手柄重设计 P2：排在 caret 路由**之后**、reader/audiobook 解析**之前**。
     // caret 保留 dpad 四向（方向键移动字级光标去选词，是查词的操作方式本身，不能
     // 让给词条翻页）；但 X / Y 在 reader+audiobook scope 都有绑定
@@ -512,7 +552,7 @@ extension _ReaderCaret on _ReaderFushiPageState {
     // TODO-700 T8: the bottom bar is excluded from focus traversal, so D-pad
     // Down no longer routes focus into the chrome. It falls through to normal
     // gamepad shortcut resolution below; the bar is operated by touch/mouse.
-    final ShortcutAction? action =
+    final ShortcutAction? bound =
         appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.reader,
@@ -520,7 +560,16 @@ extension _ReaderCaret on _ReaderFushiPageState {
         appModel.shortcutRegistry.resolveGamepad(
           button,
           scope: ShortcutScope.audiobook,
+        );
+    // D-pad 左 / 右跟随阅读方向（竖排 vertical-rl 下一页在左），与键盘方向键、漫画
+    // D-pad 同一原语；只接管出厂绑定（反馈 uz_2m0E_Eu）。
+    final ShortcutAction? action =
+        resolveReaderDpadPageTurn(
+          button: button,
+          rtl: _isRtlReading,
+          boundAction: bound,
         ) ??
+        bound ??
         // 兜底「返回上一级」（universal，默认手柄 B）。排在 reader+audiobook 之后
         // ⇒ 书内 B 仍先命中 audiobookPrevSentence（上一句），不退书；只有用户把
         // B 从上一句上解绑、或把返回改绑到别的键时，这条才会真的接管。
@@ -552,13 +601,9 @@ extension _ReaderCaret on _ReaderFushiPageState {
         enterKeys: _readerEnterCaretKeys(),
       );
     }
-    if (gamepadTriggerButton != null) {
-      return ReaderCaretRouter.isEnterTriggerGamepad(
-        gamepadTriggerButton,
-        focusNavEnabled: _focusNavEnabled,
-        enterButtons: _readerEnterCaretButtons(),
-      );
-    }
+    // A gamepad never enters the caret (the controller lookup mode is the
+    // gamepad's lookup path).
+    if (gamepadTriggerButton != null) return false;
     return _focusNavEnabled;
   }
 
@@ -571,16 +616,6 @@ extension _ReaderCaret on _ReaderFushiPageState {
         .bindingsFor(ShortcutAction.readerEnterCaret)
         .keyboardBindings
         .map((b) => b.key)
-        .toSet();
-  }
-
-  /// TODO-700 T7: the live gamepad buttons bound to
-  /// [ShortcutAction.readerEnterCaret] (default A, remappable).
-  Set<GamepadButton> _readerEnterCaretButtons() {
-    return appModel.shortcutRegistry
-        .bindingsFor(ShortcutAction.readerEnterCaret)
-        .gamepadBindings
-        .map((b) => b.button)
         .toSet();
   }
 
@@ -621,19 +656,28 @@ extension _ReaderCaret on _ReaderFushiPageState {
     );
   }
 
+  /// 查词弹窗开着时按 ← / → 翻页：先关整条弹窗栈再翻（反馈 uz_2m0E_Eu ③，与漫画
+  /// 「左右键关弹窗并翻页」一致）。只认 ← / → 触发的翻页——PageUp / PageDown /
+  /// ↑ / ↓ / 空格 / 手柄 / 鼠标的翻页语义不在本次统一范围内，保持原样。
+  void _dismissDictionaryForArrowPageTurn(LogicalKeyboardKey? trigger) {
+    if (trigger == null || directionalPageTurnSideForKey(trigger) == null) {
+      return;
+    }
+    if (isDictionaryShown) clearDictionaryResult();
+  }
+
   KeyEventResult _executeShortcutAction(
     ShortcutAction action, {
     LogicalKeyboardKey? keyboardTriggerKey,
     GamepadButton? gamepadTriggerButton,
   }) {
-    // 整句扫词（拍板台 5H922XeDHM）：键盘 / 手柄 / 鼠标三条通道都落到本执行体，扫词在
-    // 这里经唯一派发点分流；光标激活时执行体自己让位（仍消费，不让键冒泡去移焦点）。
-    if (_runReaderWordSweepAction(action)) return KeyEventResult.handled;
     switch (action) {
       case ShortcutAction.readerPageForward:
+        _dismissDictionaryForArrowPageTurn(keyboardTriggerKey);
         _paginate(ReaderNavigationDirection.forward);
         return KeyEventResult.handled;
       case ShortcutAction.readerPageBackward:
+        _dismissDictionaryForArrowPageTurn(keyboardTriggerKey);
         _paginate(ReaderNavigationDirection.backward);
         return KeyEventResult.handled;
       case ShortcutAction.readerDismissDict:

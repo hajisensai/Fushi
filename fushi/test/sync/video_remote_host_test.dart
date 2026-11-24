@@ -846,6 +846,31 @@ void main() {
     },
   );
 
+  test('原盘「全部播放」：手机收藏按句子所在那一集的时间轴落库与匹配（BUG-5356）', () async {
+    // 句子在整条播放列表的 1000ms，属于从 600ms 起的那一集 → 记 (episode-two, 400)。
+    player.anchor = (int startMs) =>
+        (bookUid: 'episode-two', ms: startMs - 600);
+    await call('favoriteSet', <String, dynamic>{
+      'cueId': 'primary',
+      'favorited': true,
+    });
+    await call('favoriteSet', <String, dynamic>{
+      'cueId': 'primary',
+      'favorited': true,
+    });
+    final List<FavoriteSentence> stored = await FavoriteSentenceRepository(
+      db,
+    ).getAll();
+    expect(stored, hasLength(1), reason: '第二次按同一锚点匹配到已有收藏');
+    expect(stored.single.bookKey, 'episode-two');
+    expect(stored.single.normCharOffset, 400);
+    await call('favoriteSet', <String, dynamic>{
+      'cueId': 'primary',
+      'favorited': false,
+    });
+    expect(await FavoriteSentenceRepository(db).getAll(), isEmpty);
+  });
+
   test(
     'favorites persist in real DB, repeated set is idempotent and bulk remove deletes',
     () async {
@@ -972,6 +997,9 @@ final class _BlockingFavorites extends FavoriteSentenceRepository {
 
 final class _Player {
   String identity = 'episode-one';
+
+  /// 播放器时间轴 → 库锚点（原盘「全部播放」，BUG-5356）；null = 同轴同行。
+  ({String bookUid, int ms}) Function(int startMs)? anchor;
   int sectionIndex = 0;
   bool playing = true;
   int controlRevision = 0;
@@ -1048,6 +1076,8 @@ final class _Player {
       seekMs = favorite.normCharOffset;
       notify();
     },
+    libraryAnchor: (int startMs) =>
+        anchor?.call(startMs) ?? (bookUid: 'book-one', ms: startMs),
     addListener: listeners.add,
     removeListener: listeners.remove,
   );

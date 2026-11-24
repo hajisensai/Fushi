@@ -12,8 +12,8 @@ import 'package:fushi_audio/fushi_audio.dart';
 
 import '../../pages/video_fushi_page_source_corpus.dart';
 
-/// videoEnterCaret：视频页手柄/键盘字级选词查词（用户诉求「视频支持手柄查词」——
-/// 此前唯一非鼠标查词入口是 Shift+指针位置，纯手柄下完全无法查词）。
+/// videoEnterCaret：视频页键盘字级选词查词（也是手柄查词模式驱动的可见光标；手柄
+/// 进光标的入口在 2026-11-22 手柄查词统一中删除，手柄只经 ControllerLookupMode）。
 ///
 /// 分四层验证：
 ///  ① 纯移动函数 [moveSubtitleCaretEntry]（几何行移/跳行/跳过模糊/边界原地）；
@@ -21,7 +21,7 @@ import '../../pages/video_fushi_page_source_corpus.dart';
 ///     （entryCount / hitAt / anchorEntry 主字幕优先）；
 ///  ③ 页级 press-time 键盘通道（激活期无修饰方向键改走光标、Ctrl 组合键仍走
 ///     视频动作、未激活零变化）；
-///  ④ 默认键位——videoEnterCaret 桌面默认 Enter + 手柄 Select；
+///  ④ 默认键位——videoEnterCaret 桌面默认 Enter，没有手柄通道与手柄默认；
 ///  ⑤ [SubtitleCaretPauseTracker]「暂停→再播放」迁移（外部恢复播放自动退光标）。
 /// 截取 [source] 中 [start] 标记到 [end] 标记之间的源码片段（含 [start]、不含 [end]）。
 String _sliceSource(String source, String start, String end) {
@@ -397,7 +397,7 @@ void main() {
       );
     });
 
-    test('主面 LT/RT 不被 caret 路由吞掉，整体交回注册表', () {
+    test('手柄只接管弹窗面上的光标；主面输入归手柄查词模式 / 注册表', () {
       final String gp = _sliceSource(
         src,
         'bool _handleCaretGamepadButton(GamepadButton button) {',
@@ -405,28 +405,23 @@ void main() {
       );
       expect(
         gp,
-        contains('final CaretAction? caretAction = shoulderOnSubtitleSurface'),
+        contains('if (!_videoCaret.onPopup) return false;'),
+        reason:
+            '手柄没有进光标的入口了：字幕主面上的手柄键由 ControllerLookupMode 先消费，'
+            '其余必须交回注册表（否则 LT/RT、播放键在查词模式里被静默吞掉）',
       );
-      expect(gp, contains('? null'));
+      expect(gp, contains('ReaderCaretRouter.decideGamepad(button)'));
       expect(
         gp,
-        contains(': ReaderCaretRouter.decideGamepad(button);'),
-        reason:
-            '主面无词典段语义：LT/RT 走 decideGamepad 会被映射成 jumpDict* 并'
-            '静默 return（用户按 RT 全屏 / LT 重听毫无反应）',
+        contains('tryDictionaryPopupGamepadButton('),
+        reason: '弹窗面上 X 制卡 / Y 发音与手柄查词模式同键，不能被模态路由吞掉',
       );
-      expect(
-        gp,
-        contains('(shoulderOnSubtitleSurface ||'),
-        reason:
-            '主面的放行白名单必须把这两个扳机算进去，否则末尾的 return true'
-            '仍会把它们吞掉',
-      );
+      expect(gp, isNot(contains('videoEnterCaret')));
     });
   });
 
   group('④ videoEnterCaret 默认键位', () {
-    test('桌面默认 Enter + 手柄 Select', () {
+    test('桌面默认 Enter，没有手柄通道与手柄默认（手柄查词统一）', () {
       final Map<ShortcutAction, ShortcutBindingSet> desktop =
           ShortcutDefaults.forPlatform(TargetPlatform.windows);
       final ShortcutBindingSet? set = desktop[ShortcutAction.videoEnterCaret];
@@ -435,9 +430,10 @@ void main() {
         set!.keyboardBindings.map((InputBinding b) => b.key),
         contains(LogicalKeyboardKey.enter),
       );
+      expect(set.gamepadBindings, isEmpty);
       expect(
-        set.gamepadBindings.map((GamepadBinding b) => b.button),
-        contains(GamepadButton.select),
+        ShortcutAction.videoEnterCaret.channels,
+        isNot(contains(ShortcutChannel.gamepad)),
       );
     });
   });

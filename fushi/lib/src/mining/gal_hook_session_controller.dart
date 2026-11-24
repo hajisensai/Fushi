@@ -192,6 +192,8 @@ class GalCaptureMemory {
     this.audioFallbackPolicy = GalAudioFallbackPolicy.full,
     this.textProcess = kGalDefaultTextProcessPipeline,
     this.engineExactDeclined = false,
+    this.ocrRegion,
+    this.ocrBinarize = false,
   });
 
   factory GalCaptureMemory.fromJson(Map<Object?, Object?> json) {
@@ -214,6 +216,8 @@ class GalCaptureMemory {
           ? GalTextProcessPipeline.fromJson(json['textProcess'])
           : kGalDefaultTextProcessPipeline,
       engineExactDeclined: json['engineExactDeclined'] == true,
+      ocrRegion: GalOcrRegion.fromJson(json['ocrRegion']),
+      ocrBinarize: json['ocrBinarize'] == true,
     );
   }
 
@@ -253,13 +257,22 @@ class GalCaptureMemory {
   /// 不再自动换掉用户的选择。用户再选回引擎精确线程时清零。
   final bool engineExactDeclined;
 
+  /// OCR 游戏模式在这个游戏上框的台词区域（BUG-5141 ②）。各游戏的台词框位置不同，
+  /// 只记一份全局会让换个游戏就得重框；null = 这个游戏没开过 OCR 模式。
+  final GalOcrRegion? ocrRegion;
+
+  /// OCR 游戏模式在这个游戏上是否开「二值化」预处理（低对比 / 描边字的游戏才开）。
+  final bool ocrBinarize;
+
   bool get isEmpty =>
       excludedTrackFingerprints.isEmpty &&
       voiceTrackFingerprint == null &&
       textThreadFingerprint == null &&
       audioFallbackPolicy == GalAudioFallbackPolicy.full &&
       textProcess == kGalDefaultTextProcessPipeline &&
-      !engineExactDeclined;
+      !engineExactDeclined &&
+      ocrRegion == null &&
+      !ocrBinarize;
 
   GalCaptureMemory copyWith({
     List<String>? excludedTrackFingerprints,
@@ -269,6 +282,8 @@ class GalCaptureMemory {
     GalAudioFallbackPolicy? audioFallbackPolicy,
     GalTextProcessPipeline? textProcess,
     bool? engineExactDeclined,
+    GalOcrRegion? ocrRegion,
+    bool? ocrBinarize,
     bool clearVoiceTrack = false,
     bool clearTextThread = false,
   }) => GalCaptureMemory(
@@ -286,6 +301,8 @@ class GalCaptureMemory {
     audioFallbackPolicy: audioFallbackPolicy ?? this.audioFallbackPolicy,
     textProcess: textProcess ?? this.textProcess,
     engineExactDeclined: engineExactDeclined ?? this.engineExactDeclined,
+    ocrRegion: ocrRegion ?? this.ocrRegion,
+    ocrBinarize: ocrBinarize ?? this.ocrBinarize,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -299,8 +316,14 @@ class GalCaptureMemory {
     if (textProcess != kGalDefaultTextProcessPipeline)
       'textProcess': textProcess.toJson(),
     if (engineExactDeclined) 'engineExactDeclined': true,
+    if (ocrRegion != null) 'ocrRegion': ocrRegion!.toJson(),
+    if (ocrBinarize) 'ocrBinarize': true,
   };
 }
+
+/// [GalHookSessionController.rememberedOcrSettingsFor] 的结果：这个游戏上次的 OCR 框与
+/// 二值化开关；[region] 为 null = 这个游戏没有记忆（调用方退到全局上次的框 / 默认框）。
+typedef GalOcrRememberedSettings = ({GalOcrRegion? region, bool binarize});
 
 /// [GalCaptureMemory] 的持久化端口（由
 /// [GalHookSessionController.attachCaptureMemory] 注入）。gameKey 是启动 exe
@@ -543,6 +566,7 @@ class GalHookSessionState {
     this.knifeTextServiceIniWritten = false,
     this.knifeTextServiceIniWriteFailed = false,
     this.ocrRegion,
+    this.ocrBinarize = false,
     this.ocrIssue = GalOcrSourceIssue.none,
   });
 
@@ -614,6 +638,9 @@ class GalHookSessionState {
   /// 定时截窗 + OCR，不注入游戏进程。值是台词框在客户区里的归一化位置。
   final GalOcrRegion? ocrRegion;
 
+  /// OCR 游戏模式送识别前是否二值化。非 OCR 模式恒为 false。
+  final bool ocrBinarize;
+
   /// OCR 泵的健康状况（截不到窗口 / 识别器不可用…），UI 据此提示。非 OCR 模式恒为 none。
   final GalOcrSourceIssue ocrIssue;
 
@@ -663,6 +690,7 @@ class GalHookSessionState {
     bool? knifeTextServiceIniWriteFailed,
     GalOcrRegion? ocrRegion,
     bool clearOcrRegion = false,
+    bool? ocrBinarize,
     GalOcrSourceIssue? ocrIssue,
   }) {
     return GalHookSessionState(
@@ -727,6 +755,7 @@ class GalHookSessionState {
           : knifeTextServiceIniWriteFailed ??
                 this.knifeTextServiceIniWriteFailed,
       ocrRegion: clearOcrRegion ? null : ocrRegion ?? this.ocrRegion,
+      ocrBinarize: clearOcrRegion ? false : ocrBinarize ?? this.ocrBinarize,
       // 泵的健康状况只属于 OCR 会话：模式一结束就复位，不把上一局的「截不到窗口」带走。
       ocrIssue: clearOcrRegion
           ? GalOcrSourceIssue.none
@@ -740,6 +769,7 @@ typedef GalOcrLineSourceFactory =
     GalOcrLineSource Function({
       required int hwnd,
       required GalOcrRegion region,
+      required bool binarize,
       required GalOcrRecognize recognize,
       required void Function(String text) onLine,
       required void Function(GalOcrSourceIssue issue, Object? detail) onIssue,
@@ -1050,12 +1080,14 @@ class GalHookSessionController extends ChangeNotifier {
   static GalOcrLineSource _defaultOcrSourceFactory({
     required int hwnd,
     required GalOcrRegion region,
+    required bool binarize,
     required GalOcrRecognize recognize,
     required void Function(String text) onLine,
     required void Function(GalOcrSourceIssue issue, Object? detail) onIssue,
   }) => GalOcrLineSource(
     hwnd: hwnd,
     region: region,
+    binarize: binarize,
     recognize: recognize,
     onLine: onLine,
     onIssue: onIssue,
@@ -2439,10 +2471,14 @@ class GalHookSessionController extends ChangeNotifier {
   /// 不是降级，所以阶段是 waitingSignals → 第一句 OCR 行到达转 running，而不是 degraded。
   /// OCR 行以 [TexthookerLineSource.screenOcr] 进台词流，之后的字数统计、逐句回录冻结、
   /// 制卡都走既有的外部行路径（[_onTextBufferChanged]）。
+  ///
+  /// [region] / [binarize] 写进这个游戏的捕获记忆（[GalCaptureMemory.ocrRegion]），下次对同一
+  /// 游戏开 OCR 模式时 [rememberedOcrSettingsFor] 交回它们（BUG-5141 ②）。
   Future<void> startOcrCapture(
     ExternalWindowInfo window, {
     required GalOcrRegion region,
     required GalOcrRecognize recognize,
+    bool binarize = false,
   }) async {
     final int generation = ++_operationGeneration;
     await _stopSources();
@@ -2465,6 +2501,7 @@ class GalHookSessionController extends ChangeNotifier {
         textSignalReceived: false,
         clearKnifeTextServiceIniPath: true,
         ocrRegion: region,
+        ocrBinarize: binarize,
         ocrIssue: GalOcrSourceIssue.none,
       ),
     );
@@ -2477,6 +2514,7 @@ class GalHookSessionController extends ChangeNotifier {
         'hwnd': window.hwnd,
         'pid': window.pid,
         'region': region.toJson(),
+        'binarize': binarize,
       },
     );
     final GalHookSessionIdentity identity = await _resolveSessionIdentity(
@@ -2485,6 +2523,7 @@ class GalHookSessionController extends ChangeNotifier {
     );
     if (generation != _operationGeneration) return;
     _beginGameSession(identity, attachedExecutable: identity.executablePath);
+    _rememberOcrSettings(region: region, binarize: binarize);
     _startPlayTracker(
       generation: generation,
       identity: identity,
@@ -2500,6 +2539,7 @@ class GalHookSessionController extends ChangeNotifier {
     final GalOcrLineSource source = _ocrSourceFactory(
       hwnd: window.hwnd,
       region: region,
+      binarize: binarize,
       recognize: recognize,
       onLine: (String text) {
         if (generation == _operationGeneration) _onOcrLine(text);
@@ -2518,12 +2558,63 @@ class GalHookSessionController extends ChangeNotifier {
     if (source == null || !_state.isOcrMode) return;
     source.setRegion(region);
     _setState(_state.copyWith(ocrRegion: region));
+    _rememberOcrSettings(region: region, binarize: _state.ocrBinarize);
     _record(
       GalHookEventSeverity.info,
       'ocr',
       'ocr.region_changed',
       'Screen OCR region changed',
       details: <String, Object?>{'region': region.toJson()},
+    );
+  }
+
+  /// 会话中开关「二值化」预处理。不是 OCR 模式时无动作。
+  void setOcrBinarize(bool binarize) {
+    final GalOcrLineSource? source = _ocrSource;
+    final GalOcrRegion? region = _state.ocrRegion;
+    if (source == null || region == null) return;
+    if (binarize == _state.ocrBinarize) return;
+    source.setBinarize(binarize);
+    _setState(_state.copyWith(ocrBinarize: binarize));
+    _rememberOcrSettings(region: region, binarize: binarize);
+    _record(
+      GalHookEventSeverity.info,
+      'ocr',
+      'ocr.binarize_changed',
+      'Screen OCR binarize ${binarize ? 'on' : 'off'}',
+      details: <String, Object?>{'binarize': binarize},
+    );
+  }
+
+  /// 这个窗口所属游戏上次的 OCR 设置（BUG-5141 ②）：正在对它跑 OCR 会话时就是本局的
+  /// 设置；否则按窗口 PID 反查 exe、读该游戏的捕获记忆。查不到 exe / 没注入记忆端口 /
+  /// 这个游戏没开过 OCR 模式时 region 为 null。只读，不改会话状态。
+  GalOcrRememberedSettings rememberedOcrSettingsFor(ExternalWindowInfo window) {
+    final GalOcrRegion? live = _state.ocrRegion;
+    if (live != null && _state.boundWindow?.hwnd == window.hwnd) {
+      return (region: live, binarize: _state.ocrBinarize);
+    }
+    final GalCaptureMemoryLoad? load = _captureMemoryLoad;
+    final String? exe = _targetImagePathProbe(window.pid)?.trim();
+    if (load == null || exe == null || exe.isEmpty) {
+      return (region: null, binarize: false);
+    }
+    final GalCaptureMemory memory = load(exe.toLowerCase());
+    return (region: memory.ocrRegion, binarize: memory.ocrBinarize);
+  }
+
+  /// 把本局 OCR 设置写进当前游戏的捕获记忆（没有游戏身份就只活在会话内）。
+  void _rememberOcrSettings({
+    required GalOcrRegion region,
+    required bool binarize,
+  }) {
+    if (!_ensureCaptureMemoryLoaded()) return;
+    if (_captureMemory.ocrRegion == region &&
+        _captureMemory.ocrBinarize == binarize) {
+      return;
+    }
+    _saveCaptureMemory(
+      _captureMemory.copyWith(ocrRegion: region, ocrBinarize: binarize),
     );
   }
 
@@ -3478,6 +3569,10 @@ class GalHookSessionController extends ChangeNotifier {
     }
     return true;
   }
+
+  /// 会话级音轨低频刷新定时器是否还在跑（[_syncTrackAutoRefresh] 起、[_stopSources] 收）。
+  @visibleForTesting
+  bool get trackAutoRefreshActive => _trackRefreshTimer?.isActive ?? false;
 
   Future<void> refreshAudioTracks() async {
     final EngineHookGalAudioSource? engine = _engineSource;

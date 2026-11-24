@@ -19,6 +19,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
+import 'package:fushi_anki/fushi_anki_core.dart' show MiningRequestOverrides;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,6 +32,7 @@ import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_frame.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_recognition_cancellation.dart';
@@ -531,7 +533,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onProfileMenu: () async => _current?._systemBallProfileMenu(),
           onSwitchProfileTo: (int id) async =>
               await _current?._systemBallSwitchProfileTo(id) ??
-              t.floating_ball_profile_switch_failed,
+              t.profile_switch_failed,
           onOpenSystemOcrSetup: () => pendingSystemOcrSetup.value = true,
           // 没有宿主时回 null：原生退回设备自带（ML Kit）。
           onScreenOcrEngine: () async => _current?._androidScreenOcrEngine(),
@@ -1424,9 +1426,27 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           ),
           sentenceContext: lookup.sentence,
           sentenceAudio: sentenceAudio,
+          pickFrame: _pickDesktopScreenOcrCardFrame,
         ),
       ),
     );
+  }
+
+  /// 拍板 EuOLprw_dV（选 b）：桌面截屏识字「制卡时框选截图」。冻结层与查词卡都是盖在
+  /// 最上层的原生窗口，框选页在主窗里：先收起两者、把主窗拉到前台，再用导航器的
+  /// context 推框选页（宿主与 Navigator 平级）。截图字节已在 [source] 里，收起冻结层
+  /// 不丢图。返回 null = 用户放弃 / 主窗不可用，这张卡不制。
+  Future<MiningRequestOverrides?> _pickDesktopScreenOcrCardFrame(
+    ScreenOcrCardImage source,
+  ) async {
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    _desktopOcr = null;
+    await FloatingBallChannel.stopScreenOcr();
+    await target.dismissLookup();
+    await target.bringMainWindowToFront();
+    final BuildContext? navigatorContext = _navigatorContext;
+    if (navigatorContext == null || !navigatorContext.mounted) return null;
+    return pickScreenOcrCardFrame(navigatorContext, source);
   }
 
   /// 冻结层被 Esc / 右键 / 关闭钮关掉（原生已关层、已恢复球）。
@@ -1661,7 +1681,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     );
     if (picked == null || picked == activeId) return;
     if (!await _applyProfileSwitch(picked)) {
-      _toast(t.floating_ball_profile_switch_failed);
+      _toast(t.profile_switch_failed);
     }
   }
 
@@ -1686,9 +1706,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     for (final ProfileRow profile in profiles) {
       if (profile.id == profileId) target = profile;
     }
-    if (target == null) return t.floating_ball_profile_switch_failed;
+    if (target == null) return t.profile_switch_failed;
     if (profileId != activeId && !await _applyProfileSwitch(profileId)) {
-      return t.floating_ball_profile_switch_failed;
+      return t.profile_switch_failed;
     }
     return t.floating_ball_profile_switched(name: target.name);
   }
@@ -1711,7 +1731,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     if (!await _applyProfileSwitch(picked)) {
       // 切失败要让人知道：把主窗叫出来给提示（成功时不打扰）。
       await desktopSystemBallActionTarget.bringMainWindowToFront();
-      _toast(t.floating_ball_profile_switch_failed);
+      _toast(t.profile_switch_failed);
     }
   }
 

@@ -163,8 +163,10 @@ void main() {
       File(collectionDetailPath).readAsStringSync(),
     );
     expect(
-      page,
-      contains('collectionEpisodeThumb(context, _episodeCover('),
+      RegExp(
+        r'collectionEpisodeThumb\(\s*context,\s*_episodeCover\(',
+      ).hasMatch(page),
+      isTrue,
       reason: '本地详情页集缩略图必须消费共享 collectionEpisodeThumb，不得自己再画',
     );
     final String layout = File(

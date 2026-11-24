@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/media/source_library/add_local_folder_source.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 import 'package:fushi/src/storage/app_paths.dart';
@@ -44,15 +45,14 @@ Future<bool> importAudioCdIfPresent(
 }) async {
   final AudioCdLayout? layout = audioCdLayoutOfDirectory(dir);
   if (layout == null) return false;
-  if (!_canRip(layout, dir)) {
+  if (!canRipAudioCd(layout, dir)) {
     FushiToast.show(
       msg: t.media_audio_cd_cda_unsupported,
       severity: ToastSeverity.warning,
     );
     return false;
   }
-  // 'audio_cd' 登记在 AppPaths.fushiOwnedDocumentsEntries：数据根迁移时随根搬走。
-  final Directory outputRoot = await AppPaths.documentsSubdirectory('audio_cd');
+  final Directory outputRoot = await audioCdRipOutputRoot();
   if (!context.mounted) return true;
   final String? ripped = await showAppDialog<String>(
     context: context,
@@ -64,14 +64,9 @@ Future<bool> importAudioCdIfPresent(
     ),
   );
   if (ripped == null) return true;
-  // 一张盘就是一张专辑：抓轨目录只有这一层，不递归。
-  final SourceScanSummary? summary = await importLocalFolderOnceAt(
+  final SourceScanSummary? summary = await importRippedAudioCd(
     db: db,
-    // 音乐来源不扫书，没有有声书要转录。
-    transcribeAudiobook: null,
-    mediaKind: SourceLibraryKind.music.dbValue,
-    path: ripped,
-    recursive: false,
+    directory: ripped,
     onScanning: onScanning,
   );
   final String? error = summary?.error;
@@ -84,13 +79,38 @@ Future<bool> importAudioCdIfPresent(
   return true;
 }
 
+/// 抓好的目录按「仅此一次」导入音乐库（[importAudioCdIfPresent] 与控制通道
+/// `music audio-cd` 共用）。一张盘就是一张专辑：抓轨目录只有这一层，不递归。
+Future<SourceScanSummary?> importRippedAudioCd({
+  required FushiDatabase db,
+  required String directory,
+  void Function(int sourceId)? onScanning,
+}) => importLocalFolderOnceAt(
+  db: db,
+  // 音乐来源不扫书，没有有声书要转录。
+  transcribeAudiobook: null,
+  mediaKind: SourceLibraryKind.music.dbValue,
+  path: directory,
+  recursive: false,
+  onScanning: onScanning,
+);
+
+/// 抓轨输出根 `<documents>/audio_cd/`（对话框与控制通道共用）。
+/// 'audio_cd' 登记在 AppPaths.fushiOwnedDocumentsEntries：数据根迁移时随根搬走。
+Future<Directory> audioCdRipOutputRoot() =>
+    AppPaths.documentsSubdirectory('audio_cd');
+
 /// Windows 光驱要按扇区读，只有本机光驱能抓；macOS 挂载点每轨已是普通 AIFF 文件，
 /// 任何带随包统一 FFmpeg（含 aiff / flac）的桌面都能转。移动端没有光驱，不接管。
-bool _canRip(AudioCdLayout layout, String dir) => switch (layout) {
+bool canRipAudioCd(AudioCdLayout layout, String dir) => switch (layout) {
   AudioCdLayout.windowsCda => Platform.isWindows && isWindowsCdromPath(dir),
-  AudioCdLayout.macCddafs =>
-    Platform.isMacOS || Platform.isWindows || Platform.isLinux,
+  AudioCdLayout.macCddafs => audioCdRipAvailableOnHost,
 };
+
+/// 本机能否抓轨（[canRipAudioCd] 任一布局可能成立的平台集合）。视频「导入文件夹」块的
+/// 音频 CD 附注按它显示，两处不再各写一份平台判据。
+bool get audioCdRipAvailableOnHost =>
+    Platform.isMacOS || Platform.isWindows || Platform.isLinux;
 
 /// 音频 CD 判定里的「旁边有真媒体」（[audioCdLayoutOf] 的 `isImportableMedia`）：视频或
 /// 纯音频都算，与最终由哪个库收它无关（纯音频归音乐库，反馈 QAondMh4M5）。
@@ -187,14 +207,7 @@ class _AudioCdRipDialogState extends State<AudioCdRipDialog> {
   /// （全局快捷键、悬浮反馈球），裸 `pop` 会弹掉那一页而把对话框留成关不掉的孤儿。
   void _close(String? directory) {
     if (!mounted) return;
-    final ModalRoute<Object?>? route = ModalRoute.of(context);
-    if (route == null) return;
-    final NavigatorState navigator = Navigator.of(context);
-    if (route.isCurrent) {
-      navigator.pop(directory);
-    } else {
-      navigator.removeRoute(route, directory);
-    }
+    closeOwnRoute<String?>(context, directory);
   }
 
   @override

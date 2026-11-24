@@ -3,6 +3,8 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
         kLiveLibraryDeletionTombstonesCapability,
         kLiveLibraryLocalAudioContentIdCapability,
         kLiveLibraryVideoDeletionCapability;
+import 'package:fushi_engine/sync/online_library_sync.dart'
+    show kLiveLibraryOnlineItemsCapability;
 import 'package:fushi_engine/sync/pdf_sync_package.dart'
     show kLiveLibraryPdfBooksCapability;
 
@@ -27,6 +29,13 @@ enum SyncPeerGapDimension {
     label: 'media links live sync',
     consequence: 'work links (the media graph) were not synced',
     capabilityKey: 'mediaLinks',
+  ),
+  onlineLibrary(
+    label: 'online library live sync',
+    consequence:
+        'library entries added from online sources (manga, novels, videos, '
+        'music) were not synced',
+    capabilityKey: kLiveLibraryOnlineItemsCapability,
   ),
   videoMetadata(
     label: 'video metadata live sync',

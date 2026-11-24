@@ -14,6 +14,7 @@ import 'dart:convert';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart'
     show readBoundedBodyString;
 import 'package:shelf/shelf.dart' as shelf;
@@ -120,4 +121,32 @@ class HostSubscriptionRejected implements Exception {
 
   @override
   String toString() => '$reason: $message';
+}
+
+/// 内容订阅（host 自建自跑）的互联模块（`/api/subscriptions*` + 能力位 `subscriptions`）。
+class HostSubscriptionsInterconnectModule extends InterconnectHostModule {
+  HostSubscriptionsInterconnectModule(this.host);
+
+  final HostSubscriptionHost? host;
+
+  @override
+  String get capabilityKey => 'subscriptions';
+
+  @override
+  Future<Object?> capability() async => host?.capability();
+
+  @override
+  List<String> get routePrefixes => const <String>['/api/subscriptions'];
+
+  @override
+  Future<shelf.Response> handle(InterconnectRequest request) async {
+    final HostSubscriptionHost? h = host;
+    if (h == null) return shelf.Response.notFound('Host subscriptions off');
+    return handleHostSubscriptionRequest(
+      h,
+      request.raw,
+      request.method.toUpperCase(),
+      request.path,
+    );
+  }
 }

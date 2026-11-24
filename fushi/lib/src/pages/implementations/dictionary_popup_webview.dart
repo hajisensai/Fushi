@@ -157,6 +157,7 @@ class MinePopupResult {
     this.noteId,
     this.duplicate = false,
   }) : queued = false,
+       cancelled = false,
        message = null;
 
   /// 制卡请求已接下、在后台进行（在线视频：抽媒体要时间，弹窗不陪着等）。
@@ -169,6 +170,18 @@ class MinePopupResult {
       noteId = null,
       duplicate = false,
       queued = true,
+      cancelled = false,
+      message = null;
+
+  /// 用户自己放弃了这次制卡（截屏识字「制卡时框选」页点了「×」，拍板 EuOLprw_dV）。
+  ///
+  /// 不是失败：popup.js 把按钮放回可点的「+」，不说「制卡失败」、不回查 Anki。
+  const MinePopupResult.cancelled()
+    : ankiConnect = false,
+      noteId = null,
+      duplicate = false,
+      queued = false,
+      cancelled = true,
       message = null;
 
   /// 一次**被收下**的制卡结果（成功，或进了待发制卡队列）。
@@ -205,7 +218,8 @@ class MinePopupResult {
     : ankiConnect = false,
       noteId = null,
       duplicate = outcome.result == MineResult.duplicate,
-      queued = false;
+      queued = false,
+      cancelled = false;
 
   /// 旧 `isAnkiConnect` 语义：true 表示制卡后可同步刷新 ✓ 状态。
   final bool ankiConnect;
@@ -228,6 +242,9 @@ class MinePopupResult {
   /// 见 [MinePopupResult.queued]。
   final bool queued;
 
+  /// 见 [MinePopupResult.cancelled]。
+  final bool cancelled;
+
   /// 失败原因（仅 [MinePopupResult.failed] 传入时非空），见那里。
   ///
   /// 弹窗发起的制卡，失败**只在弹窗里**说一次（宿主只在被收下时弹 toast）：此前
@@ -244,6 +261,7 @@ class MinePopupResult {
     // 同解，省一个恒 false 的字段；守卫 popup_mine_failure_hint_test 逐字钉这行。
     if (duplicate) 'duplicate': true,
     if (queued) 'queued': true,
+    if (cancelled) 'cancelled': true,
     if (message != null && message!.isNotEmpty) 'message': message,
   };
 
@@ -2003,6 +2021,60 @@ JSON.stringify((function(){
     timeout: timeout,
   );
 
+  /// 当前推给 WebView 的结果是否就是 [result] 且已经渲染完一遍（收到了它那一轮的
+  /// `popupRendered`）。宿主据此确认 [onRendered] 报的是哪份结果，不把旧结果的迟到
+  /// 复报当成新结果画好了。
+  bool hasRenderedResult(DictionarySearchResult result) =>
+      identical(_lastRenderedResult, result);
+
+  /// 拍板台 rf--UcsGta-overlay：按词条身份（表记 / 读音 / 命中文本）在当前已渲染的结果
+  /// 里找回词条的 DOM 序（popup.js `fushiPopupEntryDomIndexFor`），即
+  /// [mineEntryByIndex] / [buildMinePayloadByIndex] 用的那套下标。尾批词条还在分片
+  /// 渲染时回 -2（`kPopupEntryIndexStillRendering`，等下一次 `popupRendered` 再问），找不到 /
+  /// WebView 不在 / 出错回 -1。
+  Future<int> entryDomIndexFor({
+    required String expression,
+    required String reading,
+    required String matched,
+    Duration timeout = _kMineRoundTripTimeout,
+  }) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return -1;
+    try {
+      final CallAsyncJavaScriptResult? result = await controller
+          .callAsyncJavaScript(
+            functionBody:
+                'return window.fushiPopupEntryDomIndexFor'
+                ' ? window.fushiPopupEntryDomIndexFor(expression, reading, matched)'
+                ' : -1;',
+            arguments: <String, Object?>{
+              'expression': expression,
+              'reading': reading,
+              'matched': matched,
+            },
+          )
+          .timeout(timeout);
+      if (result?.error != null) {
+        ErrorLogService.instance.log(
+          'DictPopupWebview.entryDomIndexFor',
+          'popup.js threw while locating the entry: ${result!.error}',
+          StackTrace.current,
+        );
+        return -1;
+      }
+      final Object? raw = result?.value;
+      if (raw is num) return raw.toInt();
+      return int.tryParse(raw?.toString() ?? '') ?? -1;
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'DictPopupWebview.entryDomIndexFor',
+        e,
+        stack,
+      );
+      return -1;
+    }
+  }
+
   /// 跑一段返回 payload 对象的 JS，值一律折成字符串（与 `mineEntry` 桥同形）。
   Future<Map<String, String>?> _buildPayloadViaJs({
     required String functionBody,
@@ -2085,6 +2157,25 @@ JSON.stringify((function(){
   /// popup.js 侧 `audio.play()` 结果最长等待。data:/已缓存 URL 即刻回报；远端 URL
   /// 要等首帧可播（play() resolve），弱网下给足余量。超时按失败处理走 Dart 兜底。
   static const Duration _kWordAudioPlayReportTimeout = Duration(seconds: 5);
+
+  /// 自动发音的 WebView 播放目标：**本次查词那一层**的 state，在解析完音频、真正要播
+  /// 时才经 [resolve] 取（BUG-5278）。
+  ///
+  /// 不能在触发自动发音的当下取：自动发音在查词结果一到就触发，同一帧新建的层此刻
+  /// state 可能还没挂上；更不能用「最上层**可见**弹窗」——本层这时还挂在「等首帧渲染
+  /// 再翻出」上、尚不可见，拿到的是 null（顶层查词）或下面那层旧弹窗（嵌套查词）。
+  /// 两种情况都让自动发音错过弹窗 `<audio>` 快路径、回落 media_kit（每次播放重建 mpv，
+  /// 首次还要先排完静音预热）——「第一次自动发音要等一会」。
+  ///
+  /// [resolve] 回 null（层已关 / 未挂载）时答 false，[playResolvedLookupAudio] 回落
+  /// Dart 播放器，不会无声。
+  static Future<bool> Function(String url) lazyWordAudioPlayer(
+    DictionaryPopupWebViewState? Function() resolve,
+  ) => (String url) async {
+    final DictionaryPopupWebViewState? state = resolve();
+    if (state == null || !state.mounted) return false;
+    return state.playWordAudioUrl(url);
+  };
 
   /// Auto-read entry point: drives the popup's own `<audio>` element to play an
   /// already-resolved URL (from [resolveWordAudioWebViewUrl]). Returns whether

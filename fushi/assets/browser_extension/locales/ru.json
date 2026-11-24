@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "Высота подложки",
   "opt_subtitleStyleBoxHeight_desc": "% высоты видео (5–60). 0 — по тексту.",
   "opt_subtitleStyleBoxAutoFit_title": "Автоподгонка",
-  "opt_subtitleStyleBoxAutoFit_desc": "Масштабирует текст под фон фиксированной высоты.",
+  "opt_subtitleStyleBoxAutoFit_desc": "Уменьшает текст, который не помещается в фон фиксированной высоты; никогда не увеличивает.",
   "opt_subtitleStyle_auto": "По тексту",
   "opt_resetSubtitleStyle_title": "Вернуть вид по умолчанию",
   "opt_resetSubtitleStyle_desc": "Сбрасывает этот раздел (позиция и переключатель фона сохраняются).",

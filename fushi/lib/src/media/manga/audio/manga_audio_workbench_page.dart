@@ -7,7 +7,8 @@
 /// - 演出稿 = [openMangaAudioScriptPage]（AI 标注说话人 / 类型 / 阅读顺序 + 逐页复核）；
 /// - 角色与配音、试听与导出 = [openMangaAudioStudioPage]（声音指派、生成、试听、
 ///   单句重生成），另有导入成品清单（[pickAndImportMangaAudio]）、有声书音源、
-///   广播剧 / 动画音轨三种成品来源。
+///   广播剧 / 动画音轨三种成品来源，以及有声漫画导出包的导出 / 导入
+///   （`manga_audio_package_page.dart`，换设备不用重新生成）。
 ///
 /// 每步副行是按磁盘 / 库里的真值现算的进度（[loadMangaAudioWorkbenchSnapshot]）；
 /// 从子页面回来、生成任务结束、OCR 任务集合变化时重读。
@@ -28,6 +29,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_layout.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_text.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_import_flow.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_package_page.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_workbench_entry.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_script_page.dart';
@@ -84,6 +86,12 @@ void registerMangaAudioWorkbenchEntry() {
         ),
     statusLine: (BuildContext context, String bookKey) =>
         mangaAudioWorkbenchStatusLine(appOf(context), bookKey),
+    importPackage: (BuildContext context, {required String path}) =>
+        openMangaAudioPackageImportPage(
+          context,
+          appModel: appOf(context),
+          path: path,
+        ),
   );
 }
 
@@ -197,7 +205,7 @@ Future<MangaAudioWorkbenchSnapshot> loadMangaAudioWorkbenchSnapshot(
     );
   }
   final MangaRenderManifest? manifest = await MangaRenderManifest.load(
-    mangaRenderManifestFile(appModel, bookKey),
+    (await mangaAudioEditTarget(appModel, bookKey)).manifestFile,
   );
   final bool hasAudio = await mangaHasAudio(appModel.database, bookKey);
   return mangaAudioWorkbenchSnapshotOf(
@@ -487,6 +495,21 @@ class _MangaAudioWorkbenchPageState extends State<MangaAudioWorkbenchPage> {
                       ),
                     ),
                   ),
+                  onExportPackage: () => unawaited(
+                    openMangaAudioPackageExportPage(
+                      context,
+                      appModel: widget.appModel,
+                      bookKey: widget.bookKey,
+                    ),
+                  ),
+                  onImportPackage: () => unawaited(
+                    _after(
+                      pickAndOpenMangaAudioPackageImport(
+                        context,
+                        appModel: widget.appModel,
+                      ),
+                    ),
+                  ),
                 );
               },
             ),
@@ -507,6 +530,8 @@ class MangaAudioWorkbenchView extends StatelessWidget {
     required this.onImport,
     required this.onOpenAudiobookSource,
     required this.onOpenDramaTrack,
+    this.onExportPackage,
+    this.onImportPackage,
     this.job,
     this.ocrRunning = false,
     this.includeAudioSteps = true,
@@ -532,6 +557,12 @@ class MangaAudioWorkbenchView extends StatelessWidget {
   final VoidCallback onImport;
   final VoidCallback onOpenAudiobookSource;
   final VoidCallback onOpenDramaTrack;
+
+  /// 导出有声漫画包（本卷 / 系列多选）；null = 不显示入口。
+  final VoidCallback? onExportPackage;
+
+  /// 导入有声漫画包；null = 不显示入口。
+  final VoidCallback? onImportPackage;
 
   static const String keyPrefix = 'manga-audio-workbench';
 
@@ -791,6 +822,32 @@ class MangaAudioWorkbenchView extends StatelessWidget {
               title: t.manga_audio_drama_title,
               onTap: onOpenDramaTrack,
             ),
+          ],
+        ),
+      if (step == MangaAudioWorkbenchStep.render &&
+          s.supported &&
+          (onExportPackage != null || onImportPackage != null))
+        AdaptiveSettingsSection(
+          key: const ValueKey<String>('$keyPrefix-package'),
+          children: <Widget>[
+            if (onExportPackage != null)
+              AdaptiveSettingsRow(
+                key: const ValueKey<String>('$keyPrefix-export-package'),
+                icon: FushiIcons.save,
+                showIcon: true,
+                title: t.manga_audio_package_export,
+                subtitle: t.manga_audio_package_export_hint,
+                subtitleMaxLines: 3,
+                onTap: s.hasAudio || s.lineCount > 0 ? onExportPackage : null,
+              ),
+            if (onImportPackage != null)
+              AdaptiveSettingsRow(
+                key: const ValueKey<String>('$keyPrefix-import-package'),
+                icon: FushiIcons.importFile,
+                showIcon: true,
+                title: t.manga_audio_package_import,
+                onTap: onImportPackage,
+              ),
           ],
         ),
     ];

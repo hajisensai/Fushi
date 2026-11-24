@@ -1,6 +1,9 @@
 // 曲库歌词搜索的语料文档构造：歌词的时间口径与指纹。
 import 'package:test/test.dart';
 import 'package:fushi/src/corpus/corpus_documents.dart';
+import 'package:fushi/src/corpus/library_corpus_service.dart'
+    show corpusNormalizerSignature;
+import 'package:fushi_dictionary/fushi_dictionary_core.dart' show FushiDicts;
 import 'package:fushi_corpus/fushi_corpus.dart';
 import 'package:fushi_music/fushi_music.dart';
 
@@ -56,5 +59,35 @@ void main() {
     expect(doc.sentences.first.pos, 500);
     expect(doc.sentences.first.len, 3000);
     expect(doc.sentences.last.pos, 0);
+  });
+
+  test('归一签名：扫描窗口变了签名就变，出厂值时与旧签名逐字相同（反馈 ezCjUoU2QM）', () {
+    const List<({String path, int modifiedMs})> dicts =
+        <({String path, int modifiedMs})>[
+          (path: '/d/jmdict', modifiedMs: 100),
+          (path: '/d/daijirin', modifiedMs: 200),
+        ];
+    final String legacy = corpusFingerprint(<Object?>[
+      '/d/jmdict',
+      100,
+      '/d/daijirin',
+      200,
+    ]);
+    expect(
+      corpusNormalizerSignature(
+        dictionaries: dicts,
+        scanLength: FushiDicts.defaultScanLength,
+      ),
+      legacy,
+    );
+    final String s24 = corpusNormalizerSignature(
+      dictionaries: dicts,
+      scanLength: 24,
+    );
+    expect(s24, isNot(legacy));
+    expect(
+      corpusNormalizerSignature(dictionaries: dicts, scanLength: 32),
+      isNot(s24),
+    );
   });
 }

@@ -488,11 +488,12 @@ void main() {
       );
       expect(prompt, isNot(contains(kTtsUnknown)));
       expect(prompt, contains('context: 前の文。'));
-      expect(prompt, contains('1: 「おはよう」\n2: と彼女は 言った。\n'));
+      // 台词行（引号开头 / 未闭合续行）编号带 `*`，模型据此逐条回说话人 / unknown / narrator。
+      expect(prompt, contains('1*: 「おはよう」\n2: と彼女は 言った。\n'));
       expect(prompt, contains('context: 後の文。'));
       expect(prompt, contains('lines 1-2 only'));
       expect(
-        prompt.indexOf('already attributed') < prompt.indexOf('1: 「おはよう」'),
+        prompt.indexOf('already attributed') < prompt.indexOf('1*: 「おはよう」'),
         isTrue,
       );
     });
@@ -503,7 +504,8 @@ void main() {
         roster: const <TtsCastCharacter>[],
         recent: const <TtsCastRecentLine>[],
       );
-      expect(prompt, contains('use "unknown" for every dialogue line'));
+      expect(prompt, contains('use "unknown" for every spoken line'));
+      expect(prompt, contains('"narrator" for starred lines'));
       expect(prompt, isNot(contains('already attributed')));
       expect(prompt, isNot(contains('context')));
     });
@@ -522,6 +524,67 @@ void main() {
       expect(kTtsCastLinesSystemPrompt, contains('"beat"'));
       expect(kTtsCastLinesSystemPrompt, contains('"tenderness"'));
       expect(kTtsCastLinesSystemPrompt, isNot(contains('"skip"')));
+    });
+
+    test('系统提示要逐句语气说明；AI 给的 tone 进演出字段', () {
+      expect(kTtsCastLinesSystemPrompt, contains('"tone"'));
+      expect(kTtsCastLinesSystemPrompt, contains('sentence-final particles'));
+      expect(kTtsCastLinesSystemPrompt, contains('"tone":"必死に食い下がる"'));
+      final CastLineDirection d = ttsCastAiDirection(<Object?, Object?>{
+        'e': 'sadness',
+        'ei': 60,
+        'tone': '  おずおずと ',
+        'rate': 0.5,
+      });
+      expect(d.tone, 'おずおずと');
+      expect(d.emotion, CastEmotion.sadness);
+      expect(d.rateOffset, isNull, reason: '语速等偏移不归 AI 定');
+    });
+
+    test('系统提示：`*` 行必须逐条回，书名 / 标牌显式回 narrator', () {
+      expect(kTtsCastLinesSystemPrompt, contains('{"i":11,"s":"narrator"}'));
+      expect(kTtsCastLinesSystemPrompt, contains('Give EVERY starred line'));
+      expect(kTtsCastLinesSystemPrompt, contains('『書名』'));
+      expect(kTtsCastLinesSystemPrompt, contains('「立ち入り禁止」'));
+      expect(kTtsCastLinesSystemPrompt, contains('goes to a human for review'));
+    });
+
+    test('独立书名 / 标牌行：模型显式回 narrator 就记旁白、不进复核；没回的仍进复核', () {
+      final TtsCastChunk chunk = _chunk(<TtsPlanSentence>[
+        _s(2, 0, '『ドレスな僕がやんごとなき方々の家庭教師様な件』'),
+        _s(2, 30, '「立ち入り禁止」'),
+        _s(2, 40, '地の文。'),
+        _s(2, 50, '「誰だ」'),
+      ]);
+      final String prompt = buildTtsCastLinesUserPrompt(
+        chunk,
+        roster: _roster,
+        recent: const <TtsCastRecentLine>[],
+      );
+      expect(
+        prompt,
+        contains(
+          '1*: 『ドレスな僕がやんごとなき方々の家庭教師様な件』\n'
+          '2*: 「立ち入り禁止」\n3: 地の文。\n4*: 「誰だ」\n',
+        ),
+      );
+      final TtsCastParseResult parsed = parseTtsCastReply(
+        '[{"i":1,"s":"narrator"},{"i":2,"s":"narrator","c":0.9}]',
+        4,
+        speakers: _index,
+      )!;
+      expect(ttsCastReplyFailureReason(parsed), isNull);
+      final Map<String, TtsCastLine> lines = ttsCastLinesForChunk(
+        chunk,
+        parsed.labels,
+      );
+      expect(lines['2:0']!.speaker, kTtsNarrator);
+      expect(lines['2:0']!.needsReview, isFalse);
+      expect(lines['2:30']!.speaker, kTtsNarrator);
+      expect(lines['2:30']!.needsReview, isFalse);
+      expect(lines['2:40']!.speaker, kTtsNarrator);
+      expect(lines['2:50']!.speaker, kTtsUnknown);
+      expect(lines['2:50']!.needsReview, isTrue);
     });
 
     test('解析：别名 → 规范名、表外名字 → 不明、把握与依据', () {

@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "Arka plan yüksekliği",
   "opt_subtitleStyleBoxHeight_desc": "Video yüksekliğinin %’si (5–60). 0 metne uyar.",
   "opt_subtitleStyleBoxAutoFit_title": "Otomatik sığdır",
-  "opt_subtitleStyleBoxAutoFit_desc": "Metni sabit yükseklikli arka plana sığacak şekilde ölçekler.",
+  "opt_subtitleStyleBoxAutoFit_desc": "Sabit yükseklikli arka plana sığmayan metni küçültür; asla büyütmez.",
   "opt_subtitleStyle_auto": "Metne uydur",
   "opt_resetSubtitleStyle_title": "Varsayılan görünüme dön",
   "opt_resetSubtitleStyle_desc": "Bu bölümü sıfırlar (konum ve arka plan anahtarı korunur).",

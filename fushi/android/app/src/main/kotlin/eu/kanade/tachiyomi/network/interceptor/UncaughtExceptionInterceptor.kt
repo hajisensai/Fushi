@@ -13,6 +13,15 @@ import java.io.IOException
  * 整个进程被杀（BUG-4951：扩展把 StreamResetException 改抛成 PlainTextException，
  * 在线漫画取图超时 / 取消后闪退）。原异常留在 cause 里，通道错误信息与
  * Cloudflare 判定照旧沿 cause 链读。
+ *
+ * 比 Mihon 原版多收一类：扩展里的 `Error`。扩展是独立编译的 APK，按宿主
+ * kotlin-stdlib / okhttp / extension-lib 的 ABI 链接，宿主少一个类或签名对不上就是
+ * `NoClassDefFoundError` / `NoSuchMethodError`（[LinkageError]，BUG-4695、BUG-5273
+ * 都出现过），扩展递归过深是 [StackOverflowError]。它们不是 Exception，原版的
+ * `catch (Exception)` 漏过去，AsyncCall 照样在调度线程重抛把进程带崩
+ * （BUG-5350：3.3.0 扩展搜索连报 NoClassDefFoundError 的设备反复 reason=CRASH）。
+ * 只放过真正表示 VM 坏掉的 [VirtualMachineError]（OOM / InternalError），
+ * 那种情况包成 IOException 也救不回来。
  */
 class UncaughtExceptionInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response =
@@ -20,7 +29,11 @@ class UncaughtExceptionInterceptor : Interceptor {
             chain.proceed(chain.request())
         } catch (error: IOException) {
             throw error
-        } catch (error: Exception) {
+        } catch (error: StackOverflowError) {
+            throw IOException(error)
+        } catch (error: VirtualMachineError) {
+            throw error
+        } catch (error: Throwable) {
             throw IOException(error)
         }
 }

@@ -1065,6 +1065,9 @@ class VideoPlayerController extends ChangeNotifier
   /// 关掉再打开会从 null 重新起基线，第一行只有瞬时量、没有速率。
   VideoMpvStatsSnapshot? _lastDiagStats;
 
+  /// BUG-5200：上一次原生出帧计数（`present` 行的增量基线）；每次 load 清空。
+  VideoPresentStats? _lastPresentStats;
+
   @override
   AudioCue? get currentCue => _currentCue;
 
@@ -3765,6 +3768,7 @@ class VideoPlayerController extends ChangeNotifier
     // 生命周期只提示一次，换集不再重复弹）。
     _blackFlickerDetector.resetWindows();
     _lastFlickerSampleAt = null;
+    _lastPresentStats = null;
     _flickerHwdecActive = null;
     await _playingSub?.cancel();
     _playingSub = null;
@@ -4562,6 +4566,7 @@ class VideoPlayerController extends ChangeNotifier
           '${snapshot.describeSince(_lastDiagStats, windowMs)}',
         );
         _lastDiagStats = snapshot;
+        await _logPresentStats(player, loadToken, windowMs);
       }
 
       if (!flickerAllowed) return;
@@ -4585,6 +4590,30 @@ class VideoPlayerController extends ChangeNotifier
     } finally {
       _flickerSampleInFlight = false;
     }
+  }
+
+  /// BUG-5200：mpv 的 `frame-drop-count` / `vo-delayed-frame-count` 只看得到 mpv
+  /// 自己有没有按时出帧；出了帧、Flutter 却没取走（被下一帧覆盖）的丢帧 mpv 不知道。
+  /// Windows 原生纹理层计了这笔账（出帧 / 被 raster 取走 / 被覆盖 / 出帧到取走的延迟），
+  /// 诊断开着时每秒和 mpv 快照一起打一行 `present`，取不到（别的平台 / 输出忙）不打。
+  Future<void> _logPresentStats(
+    Player player,
+    int loadToken,
+    int windowMs,
+  ) async {
+    final Map<String, int>? stats = await _videoController?.notifier.value
+        ?.frameStats();
+    if (stats == null || !_isCurrentLoad(player, loadToken)) return;
+    final VideoPresentStats now = VideoPresentStats.fromMap(stats);
+    final VideoPresentStats? previous = _lastPresentStats;
+    _lastPresentStats = now;
+    if (previous == null) return;
+    final VideoPresentStats delta = now.since(previous);
+    videoDiag(
+      VideoDiagCategory.mpvStats,
+      delta.lost > 0 && isPlaying ? VideoDiagLevel.warn : VideoDiagLevel.v,
+      'present window=${windowMs}ms ${delta.describe()}',
+    );
   }
 
   void _clearChaptersForNewLoad() {
@@ -4931,8 +4960,16 @@ class VideoPlayerController extends ChangeNotifier
     final int effectiveMs = effectiveSubtitlePositionMs(clock, _delayMs);
     bool changed = _syncAuxRenderActivity(clock, effectiveMs);
     if (_cues.isNotEmpty) {
+      // 句尾动作待触发：本句已播过 endMs、下一拍 tick 就会暂停并 seek 回句尾，或
+      // 「循环当前句」回到句首。这段 overshoot 里渲染集原样冻结（仍是本句），不让
+      // 下一句先上屏又被拉回。
+      if (_subtitleEndHoldPendingAt(effectiveMs) ||
+          _shouldLoopCurrentCue(effectiveMs)) {
+        if (changed) notifyListeners();
+        return;
+      }
       final List<int> nextActive = _activeRenderIndices(
-        _currentCueIndex,
+        _clockRepresentativeIndex(effectiveMs),
         effectiveMs,
       );
       if (!_intListEquals(nextActive, _activeCueIndices)) {
@@ -4944,6 +4981,41 @@ class VideoPlayerController extends ChangeNotifier
       changed = true;
     }
     if (changed) notifyListeners();
+  }
+
+  /// 时钟路径（[_syncRenderActivityToClock]）并入渲染集的**代表 cue**（BUG-5279
+  /// 「连续字幕上下跳」）。
+  ///
+  /// 不能直接用 [_currentCueIndex]：它只在 125ms tick 更新，位置事件比 tick 密得多。
+  /// 相邻对白（前句 endMs == 后句 startMs，或间隔 < 一个 tick）交接时，时钟已越过前句
+  /// 句尾、tick 还没换代表 cue——旧代表（前句）被并进渲染集，与按时间已上屏的后句
+  /// **幻影重叠**一两帧。overlay 槽位表（`_syncGroupSlots`）据此把后句排到前句上方的
+  /// 远端槽，前句随后离场只留下锚点侧隐形占位，后句整句被顶高一行；再下一句又补回
+  /// 空出的锚点槽落回基线——连续对白一句高一句低地上下跳。
+  ///
+  /// 所以这里按**当前时钟**重算（[JsonAlignmentParser.findCueIndex]，闭区间，末句无
+  /// 后继时仍保到 endMs，与 tick 同语义）。唯一沿用 [_currentCueIndex] 的情形是主动
+  /// 跳转 snap（[_seekTargetCueIndex]）：preRoll 引导期目标句尚未到时，必须照样上屏，
+  /// 快照的生命周期由 tick 的 [_applySeekTargetSnap] 管。
+  int _clockRepresentativeIndex(int effectiveMs) {
+    final int current = _currentCueIndex;
+    final int? target = _seekTargetCueIndex;
+    if (target != null && current == target) return current;
+    return JsonAlignmentParser.findCueIndex(
+      cues: _cues,
+      positionMs: effectiveMs,
+    );
+  }
+
+  /// 代表句开着句尾暂停、时钟已越过其 endMs 而这句还没停过：下一拍 tick 必然暂停并
+  /// seek 回句尾（[_shouldHoldAtSubtitleEnd]）。「循环当前句」的回绕待触发由
+  /// [_shouldLoopCurrentCue] 判（同为纯判定，tick 与时钟路径共用一份口径）。
+  bool _subtitleEndHoldPendingAt(int effectiveMs) {
+    final int current = _currentCueIndex;
+    if (current < 0 || current >= _cues.length) return false;
+    if (effectiveMs <= _cues[current].endMs) return false;
+    if (_lastSubtitleEndPauseCueIndex == current) return false;
+    return _holdEnabledForCue(current);
   }
 
   void _syncCueForPosition(int posMs, {required bool persistPosition}) {

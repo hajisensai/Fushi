@@ -609,6 +609,8 @@ function parseMineResult(reply) {
             message,
             duplicate: reply.duplicate === true,
             queued: reply.queued === true,
+            // 拍板 EuOLprw_dV：用户在截屏识字的框选页点了「×」，自己放弃了这张卡。
+            cancelled: reply.cancelled === true,
             // BUG-3652 续：宿主发现发起制卡的弹窗已不在屏上，已自己 toast 过这次失败
             // （MineFailureNotice.settle）。这里就不能再说第二遍。
             hostReported: reply.hostReported === true,
@@ -2238,26 +2240,42 @@ function escapePitchText(text) {
 // styling — 40px of dead space on the left, 1em of margin above and below, and
 // no `・` between two transcriptions.
 function constructPitchPositionHtml(pitches) {
-    if (!pitches?.length) {
-        return '';
-    }
-
-    let items = '';
-    pitches.forEach(pitchGroup => {
-        pitchGroup.pitchPositions.forEach(pos => {
-            items += `<li><span style="display:inline;"><span>[</span><span>${pos}</span><span>]</span></span></li>`;
-        });
-        // 79c55c2 二期：pattern 式 accent 同样进 {pitch-accent-positions} 字段。
-        (pitchGroup.patterns || []).forEach(pattern => {
-            items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(pattern)}</span><span>]</span></span></li>`;
-        });
-        (pitchGroup.transcriptions || []).forEach(ipa => {
-            items += `<li><span style="display:inline;"><span>[</span><span>${escapePitchText(ipa)}</span><span>]</span></span></li>`;
-        });
-    });
+    const items = pitchPositionEntries(pitches).map(entry => `<li>${entry}</li>`).join('');
     // No positions AND no patterns AND no transcriptions: return '' instead of
     // an empty <ul> shell, so the field is treated as empty and skipped.
     return items ? `<ul>${items}</ul>` : '';
+}
+
+// 反馈 iTMx1pCb2V：{pitch-accent-positions-inline} 是同一组条目的单行变体——不包
+// <ul>，条目之间用「・」连起来，多音调的词在非 Lapis 模板里只占一行。默认的
+// {pitch-accent-positions} 仍是 <ul>（BUG-2151，Lapis 靠 `#pitch-tags ul` 归一样式），
+// 两者只差外层结构，条目内容与顺序同源（pitchPositionEntries）。
+function constructPitchPositionInlineHtml(pitches) {
+    return pitchPositionEntries(pitches).join('・');
+}
+
+// {pitch-accent-positions} 与 {pitch-accent-positions-inline} 共用的条目：每组的数字位、
+// pattern 式 accent（79c55c2 二期）、IPA 音标（TODO-688）依次排开，每条是一个
+// `[x]` span。pattern / IPA 来自词典数据，进 HTML 前必须转义。
+function pitchPositionEntries(pitches) {
+    if (!pitches?.length) {
+        return [];
+    }
+
+    const entries = [];
+    const entry = text => `<span style="display:inline;"><span>[</span><span>${text}</span><span>]</span></span>`;
+    pitches.forEach(pitchGroup => {
+        pitchGroup.pitchPositions.forEach(pos => {
+            entries.push(entry(pos));
+        });
+        (pitchGroup.patterns || []).forEach(pattern => {
+            entries.push(entry(escapePitchText(pattern)));
+        });
+        (pitchGroup.transcriptions || []).forEach(ipa => {
+            entries.push(entry(escapePitchText(ipa)));
+        });
+    });
+    return entries;
 }
 
 // Yomitan-named {phonetic-transcriptions}: ONLY the IPA transcriptions, for
@@ -2826,7 +2844,11 @@ function constructSingleFrequenciesHtml(frequencies) {
 // Builds the Anki field payload for a popup entry. Shared by mineEntry (create)
 // and updateEntry (overwrite the latest card) so both carry identical fields,
 // media, and audio — no second render path to drift (TODO-270 D).
-async function buildMinePayload(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+// [miningOverrides]：这一笔制卡请求自己的覆盖项（「调整句子音频」面板确认的起止偏移，见
+// openCrossAppAudioPanel），由发起请求的调用方一路显式传下来；不传 / null = 一键「+」。
+// HBK-AUDIT-211：以前这里读一份页面全局的「待用覆盖项」，裁剪制卡还在 await 时
+// 别的词条的普通「+」组包也会读到同一份偏移，两张卡都带了裁剪。
+async function buildMinePayload(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, miningOverrides) {
     const idx = entryIndex || 0;
     const furiganaPlain = constructFuriganaPlain(expression, reading);
     currentExportImageSizes = await probeExportImageSizes(idx);
@@ -2864,6 +2886,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     const patternNormalizedPitches = normalizePitchPatterns(pitches || [], reading);
     const normalizedPitches = mergeIdenticalPitchGroups(patternNormalizedPitches);
     const pitchPositions = constructPitchPositionHtml(normalizedPitches);
+    const pitchPositionsInline = constructPitchPositionInlineHtml(normalizedPitches);
     // categories 自己按值去重（`!categories.includes(category)`），且要的是原始分组，
     // 不受合并影响，喂未合并的分组；但要换算后的数字位，H/L 串词典才有分类。
     const pitchCategories = constructPitchCategories(patternNormalizedPitches, reading, rules);
@@ -2898,8 +2921,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         }
     }
 
-    // 「调整句子音频」面板确认后回点「+」时带上用户拖出的起止（见 openCrossAppAudioPanel）。
-    return __fushiApplyPendingMineOverrides({
+    const payload = {
         expression,
         reading,
         matched,
@@ -2912,6 +2934,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         glossaryFirst,
         singleGlossaries: JSON.stringify(singleGlossaries),
         pitchPositions,
+        pitchPositionsInline,
         pitchCategories,
         phoneticTranscriptions,
         popupSelectionText,
@@ -2920,16 +2943,19 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         audio,
         selectedDictionary: miningDictionaryFor(idx),
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])
-    });
+    };
+    // 「调整句子音频」面板确认后回点「+」时带上用户拖出的起止（见 openCrossAppAudioPanel）。
+    if (miningOverrides) payload.miningOverrides = JSON.stringify(miningOverrides);
+    return payload;
 }
 
 // [allowDuplicate]：用户已被告知「卡已在 Anki」并明确选了「新增为重复卡」。与 app 内原生
 // 对话框的 AnkiMiningPayload.withAllowDuplicate（BUG-2605）同一 wire 键 / 同一字符串值：
 // 三个后端的 addNote 以 `settings.allowDupes || payload.allowDuplicate` 放行，单次裁决、
 // 不改全局偏好。不带这个键时 payload 与旧版逐字节一致。
-async function mineEntry(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, allowDuplicate) {
+async function mineEntry(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, allowDuplicate, miningOverrides) {
     const payload = await buildMinePayload(
-        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, miningOverrides);
     if (allowDuplicate === true) payload.allowDuplicate = 'true';
     return await window.flutter_inappwebview.callHandler('mineEntry', payload);
 }
@@ -2938,9 +2964,9 @@ async function mineEntry(expression, reading, frequencies, pitches, rules, match
 // fields (same payload as mineEntry). Used by the green ✓⤺ "latest editable"
 // state so "I mined the wrong content, fix the last card" truly updates that
 // note instead of creating a second one.
-async function updateEntry(noteId, expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+async function updateEntry(noteId, expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, miningOverrides) {
     const fields = await buildMinePayload(
-        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, miningOverrides);
     return await window.flutter_inappwebview.callHandler('updateEntry', { noteId, fields });
 }
 
@@ -2954,18 +2980,18 @@ async function updateEntry(noteId, expression, reading, frequencies, pitches, ru
 // [openChooser]（反馈 E0sdqm4h-F / PR #2980 审查）：true = 用户用的是「管理」手势（右键 / 长按 /
 // 菜单键 ✓），宿主必须弹选择单；false = 单击，「允许重复」开着时宿主直接再制一张。意图走
 // 第二个桥参数，不混进制卡 payload。
-async function minedCardAction(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, openChooser) {
+async function minedCardAction(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, openChooser, miningOverrides) {
     const fields = await buildMinePayload(
-        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, miningOverrides);
     return await window.flutter_inappwebview.callHandler(
         'minedCardAction', fields, { openChooser: openChooser === true });
 }
 
 // BUG-3492：卡还在后台写入 Anki（按钮显示「已加入」）时的覆盖请求。宿主收下后排到那次
 // 写入之后、落地自动覆盖，回 {accepted, message}；没接这根桥的宿主回 null / accepted:false。
-async function queueOverwrite(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+async function queueOverwrite(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, miningOverrides) {
     const fields = await buildMinePayload(
-        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+        expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, miningOverrides);
     return await window.flutter_inappwebview.callHandler('queueOverwrite', fields);
 }
 
@@ -3299,7 +3325,11 @@ function crossAppAudioAvailable() {
         __fushiCrossAppAudioProbe = Promise.resolve()
             .then(() => window.flutter_inappwebview.callHandler('crossAppAudioAvailable'))
             .then((ok) => ok === true)
-            .catch(() => false);
+            .catch((err) => {
+                // 探测失败（桥没注册 / 宿主抛错）按「没录到」处理，但原因要留痕。
+                console.error('crossAppAudioAvailable probe failed', err);
+                return false;
+            });
     }
     return __fushiCrossAppAudioProbe;
 }
@@ -3336,19 +3366,13 @@ function crossAppAudioOverrides(defaultRange, chosen) {
     return out;
 }
 
-function crossAppAudioFormatSeconds(ms) {
-    return (Math.max(0, ms) / 1000).toFixed(2) + 's';
+// 「本次跳过句子音频」的覆盖项（拍板 Z0DtSVYC7A）：只作用于这一笔制卡，不改任何设置。
+function crossAppAudioSkipOverrides() {
+    return { omitAudio: true };
 }
 
-// 本次制卡要带的覆盖项（面板确认 → 回点「+」落地之前有效）：buildMinePayload 据此写
-// miningOverrides，回点落地后由面板清掉。
-let __fushiPendingMineOverrides = null;
-
-function __fushiApplyPendingMineOverrides(payload) {
-    if (__fushiPendingMineOverrides) {
-        payload.miningOverrides = JSON.stringify(__fushiPendingMineOverrides);
-    }
-    return payload;
+function crossAppAudioFormatSeconds(ms) {
+    return (Math.max(0, ms) / 1000).toFixed(2) + 's';
 }
 
 // 词条在本卡里的稳定 DOM 序（:scope > .entry），与 fushiPopupMineEntryByIndex 同一套索引。
@@ -3406,6 +3430,12 @@ function createCrossAppAudioPlayer(dataUrl, onStateChange) {
     let fallback = null;
     let fallbackStop = null;
     let playing = null; // {startMs, endMs, t0}
+    // 试听请求代号（HBK-AUDIT-212）：play() 在第一次 await 之前就领号、登记为当前请求
+    // （pendingId）；stop()——含换范围、关面板——让号作废。解码 / resume / <audio>.play()
+    // 回来时号已不是当前的，那次试听就此作罢：任何时刻最多只有一段在响，「停止」停的就是它。
+    // 以前播放对象要等解码完才登记，解码期间换范围再点试听会排进第二个 BufferSource。
+    let requestId = 0;
+    let pendingId = 0; // 0 = 没有等待中的试听
     const volume = typeof window.lookupAudioVolume === 'number' ? window.lookupAudioVolume : 1;
 
     function settle() {
@@ -3414,6 +3444,8 @@ function createCrossAppAudioPlayer(dataUrl, onStateChange) {
     }
 
     function stop() {
+        requestId++;
+        pendingId = 0;
         if (source) {
             const node = source;
             source = null;
@@ -3430,14 +3462,29 @@ function createCrossAppAudioPlayer(dataUrl, onStateChange) {
 
     async function play(startMs, endMs) {
         stop();
+        const id = ++requestId;
+        pendingId = id;
+        try {
+            await startPlayback(id, startMs, endMs);
+        } finally {
+            if (pendingId === id) pendingId = 0;
+        }
+    }
+
+    // 只在 id 仍是当前请求时出声；等待期间被 stop / 新的 play 取代就静默放弃。
+    async function startPlayback(id, startMs, endMs) {
+        const superseded = () => id !== requestId;
         if (Ctx) {
             if (!ctx) ctx = new Ctx();
             if (!bufferPromise) {
                 bufferPromise = ctx.decodeAudioData(__fushiDecodeDataUrlBytes(dataUrl).buffer);
             }
             const buffer = await bufferPromise;
-            if (!ctx) return; // 解码途中面板已关
-            if (ctx.state === 'suspended') await ctx.resume();
+            if (superseded() || !ctx) return; // 解码途中被取代 / 面板已关
+            if (ctx.state === 'suspended') {
+                await ctx.resume();
+                if (superseded() || !ctx) return;
+            }
             const node = ctx.createBufferSource();
             node.buffer = buffer;
             const gain = ctx.createGain();
@@ -3464,7 +3511,14 @@ function createCrossAppAudioPlayer(dataUrl, onStateChange) {
         };
         fallback.addEventListener('timeupdate', fallbackStop);
         playing = { startMs, endMs, t0: null };
-        await fallback.play();
+        try {
+            await fallback.play();
+        } catch (err) {
+            // 等待期间被 stop() 暂停：play() 以 AbortError 收场，这是取消不是失败。
+            if (superseded()) return;
+            throw err;
+        }
+        if (superseded()) return;
         onStateChange(true);
     }
 
@@ -3486,7 +3540,15 @@ function createCrossAppAudioPlayer(dataUrl, onStateChange) {
         fallback = null;
     }
 
-    return { play, stop, positionMs, dispose, isPlaying: () => playing !== null };
+    return {
+        play,
+        stop,
+        positionMs,
+        dispose,
+        isPlaying: () => playing !== null,
+        // 在响或还在等解码：换范围时两种都要停（后者是作废那次等待中的试听）。
+        isActive: () => playing !== null || pendingId !== 0,
+    };
 }
 
 // 画波形：选区外的柱子淡、选区里的实；柱高取每个柱位覆盖的峰值。颜色取 canvas 的
@@ -3579,6 +3641,18 @@ function openCrossAppAudioPanel(idx) {
         onclick: () => finish(),
     });
     actions.appendChild(cancelBtn);
+    // 拍板 Z0DtSVYC7A（方案 b）：查的词本来就没有句子语音时，录环里是刚才别的声音，按次
+    // 跳过即可，不必去设置里关掉整个跨应用语音缓存。不依赖试听数据：读取中 / 读不出时也能点。
+    // 宿主 prepareSentenceAudio 见 omitAudio 直接不截（与高级制卡「不要句子音频」同一 wire 键）。
+    const skipBtn = el('button', {
+        className: 'mined-action-btn ghost crossapp-audio-skip',
+        textContent: i18n.skip || '',
+        onclick: async () => {
+            finish();
+            await window.fushiPopupMineEntryByIndex(idx, crossAppAudioSkipOverrides());
+        },
+    });
+    actions.appendChild(skipBtn);
     panel.appendChild(actions);
 
     if (ownsDocument) rootEl.classList.add(CROSS_APP_AUDIO_OPEN_CLASS);
@@ -3688,8 +3762,9 @@ function openCrossAppAudioPanel(idx) {
 
         function setRange(next, moving) {
             range = crossAppAudioClampRange(next, totalMs, minClipMs, moving);
-            // 起止变了，正在试听的那段已不是用户要的：停掉，免得听着旧区间以为是新的。
-            if (player && player.isPlaying()) player.stop();
+            // 起止变了，正在试听（或还在解码、马上要响）的那段已不是用户要的：停掉，免得
+            // 听着旧区间以为是新的。
+            if (player && player.isActive()) player.stop();
             paint();
         }
 
@@ -3781,12 +3856,9 @@ function openCrossAppAudioPanel(idx) {
         mineBtn.onclick = async () => {
             const overrides = crossAppAudioOverrides(defaultRange, range);
             finish();
-            __fushiPendingMineOverrides = overrides;
-            try {
-                await window.fushiPopupMineEntryByIndex(idx);
-            } finally {
-                __fushiPendingMineOverrides = null;
-            }
+            // 覆盖项作为这一笔请求的参数交给「+」（HBK-AUDIT-211）：不经页面全局，别的词条
+            // 同时点下的「+」组不到这份偏移。
+            await window.fushiPopupMineEntryByIndex(idx, overrides);
         };
 
         paint();
@@ -3870,7 +3942,7 @@ async function openWordInAnki(button, expression, reading) {
 //                    带 allowDuplicate 直接再制一张。
 async function runInPageMinedCardAction(
         expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText,
-        openChooser) {
+        openChooser, miningOverrides) {
     let matches = await findMinedMatches(expression, reading, openChooser);
     if (matches === MINED_TAP_MINE_NEW) {
         return { outcome: 'mineNew', result: { ankiConnect: false, noteId: null } };
@@ -3898,7 +3970,7 @@ async function runInPageMinedCardAction(
     if (choice.action === 'overwrite') {
         const reply = await updateEntry(
             choice.noteId, expression, reading, frequencies, pitches, rules, matched,
-            entryIndex, popupSelectionText);
+            entryIndex, popupSelectionText, miningOverrides);
         return { outcome: 'handled', result: parseMineResult(reply) };
     }
     if (choice.action === 'duplicate') {
@@ -3906,7 +3978,7 @@ async function runInPageMinedCardAction(
         // allowDupes（默认关）把这次判成重复拒掉——用户选了「新增为重复卡」却只得到「已存在」。
         const reply = await mineEntry(
             expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText,
-            true);
+            true, miningOverrides);
         return { outcome: 'handled', result: parseMineResult(reply) };
     }
     return { outcome: 'handled', result: { ankiConnect: false, noteId: null } };
@@ -6405,6 +6477,12 @@ function createEntryHeader(entry, idx) {
             snapshotSelection();
         },
         onclick: async () => {
+            // 本次请求的覆盖项（「调整句子音频」面板确认的起止偏移）：只有
+            // fushiPopupMineEntryByIndex(idx, overrides) 在调本处理器前一刻置一次性的
+            // __fushiMiningOverridesOnce；与 openChooser 同一纪律，第一个 await 之前先读后清，
+            // 之后只沿下面每一条组包路径显式传下去，不再经任何页面全局（HBK-AUDIT-211）。
+            const miningOverrides = mineButton.__fushiMiningOverridesOnce || null;
+            mineButton.__fushiMiningOverridesOnce = null;
             // openChooser：false = 单击；true = 「管理」手势（右键 / 长按 / 菜单键，只对已制卡的
             // ✓ 生效，见 bindMinedCardManageTriggers，它置一次性的 __fushiOpenChooserOnce 再调
             // 本处理器）——永远弹覆写 / 新增 / 查看的选择单，不走「最新可改」原地覆写，也不因
@@ -6441,7 +6519,8 @@ function createEntryHeader(entry, idx) {
                         'duplicateCheck', { expression, reading });
                     if (landed !== true) {
                         const reply = await queueOverwrite(
-                            expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                            expression, reading, frequencies, pitches, rules, matched, idx, lastSelection,
+                            miningOverrides);
                         const accepted = !!(reply && reply.accepted === true);
                         const message = reply && typeof reply.message === 'string' ? reply.message : '';
                         // 宿主说这次后台写入在上面那次回问之后才结束（赛跑窗口）：落地了 →
@@ -6474,7 +6553,8 @@ function createEntryHeader(entry, idx) {
                     // carries a real note id → OVERWRITE that note in place with
                     // the freshly-built fields (does NOT create a second card).
                     const reply = await updateEntry(
-                        lastMinedNoteId, expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
+                        lastMinedNoteId, expression, reading, frequencies, pitches, rules, matched, idx, lastSelection,
+                        miningOverrides);
                     const result = parseMineResult(reply);
                     // A successful update keeps the same note id (handler echoes it)
                     // → stays the editable latest. A failed update drops the latest
@@ -6517,11 +6597,11 @@ function createEntryHeader(entry, idx) {
                                 outcome: 'handled',
                                 result: parseMineResult(await minedCardAction(
                                     expression, reading, frequencies, pitches, rules, matched, idx, lastSelection,
-                                    openChooser)),
+                                    openChooser, miningOverrides)),
                             }
                             : await runInPageMinedCardAction(
                                 expression, reading, frequencies, pitches, rules, matched, idx, lastSelection,
-                                openChooser);
+                                openChooser, miningOverrides);
                         if (action.outcome === 'handled') {
                             // The host applied the chosen action (or the user cancelled,
                             // in which case it echoes the unchanged mined state). Refresh
@@ -6561,7 +6641,7 @@ function createEntryHeader(entry, idx) {
 
                 const reply = await mineEntry(
                     expression, reading, frequencies, pitches, rules, matched, idx, lastSelection,
-                    allowDuplicateThisClick);
+                    allowDuplicateThisClick, miningOverrides);
                 const result = parseMineResult(reply);
                 // TODO-393：制卡后宿主清空草稿（合并卡已落地），同步把 JS 两个镜像标量
                 // 归零并刷新上下文选择器，使两端状态在同一事件归零、不漂移。仅在启用草稿
@@ -6585,6 +6665,10 @@ function createEntryHeader(entry, idx) {
 
                 if (result.queued) {
                     queuedLocally = true;
+                    setMineState(false);
+                } else if (result.cancelled) {
+                    // 拍板 EuOLprw_dV：用户自己在框选页放弃了这次制卡——不是失败，不说
+                    // 「制卡失败」，也不回查 Anki（TODO-448），按钮放回可点的 '+'。
                     setMineState(false);
                 } else if (result.ankiConnect) {
                     // TODO-270 D: a freshly mined card with a real note id becomes
@@ -7007,7 +7091,8 @@ try {
 
 // BUG-763/766：确认「制卡前调整」原生对话框时，Dart 回点第 idx 个词条（:scope > .entry
 // DOM 序，与打开对话框时的 entryIndex 同源）的制卡按钮，复用其全部制卡/查重/覆写逻辑。
-window.fushiPopupMineEntryByIndex = function(idx) {
+// [miningOverrides]（可选）：这一笔制卡的覆盖项（「调整句子音频」面板），只随这一次回点交给「+」。
+window.fushiPopupMineEntryByIndex = function(idx, miningOverrides) {
     const root = __fushiRootNode();
     const first = root && root.querySelector('.entry');
     const container = first && first.parentNode;
@@ -7023,7 +7108,15 @@ window.fushiPopupMineEntryByIndex = function(idx) {
     // 自动关栈 / 低内存 dismiss 会把弹窗连制卡草稿一起撤掉——卡制成了但上下文全丢，
     // 或 WebView 半路销毁回到「无卡无提示」。所以直接调 onclick 取回它的 promise，让
     // Dart await 到 mineEntry 回执再关窗。三条 `return false` 保持同步（没点到）。
-    const result = typeof b.onclick === 'function' ? b.onclick() : b.click();
+    // 覆盖项只交给这一次调用：处理器在第一个 await 之前就读走并清掉；这里调用后再清一次，
+    // 处理器提前返回（单飞守卫等）时也不会留给下一次普通点击。
+    b.__fushiMiningOverridesOnce = miningOverrides || null;
+    let result;
+    try {
+        result = typeof b.onclick === 'function' ? b.onclick() : b.click();
+    } finally {
+        b.__fushiMiningOverridesOnce = null;
+    }
     return Promise.resolve(result).then(() => true);
 };
 
@@ -7039,6 +7132,43 @@ window.fushiPopupBuildMinePayloadByIndex = async function(idx) {
     const b = entry && entry.querySelector('.mine-button');
     if (!b || typeof b.__fushiBuildMinePayload !== 'function') return null;
     return await b.__fushiBuildMinePayload();
+};
+
+// 拍板台 rf--UcsGta-overlay：应用外查词卡的「高级制卡」转交主窗查词页后，主窗按词条身份
+// （表记 / 读音 / 命中文本）在**自己**的结果里找回同一个词条，回它的 DOM 序（与
+// fushiPopupMineEntryByIndex / fushiPopupBuildMinePayloadByIndex 同一套 :scope > .entry
+// 下标）。不沿用覆盖窗那边的下标：两边各查一遍，渲染时机 / 被隐藏词典过滤掉的空词条
+// 不保证一致，下标错一位就制错卡。
+// 尾批词条还在分片渲染（_renderInProgress）时 _entryDomIndex 还不全，回 -2，宿主等
+// 下一次 popupRendered（尾批画完必发）再问；找不到回 -1。
+// 覆盖窗那边的词条带了读音时，表记 + 读音必须都对上：同表记异读音（生 なま / 生 せい）
+// 是另一个词条，退到「只认表记」会把预填和制卡都套到错词上（HBK-AUDIT-005）。只有
+// 转交没带读音时才退到只认表记。
+window.fushiPopupEntryDomIndexFor = function(expression, reading, matched) {
+    if (window._renderInProgress) return -2;
+    const entries = window.lookupEntries;
+    const domIndex = window._entryDomIndex;
+    if (!Array.isArray(entries) || !Array.isArray(domIndex)) return -1;
+    const wantExpression = String(expression || '');
+    const wantReading = String(reading || '');
+    const wantMatched = String(matched || '');
+    const tiers = [
+        (e) => e.expression === wantExpression
+            && (e.reading || '') === wantReading
+            && (e.matched || '') === wantMatched,
+        (e) => e.expression === wantExpression
+            && (e.reading || '') === wantReading,
+    ];
+    if (!wantReading) tiers.push((e) => e.expression === wantExpression);
+    for (const tier of tiers) {
+        for (let i = 0; i < entries.length; i++) {
+            const dom = domIndex[i];
+            if (typeof dom === 'number' && dom >= 0 && entries[i] && tier(entries[i])) {
+                return dom;
+            }
+        }
+    }
+    return -1;
 };
 
 // 收藏夹一键制卡：为 (expression, reading) 在当前 window.lookupEntries 里挑一个词条，
@@ -8579,24 +8709,80 @@ function createKanjiCard(kanji) {
     return card;
 }
 
-// Builds the container holding every kanji card for the current lookup, or null
-// when there are no kanji results. Each character in a multi-character (rare,
-// but the array supports it) result gets its own card.
+// 汉字区块默认是否展开（拍板台 6uasoIUvSR）。判据与术语词典的三态同构（BUG-2158）：
+// 区块里任一本汉字词典被显式「展开」→ 展开；否则只有全局「折叠词典」关着、且区块里的
+// 词典没有全部显式「折叠」时才展开。与术语词典不同，这里**不吃**自动展开窗口
+// （autoExpandRows）：汉字卡排在词条之上，按窗口规则它总是「第一本」、永远展开，
+// 折叠就成了摆设——单字查询的首屏应留给词条释义。名单由宿主按词典管理「汉字」分区
+// 的逐本设置注入（混合词典的汉字部分单记一份，不复用术语部分的名单，BUG-3573）。
+// window.collapseDictionaries 缺省（未注入的壳）按默认的「折叠」处理。
+// 例外：查询已结束且没有任何词条（只在汉字词典里有的生僻字）时，汉字区块就是唯一的
+// 结果，按术语词典「第一本自动展开」同理展开——没有词条可让首屏，只剩一行折叠条
+// 等于让用户多点一下才看得到唯一的结果。查询还在进行（lookupPending）时不算，免得
+// 词条随后到达时区块从展开跳回折叠。显式「折叠」仍压过这条（与 BUG-2158 同序）。
+function kanjiSectionInitiallyOpen(dictNames) {
+    const expanded = window.kanjiExpandedDictionaryNames || [];
+    const collapsed = window.kanjiCollapsedDictionaryNames || [];
+    if (dictNames.some((name) => expanded.includes(name))) return true;
+    if (dictNames.length > 0 && dictNames.every((name) => collapsed.includes(name))) return false;
+    const entries = window.lookupEntries;
+    const onlyResult = !(Array.isArray(entries) && entries.length > 0)
+        && window.lookupPending !== true;
+    if (onlyResult) return true;
+    return window.collapseDictionaries === false;
+}
+
+// Builds the collapsible block holding every kanji card for the current lookup,
+// or null when there are no kanji results. Each character in a multi-character
+// (rare, but the array supports it) result gets its own card.
+//
+// 拍板台 6uasoIUvSR：汉字卡仍排在词条之上，但整块是一张与词典卡同款的
+// <details class="glossary-group">，默认折叠成一行「汉字 · 粉  词典名…」，点标题行展开，
+// 交互与其它词典的折叠一致（同一套卡片皮肤 / 箭头 / 状态层）。根节点保留
+// .kanji-card-section：点空白不关弹窗的判据（handleDocumentClick）认的就是它。
 function buildKanjiCards() {
     const kanji = window.kanjiResults;
     if (!Array.isArray(kanji) || kanji.length === 0) {
         return null;
     }
-    const section = el('div', { className: 'kanji-card-section' });
-    let appended = 0;
+    const cards = [];
+    const characters = [];
+    const dictNames = [];
     for (const entry of kanji) {
         const card = createKanjiCard(entry);
-        if (card) {
-            section.appendChild(card);
-            appended++;
-        }
+        if (!card) continue;
+        cards.push(card);
+        if (!characters.includes(entry.character)) characters.push(entry.character);
+        if (entry.dictName && !dictNames.includes(entry.dictName)) dictNames.push(entry.dictName);
     }
-    return appended > 0 ? section : null;
+    if (cards.length === 0) return null;
+
+    const section = el('details', { className: 'kanji-card-section glossary-group' });
+    section.open = kanjiSectionInitiallyOpen(dictNames);
+
+    const summary = el('summary', { className: 'dict-label kanji-card-summary' });
+    const label = window.i18nKanjiSection || 'Kanji';
+    summary.appendChild(el('span', {
+        className: 'dict-name',
+        textContent: `${label} · ${characters.join(' ')}`
+    }));
+    if (dictNames.length > 0) {
+        summary.appendChild(el('span', {
+            className: 'kanji-card-summary-dicts',
+            textContent: dictNames.map(__fushiDictDisplayName).join(' · ')
+        }));
+    }
+    // BUG-2447 同款：鼠标按下不让 <summary> 拿 DOM 焦点（macOS WKWebView 会因此抢走
+    // 宿主快捷键）；开合是 click 的默认动作，不受影响。只对主键生效。
+    summary.addEventListener('mousedown', (e) => {
+        if (e && e.button === 0) e.preventDefault();
+    });
+    section.appendChild(summary);
+
+    const body = el('div', { className: 'kanji-card-body' });
+    for (const card of cards) body.appendChild(card);
+    section.appendChild(body);
+    return section;
 }
 
 window._renderGeneration = 0;
@@ -10806,8 +10992,17 @@ function __fushiPopupMouseMove(e) {
     __fushiPopupCancelScanDelay();
     if (delay > 0) {
         var x = e.clientX, y = e.clientY;
+        // HBK-AUDIT-231：排着的扫描与「排它那一刻的弹窗 + 设置」绑定，到点先核对再扫。
+        // 只捕获坐标的话，Esc 关窗（宿主清 __fushiRoot、推进 _renderGeneration，不派 mouseout）、
+        // 换词重渲染、或热切换触发键 / 延迟之后计时照样触发，selectText 落到宿主网页的选区
+        // 或新开的弹窗上。三项任一变了 = 这次扫描所属的弹窗 / 设置已不存在，作废。
+        var root = window.__fushiRoot || null;
+        var generation = window._renderGeneration;
         _popupScanDelayTimer = setTimeout(function() {
             _popupScanDelayTimer = null;
+            if ((window.__fushiRoot || null) !== root) return;
+            if (window._renderGeneration !== generation) return;
+            if (__fushiPopupScanDelayMs() !== delay) return;
             __fushiPopupScanAt(x, y);
         }, delay);
         return;

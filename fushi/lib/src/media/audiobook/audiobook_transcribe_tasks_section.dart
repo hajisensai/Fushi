@@ -40,21 +40,27 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final AudiobookTranscribeImportQueue? queue =
-        queueOverride ?? _appQueue(ref);
+        queueOverride ?? appQueue(ref.read(appProvider));
     if (queue == null) {
       return tasksBuilder(context, const <DownloadTaskEntry>[]);
     }
     return ListenableBuilder(
       listenable: EngineListenable(queue),
       builder: (BuildContext context, Widget? _) =>
-          tasksBuilder(context, <DownloadTaskEntry>[
-            for (final AudiobookTranscribeJob job in queue.jobs)
-              _buildEntry(queue, job),
-          ]),
+          tasksBuilder(context, entriesOf(queue)),
     );
   }
 
-  DownloadTaskEntry _buildEntry(
+  /// 队列此刻的任务 → 统一任务列表条目。下载页与侧栏下载速览共用这一份映射
+  /// （见 `download_task_sources.dart`）。
+  static List<DownloadTaskEntry> entriesOf(
+    AudiobookTranscribeImportQueue queue,
+  ) => <DownloadTaskEntry>[
+    for (final AudiobookTranscribeJob job in queue.jobs)
+      _buildEntry(queue, job),
+  ];
+
+  static DownloadTaskEntry _buildEntry(
     AudiobookTranscribeImportQueue queue,
     AudiobookTranscribeJob job,
   ) {
@@ -79,6 +85,7 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
         AudiobookTranscribeJobStatus.cancelled => DownloadTaskStatus.cancelled,
       },
       progress: progress,
+      subtitle: t.audiobook_transcribe_task_subtitle,
       searchTerms: <String>[job.title],
       // 单跑道队列：没有暂停态、没有调度优先级（同直链队列）。
       actions: DownloadTaskActions(
@@ -104,7 +111,7 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
   /// 折叠时也看得到的摘要：阶段轨（下载模型 → 加载模型 → 转录 → 匹配正文 →
   /// 入库）+ 完成后的覆盖情况。失败 / 取消时不知道停在哪一步（阶段已清掉），
   /// 阶段轨不画。
-  Widget? _buildSummary(AudiobookTranscribeJob job) {
+  static Widget? _buildSummary(AudiobookTranscribeJob job) {
     final List<AsrStageState>? rails = asrPipelineStatesForJob(job);
     final AudiobookTextCoverage? coverage =
         job.status == AudiobookTranscribeJobStatus.done ? job.coverage : null;
@@ -120,7 +127,7 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
     );
   }
 
-  Widget _buildDetails(
+  static Widget _buildDetails(
     BuildContext context,
     AudiobookTranscribeImportQueue queue,
     AudiobookTranscribeJob job,
@@ -208,8 +215,8 @@ class AudiobookTranscribeTasksSection extends ConsumerWidget {
 
   /// 生产队列。与直链区同一道门：数据库没开（轻量 widget 测试 / 桩）不去拉
   /// 组装点；本机没有 ASR 的平台不建这条队列。
-  static AudiobookTranscribeImportQueue? _appQueue(WidgetRef ref) {
-    final AppModel appModel = ref.read(appProvider);
+  /// app 持有的转录入库队列；库没就绪或本平台不支持 ASR 时为 null。
+  static AudiobookTranscribeImportQueue? appQueue(AppModel appModel) {
     if (!appModel.isDatabaseReady || !isAsrSupported) return null;
     return appModel.audiobookTranscribeImportQueue;
   }

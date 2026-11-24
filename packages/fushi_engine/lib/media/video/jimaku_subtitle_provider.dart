@@ -6,7 +6,8 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_source_season.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
-class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
+class JimakuVideoSubtitleProvider
+    implements VideoSubtitleProvider, VideoSubtitleConnectionWarmup {
   JimakuVideoSubtitleProvider({
     required JimakuClient client,
     this.priority = 100,
@@ -78,24 +79,56 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
         final int? episode = entry.flags.movie
             ? null
             : request.effectiveEpisode;
-        final List<JimakuFile> files;
+        List<JimakuFile> files;
         final List<JimakuFile> packs;
+        // 按集问服务端失败：本条目已拿到的可用候选（本地筛中的单集 + 整季包）照样
+        // 交出去，失败如实带回，不继续问后面的条目（失败多半是限流，再问只会更糟）。
+        Object? episodeLookupError;
         try {
-          files = await _client.listFiles(
+          // 先列一次全表：整季压缩包（BUG-3000 跟进，`Show (01-26).zip` 猜不出单集，
+          // 服务端 `?episode=` 会把它滤掉）只能从全表补，这一次省不掉。
+          final List<JimakuFile> all = await _client.listFiles(
             entry.id,
-            episode: episode,
             throwOnError: true,
           );
-          // 整季压缩包（BUG-3000 跟进）：Jimaku 的 `episode` 过滤按文件名猜集号，
-          // `Show (01-26).zip` 这类整季包猜不出单集，会被服务端滤掉。带集号查时再
-          // 列一次不带集号的全表，只从里面补压缩包。
           packs = <JimakuFile>[
-            for (final JimakuFile file
-                in episode == null
-                    ? files
-                    : await _client.listFiles(entry.id, throwOnError: true))
+            for (final JimakuFile file in all)
               if (file.archiveFormat != null) file,
           ];
+          files = episode == null
+              ? all
+              : <JimakuFile>[
+                  for (final JimakuFile file in all)
+                    if (file.episode == episode) file,
+                ];
+          // 集号以服务端为准，本地筛只是省一次往返的快路径。服务端 `?episode=` 用
+          // anitomy 解析文件名、认集号**区间**（`Show - 01-02.ass` 同时算第 1、2 集），
+          // 还按 anime-relations 把续作连番映射回本季集号（第二季条目里的
+          // `Show - 14.ass` 算第 2 集）；本地 [parseSubtitleEpisode] 只取单个集号、
+          // 不懂映射。所以本地一条没筛中，或全表的集号有歧义（[jimakuEpisodeNumberingAmbiguous]：
+          // 区间 / 解析不出 / 续作里的连番命名）时，再按集问一次服务端，单集结果以
+          // 服务端为准并入本地命中——本地有命中就跳过服务端，会把同集另一种编号的
+          // 版本（常常正是要的语言）整个漏掉（BUG-5360）。
+          if (episode != null &&
+              all.any((JimakuFile file) => file.archiveFormat == null) &&
+              (files.isEmpty ||
+                  jimakuEpisodeNumberingAmbiguous(
+                    all,
+                    season: entrySeason ?? request.effectiveSeason,
+                  ))) {
+            try {
+              files = <JimakuFile>[
+                ...await _client.listFiles(
+                  entry.id,
+                  episode: episode,
+                  throwOnError: true,
+                ),
+                ...files,
+              ];
+            } on Object catch (error) {
+              episodeLookupError = error;
+            }
+          }
         } on Object catch (error) {
           // 排在最前的条目都没问到 = 整次搜索失败；后面的条目失败（典型是限流）
           // 不该把已经拿到的候选一起丢掉，如实带着失败返回部分结果。
@@ -127,9 +160,20 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
               ),
               providerPriority: priority,
               wantedEpisode: episode,
+              // 带集号搜到的单集文件就是这一集：服务端按连番映射回来的
+              // `Show - 14.ja.srt` 本地解析是 14，候选若照抄它，下游按候选集号
+              // 对集（任务附加字幕、批量）就对不上请求的第 2 集。
+              episode: archive == null ? (episode ?? file.episode) : null,
               requestedLanguages: request.languages,
             ),
           );
+        }
+        if (episodeLookupError != null) {
+          if (candidates.isEmpty) {
+            throw episodeLookupError;
+          }
+          failures.add(_jimakuFailure('search', episodeLookupError));
+          break;
         }
       }
       return ProviderBatchResult<VideoSubtitleCandidate>(
@@ -229,6 +273,9 @@ class JimakuVideoSubtitleProvider implements VideoSubtitleProvider {
   }
 
   @override
+  Future<void> warmUpConnection() => _client.warmUpConnection();
+
+  @override
   void close() {
     if (_closesClient) _client.close();
   }
@@ -294,6 +341,48 @@ int? jimakuEntrySeason(JimakuEntry entry, VideoSubtitleSearchRequest request) {
   );
 }
 
+/// 条目全表的单集文件集号是否有本地解析认不准的歧义（BUG-5360）。纯函数。
+///
+/// 本地 [parseSubtitleEpisode] 只取单个集号、不懂续作连番映射；以下任一情形
+/// 本地命中都不完整，要再按集问一次服务端：
+/// - 有单集文本字幕本地解析不出集号；
+/// - 文件名带集号区间（`Show - 01-02.ass`），本地只认得其中一个；
+/// - 续作（[season] ≥ 2）里有一组同模板的文件从大于 1 的集号起编——典型是按全系列
+///   连番命名（第二季条目里的 `Show - 14.ja.srt` 是第 2 集），与按本季编号的
+///   `Show - 02.en.srt` 混在一起时，本地按 2 只筛得中后者。只在续作里看这一条：
+///   第一季的编号就是本季编号，零散上传（只传了 15~17 集）不该多花一次配额。
+bool jimakuEpisodeNumberingAmbiguous(
+  Iterable<JimakuFile> files, {
+  required int? season,
+}) {
+  final Map<String, int> minByTemplate = <String, int>{};
+  for (final JimakuFile file in files) {
+    if (file.archiveFormat != null || !file.isTextSubtitle) continue;
+    final int? parsed = file.episode;
+    if (parsed == null) return true;
+    for (final RegExpMatch m in _episodeRangePattern.allMatches(file.name)) {
+      final int from = int.parse(m.group(1)!);
+      final int to = int.parse(m.group(2)!);
+      if (to > from) return true;
+    }
+    final String template = file.name.toLowerCase().replaceAll(
+      RegExp(r'\d+'),
+      '#',
+    );
+    final int? seen = minByTemplate[template];
+    if (seen == null || parsed < seen) minByTemplate[template] = parsed;
+  }
+  if (season == null || season < 2) return false;
+  return minByTemplate.values.any((int first) => first > 1);
+}
+
+/// 紧挨着的集号区间 `01-02` / `01~02` / `01～02`（两侧不带空格，免得把
+/// `S3 - 05` 这种季号 + 分隔符 + 集号误认成区间；三位数以内、两侧不连着别的
+/// 数字或连字符，避开年份与 `2024-01-02` 这类日期）。
+final RegExp _episodeRangePattern = RegExp(
+  r'(?<![\d.\-])(\d{1,3})[-~～](\d{1,3})(?![\d\-])',
+);
+
 class _JimakuSubtitleCandidate extends VideoSubtitleCandidate {
   _JimakuSubtitleCandidate({
     required this.entry,
@@ -302,6 +391,7 @@ class _JimakuSubtitleCandidate extends VideoSubtitleCandidate {
     required int? season,
     required int providerPriority,
     required List<String> requestedLanguages,
+    required int? episode,
     this.wantedEpisode,
   }) : requestedLanguages = List<String>.unmodifiable(requestedLanguages),
        super(
@@ -312,9 +402,9 @@ class _JimakuSubtitleCandidate extends VideoSubtitleCandidate {
          providerPriority: providerPriority,
          releaseName: entry.name,
          season: season,
-         // 整季包没有单集集号（`(01-26).zip` 会被解析成第 1 集），否则批量会把整包
-         // 当成第 1 集的字幕。
-         episode: file.archiveFormat == null ? file.episode : null,
+         // 整季包没有单集集号（`(01-26).zip` 会被解析成第 1 集），由调用方传 null，
+         // 否则批量会把整包当成第 1 集的字幕。
+         episode: episode,
          fileSize: file.size,
          uploadedAtMs: file.lastModifiedMs,
          collectionId: '${entry.id}',

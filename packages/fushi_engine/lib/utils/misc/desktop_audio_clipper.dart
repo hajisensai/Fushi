@@ -6,6 +6,8 @@ import 'package:fushi_engine/media/cover_file_writer.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_hdr_tone_map.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
+import 'package:fushi_engine/media/video/video_member_file.dart'
+    show videoMemberExistsSync;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show kYoutubeStreamReplayUserAgent;
 import 'package:fushi_engine/media/video/video_clip_exporter.dart'
@@ -888,6 +890,9 @@ List<String> buildFfmpegClipArgs({
   double? tempo,
   // 视频制卡只取多声道的中置声道 FC（人声）。false = 现状（逐字节不变）。
   bool frontCenterOnly = false,
+  // 制卡句子音频跟随播放音量（反馈 d7mXlstcv9 / #3405）：片段整体增益（dB，`-af volume=…dB`）。
+  // null / ≈0 不加滤镜（逐字节不变）。
+  double? gainDb,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -898,6 +903,7 @@ List<String> buildFfmpegClipArgs({
   final String? tempoFilter = buildFfmpegSentenceAudioFilter(
     tempo: tempo,
     frontCenterOnly: frontCenterOnly,
+    gainDb: gainDb,
   );
   return <String>[
     '-y',
@@ -953,17 +959,31 @@ List<String> buildFfmpegClipArgs({
 const String kFfmpegFrontCenterFilter = 'pan=mono|c0=FC';
 
 /// 句子音频的整条 `-af` 链：先取中置声道（[frontCenterOnly]），再变速
-/// （[buildFfmpegAtempoFilter]）。两样都不要时返回 null（不加 `-af`，= 现状）。纯函数。
+/// （[buildFfmpegAtempoFilter]），最后整体增益（[buildFfmpegVolumeFilter]）。都不要时
+/// 返回 null（不加 `-af`，= 现状）。纯函数。
 String? buildFfmpegSentenceAudioFilter({
   double? tempo,
   bool frontCenterOnly = false,
+  double? gainDb,
 }) {
   final String? atempo = buildFfmpegAtempoFilter(tempo);
+  final String? volume = buildFfmpegVolumeFilter(gainDb);
   final List<String> stages = <String>[
     if (frontCenterOnly) kFfmpegFrontCenterFilter,
     if (atempo != null) atempo,
+    if (volume != null) volume,
   ];
   return stages.isEmpty ? null : stages.join(',');
+}
+
+/// 比这更小的增益（dB）听不出来，不加滤镜（保持参数逐字节不变）。
+const double kFfmpegGainEpsilonDb = 0.005;
+
+/// `-af` 里整体增益的那一段：`volume=-7.50dB`。null / 非有限 / ≈0 返回 null。纯函数。
+String? buildFfmpegVolumeFilter(double? gainDb) {
+  if (gainDb == null || !gainDb.isFinite) return null;
+  if (gainDb.abs() < kFfmpegGainEpsilonDb) return null;
+  return 'volume=${gainDb.toStringAsFixed(2)}dB';
 }
 
 /// ffprobe 参数：只读 [inputPath] 第 [audioStreamIndex] 条音轨（`a:N`）的声道布局与
@@ -1428,7 +1448,9 @@ Future<String?> extractVideoFrameViaFfmpeg({
   // BUG-2192：先裁再缩的 crop 滤镜段（`crop=…`），null = 不裁（既有调用方逐字不变）。
   String? cropFilter,
 }) async {
-  if (!_isRemoteFfmpegInput(inputPath) && !File(inputPath).existsSync()) {
+  // 原盘成员（蓝光分集 `00001.p03.mpls` 是虚拟路径）按背后的真实文件判在不在；
+  // ffmpeg 后端会把它改写成 concat 输入（BUG-5312）。
+  if (!_isRemoteFfmpegInput(inputPath) && !videoMemberExistsSync(inputPath)) {
     return null;
   }
   // BUG-2496：ffmpeg 不直写 outputPath。书架/更新中心在它写到一半时重建就会读到
@@ -2228,6 +2250,8 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   double? tempo,
   // 视频制卡只取多声道的中置声道 FC（见 [buildFfmpegClipArgs]）；false = 现状。
   bool frontCenterOnly = false,
+  // 片段整体增益（dB，见 [buildFfmpegClipArgs]）；null = 不调（现状）。
+  double? gainDb,
   // 句子级片段默认 120s 足够；整集音轨（远端对轴 / 重定时）由调用方按时长放大。
   Duration timeout = const Duration(seconds: 120),
 }) async {
@@ -2274,6 +2298,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
         httpHeaders: httpHeaders,
         tempo: tempo,
         frontCenterOnly: frontCenterOnly,
+        gainDb: gainDb,
       ),
       timeout,
     );

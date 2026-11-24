@@ -8,16 +8,54 @@ library;
 import 'package:fushi_engine/media/music/server/music_server.dart'
     show
         MusicServerBrowser,
+        MusicServerKind,
         MusicServerStream,
         MusicServerTrack,
-        musicServerAlbumUid,
-        musicServerTrackUid;
+        MusicServerTrackRef,
+        fushiHostMusicCoverPath,
+        fushiHostMusicTrackPath,
+        musicServerPlaybackAlbumUid,
+        musicServerPlaybackUid;
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
+    show MusicServerLoudness;
 
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 
-/// 一首服务器曲目 → 播放项。路径是 HTTP 流地址；源属性取服务器报的（转码时取转码后的：
+/// 一首服务器曲目在本机的离线副本（v175 `music_server_downloads`：下完的原文件）。
+/// [serverId] / [trackId] 是这首在服务器上的身份（行里存的服务器配置身份与条目 id，不含
+/// 凭据）：离线副本的播放项照样带 [MusicPlayItem.serverTrack]，播放上报、服务器歌词、
+/// 响度补查、生成字幕都认得出是哪首。[serverKind] 是那台服务器的协议家族（v176 行里存的；
+/// 这台设备上的配置删了也知道，播放上报 / 收藏据此记进离线队列）。[loudness] 是下载时一并
+/// 存下的服务器响度（离线时用）；[measuredLoudness] 是客户端对这份文件测的响度（服务器没给
+/// 响度时的后备，服务器的值永远优先）。
+typedef MusicServerLocalCopy = ({
+  String path,
+  String? coverPath,
+  String? codec,
+  String serverId,
+  String trackId,
+  MusicServerKind? serverKind,
+  MusicServerLoudness? loudness,
+  MusicServerLoudness? measuredLoudness,
+});
+
+/// 按播放身份（[musicServerTrackUid]）查离线副本；没有回 null。
+typedef MusicServerLocalCopyLookup =
+    MusicServerLocalCopy? Function(String trackUid);
+
+/// 进程级装配点：`AppModel` 建音乐会话时装上（`music_server_downloads.dart` 的进程内索引，
+/// 只认文件确实在的行）。未装配（测试 / 无头入口）时服务器曲目一律串流。
+MusicServerLocalCopyLookup? musicServerLocalCopyLookup;
+
+/// 一首服务器曲目 → 播放项。路径是 HTTP 流地址（带账号凭据，只活在内存里；落库只用
+/// [MusicPlayItem.serverTrack] 这份身份，BUG-5290）；响度取服务器给的
+/// （[MusicServerTrack.loudness]，没给时起播期按 [MusicPlayItem.serverTrack] 补查）；源属性取
+/// 服务器报的（转码时取转码后的：
 /// 信号路径面板据此不把转码流判 bit-perfect）。
+///
+/// 这首有离线副本（[musicServerLocalCopyLookup]）时路径是本机文件：不连服务器、不转码
+/// （码率上限只管串流），封面也优先用下好的那张——服务器离线照样能放、能显示。
 MusicPlayItem musicServerPlayItem(
   MusicServerBrowser browser,
   MusicServerTrack track, {
@@ -25,27 +63,121 @@ MusicPlayItem musicServerPlayItem(
   String? albumTitle,
   String? coverPath,
 }) {
+  // 互联 host 的 uid 就是 host 的 track_uid（design-imusic-q1），其余服务器按服务器 + 条目算。
+  final bool host = browser.kind == MusicServerKind.fushiHost;
+  final String uid = musicServerPlaybackUid(browser, track.id);
+  final MusicServerLocalCopy? local = musicServerLocalCopyLookup?.call(uid);
+  if (local != null) {
+    return musicServerLocalPlayItem(
+      uid,
+      local,
+      track,
+      albumUid: track.albumId == null
+          ? null
+          : musicServerPlaybackAlbumUid(browser, track.albumId!),
+      albumTitle: albumTitle,
+      fallbackCoverPath:
+          coverPath ?? browser.coverUri(track.coverRef)?.toString(),
+      kind: browser.kind,
+    );
+  }
   final MusicServerStream stream = browser.streamFor(
     track,
     maxBitrateKbps: maxBitrateKbps,
   );
+  // 互联 host：占位串直接拼（不经 Uri 往返，配对身份 / uid 原样保住），uid 就是 host 的
+  // track_uid（design-imusic-q1）。
+  final String? hostCover = host && track.coverRef != null
+      ? fushiHostMusicCoverPath(browser.serverId, track.coverRef!)
+      : null;
+  final MusicServerLoudness? loudness = track.loudness;
   return MusicPlayItem(
-    trackUid: musicServerTrackUid(browser.serverId, track.id),
-    path: stream.uri.toString(),
+    trackUid: uid,
+    path: host
+        ? fushiHostMusicTrackPath(browser.serverId, track.id)
+        : stream.uri.toString(),
     title: track.title,
     artist: track.artist,
     album: albumTitle ?? track.album,
     albumUid: track.albumId == null
         ? null
-        : musicServerAlbumUid(browser.serverId, track.albumId!),
+        : musicServerPlaybackAlbumUid(browser, track.albumId!),
     discNo: track.discNo,
     trackNo: track.trackNo,
     durationMs: track.durationMs,
-    coverPath: coverPath ?? browser.coverUri(track.coverRef)?.toString(),
+    coverPath:
+        coverPath ?? hostCover ?? browser.coverUri(track.coverRef)?.toString(),
     codec: stream.transcoded ? stream.codec : (track.codec ?? track.container),
     sampleRate: stream.transcoded ? null : track.sampleRate,
     bitDepth: stream.transcoded ? null : track.bitDepth,
     channels: track.channels,
+    rgTrackGain: loudness?.trackGainDb,
+    rgTrackPeak: loudness?.trackPeak,
+    rgAlbumGain: loudness?.albumGainDb,
+    rgAlbumPeak: loudness?.albumPeak,
+    // 互联 host 曲目不带服务器身份：播放上报 / 收藏 / 离线补发是 Jellyfin / Subsonic 的协议，
+    // host 那边没有对应接口，带上会被当成「连不上的服务器」永远排进补发队列。
+    serverTrack: host
+        ? null
+        : MusicServerTrackRef(
+            kind: browser.kind,
+            serverId: browser.serverId,
+            trackId: track.id,
+            albumId: track.albumId,
+            coverRef: track.coverRef,
+          ),
     isPreview: stream.isPreview,
+  );
+}
+
+/// 有离线副本的服务器曲目 → 播放项（不需要服务器配置：曲库里的这首在服务器删了 / 离线时
+/// 也能放）。uid 与串流时一致；封面优先本机那张，没有才用 [fallbackCoverPath]。
+///
+/// 播放项**总是**带 [MusicPlayItem.serverTrack]（播放上报 / 收藏 / 响度补查 / 生成字幕要找回
+/// 那台服务器；服务器连不上或配置删了时上报与收藏记进离线队列）：协议家族取 [kind]（调用方
+/// 手里有配着的客户端时给）或副本行里存的 [MusicServerLocalCopy.serverKind]；两者都没有
+/// （v176 之前、前缀也认不出的行）才不带。响度取列表接口当场给的
+/// （[MusicServerTrack.loudness]），没有时用下载时存下的服务器那份——客户端测的值不进播放项的
+/// `rg*`，由起播期的响度补查在服务器也没有时才用（服务器的值永远优先）。
+MusicPlayItem musicServerLocalPlayItem(
+  String trackUid,
+  MusicServerLocalCopy local,
+  MusicServerTrack track, {
+  String? albumUid,
+  String? albumTitle,
+  String? fallbackCoverPath,
+  MusicServerKind? kind,
+}) {
+  final MusicServerLoudness? loudness = track.loudness ?? local.loudness;
+  final MusicServerKind? serverKind = kind ?? local.serverKind;
+  return MusicPlayItem(
+    trackUid: trackUid,
+    path: local.path,
+    title: track.title,
+    artist: track.artist,
+    album: albumTitle ?? track.album,
+    albumUid: albumUid,
+    discNo: track.discNo,
+    trackNo: track.trackNo,
+    durationMs: track.durationMs,
+    coverPath: local.coverPath ?? fallbackCoverPath,
+    codec: local.codec ?? track.codec ?? track.container,
+    sampleRate: track.sampleRate,
+    bitDepth: track.bitDepth,
+    channels: track.channels,
+    rgTrackGain: loudness?.trackGainDb,
+    rgTrackPeak: loudness?.trackPeak,
+    rgAlbumGain: loudness?.albumGainDb,
+    rgAlbumPeak: loudness?.albumPeak,
+    // 互联 host 曲目的副本同样不带服务器身份（见 [musicServerPlayItem]）。
+    serverTrack: serverKind == null || serverKind == MusicServerKind.fushiHost
+        ? null
+        : MusicServerTrackRef(
+            kind: serverKind,
+            serverId: local.serverId,
+            trackId: local.trackId,
+            albumId: track.albumId,
+            coverRef: track.coverRef,
+          ),
   );
 }

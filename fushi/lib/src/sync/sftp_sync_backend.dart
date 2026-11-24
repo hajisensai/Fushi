@@ -619,6 +619,10 @@ class SftpSyncBackend extends SyncBackend
       } on SyncAssetRangeNotSatisfiable {
         // 区间读的契约结论（起点越过文件尾），不是传输故障：连接照用、原样交出。
         rethrow;
+      } on SyncAssetTooLarge {
+        // 读取上限的契约结论（远端文件过大），同上：不是传输故障，也不能被
+        // [getBytesAsset] 当成「不存在」吞成 null。
+        rethrow;
       } on SftpStatusError catch (e) {
         // Per-file failure; the connection is still usable, so keep it.
         throw SyncBackendError('SFTP error: $e', isRetryable: true);
@@ -690,11 +694,19 @@ class SftpSyncBackend extends SyncBackend
   Future<dynamic> _downloadJson(String fileId) async =>
       jsonDecode(utf8.decode(await _downloadBytes(fileId)));
 
+  /// 整份读 [fileId]，受 [kSyncBytesAssetMaxBytes] 上限约束（HBK-AUDIT-223）：
+  /// `handle.readBytes()` 会按 stat 的大小整份收进内存，这里先看大小、超了就
+  /// 一个字节都不读。
   Future<Uint8List> _downloadBytes(String fileId) => _guarded(() async {
     final sftp = await _ensureConnected();
     final handle = await sftp.open(fileId, mode: SftpFileOpenMode.read);
     try {
-      return await handle.readBytes();
+      final int? size = (await handle.stat()).size;
+      return await readSyncAssetBytesCapped(
+        handle.read(length: size),
+        assetId: fileId,
+        declaredLength: size,
+      );
     } finally {
       await handle.close();
     }

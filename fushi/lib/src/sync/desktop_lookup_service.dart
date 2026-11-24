@@ -5,6 +5,8 @@ import 'package:characters/characters.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:fushi/src/lookup/advanced_mining_handoff.dart';
+import 'package:fushi/src/lookup/captured_context_sentences.dart';
 import 'package:fushi/src/platform/desktop/linux_window_activation_channel.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/utils/misc/ruby_markup.dart';
@@ -13,11 +15,24 @@ import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/platform/host_platform.dart';
 
 class DesktopLookupRequest {
-  const DesktopLookupRequest({required this.text});
+  const DesktopLookupRequest({
+    required this.text,
+    this.capturedContext,
+    this.advancedMining,
+  });
 
   /// 纯基准文本：注音标记已在 [DesktopLookupService.triggerLookup] 剥掉
   /// （主窗词典页只显示 / 查询基准文本，不渲染注音）。
   final String text;
+
+  /// 应用外热键查词「抓取上下文」切出的当前句与前后句（拍板台 rf--UcsGta）：
+  /// 查词页结果区的例句与高级制卡句子分区读它。其它来源（深链 / 扩展 / 悬浮字幕）
+  /// 为 null。
+  final CapturedSentenceContext? capturedContext;
+
+  /// 应用外查词覆盖窗点「高级制卡」转交过来的词条（拍板台 rf--UcsGta-overlay）：
+  /// 查词页渲染完这次结果后为它打开高级制卡对话框。其它来源为 null。
+  final AdvancedMiningHandoff? advancedMining;
 }
 
 /// 桌面显式查词排队器。单例 ChangeNotifier。
@@ -45,7 +60,11 @@ class DesktopLookupService extends ChangeNotifier {
   /// 注意：本方法只负责**排队**待查词（设 [pendingText] + 通知）；唤前台、切到查词
   /// tab、实际搜索都由消费侧（[bringPendingLookupToFront] + HomeDictionaryPage
   /// 挂载消费）负责。返回是否真的排进了一次查词（剥注音 / 截断后为空则不排）。
-  bool triggerLookup(String text) {
+  bool triggerLookup(
+    String text, {
+    CapturedSentenceContext? capturedContext,
+    AdvancedMiningHandoff? advancedMining,
+  }) {
     // 注音标记在这里剥（悬浮字幕行可能带 `<rふる>震</r>` 标记），且必须**先于**
     // 下面的截断：先截断会把标记拦腰切断，解析器认不出就只能把半截标记当正文留下。
     final String base = parseRubyMarkup(text).text;
@@ -53,7 +72,11 @@ class DesktopLookupService extends ChangeNotifier {
     // 字素簇），避免超长串一路流到逐字渲染的 SourceLookupTextPanel 把主 isolate 撑爆。
     final String trimmed = _capLookupInput(base).trim();
     if (trimmed.isEmpty) return false;
-    _pendingRequest = DesktopLookupRequest(text: trimmed);
+    _pendingRequest = DesktopLookupRequest(
+      text: trimmed,
+      capturedContext: capturedContext,
+      advancedMining: advancedMining,
+    );
     notifyListeners();
     return true;
   }

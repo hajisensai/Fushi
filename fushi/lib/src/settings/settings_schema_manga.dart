@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
 import 'package:fushi/src/media/manga/manga_panel_model_settings.dart';
@@ -202,6 +203,23 @@ SettingsSection _mangaPagingSection() {
             c.appModel.setMangaPageTurnFollowDrag(value),
         defaultValue: kMangaPageTurnFollowDragDefault,
       ),
+      // 滑动翻页灵敏度（R721ZgWVSB 选 b：漫画单独一个偏好）：值越大越灵敏，缩放跟手与
+      // 不跟手两组提交阈值（manga_swipe_thresholds.dart），值域 / 语义照小说同名设置。
+      SettingsSliderItem(
+        id: 'manga.swipe_page_turn_sensitivity',
+        titleReadout: true,
+        title: t.swipe_page_turn_sensitivity,
+        icon: FushiIcons.swipe,
+        min: kMangaSwipePageTurnSensitivityMin,
+        max: kMangaSwipePageTurnSensitivityMax,
+        divisions: 25,
+        commitOnRelease: true,
+        value: (SettingsContext c) => c.appModel.mangaSwipePageTurnSensitivity,
+        label: (double value) => value.toStringAsFixed(1),
+        onChanged: (SettingsContext c, double value) =>
+            c.appModel.setMangaSwipePageTurnSensitivity(value),
+        defaultValue: kMangaSwipePageTurnSensitivityDefault,
+      ),
       SettingsSwitchItem(
         id: 'manga.tap_zone_paging',
         title: t.manga_tap_zone_paging,
@@ -265,6 +283,18 @@ SettingsSection _mangaPagingSection() {
         onChanged: (SettingsContext c, String value) =>
             c.appModel.setMangaResumeTarget(value),
         defaultValue: kMangaResumeTargetDefault,
+      ),
+      // 反转键盘左右键翻页方向：漫画自己的一份，与小说「阅读控制」里的同名开关分开
+      // （维护者 2026-11-23 拍板，反馈 uz_2m0E_Eu ④）。只管键盘，手柄十字键不受影响。
+      SettingsSwitchItem(
+        id: 'manga.reverse_arrow_page_turn',
+        title: t.manga_reverse_arrow_page_turn,
+        subtitle: t.manga_reverse_arrow_page_turn_subtitle,
+        icon: FushiIcons.swap,
+        value: (SettingsContext c) => c.appModel.mangaReverseArrowPageTurn,
+        onChanged: (SettingsContext c, bool value) =>
+            c.appModel.setMangaReverseArrowPageTurn(value),
+        defaultValue: false,
       ),
       // 音量键只有 Android 侧 `MainActivity.dispatchKeyEvent` 会拦截并转发
       // （见 VolumeKeyChannel），iOS 与桌面端均没有实现，故只在 Android 显示。

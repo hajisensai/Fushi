@@ -15,7 +15,9 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 /// - 鼠标右键仍走 `onMangaContextMenu`，鼠标左键按住不触发长按；
 /// - 翻页动画克隆层（无 data-page）与加载失败页不触发；
 /// - 长按 / 右键落在 OCR 文本块上时带上该块的句子分组号 `group`（Dart 据此
-///   给出「复制文字」，反馈 hjUlprxxKI），别页的块不算。
+///   给出「复制文字」，反馈 hjUlprxxKI），别页的块不算；
+/// - 中键 / 侧键按下带同一份落点回传 `onMangaPointerSeek`（Dart 按绑定判「跳到
+///   点击句」，反馈 RCsvzByem-），左键 / 右键不走这条路。
 void main() {
   String buildDocument({bool enableMouseTextSelection = false}) =>
       mangaWindowDocument(
@@ -88,7 +90,7 @@ function setTimeout(f){ timers.push(f); return timers.length; }
 function clearTimeout(id){ if(id>0) timers[id-1]=null; }
 function elapse(){ const t=timers; timers=[]; t.forEach(f=>f&&f()); }
 let calls=[], ends=[], released=[];
-function _bridge(){ return {callHandler:(n,d)=>{ calls.push(n+':'+d); }}; }
+function _bridge(){ return {callHandler:(n,...a)=>{ calls.push([n].concat(a).join(':')); }}; }
 function _pinchGeom(){
   const ids=Object.keys(touchPts); if(ids.length<2) return null;
   const a=touchPts[ids[0]], b=touchPts[ids[1]];
@@ -324,6 +326,26 @@ assert.equal(mouseOcrSelectionEnabled,false);
 assert.equal(mouseOcrSelection,null);
 ev('pointerup',{pointerType:'mouse',target:ocrCharTarget});
 assert.equal(ends.length,1);
+'''),
+    );
+  });
+
+  test('中键 / 侧键：带落点回传 onMangaPointerSeek，左键 / 右键不走', () async {
+    await runJs(
+      harness('''
+ocrBox={page:3,group:1};
+let prevented=0;
+ev('mousedown',{pointerType:'mouse',button:1,clientX:100,clientY:400,
+  preventDefault(){ prevented++; }});
+assert.deepEqual(calls,['onMangaPointerSeek:1:{"page":3,"group":1}']);
+assert.equal(prevented,1,'压掉中键自动滚动');
+calls=[];
+ev('mousedown',{pointerType:'mouse',button:0});
+ev('mousedown',{pointerType:'mouse',button:2});
+assert.deepEqual(calls,[],'左键查词 / 右键菜单各有自己的路');
+ocrBox=null;
+ev('mousedown',{pointerType:'mouse',button:3,clientX:300,clientY:400});
+assert.deepEqual(calls,['onMangaPointerSeek:3:{"page":2}'],'没点中气泡也回传，由 Dart 判');
 '''),
     );
   });

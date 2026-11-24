@@ -911,6 +911,138 @@ class _RenderPosterRows extends RenderBox
       defaultHitTestChildren(result, position: position);
 }
 
+/// [HomePosterRows] 里色块内容的竖排：同一行被拉到行高时，多出来的高度插在第
+/// [split] 个子节点前面——前面的贴顶、从第 [split] 个起贴底，内容自然高度够了就是
+/// 普通的 `Column(spacing: gap)`。
+///
+/// [HomePosterRows] 两遍量高都不封顶（只抬 minHeight），`Column` 的 [Spacer] /
+/// [Expanded] 在不封顶的高度里用不了，所以单独写成按 minHeight 分配的竖排。
+class HomePosterSpread extends MultiChildRenderObjectWidget {
+  const HomePosterSpread({
+    super.key,
+    required super.children,
+    required this.split,
+    this.gap = 12,
+  });
+
+  /// 从这个下标起的子节点贴底；≥ 子节点数时全部贴顶（等同普通竖排）。
+  final int split;
+  final double gap;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderPosterSpread(split: split, gap: gap);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderPosterSpread renderObject,
+  ) {
+    renderObject
+      ..split = split
+      ..gap = gap;
+  }
+}
+
+class _PosterSpreadParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderPosterSpread extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _PosterSpreadParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _PosterSpreadParentData> {
+  _RenderPosterSpread({required int split, required double gap})
+    : _split = split,
+      _gap = gap;
+
+  int _split;
+  set split(int v) {
+    if (v == _split) return;
+    _split = v;
+    markNeedsLayout();
+  }
+
+  double _gap;
+  set gap(double v) {
+    if (v == _gap) return;
+    _gap = v;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _PosterSpreadParentData) {
+      child.parentData = _PosterSpreadParentData();
+    }
+  }
+
+  List<RenderBox> get _kids {
+    final List<RenderBox> kids = <RenderBox>[];
+    RenderBox? child = firstChild;
+    while (child != null) {
+      kids.add(child);
+      child = childAfter(child);
+    }
+    return kids;
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      _sumHeights((RenderBox k) => k.getMinIntrinsicHeight(width));
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      _sumHeights((RenderBox k) => k.getMaxIntrinsicHeight(width));
+
+  double _sumHeights(double Function(RenderBox kid) of) {
+    final List<RenderBox> kids = _kids;
+    if (kids.isEmpty) return 0;
+    return kids.fold<double>(0, (double a, RenderBox k) => a + of(k)) +
+        _gap * (kids.length - 1);
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) => _kids.fold<double>(
+    0,
+    (double a, RenderBox k) => math.max(a, k.getMinIntrinsicWidth(height)),
+  );
+
+  @override
+  double computeMaxIntrinsicWidth(double height) => _kids.fold<double>(
+    0,
+    (double a, RenderBox k) => math.max(a, k.getMaxIntrinsicWidth(height)),
+  );
+
+  @override
+  void performLayout() {
+    final List<RenderBox> kids = _kids;
+    final double width = constraints.maxWidth;
+    final BoxConstraints each = BoxConstraints.tightFor(width: width);
+    double natural = 0;
+    for (final RenderBox kid in kids) {
+      kid.layout(each, parentUsesSize: true);
+      natural += kid.size.height;
+    }
+    if (kids.isNotEmpty) natural += _gap * (kids.length - 1);
+    final Size own = constraints.constrain(Size(width, natural));
+    final double extra = math.max(0, own.height - natural);
+    double y = 0;
+    for (int i = 0; i < kids.length; i++) {
+      if (i == _split) y += extra;
+      (kids[i].parentData! as _PosterSpreadParentData).offset = Offset(0, y);
+      y += kids[i].size.height + _gap;
+    }
+    size = own;
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+}
+
 /// 「今日」面板宽屏时的近 7 天柱条（2026-10-31 方案 A 补齐「今日」）：每天一根，
 /// 高度按 7 天里的最大值归一，今天用强调色、其余用浅一档；悬停提示是当天字数。
 /// 全为 0 时柱条贴底一线（不画空白）。
@@ -1198,7 +1330,7 @@ class _HomeTodayGoalPagerState extends State<HomeTodayGoalPager> {
         final bool side = box.maxHeight < _kGoalPagerSideDotsBelow;
         final List<Widget> dots = <Widget>[
           for (int i = 0; i < widget.count; i++)
-            Tooltip(
+            FushiTooltip(
               message: widget.dotLabel(i),
               child: Semantics(
                 button: true,
@@ -1218,11 +1350,12 @@ class _HomeTodayGoalPagerState extends State<HomeTodayGoalPager> {
                         curve: FushiMotion.enter,
                         width: side ? 6 : (i == _page ? 14 : 6),
                         height: side ? (i == _page ? 10 : 6) : 6,
-                        decoration: BoxDecoration(
+                        // 胶囊点：短边恒为 6，StadiumBorder 即半径 3 的圆端。
+                        decoration: ShapeDecoration(
                           color: widget.dotColor.withValues(
                             alpha: i == _page ? 1 : 0.35,
                           ),
-                          borderRadius: BorderRadius.circular(3),
+                          shape: const StadiumBorder(),
                         ),
                       ),
                     ),

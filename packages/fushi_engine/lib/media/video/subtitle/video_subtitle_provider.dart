@@ -204,6 +204,16 @@ abstract interface class VideoSubtitleProvider {
   void close();
 }
 
+/// 可选能力：提前把到来源服务器的连接建好（TCP + TLS），不发计配额的请求。
+///
+/// 交互式查字幕时，首个请求的大头是握手而不是请求本身（jimaku.cc 实测：冷连接
+/// 首请求 ~0.9 s，复用连接 ~0.25 s）。打开查字幕面板、或面板先去问 AniList 时
+/// 并行预热，正式请求就能落在已建好的连接上。失败只留诊断、不抛——预热落空时
+/// 正式请求照常自己建连，行为与不预热完全一样。
+abstract interface class VideoSubtitleConnectionWarmup {
+  Future<void> warmUpConnection();
+}
+
 List<VideoSubtitleCandidate> deduplicateVideoSubtitles(
   Iterable<VideoSubtitleCandidate> candidates,
 ) {

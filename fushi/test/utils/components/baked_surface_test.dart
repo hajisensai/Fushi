@@ -493,4 +493,63 @@ void main() {
       reason: '嵌套 boundary 重绘不会通知到本节点，烘焙了就会过时',
     );
   });
+
+  // BUG-5197（视频合集滚动卡顿）：滚轮连拨时根部补间每档先 `jumpTo` 回当前补间
+  // 位置、下一拍才起新动画，于是每档都有一帧位置与上一帧完全相同。旧逻辑把它当成
+  // 停稳，整屏的面在亚像素位置上逐个离屏重烘（一次滚动上千次 toImageSync）。
+  // 滚动区还在滚就不烘焙；滚动结束、停稳一帧后再烘。
+  testWidgets('no bakes while an ancestor scrollable is scrolling', (
+    WidgetTester tester,
+  ) async {
+    final ScrollController controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: ListView.builder(
+          controller: controller,
+          itemExtent: 100,
+          itemCount: 200,
+          itemBuilder: (BuildContext context, int i) =>
+              BakedSurface(child: content(Colors.primaries[i % 18])),
+        ),
+      ),
+    );
+    await settleBake(tester);
+    final int before = RenderBakedSurface.debugBakeCount;
+    expect(before, greaterThan(0), reason: '静止时照常烘焙');
+
+    // 模拟 SmoothWheelScrollScope 的连拨：每档 jumpTo 当前位置 + animateTo 新目标，
+    // 每档之间 pump 若干帧（含「位置与上一帧相同」的那一帧）。
+    double target = 0;
+    for (int notch = 0; notch < 6; notch++) {
+      target += 137.3;
+      controller.jumpTo(controller.offset);
+      controller.animateTo(
+        target,
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
+      );
+      for (int f = 0; f < 6; f++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+    }
+    expect(
+      RenderBakedSurface.debugBakeCount,
+      before,
+      reason: '滚动途中位置一直在变，不该离屏烘焙',
+    );
+
+    await tester.pumpAndSettle();
+    await settleBake(tester);
+    expect(
+      RenderBakedSurface.debugBakeCount,
+      greaterThan(before),
+      reason: '滚动停下后新露出的面照常烘焙',
+    );
+    final RenderBakedSurface visible = tester.renderObject<RenderBakedSurface>(
+      find.byType(BakedSurface).first,
+    );
+    expect(visible.debugIsBaked, isTrue);
+  });
 }

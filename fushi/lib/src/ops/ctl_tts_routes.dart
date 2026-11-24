@@ -7,7 +7,8 @@
 ///   角色、单句换种子重生成（并保留）、按角色批量重生成（排进制作队列）、按句换上本地
 ///   音频（可只预检）、发起 / 取消整卷生成（全应用唯一的制作队列）、导入外部做好的成品
 ///   清单（`manifest.json`，与漫画卡「导入漫画有声」同一套校验与登记）。批量两项的本体
-///   与撤销在 `ctl_tts_batch.dart`。
+///   与撤销在 `ctl_tts_batch.dart`；有声漫画导出包的导出 / 导入在
+///   `ctl_tts_package_routes.dart`。
 ///
 /// 本卷标注在跑时改演出稿、重生成、发起生成一律 409（复核页同样锁住编辑）。业务与
 /// 快照逻辑在 `ctl_tts_support.dart`，路由只做参数与门。
@@ -28,7 +29,10 @@ import 'package:fushi/src/media/manga/audio/manga_audio_annotate_tasks.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_library.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_render_service.dart';
 import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_volume_busy.dart'
+    show MangaVolumeBusyException;
 import 'package:fushi/src/ops/ctl_tts_batch.dart';
+import 'package:fushi/src/ops/ctl_tts_package_routes.dart';
 import 'package:fushi/src/ops/ctl_tts_support.dart';
 import 'package:fushi/src/ops/op_context.dart';
 
@@ -57,6 +61,7 @@ List<CtlRoute> buildTtsCtlRoutesFor(TtsCtlDeps deps) {
     CtlRoute.post('$item/render', h.render),
     CtlRoute.post('$item/render/cancel', h.cancelRender),
     CtlRoute.post('$item/import', h.importManifest),
+    ...buildTtsPackageCtlRoutes(deps),
   ];
 }
 
@@ -70,9 +75,12 @@ class _TtsHandlers {
     return ttsMangaBookKey(_deps, call.params['key'] ?? '');
   }
 
+  /// 写操作的卷：可写、且没有导出包的导入正占着它（所有写入口都经这里，导入落库时
+  /// 标注 / 生成 / 改演出稿 / 换成品一律 409）。
   Future<String> _writableBookKey(CtlCall call) async {
     final String bookKey = await _bookKey(call);
     requireTtsWritable(_deps);
+    requireNotImportingPackage(_deps, bookKey);
     return bookKey;
   }
 
@@ -96,7 +104,7 @@ class _TtsHandlers {
     final String bookKey = await _bookKey(call);
     final MangaAudioVolume volume = await loadTtsMangaVolume(_deps, bookKey);
     final MangaRenderManifest? manifest = await MangaRenderManifest.load(
-      mangaRenderManifestFile(_deps.appModel, bookKey),
+      (await mangaAudioEditTarget(_deps.appModel, bookKey)).manifestFile,
     );
     return ttsMangaScriptSummary(volume, rendered: manifest != null);
   }
@@ -168,6 +176,8 @@ class _TtsHandlers {
       );
     } on MangaAnnotateBusy {
       throw const CtlFailure.conflict('这一卷正在标注');
+    } on MangaVolumeBusyException {
+      throw const CtlFailure.conflict('这一卷正在导入有声漫画包，等它结束（tts package-task）');
     }
     watchMangaAnnotateResult(_deps, task);
     return <String, Object?>{
@@ -243,12 +253,16 @@ class _TtsHandlers {
     };
   }
 
-  /// 单句换种子重生成并保留（`seed` 不给 = 随机）。这一句要已经生成过。
+  /// 单句换种子重生成并保留（`seed` 不给 = 随机）。这一句要已经生成过；登记的是外部
+  /// 导入的清单时原地改写它。
   Future<Object?> regenerate(CtlCall call) async {
     final String bookKey = await _writableBookKey(call);
     requireNotAnnotating(_deps, bookKey);
     requireNotRendering(_deps, bookKey);
-    await requireAppRenderedAudio(_deps, bookKey);
+    final MangaAudioEditTarget target = await requireLineEditableAudio(
+      _deps,
+      bookKey,
+    );
     final MangaAudioVolume volume = await loadTtsMangaVolume(_deps, bookKey);
     final String? blocker = mangaRenderBlocker(volume);
     if (blocker == 'manga_script_stale') {
@@ -257,13 +271,14 @@ class _TtsHandlers {
     return regenerateAndKeepMangaLine(
       _deps,
       volume,
+      target: target,
       lineId: call.params['line'] ?? '',
       seed: call.optInt('seed'),
     );
   }
 
   /// 按句换上本地音频：`files`（行 ID → 音频绝对路径）或 `mapping`（这样一个 JSON 文件的
-  /// 绝对路径），`dryRun` 只预检、返回逐句结果。只改本机生成的成品。
+  /// 绝对路径），`dryRun` 只预检、返回逐句结果。登记的是外部导入的清单时原地改写它。
   Future<Object?> replaceLines(CtlCall call) async {
     final bool dryRun = call.optBool('dryRun') ?? false;
     final String bookKey = dryRun
@@ -271,7 +286,10 @@ class _TtsHandlers {
         : await _writableBookKey(call);
     requireNotAnnotating(_deps, bookKey);
     requireNotRendering(_deps, bookKey);
-    await requireAppRenderedAudio(_deps, bookKey);
+    final MangaAudioEditTarget target = await requireLineEditableAudio(
+      _deps,
+      bookKey,
+    );
     final Map<String, String> files = await mangaReplaceFilesOf(call.body);
     final MangaAudioVolume volume = await loadTtsMangaVolume(_deps, bookKey);
     if (mangaRenderBlocker(volume) == 'manga_script_stale') {
@@ -280,6 +298,7 @@ class _TtsHandlers {
     return replaceMangaLinesWithLocalAudio(
       _deps,
       volume,
+      target: target,
       files: files,
       dryRun: dryRun,
     );
@@ -294,7 +313,10 @@ class _TtsHandlers {
         : await _writableBookKey(call);
     requireNotAnnotating(_deps, bookKey);
     requireNotRendering(_deps, bookKey);
-    await requireAppRenderedAudio(_deps, bookKey);
+    final MangaAudioEditTarget target = await requireLineEditableAudio(
+      _deps,
+      bookKey,
+    );
     final String? kindRaw = call.optString('kind');
     final CastLineKind? kind = kindRaw == null
         ? null
@@ -311,6 +333,7 @@ class _TtsHandlers {
     return regenerateMangaCharacterLines(
       _deps,
       volume,
+      target: target,
       name: name,
       kind: kind,
       dryRun: dryRun,
@@ -343,12 +366,17 @@ class _TtsHandlers {
     final TtsRenderQueue queue = _deps.renderQueue();
     final TtsRenderJob? before = queue.latestFor(bookKey);
     final bool pending = before != null && !before.isTerminal;
-    final TtsRenderJob job = await queue.enqueue(
-      bookKey: bookKey,
-      title: volume.row.title.isEmpty ? bookKey : volume.row.title,
-      presetId: voice,
-      kind: TtsRenderJobKind.manga,
-    );
+    final TtsRenderJob job;
+    try {
+      job = await queue.enqueue(
+        bookKey: bookKey,
+        title: volume.row.title.isEmpty ? bookKey : volume.row.title,
+        presetId: voice,
+        kind: TtsRenderJobKind.manga,
+      );
+    } on TtsRenderRejected {
+      throw const CtlFailure.conflict('这一卷正在导入有声漫画包，等它结束（tts package-task）');
+    }
     return <String, Object?>{
       'taskId': ttsMangaWireKey(bookKey),
       if (pending) 'alreadyQueued': true,
@@ -373,7 +401,8 @@ class _TtsHandlers {
   /// 导入外部做好的成品清单（`manifest`：`manifest.json` 的绝对路径）：与漫画卡「导入
   /// 漫画有声」同一套校验（结构、页数与 OCR 签名与本卷一致、音频都在）与登记。没过校验
   /// 422（`code` 说明原因，消息带页数 / 缺失文件）；这一卷已有登记的有声成品时要
-  /// `confirm=true` 才替换（否则 409 `manga_audio_exists`）。只登记、不复制或删除音频。
+  /// `confirm=true` 才替换（否则 409 `manga_audio_exists`）。之后的单句重生成 / 换本地
+  /// 音频 / 按角色重生成原地改写这份清单与它旁边的音频（拍板 isATnQZ_eN-external）。
   Future<Object?> importManifest(CtlCall call) async {
     final String bookKey = await _writableBookKey(call);
     requireNotRendering(_deps, bookKey);

@@ -30,10 +30,16 @@ abstract interface class MangaAudioPlayerPort implements Listenable {
   int get positionMs;
   bool get isPlaying;
   double get speed;
+
+  /// 音量（0.0–2.0，1.0 = 100%）。
+  double get volume;
   Future<void> play();
   Future<void> pause();
   Future<void> seekMs(int ms);
   Future<void> setSpeed(double speed);
+
+  /// 改音量（生产端按书持久化，与有声书同一个按书音量）。
+  Future<void> setVolume(double volume);
 }
 
 class MangaAudioPlaybackDriver extends ChangeNotifier
@@ -92,6 +98,7 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
   int get positionMs => _seekTarget ?? _player.positionMs;
   int get totalMs => plan.totalMs;
   double get speed => _player.speed;
+  double get volume => _player.volume;
 
   /// 正在播（或停在）的条目。
   MangaAudioItem? get currentItem =>
@@ -101,6 +108,14 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
   MangaRenderedLine? get currentLine {
     final MangaAudioItem? item = currentItem;
     return item == null || !item.isLine ? null : manifest.lines[item.lineIndex];
+  }
+
+  /// 阅读器此刻框着的那句（[MangaRenderManifest.lines] 下标）：句间停顿 / 页首 lead /
+  /// 页尾补齐里仍是本页那句，口径同显示（[MangaAudioPlaybackPlan.currentLineItemIndex]）。
+  /// 整页无台词（页停留）为 null。「导出片段视频」导出的就是这一句。
+  int? get displayedLineIndex {
+    final int index = _item >= 0 ? _item : plan.itemIndexAt(positionMs);
+    return _displayLineAt(index);
   }
 
   /// 正在播的页（页段语义）。
@@ -210,6 +225,11 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
     if (!_disposed) notifyListeners();
   }
 
+  Future<void> setVolume(double value) async {
+    await _player.setVolume(value);
+    if (!_disposed) notifyListeners();
+  }
+
   @override
   bool skipLine(int delta) {
     unawaited(delta > 0 ? next() : previous());
@@ -266,27 +286,11 @@ class MangaAudioPlaybackDriver extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 第 [index] 个条目上要框的句子（[MangaRenderManifest.lines] 下标）。
-  ///
-  /// 句子条目就是它自己。静音条目不清高亮：句间停顿 / 页尾补齐框本页刚读完的那句，
-  /// 页首 `lead` 框本页马上要读的第一句——用户翻页落到页段起点、进书续播落在句间、
-  /// 暂停停在这些静音里时，高亮都还在（反馈 WrLFAXNkSw：此前一律清空，暂停时位置
-  /// 不再变，高亮就一直不回来）。整页没有台词（页停留）才为 null。
+  /// 第 [index] 个条目上要框的句子（[MangaRenderManifest.lines] 下标），口径见
+  /// [MangaAudioPlaybackPlan.currentLineItemIndex]（与「上一句」的参照句同源）。
   int? _displayLineAt(int index) {
-    final List<MangaAudioItem> items = plan.items;
-    final MangaAudioItem item = items[index];
-    if (item.isLine) return item.lineIndex;
-    for (int i = index - 1; i >= 0 && items[i].page == item.page; i--) {
-      if (items[i].isLine) return items[i].lineIndex;
-    }
-    for (
-      int i = index + 1;
-      i < items.length && items[i].page == item.page;
-      i++
-    ) {
-      if (items[i].isLine) return items[i].lineIndex;
-    }
-    return null;
+    final int? item = plan.currentLineItemIndex(index);
+    return item == null ? null : plan.items[item].lineIndex;
   }
 
   void _show(MangaAudioItem item) {

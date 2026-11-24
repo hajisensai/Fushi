@@ -6,6 +6,9 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// Mihon / Aniyomi 扩展 ABI 守卫：minSdk 下限 + release dex 里扩展可见签名不得带 j$/（见文件头）。
+apply from: "extension_abi_guard.gradle"
+
 def mihonSourceApiCommit = "fdb223d657cc60b2d7145c81b7ff690b8010d7aa"
 def mihonSourceArchiveSha256 = "645e84b2a9abbe0196057d6ba9e752abd6876b7e93bd8bee8a6cbcfe8abb154c"
 def mihonSourceArchive = layout.buildDirectory.file("downloads/mihon-${mihonSourceApiCommit}.zip")
@@ -178,13 +181,12 @@ android {
         targetCompatibility JavaVersion.VERSION_17
         // v101 统一更新提醒引入 flutter_local_notifications：它自 v10 起用 java.time
         // 做定时通知的向后兼容，**即使只发即时通知也必须开 desugaring**（插件 README
-        // 明写）。不开则 Android 构建在 dex 阶段直接失败。
+        // 明写）。不开则 Android 构建在 dex 阶段直接失败（插件 AAR 元数据声明了 desugaring，
+        // checkAarMetadata 强制宿主同开），所以 minSdk 26 下也不能去掉。
+        // minSdk 必须 ≥ 26：低于 26 时 java.time 会被改写成 j$.time，宿主 dex 里 kotlin-stdlib 的
+        // toJavaInstant 等签名跟着变，独立编译的 Mihon / Aniyomi 扩展 NoSuchMethodError
+        // （拍板台 design-mihon-desugar-abi；守卫见 extension_abi_guard.gradle）。
         coreLibraryDesugaringEnabled true
-    }
-
-    kotlinOptions {
-        jvmTarget = '17'
-        freeCompilerArgs += ['-Xcontext-parameters']
     }
 
     sourceSets {
@@ -226,7 +228,8 @@ android {
 
     defaultConfig {
         applicationId "app.fushi.reader"
-        minSdkVersion 24
+        // 26 = Android 8.0。别降：见 compileOptions 与 extension_abi_guard.gradle（扩展 ABI）。
+        minSdkVersion 26
         targetSdk 35
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
@@ -276,7 +279,7 @@ android {
                 storeFile file("${rootProject.projectDir}/${keystoreProperties['storeFile']}")
                 storePassword keystoreProperties['storePassword']
             }
-            // minSdk 24 时 AGP 默认只签 v2（3.0.0 的 APK 实测 v1=false）。华为 HarmonyOS 4.x
+            // minSdk ≥ 24 时 AGP 默认只签 v2（3.0.0 的 APK 实测 v1=false）。华为 HarmonyOS 4.x
             // 安装器 / 安全检测会因没有 JAR（v1）签名报「无证书」并拒装或标可疑（反馈 j3ChbSpKgJ），
             // 显式补上 v1，并同时签 v3 便于日后密钥轮换。
             // 注意：AGP 在 minSdk ≥ 24 时**无视** enableV1Signing（tools/base 84863c5
@@ -298,16 +301,20 @@ android {
         }
     }
 
-    packagingOptions {
-        pickFirst 'lib/**/libc++_shared.so'
-        pickFirst 'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
+    packaging {
+        jniLibs {
+            pickFirsts += ['lib/**/libc++_shared.so']
+        }
+        resources {
+            pickFirsts += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF']
+        }
     }
 
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             def appName = "fushi"
             def buildType = variant.buildType.name
-            def architecture = output.getFilter(com.android.build.OutputFile.ABI)
+            def architecture = output.getFilter('ABI')
             def newName
 
             if ("${architecture}" == "arm64-v8a") {
@@ -358,6 +365,15 @@ android {
     }
 }
 
+// KGP 2.4 removed the android { kotlinOptions { } } DSL; compilerOptions is the
+// replacement (AGP 9 with android.builtInKotlin=false still applies KGP itself).
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        freeCompilerArgs.add('-Xcontext-parameters')
+    }
+}
+
 flutter {
     source '../..'
 }
@@ -367,11 +383,11 @@ dependencies {
     // flutter_local_notifications 自身 android/build.gradle 里钉的那个。
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
     implementation "androidx.webkit:webkit:1.12.0"
-    testImplementation "org.jetbrains.kotlin:kotlin-test-junit:2.2.20"
+    testImplementation "org.jetbrains.kotlin:kotlin-test-junit:2.4.20"
     // JVM 单测里 android.jar 的 org.json 只是抛 "not mocked" 的桩（HostProxyPolicyTest 等读 JSON 的
     // 用例因此必红）；测试类路径上放真实现，生产仍用平台自带的 org.json。
     testImplementation "org.json:json:20240303"
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.4.20"
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'com.github.ankidroid:Anki-Android:2.17alpha14'
     implementation 'com.github.umair13adil:RxLogs:v1.0.18'

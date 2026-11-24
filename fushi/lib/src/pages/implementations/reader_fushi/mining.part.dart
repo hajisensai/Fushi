@@ -173,6 +173,13 @@ extension _ReaderMining on _ReaderFushiPageState {
               appModel.miningAudioFollowPlaybackSpeed
               ? _audiobookController?.speed
               : null;
+          // 句子音频跟随播放音量（d7mXlstcv9）：开关开着时片段整体加上有声书播放器当前
+          // 音量滑块的增益（按本平台播放后端的真实音量曲线换算）；关 → null（原始电平）。
+          final double? sentenceAudioGainDb = audiobookMiningClipGainDb(
+            followPlayback: appModel.miningAudioFollowPlaybackVolume,
+            volume: _audiobookController?.volume,
+            curve: audiobookPlaybackVolumeCurve,
+          );
           sentenceAudioPath = await TtsChannel.instance.extractAudioSegment(
             inputPath: audioInput.input,
             httpHeaders: audioInput.headers,
@@ -182,6 +189,7 @@ extension _ReaderMining on _ReaderFushiPageState {
             audioChannels: mediaCompression.audioChannels,
             audioBitrate: mediaCompression.audioBitrate,
             tempo: sentenceAudioTempo,
+            gainDb: sentenceAudioGainDb,
             onFailure: (String summary) {
               sentenceAudioFailure = summary;
             },
@@ -425,10 +433,13 @@ extension _ReaderMining on _ReaderFushiPageState {
       FushiToast.showMine(
         msg: described.message,
         status: described.status,
-        // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+        detail: described.detail,
+        term: fields['expression'],
+        reading: fields['reading'],
+        // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
         action: _sourceReviewSession != null
             ? null
-            : minedCardUndoToastAction(
+            : mineResultToastAction(
                 repo,
                 outcome,
                 expression: fields['expression'],
@@ -479,7 +490,13 @@ extension _ReaderMining on _ReaderFushiPageState {
     // 卡片不计入统计（不是新制一张），成功仍保留「最新可改」第三态、带回同一 noteId。
     final described = describeMineOutcome(outcome, overwrite: true);
     if (described.success) {
-      FushiToast.showMine(msg: described.message, status: described.status);
+      FushiToast.showMine(
+        msg: described.message,
+        status: described.status,
+        detail: described.detail,
+        term: fields['expression'],
+        reading: fields['reading'],
+      );
       return MinePopupResult.mined(outcome);
     }
     return MinePopupResult.failed(outcome, message: described.message);

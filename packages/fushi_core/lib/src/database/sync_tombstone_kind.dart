@@ -47,7 +47,9 @@ enum SyncTombstoneKind {
   /// 删文件夹时每个后代各写一条。只经聚合快照传播。
   webbookmark('webbookmark'),
 
-  /// 音乐曲目（itemKey=music_tracks.track_uid，内容派生、跨设备稳定；v130 起）。
+  /// 音乐曲目（itemKey=music_tracks.track_uid；v130 起）。`track_uid` 的哈希含文件**路径原文**
+  /// （`native/fushi_music/src/uid.rs`），同一首歌在两台设备上通常不同——跨设备只在同一份库
+  /// （备份恢复 / 同路径）时对得上；互联共享音乐库因此直接用 host 的 uid（设计 2026-11-23 §2.5）。
   music('music');
 
   const SyncTombstoneKind(this.dbValue);

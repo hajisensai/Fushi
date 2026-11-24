@@ -91,7 +91,7 @@
   "opt_subtitleStyleBoxHeight_title": "ارتفاع الخلفية",
   "opt_subtitleStyleBoxHeight_desc": "% من ارتفاع الفيديو (5–60). 0 يلائم النص.",
   "opt_subtitleStyleBoxAutoFit_title": "ملاءمة تلقائية",
-  "opt_subtitleStyleBoxAutoFit_desc": "يغيّر حجم النص ليلائم خلفية ثابتة الارتفاع.",
+  "opt_subtitleStyleBoxAutoFit_desc": "يصغّر النص الذي لا يتسع لخلفية ثابتة الارتفاع، ولا يكبّره أبدًا.",
   "opt_subtitleStyle_auto": "ملاءمة النص",
   "opt_resetSubtitleStyle_title": "استعادة المظهر الافتراضي",
   "opt_resetSubtitleStyle_desc": "يمسح هذا القسم (مع إبقاء الموضع ومفتاح الخلفية).",

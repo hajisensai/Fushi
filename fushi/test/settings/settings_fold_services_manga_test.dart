@@ -67,6 +67,7 @@ void main() {
         'manga.page_animation',
         'manga.page_animation_speed',
         'manga.page_turn_follow_drag',
+        'manga.swipe_page_turn_sensitivity',
         'manga.spread_offset',
         'manga.wide_page_solo',
         'manga.panel_model',
@@ -78,6 +79,7 @@ void main() {
         'manga.chrome_floating',
         'manga.controls_editor',
         'manga.resume_target',
+        'manga.reverse_arrow_page_turn',
         'manga.volume_key_paging',
       });
       for (final SettingsSection s in manga.sections) {

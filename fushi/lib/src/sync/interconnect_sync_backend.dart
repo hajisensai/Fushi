@@ -14,6 +14,8 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_wire.dart';
 import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
+import 'package:fushi_engine/sync/manga_chapter_progress_sync.dart';
+import 'package:fushi_engine/sync/online_library_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
@@ -615,6 +617,55 @@ class InterconnectSyncBackend extends SyncBackend
   Future<Map<String, RemoteBookProgress>?> getLiveBookProgressSnapshot({
     InterconnectHostPin? pin,
   }) => _pinned(pin, remoteBookProgressSnapshot);
+
+  /// 钉住 [pin] 读 host 上漫画 [bookKey] 的全部章状态（`GET` [kMangaChapterProgressPath]，拍板
+  /// design-ic-manga-chapter-progress）。老 host 没有这条路由、或 host 上没有这本漫画 → 404 → null
+  /// （调用方静默跳过）。网络 / 鉴权 / 5xx 照常抛。
+  Future<Map<String, RemoteMangaChapterState>?> getLiveMangaChapterProgress(
+    String bookKey, {
+    InterconnectHostPin? pin,
+  }) => _pinned(pin, () => _mangaChapterProgressRequest('GET', bookKey));
+
+  /// 钉住 [pin] 把本端较新的章 [states] 推给 host（`PUT` [kMangaChapterProgressPath]），host 按章
+  /// LWW 合并后回合并后的全部章状态。404 → null（同 [getLiveMangaChapterProgress]）。只在同一本书的
+  /// GET 成功之后调：老 host 会把这条路径上的 PUT 当 WebDAV 写文件。
+  Future<Map<String, RemoteMangaChapterState>?> putLiveMangaChapterProgress(
+    String bookKey,
+    Map<String, RemoteMangaChapterState> states, {
+    InterconnectHostPin? pin,
+  }) => _pinned(
+    pin,
+    () => _mangaChapterProgressRequest('PUT', bookKey, body: states),
+  );
+
+  Future<Map<String, RemoteMangaChapterState>?> _mangaChapterProgressRequest(
+    String method,
+    String bookKey, {
+    Map<String, RemoteMangaChapterState>? body,
+  }) async {
+    await _resolvedForLive();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      method,
+      '$_apiBase$kMangaChapterProgressPath/${Uri.encodeComponent(bookKey)}',
+    );
+    if (body != null) {
+      req.headers.set('Content-Type', 'application/json; charset=utf-8');
+      req.add(utf8.encode(jsonEncode(encodeMangaChapterStates(body))));
+    }
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404 || res.statusCode == 405) {
+      await res.drain<void>();
+      return null;
+    }
+    if (res.statusCode >= 400) {
+      _ops!.checkStatus(
+        res.statusCode,
+        '$method $kMangaChapterProgressPath',
+        serverReason: await readSyncErrorBody(res),
+      );
+    }
+    return decodeMangaChapterStates(jsonDecode(await _readBodyBounded(res)));
+  }
 
   /// 钉住 [pin] 读 host 视频播放位置（内容同 [remoteVideoPosition]）。
   Future<LivePosition> getLiveVideoPosition(
@@ -1552,7 +1603,7 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// 返回 null 的三种情形归一为「对端不提供此能力」：明文会话 / 老 host 404 /
   /// host 未接线该能力 404。host **开关关着**是 403（不是 404）——那不是「不支持」，
-  /// 而是对端明确拒绝，必须如实报给用户，故走 checkStatus 抛出。
+  /// 而是对端明确拒绝，必须如实报给用户，故抛 [InterconnectProfileRejected]。
   ///
   /// BUG-3147：[repo] 必填，进来先 [_reloadSessionFrom]——本类是单例，这个按钮又不经
   /// 任何同步编排，不重载就会拿进程里那份旧会话（重新配对之前的 token / 地址）去打
@@ -1570,21 +1621,15 @@ class InterconnectSyncBackend extends SyncBackend
       await res.drain<void>();
       return null;
     }
-    if (res.statusCode >= 400) {
-      _ops!.checkStatus(
-        res.statusCode,
-        'GET $kInterconnectProfilePath',
-        serverReason: await readSyncErrorBody(res),
-      );
-    }
+    await _checkProfileResponse(res, 'GET $kInterconnectProfilePath');
     return _readBodyBounded(res);
   }
 
   /// 把本机的 Profile 分享 JSON 推给 host（互联「上传配置」动作）。
   ///
   /// 返回 host 上新建的 Profile 名；host 不提供该能力（老 host / 未接线）返回 null，
-  /// 由调用方翻成「对端不支持」。host 开关关着 / 明文会话 / 未配对一律经 checkStatus
-  /// 抛出，携带 host 给的拒绝原因。
+  /// 由调用方翻成「对端不支持」。host 开关关着 / 明文会话 / 未配对一律抛
+  /// [InterconnectProfileRejected]，携带 host 给的拒绝码。
   ///
   /// [repo] 的用途同 [getRemoteProfileJson]（BUG-3147）。
   Future<String?> putRemoteProfileJson(
@@ -1609,19 +1654,30 @@ class InterconnectSyncBackend extends SyncBackend
       await res.drain<void>();
       return null;
     }
-    if (res.statusCode >= 400) {
-      _ops!.checkStatus(
-        res.statusCode,
-        'PUT $kInterconnectProfilePath',
-        serverReason: await readSyncErrorBody(res),
-      );
-    }
+    await _checkProfileResponse(res, 'PUT $kInterconnectProfilePath');
     final Object? decoded = jsonDecode(await _readBodyBounded(res));
     if (decoded is! Map) {
       throw const FormatException('Invalid profile upload response');
     }
     final Object? name = decoded['name'];
     return name is String ? name : '';
+  }
+
+  /// 配置搬运的错误响应：带 `{"error": code}` 的是 host 的明确拒绝 →
+  /// [InterconnectProfileRejected]（UI 按码给本地化原因，反馈 G-ebgSnoK8）；其余
+  /// （401 配对失效、老 host 的自由文本等）交给统一的 [WebDavOps.checkStatus]。
+  Future<void> _checkProfileResponse(
+    HttpClientResponse res,
+    String label,
+  ) async {
+    if (res.statusCode < 400) return;
+    final SyncErrorBody? body = await readSyncErrorBody(res);
+    final InterconnectProfileDenial? denial =
+        parseInterconnectProfileDenialBody(body?.reason ?? '');
+    if (denial != null) {
+      throw InterconnectProfileRejected(denial, statusCode: res.statusCode);
+    }
+    _ops!.checkStatus(res.statusCode, label, serverReason: body);
   }
 
   /// 互联「主机版本」：取 host 的 app 版本、可用更新与更新进度（反馈 Pp8XPyve0N）。
@@ -2003,31 +2059,52 @@ class InterconnectSyncBackend extends SyncBackend
   ///
   /// 走 [requestTimeout] 封顶而不是大文件那套 stall 超时：一页图是几百 KB 量级，
   /// 且阅读器等着它渲染——挂住不如尽早失败让上层重试。
-  Future<Uint8List> fetchRemoteMangaPage(String bookKey, int index) =>
-      _fetchMangaPageBytes(
-        '/api/library/manga/${Uri.encodeComponent(bookKey)}/pages/$index',
-      );
+  ///
+  /// [expectedKeyDigest]（`remoteMangaPageKeyDigest(RemoteMangaPageInfo.key)`）非
+  /// null 时随请求带给 host 核对（HBK-AUDIT-205）：host 此刻这一页已不是它，回 409，
+  /// 这里抛 [MangaPageChanged]。
+  Future<Uint8List> fetchRemoteMangaPage(
+    String bookKey,
+    int index, {
+    String? expectedKeyDigest,
+  }) => _fetchMangaPageBytes(
+    '/api/library/manga/${Uri.encodeComponent(bookKey)}/pages/$index',
+    expectedKeyDigest,
+  );
 
   /// 章节式在线漫画的页图（BUG-2474），判据同 [fetchRemoteMangaPage]。
   Future<Uint8List> fetchRemoteMangaChapterPage(
     String bookKey,
     String chapterDigest,
-    int index,
-  ) => _fetchMangaPageBytes(
+    int index, {
+    String? expectedKeyDigest,
+  }) => _fetchMangaPageBytes(
     '/api/library/manga/${Uri.encodeComponent(bookKey)}'
     '/chapters/$chapterDigest/pages/$index',
+    expectedKeyDigest,
   );
 
-  Future<Uint8List> _fetchMangaPageBytes(String path) async {
+  Future<Uint8List> _fetchMangaPageBytes(
+    String path,
+    String? expectedKeyDigest,
+  ) async {
     await _ensureResolved();
+    final String query = expectedKeyDigest == null
+        ? ''
+        : '?$kMangaPageKeyQuery=${Uri.encodeQueryComponent(expectedKeyDigest)}';
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
-      '$_apiBase$path',
+      '$_apiBase$path$query',
     );
     final HttpClientResponse res = await _sendBounded(req);
     if (res.statusCode == 404) {
       await res.drain<void>();
       throw const MangaInterconnectUnsupported();
+    }
+    if (res.statusCode == 409) {
+      throw MangaPageChanged(
+        'GET $path -> 409: ${await readSyncErrorBody(res)}',
+      );
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       await res.drain<void>();
@@ -2334,6 +2411,56 @@ class InterconnectSyncBackend extends SyncBackend
     _ops!.checkStatus(res.statusCode, 'POST /api/library/media-links');
     final String body = await _readBodyBounded(res);
     return MediaLinkManifest.fromJson(jsonDecode(body));
+  }
+
+  // ── Live online library items (interconnect-only) ──────────────────────
+  // 在线源条目清单（`online_library_sync.dart`，拍板台 mY5VWg1nD-）。
+
+  /// GET host 上的各设备在线源条目清单（含 host 自己的）。老 host 无端点（404）
+  /// 返回 null，调用方记「对端版本过旧」后跳过。
+  Future<List<OnlineLibraryManifest>?> getRemoteOnlineLibraryManifests() async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'GET',
+      '$_apiBase$kOnlineLibraryItemsPath',
+    );
+    final HttpClientResponse res = await _sendBounded(req);
+    if (res.statusCode == 404) {
+      await res.drain<void>();
+      return null;
+    }
+    _ops!.checkStatus(res.statusCode, 'GET $kOnlineLibraryItemsPath');
+    final Object? decoded = jsonDecode(await _readBodyBounded(res));
+    final Object? list = decoded is Map ? decoded['manifests'] : null;
+    if (list is! List) {
+      throw const FormatException('online library manifests: bad body');
+    }
+    final List<OnlineLibraryManifest> out = <OnlineLibraryManifest>[];
+    for (final Object? raw in list) {
+      // 单份坏清单只丢那一份（那台设备下次推送时覆盖），不让整轮作废。
+      try {
+        out.add(OnlineLibraryManifest.fromJson(raw));
+      } on FormatException {
+        continue;
+      }
+    }
+    return out;
+  }
+
+  /// PUT 本机在线源条目清单到 host。
+  Future<void> putRemoteOnlineLibraryManifest(
+    OnlineLibraryManifest manifest,
+  ) async {
+    await _ensureResolved();
+    final HttpClientRequest req = await _ops!.buildRequest(
+      'PUT',
+      '$_apiBase$kOnlineLibraryItemsPath',
+    );
+    req.headers.set('Content-Type', 'application/json; charset=utf-8');
+    req.add(utf8.encode(manifest.canonicalJson()));
+    final HttpClientResponse res = await _sendBounded(req);
+    _ops!.checkStatus(res.statusCode, 'PUT $kOnlineLibraryItemsPath');
+    await res.drain<void>();
   }
 
   // ── Live video metadata (interconnect-only, #7) ────────────────────────

@@ -60,6 +60,47 @@ int? controllerLookupWordStep(
   return null;
 }
 
+/// A letter or digit: a sweep token holding none (whitespace, punctuation,
+/// symbols only) is not a word a step entering a block lands on.
+final RegExp _wordChar = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
+/// Where a word step that left its block lands in the block it entered: the
+/// cursor [at] (UTF-16) is on the entered block's first character (moving
+/// forward, [dir] > 0) or its last character (moving back, [dir] < 0), and the
+/// step goes on to that block's first word start at or after [at] (forward) /
+/// last word start at or before [at] (back). Words are the sweep tokens
+/// ([buildSubtitleSweepTokens], the same split as [controllerLookupWordStep])
+/// that hold a letter or digit: a block opening with whitespace / punctuation
+/// (「, ……) lands on its first real word. Null when the block has no such word
+/// on that side. [tokenize] is for tests only.
+int? controllerLookupBlockEntryWord(
+  String text,
+  int at,
+  int dir, {
+  SubtitleSweepTokenizer? tokenize,
+}) {
+  if (text.isEmpty) return null;
+  final List<int> graphemes = controllerLookupGraphemeStarts(text);
+  final List<int> starts = <int>[
+    for (final SubtitleSweepToken t in buildSubtitleSweepTokens(
+      text,
+      tokenize: tokenize,
+    ))
+      if (t.graphemeStart < graphemes.length && _wordChar.hasMatch(t.word))
+        graphemes[t.graphemeStart],
+  ];
+  if (dir > 0) {
+    for (final int s in starts) {
+      if (s >= at) return s;
+    }
+    return null;
+  }
+  for (final int s in starts.reversed) {
+    if (s <= at) return s;
+  }
+  return null;
+}
+
 /// One character of a subtitle caret registry, as the word step needs it:
 /// the sentence it belongs to, its grapheme index there, and its cue (two
 /// cues can carry the same sentence text).

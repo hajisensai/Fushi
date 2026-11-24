@@ -101,16 +101,21 @@ void main() {
     final String source = File(
       'lib/src/pages/implementations/home_dictionary_page.dart',
     ).readAsStringSync();
+    // 去掉空白与尾逗号再比：调用写法不变时，`dart format` 因缩进加深把实参折行
+    // 不该让接线守卫变红（b9833035b1 把结果区挪进独立视口后就这样误红过）。
+    final String flat = source
+        .replaceAll(RegExp(r'\s+'), '')
+        .replaceAll(',)', ')');
     expect(
-      source,
+      flat,
       contains('onMineEntry(_withSourceSentence(fields))'),
       reason: '结果区制卡必须补源文本例句，否则查词页卡片 Sentence 恒空',
     );
     expect(
-      source,
-      contains('onUpdateEntry(noteId, _withSourceSentence(fields))'),
+      flat,
+      contains('onUpdateEntry(noteId,_withSourceSentence(fields))'),
       reason: '覆写最新卡与新制卡同一口径',
     );
-    expect(source, contains('sourceLookupMiningSentence('));
+    expect(flat, contains('sourceLookupMiningSentence('));
   });
 }

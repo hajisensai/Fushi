@@ -53,6 +53,17 @@ class CollectionArtScrape {
 
   BookArtStore get store => BookArtStore.of(thumbnailsDirectory);
 
+  /// 刮削层变更通知（写入 / 清除 / 撤销后合集详情页重算横幅）。
+  Listenable get changes => store;
+
+  /// [rows] 里书成员的合集横幅（[BookArtStore.backdropForCollection]，成员多数票
+  /// 那张）；没下到为 null。只读刮削层，不受「在线服务」门约束：图已在本地。
+  File? bannerFor(Iterable<MediaCollectionItemRow> rows) =>
+      store.backdropForCollection(<String>[
+        for (final MediaCollectionItemRow r in rows)
+          if (r.mediaType == 'epub') r.entryKey,
+      ]);
+
   BookArtScrapeService _service() =>
       serviceFactory?.call() ??
       BookArtScrapeService(database: database, store: store);
@@ -72,13 +83,14 @@ class CollectionArtScrape {
     await showAppDialog<void>(
       context: context,
       builder: (BuildContext ctx) => CollectionArtScrapeDialog(
-        run: (Map<String, BookArtSeriesPin> pins) async {
+        run: (BookArtRerun rerun) async {
           final BookArtScrapeService service = _service();
           try {
             final BookArtRunResult result = await service.run(
               await service.collectionBookKeys(collectionId),
-              pins: pins,
-              onlyPinnedGroups: pins.isNotEmpty,
+              pins: rerun.pins,
+              originalEditionCovers: rerun.originalEditionCovers,
+              onlyPinnedGroups: !rerun.isEmpty,
               // 界面路径不提供撤销（清除有确认框），不留撤销备份文件。
               recordUndo: false,
             );
@@ -145,8 +157,7 @@ class CollectionArtScrape {
 class CollectionArtScrapeDialog extends StatefulWidget {
   const CollectionArtScrapeDialog({required this.run, super.key});
 
-  final Future<BookArtRunResult> Function(Map<String, BookArtSeriesPin> pins)
-  run;
+  final Future<BookArtRunResult> Function(BookArtRerun rerun) run;
 
   @override
   State<CollectionArtScrapeDialog> createState() =>
@@ -161,10 +172,10 @@ class _CollectionArtScrapeDialogState extends State<CollectionArtScrapeDialog> {
   @override
   void initState() {
     super.initState();
-    _start(const <String, BookArtSeriesPin>{});
+    _start();
   }
 
-  Future<void> _start(Map<String, BookArtSeriesPin> pins) async {
+  Future<void> _start([BookArtRerun rerun = const BookArtRerun()]) async {
     setState(() {
       _running = true;
       _failure = null;
@@ -172,7 +183,7 @@ class _CollectionArtScrapeDialogState extends State<CollectionArtScrapeDialog> {
     BookArtRunResult? result;
     Object? failure;
     try {
-      result = await widget.run(pins);
+      result = await widget.run(rerun);
     } catch (e, stack) {
       ErrorLogService.instance.log('CollectionArtScrape.run', e, stack);
       failure = e;
@@ -182,9 +193,9 @@ class _CollectionArtScrapeDialogState extends State<CollectionArtScrapeDialog> {
       _running = false;
       _failure = failure;
       if (result != null) {
-        // 钉死重跑只回来那一组：合并进上一轮结果。
+        // 钉死 / 改封面选择的重跑只回来那一组：合并进上一轮结果。
         final BookArtRunResult? previous = _result;
-        _result = previous == null || pins.isEmpty
+        _result = previous == null || rerun.isEmpty
             ? result
             : BookArtRunResult(
                 dryRun: false,
@@ -200,7 +211,7 @@ class _CollectionArtScrapeDialogState extends State<CollectionArtScrapeDialog> {
                     result.series.firstWhere(
                       (BookArtSeriesPlan n) =>
                           n.seriesKey == s.seriesKey &&
-                          pins.containsKey(s.seriesKey),
+                          rerun.covers(s.seriesKey),
                       orElse: () => s,
                     ),
                 ],
@@ -331,12 +342,16 @@ class _CollectionArtScrapeDialogState extends State<CollectionArtScrapeDialog> {
               FushiTextButton(
                 onPressed: _running
                     ? null
-                    : () => _start(<String, BookArtSeriesPin>{
-                        s.seriesKey: BookArtSeriesPin(
-                          source: o.source,
-                          id: o.id,
+                    : () => _start(
+                        BookArtRerun(
+                          pins: <String, BookArtSeriesPin>{
+                            s.seriesKey: BookArtSeriesPin(
+                              source: o.source,
+                              id: o.id,
+                            ),
+                          },
                         ),
-                      }),
+                      ),
                 child: Text(t.book_scrape_use),
               ),
             ],
@@ -364,6 +379,44 @@ class _CollectionArtScrapeDialogState extends State<CollectionArtScrapeDialog> {
                 .length,
           ),
           style: small,
+        ),
+      // 非日文版、MangaBaka 只有原版（日文版）封面的卷：按系列选用哪一种（BUG-5287）。
+      if (s.decision == BookArtDecision.accepted &&
+          s.originalEditionVolumes > 0)
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                s.originalEditionCovers
+                    ? t.collection_art_scrape_original_edition_in_use(
+                        count: s.originalEditionVolumes,
+                      )
+                    : t.collection_art_scrape_original_edition_available(
+                        count: s.originalEditionVolumes,
+                      ),
+                style: small,
+              ),
+            ),
+            FushiTextButton(
+              key: ValueKey<String>(
+                'collection_art_scrape_original_edition_${s.seriesKey}',
+              ),
+              onPressed: _running
+                  ? null
+                  : () => _start(
+                      BookArtRerun(
+                        originalEditionCovers: <String, bool>{
+                          s.seriesKey: !s.originalEditionCovers,
+                        },
+                      ),
+                    ),
+              child: Text(
+                s.originalEditionCovers
+                    ? t.collection_art_scrape_original_edition_keep
+                    : t.collection_art_scrape_original_edition_use,
+              ),
+            ),
+          ],
         ),
     ];
     return Column(

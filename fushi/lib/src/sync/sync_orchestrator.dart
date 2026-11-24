@@ -39,7 +39,10 @@ import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/deletion_tombstone_bundle.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/font_sync.dart';
+import 'package:fushi/src/sync/online_library_items.dart';
+import 'package:fushi_engine/sync/online_library_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
+import 'package:fushi/src/sync/interconnect_manga_chapter_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_source_share_kinds.dart'
     show sourceSharePluginStores, sourceSharePrefWriter, SharedPluginStore;
@@ -54,6 +57,8 @@ import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
 import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/manga_chapter_progress_sync.dart'
+    show kMangaChapterProgressCapability;
 import 'package:fushi/src/sync/sync_peer_gap.dart';
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
     show RemoteDictionaryCatalogService;
@@ -89,6 +94,7 @@ part 'sync_orchestrator/aggregate.part.dart';
 part 'sync_orchestrator/collections.part.dart';
 part 'sync_orchestrator/tags.part.dart';
 part 'sync_orchestrator/media_links.part.dart';
+part 'sync_orchestrator/online_library.part.dart';
 part 'sync_orchestrator/video_metadata.part.dart';
 part 'sync_orchestrator/tombstones.part.dart';
 part 'sync_orchestrator/books.part.dart';
@@ -411,6 +417,11 @@ class SyncRunReport {
   /// [needsLocalLibraryRefresh]。
   int mediaLinksUpdated = 0;
 
+  /// 本轮在线源条目同步在本机新建 / 改动的条目数（`online_library_items.dart`，
+  /// 拍板台 mY5VWg1nD-）。新落的漫画 / 小说 / 视频行要库页刷新，计入
+  /// [needsLocalLibraryRefresh]。
+  int onlineLibraryItemsApplied = 0;
+
   /// 7c：本轮从互联 host 落到本地的视频刮削元数据作品数（`applyRemoteVideoMetadata`）。
   /// >0 时合集详情页 / 视频卡的简介、评分、分集名会变，计入 [needsLocalLibraryRefresh]。
   int videoMetadataUpdated = 0;
@@ -576,6 +587,7 @@ class SyncRunReport {
       tagsUpdated > 0 ||
       videoMetadataUpdated > 0 ||
       streamVideosPulled > 0 ||
+      onlineLibraryItemsApplied > 0 ||
       serviceConfigsImported > 0 ||
       sourcesShared > 0 ||
       settingsImported > 0;
@@ -604,6 +616,7 @@ class SyncRunReport {
     collectionsUpdated += other.collectionsUpdated;
     tagsUpdated += other.tagsUpdated;
     mediaLinksUpdated += other.mediaLinksUpdated;
+    onlineLibraryItemsApplied += other.onlineLibraryItemsApplied;
     videoMetadataUpdated += other.videoMetadataUpdated;
     streamVideosPulled += other.streamVideosPulled;
     streamVideosPushed += other.streamVideosPushed;
@@ -1100,6 +1113,8 @@ class SyncOrchestrator {
       // 一本小说的进度要等所有视频传完才到对端。
       _emitPhaseStart(SyncPhase.readingData);
       await _syncBookProgressLive(report, b);
+      // 章节式互联漫画的章级进度（书级位置对它们不带章身份，上一步已排除）。
+      await _syncMangaChapterProgressLive(report, b);
       mark('bookProgressLive');
     }
 
@@ -1325,6 +1340,13 @@ class SyncOrchestrator {
     // 成员并集 + 移出/删除墓碑 + 手动序整合集 LWW，仅通道不同。
     _checkpoint();
     _emitPhaseStart(SyncPhase.collections);
+    // 在线源条目放在合集之前：对端在线条目的行先落到本机，同一轮的合集 / 标签 /
+    // 作品图谱就能把它们认领进去。
+    if (isInterconnect) {
+      await _syncOnlineLibraryLive(report, b);
+    } else {
+      await _syncOnlineLibraryCloud(report);
+    }
     if (isInterconnect) {
       await _syncCollectionsLive(report, b);
       // 标签紧跟合集之后：合集标签按合集自然键解析，要先让合集行落地。
@@ -1401,6 +1423,7 @@ class SyncOrchestrator {
   static const String _kTombstoneBundleMirror = 'tombstone_bundles';
   static const String _kCollectionsMirror = 'collections';
   static const String _kMediaLinksMirror = 'media_links';
+  static const String _kOnlineLibraryMirror = 'online_library';
   static const String _kVideoManifestMirror = 'videos';
 
   /// 整轮超过这么久才把分阶段耗时写进诊断日志（快的同步每分钟都可能跑一次，
@@ -1709,6 +1732,18 @@ class SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) => _syncMediaLinksLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncOnlineLibraryLive]。
+  @visibleForTesting
+  Future<void> syncOnlineLibraryLiveForTest(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) => _syncOnlineLibraryLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncOnlineLibraryCloud]。
+  @visibleForTesting
+  Future<void> syncOnlineLibraryCloudForTest(SyncRunReport report) =>
+      _syncOnlineLibraryCloud(report);
 
   /// 测试入口：直接调用 [_syncMediaLinksCloud]。
   @visibleForTesting
@@ -2438,6 +2473,13 @@ class SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) => _syncBookProgressLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncMangaChapterProgressLive]。
+  @visibleForTesting
+  Future<void> syncMangaChapterProgressLiveForTest(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) => _syncMangaChapterProgressLive(report, backend);
 
   /// 测试入口：直接调用 [_syncVideoProgressLive]。
   @visibleForTesting

@@ -221,11 +221,15 @@ final class MusicRemoteEntry extends MusicLibraryEntry {
 
   MusicRemoteTrackKind? get kind => MusicRemoteTrackKind.fromWire(track.kind);
 
-  /// 现在能不能播：种类认识，且服务器曲目的服务器在这台设备上配着。
+  /// 现在能不能播：种类认识，且服务器曲目的服务器在这台设备上配着，或有离线副本（v175）。
   bool get available => switch (kind) {
     null => false,
-    MusicRemoteTrackKind.server => server != null,
-    MusicRemoteTrackKind.youtube || MusicRemoteTrackKind.plugin => true,
+    MusicRemoteTrackKind.server =>
+      server != null || musicRemoteLocalCopyOf(track) != null,
+    // 互联 host 曲目：起播时才找 host，离线时按单曲播放失败（同插件曲目）；下了离线副本的放本机文件。
+    MusicRemoteTrackKind.youtube ||
+    MusicRemoteTrackKind.plugin ||
+    MusicRemoteTrackKind.fushiHost => true,
   };
 
   /// 封面地址（服务器曲目按当前配置现算）。

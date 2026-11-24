@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+		<key>FLTEnableFlutterGPU</key>
+		<true/>
 		<key>NSMicrophoneUsageDescription</key>
 		<string>Fushi needs the microphone to record audio for your Anki cards, and to let websites you open in the built-in browser use it when you allow them.</string>
 		<key>NSAppleMusicUsageDescription</key>

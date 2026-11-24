@@ -65,6 +65,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/media/manga/mokuro_sidecar.dart';
+import 'package:fushi_engine/utils/misc/atomic_text_file.dart'
+    show writeTextFileAtomically;
 
 /// 页图字节 → 真实宽高（解不出返回 null）。
 typedef MangaPageDimensions =
@@ -1356,6 +1358,19 @@ class MangaDownloadService {
         );
       }
     }
+    _throwIfCancelled(token);
+    // 每页从源端哪一页下来（互联 host 让这章下载前后对外报同一个页身份，见
+    // [MangaChapterSourcePage]）。先于 `manga.json` 落盘：章一被判「已下载」，
+    // 旁注就已经在了；每次都整份重写，不留上一次下载的旧身份。
+    await writeTextFileAtomically(
+      mangaChapterSourcePagesFile(chapterDir),
+      encodeMangaChapterSourcePages(
+        mangaChapterSourcePagesOf(payload, <String?>[
+          for (int index = 0; index < pages.length; index++)
+            pages[index].pageKey,
+        ]),
+      ),
+    );
     _throwIfCancelled(token);
     await runExclusiveOnMangaJson<void>(
       mangaJson.path,

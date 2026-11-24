@@ -45,7 +45,9 @@ class LibraryOrganizeResult {
   /// 落了几处改动（不含待确认建议）。
   final int changes;
 
-  /// 这次新产出的待用户确认的合集级建议数（[loadLibraryOrganizeProposals]）。
+  /// 这次新产出的待用户确认的合集级建议数。AI 管库 v3（§2.2）起合并 / 改名直接执行、
+  /// 不再产出建议，恒为 0；字段留给读它的线上结果（`library.organize.run` /
+  /// 库管家汇报）保持形状。
   final int proposals;
   final int requests;
   final String? error;
@@ -123,7 +125,6 @@ class LibraryOrganizeService {
           ),
         );
     int changes = 0;
-    int proposals = 0;
     int requests = 0;
     int inputTokens = 0;
     int outputTokens = 0;
@@ -201,13 +202,6 @@ class LibraryOrganizeService {
               trigger: trigger,
               tagPrefix: videoTagPrefix,
             );
-            // 待确认建议按裁决时刻的合集快照记（自然键），先于落盘：落盘可能合并 /
-            // 移空自删其中的合集。
-            proposals += await recordOrganizeProposals(
-              db,
-              runId: runId,
-              proposals: verdict.proposals,
-            );
             touched.addAll(
               await applyOrganizeActions(
                 db,
@@ -278,7 +272,6 @@ class LibraryOrganizeService {
       requests: requests,
       error: error,
       touchedCollectionIds: touched,
-      proposals: proposals,
     );
   }
 
