@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/sync/background_tasks_indicator.dart';
+import 'package:fushi/src/sync/manual_sync_ui.dart'
+    show syncActivityLine, syncProgressLine;
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_task_board.dart';
@@ -135,6 +137,32 @@ void main() {
         isEmpty,
         reason: '已结束的不进入口气泡 / 进度环',
       );
+    });
+
+    test('已结束的失败轮次标题说这轮是谁，不沿用最后一个进度阶段（BUG-5368）', () {
+      final SyncTaskHandle sweep = beginSyncTask(SyncActivityKind.fullSweep);
+      const SyncProgress listing = SyncProgress(
+        phase: SyncPhase.remoteListing,
+        itemIndex: 0,
+        itemTotal: 0,
+      );
+      sweep.progress(listing);
+      expect(
+        syncBackgroundTasks().single.line,
+        syncProgressLine(listing),
+        reason: '在跑时照旧显示当前阶段',
+      );
+      sweep.error('boom');
+      sweep.finish();
+      final BackgroundTask kept = syncBackgroundTasks().single;
+      expect(kept.finished, isTrue);
+      expect(
+        kept.line,
+        syncActivityLine(const SyncActivity(SyncActivityKind.fullSweep)),
+        reason: '修复前：失败项标题仍是「正在读取远端文件清单」',
+      );
+      expect(kept.line, isNot(syncProgressLine(listing)));
+      expect(kept.fraction, isNull, reason: '结束了不再带进度');
     });
 
     test('失败轮次结束后算「未看过的失败」，确认后移出任务表；在跑的不动', () {

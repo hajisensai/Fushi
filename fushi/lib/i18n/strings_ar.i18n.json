@@ -12832,6 +12832,7 @@
   "sync_last_failed": "آخر مزامنة: فشلت",
   "sync_last_no_channels": "آخر مزامنة: لم تتم المزامنة - لا توجد قناة مزامنة متصلة",
   "sync_last_nothing": "آخر مزامنة: لا شيء لمزامنته",
+  "sync_last_peer_offline": "Last sync: skipped Interconnect - the peer is offline",
   "sync_manga_content": "Upload manga files",
   "sync_manga_content_warning": "Manga volumes are large and use more storage and data",
   "sync_not_signed_in": "لم يتم تسجيل الدخول",

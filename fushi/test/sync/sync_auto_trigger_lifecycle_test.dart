@@ -7,6 +7,7 @@ import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_task_board.dart' show resetSyncTasksForTest;
 import 'package:fushi_core/fushi_core.dart';
 
 /// BUG-1569 守卫：互联自动同步触发层的三处生命周期缺口。
@@ -32,7 +33,10 @@ Future<void> _waitFor(bool Function() cond, {String what = 'condition'}) async {
 void main() {
   const int cooldownMs = 5 * 60 * 1000; // 与 _syncCooldownMs 保持一致
 
-  setUp(resetAutoSweepFailureBackoffForTest);
+  setUp(() {
+    resetAutoSweepFailureBackoffForTest();
+    resetSyncTasksForTest();
+  });
   tearDown(() {
     resetAutoSweepFailureBackoffForTest();
     debugMarkSweepInProgress(false);
@@ -67,6 +71,15 @@ void main() {
       expect(isAutoSweepBackedOff(nowMs: now), isTrue, reason: '非成败结局不得改写退避戳');
 
       noteAutoSweepOutcomeForBackoff(SyncOutcomeReason.completed, nowMs: now);
+      expect(isAutoSweepBackedOff(nowMs: now), isFalse);
+
+      noteAutoSweepOutcomeForBackoff(SyncOutcomeReason.peerOffline, nowMs: now);
+      expect(
+        isAutoSweepBackedOff(nowMs: now),
+        isTrue,
+        reason: '对端离线不算失败但同样退避（BUG-5368）',
+      );
+      noteAutoSweepOutcomeForBackoff(SyncOutcomeReason.completed, nowMs: now);
       expect(
         isAutoSweepBackedOff(nowMs: now),
         isFalse,
@@ -76,7 +89,7 @@ void main() {
   });
 
   group('BUG-1569① 全量 sweep 失败路径推进退避（集成）', () {
-    test('对端离线：第一轮 failed 置退避，第二轮 cooledDown 跳过探测', () async {
+    test('对端离线：第一轮 peerOffline 置退避，第二轮 cooledDown 跳过探测', () async {
       final FushiDatabase db = _memDb();
       final Directory work = await Directory.systemTemp.createTemp(
         'bug1569_backoff_',
@@ -88,7 +101,7 @@ void main() {
       final SyncRepository repo = SyncRepository(db);
       await repo.setAutoSyncEnabled(true);
       // 唯一通道 = 互联（云备份后端也选成互联，dedup 后只剩一条），指向一个
-      // 已关闭端口 → 连接拒绝 → 全候选探测失败 → SyncBackendError → 通道失败。
+      // 已关闭端口 → 连接拒绝 → 全候选探测失败 → SyncPeerUnreachableError。
       await repo.setBackendType(SyncBackendType.fushiServer);
       final ServerSocket dead = await ServerSocket.bind(
         InternetAddress.loopbackIPv4,
@@ -114,13 +127,14 @@ void main() {
 
       expect(
         await runOnce(),
-        SyncOutcomeReason.failed,
-        reason: '对端离线的通道异常必须如实记为 failed',
+        SyncOutcomeReason.peerOffline,
+        reason: '对端离线是预期状态，如实记为 peerOffline 而不是 failed（BUG-5368）',
       );
+      expect(syncTasks.value, isEmpty, reason: '对端离线不在后台任务表留失败项（BUG-5368）');
       expect(
         autoSweepFailureBackoffUntilMsForTest,
         isNotNull,
-        reason: '失败结局必须推进退避戳（BUG-1569①）',
+        reason: '对端离线结局同样推进退避戳（BUG-1569①）',
       );
 
       final Stopwatch watch = Stopwatch()..start();
