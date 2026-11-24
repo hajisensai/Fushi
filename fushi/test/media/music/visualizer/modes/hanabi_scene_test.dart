@@ -183,7 +183,106 @@ void _paintAt(
   recorder.endRecording().dispose();
 }
 
+/// 只数顶层画布上的调用（场景层录进内层 picture，不经过这里）；其余调用照样吞掉。
+class _CountingCanvas implements ui.Canvas {
+  int pictures = 0;
+  int images = 0;
+  int filteredLayers = 0;
+  final List<double> imageAlphas = <double>[];
+
+  @override
+  void drawPicture(ui.Picture picture) => pictures++;
+
+  @override
+  void drawImage(ui.Image image, Offset offset, Paint paint) {
+    images++;
+    imageAlphas.add(paint.color.a);
+  }
+
+  @override
+  void saveLayer(Rect? bounds, Paint paint) {
+    if (paint.imageFilter != null) filteredLayers++;
+  }
+
+  @override
+  Object? noSuchMethod(Invocation invocation) => null;
+}
+
 void main() {
+  group('BUG-5403 GPU 开销', () {
+    HanabiScene scene0() {
+      final HanabiScene scene = HanabiScene(
+        program: compileHanabiProgram(
+          <HanabiLine>[
+            _line('夜空に咲いた花火', 2, 0.25)..isChorus = true,
+            _line('君の声が聞こえる', 5, 0.25),
+          ],
+          'hanabi:gpu',
+          duration: 30,
+        ),
+        title: '花火',
+        artist: 'Artist',
+        album: 'Album',
+      );
+      addTearDown(scene.dispose);
+      return scene;
+    }
+
+    testWidgets('全屏辉光只把场景层画一遍：三层辉光都从同一张栅格化纹理来，不再每层重放整个场景', (
+      WidgetTester tester,
+    ) async {
+      final HanabiScene scene = scene0();
+      const HanabiSettings settings = HanabiSettings(overlayFrame: false);
+      final _CountingCanvas canvas = _CountingCanvas();
+      scene.paint(canvas, const Size(800, 450), _frame(3, settings));
+      // 修前：drawPicture 1 + 每层辉光 saveLayer(模糊) 里各 drawPicture 一次 = 4 遍场景。
+      expect(canvas.pictures, 1);
+      expect(canvas.filteredLayers, 0);
+      expect(canvas.images, 3);
+      for (final double a in canvas.imageAlphas) {
+        expect(a, greaterThan(0));
+      }
+
+      final _CountingCanvas off = _CountingCanvas();
+      scene.paint(
+        off,
+        const Size(800, 450),
+        _frame(
+          3,
+          const HanabiSettings(overlayFrame: false, bloom: 0, chorusBloom: 0),
+        ),
+      );
+      expect(off.pictures, 1);
+      expect(off.images, 0);
+    });
+
+    test('场景层栅格化按设备像素出图', () {
+      final ui.PictureRecorder recorder = ui.PictureRecorder();
+      ui.Canvas(recorder).drawRect(
+        const Rect.fromLTWH(0, 0, 10, 10),
+        Paint()..color = const Color(0xFFFFFFFF),
+      );
+      final ui.Picture picture = recorder.endRecording();
+      final ui.Image image = rasterizeHanabiSceneLayer(
+        picture,
+        const Size(100.5, 40),
+        1.5,
+      );
+      expect(image.width, 151);
+      expect(image.height, 60);
+      image.dispose();
+      picture.dispose();
+    });
+
+    test('片尾卡设过的烟花辉光不漏回场景层：回拖到歌词段落时场景火花不挂辉光', () {
+      final HanabiScene scene = scene0();
+      const HanabiSettings settings = HanabiSettings(glow: 1.5);
+      _paintAt(scene, 25, settings);
+      _paintAt(scene, 3, settings);
+      expect(scene.sparkHalo, 0);
+    });
+  });
+
   group('花火 scene 域', () {
     test('50 个镜头配方与 folia catalog.ts 逐字段一致', () {
       expect(hanabiProfiles.length, _foliaCatalog.length);

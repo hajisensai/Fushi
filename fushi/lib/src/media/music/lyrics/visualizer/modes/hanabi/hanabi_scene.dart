@@ -130,6 +130,7 @@ class HanabiFrame {
     this.beatBursts = 0,
     this.pulseScale = 1,
     this.pulseRotation = 0,
+    this.devicePixelRatio = 1,
   });
 
   /// 歌词时间（秒）。
@@ -158,6 +159,9 @@ class HanabiFrame {
   /// 「随拍推镜」这一帧的整层缩放与旋转（弧度）。
   final double pulseScale;
   final double pulseRotation;
+
+  /// 画布的设备像素比：全屏辉光把场景层按设备像素栅格化一次（见 [HanabiScene.paint]）。
+  final double devicePixelRatio;
 }
 
 const double _prepareAhead = 1.5;
@@ -200,6 +204,27 @@ const ui.ColorFilter _bloomExtract = ui.ColorFilter.matrix(<double>[
   0, 0, 1.8 * 0.98, 0, -0.81 * 255 * 0.98, //
   0, 0, 0, 1, 0,
 ]);
+
+/// 场景层（逻辑坐标录成的 [picture]）按设备像素栅格化成一张纹理：全屏辉光从它提亮模糊，
+/// 场景本身不必为每层辉光重画（[HanabiScene] 的 `_paintScreenBloom`）。
+@visibleForTesting
+ui.Image rasterizeHanabiSceneLayer(
+  ui.Picture picture,
+  Size size,
+  double devicePixelRatio,
+) {
+  final ui.PictureRecorder recorder = ui.PictureRecorder();
+  ui.Canvas(recorder)
+    ..scale(devicePixelRatio)
+    ..drawPicture(picture);
+  final ui.Picture scaled = recorder.endRecording();
+  final ui.Image image = scaled.toImageSync(
+    math.max(1, (size.width * devicePixelRatio).ceil()),
+    math.max(1, (size.height * devicePixelRatio).ceil()),
+  );
+  scaled.dispose();
+  return image;
+}
 
 int _particleBudget(HanabiQuality q) => switch (q) {
   HanabiQuality.full => 6000,
@@ -295,6 +320,10 @@ class HanabiScene {
   final String? album;
   final HanabiSprites sprites;
   final SparkBatch _batch = SparkBatch();
+
+  /// 场景火花批次当前的辉光强度（测试用：场景层的烟花不挂辉光，片尾卡设过之后也要归零）。
+  @visibleForTesting
+  double get sparkHalo => _batch.halo;
   final Map<int, _ParagraphRig> _rigs = <int, _ParagraphRig>{};
   Object? _rigKey;
   final HanabiOverlay _overlay = HanabiOverlay();
@@ -969,6 +998,9 @@ class HanabiScene {
         ? 0
         : s.spin * hanabiSpinDirection(program.seed);
     _batch.reset(_particleBudget(s.quality));
+    // 场景层的烟花不挂辉光（片尾卡才挂，见下）；每帧显式归零，免得片尾卡设过一次后
+    // 回拖 / 单曲循环时每个镜头的烟花都多出 5 层全屏模糊。
+    _batch.halo = 0;
     for (final HanabiLayerFrame l in frames.layers) {
       final HanabiTransitionFrame frame = l.frame;
       final double alpha = clamp01(frame.alpha * credits.lyricAlpha);
@@ -1011,7 +1043,9 @@ class HanabiScene {
       s.chorusBloom,
       resolveHanabiChorusWeight(program.chorus, time),
     );
-    if (bloom > 0.01) _paintScreenBloom(canvas, size, picture, bloom);
+    if (bloom > 0.01) {
+      _paintScreenBloom(canvas, size, picture, bloom, f.devicePixelRatio);
+    }
     picture.dispose();
 
     // 片尾卡（在场景层之上，不吃随拍推镜与全屏辉光）。
@@ -1097,34 +1131,49 @@ class HanabiScene {
   /// 全屏辉光（folia `createBloomFilter`：阈值 0.5、软膝 0.3、5 级双线性金字塔、同级权重 0.85、色调 [1, 0.95, 0.98]）。
   /// 软膝亮部提取用一条线性色彩矩阵逼近（`0.9·c − 0.405`，在 c ≥ 0.5 与原曲线相差 < 0.03），
   /// 5 级逐级降 / 升采样折成三层宽度递增的高斯模糊，各层权重之和与金字塔一致（1 + 0.85 × 4）。
+  ///
+  /// 和 folia 一样只把场景层栅格化一次（Pixi 的 filter 也是先把容器画进一张纹理再滤）：场景录成的 [picture]
+  /// 按设备像素画成一张纹理，三层辉光都从这张纹理提亮、模糊再加色叠回去。早先每层各开一个全屏离屏层把整个
+  /// 场景（几千个火花、字形、装饰件、拼贴）重画一遍，每帧整个场景画 4 遍，2000 px 宽屏上 GPU 占满。
   void _paintScreenBloom(
     ui.Canvas canvas,
     Size size,
     ui.Picture picture,
     double strength,
+    double devicePixelRatio,
   ) {
-    final Rect bounds = Offset.zero & size;
-    for (final (double sigma, double weight) in _bloomLevels) {
-      // 提取矩阵把亮部放大了 2 倍（免得在 8 位里截断），这里乘回 0.5。
-      final double alpha = clamp01(strength * weight * 0.5);
-      if (alpha <= 0.002) continue;
-      canvas.saveLayer(
-        bounds,
+    final List<(double, double)> levels = <(double, double)>[
+      for (final (double sigma, double weight) in _bloomLevels)
+        // 提取矩阵把亮部放大了 2 倍（免得在 8 位里截断），这里乘回 0.5。
+        if (clamp01(strength * weight * 0.5) > 0.002)
+          (sigma, clamp01(strength * weight * 0.5)),
+    ];
+    if (levels.isEmpty) return;
+    final double dpr = devicePixelRatio > 0 ? devicePixelRatio : 1;
+    final ui.Image source = rasterizeHanabiSceneLayer(picture, size, dpr);
+    canvas
+      ..save()
+      ..scale(1 / dpr);
+    for (final (double sigma, double alpha) in levels) {
+      canvas.drawImage(
+        source,
+        Offset.zero,
         Paint()
           ..blendMode = BlendMode.plus
           ..color = Color.fromRGBO(255, 255, 255, alpha)
           ..imageFilter = ui.ImageFilter.compose(
+            // σ 是逻辑像素，这里画在设备像素坐标里。
             outer: ui.ImageFilter.blur(
-              sigmaX: sigma,
-              sigmaY: sigma,
+              sigmaX: sigma * dpr,
+              sigmaY: sigma * dpr,
               tileMode: TileMode.decal,
             ),
             inner: _bloomExtract,
           ),
       );
-      canvas.drawPicture(picture);
-      canvas.restore();
     }
+    canvas.restore();
+    source.dispose();
   }
 
   bool get _hasMeta =>

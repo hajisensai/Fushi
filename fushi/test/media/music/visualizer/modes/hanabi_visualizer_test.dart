@@ -3,6 +3,7 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_beat_fx.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_catalog.dart';
@@ -48,7 +49,79 @@ const HanabiTheme _theme = HanabiTheme(
   background: 0x101018,
 );
 
+Future<void> _mount(WidgetTester tester, Widget child) async {
+  await tester.binding.setSurfaceSize(const Size(1280, 720));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        backgroundColor: Colors.black,
+        body: SizedBox.expand(child: child),
+      ),
+    ),
+  );
+  await tester.pump(const Duration(milliseconds: 16));
+  await tester.pump(const Duration(milliseconds: 16));
+}
+
 void main() {
+  group('BUG-5403 暂停时停帧', () {
+    testWidgets('花火暂停（开着动态效果）时不再逐帧要帧，播放时照常逐帧', (WidgetTester tester) async {
+      final FakeVisualizerClock clock = FakeVisualizerClock(3000);
+      await _mount(
+        tester,
+        hanabiVisualizerEntry.builder(
+          visualizerContextFor(
+            hanabiVisualizerEntry,
+            clock: clock,
+            playing: false,
+          ),
+        ),
+      );
+      expect(tester.binding.hasScheduledFrame, isFalse);
+
+      await _mount(
+        tester,
+        hanabiVisualizerEntry.builder(
+          visualizerContextFor(hanabiVisualizerEntry, clock: clock),
+        ),
+      );
+      expect(tester.binding.hasScheduledFrame, isTrue);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+
+    testWidgets('驱动器：有闲置动画的样式暂停时照常逐帧（默认），声明没有的停帧', (WidgetTester tester) async {
+      final LyricVisualizerContext paused = visualizerContextFor(
+        hanabiVisualizerEntry,
+        clock: FakeVisualizerClock(3000),
+        playing: false,
+      );
+      int built = 0;
+      Widget frame({required bool idle}) => LyricVisualizerFrame(
+        context: paused,
+        idleAnimation: idle,
+        builder: (BuildContext c, LyricVisualizerTicks ticks) =>
+            ValueListenableBuilder<LyricVisualizerTick>(
+              valueListenable: ticks,
+              builder: (BuildContext c, LyricVisualizerTick t, Widget? _) {
+                built++;
+                return const SizedBox.expand();
+              },
+            ),
+      );
+      await _mount(tester, frame(idle: true));
+      expect(tester.binding.hasScheduledFrame, isTrue);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _mount(tester, frame(idle: false));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      final int before = built;
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(built, before);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  });
+
   group('节目单', () {
     test('同种子同结果，镜头覆盖每一行、种类都在配方表里', () {
       final HanabiProgram a = compileHanabiProgram(
