@@ -355,7 +355,7 @@ impl G4Core {
                 // 不逐条写命令重试，下一次打开或下一次清除再试。打开本身不因收尾没做成而失败。
                 if super::scrub::due(&opened.conn)? {
                     scrub_due = matches!(
-                        super::scrub::scrub(&opened.conn, super::scrub::Wait::Yes),
+                        super::scrub::scrub(&opened.conn, super::scrub::Wait::Yes, None),
                         Ok(false)
                     );
                 }
@@ -525,7 +525,7 @@ impl G4Core {
             } else {
                 super::scrub::Wait::No
             };
-            let blocked = matches!(super::scrub::scrub(&w, wait), Ok(false));
+            let blocked = matches!(super::scrub::scrub(&w, wait, Some(&self.cancel)), Ok(false));
             self.scrub_pending.store(blocked, Ordering::SeqCst);
         }
         Ok(v)

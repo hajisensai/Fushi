@@ -29,6 +29,8 @@
 //! - **出错**（整理时空间不够、I/O 错误……，[scrub] 回 `Err`）：原因记进 [ERROR_KEY]（读命令 `scrub_state` 的 `error`，
 //!   UI 据此告诉用户「清除的内容在磁盘上还没抹干净」），内核不再逐条写命令重试——那样每条写命令都要重做一次注定失败的
 //!   整库整理——只在下一次打开、或下一次又有清除落成空洞时再试。做成了删掉 [ERROR_KEY]。
+//! - **被关库打断**（库句柄的取消令牌，`cancel.rs`）：不算出错，同「被读者挡住」回 `Ok(false)`、不记 [ERROR_KEY]，
+//!   下一次打开接着做。
 
 use rusqlite::{Connection, OptionalExtension};
 
@@ -97,9 +99,21 @@ pub(crate) enum Wait {
 /// 字节层收尾（[conn] 是写连接、不在事务里）：没有标记的存量库先整库整理一次，再把 WAL 并回主库并截断，都成了才删
 /// 「欠一次收尾」。回包：做完了没有（`false` = 检查点被别的读者挡住，留到下一次）。没欠就什么都不做。出错时原因记进
 /// [ERROR_KEY]（记不下也照样把原错误报回去），做成了删掉它。
-pub(crate) fn scrub(conn: &Connection, wait: Wait) -> Result<bool, String> {
+///
+/// [cancel]：库句柄的取消令牌（`cancel.rs`；开库时还没有句柄，给 `None`）。关库开始之后不动手，动手途中被打断
+/// （进度回调让 `VACUUM` / 检查点以 `SQLITE_INTERRUPT` 退出）也不算出错：「欠一次收尾」留着、不记 [ERROR_KEY]，回
+/// `Ok(false)`，下一次打开接着做——被关库打断不是「整理时空间不够」那类要告诉用户的失败。
+pub(crate) fn scrub(
+    conn: &Connection,
+    wait: Wait,
+    cancel: Option<&super::cancel::Cancel>,
+) -> Result<bool, String> {
+    let cancelled = || cancel.is_some_and(super::cancel::Cancel::is_cancelled);
     if !conn.is_autocommit() {
         return Err("gen4 scrub: must run outside a transaction".to_owned());
+    }
+    if cancelled() {
+        return Ok(false);
     }
     if !due(conn)? {
         return Ok(true);
@@ -114,6 +128,9 @@ pub(crate) fn scrub(conn: &Connection, wait: Wait) -> Result<bool, String> {
             out
         }
     };
+    if out.is_err() && cancelled() {
+        return Ok(false);
+    }
     if let Err(e) = &out {
         // 记不下（库坏了、盘满）就只把原错误报回去：调用方照样知道没做成。
         let _ = conn
@@ -193,7 +210,11 @@ mod tests {
         mark_due(&w).unwrap();
 
         let started = Instant::now();
-        assert_eq!(scrub(&w, Wait::No), Ok(false), "blocked by the reader");
+        assert_eq!(
+            scrub(&w, Wait::No, None),
+            Ok(false),
+            "blocked by the reader"
+        );
         let took = started.elapsed();
         assert!(
             took < BUSY_TIMEOUT / 5,
@@ -207,7 +228,50 @@ mod tests {
         assert_eq!(Duration::from_millis(ms as u64), BUSY_TIMEOUT);
 
         r.execute_batch("COMMIT").unwrap();
-        assert_eq!(scrub(&w, Wait::No), Ok(true));
+        assert_eq!(scrub(&w, Wait::No, None), Ok(true));
         assert!(!due(&w).unwrap());
+    }
+
+    /// 拍板台 review-merge-1124-leftovers 第 5 条（关库取消在途命令）：存量库的整库 `VACUUM` 做到一半关库开始了，被
+    /// 进度回调打断——不是「整理出错」：不记 [ERROR_KEY]（否则界面会说「清除的内容在磁盘上还没抹干净：interrupted」），
+    /// 「欠一次收尾」留着、回 `Ok(false)`，下一次打开（不带令牌）照常做完。关库开始之后再到的收尾不动手。
+    #[test]
+    fn a_scrub_interrupted_by_closing_is_still_owed_and_not_an_error() {
+        use crate::store::gen4::cancel::{Cancel, PROGRESS_OPS};
+        let dir = tempdir::new("scrub-cancel");
+        let path = dir.0.join("srs4.db");
+        let w = open(&path).unwrap();
+        w.execute_batch(
+            "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n WHERE x < 5000)              INSERT INTO srs_meta (key, value) SELECT 'scrub-cancel-' || x, 'x' FROM n",
+        )
+        .unwrap();
+        // 存量库：没有「从建库起就 secure_delete」的标记，收尾要整库 `VACUUM`。
+        w.execute("DELETE FROM srs_meta WHERE key = ?1", [SECURE_KEY])
+            .unwrap();
+        mark_due(&w).unwrap();
+
+        let cancel = Cancel::new();
+        // 关库开始在 `VACUUM` 途中到达：第一次进度回调时置位令牌并打断（同 `Cancel::watch` 装的回调置位之后的样子）。
+        let arrives = cancel.clone();
+        w.progress_handler(
+            PROGRESS_OPS,
+            Some(move || {
+                arrives.cancel();
+                true
+            }),
+        );
+        assert_eq!(scrub(&w, Wait::Yes, Some(&cancel)), Ok(false));
+        w.progress_handler(PROGRESS_OPS, None::<fn() -> bool>);
+        assert!(!has(&w, SECURE_KEY).unwrap(), "the VACUUM did not finish");
+        assert_eq!(state(&w).unwrap(), (true, None), "still owed, not an error");
+
+        // 已经取消了：再到的收尾不动手。
+        assert_eq!(scrub(&w, Wait::Yes, Some(&cancel)), Ok(false));
+        assert_eq!(state(&w).unwrap(), (true, None));
+
+        // 下一次打开（没有令牌）照常做完。
+        assert_eq!(scrub(&w, Wait::Yes, None), Ok(true));
+        assert_eq!(state(&w).unwrap(), (false, None));
+        assert!(has(&w, SECURE_KEY).unwrap());
     }
 }
