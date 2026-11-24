@@ -15371,6 +15371,7 @@
   "web_video_no_tracks": "尚未采集到字幕",
   "web_video_open_in_browser": "在浏览器中打开",
   "web_video_player_unavailable": "内置网页播放器已暂时停用，此地址暂时无法在应用内播放。",
+  "web_video_subtitle_generate_other_video": "页面已经换到别的视频了，只能给打开时的那个视频生成字幕。",
   "web_video_subtitle_media_encrypted": "这个视频是 DRM 加密流（EME），读不出音频，无法生成字幕",
   "web_video_subtitle_media_no_address": "站点播放器没有给出这个视频的媒体地址（没有直链或播放清单），拉不到音频",
   "web_video_subtitle_media_no_video": "页面上还没有视频",

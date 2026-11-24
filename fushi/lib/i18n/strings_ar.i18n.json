@@ -15371,6 +15371,7 @@
   "web_video_no_tracks": "لم يتم التقاط أي ترجمة بعد",
   "web_video_open_in_browser": "Open in browser",
   "web_video_player_unavailable": "مشغّل صفحات الويب المدمج معطّل مؤقتًا؛ لا يمكن تشغيل هذا العنوان داخل التطبيق حاليًا.",
+  "web_video_subtitle_generate_other_video": "This page has moved on to a different video. Subtitles can only be generated for the video it was opened with.",
   "web_video_subtitle_media_encrypted": "This video is DRM-encrypted (EME): its audio can't be read, so subtitles can't be generated",
   "web_video_subtitle_media_no_address": "The site's player didn't expose a media address for this video (no stream link or playlist), so its audio can't be fetched",
   "web_video_subtitle_media_no_video": "There's no video on the page yet",
