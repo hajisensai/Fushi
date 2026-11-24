@@ -2454,9 +2454,15 @@ class DatabaseLibraryCurateFacts implements LibraryCurateFacts {
   }
 
   /// 「缺元数据」的书（[LibraryCurateBookVolume.missing]：没有封面 / 没有作者 / 书名是
-  /// 文件名），按合集归成系列单元：同一个 `collection` 型合集里有两本以上缺资料的书
-  /// → 一个系列单元（按合集名查）；其余每本一个单元。在线漫画源的书不算（资料归源站）。
+  /// 文件名），按合集归成系列单元：同一个系列合集里有两本以上缺资料的书 → 一个系列
+  /// 单元（按合集名查）；其余每本一个单元。在线漫画源的书不算（资料归源站）。
   /// [sinceMs] 非 null 时只要含新入库（`local_added_at` 晚于它）书的单元。
+  ///
+  /// 系列合集 = 用户建的 `collection` 型合集，加上整理器建的系列（`playlist` 型且
+  /// [CollectionOrigin.isOrganizerManaged]：书架自动归组 `BookSeriesGrouper` 的 `rule`、
+  /// AI 整理的 `ai`）——书架叠成一张系列卡的就是后者，只认前者会把同一系列的各卷
+  /// 拆成单书各查各的、待确认提醒条按卷计数。用户手建的 `playlist` 可以混放不相干的
+  /// 书，不当系列。
   @override
   Future<List<LibraryCurateBookUnit>> bookScrapeUnits(int? sinceMs) async {
     final Map<String, (LibraryCurateBookVolume, String, int?)> missing =
@@ -2491,9 +2497,15 @@ class DatabaseLibraryCurateFacts implements LibraryCurateFacts {
               'SELECT c.id AS id, c.name AS name, i.entry_key AS k '
               'FROM media_collections c '
               'JOIN media_collection_items i ON i.collection_id = c.id '
-              "WHERE c.collection_type = 'collection' AND i.media_type = ?1 "
+              "WHERE (c.collection_type = 'collection' "
+              "OR (c.collection_type = 'playlist' AND c.origin IN (?2, ?3))) "
+              'AND i.media_type = ?1 '
               'ORDER BY c.id, i.sort_index',
-              variables: <Variable<Object>>[Variable<String>(epub)],
+              variables: <Variable<Object>>[
+                Variable<String>(epub),
+                Variable<String>(CollectionOrigin.rule.dbValue),
+                Variable<String>(CollectionOrigin.ai.dbValue),
+              ],
             )
             .get()) {
       final String key = '${row.data['k']}';

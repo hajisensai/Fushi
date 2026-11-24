@@ -42,10 +42,17 @@ void main() {
 
   Future<String> uidOf(String key) async => (await db.getEpubBook(key))!.uid;
 
-  Future<void> collection(int id, String name, List<String> uids) async {
+  Future<void> collection(
+    int id,
+    String name,
+    List<String> uids, {
+    String type = 'collection',
+    CollectionOrigin origin = CollectionOrigin.user,
+  }) async {
     await db.customStatement(
-      'INSERT INTO media_collections (id, name, collection_type, created_at) '
-      "VALUES ($id, '$name', 'collection', 1)",
+      'INSERT INTO media_collections '
+      '(id, name, collection_type, origin, created_at) '
+      "VALUES ($id, '$name', '$type', '${origin.dbValue}', 1)",
     );
     for (final String u in uids) {
       await db.customStatement(
@@ -87,6 +94,53 @@ void main() {
     expect(series.volumes.last.missingAuthor, isTrue);
     final LibraryCurateBookUnit file = units[1];
     expect(file.volumes.single.fileNameTitle, isTrue);
+  });
+
+  // BUG-5370：书架自动归组（BookSeriesGrouper）与 AI 整理建的系列是 `playlist` 型；
+  // 以前只认 `collection` 型，同一系列的两卷被拆成两个单书单元、提醒条数成两部。
+  test('整理器建的 playlist 系列（rule / ai）归一个单元；用户手建的 playlist 不归', () async {
+    await book('r1', author: null);
+    await book('r2', author: null);
+    await book('a1', cover: null);
+    await book('a2', cover: null);
+    await book('u1', author: null);
+    await book('u2', author: null);
+    await collection(
+      1,
+      'Rule Series',
+      <String>[await uidOf('r1'), await uidOf('r2')],
+      type: 'playlist',
+      origin: CollectionOrigin.rule,
+    );
+    await collection(
+      2,
+      'AI Series',
+      <String>[await uidOf('a1'), await uidOf('a2')],
+      type: 'playlist',
+      origin: CollectionOrigin.ai,
+    );
+    await collection(3, 'My playlist', <String>[
+      await uidOf('u1'),
+      await uidOf('u2'),
+    ], type: 'playlist');
+    final List<LibraryCurateBookUnit> units = await facts.bookScrapeUnits(null);
+    expect(units.map((LibraryCurateBookUnit u) => u.id), <String>[
+      'collection:1',
+      'collection:2',
+      'book:u1',
+      'book:u2',
+    ]);
+    final LibraryCurateBookUnit rule = units.first;
+    expect(rule.isSeries, isTrue);
+    expect(rule.title, 'Rule Series');
+    expect(rule.volumes.map((LibraryCurateBookVolume v) => v.bookKey), <String>[
+      'r1',
+      'r2',
+    ]);
+    expect(
+      units[1].volumes.map((LibraryCurateBookVolume v) => v.bookKey),
+      <String>['a1', 'a2'],
+    );
   });
 
   test('书的水位：只要含新入库书的单元', () async {
