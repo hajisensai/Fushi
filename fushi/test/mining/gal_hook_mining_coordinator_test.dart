@@ -112,6 +112,28 @@ class _CoverBytesRepo extends _RecordingRepo {
   }
 }
 
+/// 反馈 y90oiVojic：按脚本依次回写卡结果；[gate] 非空时每次写卡先等它（模拟慢编码 /
+/// 慢后端）。
+class _ScriptedRepo extends _RecordingRepo {
+  _ScriptedRepo(this.script);
+
+  final List<MineOutcome> script;
+  Completer<void>? gate;
+  int writes = 0;
+
+  @override
+  Future<MineOutcome> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    final Completer<void>? waitFor = gate;
+    if (waitFor != null) await waitFor.future;
+    final MineOutcome outcome = script[writes];
+    writes++;
+    return outcome;
+  }
+}
+
 void main() {
   late TexthookerService service;
   late Directory testRoot;
@@ -1322,6 +1344,125 @@ void main() {
           );
       expect(result.success, isTrue);
       expect(gifCalls, 1);
+    });
+  });
+
+  group('反馈 y90oiVojic：查词弹窗只等采样，写卡后台落地', () {
+    test('startMineLine 采样完即返回，写卡还在跑', () async {
+      final TexthookerLineEntry entry = service.appendLine('慢い台詞')!;
+      final _ScriptedRepo repo = _ScriptedRepo(<MineOutcome>[
+        const MineOutcome.success(noteId: 42),
+      ])..gate = Completer<void>();
+
+      final GalHookMiningTicket ticket =
+          await coordinator(validator: (_) => true).startMineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '台詞'},
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+          );
+
+      expect(ticket.captured, isTrue);
+      bool landed = false;
+      unawaited(ticket.result.then((_) => landed = true));
+      await pumpEventQueue();
+      expect(landed, isFalse, reason: '写卡被 gate 挡着，回执不能等它');
+      expect(repo.writes, 0);
+
+      repo.gate!.complete();
+      final GalHookMiningResult result = await ticket.result;
+      expect(result.success, isTrue);
+      expect(result.outcome!.noteId, 42);
+      expect(result.retryWrite, isNull);
+    });
+
+    test('采样阶段就失败：captured 为假，结论现成', () async {
+      final TexthookerLineEntry entry = service.appendLine('消えた台詞')!;
+      final GalHookMiningTicket ticket =
+          await coordinator(validator: (_) => false).startMineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '台詞'},
+            compression: MiningMediaCompression.compressed,
+            repo: _ScriptedRepo(<MineOutcome>[]),
+          );
+      expect(ticket.captured, isFalse);
+      final GalHookMiningResult result = await ticket.result;
+      expect(result.aborted, isTrue);
+      expect(result.retryWrite, isNull);
+    });
+
+    test('写卡失败可重试：用已做好的画面与句音重写，不重抓窗口', () async {
+      final TexthookerLineEntry entry = service.appendLine('重試の台詞')!;
+      int gifCalls = 0;
+      int audioCalls = 0;
+      final _ScriptedRepo repo = _ScriptedRepo(<MineOutcome>[
+        MineOutcome.failure('AnkiConnect unreachable'),
+        const MineOutcome.success(noteId: 7),
+      ]);
+      final GalHookMiningCoordinator subject = coordinator(
+        validator: (_) => true,
+        gif:
+            ({
+              required int hwnd,
+              MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+            }) async {
+              gifCalls++;
+              return (
+                bytes: Uint8List.fromList(<int>[71, 73, 70]),
+                format: format,
+              );
+            },
+        audio:
+            ({
+              required String lineId,
+              required String sentence,
+              required String outputExtension,
+              required GalMiningAudioLimit limit,
+            }) async {
+              audioCalls++;
+              return Uint8List.fromList(<int>[7, 8, 9]);
+            },
+      );
+
+      final GalHookMiningResult failed = await (await subject.startMineLine(
+        lineId: entry.id,
+        fields: const <String, String>{'expression': '台詞'},
+        compression: MiningMediaCompression.compressed,
+        repo: repo,
+      )).result;
+      expect(failed.success, isFalse);
+      expect(failed.retryWrite, isNotNull);
+
+      // 重试时这一行已经不在会话里了（台词早翻过去）：重写的是冻结的材料，照样能写。
+      service.appendLine('次の台詞');
+      final GalHookMiningResult retried = await failed.retryWrite!();
+      expect(retried.success, isTrue);
+      expect(retried.outcome!.noteId, 7);
+      expect(repo.writes, 2);
+      expect(gifCalls, 1, reason: '重试不能重抓窗口画面');
+      expect(audioCalls, 1, reason: '重试不能重抓句子音频');
+    });
+
+    test('重复卡片不给重试', () async {
+      final TexthookerLineEntry entry = service.appendLine('重複の台詞')!;
+      final GalHookMiningResult result =
+          await coordinator(validator: (_) => true).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '台詞'},
+            compression: MiningMediaCompression.compressed,
+            repo: _ScriptedRepo(<MineOutcome>[const MineOutcome.duplicate()]),
+          );
+      expect(result.duplicate, isTrue);
+      expect(result.retryWrite, isNull);
+    });
+
+    test('queued 回包：popup.js 画「已加入」并解锁，不报失败', () {
+      expect(GalHookMiningResult.queuedPopupReply['queued'], isTrue);
+      expect(GalHookMiningResult.queuedPopupReply['ankiConnect'], isFalse);
+      expect(
+        GalHookMiningResult.queuedPopupReply.containsKey('message'),
+        isFalse,
+      );
     });
   });
 }
