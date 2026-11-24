@@ -627,6 +627,38 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
         ? apple.secondaryFill
         : apple.secondaryFill.withValues(alpha: apple.secondaryFill.a * 0.5);
     final IconData? icon = row.icon;
+    if (row.header) {
+      // 节标题（「标签」）：与侧栏分组标题同一字级，不可点、不进焦点序。
+      return Positioned.fromRect(
+        key: ValueKey<String>('apple-sidebar-library-${row.id}'),
+        rect: rect,
+        child: Opacity(
+          opacity: opacity,
+          child: ExcludeFocus(
+            child: Align(
+              alignment: AlignmentDirectional.bottomStart,
+              child: Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: 8 * k,
+                  bottom: 4 * k,
+                ),
+                child: Text(
+                  row.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.fade,
+                  softWrap: false,
+                  style: context.fushiType.labelSmall.copyWith(
+                    fontSize: (_kAppleSidebarFontSize - 2) * k,
+                    fontWeight: FontWeight.w600,
+                    color: apple.tertiaryLabel,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Positioned.fromRect(
       key: ValueKey<String>('apple-sidebar-library-${row.id}'),
       rect: rect,
@@ -655,7 +687,9 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
               padding: 8 * k,
               gap: 7 * k,
               iconSize: (_kAppleSidebarIconSize - 1) * k,
-              iconColor: windowActive ? apple.accent : apple.secondaryLabel,
+              iconColor:
+                  row.tint ??
+                  (windowActive ? apple.accent : apple.secondaryLabel),
               fillDuration: fushiMotionDuration(context, FushiMotion.short),
               label: Text(
                 row.label,

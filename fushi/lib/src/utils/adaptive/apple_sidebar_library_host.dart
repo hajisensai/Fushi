@@ -14,7 +14,20 @@ class AppleSidebarLibraryRow {
     required this.onTap,
     this.icon,
     this.depth = 1,
+    this.tint,
+    this.header = false,
   });
+
+  /// 节标题行（「标签」）：不可点、不可聚焦，只画小标题。
+  const AppleSidebarLibraryRow.header({required this.id, required this.label})
+    : selected = false,
+      onTap = _noop,
+      icon = null,
+      depth = 1,
+      tint = null,
+      header = true;
+
+  static void _noop() {}
 
   /// 稳定身份（焦点 id 与比较用）。
   final String id;
@@ -26,13 +39,21 @@ class AppleSidebarLibraryRow {
   final int depth;
   final VoidCallback onTap;
 
+  /// 图标颜色（标签行：标签自己的颜色，Finder 标签式）；null = 侧栏强调色。
+  final Color? tint;
+
+  /// 是否节标题行（见 [AppleSidebarLibraryRow.header]）。
+  final bool header;
+
   /// 只比可见内容（[onTap] 是闭包，每次构建都是新对象）。
   bool sameLook(AppleSidebarLibraryRow other) =>
       id == other.id &&
       label == other.label &&
       icon == other.icon &&
       selected == other.selected &&
-      depth == other.depth;
+      depth == other.depth &&
+      tint == other.tint &&
+      header == other.header;
 }
 
 /// 库页往侧栏登记分区行的宿主（首页外壳持有一个，经 [AppleSidebarLibraryScope]
@@ -57,9 +78,42 @@ class AppleSidebarLibraryHost extends ChangeNotifier {
   /// 侧栏此刻是否以侧栏形态展示（能承载分区子项）。
   bool get sidebarMode => _sidebarMode;
 
-  /// 看得见的库页登记的分区行；没有时为空。
-  List<AppleSidebarLibraryRow> get rows =>
-      _entries[_visibleOwner] ?? const <AppleSidebarLibraryRow>[];
+  /// 看得见的库页登记的标签节（[publishTags]），按 owner 存。
+  final Map<Object, List<AppleSidebarLibraryRow>> _tagEntries =
+      <Object, List<AppleSidebarLibraryRow>>{};
+  Object? _visibleTagOwner;
+
+  /// 看得见的库页登记的分区行 + 标签节；没有时为空。
+  List<AppleSidebarLibraryRow> get rows {
+    final List<AppleSidebarLibraryRow> sections =
+        _entries[_visibleOwner] ?? const <AppleSidebarLibraryRow>[];
+    final List<AppleSidebarLibraryRow> tags =
+        _tagEntries[_visibleTagOwner] ??
+        (_tagEntries.isEmpty
+            ? const <AppleSidebarLibraryRow>[]
+            : _tagEntries.values.last);
+    if (tags.isEmpty) return sections;
+    return <AppleSidebarLibraryRow>[...sections, ...tags];
+  }
+
+  /// 库页的标签栏登记 / 更新侧栏「标签」节（2026-11-24 方案 A 第 8 项：macOS 档
+  /// 侧栏承载标签筛选与「管理标签…」，内容区不再画标签 chip）；[rows] 为 null =
+  /// 撤回。与 [publish] 同一套「看得见才登记」约定；同一页里同时挂着两份工具行
+  /// （宽 / 窄两套布局）时，撤回其中一份不会把另一份的标签节带走。
+  void publishTags(Object owner, List<AppleSidebarLibraryRow>? rows) {
+    if (rows == null) {
+      if (_tagEntries.remove(owner) == null) return;
+      if (_visibleTagOwner == owner) _visibleTagOwner = null;
+      _scheduleNotify();
+      return;
+    }
+    final List<AppleSidebarLibraryRow>? old = _tagEntries[owner];
+    _tagEntries[owner] = rows;
+    final bool ownerChanged = _visibleTagOwner != owner;
+    _visibleTagOwner = owner;
+    if (!ownerChanged && old != null && _sameLook(old, rows)) return;
+    _scheduleNotify();
+  }
 
   /// 侧栏外壳报告自己的形态（构建期间可调，通知推迟到帧末）。
   void reportSidebarMode(bool value) {
