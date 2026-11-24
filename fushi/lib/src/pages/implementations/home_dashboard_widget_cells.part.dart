@@ -65,8 +65,11 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         poster: poster,
       ),
       HomeWidgetKind.languageGoals => _languageGoalsCell(tokens, item, poster),
-      HomeWidgetKind.favorites => HomeFavoritesPanel(
+      HomeWidgetKind.favorites => HomeFavoritesCard(
         key: const ValueKey<String>('home-favorites-card'),
+        database: appModel.database,
+        todayKey: statTodayKey,
+        titleOf: _homeFavoriteTitle,
         poster: poster,
         onOpenCollections: _openFavoriteSentences,
         canOpenFavorite: (FavoriteSentence f) =>
@@ -2347,4 +2350,19 @@ double _lineHeight(BuildContext context, TextStyle style) {
   final double h = painter.height;
   painter.dispose();
   return h;
+}
+
+/// 首页「收藏句子」一句的来源作品显示名（与收藏夹 `_displayBookTitleFor` 同口径）：
+/// 视频按库行（[videoRow]）现取（改名直写行），网页收藏标题快照即网页名，其余按
+/// bookKey 过 override 门面。
+String _homeFavoriteTitle(FavoriteSentence f, VideoBookRow? videoRow) {
+  final String raw = f.bookTitle;
+  final String? key = f.bookKey;
+  if (key == null || key.isEmpty) return raw;
+  if (f.source == kFavoriteSentenceSourceWeb) return raw.isEmpty ? key : raw;
+  if (f.source == kFavoriteSentenceSourceVideo) {
+    return videoRow != null ? displayTitleForVideo(videoRow) : raw;
+  }
+  final String display = displayTitleForBook(bookKey: key, rawTitle: raw);
+  return display.isEmpty ? raw : display;
 }

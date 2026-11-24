@@ -1,45 +1,41 @@
 /// 首页「收藏句子」小组件（[HomeWidgetKind.favorites]，可选组件，默认不放）。
 ///
 /// 数据：收藏句表（`favorite_sentences`）+ 制卡历史（`mined_sentences`），两张表任何
-/// 写入（收藏 / 取消收藏 / 同步合并 / 制卡）都让 [homeFavoritesSnapshotProvider] 重读；
+/// 写入（收藏 / 取消收藏 / 同步合并 / 制卡）都让首页持有的流（[watchHomeFavorites]）
+/// 重读；只读要显示的量（计数走 SQL、句子只取最近几条，见 [loadHomeFavorites]）。
 /// 上锁作品的句子与收藏夹同一口径滤掉（[favoriteHiddenByLock]），首页是开机第一屏，
-/// 宁可少列也不让私密内容出现。不改 DB schema。
+/// 宁可少列也不让私密内容出现。
 ///
 /// 排版按格子的实际宽高走（与别的首页组件同一约定，不按尺寸档 switch）：
 /// - 一行高、窄（1×1）：心形 + 总数大字 + 「今日 +N」；
 /// - 一行高、宽（2×1 及更宽）：最新一句 + 查词词头 chip + 来源行；
 /// - 两行及以上：最近几句的列表，行数跟高度走；
-/// - 够宽（约 4 列）且有没制卡的收藏、制卡模块开着：底部挂「制卡（N）」，复用收藏夹的
-///   批量制卡（`showFavoriteBatchMining`）。
+/// - 够宽（约 4 列）且列出的句子里有没制卡的、制卡模块开着：底部挂「制卡（N）」，复用
+///   收藏夹的批量制卡（`showFavoriteBatchMining`）。
 ///
 /// 点块本身（标题区）进收藏夹「句子」页签；点一句跳回原处，分派与收藏夹列表同一份
-/// （[FavoriteOriginNavigator]）。目的地模块关掉的句子点了改进收藏夹。
+/// （收藏夹页的 `FavoriteOriginNavigator`，由首页接线）。目的地模块关掉的句子点了改进
+/// 收藏夹。
 library;
+
+import 'dart:async';
 
 import 'package:drift/drift.dart'
     show ResultSetImplementation, TableUpdateQuery;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show
         FavoriteSentence,
         FavoriteSentenceRepository,
-        kFavoriteSentenceSourceVideo,
-        kFavoriteSentenceSourceWeb;
+        kFavoriteSentenceSourceVideo;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/favorites/favorite_visibility.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
-import 'package:fushi/src/media/privacy/media_visibility_providers.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
-import 'package:fushi/src/pages/implementations/collections_page.dart'
-    show favoriteHiddenByLock;
 import 'package:fushi/src/pages/implementations/home_widget_frame.dart';
-import 'package:fushi/src/pages/implementations/stat_activity.dart'
-    show statTodayKey;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
     show FushiSkeleton, FushiSkeletonShimmer;
@@ -52,6 +48,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 列表最多取几句（6×4 的格子也放不下更多）。
 const int kHomeFavoritesRecentLimit = 12;
@@ -72,56 +69,56 @@ String homeFavoriteMinedKey(String sentence, String? bookKey) =>
 /// [selectHomeFavorites] 的结果（纯数据）。
 @immutable
 class HomeFavoritesSelection {
-  const HomeFavoritesSelection({
-    required this.total,
-    required this.today,
-    required this.recent,
-    required this.unmined,
-  });
-
-  /// 没被上锁过滤掉的收藏句总数（与收藏夹「句子」页签同口径）。
-  final int total;
-
-  /// 其中今天收藏的条数（[FavoriteSentence.dateKey] == 今天的统计日期键）。
-  final int today;
+  const HomeFavoritesSelection({required this.recent, required this.unmined});
 
   /// 最近收藏的几句，新的在前，至多 [kHomeFavoritesRecentLimit] 句。
   final List<FavoriteSentence> recent;
 
-  /// 可制卡（记着查词词头）且还没有对应制卡历史的收藏，新的在前。
+  /// [recent] 里可制卡（记着查词词头）且还没有对应制卡历史的收藏，新的在前。只看
+  /// 列出来的这几句：首页不为一颗按钮读整张收藏表与制卡历史，更早的收藏去收藏夹制卡。
   final List<FavoriteSentence> unmined;
 }
 
-/// 纯函数：从全部收藏句里挑首页要显示的内容。
+/// 纯函数：从最近的收藏句里挑首页要列的几句与其中没制卡的。
 ///
-/// [hidden] 是上锁过滤（收藏夹同一判据，见 [favoriteHiddenByLock]）；[todayKey] 是今天
-/// 的统计日期键（`statTodayKey()`）；[minedKeys] 是制卡历史的 [homeFavoriteMinedKey]。
+/// [favorites] 新的在前；[hidden] 是上锁过滤（收藏夹同一判据，见
+/// [favoriteHiddenByLock]）；[minedKeys] 是这几句对应制卡历史的 [homeFavoriteMinedKey]。
 HomeFavoritesSelection selectHomeFavorites({
   required List<FavoriteSentence> favorites,
   required bool Function(FavoriteSentence favorite) hidden,
-  required String todayKey,
   required Set<String> minedKeys,
   int recentLimit = kHomeFavoritesRecentLimit,
 }) {
-  final List<FavoriteSentence> shown =
-      <FavoriteSentence>[
-        for (final FavoriteSentence f in favorites)
-          if (!hidden(f)) f,
-      ]..sort(
-        (FavoriteSentence a, FavoriteSentence b) =>
-            b.createdAt.compareTo(a.createdAt),
-      );
+  final List<FavoriteSentence> recent = <FavoriteSentence>[
+    for (final FavoriteSentence f in favorites)
+      if (!hidden(f)) f,
+  ].take(recentLimit).toList(growable: false);
   return HomeFavoritesSelection(
-    total: shown.length,
-    today: shown.where((FavoriteSentence f) => f.dateKey == todayKey).length,
-    recent: List<FavoriteSentence>.unmodifiable(shown.take(recentLimit)),
+    recent: List<FavoriteSentence>.unmodifiable(recent),
     unmined: List<FavoriteSentence>.unmodifiable(<FavoriteSentence>[
-      for (final FavoriteSentence f in shown)
+      for (final FavoriteSentence f in recent)
         if ((f.expression?.isNotEmpty ?? false) &&
             !minedKeys.contains(homeFavoriteMinedKey(f.text, f.bookKey)))
           f,
     ]),
   );
+}
+
+/// 纯函数：有作品上锁时数总数 / 今日（[rows] 是全部收藏句的四列，不含正文；没有
+/// 上锁时走 SQL 计数，见 [loadHomeFavorites]）。
+({int total, int today}) countHomeFavorites({
+  required Iterable<FavoriteSentenceLockRow> rows,
+  required bool Function(FavoriteSentenceLockRow row) hidden,
+  required String todayKey,
+}) {
+  int total = 0;
+  int today = 0;
+  for (final FavoriteSentenceLockRow r in rows) {
+    if (hidden(r)) continue;
+    total++;
+    if (r.dateKey == todayKey) today++;
+  }
+  return (total: total, today: today);
 }
 
 /// 列表里的一句：收藏本身 + 来源作品的显示名（过 display-title 门面，与收藏夹同口径）。
@@ -152,76 +149,119 @@ class HomeFavoritesSnapshot {
     unmined: <FavoriteSentence>[],
   );
 
+  /// 没被上锁过滤掉的收藏句总数（与收藏夹「句子」页签同口径）。
   final int total;
+
+  /// 其中今天收藏的条数（[FavoriteSentence.dateKey] == 今天的统计日期键）。
   final int today;
   final List<HomeFavoriteEntry> recent;
   final List<FavoriteSentence> unmined;
 }
 
-/// 收藏句来源作品的显示名：视频按库行现查（改名直写行），网页收藏标题快照即网页名，
-/// 其余按 bookKey 过 override 门面（与收藏夹 `_displayBookTitleFor` 同口径）。
-Future<String> _favoriteDisplayTitle(
-  VideoBookRepository videos,
-  FavoriteSentence f,
-) async {
-  final String raw = f.bookTitle;
-  final String? key = f.bookKey;
-  if (key == null || key.isEmpty) return raw;
-  if (f.source == kFavoriteSentenceSourceWeb) return raw.isEmpty ? key : raw;
-  if (f.source == kFavoriteSentenceSourceVideo) {
-    final VideoBookRow? row = await videos.getByBookUid(key);
-    return row != null ? displayTitleForVideo(row) : raw;
-  }
-  final String display = displayTitleForBook(bookKey: key, rawTitle: raw);
-  return display.isEmpty ? raw : display;
-}
+/// 一句收藏的来源作品显示名（过 display-title 门面，与收藏夹同口径）。[videoRow] 是
+/// 视频收藏的本机库行（[loadHomeFavorites] 按 bookUid 一次批量查好；不是视频 / 没入库
+/// 为 null）。由首页传入：display-title 门面依赖阅读器来源，本文件 import 它会被拖进
+/// import 大环。
+typedef HomeFavoriteTitleOf =
+    String Function(FavoriteSentence favorite, VideoBookRow? videoRow);
 
-/// 读一份快照（[visibility] = 当前上锁显示口径）。
+/// 读一份快照（[visibility] = 当前上锁显示口径，[todayKey] = 今天的统计日期键）。
+///
+/// 只读要显示的量：总数 / 今日没有上锁作品时一条 SQL 数完（有上锁时读四列小行判
+/// 上锁）；句子只取最近 [recentLimit] 条（上锁滤掉的再往后补页）；制卡判定只查这
+/// 几句的制卡历史；视频标题按 bookUid 一次批量查。
 Future<HomeFavoritesSnapshot> loadHomeFavorites(
   FushiDatabase db,
-  MediaVisibility visibility,
-) async {
-  final List<FavoriteSentence> all = await FavoriteSentenceRepository(
-    db,
-  ).getAll();
-  if (all.isEmpty) return HomeFavoritesSnapshot.empty;
+  MediaVisibility visibility, {
+  required String todayKey,
+  required HomeFavoriteTitleOf titleOf,
+  int recentLimit = kHomeFavoritesRecentLimit,
+}) async {
+  bool hidden(String? bookKey, String title, String source) =>
+      favoriteHiddenByLock(
+        visibility,
+        bookKey: bookKey,
+        title: title,
+        source: source,
+      );
+  final ({int total, int today}) counts = visibility.hidesAnything
+      ? countHomeFavorites(
+          rows: await db.getFavoriteSentenceLockRows(),
+          hidden: (FavoriteSentenceLockRow r) =>
+              hidden(r.bookKey, r.bookTitle, r.source),
+          todayKey: todayKey,
+        )
+      : await db.countFavoriteSentences(todayKey: todayKey);
+  if (counts.total == 0) return HomeFavoritesSnapshot.empty;
+
+  final List<FavoriteSentence> visible = <FavoriteSentence>[];
+  for (int offset = 0; visible.length < recentLimit;) {
+    final List<FavoriteSentenceRow> page = await db
+        .getRecentFavoriteSentenceRows(limit: recentLimit, offset: offset);
+    for (final FavoriteSentenceRow row in page) {
+      final FavoriteSentence f = FavoriteSentenceRepository.fromRow(row);
+      if (!hidden(f.bookKey, f.bookTitle, f.source)) visible.add(f);
+    }
+    if (page.length < recentLimit) break;
+    offset += page.length;
+  }
+  final List<FavoriteSentence> candidates = visible
+      .take(recentLimit)
+      .toList(growable: false);
   final Set<String> minedKeys = <String>{
-    for (final MinedSentenceRow m in await db.getAllMinedSentences())
-      if (m.sentence.isNotEmpty) homeFavoriteMinedKey(m.sentence, m.bookKey),
+    for (final ({String sentence, String? bookKey}) m
+        in await db.getMinedSentenceOrigins(<String>[
+          for (final FavoriteSentence f in candidates)
+            if (f.expression?.isNotEmpty ?? false) f.text,
+        ]))
+      homeFavoriteMinedKey(m.sentence, m.bookKey),
   };
   final HomeFavoritesSelection selection = selectHomeFavorites(
-    favorites: all,
-    hidden: (FavoriteSentence f) => favoriteHiddenByLock(
-      visibility,
-      bookKey: f.bookKey,
-      title: f.bookTitle,
-      source: f.source,
-    ),
-    todayKey: statTodayKey(),
+    favorites: candidates,
+    hidden: (_) => false,
     minedKeys: minedKeys,
+    recentLimit: recentLimit,
   );
-  final VideoBookRepository videos = VideoBookRepository(db);
+  final Map<String, VideoBookRow> videoRows = <String, VideoBookRow>{
+    for (final VideoBookRow row
+        in await VideoBookRepository(db).getByBookUids(<String>{
+          for (final FavoriteSentence f in selection.recent)
+            if (f.source == kFavoriteSentenceSourceVideo &&
+                (f.bookKey?.isNotEmpty ?? false))
+              f.bookKey!,
+        }))
+      row.bookUid: row,
+  };
   return HomeFavoritesSnapshot(
-    total: selection.total,
-    today: selection.today,
+    total: counts.total,
+    today: counts.today,
     recent: <HomeFavoriteEntry>[
       for (final FavoriteSentence f in selection.recent)
         HomeFavoriteEntry(
           favorite: f,
-          title: await _favoriteDisplayTitle(videos, f),
+          title: titleOf(
+            f,
+            f.source == kFavoriteSentenceSourceVideo
+                ? videoRows[f.bookKey ?? '']
+                : null,
+          ),
         ),
     ],
     unmined: selection.unmined,
   );
 }
 
-/// 先读一份，之后收藏句表 / 制卡历史有写入就重读一份。
+/// 先读一份，之后收藏句表 / 制卡历史有写入就重读一份（[todayKey] 每次重读现取，
+/// 跨过统计日界后的下一次重读按新的一天数「今日」）。
 Stream<HomeFavoritesSnapshot> watchHomeFavorites(
   FushiDatabase db,
-  MediaVisibility visibility,
-) => _homeFavoritesTriggers(
-  db,
-).asyncMap((_) => loadHomeFavorites(db, visibility));
+  MediaVisibility visibility, {
+  required String Function() todayKey,
+  required HomeFavoriteTitleOf titleOf,
+}) => _homeFavoritesTriggers(db).asyncMap(
+  (_) =>
+      loadHomeFavorites(db, visibility, todayKey: todayKey(), titleOf: titleOf),
+);
 
 Stream<void> _homeFavoritesTriggers(FushiDatabase db) async* {
   yield null;
@@ -233,29 +273,22 @@ Stream<void> _homeFavoritesTriggers(FushiDatabase db) async* {
   );
 }
 
-/// 首页「收藏句子」的数据（组件不在首页上时自动释放、不再监听表变更）。上锁口径变了
-/// （解锁 / 重新上锁 / 上锁标记变化）整条流重建。
-final AutoDisposeStreamProvider<HomeFavoritesSnapshot>
-homeFavoritesSnapshotProvider =
-    StreamProvider.autoDispose<HomeFavoritesSnapshot>((Ref ref) {
-      final FushiDatabase db = ref.watch(
-        appProvider.select((AppModel m) => m.database),
-      );
-      final MediaVisibility visibility = ref.watch(mediaVisibilityProvider);
-      return watchHomeFavorites(db, visibility);
-    });
-
-/// 首页「收藏句子」小组件。可用性恒为可用（[homeWidgetAvailable]）；导航与制卡由首页
-/// 经回调接线，本 widget 只管画（测试据此不必起一个 AppModel）。
-class HomeFavoritesPanel extends ConsumerWidget {
+/// 首页「收藏句子」小组件。可用性恒为可用（[homeWidgetAvailable]）；数据、导航与制卡
+/// 都由首页接线（首页持有 [watchHomeFavorites] 的 provider），本 widget 只管画——不读
+/// AppModel，也就不进 import 大环，测试也不必起一个 AppModel。
+class HomeFavoritesPanel extends StatelessWidget {
   const HomeFavoritesPanel({
     super.key,
+    required this.data,
     required this.onOpenCollections,
     required this.onOpenFavorite,
     required this.canOpenFavorite,
     this.onCreateCards,
     this.poster = false,
   });
+
+  /// 当前快照；null = 还在读（画骨架）。
+  final HomeFavoritesSnapshot? data;
 
   /// 点块本身：进收藏夹「句子」页签。
   final VoidCallback onOpenCollections;
@@ -273,10 +306,7 @@ class HomeFavoritesPanel extends ConsumerWidget {
   final bool poster;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final HomeFavoritesSnapshot? data = ref
-        .watch(homeFavoritesSnapshotProvider)
-        .valueOrNull;
+  Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         final bool dense = homeWidgetIsDense(c.maxHeight);
@@ -360,6 +390,105 @@ class HomeFavoritesPanel extends ConsumerWidget {
       ),
     };
   }
+}
+
+/// 首页网格里的「收藏句子」格子：订阅 [watchHomeFavorites] 并把快照交给
+/// [HomeFavoritesPanel]。
+///
+/// 订阅由本 State 持有（不放全局 provider）：格子从首页移走即取消、不再监听表变更；
+/// 上锁口径（[MediaVisibility.of]）或数据库换了就重订阅，并先清回骨架——重新上锁后
+/// 不让旧快照里的私密句子多显示一帧。读库失败记 [ErrorLogService]，格子保持上一份
+/// 快照（第一份就失败则停在骨架）。
+class HomeFavoritesCard extends StatefulWidget {
+  const HomeFavoritesCard({
+    super.key,
+    required this.database,
+    required this.todayKey,
+    required this.titleOf,
+    required this.onOpenCollections,
+    required this.onOpenFavorite,
+    required this.canOpenFavorite,
+    this.onCreateCards,
+    this.poster = false,
+  });
+
+  final FushiDatabase database;
+
+  /// 今天的统计日期键（`statTodayKey`），每次重读现取。
+  final String Function() todayKey;
+
+  /// 来源作品显示名（见 [HomeFavoriteTitleOf]）。
+  final HomeFavoriteTitleOf titleOf;
+
+  final VoidCallback onOpenCollections;
+  final void Function(HomeFavoriteEntry entry) onOpenFavorite;
+  final bool Function(FavoriteSentence favorite) canOpenFavorite;
+  final void Function(List<FavoriteSentence> favorites)? onCreateCards;
+  final bool poster;
+
+  @override
+  State<HomeFavoritesCard> createState() => _HomeFavoritesCardState();
+}
+
+class _HomeFavoritesCardState extends State<HomeFavoritesCard> {
+  StreamSubscription<HomeFavoritesSnapshot>? _subscription;
+  MediaVisibility? _visibility;
+  HomeFavoritesSnapshot? _data;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final MediaVisibility next = MediaVisibility.of(context);
+    if (!identical(next, _visibility)) _subscribe(next);
+  }
+
+  @override
+  void didUpdateWidget(HomeFavoritesCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.database, widget.database)) {
+      _subscribe(_visibility ?? MediaVisibility.of(context));
+    }
+  }
+
+  void _subscribe(MediaVisibility visibility) {
+    unawaited(_subscription?.cancel());
+    _visibility = visibility;
+    _data = null;
+    _subscription =
+        watchHomeFavorites(
+          widget.database,
+          visibility,
+          todayKey: widget.todayKey,
+          titleOf: widget.titleOf,
+        ).listen(
+          (HomeFavoritesSnapshot snapshot) {
+            if (mounted) setState(() => _data = snapshot);
+          },
+          onError: (Object error, StackTrace stack) {
+            ErrorLogService.instance.log(
+              'HomeFavoritesCard.load',
+              error,
+              stack,
+            );
+          },
+        );
+  }
+
+  @override
+  void dispose() {
+    unawaited(_subscription?.cancel());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => HomeFavoritesPanel(
+    data: _data,
+    poster: widget.poster,
+    onOpenCollections: widget.onOpenCollections,
+    onOpenFavorite: widget.onOpenFavorite,
+    canOpenFavorite: widget.canOpenFavorite,
+    onCreateCards: widget.onCreateCards,
+  );
 }
 
 enum _HomeFavoritesMode { count, newest, list }
@@ -456,7 +585,7 @@ class _HeadwordChip extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: style.accent.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: FushiBorderRadius.chip,
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),

@@ -1,20 +1,21 @@
 // 首页「收藏句子」小组件（HomeWidgetKind.favorites）：数据挑选（总数 / 今日 / 上锁过滤 /
 // 未制卡）的纯函数，与按格子尺寸变化的渲染（1×1 数字、2×1 最新一句、两行以上列表、
 // 够宽才出「制卡（N）」、空态），MD3 与 Apple 两套设计系统各跑一遍。
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
+import 'package:fushi/src/media/favorites/favorite_visibility.dart';
 import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
-import 'package:fushi/src/pages/implementations/collections_page.dart'
-    show favoriteHiddenByLock;
 import 'package:fushi/src/pages/implementations/home_favorites_panel.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show FushiGlassMaterial;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
 FavoriteSentence _fav(
@@ -78,32 +79,26 @@ Future<_Harness> _pump(
   addTearDown(tester.view.reset);
   final _Harness h = _Harness();
   await tester.pumpWidget(
-    ProviderScope(
-      overrides: <Override>[
-        homeFavoritesSnapshotProvider.overrideWith(
-          (_) => Stream<HomeFavoritesSnapshot>.value(snapshot),
-        ),
-      ],
-      child: MaterialApp(
-        theme: buildFushiThemeData(
-          scheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-          textTheme: Typography.material2021().black,
-          glass: FushiGlassMaterial.off,
-          glassDesign: apple,
-        ),
-        home: FushiGlassScope(
-          child: Scaffold(
-            body: Align(
-              alignment: Alignment.topLeft,
-              child: SizedBox(
-                width: size.width,
-                height: size.height,
-                child: HomeFavoritesPanel(
-                  onOpenCollections: () => h.openedCollections++,
-                  onOpenFavorite: h.opened.add,
-                  canOpenFavorite: (_) => reachable,
-                  onCreateCards: canCreate ? h.created.add : null,
-                ),
+    MaterialApp(
+      theme: buildFushiThemeData(
+        scheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        textTheme: Typography.material2021().black,
+        glass: FushiGlassMaterial.off,
+        glassDesign: apple,
+      ),
+      home: FushiGlassScope(
+        child: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: size.width,
+              height: size.height,
+              child: HomeFavoritesPanel(
+                data: snapshot,
+                onOpenCollections: () => h.openedCollections++,
+                onOpenFavorite: h.opened.add,
+                canOpenFavorite: (_) => reachable,
+                onCreateCards: canCreate ? h.created.add : null,
               ),
             ),
           ),
@@ -135,26 +130,38 @@ Finder _rows() => find.byWidgetPredicate(
 
 void main() {
   group('selectHomeFavorites', () {
-    test('总数 / 今日 / 新的在前 / 最多 N 句', () {
+    test('最多 N 句，保持传入的新→旧顺序', () {
       final HomeFavoritesSelection s = selectHomeFavorites(
         favorites: <FavoriteSentence>[
-          _fav('old', minutesAgo: 300, dateKey: '2026-11-22'),
-          _fav('new', minutesAgo: 1, dateKey: '2026-11-23'),
-          _fav('mid', minutesAgo: 30, dateKey: '2026-11-23'),
+          _fav('new', minutesAgo: 1),
+          _fav('mid', minutesAgo: 30),
+          _fav('old', minutesAgo: 300),
           _fav('legacy', minutesAgo: 900),
         ],
         hidden: (_) => false,
-        todayKey: '2026-11-23',
         minedKeys: const <String>{},
         recentLimit: 3,
       );
-      expect(s.total, 4);
-      expect(s.today, 2);
       expect(s.recent.map((FavoriteSentence f) => f.text), <String>[
         'new',
         'mid',
         'old',
       ]);
+    });
+
+    test('有上锁时的计数：总数 / 今日都不算上锁作品', () {
+      final ({int total, int today}) c = countHomeFavorites(
+        rows: <FavoriteSentenceLockRow>[
+          (bookKey: 'a', bookTitle: 'A', source: 'book', dateKey: 'd'),
+          (bookKey: 'a', bookTitle: 'A', source: 'book', dateKey: 'old'),
+          (bookKey: 'a', bookTitle: 'A', source: 'book', dateKey: null),
+          (bookKey: 'locked', bookTitle: 'L', source: 'book', dateKey: 'd'),
+        ],
+        hidden: (FavoriteSentenceLockRow r) => r.bookKey == 'locked',
+        todayKey: 'd',
+      );
+      expect(c.total, 3);
+      expect(c.today, 1);
     });
 
     test('上锁作品的句子不计数、不列、不进制卡（与收藏夹同一判据）', () {
@@ -171,11 +178,8 @@ void main() {
       final HomeFavoritesSelection s = selectHomeFavorites(
         favorites: favs,
         hidden: (FavoriteSentence f) => f.bookKey == 'hoshi://book/locked',
-        todayKey: 'd',
         minedKeys: const <String>{},
       );
-      expect(s.total, 1);
-      expect(s.today, 1);
       expect(s.recent.single.text, 'public');
       expect(s.unmined.single.text, 'public');
     });
@@ -190,10 +194,8 @@ void main() {
           title: f.bookTitle,
           source: f.source,
         ),
-        todayKey: 'd',
         minedKeys: const <String>{},
       );
-      expect(s.total, 0);
       expect(s.recent, isEmpty);
       // 已解锁：照常显示。
       expect(
@@ -222,7 +224,6 @@ void main() {
       final HomeFavoritesSelection s = selectHomeFavorites(
         favorites: favs,
         hidden: (_) => false,
-        todayKey: 'd',
         minedKeys: <String>{homeFavoriteMinedKey(' carded ', 'hoshi://book/a')},
       );
       expect(
@@ -240,6 +241,99 @@ void main() {
       expect(item?.sentence, '文');
       expect(item?.bookKey, 'hoshi://book/a');
       expect(item?.bookTitle, 'Book A');
+    });
+  });
+
+  group('loadHomeFavorites（真库）', () {
+    late FushiDatabase db;
+    setUp(() => db = FushiDatabase.forTesting(NativeDatabase.memory()));
+    tearDown(() => db.close());
+
+    Future<void> add(FavoriteSentence f) =>
+        FavoriteSentenceRepository(db).add(f);
+
+    String titleOf(FavoriteSentence f, VideoBookRow? row) =>
+        row != null ? 'row:${row.title}' : 'raw:${f.bookTitle}';
+
+    test('计数走全表，句子只取最近 N 条，制卡判定只看这 N 条，视频标题批量取', () async {
+      for (int i = 0; i < 20; i++) {
+        await add(
+          _fav(
+            's$i',
+            minutesAgo: i,
+            expression: '語',
+            dateKey: i < 5 ? '2026-11-23' : '2026-11-01',
+          ),
+        );
+      }
+      await add(
+        _fav(
+          'video line',
+          minutesAgo: -1,
+          bookKey: 'vid-1',
+          title: 'snapshot title',
+          source: kFavoriteSentenceSourceVideo,
+        ),
+      );
+      await db
+          .into(db.videoBooks)
+          .insert(
+            VideoBooksCompanion.insert(
+              bookUid: 'vid-1',
+              title: 'Library title',
+              videoPath: '/v/vid-1.mkv',
+              importedAt: const Value<int?>(0),
+            ),
+          );
+      // 列出的句子里 s0 制过卡（制卡历史里原句带首尾空白也认）。
+      await db.addMinedSentence(
+        source: kFavoriteSentenceSourceBook,
+        dateKey: '2026-11-23',
+        sentence: ' s0 ',
+        bookKey: 'hoshi://book/a',
+      );
+
+      final HomeFavoritesSnapshot snap = await loadHomeFavorites(
+        db,
+        MediaVisibility.nothingLocked,
+        todayKey: '2026-11-23',
+        titleOf: titleOf,
+        recentLimit: 4,
+      );
+      expect(snap.total, 21);
+      expect(snap.today, 5);
+      expect(
+        snap.recent.map((HomeFavoriteEntry e) => e.favorite.text),
+        <String>['video line', 's0', 's1', 's2'],
+      );
+      expect(snap.recent.first.title, 'row:Library title');
+      expect(snap.recent[1].title, 'raw:Book A');
+      expect(snap.unmined.map((FavoriteSentence f) => f.text), <String>[
+        's1',
+        's2',
+      ], reason: '没有词头的视频句不进；s0 制过卡；只看列出来的 4 句');
+    });
+
+    test('上锁口径没读完（pending）：一句不列、计数为 0（fail-closed）', () async {
+      await add(_fav('x', minutesAgo: 1, dateKey: '2026-11-23'));
+      final HomeFavoritesSnapshot snap = await loadHomeFavorites(
+        db,
+        MediaVisibility.pending,
+        todayKey: '2026-11-23',
+        titleOf: titleOf,
+      );
+      expect(snap.total, 0);
+      expect(snap.recent, isEmpty);
+    });
+
+    test('空表：空快照', () async {
+      final HomeFavoritesSnapshot snap = await loadHomeFavorites(
+        db,
+        MediaVisibility.all,
+        todayKey: 'd',
+        titleOf: titleOf,
+      );
+      expect(identical(snap, HomeFavoritesSnapshot.empty), isTrue);
     });
   });
 

@@ -108,4 +108,54 @@ void main() {
     await tester.pump(const Duration(seconds: 10));
     await tester.pumpAndSettle();
   });
+
+  for (final (String origin, String Function() message) c
+      in <(String, String Function())>[
+        // 记着来源的收藏：那台服务器没登录，明说是「没登录」，不笼统说不在库里。
+        (
+          'jellyfin:http://gone:8096|u1',
+          () => t.video_favorite_server_signed_out,
+        ),
+        // 来源是互联对端（不是媒体服务器）：本机找不回来，笼统提示。
+        ('interconnect', () => t.video_favorite_source_unavailable),
+      ]) {
+    testWidgets('a favorite that recorded its source (${c.$1}) and cannot be '
+        'reopened says why', (WidgetTester tester) async {
+      await FavoriteSentenceRepository(db).add(
+        FavoriteSentence(
+          text: '来源つきの文です。',
+          bookTitle: 'Episode 3',
+          createdAt: DateTime(2026, 11, 20, 10),
+          bookKey: '1234',
+          normCharOffset: 61000,
+          normCharLength: 2400,
+          source: kFavoriteSentenceSourceVideo,
+          originSourceId: c.$1,
+        ),
+      );
+
+      FushiToast.navigatorKey = appModel.navigatorKey;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+          child: TranslationProvider(
+            child: MaterialApp(
+              navigatorKey: appModel.navigatorKey,
+              home: const CollectionsPage(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('来源つきの文です。'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(c.$2()), findsOneWidget);
+      expect(find.byType(CollectionsPage), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
+    });
+  }
 }

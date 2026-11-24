@@ -9,7 +9,64 @@ typedef FavoriteSentenceStatRow = ({
   DateTime createdAt,
 });
 
+/// 只用来判上锁、按天计数的四列（不读句子正文）：首页「收藏句子」小组件在有作品
+/// 上锁时数总数 / 今日用。
+typedef FavoriteSentenceLockRow = ({
+  String? bookKey,
+  String bookTitle,
+  String source,
+  String? dateKey,
+});
+
 mixin _FushiDbFavoriteSentences on _$FushiDatabase, _FushiDbInfra {
+  /// 最近收藏的 [limit] 条（新的在前，与 [getAllFavoriteSentenceRows] 同序），跳过
+  /// 最新的 [offset] 条。首页「收藏句子」小组件只读这么多，不读整表。
+  Future<List<FavoriteSentenceRow>> getRecentFavoriteSentenceRows({
+    required int limit,
+    int offset = 0,
+  }) =>
+      (select(favoriteSentences)
+            ..orderBy(_newestFirst)
+            ..limit(limit, offset: offset))
+          .get();
+
+  /// 收藏句总数与 [todayKey] 那天（`dateKey`）收藏的条数，一条 SQL 数完、不读行。
+  Future<({int total, int today})> countFavoriteSentences({
+    required String todayKey,
+  }) async {
+    final $FavoriteSentencesTable t = favoriteSentences;
+    final Expression<int> total = t.id.count();
+    final Expression<int> today = t.id.count(
+      filter: t.dateKey.equals(todayKey),
+    );
+    final TypedResult row = await (selectOnly(
+      t,
+    )..addColumns(<Expression<Object>>[total, today])).getSingle();
+    return (total: row.read(total) ?? 0, today: row.read(today) ?? 0);
+  }
+
+  /// 每条收藏句的出处 / 标题快照 / 来源 / 收藏日四列（[FavoriteSentenceLockRow]）。
+  Future<List<FavoriteSentenceLockRow>> getFavoriteSentenceLockRows() async {
+    final $FavoriteSentencesTable t = favoriteSentences;
+    final List<TypedResult> rows =
+        await (selectOnly(t)..addColumns(<Expression<Object>>[
+              t.bookKey,
+              t.bookTitle,
+              t.source,
+              t.dateKey,
+            ]))
+            .get();
+    return <FavoriteSentenceLockRow>[
+      for (final TypedResult r in rows)
+        (
+          bookKey: r.read(t.bookKey),
+          bookTitle: r.read(t.bookTitle)!,
+          source: r.read(t.source)!,
+          dateKey: r.read(t.dateKey),
+        ),
+    ];
+  }
+
   /// 全部收藏句，新收藏在前（与旧 JSON 仓库 `getAll` 的排序一致；同一时刻按 id 定序）。
   Future<List<FavoriteSentenceRow>> getAllFavoriteSentenceRows() =>
       (select(favoriteSentences)..orderBy(_newestFirst)).get();

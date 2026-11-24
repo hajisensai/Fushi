@@ -46,6 +46,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' show WidgetRef;
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/favorites/favorite_batch_mining.dart';
+import 'package:fushi/src/media/favorites/favorite_visibility.dart';
 import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
 import 'package:fushi/src/media/favorites/web_video_favorite.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -53,12 +54,14 @@ import 'package:fushi/src/mining/mined_origin_navigation.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
-    show resolveMediaServerItemLaunch;
+    show
+        MediaServerItemLaunch,
+        MediaServerItemLaunchFailure,
+        MediaServerItemLaunchResult,
+        isMediaServerSourceId,
+        resolveMediaServerItemLaunch;
 import 'package:fushi/src/media/video/remote_client_teardown.dart'
     show closeOwnedRemoteVideoClient;
-import 'package:fushi/src/sync/remote_video_client.dart' show RemoteVideoClient;
-import 'package:fushi_engine/sync/fushi_library_host_service.dart'
-    show RemoteVideoInfo;
 import 'package:fushi/src/sync/sync_repository.dart' show SyncRepository;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
@@ -296,6 +299,7 @@ class _CollectionItem {
     this.contextSentence,
     this.headword,
     this.headwordReading,
+    this.originSourceId,
   });
 
   /// 收藏句表的一行（收藏夹列表与首页「收藏句子」小组件同一映射）。
@@ -314,6 +318,7 @@ class _CollectionItem {
         source: fav.source,
         headword: fav.expression,
         headwordReading: fav.reading,
+        originSourceId: fav.originSourceId,
       );
 
   final _CollectionType type;
@@ -355,6 +360,10 @@ class _CollectionItem {
   /// 读音；划选收藏 / 旧条目为 null。
   final String? headword;
   final String? headwordReading;
+
+  /// 收藏时所在远端条目的来源身份（[FavoriteSentence.originSourceId]，收藏句专用；
+  /// 制卡历史 / 收藏词没有）。视频跳回原处据此回到那一台媒体服务器（BUG-5379）。
+  final String? originSourceId;
 
   bool get isWord => type == _CollectionType.word;
 
@@ -2272,18 +2281,39 @@ bool favoriteSentenceOriginReachable(
   visibility,
 );
 
-/// 收藏 / 制卡行的来源作品上锁（本次会话未解锁）时不出现（[MediaVisibility.hidesWork]，
-/// 唯一的上锁过滤入口）。网页收藏的 bookKey 是网址，不是作品身份。收藏夹与首页
-/// 「收藏句子」小组件共用这一判据。
-bool favoriteHiddenByLock(
-  MediaVisibility visibility, {
-  required String? bookKey,
-  required String? title,
-  required String source,
-}) => visibility.hidesWork(
-  key: source == kFavoriteSentenceSourceWeb ? null : bookKey,
-  title: title ?? '',
-);
+/// 视频收藏跳不回去时的提示（收藏夹 / 首页「收藏句子」共用）。[hasOrigin] = 收藏
+/// 记着来源身份：此时按 [failure] 分开说「那台服务器没登录 / 条目没了 / 连不上」；
+/// 旧收藏不知道来自哪台，只能笼统提示（来源不在库里，若是媒体服务器串流请登录那台）。
+String videoFavoriteUnavailableMessage(
+  MediaServerItemLaunchFailure? failure, {
+  required bool hasOrigin,
+}) {
+  if (!hasOrigin) {
+    return failure == MediaServerItemLaunchFailure.serverUnreachable
+        ? t.video_favorite_server_unreachable
+        : t.video_favorite_source_unavailable;
+  }
+  return switch (failure) {
+    MediaServerItemLaunchFailure.serverSignedOut =>
+      t.video_favorite_server_signed_out,
+    MediaServerItemLaunchFailure.itemMissing =>
+      t.video_favorite_server_item_missing,
+    MediaServerItemLaunchFailure.serverUnreachable =>
+      t.video_favorite_server_unreachable,
+    null => t.video_favorite_source_unavailable,
+  };
+}
+
+/// 弹 [videoFavoriteUnavailableMessage]。
+void showVideoFavoriteUnavailable(
+  MediaServerItemLaunchFailure? failure, {
+  required bool hasOrigin,
+}) {
+  FushiToast.show(
+    msg: videoFavoriteUnavailableMessage(failure, hasOrigin: hasOrigin),
+    severity: ToastSeverity.error,
+  );
+}
 
 /// 收藏句 / 制卡句 / 带锚点收藏词「跳回原文」的唯一实现：收藏夹（列表行与条目菜单）
 /// 与首页「收藏句子」小组件（[HomeWidgetKind.favorites]）共用同一份分派，不各写一套。
@@ -2455,11 +2485,19 @@ class FavoriteOriginNavigator {
 
   Future<void> _openVideoSentence(_CollectionItem item) async {
     final String? bookUid = item.bookKey;
-    if (bookUid == null || bookUid.isEmpty) return;
+    if (bookUid == null || bookUid.isEmpty) {
+      showVideoFavoriteUnavailable(null, hasOrigin: false);
+      return;
+    }
 
     final VideoBookRepository repo = VideoBookRepository(appModel.database);
     final VideoBookRow? row = await repo.getByBookUid(bookUid);
-    if (row == null) return;
+    if (row == null) {
+      // 没有本机库行：从媒体服务器浏览页直接串流（没「加入媒体库」）时收藏的句子，
+      // bookKey 是服务器条目 id，按收藏时记下的来源身份回到那一台服务器（BUG-5379）。
+      await _openMediaServerVideoSentence(repo, bookUid, item);
+      return;
+    }
 
     final int? startMs = await _resolveVideoFavoriteStartMs(repo, row, item);
     final target = resolveVideoFavoriteOpenTarget(
@@ -2487,6 +2525,77 @@ class FavoriteOriginNavigator {
           initialCueStartMs: target.startMs,
           initialEpisodeIndex: target.episodeIndex,
           initialSubtitleListVisible: true,
+        ),
+      ),
+    );
+  }
+
+  /// 媒体服务器串流条目（没入库）的收藏句：按收藏时记下的来源身份
+  /// （[_CollectionItem.originSourceId]）在那一台服务器上取回条目、以远端播放页打开，
+  /// 起播后按收藏的起点 + 原文对到那一句（与手机遥控跳收藏同一条
+  /// `initialRemoteFavorite` 路径）。旧收藏 / 制卡历史没记来源，由解析器挨台问并核对
+  /// 标题。找不回来一律按原因给提示（没登录 / 条目没了 / 连不上），不静默。
+  Future<void> _openMediaServerVideoSentence(
+    VideoBookRepository repo,
+    String itemId,
+    _CollectionItem item,
+  ) async {
+    final String? origin = item.originSourceId;
+    if (origin != null && !isMediaServerSourceId(origin)) {
+      // 来源是互联对端 / 在线源等非媒体服务器：本机没有能按条目 id 找回它的入口。
+      showVideoFavoriteUnavailable(null, hasOrigin: false);
+      return;
+    }
+    final MediaServerItemLaunchResult result;
+    try {
+      result = await resolveMediaServerItemLaunch(
+        itemId: itemId,
+        originSourceId: origin,
+        expectedTitle: item.bookTitle ?? '',
+        loadConfigs: SyncRepository(appModel.database).getMediaServers,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'FavoriteOriginNavigator.openMediaServerVideo',
+        error,
+        stack,
+      );
+      showVideoFavoriteUnavailable(null, hasOrigin: origin != null);
+      return;
+    }
+    final MediaServerItemLaunch? launch = result.launch;
+    if (launch == null) {
+      showVideoFavoriteUnavailable(result.failure, hasOrigin: origin != null);
+      return;
+    }
+    if (!context.mounted) {
+      closeOwnedRemoteVideoClient(launch.client);
+      return;
+    }
+    final FavoriteSentence favorite = FavoriteSentence(
+      text: item.anchorText ?? item.text ?? '',
+      bookTitle: item.bookTitle ?? itemId,
+      createdAt: item.createdAt,
+      bookKey: itemId,
+      sectionIndex: item.sectionIndex,
+      normCharOffset: item.normCharOffset,
+      normCharLength: item.normCharLength,
+      source: kFavoriteSentenceSourceVideo,
+      originSourceId: origin,
+    );
+    unawaited(
+      Navigator.push(
+        context,
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (_) => VideoFushiPage.neutralizedRemote(
+            info: launch.info,
+            repo: repo,
+            client: launch.client,
+            ownsRemoteClient: true,
+            initialRemoteFavorite: favorite,
+            initialSubtitleListVisible: true,
+          ),
         ),
       ),
     );

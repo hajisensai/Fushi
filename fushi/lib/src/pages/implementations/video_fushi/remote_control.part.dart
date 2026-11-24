@@ -100,6 +100,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       },
       favoritesChanged: _refreshFavoritedCueCache,
       libraryAnchor: _libraryAnchorAt,
+      originSourceId: () => _favoriteOriginSourceId,
       // 以下三组与桌面控制通道（[_playbackRemote]）/ 剧集列表同一批执行体。
       setVolume: (int volume) => _applyUserVideoVolume(volume.toDouble()),
       episodes: _remoteEpisodes,
@@ -685,12 +686,19 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       );
     } else {
       // 没有本机库行：从媒体服务器浏览页直接串流时收藏的条目（bookKey = 服务器条目
-      // id），到已登录的服务器上按 id 找回来（BUG-5379）。
-      final ({RemoteVideoClient client, RemoteVideoInfo info})? launch =
-          await resolveMediaServerItemLaunch(
-            itemId: uid,
-            loadConfigs: SyncRepository(appModel.database).getMediaServers,
-          );
+      // id），按收藏时记下的来源身份回到那一台服务器（BUG-5379；旧收藏由解析器挨台
+      // 问并核对标题）。来源不是媒体服务器（互联对端 / 在线源）的找不回来。找不回来
+      // 的原因（没登录 / 条目没了 / 连不上）不进 wire：旧版手机只认这一个错误码。
+      final String? origin = favorite.originSourceId;
+      if (origin != null && !isMediaServerSourceId(origin)) {
+        throw const VideoRemoteException(404, 'favorite_source_unavailable');
+      }
+      final MediaServerItemLaunch? launch = (await resolveMediaServerItemLaunch(
+        itemId: uid,
+        originSourceId: origin,
+        expectedTitle: favorite.bookTitle,
+        loadConfigs: SyncRepository(appModel.database).getMediaServers,
+      )).launch;
       if (launch == null) {
         throw const VideoRemoteException(404, 'favorite_source_unavailable');
       }
