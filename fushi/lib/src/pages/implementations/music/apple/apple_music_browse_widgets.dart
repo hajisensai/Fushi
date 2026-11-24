@@ -445,40 +445,11 @@ class AppleMusicEntityRow extends StatelessWidget {
       child: Row(
         children: <Widget>[
           Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              spacing: 2 * k,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Flexible(
-                      child: Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: appleMusicText(context, size: 15 * k),
-                      ),
-                    ),
-                    for (final Widget b in badges) ...<Widget>[
-                      SizedBox(width: 5 * k),
-                      b,
-                    ],
-                  ],
-                ),
-                if (subtitle.isNotEmpty)
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: appleMusicText(
-                      context,
-                      size: 12.5 * k,
-                      color: c.secondaryLabel,
-                    ),
-                  ),
-                ?extra,
-              ],
+            child: AppleMusicRowTexts(
+              title: title,
+              subtitle: subtitle,
+              badges: badges,
+              extra: extra,
             ),
           ),
           FushiIcon(
@@ -493,9 +464,77 @@ class AppleMusicEntityRow extends StatelessWidget {
   }
 }
 
+/// Apple 列表行的文字列：标题（15 × 缩放，label，单行省略）+ 紧跟标题的
+/// [badges] + 副行（12.5，secondaryLabel）+ 可选 [extra]。实体行与来源 / 插件行
+/// 共用这一份字样。
+class AppleMusicRowTexts extends StatelessWidget {
+  const AppleMusicRowTexts({
+    super.key,
+    required this.title,
+    this.subtitle = '',
+    this.badges = const <Widget>[],
+    this.extra,
+    this.subtitleMaxLines = 1,
+  });
+
+  final String title;
+  final String subtitle;
+  final List<Widget> badges;
+  final Widget? extra;
+
+  /// 副行最多几行（来源 / 插件行的说明可折两行）。
+  final int subtitleMaxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors c = appleColorsOf(context);
+    final double k = FushiAppleMetrics.of(context).scale;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 2 * k,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Flexible(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: appleMusicText(context, size: 15 * k),
+              ),
+            ),
+            for (final Widget b in badges) ...<Widget>[
+              SizedBox(width: 5 * k),
+              b,
+            ],
+          ],
+        ),
+        if (subtitle.isNotEmpty)
+          Text(
+            subtitle,
+            maxLines: subtitleMaxLines,
+            overflow: TextOverflow.ellipsis,
+            style: appleMusicText(
+              context,
+              size: 12.5 * k,
+              color: c.secondaryLabel,
+            ),
+          ),
+        ?extra,
+      ],
+    );
+  }
+}
+
 /// Apple 实体行（[AppleMusicEntityRow]）行首封面的边长：iOS 48，macOS 档 ×scale。
 double appleMusicRowCoverExtent(BuildContext context) =>
     48 * FushiAppleMetrics.of(context).scale;
+
+/// Apple 列表行行首（封面 / 方块）与文字之间的间距：11 × 缩放。分隔线与子行都从
+/// 「行首 + 这段」的文字左缘起。
+double appleMusicRowLeadingGap(BuildContext context) =>
+    11 * FushiAppleMetrics.of(context).scale;
 
 /// Apple 实体行行首封面的连续曲率圆角（与 [appleMusicRowCoverExtent] 同比缩放）。
 double appleMusicRowCoverRadius(BuildContext context) =>
@@ -512,6 +551,7 @@ class AppleMusicListRowFrame extends StatelessWidget {
     required this.child,
     required this.onTap,
     this.separator = true,
+    this.trailing,
   });
 
   final Widget leading;
@@ -519,11 +559,15 @@ class AppleMusicListRowFrame extends StatelessWidget {
   final VoidCallback? onTap;
   final bool separator;
 
+  /// 行尾控件（开关 / 重排把手）：排在文字的竖直内边距**之外**、竖直居中，自带命中区
+  /// 的控件不会把行撑高。
+  final Widget? trailing;
+
   @override
   Widget build(BuildContext context) {
     final FushiAppleColors c = appleColorsOf(context);
     final double k = FushiAppleMetrics.of(context).scale;
-    final double gap = 11 * k;
+    final double gap = appleMusicRowLeadingGap(context);
     return ConstrainedBox(
       constraints: BoxConstraints(minHeight: 64 * k),
       child: AppleMusicRowHighlight(
@@ -541,6 +585,7 @@ class AppleMusicListRowFrame extends StatelessWidget {
                     child: child,
                   ),
                 ),
+                ?trailing,
               ],
             ),
             if (separator)

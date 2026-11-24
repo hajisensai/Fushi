@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
     show AdaptiveSettingsSection;
 import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -375,11 +376,18 @@ void main() {
       );
     });
 
-    testWidgets('Cupertino：Apple 分组，空态是组脚说明 + 组内「安装插件」平行', (
+    testWidgets('Cupertino（音乐「来源」页里）：歌单同款分组列表，空态是一行说明 + 「安装插件…」动作行', (
       WidgetTester tester,
     ) async {
       await build(tester, <InstalledMusicPlugin>[musicSource], glass: true);
-      expect(find.byType(AdaptiveSettingsSection), findsOneWidget);
+      // 与曲库「歌单」同一套：粗体段头 + 列表行，不是「设置」式 inset grouped 卡片。
+      expect(find.byType(AdaptiveSettingsSection), findsNothing);
+      expect(find.byType(AppleMusicListSectionHeader), findsOneWidget);
+      expect(find.byType(AppleMusicListRow), findsOneWidget);
+      expect(
+        find.text('${t.music_lyrics_providers_install_action}…'),
+        findsOneWidget,
+      );
       expect(find.text('Music Source'), findsNothing);
       expect(
         find.textContaining(t.music_lyrics_providers_empty),

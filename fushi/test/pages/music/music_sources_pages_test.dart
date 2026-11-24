@@ -21,6 +21,9 @@ import 'package:fushi/src/pages/implementations/music/apple/apple_music_sources_
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart'
     show FushiReorderableDragHandle;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsSection;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
@@ -615,9 +618,25 @@ void main() {
         findsNothing,
       );
       expect(find.byType(FushiReorderableDragHandle), findsNothing);
-      // 「添加来源」是组内的平行，不是胶囊按钮。
-      expect(find.text(t.music_sources_add), findsOneWidget);
+      // 「添加来源…」是组内强调色动作行（与歌单页「新建歌单…」同款），不是胶囊按钮；
+      // 行是歌单同款列表行，不是「设置」式 inset grouped 卡片。
+      expect(find.text('${t.music_sources_add}…'), findsOneWidget);
+      expect(find.byType(AppleMusicListActionRow), findsWidgets);
       expect(find.byType(FushiOutlinedButton), findsNothing);
+      expect(find.byType(FushiFilledButton), findsNothing);
+      expect(find.byType(AdaptiveSettingsSection), findsNothing);
+      expect(find.byType(AppleMusicListSectionHeader), findsWidgets);
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w is AppleMusicListRow &&
+              w.key ==
+                  const ValueKey<String>(
+                    'music-source-toggle-server:subsonic-a',
+                  ),
+        ),
+        findsOneWidget,
+      );
       // macOS 档内容限宽。
       expect(
         tester

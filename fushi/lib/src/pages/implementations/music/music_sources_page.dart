@@ -39,6 +39,8 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart'
     show buildMusicServersDestination;
 import 'package:fushi/src/pages/implementations/music/apple/apple_music_sources_layout.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart'
+    show appleMusicListPagePadding;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show isGlassDesign;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
@@ -421,8 +423,8 @@ class _MusicOnlineSourcesViewState
     );
   }
 
-  /// Cupertino：Apple「设置」式 inset grouped（[AppleMusicSourcesLayout]）；状态、写回、
-  /// 添加菜单与 M3E 同一份。
+  /// Cupertino：与曲库「歌单」同一套 Apple Music 资料库式分组列表
+  /// （[AppleMusicSourcesLayout]）；状态、写回、添加菜单与 M3E 同一份。
   Widget _buildApple(
     BuildContext context,
     List<MusicOrderedSource>? rows,
@@ -454,7 +456,9 @@ class _MusicOnlineSourcesViewState
     onStorefront: (String v) => unawaited(_setStorefront(v)),
     addKey: _addAnchor,
     onAdd: () => unawaited(_openAddMenu()),
-    padding: musicBrowsePagePadding(context),
+    // 曲库「在线 › 来源」排在大字页头下面：页头已给让位 + 一档间距，不再叠
+    // musicBrowsePagePadding 的顶距（那是给滚到大字底下的推荐页用的）。
+    padding: appleMusicListPagePadding(context),
     lyrics: isMusicPluginSourcesUsable
         ? MusicLyricsProvidersBody(
             appModel: _app,
@@ -545,7 +549,11 @@ class MusicPluginsView extends ConsumerWidget {
       manager: app.musicPluginManager,
       child: SingleChildScrollView(
         key: const ValueKey<String>('music-plugins-view'),
-        padding: musicBrowsePagePadding(context),
+        // Apple：排在大字页头下面，页头已给顶部间距，列表不再叠一份（与歌单 / 来源
+        // 同一处 [appleMusicListPagePadding]）。M3E 照旧。
+        padding: isGlassDesign(context)
+            ? appleMusicListPagePadding(context)
+            : musicBrowsePagePadding(context),
         child: FushiEntranceScope(
           child: FushiStaggeredEntrance(
             index: 0,

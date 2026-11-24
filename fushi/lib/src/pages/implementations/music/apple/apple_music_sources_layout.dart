@@ -1,15 +1,19 @@
-/// 音乐「在线 › 来源」的 Cupertino 版（用户 2026-11-24「来源布局有点怪」）：照 Apple
-/// 「设置」的 inset grouped 写——
+/// 音乐「在线 › 来源」的 Cupertino 版（用户 2026-11-24「来源布局有点怪」→「看看和
+/// 歌单一样吧」）：与曲库「歌单」同一套 Apple Music 资料库式分组列表
+/// （`apple_music_list_layout.dart`）——
 ///
-/// - 「音源」组：每行 图标 + 名称 + 类型说明 + 行尾 Apple 开关；组头右侧「编辑」进入
-///   编辑态，行尾换成 ≡ 重排把手（拖动 / Alt+↑↓ / 读屏「上移 / 下移」）；Apple Music 开着
-///   时组内多一条与名称对齐缩进的「地区」子行（行尾 pull-down）；组末是带 + 的「添加来源」
-///   平行；组脚是排序说明。
-/// - 「歌词来源」另起一组（[MusicLyricsProvidersBody] 的 Apple 分支）。
+/// - 「音源」组：段头（粗体段名 + 右侧「编辑 / 完成」文字动作，段头自带分组间距）；
+///   每行 与封面同尺寸的图标方块 + 名称 + 类型说明 + 行尾 Apple 开关（整行点 / Enter
+///   也切换）；编辑态行尾换 ≡ 重排把手（拖动 / Alt+↑↓ / 读屏「上移 / 下移」）；
+///   Apple Music 开着时多一条与名称对齐的「地区」子行；组末强调色「添加来源…」动作行，
+///   组脚一行说明。
+/// - 「歌词来源」另起一组（[MusicLyricsProvidersBody] 的 Apple 列表分支）。
 /// - macOS 档内容限宽居中。
 ///
 /// 只在 `isGlassDesign` 为真时由 `MusicOnlineSourcesView` 使用；状态与写回仍在那一个
-/// State 里（这里只收行数据与回调），M3E 一侧不经过这里。
+/// State 里（这里只收行数据与回调），M3E 一侧不经过这里。设置里的「歌词来源」页
+/// 仍是 Apple「设置」式 inset grouped（[appleMusicSourcesSeparated] /
+/// [appleMusicSourcesFootnote]）。
 library;
 
 import 'package:flutter/semantics.dart' show CustomSemanticsAction;
@@ -18,7 +22,8 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/import/apple/apple_import_rows.dart'
-    show AppleImportIconTile, AppleImportSectionAction;
+    show AppleImportSectionAction;
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
@@ -28,6 +33,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiLinearProgressIndicator;
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiAppleMetrics, fushiHairline;
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiSwitch;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -213,115 +220,91 @@ class _AppleMusicSourcesLayoutState extends State<AppleMusicSourcesLayout> {
     bool editing,
   ) {
     final AppleMusicSourceRowData r = rows[i];
-    final FushiAppleMetrics m = FushiAppleMetrics.of(context);
     final String selected = widget.storefronts.contains(widget.storefront)
         ? widget.storefront
         : widget.storefronts.first;
-    final Widget main = editing
-        ? AdaptiveSettingsRow(
-            key: ValueKey<String>('music-source-row-${r.key}'),
-            icon: r.icon,
-            showIcon: true,
-            title: r.title,
-            subtitle: r.subtitle,
-            trailing: AppleMusicReorderHandle(
+    final bool region = r.appleMusic && r.on && !editing;
+    final Widget main = AppleMusicListRow(
+      key: ValueKey<String>(
+        editing ? 'music-source-row-${r.key}' : 'music-source-toggle-${r.key}',
+      ),
+      icon: r.icon,
+      title: r.title,
+      subtitle: r.subtitle,
+      // 整行点 / Enter = 切开关（Apple「设置」开关行）；编辑态整行不响应，只拖把手。
+      onTap: editing ? null : () => widget.onToggle(i, !r.on),
+      trailing: editing
+          ? AppleMusicReorderHandle(
               key: ValueKey<String>('music-source-handle-${r.key}'),
               index: i,
               count: rows.length,
               onReorder: widget.onReorder,
+            )
+          : FushiSwitch(
+              value: r.on,
+              onChanged: (bool v) => widget.onToggle(i, v),
             ),
-          )
-        : AdaptiveSettingsSwitchRow(
-            key: ValueKey<String>('music-source-toggle-${r.key}'),
-            icon: r.icon,
-            showIcon: true,
-            title: r.title,
-            subtitle: r.subtitle,
-            value: r.on,
-            onChanged: (bool v) => widget.onToggle(i, v),
-          );
-    return appleMusicSourcesSeparated(
-      context,
-      index: i,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          main,
-          AnimatedSize(
-            duration: fushiMotionDuration(context, FushiMotion.short),
-            curve: FushiMotion.standard,
-            alignment: Alignment.topCenter,
-            child: r.appleMusic && r.on && !editing
-                // 子行：细线与文字都从父行文字左缘起（Apple「设置」的从属行）。
-                ? Padding(
-                    padding: EdgeInsetsDirectional.only(
-                      start:
-                          m.iconTileSize +
-                          FushiDesignTokens.of(context).spacing.gap +
-                          4,
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        main,
+        AnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
+          alignment: Alignment.topCenter,
+          child: region
+              // 从属子行：文字与父行文字左缘对齐（Apple「设置」的从属行）。
+              ? AppleMusicListSubRow(
+                  child: AdaptiveSettingsPickerRow<String>(
+                    key: const ValueKey<String>(
+                      'music-sources-apple-music-region',
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: <Widget>[
-                        Padding(
-                          padding: EdgeInsetsDirectional.only(
-                            start: m.rowHorizontal,
-                          ),
-                          child: Container(
-                            height: fushiHairline(context),
-                            color: appleColorsOf(context).separator,
-                          ),
+                    title: t.music_sources_region,
+                    subtitle: t.music_apple_music_storefront_hint,
+                    options: <AdaptiveSettingsPickerOption<String>>[
+                      for (final String sf in widget.storefronts)
+                        AdaptiveSettingsPickerOption<String>(
+                          value: sf,
+                          label: sf.toUpperCase(),
                         ),
-                        AdaptiveSettingsPickerRow<String>(
-                          key: const ValueKey<String>(
-                            'music-sources-apple-music-region',
-                          ),
-                          title: t.music_sources_region,
-                          subtitle: t.music_apple_music_storefront_hint,
-                          options: <AdaptiveSettingsPickerOption<String>>[
-                            for (final String sf in widget.storefronts)
-                              AdaptiveSettingsPickerOption<String>(
-                                value: sf,
-                                label: sf.toUpperCase(),
-                              ),
-                          ],
-                          selected: selected,
-                          onChanged: widget.onStorefront,
-                        ),
-                      ],
-                    ),
-                  )
-                : const SizedBox(width: double.infinity),
-          ),
-        ],
-      ),
+                    ],
+                    selected: selected,
+                    onChanged: widget.onStorefront,
+                  ),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final FushiAppleMetrics m = FushiAppleMetrics.of(context);
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<AppleMusicSourceRowData>? rows = widget.rows;
     final bool editing = _editing && (rows?.isNotEmpty ?? false);
     final Widget? lyrics = widget.lyrics;
-    final Widget sources = AdaptiveSettingsSection(
+    // 「音源」一组：段头（+「编辑 / 完成」）→ 开关行 → 「添加来源…」→ 组脚说明。
+    final Widget sources = Column(
       key: const ValueKey<String>('music-sources-group'),
-      title: t.music_sources_section_title,
-      titleTrailing: rows == null || rows.length < 2
-          ? null
-          : AppleImportSectionAction(
-              key: const ValueKey<String>('music-sources-edit'),
-              label: editing ? t.dialog_done : t.dialog_edit,
-              onTap: () => setState(() => _editing = !editing),
-            ),
-      footer: appleMusicSourcesFootnote(context, t.music_sources_online_hint),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        AppleMusicListSectionHeader(
+          title: t.music_sources_section_title,
+          actions: <Widget>[
+            if (rows != null && rows.length >= 2)
+              AppleImportSectionAction(
+                key: const ValueKey<String>('music-sources-edit'),
+                label: editing ? t.dialog_done : t.dialog_edit,
+                onTap: () => setState(() => _editing = !editing),
+              ),
+          ],
+        ),
         if (rows == null)
           const Padding(
-            padding: EdgeInsets.all(16),
+            padding: EdgeInsets.symmetric(vertical: 16),
             child: FushiLinearProgressIndicator(),
           )
         else if (rows.isNotEmpty)
@@ -334,12 +317,14 @@ class _AppleMusicSourcesLayoutState extends State<AppleMusicSourcesLayout> {
             itemBuilder: (BuildContext context, int i) =>
                 _row(context, rows, i, editing),
           ),
-        AdaptiveSettingsRow(
+        AppleMusicListActionRow(
           key: widget.addKey,
-          title: t.music_sources_add,
-          leading: const AppleImportIconTile(icon: FushiIcons.add, plain: true),
+          icon: FushiIcons.add,
+          title: '${t.music_sources_add}…',
+          separator: false,
           onTap: editing ? null : widget.onAdd,
         ),
+        AppleMusicListNote(t.music_sources_online_hint),
       ],
     );
     return SingleChildScrollView(
@@ -352,10 +337,10 @@ class _AppleMusicSourcesLayoutState extends State<AppleMusicSourcesLayout> {
                 ? kAppleMusicSourcesMaxWidth * m.scale
                 : double.infinity,
           ),
+          // 段与段之间不另加间距：段头自带分组间距（[AppleMusicListSectionHeader]）。
           child: FushiEntranceScope(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: tokens.spacing.section,
               children: <Widget>[
                 FushiStaggeredEntrance(index: 0, child: sources),
                 if (lyrics != null)

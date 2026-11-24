@@ -110,7 +110,7 @@ import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart'
     show isMusicPluginRelayClient, isMusicPluginSourcesAvailable;
 import 'package:fushi/src/pages/implementations/music/apple/apple_music_browse_widgets.dart';
-import 'package:fushi/src/pages/implementations/music/apple/apple_music_playlists_layout.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart';
 import 'package:fushi/src/pages/implementations/music/apple/apple_music_recommend_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
@@ -2251,7 +2251,7 @@ class _MusicPluginLibrarySectionState
   });
 
   /// 段头：M3E 是库页分组标题 + 色块「新建歌单」+ 刷新图标；Apple 是 Apple Music
-  /// 资料库段头（[AppleMusicPlaylistsSectionHeader]），动作全是裸字形。
+  /// 资料库段头（[AppleMusicListSectionHeader]），动作全是裸字形。
   Widget _header(BuildContext context, MusicPluginManifest m) {
     final Widget? create = _pluginCreatePlaylistButton(
       context,
@@ -2264,7 +2264,7 @@ class _MusicPluginLibrarySectionState
     );
     final String title = t.music_plugin_library_title(name: m.name);
     if (isGlassDesign(context)) {
-      return AppleMusicPlaylistsSectionHeader(
+      return AppleMusicListSectionHeader(
         title: title,
         actions: <Widget>[
           ?create,
@@ -2297,7 +2297,7 @@ class _MusicPluginLibrarySectionState
   /// 单行说明（出错 / 未登录 / 空）：Apple 是 secondaryLabel 脚注行。
   Widget _note(BuildContext context, String text, {Widget? trailing}) {
     if (isGlassDesign(context)) {
-      return AppleMusicPlaylistsNote(text, trailing: trailing);
+      return AppleMusicListNote(text, trailing: trailing);
     }
     final Widget label = Text(text, style: context.fushiType.bodySmall);
     return trailing == null

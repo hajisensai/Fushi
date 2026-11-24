@@ -12,7 +12,10 @@ import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/import/apple/apple_import_rows.dart'
     show AppleImportIconTile, AppleImportSectionAction;
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart';
 import 'package:fushi/src/pages/implementations/music/apple/apple_music_sources_layout.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiSwitch;
 import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show isGlassDesign;
@@ -122,6 +125,121 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
     await pickAndInstallMusicPlugin(context, _manager);
   }
 
+  /// 一行的名称 / 说明 / 图标（Apple 两种排法同一份口径）。
+  ({String title, String subtitle, IconData icon}) _describe(
+    LyricsProviderEntry e,
+  ) {
+    final MusicPluginManifest? m = _byId[e.id]?.info?.manifest;
+    final bool builtIn = e.id == MusicLyricsSource.lrclib;
+    return (
+      title: builtIn ? 'LRCLIB' : m?.name ?? e.id,
+      subtitle: builtIn
+          ? t.music_lyrics_providers_builtin_note
+          : m == null
+          ? e.id
+          : <String>[
+              t.music_plugins_version(version: m.version),
+              m.id,
+            ].join(' · '),
+      icon: builtIn ? FushiIcons.lyrics : FushiIcons.browserExtension,
+    );
+  }
+
+  /// 组脚说明（空态时追加「没有歌词插件」两句）。
+  String _footnote(bool empty) => <String>[
+    t.music_lyrics_providers_hint,
+    if (empty) ...<String>[
+      t.music_lyrics_providers_empty,
+      t.music_lyrics_providers_empty_hint,
+    ],
+  ].join('\n');
+
+  /// Cupertino、嵌在音乐「在线 › 来源」里（[MusicLyricsProvidersBody.sectionTitle]
+  /// 非 null）：与「音源」组、曲库「歌单」同一套 Apple Music 资料库式分组列表——段头
+  /// （粗体 + 「编辑 / 完成」）、图标方块 + 名称 + 说明 + Apple 开关的行（整行点 /
+  /// Enter 也切换；编辑态换 ≡ 把手）、强调色「安装插件…」动作行、一行组脚说明。
+  Widget _buildAppleList(
+    BuildContext context,
+    List<LyricsProviderEntry>? entries,
+    String title,
+  ) {
+    final bool editing = _editing && (entries?.length ?? 0) > 1;
+    final bool empty = entries != null && !_hasPlugins(entries);
+    final bool install = widget.canInstall && entries != null;
+    Widget row(int i) {
+      final LyricsProviderEntry e = entries![i];
+      final (:String title, :String subtitle, :IconData icon) = _describe(e);
+      return AppleMusicListRow(
+        key: ValueKey<String>(
+          editing
+              ? 'music-lyrics-provider-row-${e.id}'
+              : 'music-lyrics-provider-toggle-${e.id}',
+        ),
+        icon: icon,
+        title: title,
+        subtitle: subtitle,
+        separator: install || i < entries.length - 1,
+        onTap: editing ? null : () => _toggle(e.id, !e.enabled),
+        trailing: editing
+            ? AppleMusicReorderHandle(
+                key: ValueKey<String>('music-lyrics-provider-handle-${e.id}'),
+                index: i,
+                count: entries.length,
+                onReorder: _move,
+              )
+            : FushiSwitch(
+                value: e.enabled,
+                onChanged: (bool v) => _toggle(e.id, v),
+              ),
+      );
+    }
+
+    return Column(
+      key: const ValueKey<String>('music-lyrics-providers-group'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AppleMusicListSectionHeader(
+          title: title,
+          actions: <Widget>[
+            if ((entries?.length ?? 0) >= 2)
+              AppleImportSectionAction(
+                key: const ValueKey<String>('music-lyrics-providers-edit'),
+                label: editing ? t.dialog_done : t.dialog_edit,
+                onTap: () => setState(() => _editing = !editing),
+              ),
+          ],
+        ),
+        if (entries == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: FushiLinearProgressIndicator(),
+          )
+        else
+          FushiReorderableColumn(
+            itemCount: entries.length,
+            useDragHandles: true,
+            keyForIndex: (int i) =>
+                ValueKey<String>('music-lyrics-provider-${entries[i].id}'),
+            onReorder: _move,
+            itemBuilder: (BuildContext context, int i) => row(i),
+          ),
+        if (install)
+          AppleMusicListActionRow(
+            key: ValueKey<String>(
+              empty
+                  ? 'music_lyrics_provider_install'
+                  : 'music_lyrics_provider_install_more',
+            ),
+            icon: FushiIcons.add,
+            title: '${t.music_lyrics_providers_install_action}…',
+            separator: false,
+            onTap: editing ? null : () => unawaited(_install()),
+          ),
+        AppleMusicListNote(_footnote(empty)),
+      ],
+    );
+  }
+
   /// Cupertino：Apple「设置」式分组——每行 图标 + 名称 + 说明 + 行尾 Apple 开关，组头
   /// 「编辑」换 ≡ 重排把手；没有歌词插件时空态是组脚说明 + 组内带 + 的「安装插件」平行
   /// （不画 M3E 占位插画）。
@@ -130,20 +248,7 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
     final bool empty = entries != null && !_hasPlugins(entries);
     Widget row(int i) {
       final LyricsProviderEntry e = entries![i];
-      final MusicPluginManifest? m = _byId[e.id]?.info?.manifest;
-      final bool builtIn = e.id == MusicLyricsSource.lrclib;
-      final String title = builtIn ? 'LRCLIB' : m?.name ?? e.id;
-      final String subtitle = builtIn
-          ? t.music_lyrics_providers_builtin_note
-          : m == null
-          ? e.id
-          : <String>[
-              t.music_plugins_version(version: m.version),
-              m.id,
-            ].join(' · ');
-      final IconData icon = builtIn
-          ? FushiIcons.lyrics
-          : FushiIcons.browserExtension;
+      final (:String title, :String subtitle, :IconData icon) = _describe(e);
       return appleMusicSourcesSeparated(
         context,
         index: i,
@@ -183,16 +288,7 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
               label: editing ? t.dialog_done : t.dialog_edit,
               onTap: () => setState(() => _editing = !editing),
             ),
-      footer: appleMusicSourcesFootnote(
-        context,
-        <String>[
-          t.music_lyrics_providers_hint,
-          if (empty) ...<String>[
-            t.music_lyrics_providers_empty,
-            t.music_lyrics_providers_empty_hint,
-          ],
-        ].join('\n'),
-      ),
+      footer: appleMusicSourcesFootnote(context, _footnote(empty)),
       children: <Widget>[
         if (entries == null)
           const Padding(
@@ -230,7 +326,12 @@ class _MusicLyricsProvidersBodyState extends State<MusicLyricsProvidersBody> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<LyricsProviderEntry>? entries = _entries;
-    if (isGlassDesign(context)) return _buildApple(context, entries);
+    if (isGlassDesign(context)) {
+      final String? title = widget.sectionTitle;
+      return title == null
+          ? _buildApple(context, entries)
+          : _buildAppleList(context, entries, title);
+    }
     return FushiEntranceScope(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

@@ -15,7 +15,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/music/apple/apple_music_browse_widgets.dart';
-import 'package:fushi/src/pages/implementations/music/apple/apple_music_playlists_layout.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart';
 import 'package:fushi/src/pages/implementations/music/music_library_page.dart';
 import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
@@ -246,7 +246,7 @@ void main() {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   const SizedBox(height: 100),
-                  AppleMusicPlaylistsSectionHeader(
+                  AppleMusicListSectionHeader(
                     key: const ValueKey<String>('header'),
                     title: 'NetEase · My playlists',
                     actions: <Widget>[

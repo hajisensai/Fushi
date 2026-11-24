@@ -62,7 +62,7 @@ import 'package:fushi/src/pages/implementations/library_layout/library_layout.da
 import 'package:fushi/src/pages/implementations/music/music_import_view.dart';
 import 'package:fushi/src/pages/implementations/music/apple/apple_music_browse_widgets.dart'
     show AppleMusicEntityRow;
-import 'package:fushi/src/pages/implementations/music/apple/apple_music_playlists_layout.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_local_playlist_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart'
@@ -2525,14 +2525,14 @@ class _ApplePlaylists extends ConsumerWidget {
           manifest: m,
         ),
       if (accounts.isNotEmpty)
-        AppleMusicPlaylistsSectionHeader(title: t.music_playlists_local),
-      AppleMusicPlaylistActionRow(
+        AppleMusicListSectionHeader(title: t.music_playlists_local),
+      AppleMusicListActionRow(
         key: const ValueKey<String>('music_new_local_playlist'),
         icon: FushiIcons.add,
         title: '${t.music_action_new_playlist}…',
         onTap: () => _createLocalPlaylist(context, ref.read(appProvider)),
       ),
-      AppleMusicPlaylistActionRow(
+      AppleMusicListActionRow(
         key: const ValueKey<String>('music_import_local_playlist'),
         icon: FushiIcons.folderOpen,
         title: '${t.music_action_import_playlist}…',
@@ -2565,15 +2565,7 @@ class _ApplePlaylists extends ConsumerWidget {
     return FushiEntranceScope(
       child: ListView.builder(
         key: const ValueKey<String>('music-library-playlists-apple'),
-        padding: withBottomSafeInset(
-          context,
-          EdgeInsets.fromLTRB(
-            tokens.spacing.page,
-            0,
-            tokens.spacing.page,
-            tokens.spacing.section,
-          ),
-        ),
+        padding: appleMusicListPagePadding(context),
         itemCount: head.length + rowCount,
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
           if (i < head.length) return head[i];
