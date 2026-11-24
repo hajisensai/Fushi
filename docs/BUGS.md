@@ -53,6 +53,11 @@
 |---|:--:|:--:|---|
 | [BUG-5404](bugs/BUG-5404-gal-write-abort-reported-as-capture-failed.md) | ✅ | ✅ | gal 写卡阶段被引擎中止时提示说成窗口截图失败 |
 | [BUG-5403](bugs/BUG-5403-lyrics-display-sheet-stale-on-track-change.md) | ✅ | ✅ | 歌词显示面板开着时切歌置灰状态不刷新 |
+> 共 4700 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5408](bugs/BUG-5408-lyrics-illustration-undecodable-image.md) | ✅ | ✅ | 歌词模式插图把文件头认不出的图（加扰 PNG / SVG）当插图，大图浏览显示坏图 |
 | [BUG-5402](bugs/BUG-5402-media-server-favorite-jump-dead-end.md) | ✅ | ✅ | 媒体服务器直接串流（未入库）的收藏句在收藏夹点了没反应 |
 | [BUG-5401](bugs/BUG-5401-anilist-cover-search-novels-only.md) | ✅ | ✅ | anilist-cover-search-novels-only |
 | [BUG-5400](bugs/BUG-5400-series-key-split-volume-parts.md) | ✅ | ✅ | series-key-split-volume-parts |

@@ -71,12 +71,19 @@ enum LyricsIllustrationVerdict {
 
   /// 排在文字行内且不够大（外字、标题小图标）。
   inlineGlyph,
+
+  /// 文件头认不出是 Flutter 能解码的位图（PNG / JPEG / GIF / BMP / WebP）：
+  /// SVG、残缺或被加扰的文件（BUG-5408：BookWalker 版 EPUB 里加扰过的
+  /// `bookwalker.png`）。插图卡与大图浏览都用 `Image(FileImage)` 画，这类文件
+  /// 放进来只会显示成坏图。
+  undecodable,
 }
 
 /// 判一张书中图片能否当歌词模式插图。
 ///
-/// * [size]：图片真实像素尺寸（读文件头得到）；null = 读不出来（SVG 等），此时
-///   只看排版：独占一块的当插图，排在文字行内的当字。
+/// * [size]：图片真实像素尺寸（读文件头得到）；null = 文件头认不出位图格式
+///   （SVG、残缺 / 加扰的文件），判 [LyricsIllustrationVerdict.undecodable]——
+///   歌词页用 Flutter `Image` 画插图，认不出头的文件画出来就是坏图。
 /// * [sharesLineWithText]：图片在排版里是否与文字同处一个块（行内嵌字）。
 /// * [isCover]：是 OPF 封面，或与封面是同一张图。
 LyricsIllustrationVerdict classifyLyricsIllustration({
@@ -85,11 +92,7 @@ LyricsIllustrationVerdict classifyLyricsIllustration({
   bool isCover = false,
 }) {
   if (isCover) return LyricsIllustrationVerdict.cover;
-  if (size == null) {
-    return sharesLineWithText
-        ? LyricsIllustrationVerdict.inlineGlyph
-        : LyricsIllustrationVerdict.illustration;
-  }
+  if (size == null) return LyricsIllustrationVerdict.undecodable;
   if (isInlineSizedImage(size)) return LyricsIllustrationVerdict.inlineSized;
   final int shortSide = math.min(size.width, size.height);
   final int longSide = math.max(size.width, size.height);
@@ -111,7 +114,7 @@ LyricsIllustrationVerdict classifyLyricsIllustration({
 typedef LyricsIllustrationFileProbe = ({int width, int height, int bytes});
 
 /// `compute()` 入口：批量读图片文件头拿像素尺寸与文件大小。读不出尺寸的文件
-/// 不进结果（调用方按「尺寸未知」处理）。
+/// 不进结果（调用方判 [LyricsIllustrationVerdict.undecodable]）。
 Map<String, LyricsIllustrationFileProbe> probeLyricsIllustrationFiles(
   List<String> paths,
 ) {
