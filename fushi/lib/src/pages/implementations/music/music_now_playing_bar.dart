@@ -121,14 +121,19 @@ Widget _musicBar(
     ),
     actions: <Widget>[
       musicQueueButton(context, engine),
-      musicPlayModeButton(context, engine),
+      musicPlayModeButton(
+        context,
+        engine,
+        appleExtent: kFushiNowPlayingAppleGlyphExtent,
+      ),
       // 音量滑杆浮在条外：开着时让宽屏色块保持展开。
       Builder(
         builder: (BuildContext context) => MusicVolumeButton(
           onOpenChanged: FushiNowPlayingBar.holdExpandedOf(context),
+          appleExtent: kFushiNowPlayingAppleGlyphExtent,
         ),
       ),
-      _musicBarCloseButton(session),
+      _musicBarCloseButton(context, session),
     ],
     onMore: () => unawaited(_musicBarMoreMenu(context, appModel, session)),
     onTap: () => openMusicPlayerPage(context),
@@ -442,26 +447,44 @@ Widget musicPlayModeButton(
 }
 
 /// 播放队列按钮（迷你条 / 停靠条，纯图标）：窄屏弹底部弹层、宽屏从右侧滑出侧栏
-/// （[showMusicQueue]）。
+/// （[showMusicQueue]）。Apple 下是 label 色裸字形（Apple Music 迷你播放器）。
 Widget musicQueueButton(BuildContext context, MusicPlayerEngine engine) =>
-    FushiPressScale(
-      child: FushiIconButtonControl(
+    isGlassDesign(context)
+    ? FushiAppleGlyphButton(
         key: const ValueKey<String>('music_bar_queue'),
+        icon: FushiIcons.playlist,
         tooltip: t.music_queue_title,
+        secondary: false,
+        extent: kFushiNowPlayingAppleGlyphExtent,
         onPressed: () => unawaited(showMusicQueue(context, engine)),
-        icon: const FushiIcon(FushiIcons.playlist),
-      ),
-    );
+      )
+    : FushiPressScale(
+        child: FushiIconButtonControl(
+          key: const ValueKey<String>('music_bar_queue'),
+          tooltip: t.music_queue_title,
+          onPressed: () => unawaited(showMusicQueue(context, engine)),
+          icon: const FushiIcon(FushiIcons.playlist),
+        ),
+      );
 
 /// 音量：点开一条横向滑杆（0–100，写偏好并即时下发给后端）。
 /// 关闭迷你条：停止音乐并释放媒体会话（条随之消失）。用户 2026-10-30「底部栏
 /// 提供个按钮关闭」——原来只藏在长按菜单的「停止音乐」里。
-Widget _musicBarCloseButton(MusicSession session) => FushiIconButtonControl(
-  key: const ValueKey<String>('music_bar_close'),
-  tooltip: t.music_stop,
-  onPressed: () => unawaited(session.stop()),
-  icon: const FushiIcon(FushiIcons.close),
-);
+Widget _musicBarCloseButton(BuildContext context, MusicSession session) =>
+    isGlassDesign(context)
+    ? FushiAppleGlyphButton(
+        key: const ValueKey<String>('music_bar_close'),
+        icon: FushiIcons.close,
+        tooltip: t.music_stop,
+        extent: kFushiNowPlayingAppleGlyphExtent,
+        onPressed: () => unawaited(session.stop()),
+      )
+    : FushiIconButtonControl(
+        key: const ValueKey<String>('music_bar_close'),
+        tooltip: t.music_stop,
+        onPressed: () => unawaited(session.stop()),
+        icon: const FushiIcon(FushiIcons.close),
+      );
 
 /// 音量按钮：点开弹出音量滑杆（迷你条与播放页共用，读写 [AppModel.musicVolume]）。
 class MusicVolumeButton extends StatefulWidget {

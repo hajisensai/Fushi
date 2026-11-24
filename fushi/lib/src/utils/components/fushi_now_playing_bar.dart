@@ -22,9 +22,11 @@
 ///   （< [kFushiNowPlayingRoomyWidth]）且调用方给了 [FushiNowPlayingBar.onMore] 时，
 ///   额外动作收进长按 / 右键菜单。
 ///
-/// Apple 设计系统同一块取色色块，外框换 Apple 实色浮层的发丝描边 + 投影
-/// （[fushiAppleSolidFloatingDecoration]），按钮 / 播放键由各自的设计系统分派件
-/// 画；墨水屏不压大字、不取色、不投影，改描一圈 outline。
+/// 以上是 M3E 分支。Apple 设计系统（`isGlassDesign`）在根部分派到
+/// `fushi_now_playing_bar_apple.part.dart`（Apple Music iOS 27 / macOS 27 迷你
+/// 播放器：中性玻璃、方形小圆角封面、裸字形按钮，不取色、不压大字）。墨水屏下
+/// `isGlassDesign` 恒 false，走 M3E 分支：不压大字、不取色、不投影，改描一圈
+/// outline。
 library;
 
 import 'dart:async';
@@ -53,8 +55,22 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show FushiButtonGroup;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
-    show FushiAppleFloatingSurface, fushiAppleSolidFloatingDecoration;
+    show
+        FushiAppleFloatingSurface,
+        fushiAppleSolidFloatingDecoration,
+        fushiGlassOverPlatformView,
+        fushiGlassQuality,
+        fushiLiquidShapeOf;
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_presence.dart'
+    show fushiChromeFade;
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassContainer;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+
+part 'fushi_now_playing_bar_apple.part.dart';
 
 /// 可用宽到这个值就用宽屏浮动色块（M3 expanded 档下限之上）。
 const double kFushiNowPlayingDockedMinWidth = 900;
@@ -209,7 +225,10 @@ class _FushiNowPlayingBarState extends State<FushiNowPlayingBar> {
   }
 
   void _resolveTint() {
-    final ImageProvider? image = isEinkTheme(context) ? null : widget.tintImage;
+    // Apple 分支不取封面色（中性玻璃）；墨水屏不取。
+    final ImageProvider? image = isEinkTheme(context) || isGlassDesign(context)
+        ? null
+        : widget.tintImage;
     final Brightness brightness = Theme.of(context).brightness;
     if (image == _tintFor && brightness == _tintBrightness) return;
     _tintFor = image;
@@ -233,6 +252,21 @@ class _FushiNowPlayingBarState extends State<FushiNowPlayingBar> {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      final FushiMotionScheme motion = context.fushiMotion;
+      // 玻璃不能被 Opacity 压着淡入：走 [fushiChromeFade]（玻璃与内容同一条进度）。
+      return TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: 1),
+        duration: motion.spatialDefault.duration,
+        curve: motion.spatialDefault.curve,
+        builder: (BuildContext context, double v, Widget? child) =>
+            Transform.translate(
+              offset: Offset(0, (1 - v) * 24),
+              child: fushiChromeFade(context, v.clamp(0.0, 1.0), child!),
+            ),
+        child: _AppleNowPlayingBar(bar: widget),
+      );
+    }
     final ThemeData theme = Theme.of(context);
     final FushiCoverBlockColors colors = FushiCoverBlockColors.resolve(
       theme,

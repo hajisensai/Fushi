@@ -23,6 +23,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart'
+    show FushiApplePlayPauseButton;
 
 /// 有声书播放控制条（紧凑型，固定于阅读器底部）。
 ///
@@ -997,9 +999,10 @@ class _AudiobookMiniPlayerState extends State<AudiobookMiniPlayer> {
   }
 }
 
-/// 有声书播放键 FAB（[FushiToolbarFab] playButton：MD3 = 统一播放键多边形，
-/// 播放中转半瓣；Apple = 强调色圆钮），悬浮工具栏 / 迷你播放条旁共用。只随控制器
-/// 重建。
+/// 有声书播放键（MD3 = [FushiToolbarFab] playButton 的统一播放键多边形，播放中
+/// 转半瓣；Apple = Apple Music 式裸字形 [FushiApplePlayPauseButton]：无底、无着色、
+/// label 色实心 play / pause，命中区沿用 [size]），悬浮工具栏 / 迷你播放条旁共用。
+/// 只随控制器重建。
 class AudiobookPlayFab extends StatelessWidget {
   const AudiobookPlayFab({required this.controller, this.size = 56, super.key});
 
@@ -1012,6 +1015,23 @@ class AudiobookPlayFab extends StatelessWidget {
       listenable: controller,
       builder: (BuildContext context, Widget? _) {
         final bool playing = controller.isPlaying;
+        if (isGlassDesign(context)) {
+          return FushiFocusTarget(
+            id: const FushiFocusId('audiobook_play'),
+            child: Semantics(
+              identifier: 'fushi.reader.audiobook.play_fab',
+              container: true,
+              child: FushiApplePlayPauseButton(
+                key: const ValueKey<String>('audiobook_play_fab'),
+                isPlaying: playing,
+                tooltip: playing ? t.pause : t.play,
+                glyphSize: size * 0.55,
+                extent: math.max(size, 48),
+                onPressed: () => controller.togglePlayPause(),
+              ),
+            ),
+          );
+        }
         return FushiFocusTarget(
           id: const FushiFocusId('audiobook_play'),
           child: FushiToolbarFab(
