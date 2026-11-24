@@ -102,9 +102,13 @@ extension _VideoWebSource on _VideoFushiPageState {
           displayHeightPx: webVideoDisplayHeightPx(context),
         );
     WebVideoHosting hosting = WebVideoHosting.builtin;
-    if (wanted == WebVideoHosting.windowed &&
-        underlay &&
-        await acquireUnderlayComposition()) {
+    // 「画质优先」此刻能不能用：引擎支持底层合成，且真去申请时没被拒（申请失败也落到制卡优先，
+    // 顶栏 / 设置面板就不能再把它当成可切的一档）。
+    bool qualityFirstAvailable = underlay;
+    if (wanted == WebVideoHosting.windowed && underlay) {
+      qualityFirstAvailable = await acquireUnderlayComposition();
+    }
+    if (wanted == WebVideoHosting.windowed && qualityFirstAvailable) {
       if (!mounted) {
         // dispose 已在 await 期间跑过（那时还没持有），这份由这里归还。
         unawaited(releaseUnderlayComposition());
@@ -125,7 +129,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
     if (!mounted) return;
     _webHosting = hosting;
-    _webQualityFirstAvailable = underlay;
+    _webQualityFirstAvailable = qualityFirstAvailable;
     _webHostingProbe = WebVideoHostingProbe(hosting: hosting);
     _webShaderTier = webVideoShaderTierFromPref(
       appModel.prefsRepo.getPref(kWebVideoShaderTierPrefKey),
@@ -133,13 +137,9 @@ extension _VideoWebSource on _VideoFushiPageState {
     await _initWebSource(row);
   }
 
-  /// 「制卡优先」档的 WebView（含进程死亡后重建的）建好：挂超分（着色器绑在这个 WebView 上）。
+  /// 「制卡优先」档的 WebView（含进程死亡后重建的）建好：挂超分（着色器绑在这个 WebView 上，
+  /// 新 WebView 建好时整套重挂，死前那份随旧 WebView 作废）。
   void _onWebCaptureSurfaceCreated() => unawaited(_applyWebShaderTier());
-
-  /// 「制卡优先」档的 WebView 进程死了：超分确认作废（新 WebView 建好时重挂）。
-  Future<void> _onWebCaptureSurfaceGone() async {
-    if (mounted && _webShaderActive) _rebuild(() => _webShaderActive = false);
-  }
 
   /// 「制卡优先」档截画面（[WebVideoPlatformPlayer.surfaceCapture]）：截图 / 识别画面文字用。
   Future<Uint8List?> _captureWebSurface(
@@ -147,18 +147,24 @@ extension _VideoWebSource on _VideoFushiPageState {
     String format,
   ) => session.captureSurface(png: format == 'image/png');
 
-  /// 把 [_webShaderTier] 挂到「制卡优先」档的 WebView 上（fork 的 libplacebo 通道，与内置网页
-  /// 播放器同一套 [loadWebVideoShaderTexts] / [applyWebVideoShaders]）。「画质优先」档不经捕获，
-  /// 着色器无从生效，什么都不做。
-  Future<void> _applyWebShaderTier() async {
+  /// 网页档截不到帧时给用户的说明：「画质优先」档（站点自己画、加密站截不到）指明要切到
+  /// 「制卡优先」；其余情况（画面还没出来）用调用方给的 [fallback]。
+  String _webFrameCaptureUnavailableMessage(String fallback) =>
+      _webMode && _webHosting == WebVideoHosting.windowed
+      ? t.web_video_mode_capture_needed
+      : fallback;
+
+  /// 把 [_webShaderTier] 挂到「制卡优先」档的 WebView 上（fork 的 libplacebo 通道，与制卡重放
+  /// 宿主页同一套 [loadWebVideoShaderTexts] / [applyWebVideoShaders]）。返回 fork 是否按档位
+  /// 生效（关 = 收下空链；其余档 = 收下且着色器文件读到了）；「画质优先」档不经捕获、着色器
+  /// 无从生效，什么都不做、回 false。
+  Future<bool> _applyWebShaderTier() async {
     final Object? viewId = _webSession?.platformViewId;
-    if (_webHosting != WebVideoHosting.builtin || viewId == null) return;
+    if (_webHosting != WebVideoHosting.builtin || viewId == null) return false;
     final VideoShaderTier tier = _webShaderTier;
-    bool ok = false;
     try {
       final List<String> texts = await loadWebVideoShaderTexts(tier);
       final bool accepted = await applyWebVideoShaders(viewId, texts);
-      ok = accepted && texts.isNotEmpty;
       // 诊断（进 error_log）：档位 / 文本数 / fork 是否收下——分别对应文件缺失、DLL 缺失、
       // 通道不通，真机排障时不用猜。
       ErrorLogService.instance.log(
@@ -166,22 +172,22 @@ extension _VideoWebSource on _VideoFushiPageState {
         'shaders tier=${tier.name} texts=${texts.length} '
             'accepted=$accepted viewId=$viewId',
       );
+      return accepted && (tier == VideoShaderTier.off || texts.isNotEmpty);
     } catch (e, st) {
       ErrorLogService.instance.log('VideoFushi.web.shaders', e, st);
+      return false;
     }
-    if (!mounted || _webShaderTier != tier) return;
-    _rebuild(() => _webShaderActive = ok);
   }
 
-  /// 设置面板「画质增强」页签里选超分档位：记偏好（与内置网页播放器同一个键）并当场挂上。
+  /// 设置面板「画质增强」页签里选超分档位：记偏好（与制卡重放宿主页同一个键）并当场挂上。
+  /// 没挂上（着色器文件缺失 / fork 不收）就用 OSD 说清楚，不让面板上的选中态冒充已生效。
   Future<void> _selectWebShaderTier(VideoShaderTier tier) async {
     if (tier == _webShaderTier) return;
-    _rebuild(() {
-      _webShaderTier = tier;
-      _webShaderActive = false;
-    });
+    _rebuild(() => _webShaderTier = tier);
     await appModel.prefsRepo.setPref(kWebVideoShaderTierPrefKey, tier.name);
-    await _applyWebShaderTier();
+    final bool ok = await _applyWebShaderTier();
+    if (ok || !mounted || _webShaderTier != tier) return;
+    _showOsd(t.web_video_mode_shaders_failed, severity: ToastSeverity.error);
   }
 
   /// 建会话（脚本 / 4K 环境 / 登录 cookie）→ 网页播放器后端 → [VideoPlayerController.loadWeb]，
@@ -221,7 +227,6 @@ extension _VideoWebSource on _VideoFushiPageState {
       onSurfaceCreated: captureFirst
           ? (_) => _onWebCaptureSurfaceCreated()
           : null,
-      onProcessGone: captureFirst ? _onWebCaptureSurfaceGone : null,
       onTrack: _onWebTrack,
       onState: _onWebState,
       onKeyToken: _onWebKeyToken,

@@ -2837,9 +2837,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   WebVideoHostingProbe? _webHostingProbe;
 
   /// 「制卡优先」档的超分档位（与 mpv 页同一套 Anime4K 文件，经 fork 的 libplacebo 通道跑在
-  /// 页面帧上，偏好 [kWebVideoShaderTierPrefKey]）；[_webShaderActive] = fork 确认已启用。
+  /// 页面帧上，偏好 [kWebVideoShaderTierPrefKey]）。
   VideoShaderTier _webShaderTier = VideoShaderTier.off;
-  bool _webShaderActive = false;
 
   /// 「制卡优先」档：用户自己开播时检查过一次可捕获档会话有没有停在静音重放留下的 -100 dB。
   bool _webDuckResidueChecked = false;
@@ -9184,7 +9183,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     if (!controller.canCaptureFrame) {
-      _showOsd(t.video_ocr_frame_web_unsupported, icon: FushiIcons.ocr);
+      _showOsd(
+        _webFrameCaptureUnavailableMessage(t.video_ocr_frame_web_unsupported),
+        icon: FushiIcons.ocr,
+      );
       return;
     }
     if (controller.isPlaying) unawaited(controller.pause());
@@ -9937,7 +9939,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   VideoPlayerShortcutActions _buildVideoShortcutActions(
     VideoPlayerController controller,
   ) {
-    // 网页档（站点视频）：截图 / 逐帧 / 小窗 / 着色器对比 / 章节都要 libmpv，诚实 no-op。
+    // 网页档（站点视频）：逐帧 / 小窗 / 着色器对比 / 章节都要 libmpv，诚实 no-op（截图看能否截帧）。
     final bool web = controller.isWebBackend;
     void unsupported() {}
     return VideoPlayerShortcutActions(
@@ -10022,16 +10024,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : () => _runWhenImmersiveAllowsShortcuts(
               () => unawaited(controller.frameStep(forward: true)),
             ),
-      screenshot: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(_saveScreenshot(withSubtitles: false)),
-            ),
-      screenshotSubtitled: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(_saveScreenshot(withSubtitles: true)),
-            ),
+      // 网页档截图与控制条截图钮同一条门（[VideoPlayerController.canCaptureFrame]，「制卡优先」档 /
+      // 非 DRM 站截得到）：按下那一刻判，截不到由 [_saveScreenshot] 给 OSD 说明，不静默 no-op。
+      screenshot: () => _runWhenImmersiveAllowsShortcuts(
+        () => unawaited(_saveScreenshot(withSubtitles: false)),
+      ),
+      screenshotSubtitled: () => _runWhenImmersiveAllowsShortcuts(
+        () => unawaited(_saveScreenshot(withSubtitles: true)),
+      ),
       // 网页档也走 [_ocrCurrentFrame]：它会给 OSD 说明不可用，而不是静默 no-op。
       ocrFrame: () => _runWhenImmersiveAllowsShortcuts(_ocrCurrentFrame),
       toggleFullscreen: () => _runWhenImmersiveAllowsShortcuts(() {

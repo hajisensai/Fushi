@@ -594,6 +594,14 @@ extension _VideoClipExport on _VideoFushiPageState {
   /// 静默写进指定目录。复用 [VideoPlayerController.screenshot]（制卡同源，JPEG）。
   Future<void> _saveScreenshot({bool withSubtitles = false}) async {
     final VideoPlayerController? controller = _controller;
+    // 网页档截不到帧（「画质优先」档的加密站 / 画面还没出来）：说清楚为什么，而不是报一条
+    // 「截图失败」。libmpv 恒可截。
+    if (controller != null && !controller.canCaptureFrame) {
+      _showScreenshotFailure(
+        _webFrameCaptureUnavailableMessage('no frame available'),
+      );
+      return;
+    }
     final Uint8List? raw = await controller?.screenshot();
     if (raw == null) {
       _showScreenshotFailure('no frame available');

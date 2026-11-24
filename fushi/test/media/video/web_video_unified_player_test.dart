@@ -16,6 +16,10 @@ const String _webSourcePath =
     'lib/src/pages/implementations/video_fushi/web_source.part.dart';
 const String _hostPagePath =
     'lib/src/pages/implementations/web_video_fushi_page.dart';
+const String _playerPagePath =
+    'lib/src/pages/implementations/video_fushi_page.dart';
+const String _clipExportPath =
+    'lib/src/pages/implementations/video_fushi/clip_export.part.dart';
 
 /// [src] 里从 [start] 起到 [end]（不含）的一段；找不到即失败。
 String _slice(String src, String start, String end) {
@@ -190,6 +194,80 @@ void main() {
       expect(hostPage, isNot(contains('this.hosting')));
       expect(hostPage, isNot(contains('_switchHosting(')));
       expect(hostPage, isNot(contains('WebVideoHosting.windowed')));
+    });
+  });
+
+  group('制卡优先档的能力真的接上（审查补丁）', () {
+    late String webSource;
+    late String playerPage;
+    late String clipExport;
+
+    setUpAll(() {
+      webSource = maskComments(File(_webSourcePath).readAsStringSync());
+      playerPage = maskComments(File(_playerPagePath).readAsStringSync());
+      clipExport = maskComments(File(_clipExportPath).readAsStringSync());
+    });
+
+    test('截图快捷键与控制条截图钮同一条门：网页档不再一律 no-op', () {
+      final String actions = _slice(
+        playerPage,
+        'VideoPlayerShortcutActions _buildVideoShortcutActions(',
+        'ocrFrame:',
+      );
+      expect(actions, isNot(contains('screenshot: web')));
+      expect(actions, isNot(contains('screenshotSubtitled: web')));
+      expect(actions, contains('_saveScreenshot(withSubtitles: false)'));
+      expect(actions, contains('_saveScreenshot(withSubtitles: true)'));
+      final String save = _slice(
+        clipExport,
+        'Future<void> _saveScreenshot(',
+        'await controller?.screenshot()',
+      );
+      expect(save, contains('!controller.canCaptureFrame'));
+      expect(save, contains('_webFrameCaptureUnavailableMessage('));
+    });
+
+    test('画质优先档截不到帧时指明要切到制卡优先', () {
+      final String msg = _slice(
+        webSource,
+        'String _webFrameCaptureUnavailableMessage(',
+        'Future<bool> _applyWebShaderTier(',
+      );
+      expect(msg, contains('WebVideoHosting.windowed'));
+      expect(msg, contains('t.web_video_mode_capture_needed'));
+      final String ocr = _slice(
+        playerPage,
+        'void _ocrCurrentFrame()',
+        '_manualFrameOcrRequests.value++',
+      );
+      expect(ocr, contains('_webFrameCaptureUnavailableMessage('));
+    });
+
+    test('选了超分但没挂上要报出来，不让面板选中态冒充已生效', () {
+      final String select = _slice(
+        webSource,
+        'Future<void> _selectWebShaderTier(',
+        'Future<void> _initWebSource(',
+      );
+      expect(select, contains('await _applyWebShaderTier()'));
+      expect(select, contains('t.web_video_mode_shaders_failed'));
+      expect(playerPage, isNot(contains('_webShaderActive')));
+    });
+
+    test('画质优先申请底层合成被拒时不再被当成可切的一档', () {
+      final String open = _slice(
+        webSource,
+        'Future<void> _openWebSource(',
+        'void _onWebCaptureSurfaceCreated(',
+      );
+      expect(
+        open,
+        contains('qualityFirstAvailable = await acquireUnderlayComposition();'),
+      );
+      expect(
+        open,
+        contains('_webQualityFirstAvailable = qualityFirstAvailable;'),
+      );
     });
   });
 }
