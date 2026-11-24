@@ -11,6 +11,7 @@ import 'package:fushi_engine/sync/manga_sync_package.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart' show AssetEntry;
 import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
+import 'package:fushi/src/sync/book_change_gate.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/position_converter.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart'
@@ -117,6 +118,7 @@ class SyncBookResult {
     this.conflictLocalVersion,
     this.conflictRemoteVersion,
     this.contentError,
+    this.remoteFileNames,
   });
 
   final SyncResult direction;
@@ -137,6 +139,10 @@ class SyncBookResult {
   final int? conflictLocalVersion;
   final int? conflictRemoteVersion;
 
+  /// 这次判定所依据的那次列举看到的书文件夹完整文件名（[SyncFileTrio.fileNames]）；
+  /// 列举方给不出完整清单时为 null。书级变更筛选（[BookChangeGate]）记一致指纹用。
+  final Set<String>? remoteFileNames;
+
   SyncBookResult withContentError(String message) => SyncBookResult(
     direction: direction,
     title: title,
@@ -147,6 +153,20 @@ class SyncBookResult {
     conflictLocalVersion: conflictLocalVersion,
     conflictRemoteVersion: conflictRemoteVersion,
     contentError: message,
+    remoteFileNames: remoteFileNames,
+  );
+
+  SyncBookResult withRemoteFileNames(Set<String>? names) => SyncBookResult(
+    direction: direction,
+    title: title,
+    characterCount: characterCount,
+    error: error,
+    conflictAssetKey: conflictAssetKey,
+    conflictDimension: conflictDimension,
+    conflictLocalVersion: conflictLocalVersion,
+    conflictRemoteVersion: conflictRemoteVersion,
+    contentError: contentError,
+    remoteFileNames: names,
   );
 }
 
@@ -399,6 +419,7 @@ class SyncManager {
     RemoteListingSnapshot? listing,
     BookFolderListingObservations? observations,
     Set<String> skipBookKeys = const <String>{},
+    BookChangeGate? changeGate,
     void Function(int done, int total, String title)? onBookProgress,
   }) async {
     // 全部书都命中索引时，下面的循环一次 `_syncBookOnce` 都不会进，而 folder 缓存
@@ -412,7 +433,21 @@ class SyncManager {
     _identityUnavailable = null;
     await _progressBaselineIfKnown();
 
-    final books = await _db.getAllEpubBooks();
+    final List<EpubBookRow> allBooks = await _db.getAllEpubBooks();
+    // wiO0nN8aiG：有书级变更筛选时，上次亲眼看到两端一致、之后本地与远端证据都没变的
+    // 书不进逐本阶段（结果必然仍是 synced、什么都不做），也不计进度。
+    final _BookChangePlan? plan = changeGate == null
+        ? null
+        : await _planBookChanges(
+            allBooks,
+            changeGate,
+            syncContent: syncContent,
+            syncMangaContent: syncMangaContent,
+            importOnly: importOnly,
+            skipBookKeys: skipBookKeys,
+            observations: observations,
+          );
+    final List<EpubBookRow> books = plan?.toSync ?? allBooks;
     // 没有整树快照时，把「每本书列一次文件夹」从串行改成有界并发的预取：请求数不变
     // （仍是每本一次），但不再一本接一本地排队等往返（jHQpTfjrNB：36 本书 ×
     // 一次 PROPFIND 串行就是十几秒）。
@@ -443,6 +478,8 @@ class SyncManager {
         listing: listing,
         observations: observations,
         skipBookKeys: skipBookKeys,
+        changeGate: changeGate,
+        plan: plan,
         onBookProgress: onBookProgress,
       );
     } finally {
@@ -475,6 +512,8 @@ class SyncManager {
     required RemoteListingSnapshot? listing,
     required BookFolderListingObservations? observations,
     required Set<String> skipBookKeys,
+    required BookChangeGate? changeGate,
+    required _BookChangePlan? plan,
     required void Function(int done, int total, String title)? onBookProgress,
   }) async {
     for (int i = 0; i < books.length; i++) {
@@ -518,7 +557,101 @@ class SyncManager {
         rethrow;
       }
       results.add(result);
+      if (changeGate == null || plan == null) continue;
+      if (result.direction != SyncResult.synced ||
+          result.error != null ||
+          result.contentError != null) {
+        // 没亲眼看到一致（导入 / 导出 / 冲突 / 失败）：旧指纹不再可信，删掉，这本书
+        // 下一轮照常逐本确认。全扫里某本失败也因此不会被「全扫已跑完」掩盖过去。
+        await changeGate.forget(_db, sanitizeTtuFilename(book.title));
+      } else {
+        // 只在亲眼看到两端一致时记指纹（设计文档 §2.1）。本地时间戳取开轮读到的那个：
+        // 判定途中本地又动过时指纹对不上，下一轮照常逐本确认，只会多做不会漏做。
+        await changeGate.recordAgreement(
+          db: _db,
+          assetKey: sanitizeTtuFilename(book.title),
+          localStamp: plan.localStamps[book.uid],
+          contentChecked: _contentChecked(
+            book,
+            syncContent: syncContent,
+            syncMangaContent: syncMangaContent,
+            importOnly: importOnly,
+          ),
+          remoteFileNames: result.remoteFileNames,
+        );
+      }
     }
+  }
+
+  /// 这本书的逐本阶段会不会做「远端缺书文件就补传」（与 [_syncBookOnce] 的门同一判据）。
+  bool _contentChecked(
+    EpubBookRow book, {
+    required bool syncContent,
+    required bool syncMangaContent,
+    required bool importOnly,
+  }) =>
+      !importOnly &&
+      !_fileBoxIsClientOwned &&
+      isBookContentSyncEnabled(
+        book,
+        syncContent: syncContent,
+        syncMangaContent: syncMangaContent,
+      );
+
+  /// 按 [gate] 把本轮的书分成「要进逐本阶段」与「未变、跳过」。
+  ///
+  /// 本地阅读位置一条查询读齐。被跳过的书若上次一致时见过有声书包，把这个观测喂给
+  /// 同轮有声书包阶段（只对 title→folderId 已缓存的书，拿 folderId 不发请求），不退回
+  /// 逐本 HEAD 探针。
+  Future<_BookChangePlan> _planBookChanges(
+    List<EpubBookRow> books,
+    BookChangeGate gate, {
+    required bool syncContent,
+    required bool syncMangaContent,
+    required bool importOnly,
+    required Set<String> skipBookKeys,
+    required BookFolderListingObservations? observations,
+  }) async {
+    final Map<String, int> stamps = <String, int>{
+      for (final ReaderPositionRow row in await _db.getAllReaderPositions())
+        row.bookUid: row.updatedAt,
+    };
+    final Map<String, String> cached = _backend.cachedFolderIds;
+    String? rootId;
+    final List<EpubBookRow> toSync = <EpubBookRow>[];
+    for (final EpubBookRow book in books) {
+      final String assetKey = sanitizeTtuFilename(book.title);
+      final bool skip =
+          assetKey.isNotEmpty &&
+          !skipBookKeys.contains(book.bookKey) &&
+          gate.canSkip(
+            assetKey: assetKey,
+            localStamp: stamps[book.uid],
+            contentChecked: _contentChecked(
+              book,
+              syncContent: syncContent,
+              syncMangaContent: syncMangaContent,
+              importOnly: importOnly,
+            ),
+          );
+      if (!skip) {
+        toSync.add(book);
+        continue;
+      }
+      gate.skipped++;
+      if (observations != null &&
+          gate.audioPackageSeen(assetKey) &&
+          cached.containsKey(assetKey)) {
+        rootId ??= await _backend.findOrCreateRootFolder();
+        final String folderId = await _backend.ensureBookFolder(
+          bookTitle: book.title,
+          rootFolderId: rootId,
+        );
+        observations.noteSeenFromFingerprint(folderId, gate.audioPackageNames);
+      }
+    }
+    gate.checked += toSync.length;
+    return _BookChangePlan(toSync: toSync, localStamps: stamps);
   }
 
   /// 逐本列举预取的并发上限。只是把同样多的请求叠起来发，不改变请求数；取小值是为了
@@ -676,7 +809,7 @@ class SyncManager {
     }
 
     onStage(SyncBookStage.progress);
-    final SyncBookResult result = await _syncBookProgress(
+    final SyncBookResult result = (await _syncBookProgress(
       book: book,
       assetKey: assetKey,
       folderId: folderId,
@@ -687,7 +820,7 @@ class SyncManager {
       syncAudioBook: syncAudioBook,
       syncContent: syncContent,
       importOnly: importOnly,
-    );
+    )).withRemoteFileNames(remoteFileNames);
 
     // 内容失败仍须上报已判定的进度冲突，不能被外层错误包装成普通 skipped。
     onProgressResult(result);
@@ -1613,4 +1746,14 @@ List<TtuStatistics> mergeStatistics(
     }
   }
   return grouped.values.toList();
+}
+
+/// [SyncManager._planBookChanges] 的结果：要进逐本阶段的书 + 开轮读到的本地时间戳。
+class _BookChangePlan {
+  const _BookChangePlan({required this.toSync, required this.localStamps});
+
+  final List<EpubBookRow> toSync;
+
+  /// bookUid → 阅读位置 updatedAt（无行不在表里）。
+  final Map<String, int> localStamps;
 }

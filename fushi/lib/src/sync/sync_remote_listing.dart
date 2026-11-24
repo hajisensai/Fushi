@@ -130,6 +130,13 @@ class BookFolderListingObservations {
   /// [folderId] 本轮见过的文件名；没列过（或列举不完整）返回 null。
   Set<String>? namesOf(String folderId) => _namesByFolderId[folderId];
 
+  /// 书级变更筛选（`BookChangeGate`）跳过的书：上次两端一致时在 [folderId] 里见过
+  /// [names] 中的文件（目前只喂有声书包名）。只往已有的观测里加；没有观测就建一份
+  /// **只含这些名字**的观测——消费方都只问「某个名字在不在」，不把它当完整清单用。
+  void noteSeenFromFingerprint(String folderId, Iterable<String> names) {
+    (_namesByFolderId[folderId] ??= <String>{}).addAll(names);
+  }
+
   /// 本机本轮往 [folderId] 传了 [name]。
   void noteUploaded(String folderId, String name) {
     _namesByFolderId[folderId]?.add(name);

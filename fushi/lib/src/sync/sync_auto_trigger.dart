@@ -8,6 +8,8 @@ import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
+import 'package:fushi/src/sync/book_change_gate.dart'
+    show publishOwnBookManifestAfterBookSync;
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
@@ -1786,6 +1788,8 @@ Future<SyncConflict?> syncExitedBookOnChannel({
         syncContent: flags.syncContent,
         syncMangaContent: flags.syncMangaContent,
       );
+  // wiO0nN8aiG：对端按书级清单判「哪些书变了」，退出书写的进度要马上让它看见。
+  await publishOwnBookManifestAfterBookSync(db: db, backend: backend);
   if (result.direction != SyncResult.conflict) return null;
   return SyncConflict(
     assetKey: result.conflictAssetKey!,
