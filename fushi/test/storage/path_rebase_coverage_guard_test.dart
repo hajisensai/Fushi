@@ -5,6 +5,8 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/media_source.dart' show dbSourcePrefKey;
 import 'package:fushi/src/storage/path_rebase_coverage.dart';
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
+    show kPageBackdropDeviceLocalPrefKeys;
 import '../helpers/scan_scale.dart';
 
 /// BUG-1174 守卫：**路径 rebase 覆盖率**。
@@ -229,6 +231,25 @@ void main() {
       if (!src.contains(needle)) stale.add(spec.key);
     }
     expect(stale, isEmpty, reason: '这些 pref 声明在 lib/ 里已无任何引用，请删声明：$stale');
+  });
+
+  // BUG-5370：页面背景图键名不像路径（上面的 key 正则扫不到）、又经 const 声明而非
+  // getPref 字面量读写，于是漏登记，iOS 更新换容器后背景图整批悬空。设备本地的这组
+  // 文件型键逐个要求登记，新增一个就得先想清楚它存的是什么、换根后怎么办。
+  test('页面背景的设备本地文件键都在 kPathRebasePrefs 里登记', () {
+    final Set<String> declared = kPathRebasePrefs
+        .map((PathRebasePref s) => s.key)
+        .toSet();
+    expect(kPageBackdropDeviceLocalPrefKeys, isNotEmpty);
+    final List<String> missing = <String>[
+      for (final String key in kPageBackdropDeviceLocalPrefKeys)
+        if (!declared.contains(key)) key,
+    ];
+    expect(
+      missing,
+      isEmpty,
+      reason: '这些页面背景键承载本机文件，请在 kPathRebasePrefs 登记处置：$missing',
+    );
   });
 
   test('每条 pref 声明都给出了非空理由，且 key 不重复', () {

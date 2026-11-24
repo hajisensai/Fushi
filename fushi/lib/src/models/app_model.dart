@@ -5824,7 +5824,12 @@ class AppModel
 
       final Map<String, String> prefsSnapshot = prefsRepo.prefsSnapshot;
 
-      themeNotifier = ThemeNotifier(_database, () => textTheme);
+      // 背景图偏好存文件名，先解析目录，首帧就能拼出路径（BUG-5370）。构造与载入
+      // 之间不让出事件循环，别处读不到一个还没载入偏好的主题。
+      final Directory pageBackdropDir =
+          await ThemeNotifier.resolvePageBackdropImageDirectory();
+      themeNotifier = ThemeNotifier(_database, () => textTheme)
+        ..usePageBackdropImageDirectory(pageBackdropDir);
       themeNotifier.loadFromPrefsSnapshot(prefsSnapshot);
       themeNotifier.addListener(notifyListeners);
       _themeListenerAdded = true;
@@ -6374,7 +6379,10 @@ class AppModel
       // appModel.theme/darkTheme/themeMode which delegate to themeNotifier,
       // so it MUST be constructed here exactly as in initialise() — otherwise
       // the late final throws LateInitializationError (HBK-AUDIT-003).
-      themeNotifier = ThemeNotifier(_database, () => textTheme);
+      final Directory pageBackdropDir =
+          await ThemeNotifier.resolvePageBackdropImageDirectory();
+      themeNotifier = ThemeNotifier(_database, () => textTheme)
+        ..usePageBackdropImageDirectory(pageBackdropDir);
       themeNotifier.loadFromPrefsSnapshot(prefsRepo.prefsSnapshot);
       themeNotifier.addListener(notifyListeners);
       _themeListenerAdded = true;

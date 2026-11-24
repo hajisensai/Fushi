@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart' show PrefCodec;
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/home_tab.dart';
 
@@ -121,7 +122,15 @@ const String kPageBackdropModulePresetsPrefKey = 'page_backdrop_module_presets';
 /// `{模块 wire: {"landscape": 路径, "portrait": 路径}}`。文件只在这台设备上，设备本地。
 const String kPageBackdropModuleImagesPrefKey = 'page_backdrop_module_images';
 
-/// 设备本地的那几个键（图片文件路径 + 取色缓存）。
+/// 设备本地的那几个键（图片文件 + 取色缓存）。
+///
+/// BUG-5370：图片键（含模块 JSON 与各配置的停放值）存的是背景图目录
+/// （`<support>/page_backdrop`）里的**文件名**，读时按当前目录拼成绝对路径
+/// （[resolvePageBackdropImagePath]）。以前存绝对路径，iOS 每次安装 / 更新都换容器
+/// UUID、桌面换数据根也换 support 根，旧路径悬空，背景图静默回落默认样式。存量绝对
+/// 路径由 `ThemeNotifier` 载入时按文件名改写一次（[healPageBackdropImageRef]）。取色
+/// 缓存里的路径同样只按文件名比对。这几个键在 `kPathRebasePrefs` 里登记为非路径，守卫
+/// `path_rebase_coverage_guard_test.dart` 盯着这份清单。
 const List<String> kPageBackdropDeviceLocalPrefKeys = <String>[
   kPageBackdropLandscapeImagePrefKey,
   kPageBackdropPortraitImagePrefKey,
@@ -145,7 +154,8 @@ const Map<String, String> kPageBackdropProfileParkedPrefKeyPrefixes =
       kPageBackdropSeedCachePrefKey: 'page_backdrop_seed_cache::',
     };
 
-/// [prefs]（偏好表原始编码值）里仍在引用的全部背景图路径：live 键与各配置停放的值，
+/// [prefs]（偏好表原始编码值）里仍在引用的全部背景图（存的原值：文件名或存量绝对
+/// 路径，调用方按 [pageBackdropImageFileName] 比对）：live 键与各配置停放的值，
 /// 全局两张 + 各模块的。[skipParkedUid] 的停放值不算——激活配置的停放值是它上次切走时
 /// 的旧值，live 键才是它现在的图（下次切走会被覆盖），算进去只会让换掉的旧图多留一阵。
 Set<String> pageBackdropReferencedImagePaths(
@@ -285,6 +295,70 @@ double clampPageBackdropScrim(Object? raw) {
       .toDouble()
       .clamp(kPageBackdropScrimMin, kPageBackdropScrimMax)
       .toDouble();
+}
+
+/// [path]（文件名或存量绝对路径，`/` 与 `\` 两种分隔符都认）的文件名部分。
+String pageBackdropImageFileName(String path) {
+  final int cut = path.lastIndexOf(RegExp(r'[\\/]'));
+  return cut < 0 ? path : path.substring(cut + 1);
+}
+
+/// 偏好里的图片值（文件名，或 BUG-5370 之前写下的绝对路径）→ 本机绝对路径。
+///
+/// 文件名按 [directory]（当前背景图目录）拼；[directory] 还没解析出来时返回 null
+/// （当作暂时没有图，目录解析后会重发布）。存量绝对路径原样返回（载入时能按文件名
+/// 找回的已被 [healPageBackdropImageRef] 改写成文件名，剩下的是真不在本机的）。
+String? resolvePageBackdropImagePath(
+  Object? raw, {
+  required String? directory,
+}) {
+  if (raw is! String || raw.isEmpty) return null;
+  if (pageBackdropImageFileName(raw) != raw) return raw;
+  if (directory == null) return null;
+  return p.join(directory, raw);
+}
+
+/// 存量绝对路径值的迁移：文件名在当前背景图目录里（[inDirectory] 判）就返回该文件名，
+/// 否则（已是文件名 / 空值 / 文件不在目录里）返回 null = 不改写。
+String? healPageBackdropImageRef(
+  Object? raw, {
+  required bool Function(String name) inDirectory,
+}) {
+  if (raw is! String || raw.isEmpty) return null;
+  final String name = pageBackdropImageFileName(raw);
+  if (name == raw || name.isEmpty) return null;
+  return inDirectory(name) ? name : null;
+}
+
+/// [kPageBackdropModuleImagesPrefKey] 值（解码后的 JSON 串）里的存量绝对路径按
+/// [healPageBackdropImageRef] 改写；没有要改的返回 null。
+String? healPageBackdropModuleImagesValue(
+  Object? raw, {
+  required bool Function(String name) inDirectory,
+}) {
+  final Map<HomeTab, PageBackdropModuleImages> images =
+      decodePageBackdropModuleImages(raw);
+  bool changed = false;
+  String? heal(String? path) {
+    final String? healed = healPageBackdropImageRef(
+      path,
+      inDirectory: inDirectory,
+    );
+    if (healed == null) return path;
+    changed = true;
+    return healed;
+  }
+
+  final Map<HomeTab, PageBackdropModuleImages> out =
+      <HomeTab, PageBackdropModuleImages>{
+        for (final MapEntry<HomeTab, PageBackdropModuleImages> e
+            in images.entries)
+          e.key: (
+            landscape: heal(e.value.landscape),
+            portrait: heal(e.value.portrait),
+          ),
+      };
+  return changed ? encodePageBackdropModuleImages(out) : null;
 }
 
 /// 偏好里存的图片路径：空串 / 非字符串 / [exists] 判为不存在的一律视为没有。
