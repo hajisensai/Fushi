@@ -238,6 +238,7 @@ import 'package:fushi/src/media/links/media_links_section.dart'
 import 'package:fushi/src/media/links/work_kinds_badge.dart';
 import 'package:fushi/src/media/tracking/book_tracking_dialog.dart';
 import 'package:fushi/src/media/tracking/series_card_tracking_section.dart';
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
 
 part 'reader_history/card_widgets.part.dart';
 part 'reader_history/remote.part.dart';
