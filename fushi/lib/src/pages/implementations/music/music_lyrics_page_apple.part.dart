@@ -33,6 +33,9 @@ KaraokeLyricsAppearance musicAppleLyricsAppearance(
   inactiveOpacity: 0.5,
 );
 
+/// Apple 下拉菜单与窗口边缘的安全距离：放不下就翻到按钮上方，而不是贴边。
+const double _kAppleMenuSafeMargin = 16;
+
 /// 测试钩子：Apple 歌词页封面（大封面复用 [_LyricsCover] 的 3D 倾斜 + 光面）。
 @visibleForTesting
 Widget debugMusicAppleLyricsCover(MusicPlayItem? item, double size) =>
@@ -181,10 +184,14 @@ class _AppleVolumeRowState extends State<_AppleVolumeRow> {
         Expanded(
           child: Semantics(
             label: t.music_volume_title,
-            child: adaptiveSlider(
-              context: context,
+            // Apple Music 全屏播放器的音量轨是白色（label），与进度条同色系，
+            // 不用强调色。
+            child: FushiSlider(
+              key: const ValueKey<String>('music_lyrics_apple_volume_slider'),
               value: v,
               max: 100,
+              activeColor: apple.label,
+              inactiveColor: apple.fill,
               onChanged: (double next) {
                 setState(() => _dragging = next);
                 unawaited(widget.appModel.setMusicVolume(next));
@@ -426,8 +433,13 @@ extension _MusicLyricsAppleLayout on _MusicLyricsPageState {
     );
   }
 
-  /// ⋯：次级功能收进一个 Apple pull-down——歌词偏移（当前值作小标题，− / + 点了
-  /// 不收起，可连点）、AB 循环 / 再加一行、音质、音效、桌面歌词、播放队列。
+  /// ⋯：次级功能收进 Apple pull-down（[FushiMenuAnchor] 的 Apple 面板，与右上「⋯」
+  /// 的顶栏菜单同一套菜单外观 / 行高 / 对勾列）。两组：
+  /// - 歌词：偏移当前值作组标题，「延后 / 提前」点了不收起可连点；「循环当前行」是
+  ///   勾选项（开 = ✓）；循环开着时多一行「再加一行」。
+  /// - 播放：音质 / 音效 / 播放队列 = 标题 + 行尾 secondaryLabel 当前值；音效处理中、
+  ///   桌面歌词开着时 ✓。
+  /// 下方空间不够时 MenuAnchor 整块翻到按钮上方，四周留 [_kAppleMenuSafeMargin]。
   Widget _buildAppleMoreMenu(BuildContext context) {
     final bool synced = _lyrics?.timeline.isSynced ?? false;
     final MusicPlayItem? item = _engine.current;
@@ -436,39 +448,55 @@ extension _MusicLyricsAppleLayout on _MusicLyricsPageState {
             appModelNoUpdate.musicPluginQualityFor(item.path),
           )
         : null;
+    final bool effectsOn = appModelNoUpdate.musicAudioEffects.isActive;
     final String effects = appModelNoUpdate.musicAudioEffects.enabled
-        ? '${t.music_effects_title} · '
-              '${musicEqPresetLabel(appModelNoUpdate.musicEqPreset)}'
-        : '${t.music_effects_title} · ${t.music_eq_off}';
-    Widget entry(
+        ? musicEqPresetLabel(appModelNoUpdate.musicEqPreset)
+        : t.music_eq_off;
+    Widget value(String text) => Text(
+      text,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(color: appleColorsOf(context).secondaryLabel),
+    );
+    Widget action(
       String key,
       IconData icon,
       String label,
       VoidCallback onPressed, {
       bool close = true,
-      bool? checked,
+      String? trailing,
     }) => MenuItemButton(
       key: ValueKey<String>(key),
       closeOnActivate: close,
-      leadingIcon: FushiIcon(checked ?? false ? FushiIcons.filled(icon) : icon),
-      trailingIcon: checked ?? false ? const FushiIcon(FushiIcons.check) : null,
+      leadingIcon: FushiIcon(icon),
+      trailingIcon: trailing == null ? null : value(trailing),
       onPressed: onPressed,
+      child: Text(label),
+    );
+    Widget toggle(
+      String key,
+      String label,
+      bool on,
+      VoidCallback onPressed, {
+      String? trailing,
+    }) => CheckboxMenuButton(
+      key: ValueKey<String>(key),
+      value: on,
+      onChanged: (_) => onPressed(),
+      trailingIcon: trailing == null ? null : value(trailing),
       child: Text(label),
     );
     final List<Widget> lyricTools = <Widget>[
       if (synced) ...<Widget>[
-        FushiAppleMenuSectionHeader(
-          t.music_lyrics_offset_value(ms: _offsetMs),
-          alignWithCheck: false,
-        ),
-        entry(
+        FushiAppleMenuSectionHeader(t.music_lyrics_offset_value(ms: _offsetMs)),
+        action(
           'music_lyrics_offset_earlier',
           FushiIcons.remove,
           t.music_lyrics_offset_later,
           () => _nudgeOffset(-kMusicLyricsOffsetStepMs),
           close: false,
         ),
-        entry(
+        action(
           'music_lyrics_offset_later',
           FushiIcons.add,
           t.music_lyrics_offset_earlier,
@@ -476,17 +504,14 @@ extension _MusicLyricsAppleLayout on _MusicLyricsPageState {
           close: false,
         ),
         if (_engine.capabilities.abLoop)
-          entry(
+          toggle(
             'music_lyrics_ab_loop',
-            FushiIcons.repeat,
-            _loopLines == null
-                ? t.music_lyrics_ab_loop_line
-                : t.music_lyrics_ab_loop_off,
+            t.music_lyrics_ab_loop_line,
+            _loopLines != null,
             () => unawaited(_toggleLoop()),
-            checked: _loopLines != null,
           ),
         if (_loopLines != null)
-          entry(
+          action(
             'music_lyrics_ab_loop_extend',
             FushiIcons.addCircle,
             t.music_lyrics_ab_loop_extend,
@@ -496,38 +521,40 @@ extension _MusicLyricsAppleLayout on _MusicLyricsPageState {
     ];
     final List<Widget> playback = <Widget>[
       if (quality != null)
-        entry(
+        action(
           'music_lyrics_quality',
           FushiIcons.highQuality,
-          t.music_quality_chip_semantics(quality: quality),
+          t.music_quality_title,
           () => unawaited(
             showMusicQualitySheet(_themedContext, appModelNoUpdate),
           ),
+          trailing: quality,
         ),
       if (_engine.capabilities.signalPath)
-        entry(
+        toggle(
           'music_lyrics_effects',
-          FushiIcons.barChart,
-          effects,
+          t.music_effects_title,
+          effectsOn,
           () => unawaited(_openEffects()),
-          checked: appModelNoUpdate.musicAudioEffects.isActive,
+          trailing: effects,
         ),
       if (FloatingLyricChannel.supported)
-        entry(
+        toggle(
           'music_lyrics_desktop_menu',
-          FushiIcons.pictureInPicture,
           t.music_desktop_lyrics_title,
+          appModel.musicDesktopLyrics,
           () => unawaited(_toggleDesktopLyrics()),
-          checked: appModel.musicDesktopLyrics,
         ),
-      entry(
+      action(
         'music_lyrics_queue',
         FushiIcons.playlist,
-        t.music_queue_button_count(count: _engine.queue.length),
+        t.music_queue_title,
         () => unawaited(showMusicQueue(_themedContext, _engine)),
+        trailing: '${_engine.queue.length}',
       ),
     ];
     return FushiMenuAnchor(
+      reservedPadding: const EdgeInsets.all(_kAppleMenuSafeMargin),
       menuChildren: <Widget>[
         ...lyricTools,
         if (lyricTools.isNotEmpty) const FushiAppleMenuDivider(),

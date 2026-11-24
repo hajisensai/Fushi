@@ -13,6 +13,8 @@ import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
     show ShelfCoverFrame;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
     show FushiGlassScope;
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiAppleMenuCheck, FushiMenuAnchor;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -167,6 +169,125 @@ void main() {
     expect(page, contains('_sourceActionOptions()'));
     expect(page, contains("? const ValueKey<String>('music_lyrics_more')"));
   });
+
+  // 用户 2026-11-24「还有点问题」：标题旁「⋯」的菜单要是 Apple 菜单——开着的项 ✓、
+  // 行带图标（宽屏 macOS 按 11-24 拍板不画行内图标）、下方放不下翻到上方。
+  Widget appleHost(Widget child, {Size size = const Size(800, 600)}) =>
+      MediaQuery(
+        data: MediaQueryData(size: size),
+        child: MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(
+              seedColor: Colors.teal,
+              brightness: Brightness.dark,
+            ),
+            textTheme: Typography.material2021().white,
+            glass: FushiGlassMaterial.minimal,
+            glassDesign: true,
+            eink: false,
+          ),
+          home: FushiGlassScope(child: Scaffold(body: child)),
+        ),
+      );
+
+  Widget moreMenu() => FushiMenuAnchor(
+    reservedPadding: const EdgeInsets.all(16),
+    menuChildren: <Widget>[
+      MenuItemButton(
+        key: const ValueKey<String>('earlier'),
+        closeOnActivate: false,
+        leadingIcon: const Icon(FushiIcons.remove),
+        onPressed: () {},
+        child: const Text('Delay lyrics'),
+      ),
+      CheckboxMenuButton(
+        key: const ValueKey<String>('loop'),
+        value: true,
+        onChanged: (_) {},
+        child: const Text('Loop current line'),
+      ),
+      CheckboxMenuButton(
+        key: const ValueKey<String>('desktop'),
+        value: false,
+        onChanged: (_) {},
+        child: const Text('Desktop lyrics'),
+      ),
+      for (int i = 0; i < 6; i++)
+        MenuItemButton(
+          leadingIcon: const Icon(FushiIcons.playlist),
+          onPressed: () {},
+          child: Text('Row $i'),
+        ),
+    ],
+    builder: (BuildContext context, MenuController menu, Widget? _) =>
+        TextButton(
+          key: const ValueKey<String>('more'),
+          onPressed: menu.open,
+          child: const Text('...'),
+        ),
+  );
+
+  testWidgets('Apple ⋯ menu: active rows get ✓, inactive do not', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(appleHost(Center(child: moreMenu())));
+    await tester.tap(find.byKey(const ValueKey<String>('more')));
+    await tester.pumpAndSettle();
+    Iterable<FushiAppleMenuCheck> checks(String key) =>
+        tester.widgetList<FushiAppleMenuCheck>(
+          find.descendant(
+            of: find.byKey(ValueKey<String>(key)),
+            matching: find.byType(FushiAppleMenuCheck),
+          ),
+        );
+    expect(checks('loop').single.checked, isTrue);
+    expect(checks('desktop').single.checked, isFalse);
+    // 同组有勾选项：普通行也让出 ✓ 列（未勾），文字左缘对齐。
+    expect(checks('earlier').single.checked, isFalse);
+  });
+
+  testWidgets('Apple ⋯ menu flips above the button when room below is short', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      appleHost(
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 40),
+            child: moreMenu(),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('more')));
+    await tester.pumpAndSettle();
+    final Rect button = tester.getRect(
+      find.byKey(const ValueKey<String>('more')),
+    );
+    final Rect first = tester.getRect(
+      find.byKey(const ValueKey<String>('earlier')),
+    );
+    final Rect last = tester.getRect(find.text('Row 5'));
+    expect(first.top, lessThan(button.top), reason: '翻到按钮上方');
+    expect(last.bottom, lessThanOrEqualTo(button.top));
+  });
+
+  test(
+    'lyrics ⋯ menu uses check rows + trailing values; volume track is label',
+    () {
+      final String more = _method(_part(), 'Widget _buildAppleMoreMenu(');
+      expect(more, contains('CheckboxMenuButton('));
+      expect(more, contains('reservedPadding:'));
+      expect(more, contains('t.music_quality_title'));
+      expect(more, contains('trailing: quality'));
+      expect(more, contains('trailing: effects'));
+      expect(more, isNot(contains('music_quality_chip_semantics')));
+      final String part = _part();
+      expect(part, contains('activeColor: apple.label'));
+      expect(part, isNot(contains('adaptiveSlider(')));
+    },
+  );
 
   test('Apple lyrics appearance: label colours, anchor at 1/3, blur on', () {
     final FushiAppleColors apple = FushiAppleColors.of(

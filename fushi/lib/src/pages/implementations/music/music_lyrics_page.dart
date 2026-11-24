@@ -152,8 +152,8 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show FushiAppleMenuDivider, FushiAppleMenuSectionHeader, FushiMenuAnchor;
-import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
-    show adaptiveSlider;
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiSlider;
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
