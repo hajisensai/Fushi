@@ -227,6 +227,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 生效由 music_lyrics_page_test 咬住，blurInactive 开 / 关下非当前行有无模糊层由
   // karaoke_lyrics_view_test 咬住。
   'music/Blur surrounding lines': 'test/pages/music_lyrics_page_test.dart',
+  // 歌词副行三开关：设置值 → AppModel.musicLyricsShow* → 歌词页 KaraokeLyricsView
+  // 的 appearance.showTranslation / showRomanization / showRuby 由 music_lyrics_page_test
+  // 咬住；三个开关关掉后对应副行 / 注音不渲染由 karaoke_lyrics_view_test 咬住。
+  'music/Show translation': 'test/pages/music_lyrics_page_test.dart',
+  'music/Show romanization': 'test/pages/music_lyrics_page_test.dart',
+  'music/Show furigana': 'test/pages/music_lyrics_page_test.dart',
   // 服务器曲库的码率上限：生效点是播放服务器曲目时向服务器要的流（直出 / 转码），harness
   // 里没有服务器。设置值 → musicServerBitrateLimit → streamFor 的直出 / 转码与信号路径源
   // 属性由 music_server_test 咬住。

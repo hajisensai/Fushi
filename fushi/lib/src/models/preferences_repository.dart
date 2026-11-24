@@ -6274,6 +6274,33 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 歌词翻译副行（双语 / 单语，[KaraokeLyricsAppearance.showTranslation]）。默认开。
+  bool get musicLyricsShowTranslation =>
+      getPref('music_lyrics_show_translation', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsShowTranslation(bool value) async {
+    await setPref('music_lyrics_show_translation', value);
+    notifyListeners();
+  }
+
+  /// 歌词罗马音副行（[KaraokeLyricsAppearance.showRomanization]）。默认开。
+  bool get musicLyricsShowRomanization =>
+      getPref('music_lyrics_show_romanization', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsShowRomanization(bool value) async {
+    await setPref('music_lyrics_show_romanization', value);
+    notifyListeners();
+  }
+
+  /// 歌词注音（音节 ruby，[KaraokeLyricsAppearance.showRuby]）。默认开。
+  bool get musicLyricsShowRuby =>
+      getPref('music_lyrics_show_ruby', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsShowRuby(bool value) async {
+    await setPref('music_lyrics_show_ruby', value);
+    notifyListeners();
+  }
+
   /// 桌面歌词（设计 §6.2：Android 悬浮窗 / Windows 置顶穿透窗）。默认关。
   bool get musicDesktopLyrics =>
       getPref('music_desktop_lyrics', defaultValue: false) == true;

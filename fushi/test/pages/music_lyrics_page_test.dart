@@ -30,11 +30,13 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
+import 'package:fushi/src/pages/implementations/music/music_lyrics_display_sheet.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_queue_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
 import 'package:fushi/src/second_screen/companion/companion_context.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -476,6 +478,107 @@ void main() {
     expect(viewBlurs(), isTrue);
 
     await unmountPage(tester);
+  });
+
+  // 歌词显示快切：翻译（双语 / 单语）、罗马音、注音三个副行开关此前只有渲染层支持、
+  // 没有入口。顶栏「歌词显示」打开面板；歌词没有的那类数据整行禁用。
+  testWidgets('「歌词显示」面板：切翻译即时生效并落库，没有的罗马音 / 注音禁用', (WidgetTester tester) async {
+    // LRC 同一时间戳的第二行 = 翻译。
+    File(
+      '${dir.path}${Platform.pathSeparator}song.lrc',
+    ).writeAsStringSync('[00:01.00]夜に駆ける\n[00:01.00]奔向夜晚\n[00:04.00]沈むように\n');
+    KaraokeLyricsView view() =>
+        tester.widget<KaraokeLyricsView>(find.byType(KaraokeLyricsView));
+
+    await pumpPage(tester);
+    expect(view().appearance.showTranslation, isTrue, reason: '默认双语');
+    expect(view().appearance.showRomanization, isTrue);
+    expect(view().appearance.showRuby, isTrue);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music_lyrics_display')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(MusicLyricsDisplaySheet), findsOneWidget);
+
+    FushiSwitch switchOf(String key) => tester.widget<FushiSwitch>(
+      find.descendant(
+        of: find.byKey(ValueKey<String>(key)),
+        matching: find.byType(FushiSwitch),
+      ),
+    );
+    expect(switchOf('music_lyrics_display_translation').onChanged, isNotNull);
+    expect(switchOf('music_lyrics_display_romanization').onChanged, isNull);
+    expect(switchOf('music_lyrics_display_ruby').onChanged, isNull);
+    expect(find.text(t.music_lyrics_show_romanization_missing), findsOneWidget);
+    expect(find.text(t.music_lyrics_show_ruby_missing), findsOneWidget);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('music_lyrics_display_translation'),
+        ),
+        matching: find.byType(FushiSwitch),
+      ),
+    );
+    await settle(tester);
+    expect(app.prefsRepo.musicLyricsShowTranslation, isFalse);
+    expect(switchOf('music_lyrics_display_translation').value, isFalse);
+    expect(view().appearance.showTranslation, isFalse, reason: '单语');
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music_lyrics_display_close')),
+    );
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => app.setMusicLyricsShowTranslation(true));
+    await tester.pump();
+    expect(view().appearance.showTranslation, isTrue);
+
+    // 设置页那两项（罗马音 / 注音）写同一组偏好，歌词页即时跟上。
+    await tester.runAsync(() => app.setMusicLyricsShowRomanization(false));
+    await tester.runAsync(() => app.setMusicLyricsShowRuby(false));
+    await tester.pump();
+    expect(view().appearance.showRomanization, isFalse);
+    expect(view().appearance.showRuby, isFalse);
+
+    await unmountPage(tester);
+  });
+
+  test('MusicLyricsExtras：按时间轴里实际有的翻译 / 罗马音 / 注音判定', () {
+    const LyricTimeline plain = LyricTimeline(
+      format: 'lrc',
+      lines: <LyricLine>[
+        LyricLine(
+          startMs: 0,
+          endMs: 1000,
+          syllables: <LyricSyllable>[
+            LyricSyllable(text: '夜', startMs: 0, endMs: 1000),
+          ],
+        ),
+      ],
+    );
+    final MusicLyricsExtras none = MusicLyricsExtras.of(plain);
+    expect(
+      (none.translation, none.romanization, none.ruby),
+      (false, false, false),
+    );
+    expect(MusicLyricsExtras.of(null).ruby, isFalse);
+
+    const LyricTimeline rich = LyricTimeline(
+      format: 'ttml',
+      lines: <LyricLine>[
+        LyricLine(
+          startMs: 0,
+          endMs: 1000,
+          romanization: 'yoru',
+          syllables: <LyricSyllable>[
+            LyricSyllable(text: '夜', startMs: 0, endMs: 1000, ruby: 'よる'),
+          ],
+        ),
+      ],
+    );
+    final MusicLyricsExtras all = MusicLyricsExtras.of(rich);
+    expect((all.romanization, all.ruby), (true, true));
   });
 
   // BUG-4084 追加（用户 2026-11-05）：音乐播放页也是「播放页」，盖住浏览器时浏览页要让

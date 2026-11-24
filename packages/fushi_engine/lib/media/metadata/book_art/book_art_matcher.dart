@@ -16,6 +16,9 @@
 /// 单卷最多到待确认。
 library;
 
+import 'package:fushi_engine/media/metadata/books/book_search_query.dart'
+    show splitBookTitleScripts;
+
 /// 本地书的种类提示（来自 `epub_books.format`）。
 enum BookArtLocalKind {
   /// `format = manga`：确定是漫画。
@@ -354,6 +357,23 @@ BookArtTitleTier bestTitleTier(String local, Iterable<String> remotes) {
   return best;
 }
 
+/// [local] 对候选全部写法的档位；整名对不上而本地是混写书名（`Horimiya ホリミヤ`，
+/// 拆法与搜索词改写同一份 [splitBookTitleScripts]）时，任一半对得上也只给
+/// [BookArtTitleTier.localExtends]（最多待确认，不自动采用）：只有日文原名的候选
+/// （Bangumi）对混写书名原来是 none，连候选都进不了。
+BookArtTitleTier localBookTitleTier(String local, Iterable<String> remotes) {
+  final BookArtTitleTier whole = bestTitleTier(local, remotes);
+  if (whole != BookArtTitleTier.none) return whole;
+  final ({String cjk, String latin})? split = splitBookTitleScripts(local);
+  if (split == null) return BookArtTitleTier.none;
+  for (final String part in <String>[split.cjk, split.latin]) {
+    if (bestTitleTier(part, remotes) != BookArtTitleTier.none) {
+      return BookArtTitleTier.localExtends;
+    }
+  }
+  return BookArtTitleTier.none;
+}
+
 // ── 作者 ───────────────────────────────────────────────────────────────
 
 final RegExp _cjk = RegExp(r'[぀-ヿ㐀-鿿豈-﫿]');
@@ -434,7 +454,7 @@ BookArtTitleAssessment assessBookArtCandidate(
     BookArtLocalKind.unknown => false,
   };
   return BookArtTitleAssessment(
-    tier: bestTitleTier(local.seriesTitle, candidate.titles),
+    tier: localBookTitleTier(local.seriesTitle, candidate.titles),
     kindCompatible: compatible,
     kindPreferred: preferred,
     author: compareBookAuthors(local.author, candidate.authors),

@@ -413,6 +413,39 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMusicLyricsBlurInactive(value),
           ),
+          // 歌词副行：翻译（关 = 单语）/ 罗马音 / 注音（只显示歌词源自带的 ruby，不现算）。
+          // 播放页顶栏「歌词显示」是同一组开关的快切。
+          SettingsSwitchItem(
+            id: 'music.lyrics_show_translation',
+            title: t.music_lyrics_show_translation_title,
+            subtitle: t.music_lyrics_show_translation_hint,
+            icon: FushiIcons.language,
+            defaultValue: true,
+            value: (SettingsContext c) => c.appModel.musicLyricsShowTranslation,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicLyricsShowTranslation(value),
+          ),
+          SettingsSwitchItem(
+            id: 'music.lyrics_show_romanization',
+            title: t.music_lyrics_show_romanization_title,
+            subtitle: t.music_lyrics_show_romanization_hint,
+            icon: FushiIcons.textFields,
+            defaultValue: true,
+            value: (SettingsContext c) =>
+                c.appModel.musicLyricsShowRomanization,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicLyricsShowRomanization(value),
+          ),
+          SettingsSwitchItem(
+            id: 'music.lyrics_show_ruby',
+            title: t.music_lyrics_show_ruby_title,
+            subtitle: t.music_lyrics_show_ruby_hint,
+            icon: FushiIcons.title,
+            defaultValue: true,
+            value: (SettingsContext c) => c.appModel.musicLyricsShowRuby,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicLyricsShowRuby(value),
+          ),
           SettingsSwitchItem(
             id: 'music.desktop_lyrics',
             title: t.music_desktop_lyrics_title,

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Favorites widget A</title>
+<style>
+:root{--bg:#f6f2f8;--surface:#fff;--surface2:#efe9f3;--on:#1d1b20;--muted:#5f5a66;--primary:#6750a4;--onprimary:#fff;--chip:#e8def8;--line:#e2dce8;--heart:#c2185b}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141218;--surface:#211f26;--surface2:#2b2930;--on:#e6e0e9;--muted:#b4adbb;--primary:#d0bcff;--onprimary:#381e72;--chip:#4a4458;--line:#3a3740;--heart:#f48fb1}}
+:root[data-theme="dark"]{--bg:#141218;--surface:#211f26;--surface2:#2b2930;--on:#e6e0e9;--muted:#b4adbb;--primary:#d0bcff;--onprimary:#381e72;--chip:#4a4458;--line:#3a3740;--heart:#f48fb1}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--on);font:15px/1.45 system-ui,"Segoe UI",sans-serif;padding:24px 16px}
+h1{font-size:20px;margin:0 0 4px}p.lead{color:var(--muted);margin:0 0 24px;max-width:760px}
+h2{font-size:14px;color:var(--muted);font-weight:600;margin:28px 0 10px;text-transform:uppercase;letter-spacing:.04em}
+.grid{display:grid;grid-template-columns:repeat(6,72px);grid-auto-rows:72px;gap:12px}
+.w{background:var(--surface);border-radius:24px;padding:14px;display:flex;flex-direction:column;gap:8px;overflow:hidden;border:1px solid var(--line)}
+.s11{grid-column:span 1;grid-row:span 1;align-items:center;justify-content:center;gap:2px}
+.s21{grid-column:span 2;grid-row:span 1}.s22{grid-column:span 2;grid-row:span 2}.s42{grid-column:span 4;grid-row:span 2}.s43{grid-column:span 4;grid-row:span 3}
+.hdr{display:flex;align-items:center;gap:6px;font-weight:600;font-size:13px}.hdr .grow{flex:1}.heart{color:var(--heart)}
+.big{font-size:22px;font-weight:700}.tiny{font-size:11px;color:var(--muted)}
+.sent{font-size:14px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.src{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hw{background:var(--chip);border-radius:8px;padding:0 6px;font-size:11px}
+.row{display:flex;gap:8px;align-items:flex-start;padding:6px 4px;border-radius:12px}.row:hover{background:var(--surface2)}
+.row .txt{flex:1;min-width:0}.row .play{font-size:13px;color:var(--primary)}
+.btn{background:var(--primary);color:var(--onprimary);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:600}
+.note{color:var(--muted);font-size:13px;max-width:760px}
+@media (max-width:620px){.grid{grid-template-columns:repeat(2,1fr);grid-auto-rows:80px}.s42,.s43{grid-column:span 2}}
+</style>
+</head>
+<body>
+<h1>Option A: Recent favorites</h1>
+<p class="lead">New optional Home widget (Add widget → Study). It shows your newest favorited sentences. The content grows with the widget size. Tapping a sentence jumps to where it came from; tapping the header opens Collections → Sentence.</p>
+
+<h2>Sizes</h2>
+<div class="grid">
+  <div class="w s11"><span class="heart">♥</span><span class="big">128</span><span class="tiny">+3 today</span></div>
+  <div class="w s21">
+    <div class="hdr"><span class="heart">♥</span><span class="grow">Favorites</span><span class="tiny">128</span></div>
+    <div class="sent">もう二度と会えないなんて、信じたくなかった。</div>
+    <div class="src"><span class="hw">信じる</span> · Frieren · E07</div>
+  </div>
+  <div class="w s22">
+    <div class="hdr"><span class="heart">♥</span><span class="grow">Favorites</span><span class="tiny">›</span></div>
+    <div class="row"><div class="txt"><div class="sent">もう二度と会えないなんて、信じたくなかった。</div><div class="src">Frieren · E07</div></div><span class="play">▶</span></div>
+    <div class="row"><div class="txt"><div class="sent">雨の匂いがすると、あの日を思い出す。</div><div class="src">Kafka on the Shore · Ch 3</div></div></div>
+  </div>
+  <div class="w s42">
+    <div class="hdr"><span class="heart">♥</span><span class="grow">Favorites · 128</span><span class="btn">Create cards (14)</span></div>
+    <div class="row"><div class="txt"><div class="sent">もう二度と会えないなんて、信じたくなかった。</div><div class="src"><span class="hw">信じる</span> · Frieren · E07 (Jellyfin) · 2 h ago</div></div><span class="play">▶</span></div>
+    <div class="row"><div class="txt"><div class="sent">雨の匂いがすると、あの日を思い出す。</div><div class="src"><span class="hw">匂い</span> · Kafka on the Shore · Ch 3 · yesterday</div></div></div>
+  </div>
+</div>
+
+<h2>Behaviour</h2>
+<ul class="note">
+  <li>Off by default, not in the default layout. Sizes 1×1 to 6×4; the number of rows follows the height.</li>
+  <li>"Create cards (N)": favorites without a card yet, using the existing batch card creation. Shown only when card creation is on and the widget is wide enough.</li>
+  <li>Sentences from hidden media are left out (same rule as Collections). Updates live when a favorite is added or removed.</li>
+  <li>Motion: staggered list entrance, press scale; both the MD3 and Apple designs.</li>
+</ul>
+</body>
+</html>

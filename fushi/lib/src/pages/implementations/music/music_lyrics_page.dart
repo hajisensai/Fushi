@@ -112,6 +112,7 @@ import 'package:fushi/src/pages/implementations/music/music_shortcuts.dart';
 import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_signal_path_panel.dart';
 import 'package:fushi/src/pages/implementations/music/music_quality_sheet.dart';
+import 'package:fushi/src/pages/implementations/music/music_lyrics_display_sheet.dart';
 import 'package:fushi/src/media/music/asr/music_server_asr_audio.dart'
     show musicItemIsTranscribableServerTrack;
 import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart';
@@ -2252,6 +2253,20 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               selected: appModel.musicDesktopLyrics,
               onPressed: () => unawaited(_toggleDesktopLyrics()),
             ),
+          // 歌词显示：翻译（双语 / 单语）、罗马音、注音三个副行开关。
+          if (_lyrics?.timeline.lines.isNotEmpty ?? false)
+            FushiToolbarItem(
+              key: const ValueKey<String>('music_lyrics_display'),
+              icon: FushiIcons.language,
+              label: t.music_lyrics_display_title,
+              onPressed: () => unawaited(
+                showMusicLyricsDisplaySheet(
+                  _themedContext,
+                  prefs: appModelNoUpdate.prefsRepo,
+                  extras: MusicLyricsExtras.of(_lyrics?.timeline),
+                ),
+              ),
+            ),
           if ((_lyrics?.timeline.lines.isNotEmpty ?? false) &&
               (_lyrics?.timeline.isSynced ?? false))
             FushiToolbarItem(
@@ -2891,6 +2906,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       cursor: _lookupCursor,
       appearance: KaraokeLyricsAppearance(
         blurInactive: appModel.musicLyricsBlurInactive,
+        showTranslation: appModel.musicLyricsShowTranslation,
+        showRomanization: appModel.musicLyricsShowRomanization,
+        showRuby: appModel.musicLyricsShowRuby,
       ),
     );
     // 字幕组特效 ASS：结构化会丢特效，提示去卡拉 OK 字幕页原样渲染（§6.3）。

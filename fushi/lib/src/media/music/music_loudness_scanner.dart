@@ -206,18 +206,34 @@ class MusicLoudnessScanner extends ChangeNotifier {
     }
   }
 
+  /// 一轮扫描绑定在**开轮时的那一个库**上（BUG-5387）：整轮登记成它的后台工作，
+  /// 换库 / 关库（备份恢复等）时被取消，测到一半的那首不再等，旧库读出的曲目身份
+  /// 不会写进换上来的新库。
   Future<void> _runOnce() async {
+    final FushiDatabase? db = _database();
+    if (db == null) return;
+    try {
+      await db.runBackgroundWork<void>(
+        'music.loudnessScan',
+        (DatabaseWorkToken work) => _runOnceOn(db, work),
+      );
+    } on DatabaseWorkCancelledException {
+      // 库要关了：剩下的曲目保持待测，下次开库再测；不再补跑。
+      _again = false;
+    }
+  }
+
+  Future<void> _runOnceOn(FushiDatabase db, DatabaseWorkToken work) async {
     final Set<String> albums = <String>{};
     while (true) {
-      final FushiDatabase? db = _database();
-      if (db == null) return;
+      work.throwIfCancelled();
       final List<MusicTrackRow> batch = await db
           .listMusicTracksNeedingLoudnessScan(limit: 50);
       if (batch.isEmpty) break;
       for (final MusicTrackRow track in batch) {
         final MusicLoudnessMeasurement? m;
         try {
-          m = await _measure(track);
+          m = await work.guard(_measure(track));
         } on ProcessException catch (e) {
           // FFmpeg 本身起不来（没装 / 捆绑件缺失或损坏）：FFmpeg 后端契约是把
           // ProcessException 抛给调用方处置。这不是这一首的问题——不能把曲目记成
@@ -240,8 +256,6 @@ class MusicLoudnessScanner extends ChangeNotifier {
         notifyListeners();
       }
     }
-    final FushiDatabase? db = _database();
-    if (db == null) return;
     for (final String albumUid in albums) {
       final List<MusicTrackRow> tracks = await db.listMusicTracks(
         albumUid: albumUid,
