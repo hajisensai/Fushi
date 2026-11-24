@@ -4,6 +4,24 @@ import 'package:fushi/src/models/audio_source_config.dart' show AudioSourceKind;
 import 'package:fushi/src/sync/backup_path_rebase.dart'
     show joinPrefTag, splitPrefTag;
 import 'package:fushi/src/sync/settings_sync.dart';
+import 'package:fushi/src/profile/combo/combo_repository.dart'
+    show
+        ComboDocument,
+        ComboRole,
+        SettingKey,
+        SettingsTree,
+        decodeComboRows,
+        encodeComboRows,
+        kComboRoleKey,
+        kComboSyntheticCategory,
+        mergeComboProfileRows;
+import 'package:fushi/src/profile/combo/fushi_settings_tree.dart'
+    show
+        FushiComboNode,
+        fushiSettingsTree,
+        kComboSrsLibraryKey,
+        kComboSrsLibraryOwn,
+        normalizeLegacySettingKey;
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
@@ -2029,26 +2047,121 @@ class BackupMergeEngine {
     await _db.enforceMediaLinkVetoes();
   }
 
+  /// 每份 src Profile 的 `profile_settings` 落到本机同名那份（组合阶段 6 的备份合并规则，设计
+  /// `docs/specs/2026-11-23-combo-settings-tree-design.md` §4.4，规则本体在引擎
+  /// [mergeComboProfileRows]）：本机默认组合保持默认；对端的默认组合 / 整份快照按本机默认组合
+  /// diff 成普通组合；两边同名的组合单独设置的叶子取并集、都拆了的叶子整组以本机为准（叶子是
+  /// 原子的，不逐键混拼）；对端的共享复习库指针不带进来。本机还不是组合格式（迁移前）时照旧
+  /// 「本机有的键保留、缺的键补」。[localNames] 是合并前本机已有的 Profile 名。
+  ///
+  /// 本机默认组合的值取它的行（它是激活配置时行是上次切走 / 快照时的值）：只用来判对端哪些
+  /// 叶子与本机默认不同，不改本机任何设置值。
+  Future<void> _mergeProfileSettings(Set<String> localNames) async {
+    final SettingsTree tree = fushiSettingsTree;
+    final Map<int, Map<SettingKey, String>> srcRows =
+        <int, Map<SettingKey, String>>{};
+    for (final QueryRow r
+        in await _db
+            .customSelect(
+              'SELECT profile_id, category, "key", "value" '
+              'FROM $_srcAlias.profile_settings',
+            )
+            .get()) {
+      (srcRows[r.read<int>('profile_id')] ??=
+          <SettingKey, String>{})[SettingKey(
+        r.read<String>('category'),
+        r.read<String>('key'),
+      )] = r.read<String>(
+        'value',
+      );
+    }
+    final Map<String, int> localIdByName = <String, int>{
+      for (final QueryRow r
+          in await _db.customSelect('SELECT id, name FROM profiles').get())
+        r.read<String>('name'): r.read<int>('id'),
+    };
+    int? localDefaultId;
+    for (final MapEntry<int, String> e in (await _db.profileSettingValuesOf(
+      kComboSyntheticCategory,
+      kComboRoleKey,
+    )).entries) {
+      if (e.value != ComboRole.defaults.wire) continue;
+      if (localDefaultId == null || e.key < localDefaultId) {
+        localDefaultId = e.key;
+      }
+    }
+    final bool comboWorld = localDefaultId != null;
+    Future<Map<SettingKey, String>> localRowsOf(int id) async =>
+        _normalizedProfileRows(<SettingKey, String>{
+          for (final ProfileSettingRow r in await _db.getProfileSettings(id))
+            SettingKey(r.category, r.key): r.value,
+        }, comboWorld: comboWorld);
+    final Map<SettingKey, String>? localDefaultValues = localDefaultId == null
+        ? null
+        : decodeComboRows(tree, await localRowsOf(localDefaultId)).values;
+
+    for (final QueryRow r
+        in await _db
+            .customSelect('SELECT id, name, uid FROM $_srcAlias.profiles')
+            .get()) {
+      final String name = r.read<String>('name');
+      final int? targetId = localIdByName[name];
+      if (targetId == null) continue;
+      final Map<SettingKey, String>? merged = mergeComboProfileRows(
+        tree: tree,
+        local: localNames.contains(name) ? await localRowsOf(targetId) : null,
+        incoming: _normalizedProfileRows(
+          srcRows[r.read<int>('id')] ?? const <SettingKey, String>{},
+          comboWorld: comboWorld,
+        ),
+        incomingUid: r.readNullable<String>('uid'),
+        localDefaultValues: localDefaultValues,
+      );
+      if (merged == null) continue;
+      await _db.replaceProfileSettings(targetId, <ProfileSettingsCompanion>[
+        for (final MapEntry<SettingKey, String> e in merged.entries)
+          ProfileSettingsCompanion.insert(
+            profileId: targetId,
+            category: e.key.category,
+            key: e.key.key,
+            value: e.value,
+          ),
+      ]);
+    }
+  }
+
+  /// 组合格式的库里，存量快照的旧 category（`dictionary` / `reader`）换成今天落到的 pref 键再比较
+  /// （与 `ComboRepository.rowsOf` 同一映射，撞键时新式行优先）；迁移前的库原样保留行。
+  static Map<SettingKey, String> _normalizedProfileRows(
+    Map<SettingKey, String> rows, {
+    required bool comboWorld,
+  }) {
+    if (!comboWorld) return rows;
+    final Map<SettingKey, String> modern = <SettingKey, String>{};
+    final Map<SettingKey, String> legacy = <SettingKey, String>{};
+    for (final MapEntry<SettingKey, String> e in rows.entries) {
+      final SettingKey k = normalizeLegacySettingKey(e.key);
+      (identical(k, e.key) ? modern : legacy)[k] = e.value;
+    }
+    return <SettingKey, String>{...legacy, ...modern};
+  }
+
   /// Profiles UNION by name (device keeps its own profile + id on a name clash),
   /// then the three child tables with src profile_id REMAPPED to the target id
   /// resolved by profile name (necessary because Profiles.id is autoincrement --
   /// FK children would otherwise dangle / cross).
   Future<void> _mergeProfilesAndChildren() async {
+    final Set<String> localNames = <String>{
+      for (final QueryRow r
+          in await _db.customSelect('SELECT name FROM profiles').get())
+        r.read<String>('name'),
+    };
     await _db.customStatement(
       'INSERT INTO profiles (name, created_at, updated_at) '
       'SELECT name, created_at, updated_at FROM $_srcAlias.profiles AS s '
       'WHERE NOT EXISTS (SELECT 1 FROM profiles AS t WHERE t.name = s.name)',
     );
-    await _db.customStatement(
-      'INSERT INTO profile_settings (profile_id, category, "key", "value") '
-      'SELECT tp.id, sps.category, sps."key", sps."value" '
-      'FROM $_srcAlias.profile_settings AS sps '
-      'JOIN $_srcAlias.profiles AS sp ON sp.id = sps.profile_id '
-      'JOIN profiles AS tp ON tp.name = sp.name '
-      'WHERE NOT EXISTS (SELECT 1 FROM profile_settings AS m '
-      'WHERE m.profile_id = tp.id AND m.category = sps.category '
-      'AND m."key" = sps."key")',
-    );
+    await _mergeProfileSettings(localNames);
     await _db.customStatement(
       'INSERT INTO media_type_profiles (media_type, profile_id) '
       'SELECT smtp.media_type, tp.id '
@@ -2685,6 +2798,34 @@ Future<int> insertSrsRestoredProfile(
       (await db.customSelect('SELECT last_insert_rowid() AS id').getSingle())
           .read<int>('id');
   await db.adoptProfileUid(id, uid);
+  // 组合格式的库：这份配置只为承载备份里的那份复习数据而建——设置全部继承默认组合，复习库
+  // 拆成独立库（集合 uid = 它自己的 uid，就是落进来的那份）。不写的话它是一份没有任何行的
+  // 「存量快照」，归一时会被当成「所有设置都未设置」整个拆开，复习数据也落在共享库之外看不见。
+  final bool comboWorld = (await db.profileSettingValuesOf(
+    kComboSyntheticCategory,
+    kComboRoleKey,
+  )).containsValue(ComboRole.defaults.wire);
+  if (comboWorld) {
+    final Map<SettingKey, String> rows = encodeComboRows(
+      fushiSettingsTree,
+      ComboDocument(<String, Map<SettingKey, String>>{
+        FushiComboNode.srsLibrary: <SettingKey, String>{
+          const SettingKey(kComboSyntheticCategory, kComboSrsLibraryKey):
+              kComboSrsLibraryOwn,
+        },
+      }),
+      role: ComboRole.named,
+    );
+    await db.replaceProfileSettings(id, <ProfileSettingsCompanion>[
+      for (final MapEntry<SettingKey, String> e in rows.entries)
+        ProfileSettingsCompanion.insert(
+          profileId: id,
+          category: e.key.category,
+          key: e.key.key,
+          value: e.value,
+        ),
+    ]);
+  }
   return id;
 }
 

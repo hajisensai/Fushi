@@ -152,33 +152,17 @@ extension _ReaderAudiobook on _ReaderFushiPageState {
 
       final String bookKey = widget.bookKey;
 
-      // 两张内容表都查一次：媒体类型判定只需要知道「有没有」，但语言级绑定要读
-      // 它们的 language 列。`audiobooks` 表自身**没有** language 列——有声书的
-      // 语言跟着它配对的 srt_books / epub_books 行走，所以这里不按 mediaType
-      // 分支去取，两张都取、SRT 优先（有声书多数配 SRT）。
-      final srtRow = await db.getSrtBookByBookKey(bookKey);
-      final epubRow = await db.getEpubBook(bookKey);
-
-      ProfileMediaKind mediaType;
-      if (mediaTypeOverride != null) {
-        mediaType = mediaTypeOverride;
-      } else {
-        mediaType = ProfileMediaKind.epub;
-        final abRow = await db.getAudiobookByBookKey(bookKey);
-        if (abRow != null) {
-          mediaType = ProfileMediaKind.audiobook;
-        } else if (srtRow != null) {
-          mediaType = ProfileMediaKind.srtbook;
-        }
-      }
+      // 媒体类型与内容语言的判据与书架「作品配置」共用一份（[resolveBookProfileContext]）。
+      final ({ProfileMediaKind mediaType, String? languageTag}) bookContext =
+          await resolveBookProfileContext(db, bookKey);
 
       // 反馈 kEFPY4cuKZ：作品级配置只在这本书的会话里生效（会话覆盖层），不切 App 的
       // 激活配置；页面 dispose 时离开会话。
       await profileVm.enterWorkSession(
         owner: this,
         bookUid: bookKey,
-        languageTag: srtRow?.language ?? epubRow?.language,
-        mediaType: mediaType,
+        languageTag: bookContext.languageTag,
+        mediaType: mediaTypeOverride ?? bookContext.mediaType,
       );
     } catch (e, st) {
       debugPrint(

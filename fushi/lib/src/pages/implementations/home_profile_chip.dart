@@ -35,6 +35,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase, ProfileRow;
+import 'package:fushi_engine/profile/combo/combo_profiles.dart'
+    show listedComboProfiles;
 import 'package:material_ui/material_ui.dart';
 
 /// 胶囊里配置名的最大宽度：再长就省略号截断，不把顶栏动作组挤进「⋯」。
@@ -122,7 +124,8 @@ class _HomeProfileChipState extends State<HomeProfileChip> {
     final int generation = ++_generation;
     try {
       final FushiDatabase db = widget.database;
-      final List<ProfileRow> profiles = await db.getAllProfiles();
+      // 作品上直接拆出的匿名组合不列（组合阶段 6）。
+      final List<ProfileRow> profiles = await listedComboProfiles(db);
       final int activeId = await db.resolveActiveProfileId();
       if (!mounted || generation != _generation) return;
       setState(() {

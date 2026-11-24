@@ -28,6 +28,8 @@ import 'package:fushi/src/profile/combo/fushi_settings_tree.dart';
 export 'package:fushi_engine/profile/combo/combo_migration.dart';
 export 'package:fushi_engine/profile/combo/combo_resolver.dart';
 export 'package:fushi_engine/profile/combo/combo_rows.dart';
+export 'package:fushi_engine/profile/combo/combo_profiles.dart';
+export 'package:fushi_engine/profile/combo/combo_share.dart';
 export 'package:fushi_engine/profile/combo/settings_tree.dart';
 export 'package:fushi_engine/profile/combo/combo_srs_library.dart';
 

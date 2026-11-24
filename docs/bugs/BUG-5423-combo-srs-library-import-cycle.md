@@ -1,0 +1,6 @@
+## BUG-5423 · combo-srs-library-import-cycle
+- **报告**：2026-11-25（用户：组合阶段 6 开发中发现，Claude 登记）
+- **真实性**：✅ 真问题（守卫红）。`fushi/test/build/import_cycle_guard_test.dart` 的「lib/ 最大 import 环不超过 622 个文件」在组合阶段 5 分支 `claude/combo-stage5-merge-into-shared`（540d907a01）上就是 626：比 `origin/develop` 多出 `lib/src/srs/srs_library.dart`、`lib/src/srs/srs_library_merge.dart`、`lib/src/pages/implementations/srs/srs_library_switcher.dart`、`lib/src/pages/implementations/srs/srs_library_merge_dialog.dart` 四个文件。根因：`srs_library.dart:20` / `srs_library_merge.dart:34` 直接 import `models/app_model.dart`（取 `appProvider`），`srs_library.dart:23` 还 import `profile_view_model.dart`；而 `profile_view_model.dart` 为了在 provider 里装 `SrsLibraryMerger` 反向 import `srs_library_merge.dart`，四个文件于是进了 AppModel 所在的强连通分量。阶段 4（PR #4407）/ 阶段 5（PR #4409）引入，阶段 6 没有再加（阶段 6 的新界面已改成注入 `ComboEditing` 接口，不进环）。
+- **[ ] ① 未修复** — 方向：`SrsLibraryMerger` / 复习库列表的 provider 装配挪到 AppModel 一侧（或 provider 文件），`srs_library*.dart` 只收 `FushiDatabase` 等参数，不 import `app_model.dart` / `profile_view_model.dart`；`srs_library_merge_dialog.dart` 只依赖 `srs_library_merge.dart` 的数据类型。
+- **[ ] ② 未加自动化测试** — 现有 `import_cycle_guard_test.dart` 即回归测试，修好后它转绿即可。
+- **备注**：阶段 4～6 叠加的 PR 在快门上都会因这一条红；合并阶段 4/5 前要先修。

@@ -195,4 +195,47 @@ class InertProfileRepository implements ProfileRepository {
 
   @override
   Future<void> ensureDefaultProfile() async {}
+
+  @override
+  Future<List<ProfileRow>> getListedProfiles() => getAllProfiles();
+
+  @override
+  Future<ComboEditorData?> loadComboEditor(int profileId) async => null;
+
+  @override
+  Future<void> splitComboNode(int profileId, String nodeId) async {}
+
+  @override
+  Future<bool> restoreComboNode(int profileId, String nodeId) async => false;
+
+  @override
+  Future<void> splitComboSrsLibrary(int profileId) async {}
+
+  @override
+  Future<WorkComboTable> loadWorkComboTable({
+    required String bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
+  }) => throw UnsupportedError('InertProfileRepository has no combos');
+
+  @override
+  Future<void> splitWorkNode({
+    required String bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
+    required String nodeId,
+    required String anonymousName,
+  }) async {}
+
+  @override
+  Future<void> restoreWorkNode({
+    required String bookUid,
+    required String nodeId,
+  }) async {}
+
+  @override
+  Future<int?> saveWorkComboAs({
+    required String bookUid,
+    required String name,
+  }) async => null;
 }

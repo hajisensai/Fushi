@@ -21,7 +21,11 @@ import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/combo/combo_repository.dart';
 import 'package:fushi/src/profile/combo/fushi_settings_tree.dart'
-    show FushiComboNode, normalizeLegacySettingKey;
+    show
+        FushiComboNode,
+        kComboSrsLibraryKey,
+        kComboSrsLibraryOwn,
+        normalizeLegacySettingKey;
 import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
 import 'package:fushi/src/profile/language_binding.dart';
 import 'package:fushi/src/profile/profile_deletion_cascade.dart'
@@ -587,11 +591,21 @@ class ProfileRepository {
     return row?.profileId;
   }
 
-  Future<void> setBookProfile(String bookUid, int profileId) =>
-      _db.setBookProfile(bookUid, profileId);
+  /// 把作品 [bookUid] 绑到 [profileId]。原来挂的是作品上直接拆出的匿名组合时，它已没人用，删掉。
+  Future<void> setBookProfile(String bookUid, int profileId) async {
+    final int? previous = await getBookProfileId(bookUid);
+    await _db.setBookProfile(bookUid, profileId);
+    if (previous != null && previous != profileId) {
+      await _dropOrphanWorkLocalCombo(previous);
+    }
+  }
 
-  Future<void> removeBookProfile(String bookUid) =>
-      _db.deleteBookProfile(bookUid);
+  /// 撤掉作品 [bookUid] 的绑定（跟随默认）。原来挂的匿名组合一并删掉。
+  Future<void> removeBookProfile(String bookUid) async {
+    final int? previous = await getBookProfileId(bookUid);
+    await _db.deleteBookProfile(bookUid);
+    if (previous != null) await _dropOrphanWorkLocalCombo(previous);
+  }
 
   /// 反馈 kEFPY4cuKZ：作品会话期间对作品级键（[key]，`preferences` 表键）的写入落到
   /// [profileId] 这份组合上（[raw] 为 null = 在这一层设为「未设置」）。目标组合由会话按叶子
@@ -787,11 +801,19 @@ class ProfileRepository {
       await snapshotCurrentSettings(profileId);
     }
 
-    // 组合格式的库：导出这份配置的**生效值全量**（组合 = 默认组合 + 它的拆分），仍是 v1 分享
-    // 格式——别的设备 / 旧版本导入时当整份快照，不会把差异文档误当全量把没拆的设置全剪掉。
-    // 组合格式元数据与复习库归属（本机复习数据的安排）不出本机。
+    // 组合格式的库：导出这份配置的**生效值全量**（组合 = 默认组合 + 它的拆分）+ 它单独设置了
+    // 哪些叶子（分享 JSON v2）——别的设备导入时按自己的默认组合重新 diff，生效值全量保证不会把
+    // 差异文档误当全量、把没拆的设置全剪掉。组合格式元数据与复习库归属（本机复习数据的安排）
+    // 不出本机。
+    final int? defaultId = await combos.defaultComboId();
+    final List<String> splitNodes = defaultId == null
+        ? const <String>[]
+        : sharedSplitNodesOf(
+            combos.tree,
+            await _currentDocumentOf(profileId, defaultId: defaultId),
+          );
     final List<({String category, String key, String value})> rows =
-        await combos.defaultComboId() == null
+        defaultId == null
         ? <({String category, String key, String value})>[
             for (final ProfileSettingRow r in await _db.getProfileSettings(
               profileId,
@@ -836,6 +858,7 @@ class ProfileRepository {
       profileName: profile.name,
       schemaVersion: _db.schemaVersion,
       settings: settings,
+      splitNodes: splitNodes,
     );
   }
 
@@ -905,18 +928,21 @@ class ProfileRepository {
         for (final ProfileSettingEntry e in parsed.settings)
           if (e.category != kComboSyntheticCategory) e,
       ],
+      splitNodes: parsed.splitNodes,
     );
     final int? defaultId = await combos.defaultComboId();
 
     switch (mode) {
       case ProfileImportMode.createNew:
         if (defaultId == null) return importProfileDocumentAsNew(_db, export);
-        // 组合格式的库：文件是整份快照，落成相对默认组合的差异（新的普通组合）。新行与它的
-        // 设置在一个事务里落库：表变更监听方（常驻的配置列表）不会看到一份还没有设置的配置。
-        final ComboDocument document = diffAgainstDefaults(
+        // 组合格式的库：文件是生效值全量（v1 是整份快照），落成相对本机默认组合的差异（新的
+        // 普通组合）；v2 里对方单独设置的叶子保持单独设置。新行与它的设置在一个事务里落库：
+        // 表变更监听方（常驻的配置列表）不会看到一份还没有设置的配置。
+        final ComboDocument document = comboDocumentFromShared(
           tree: combos.tree,
-          defaults: await _defaultComboValues(defaultId),
-          snapshot: _importedValues(export),
+          localDefaults: await _defaultComboValues(defaultId),
+          values: _importedValues(export),
+          splitNodes: export.splitNodes ?? const <String>[],
         );
         return _db.transaction(() async {
           final int now = DateTime.now().millisecondsSinceEpoch;
@@ -955,10 +981,11 @@ class ProfileRepository {
             ComboRepository.isSplitDocument(targetRows) &&
             defaultId != targetProfileId) {
           // 覆盖一个组合：文件内容落成相对默认组合的差异；复习库归属（本机安排）保留。
-          final ComboDocument imported = diffAgainstDefaults(
+          final ComboDocument imported = comboDocumentFromShared(
             tree: combos.tree,
-            defaults: await _defaultComboValues(defaultId),
-            snapshot: _importedValues(export),
+            localDefaults: await _defaultComboValues(defaultId),
+            values: _importedValues(export),
+            splitNodes: export.splitNodes ?? const <String>[],
           );
           final Map<String, Map<SettingKey, String>>? library =
               targetRows.document.splits[FushiComboNode.srsLibrary] == null
@@ -1398,6 +1425,355 @@ class ProfileRepository {
     }
   }
 
+  // ── 组合编辑（拍板台 design-combo-node-split 阶段 6）────────────────
+
+  /// 配置列表里列出的 Profile：不含作品上直接拆出的匿名组合（`role = work_local`，只挂在那部
+  /// 作品上，在作品的「作品配置」里管理）。
+  Future<List<ProfileRow>> getListedProfiles() => listedComboProfiles(_db);
+
+  /// 组合 [profileId] 此刻的差异文档。激活配置按活偏好改基（活偏好里的改动在切走前还没写回
+  /// 它的行，[snapshotCurrentSettings] 写回时也是这个结果）；默认组合为空文档。
+  Future<ComboDocument> _currentDocumentOf(
+    int profileId, {
+    required int defaultId,
+  }) async {
+    if (profileId == defaultId) return ComboDocument.empty;
+    final DecodedComboRows decoded = decodeComboRows(
+      combos.tree,
+      await combos.rowsOf(profileId),
+    );
+    final Map<SettingKey, String> base = await _defaultComboValues(defaultId);
+    if (!ComboRepository.isSplitDocument(decoded)) {
+      // 存量整份快照（组合格式的库里只在归一之前短暂存在）：读时 diff。
+      return diffAgainstDefaults(
+        tree: combos.tree,
+        defaults: base,
+        snapshot: decoded.values,
+      );
+    }
+    if (profileId != await getActiveProfileId()) return decoded.document;
+    return rebaseComboDocument(
+      tree: combos.tree,
+      existing: decoded.document,
+      base: base,
+      effective: await currentSettings(),
+    );
+  }
+
+  /// 组合编辑页的数据：[profileId] 的拆分状态与它在默认组合之上的生效值。库还不是组合格式
+  /// （迁移前）或 Profile 不存在时 null。
+  Future<ComboEditorData?> loadComboEditor(int profileId) async {
+    final ProfileRow? profile = await _db.getProfileById(profileId);
+    final int? defaultId = await combos.defaultComboId();
+    if (profile == null || defaultId == null) return null;
+    final DecodedComboRows decoded = decodeComboRows(
+      combos.tree,
+      await combos.rowsOf(profileId),
+    );
+    final ComboRole role = profileId == defaultId
+        ? ComboRole.defaults
+        : decoded.role ?? ComboRole.named;
+    final ComboScope scope = comboEditScopeOf(role);
+    final ComboDocument document = await _currentDocumentOf(
+      profileId,
+      defaultId: defaultId,
+    );
+    final ResolvedSettings effective = resolveCombos(
+      tree: combos.tree,
+      defaults: await _defaultComboValues(defaultId),
+      layers: <ComboLayer>[
+        if (role != ComboRole.defaults)
+          ComboLayer(
+            scope: scope,
+            comboRef: await _db.profileUidOf(profileId),
+            document: document,
+          ),
+      ],
+    );
+    final ProfileRow? defaultRow = await _db.getProfileById(defaultId);
+    return ComboEditorData(
+      profile: profile,
+      role: role,
+      scope: scope,
+      document: document,
+      effective: effective,
+      active: profileId == await getActiveProfileId(),
+      defaultName: defaultRow?.name ?? '',
+    );
+  }
+
+  /// 组合按哪一层判「这个叶子能不能单独设置」：作品上直接拆出的匿名组合只挂在作品上；普通组合
+  /// 可以绑在任何一层，按「所有叶子都能拆」的那层（与应用 / 导出整份配置同一口径），挂到作品
+  /// 上时越层的拆分由解析器忽略并在作品的生效值表里列出。
+  static ComboScope comboEditScopeOf(ComboRole role) =>
+      role == ComboRole.workLocal ? ComboScope.work : ComboScope.mediaType;
+
+  /// 编辑页「单独设置」：把节点 [nodeId]（叶子或子组）在组合 [profileId] 上拆出来，复制此刻的
+  /// 生效值（之后改值就只改这一份）。子组 = 其下能在这一层拆的叶子全拆。复习库归属不走这里
+  /// （[splitComboSrsLibrary] / 合并进共享库）。
+  ///
+  /// [profileId] 是激活配置时先把活偏好写回它（拆分以此刻的生效值为准），值不变，不用重新应用。
+  Future<void> splitComboNode(int profileId, String nodeId) async {
+    final ({ComboDocument document, ComboRole role, int defaultId}) target =
+        await _editableCombo(profileId);
+    final ComboScope scope = comboEditScopeOf(target.role);
+    final ResolvedSettings effective = resolveCombos(
+      tree: combos.tree,
+      defaults: await _defaultComboValues(target.defaultId),
+      layers: <ComboLayer>[
+        ComboLayer(
+          scope: scope,
+          comboRef: await _db.profileUidOf(profileId),
+          document: target.document,
+        ),
+      ],
+    );
+    ComboDocument next = target.document;
+    for (final SettingsNode leaf in _editableLeavesUnder(nodeId, scope)) {
+      next = splitNode(
+        tree: combos.tree,
+        document: next,
+        nodeId: leaf.id,
+        scope: scope,
+        effective: effective,
+      );
+    }
+    if (next.splits.length == target.document.splits.length) return;
+    await combos.saveDocument(profileId, next, role: target.role);
+  }
+
+  /// 编辑页「恢复继承」：撤掉节点 [nodeId]（叶子或子组）在组合 [profileId] 上的拆分。复习库归属
+  /// 不走这里（独立库要经「合并进共享库」才能回到共享）。返回 true = [profileId] 是激活配置且
+  /// 真的撤了拆分，调用方要 [applyProfile] 让活偏好换成继承来的值。
+  Future<bool> restoreComboNode(int profileId, String nodeId) async {
+    final ({ComboDocument document, ComboRole role, int defaultId}) target =
+        await _editableCombo(profileId);
+    final ComboDocument next = _withoutLeavesUnder(target.document, nodeId);
+    if (next.splits.length == target.document.splits.length) return false;
+    await combos.saveDocument(profileId, next, role: target.role);
+    return profileId == await getActiveProfileId();
+  }
+
+  /// [document] 撤掉 [nodeId] 下可比较叶子的拆分（复习库归属保留）。
+  ComboDocument _withoutLeavesUnder(ComboDocument document, String nodeId) {
+    final Set<String> drop = <String>{
+      for (final SettingsNode leaf in combos.tree.leavesUnder(nodeId))
+        if (leaf.diffable) leaf.id,
+    };
+    return ComboDocument(<String, Map<SettingKey, String>>{
+      for (final MapEntry<String, Map<SettingKey, String>> e
+          in document.splits.entries)
+        if (!drop.contains(e.key)) e.key: e.value,
+    });
+  }
+
+  /// 编辑页「拆成独立复习库」：组合 [profileId] 之后制卡 / 导入 / 复习落它自己的集合（uid =
+  /// 它的 `profiles.uid`），沿用实体归属闸。默认组合承载共享库，不能拆。
+  Future<void> splitComboSrsLibrary(int profileId) async {
+    final ({ComboDocument document, ComboRole role, int defaultId}) target =
+        await _editableCombo(profileId);
+    await combos.saveDocument(
+      profileId,
+      ComboDocument(<String, Map<SettingKey, String>>{
+        ...target.document.splits,
+        FushiComboNode.srsLibrary: <SettingKey, String>{
+          const SettingKey(kComboSyntheticCategory, kComboSrsLibraryKey):
+              kComboSrsLibraryOwn,
+        },
+      }),
+      role: target.role,
+    );
+  }
+
+  /// 编辑口共用：[profileId] 必须是组合格式库里的非默认组合；激活配置先把活偏好写回它。
+  Future<({ComboDocument document, ComboRole role, int defaultId})>
+  _editableCombo(int profileId) async {
+    final int? defaultId = await combos.defaultComboId();
+    if (defaultId == null || defaultId == profileId) {
+      throw StateError('profile $profileId is not an editable combo');
+    }
+    if (profileId == await getActiveProfileId()) {
+      await snapshotCurrentSettings(profileId);
+    }
+    final DecodedComboRows decoded = decodeComboRows(
+      combos.tree,
+      await combos.rowsOf(profileId),
+    );
+    if (!ComboRepository.isSplitDocument(decoded)) {
+      throw StateError('profile $profileId is not in combo format');
+    }
+    return (
+      document: decoded.document,
+      role: decoded.role!,
+      defaultId: defaultId,
+    );
+  }
+
+  /// 节点 [nodeId] 下编辑页能拆的叶子：在 [scope] 层可拆、且是可比较的设置（合成的复习库归属
+  /// 有自己的入口）。
+  List<SettingsNode> _editableLeavesUnder(String nodeId, ComboScope scope) =>
+      <SettingsNode>[
+        for (final SettingsNode leaf in combos.tree.leavesUnder(nodeId))
+          if (leaf.diffable && leaf.splittableAt.contains(scope)) leaf,
+      ];
+
+  /// 作品「作品配置」里的生效值表：作品 [bookUid]（媒体类型 [mediaType]、内容语言
+  /// [languageTag]）逐叶子的生效值与来源层 / 来源组合，外加作品层挂的是哪份组合。
+  Future<WorkComboTable> loadWorkComboTable({
+    required String bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
+  }) async {
+    final Map<ComboScope, int> layers = await resolveBindingLayers(
+      bookUid: bookUid,
+      languageTag: languageTag,
+      mediaType: mediaType,
+    );
+    final ResolvedComboStack stack = await combos.resolve(layers);
+    final int? defaultId = await combos.defaultComboId();
+    final int? workId = layers[ComboScope.work];
+    ComboRole? workRole;
+    if (workId != null) {
+      workRole = workId == defaultId
+          ? ComboRole.defaults
+          : decodeComboRows(combos.tree, await combos.rowsOf(workId)).role;
+    }
+    return WorkComboTable(
+      stack: stack,
+      profiles: <int, ProfileRow>{
+        for (final ProfileRow p in await _db.getAllProfiles()) p.id: p,
+      },
+      workProfileId: workId,
+      workRole: workRole,
+      comboFormat: defaultId != null,
+    );
+  }
+
+  /// 作品上直接「单独设置」节点 [nodeId]：作品层还没挂组合时新建一个只挂在这部作品上的匿名组合
+  /// （名字取 [anonymousName]，重名加后缀）并绑上；复制这部作品此刻的生效值（含媒体类型 / 语言层）。
+  /// 只拆作品层可拆的叶子。作品层挂的是普通组合（别的作品也可能用它）时不在这里改，抛
+  /// [StateError]——去组合编辑页改。
+  Future<void> splitWorkNode({
+    required String bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
+    required String nodeId,
+    required String anonymousName,
+  }) async {
+    if (await combos.defaultComboId() == null) {
+      throw StateError('combo format not ready');
+    }
+    final Map<ComboScope, int> layers = await resolveBindingLayers(
+      bookUid: bookUid,
+      languageTag: languageTag,
+      mediaType: mediaType,
+    );
+    final int? workId = layers[ComboScope.work];
+    ComboDocument document = ComboDocument.empty;
+    if (workId != null) {
+      final DecodedComboRows decoded = decodeComboRows(
+        combos.tree,
+        await combos.rowsOf(workId),
+      );
+      if (decoded.role != ComboRole.workLocal) {
+        throw StateError('work $bookUid is bound to a shared combo');
+      }
+      document = decoded.document;
+    }
+    final ResolvedComboStack stack = await combos.resolve(layers);
+    ComboDocument next = document;
+    for (final SettingsNode leaf in _editableLeavesUnder(
+      nodeId,
+      ComboScope.work,
+    )) {
+      next = splitNode(
+        tree: combos.tree,
+        document: next,
+        nodeId: leaf.id,
+        scope: ComboScope.work,
+        effective: stack.settings,
+      );
+    }
+    if (next.splits.length == document.splits.length) return;
+    await _db.transaction(() async {
+      int id = workId ?? 0;
+      if (workId == null) {
+        final int now = DateTime.now().millisecondsSinceEpoch;
+        id = await _db.insertProfile(
+          ProfilesCompanion.insert(
+            name: await uniqueProfileName(_db, anonymousName),
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+        await _db.setBookProfile(bookUid, id);
+      }
+      await combos.saveDocument(id, next, role: ComboRole.workLocal);
+    });
+  }
+
+  /// 作品上「恢复继承」节点 [nodeId]（只对作品上的匿名组合）。全部恢复后匿名组合没用了：撤掉
+  /// 绑定并删掉它，作品回到跟随默认。
+  Future<void> restoreWorkNode({
+    required String bookUid,
+    required String nodeId,
+  }) async {
+    final int? workId = await getBookProfileId(bookUid);
+    if (workId == null) return;
+    final DecodedComboRows decoded = decodeComboRows(
+      combos.tree,
+      await combos.rowsOf(workId),
+    );
+    if (decoded.role != ComboRole.workLocal) {
+      throw StateError('work $bookUid is bound to a shared combo');
+    }
+    final ComboDocument next = _withoutLeavesUnder(decoded.document, nodeId);
+    if (next.splits.length == decoded.document.splits.length) return;
+    if (next.splits.isEmpty) {
+      await removeBookProfile(bookUid);
+      return;
+    }
+    await combos.saveDocument(workId, next, role: ComboRole.workLocal);
+  }
+
+  /// 作品上的匿名组合「存成组合」：改名为 [name]（重名加后缀）并列进配置列表，别的作品 / 媒体
+  /// 类型 / 语言就能绑它。作品照旧挂着它。返回存成的 Profile id；作品没挂匿名组合时 null。
+  Future<int?> saveWorkComboAs({
+    required String bookUid,
+    required String name,
+  }) async {
+    final int? workId = await getBookProfileId(bookUid);
+    if (workId == null) return null;
+    final DecodedComboRows decoded = decodeComboRows(
+      combos.tree,
+      await combos.rowsOf(workId),
+    );
+    if (decoded.role != ComboRole.workLocal) return null;
+    final ProfileRow? row = await _db.getProfileById(workId);
+    final String unique = row != null && row.name == name
+        ? name
+        : await uniqueProfileName(_db, name);
+    await _db.transaction(() async {
+      await _db.updateProfileName(workId, unique);
+      await combos.saveDocument(workId, decoded.document);
+    });
+    return workId;
+  }
+
+  /// [profileId] 是作品上的匿名组合、且已不挂在任何作品 / 媒体类型 / 语言上时删掉它（它不出现在
+  /// 配置列表里，留着就是看不见的孤儿）。
+  Future<void> _dropOrphanWorkLocalCombo(int profileId) async {
+    if (!(await workLocalComboIds(_db)).contains(profileId)) return;
+    final bool stillBound =
+        (await _db.getAllBookProfiles()).any(
+          (BookProfileRow r) => r.profileId == profileId,
+        ) ||
+        (await getAllMediaTypeBindings()).containsValue(profileId) ||
+        (await getAllLanguageBindings()).containsValue(profileId);
+    if (stillBound) return;
+    await deleteProfile(profileId);
+  }
+
   // ── 组合格式（拍板台 design-combo-node-split 阶段 3）────────────────
 
   /// 把库里的 Profile 归一成「唯一默认组合 + 其余只存被拆叶子的组合」，并定复习库归属
@@ -1734,4 +2110,78 @@ class WorkComboView {
 
   /// 解析结果做成的只读设置视图（查词过滤 / 作品级键 / Anki 字段取它）。
   final ProfileSettingsView view;
+}
+
+/// 组合编辑页的数据（[ProfileRepository.loadComboEditor]）。
+class ComboEditorData {
+  const ComboEditorData({
+    required this.profile,
+    required this.role,
+    required this.scope,
+    required this.document,
+    required this.effective,
+    required this.active,
+    required this.defaultName,
+  });
+
+  final ProfileRow profile;
+
+  /// [ComboRole.defaults] = 默认组合（所有叶子都有值，没有继承 / 拆分可言）。
+  final ComboRole role;
+
+  /// 判「能不能在这里单独设置」用的层（[ProfileRepository.comboEditScopeOf]）。
+  final ComboScope scope;
+
+  /// 单独设置的叶子（激活配置已按活偏好改基）。
+  final ComboDocument document;
+
+  /// 默认组合之上的生效值与每个叶子的来源。
+  final ResolvedSettings effective;
+
+  /// 是不是激活配置（此刻在设置里改的就是它）。
+  final bool active;
+
+  /// 默认组合的名字（「继承自 …」）。
+  final String defaultName;
+
+  bool get isDefault => role == ComboRole.defaults;
+
+  /// 这个组合拆出了独立复习库。
+  bool get ownSrsLibrary =>
+      document.splits[FushiComboNode.srsLibrary]?[const SettingKey(
+        kComboSyntheticCategory,
+        kComboSrsLibraryKey,
+      )] ==
+      kComboSrsLibraryOwn;
+}
+
+/// 作品的「最终生效值」表（[ProfileRepository.loadWorkComboTable]）。
+class WorkComboTable {
+  WorkComboTable({
+    required this.stack,
+    required Map<int, ProfileRow> profiles,
+    required this.workProfileId,
+    required this.workRole,
+    required this.comboFormat,
+  }) : profiles = Map<int, ProfileRow>.unmodifiable(profiles);
+
+  /// 逐叶子的生效值与来源；来源组合经 [ResolvedComboStack.sourceProfileIdOf] 换成 Profile。
+  final ResolvedComboStack stack;
+
+  /// id → Profile（显示来源组合的名字）。
+  final Map<int, ProfileRow> profiles;
+
+  /// 作品层挂的 Profile；null = 跟随默认。
+  final int? workProfileId;
+
+  /// 作品层那份的角色（[ComboRole.workLocal] = 作品上直接拆出的匿名组合，可在这里直接拆 /
+  /// 恢复）；[workProfileId] 为 null 时 null。
+  final ComboRole? workRole;
+
+  /// 库已是组合格式（迁移前不提供直接拆分）。
+  final bool comboFormat;
+
+  /// 作品上能不能直接拆 / 恢复：作品层空着（第一次拆会新建匿名组合），或挂的就是匿名组合。
+  bool get canEditOnWork =>
+      comboFormat && (workProfileId == null || workRole == ComboRole.workLocal);
 }

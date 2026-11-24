@@ -14,6 +14,7 @@ import 'package:fushi/src/profile/combo/combo_repository.dart'
     show ComboMigrationReport;
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/profile/combo/combo_editing.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi/src/profile/combo/fushi_settings_tree.dart'
     show FushiComboNode;
@@ -167,7 +168,8 @@ class ProfileUiState {
   );
 }
 
-class ProfileViewModel extends StateNotifier<ProfileUiState> {
+class ProfileViewModel extends StateNotifier<ProfileUiState>
+    implements ComboEditing {
   ProfileViewModel(
     this._repo,
     this._onProfileApplied,
@@ -204,7 +206,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   }
 
   Future<void> _refreshProfileList() async {
-    final List<ProfileRow> profiles = await _repo.getAllProfiles();
+    final List<ProfileRow> profiles = await _repo.getListedProfiles();
     if (!mounted) return;
     state = state.copyWith(profiles: profiles);
   }
@@ -242,7 +244,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   Future<void> _load() async {
     state = state.copyWith(isLoading: true);
     await _repo.ensureDefaultProfile();
-    final profiles = await _repo.getAllProfiles();
+    final profiles = await _repo.getListedProfiles();
     final activeId = await _repo.getActiveProfileId();
     final bindings = await _repo.getAllMediaTypeBindings();
     final languageBindings = await _repo.getAllLanguageBindings();
@@ -339,6 +341,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   /// 用户手动切换：这是新的「自己选的配置」，作废绑定留下的回退点。清回退点与
   /// 切换在同一把锁里，不会被并发的绑定应用夹在中间。
+  @override
   Future<void> switchProfile(int profileId) async {
     // 乐观标签：用户一点选就显示目标配置名，不等排队 / 快照 / 应用这些秒级步骤。
     ProfileRow? target;
@@ -404,7 +407,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         await _repo.snapshotCurrentSettings(newId);
         await _repo.setActiveProfileId(newId);
         state = state.copyWith(
-          profiles: await _repo.getAllProfiles(),
+          profiles: await _repo.getListedProfiles(),
           activeProfileId: newId,
         );
       });
@@ -414,12 +417,12 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       await _repo.snapshotCurrentSettings(sourceId);
     }
     await _repo.copyProfile(sourceId, newName);
-    state = state.copyWith(profiles: await _repo.getAllProfiles());
+    state = state.copyWith(profiles: await _repo.getListedProfiles());
   }
 
   Future<void> renameProfile(int id, String name) async {
     await _repo.renameProfile(id, name);
-    state = state.copyWith(profiles: await _repo.getAllProfiles());
+    state = state.copyWith(profiles: await _repo.getListedProfiles());
   }
 
   /// 删掉 [id] 会连带删掉的数据规模（确认框用）。[id] 承载共享复习库时抛
@@ -464,7 +467,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         }
 
         await _repo.deleteProfile(id);
-        final profiles = await _repo.getAllProfiles();
+        final profiles = await _repo.getListedProfiles();
         final activeId = await _repo.getActiveProfileId();
         state = state.copyWith(profiles: profiles, activeProfileId: activeId);
         if (deletesActiveProfile && activeId != previousActiveId) {
@@ -525,6 +528,97 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   Future<void> _restoreSrsLibrary(int profileId) =>
       _repo.combos.restoreInheritanceOf(profileId, FushiComboNode.srsLibrary);
+
+  // ── 组合编辑（拍板台 design-combo-node-split 阶段 6）──────────────────
+  //
+  // 都在配置变更锁里做：激活配置的拆分 / 恢复要先把活偏好写回它，和切换配置的快照不能交错。
+
+  /// 组合编辑页的数据（[ProfileRepository.loadComboEditor]）。
+  @override
+  Future<ComboEditorData?> loadComboEditor(int profileId) =>
+      _repo.loadComboEditor(profileId);
+
+  /// 「单独设置」节点 [nodeId]（复制此刻的生效值）。值不变，不用重新应用。
+  @override
+  Future<void> splitComboNode(int profileId, String nodeId) =>
+      _profileDraftCoordinator._runProfileMutation(
+        (_ProfileDraftMutation _) => _repo.splitComboNode(profileId, nodeId),
+      );
+
+  /// 「恢复继承」节点 [nodeId]。[profileId] 是激活配置时活偏好换成继承来的值（重新应用，作废
+  /// 在飞的设置草稿，刷新各处缓存）。
+  @override
+  Future<void> restoreComboNode(int profileId, String nodeId) =>
+      _profileDraftCoordinator._runProfileMutation((
+        _ProfileDraftMutation mutation,
+      ) async {
+        final bool reapply = await _repo.restoreComboNode(profileId, nodeId);
+        if (!reapply) return;
+        mutation.invalidateDrafts();
+        await _repo.applyProfile(profileId);
+        await _onProfileApplied();
+      });
+
+  /// 「拆成独立复习库」。复习库列表随 `profile_settings` 变更自己重算（`srsLibrariesProvider`）。
+  @override
+  Future<void> splitComboSrsLibrary(int profileId) =>
+      _profileDraftCoordinator._runProfileMutation(
+        (_ProfileDraftMutation _) => _repo.splitComboSrsLibrary(profileId),
+      );
+
+  /// 作品的「最终生效值」表（[ProfileRepository.loadWorkComboTable]）。
+  @override
+  Future<WorkComboTable> loadWorkComboTable({
+    required String bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
+  }) => _repo.loadWorkComboTable(
+    bookUid: bookUid,
+    languageTag: languageTag,
+    mediaType: mediaType,
+  );
+
+  /// 作品上直接「单独设置」节点 [nodeId]（[ProfileRepository.splitWorkNode]）。
+  @override
+  Future<void> splitWorkNode({
+    required String bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
+    required String nodeId,
+    required String anonymousName,
+  }) => _profileDraftCoordinator._runProfileMutation(
+    (_ProfileDraftMutation _) => _repo.splitWorkNode(
+      bookUid: bookUid,
+      languageTag: languageTag,
+      mediaType: mediaType,
+      nodeId: nodeId,
+      anonymousName: anonymousName,
+    ),
+  );
+
+  /// 作品上「恢复继承」节点 [nodeId]（[ProfileRepository.restoreWorkNode]）。
+  @override
+  Future<void> restoreWorkNode({
+    required String bookUid,
+    required String nodeId,
+  }) => _profileDraftCoordinator._runProfileMutation(
+    (_ProfileDraftMutation _) =>
+        _repo.restoreWorkNode(bookUid: bookUid, nodeId: nodeId),
+  );
+
+  /// 作品上的匿名组合「存成组合」，之后出现在配置列表里。
+  @override
+  Future<void> saveWorkComboAs({
+    required String bookUid,
+    required String name,
+  }) async {
+    await _profileDraftCoordinator._runProfileMutation(
+      (_ProfileDraftMutation _) =>
+          _repo.saveWorkComboAs(bookUid: bookUid, name: name),
+    );
+    if (!mounted) return;
+    state = state.copyWith(profiles: await _repo.getListedProfiles());
+  }
 
   static ProfileRow? _profileById(List<ProfileRow> profiles, int id) {
     for (final ProfileRow p in profiles) {
@@ -603,7 +697,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       mode: mode,
       targetProfileId: targetProfileId,
     );
-    state = state.copyWith(profiles: await _repo.getAllProfiles());
+    state = state.copyWith(profiles: await _repo.getListedProfiles());
     if (overwritesActiveProfile && writtenId == activeProfileId) {
       await _repo.applyProfile(writtenId);
       await _onProfileApplied();

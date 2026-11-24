@@ -485,7 +485,7 @@ void main() {
       expect(decoded.document.splits, isEmpty);
     });
 
-    test('导出组合 = 生效值全量（v1 格式，无组合行）；导入为新组合时落成差异', () async {
+    test('导出组合 = 生效值全量 + 单独设置的叶子（v2，无组合行）；导入为新组合时落成差异', () async {
       final String json = await repo.exportProfileToJson(b);
       final ProfileExport export = repo.parseProfileExport(json);
       final Map<String, String> prefs = <String, String>{
@@ -494,6 +494,8 @@ void main() {
       };
       expect(prefs[theme], PrefCodec.encode('glass'));
       expect(prefs['home_layout'], PrefCodec.encode('grid'), reason: '没拆的也导出');
+      expect(export.formatVersion, 2);
+      expect(export.splitNodes, <String>[FushiComboNode.appearanceTheme]);
       expect(
         export.settings.any(
           (ProfileSettingEntry e) => e.category == kComboSyntheticCategory,

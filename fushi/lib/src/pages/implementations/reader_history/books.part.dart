@@ -2141,17 +2141,28 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
     }
   }
 
-  void _openBookProfilePicker(MediaItem item, String bookKey) {
+  Future<void> _openBookProfilePicker(MediaItem item, String bookKey) async {
     Navigator.pop(context);
-    final String bookUid = bookKey;
     final ProfileRepository profileRepo = ref.read(profileRepositoryProvider);
     final ProfileUiState profileState = ref.read(profileViewModelProvider);
+    // 生效值表按这部作品的绑定层解析（组合阶段 6），媒体类型 / 内容语言与开书时同一判据。
+    final ({ProfileMediaKind mediaType, String? languageTag}) bookContext =
+        await resolveBookProfileContext(
+          appModel.database,
+          bookKey,
+          manga: item.mediaSourceIdentifier == MangaFushiSource.kUniqueKey,
+        );
+    if (!mounted) return;
 
-    showAppDialog<void>(
+    await showAppDialog<void>(
       context: context,
       builder: (ctx) => _BookProfileDialog(
-        bookUid: bookUid,
+        bookUid: bookKey,
+        title: item.title,
+        mediaType: bookContext.mediaType,
+        languageTag: bookContext.languageTag,
         profileRepo: profileRepo,
+        editing: ref.read(profileViewModelProvider.notifier),
         profiles: profileState.profiles,
         activeProfileName: profileState.activeProfile?.name ?? '',
       ),

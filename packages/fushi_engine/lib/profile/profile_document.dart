@@ -36,13 +36,20 @@ class ProfileExport {
     required this.formatVersion,
     required this.schemaVersion,
     required this.settings,
+    this.splitNodes,
   });
 
   /// 文件类型魔数：辨识这是 Fushi 配置方案导出，而非任意 JSON / 整库备份。
   static const String fileType = 'hibiki.profile';
 
   /// 当前导出文件格式版本。结构变化时 +1；导入按此判兼容。
-  static const int currentFormatVersion = 1;
+  ///
+  /// * 1：`settings` 是这份配置的整份快照。
+  /// * 2（组合阶段 6，设计 `docs/specs/2026-11-23-combo-settings-tree-design.md` §4.4）：`settings`
+  ///   是这份配置的**生效值全量**（默认组合 + 它的拆分，所以照样能当整份快照用），另带
+  ///   `splitNodes`：它单独设置了设置树上哪些叶子。导入为新组合时按本机默认组合重新 diff，
+  ///   `splitNodes` 里的叶子即使与本机默认相同也保持单独设置。
+  static const int currentFormatVersion = 2;
 
   final String profileName;
   final int formatVersion;
@@ -50,6 +57,10 @@ class ProfileExport {
 
   /// 每条 `{category, key, value}`；category ∈ {anki, pref, ...}。
   final List<ProfileSettingEntry> settings;
+
+  /// v2：导出方单独设置的叶子 id（设置树节点 id，持久化名）；默认组合 / 什么都没拆为空。
+  /// v1 文件为 null（整份快照，导入时 diff）。
+  final List<String>? splitNodes;
 }
 
 /// 单条配置项（category/key/value），对应 profile_settings 行。
@@ -122,6 +133,16 @@ ProfileExport parseProfileDocument(String json) {
   final Object? rawSchema = map['schemaVersion'];
   final int schemaVersion = rawSchema is int ? rawSchema : 0;
 
+  List<String>? splitNodes;
+  if (formatVersion >= 2) {
+    // 缺省 = 什么都没单独设置（与生效值全量一起导入时只按本机默认 diff）。
+    final Object? rawSplits = map['splitNodes'] ?? const <Object?>[];
+    if (rawSplits is! List || rawSplits.any((Object? e) => e is! String)) {
+      throw ProfileImportException('splitNodes is not a list of strings');
+    }
+    splitNodes = List<String>.unmodifiable(rawSplits.cast<String>());
+  }
+
   final List<ProfileSettingEntry> entries = <ProfileSettingEntry>[];
   for (final dynamic e in rawSettings) {
     if (e is! Map) {
@@ -145,21 +166,25 @@ ProfileExport parseProfileDocument(String json) {
     formatVersion: formatVersion,
     schemaVersion: schemaVersion,
     settings: entries,
+    splitNodes: splitNodes,
   );
 }
 
-/// 组装分享 JSON（带缩进）。[settings] 必须已由调用方剔除凭据 / 设备本地 key、
-/// 剥掉字体绝对路径——本函数只负责信封格式，不做任何过滤。
+/// 组装分享 JSON（带缩进，[ProfileExport.currentFormatVersion]）。[settings] 必须已由调用方剔除
+/// 凭据 / 设备本地 key、剥掉字体绝对路径——本函数只负责信封格式，不做任何过滤。[settings] 是
+/// 这份配置的生效值全量，[splitNodes] 是它单独设置的叶子（见 [ProfileExport.splitNodes]）。
 String encodeProfileDocument({
   required String profileName,
   required int schemaVersion,
   required List<ProfileSettingEntry> settings,
+  List<String> splitNodes = const <String>[],
 }) {
   final Map<String, dynamic> doc = <String, dynamic>{
     'type': ProfileExport.fileType,
     'formatVersion': ProfileExport.currentFormatVersion,
     'schemaVersion': schemaVersion,
     'profileName': profileName,
+    'splitNodes': splitNodes,
     'settings': <Map<String, String>>[
       for (final ProfileSettingEntry s in settings)
         <String, String>{

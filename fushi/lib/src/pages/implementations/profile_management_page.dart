@@ -30,8 +30,8 @@ import 'package:fushi/src/profile/combo/combo_repository.dart'
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/pages/implementations/combo_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_library_merge_dialog.dart';
-import 'package:fushi/src/srs/srs_library.dart';
 import 'package:fushi/src/srs/srs_library_merge.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart'
     show SettingsSectionFooter;
@@ -245,13 +245,6 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
 
   List<Widget> _buildProfileRows(ProfileUiState uiState, ProfileViewModel vm) {
     final isOnly = uiState.profiles.length <= 1;
-    // 拆出了独立复习库的组合（组合阶段 5）：行上多一个「合并进共享复习库」。
-    final Set<String> ownLibraries = <String>{
-      for (final SrsLibraryEntry e
-          in ref.watch(srsLibrariesProvider).valueOrNull?.entries ??
-              const <SrsLibraryEntry>[])
-        if (!e.shared) e.uid,
-    };
     final bool cupertino = isCupertinoPlatform(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return [
@@ -287,14 +280,16 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
                 tooltip: t.profile_copy,
                 onPressed: () => _showCopyDialog(vm, profile.id, profile.name),
               ),
-              if (ownLibraries.contains(profile.uid)) ...[
+              // 组合编辑（阶段 6）：只有默认组合时不出现「组合」概念（设置页照常编辑默认值）。
+              // 复习库的「拆成独立库 / 合并进共享库」也在编辑页的复习库项上。
+              if (!isOnly) ...[
                 SizedBox(width: tokens.spacing.gap / 2),
                 _ProfileActionButton(
-                  key: ValueKey<String>('profile_merge_srs_${profile.id}'),
-                  materialIcon: Icons.merge_type,
-                  cupertinoIcon: CupertinoIcons.arrow_merge,
-                  tooltip: t.srs_library_merge_action,
-                  onPressed: () => _mergeSrsLibrary(vm, profile.id),
+                  key: ValueKey<String>('profile_edit_combo_${profile.id}'),
+                  materialIcon: FushiIcons.widgets,
+                  cupertinoIcon: CupertinoIcons.square_stack_3d_up,
+                  tooltip: t.profile_combo_edit,
+                  onPressed: () => _openComboEditor(profile.id),
                 ),
               ],
               SizedBox(width: tokens.spacing.gap / 2),
@@ -400,11 +395,32 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   // Dialogs
   // ---------------------------------------------------------------------------
 
-  /// 「合并进共享复习库」（组合阶段 5）：先读预览（冲突表），再弹确认框；合并在框里跑。
-  Future<void> _mergeSrsLibrary(ProfileViewModel vm, int id) async {
+  /// 组合编辑页（阶段 6）。
+  Future<void> _openComboEditor(int profileId) {
+    final ProfileViewModel vm = ref.read(profileViewModelProvider.notifier);
+    return Navigator.of(context).push(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => ComboEditorPage(
+          profileId: profileId,
+          editing: vm,
+          onMergeSrsLibrary: (BuildContext ctx, int id) =>
+              _runSrsLibraryMergeFlow(ctx, vm, id),
+        ),
+      ),
+    );
+  }
+
+  /// 「合并进共享复习库」（组合阶段 5）：先读预览（冲突表），再弹确认框；合并在框里跑。入口在组合
+  /// 编辑页的复习库项上。
+  static Future<void> _runSrsLibraryMergeFlow(
+    BuildContext context,
+    ProfileViewModel vm,
+    int profileId,
+  ) async {
     final SrsLibraryMergePlan? plan;
     try {
-      plan = await vm.srsLibraryMergePlan(id);
+      plan = await vm.srsLibraryMergePlan(profileId);
     } catch (e, stack) {
       ErrorLogService.instance.log('ProfileManagement.mergePlan', e, stack);
       FushiToast.show(
@@ -414,7 +430,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
       );
       return;
     }
-    if (plan == null || !mounted) return;
+    if (plan == null || !context.mounted) return;
     final SrsMergeResult? result = await showSrsLibraryMergeDialog(
       context,
       plan: plan,
@@ -795,7 +811,7 @@ class ProfileDeleteDialog extends StatelessWidget {
   }
 }
 
-@visibleForTesting
+/// 配置名输入框（新建 / 复制 / 改名，及作品「存成组合」）。
 class ProfileNameDialog extends StatefulWidget {
   const ProfileNameDialog({
     required this.title,

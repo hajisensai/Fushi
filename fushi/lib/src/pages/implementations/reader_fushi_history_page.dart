@@ -155,6 +155,11 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/shelf_ordering.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/profile/book_profile_context.dart';
+import 'package:fushi/src/profile/combo/work_combo_panel.dart';
+import 'package:fushi/src/profile/combo/combo_editing.dart';
+import 'package:fushi/src/pages/implementations/profile_management_page.dart'
+    show ProfileNameDialog;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/second_screen/companion/companion_cover_files.dart';
 import 'package:fushi/src/second_screen/companion/companion_protocol.dart'
