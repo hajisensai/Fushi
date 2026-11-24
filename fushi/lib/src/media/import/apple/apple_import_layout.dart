@@ -58,6 +58,10 @@ String? appleImportLibraryName(String specId) => switch (specId) {
 /// macOS 档宽窗双栏的最小内容宽。
 const double kAppleImportTwoColumnMinWidth = 860;
 
+/// 双栏每栏的最大宽（macOS 系统设置表单列宽量级）与栏间距。
+const double kAppleImportColumnMaxWidth = 520;
+const double kAppleImportColumnGap = 28;
+
 class AppleImportLayout extends StatefulWidget {
   const AppleImportLayout({
     required this.spec,
@@ -197,21 +201,27 @@ class _AppleImportLayoutState extends State<AppleImportLayout> {
             children: <Widget>[add, ?network, ?sources],
           );
         }
-        final double left = math.min(440, constraints.maxWidth * 0.42);
+        // macOS「系统设置」式两栏：两栏等宽、各不超过 [kAppleImportColumnMaxWidth]，
+        // 靠起始边排（宽窗不把右栏拉满到窗口边）；两栏顶部都是组外标题，
+        // 走同一套 AdaptiveSettingsSection 标题度量，标题基线与卡片顶边齐平。
+        final double column = math.min(
+          kAppleImportColumnMaxWidth,
+          (constraints.maxWidth - kAppleImportColumnGap) / 2,
+        );
         return Row(
           key: const ValueKey<String>('import-apple-two-columns'),
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             SizedBox(
-              width: left,
+              width: column,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[add, ?network],
               ),
             ),
-            const SizedBox(width: 28),
-            Expanded(child: right),
+            const SizedBox(width: kAppleImportColumnGap),
+            SizedBox(width: column, child: right),
           ],
         );
       },

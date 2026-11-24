@@ -176,15 +176,15 @@ class _AppleImportSourcesSectionState extends State<AppleImportSourcesSection> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        AppleImportSectionHeader(
-          title: t.media_source_section_title,
-          actionKey: const ValueKey<String>('import-sources-edit'),
-          actionLabel: sources == null || sources.isEmpty
-              ? null
-              : (editing ? t.dialog_done : t.dialog_edit),
-          onAction: () => setState(() => _editing = !editing),
-        ),
         AdaptiveSettingsSection(
+          title: t.media_source_section_title,
+          titleTrailing: sources == null || sources.isEmpty
+              ? null
+              : AppleImportSectionAction(
+                  key: const ValueKey<String>('import-sources-edit'),
+                  label: editing ? t.dialog_done : t.dialog_edit,
+                  onTap: () => setState(() => _editing = !editing),
+                ),
           children: <Widget>[
             if (sources == null)
               const Padding(

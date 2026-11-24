@@ -20,6 +20,7 @@ import 'package:fushi/src/pages/implementations/media_library_shell.dart'
     show LibrarySectionGroup;
 import 'package:fushi/src/pages/implementations/video_import_page.dart'
     show buildVideoImportSpec;
+import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/adaptive/apple_sidebar_library_host.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
@@ -385,6 +386,36 @@ void main() {
         find.byKey(const ValueKey<String>('import-apple-two-columns')),
         findsOneWidget,
       );
+      // 两栏组标题基线 / 分组卡顶边严格齐平（右栏组标题带「编辑」也不变高）。
+      final Finder addSection = find.byKey(
+        const ValueKey<String>('import-apple-add-section'),
+      );
+      final Finder sourcesSection = find.descendant(
+        of: find.byType(AppleImportSourcesSection),
+        matching: find.byType(AdaptiveSettingsSection),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('import-sources-edit')),
+        findsOneWidget,
+      );
+      expect(
+        tester.getTopLeft(addSection).dy,
+        tester.getTopLeft(sourcesSection).dy,
+      );
+      Finder card(Finder section) => find
+          .descendant(
+            of: section,
+            matching: find.byType(AdaptiveSettingsSurface),
+          )
+          .first;
+      expect(
+        tester.getTopLeft(card(addSection)).dy,
+        tester.getTopLeft(card(sourcesSection)).dy,
+      );
+      // 两栏等宽且封顶，右栏不拉满到窗口边。
+      final double leftWidth = tester.getSize(addSection).width;
+      expect(tester.getSize(sourcesSection).width, leftWidth);
+      expect(leftWidth, lessThanOrEqualTo(kAppleImportColumnMaxWidth));
     });
 
     testWidgets('real video spec: every method has a row', (

@@ -1,5 +1,5 @@
 /// Apple（Cupertino，iOS 27 / macOS 27）导入页的行件（方案 A「设置」式分组列表）：
-/// 行首中性灰圆角方块图标（主方式换强调色）、方式行、分组头（带右侧动作）、
+/// 行首中性灰圆角方块图标、方式行、组标题行尾动作、
 /// 行尾小转圈。行本身一律是公共件 [AdaptiveSettingsRow]，这里只给 Apple 档的
 /// 行首 / 行尾件；颜色只表达「可点 / 选中 / 状态」，不读 `ImportTone`。
 library;
@@ -81,69 +81,38 @@ class AppleImportRowSpinner extends StatelessWidget {
   }
 }
 
-/// 分组头：13 号 secondaryLabel 标题（与 [AdaptiveSettingsSection] 外标题同一
-/// 口径）+ 右侧可选的强调色文字动作（「编辑」/「完成」）。
-class AppleImportSectionHeader extends StatelessWidget {
-  const AppleImportSectionHeader({
-    required this.title,
-    this.actionLabel,
-    this.onAction,
-    this.actionKey,
+/// 分组外标题行尾的文字动作（「编辑」/「完成」），挂在
+/// [AdaptiveSettingsSection.titleTrailing]：字号行高与组标题相同，标题行不因它
+/// 变高，并排两栏的组标题基线与卡片顶边因此齐平。
+class AppleImportSectionAction extends StatelessWidget {
+  const AppleImportSectionAction({
+    required this.label,
+    required this.onTap,
     super.key,
   });
 
-  final String title;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-  final Key? actionKey;
+  final String label;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
-    final String? label = actionLabel;
-    final VoidCallback? action = onAction;
-    return Padding(
-      padding: EdgeInsetsDirectional.fromSTEB(
-        metrics.rowHorizontal,
-        0,
-        metrics.rowHorizontal,
-        metrics.desktop ? 6 * metrics.scale : 7,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: <Widget>[
-          Expanded(
-            child: Text(title, style: settingsAppleSectionTitleStyle(context)),
-          ),
-          if (label != null)
-            Semantics(
-              button: true,
+    final VoidCallback? action = onTap;
+    return Semantics(
+      button: true,
+      enabled: action != null,
+      child: FushiPressScale(
+        enabled: action != null,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: action,
+          child: Text(
+            label,
+            style: settingsSectionTitleActionStyle(
+              context,
               enabled: action != null,
-              child: FushiPressScale(
-                enabled: action != null,
-                child: GestureDetector(
-                  key: actionKey,
-                  behavior: HitTestBehavior.opaque,
-                  onTap: action,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 32),
-                    child: Align(
-                      widthFactor: 1,
-                      alignment: AlignmentDirectional.bottomEnd,
-                      child: Text(
-                        label,
-                        style: appleImportSecondaryStyle(context).copyWith(
-                          color: action == null
-                              ? appleColorsOf(context).tertiaryLabel
-                              : appleColorsOf(context).accent,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
             ),
-        ],
+          ),
+        ),
       ),
     );
   }

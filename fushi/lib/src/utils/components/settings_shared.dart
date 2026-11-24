@@ -96,6 +96,20 @@ TextStyle settingsAppleSectionTitleStyle(BuildContext context) =>
       context,
     ).footnoteStyle(context).copyWith(fontWeight: FontWeight.w600);
 
+/// 分组外标题行尾的文字动作（[AdaptiveSettingsSection.titleTrailing]）：与
+/// [settingsAppleSectionTitleStyle] 同字号同行高（标题行不因动作变高），常规字重、
+/// 强调色（不可用时 tertiaryLabel）。
+TextStyle settingsSectionTitleActionStyle(
+  BuildContext context, {
+  bool enabled = true,
+}) {
+  final FushiAppleColors colors = appleColorsOf(context);
+  return settingsAppleSectionTitleStyle(context).copyWith(
+    fontWeight: FontWeight.w400,
+    color: enabled ? colors.accent : colors.tertiaryLabel,
+  );
+}
+
 const kSettingsSegmentedStyle = ButtonStyle(
   visualDensity: VisualDensity.compact,
   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -506,10 +520,17 @@ class AdaptiveSettingsSection extends StatefulWidget {
     this.onExpansionChanged,
     this.summary,
     this.footer,
+    this.titleTrailing,
   });
 
   final String? title;
   final List<Widget> children;
+
+  /// 分组外标题行尾的动作（如「编辑」/「完成」），与标题同一行、按基线对齐；
+  /// 只在标题画在组外（[SettingsSectionTitlePlacement.outside]）时出现。标题行高度
+  /// 仍由标题决定——调用方让动作文字与标题同一行高（见
+  /// [settingsSectionTitleActionStyle]），并排两栏的分组卡顶边才严格齐平。
+  final Widget? titleTrailing;
 
   /// 贴在分组卡下方的说明（macOS 27 grouped form：卡下 6、再隔组间距到下一
   /// 组）；null = 没有。
@@ -672,43 +693,73 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           if (!titleInside && widget.title != null && widget.title!.isNotEmpty)
-            apple != null
-                ? Padding(
-                    // 分组外标题：13 号 semibold secondaryLabel（macOS 系统设置
-                    // 的分组标题口径），与卡片内行文字起点（行内边距）左对齐。
-                    padding: EdgeInsets.fromLTRB(
-                      apple.rowHorizontal,
-                      0,
-                      apple.rowHorizontal,
-                      apple.desktop ? 6 * apple.scale : 7,
-                    ),
-                    child: Text(
-                      widget.title!,
-                      style: settingsAppleSectionTitleStyle(context),
-                    ),
-                  )
-                : cupertino
-                ? Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                    child: Text(
-                      widget.title!.toUpperCase(),
-                      style: tokens.type.metadata.copyWith(
-                        color: CupertinoColors.secondaryLabel.resolveFrom(
-                          context,
-                        ),
-                        fontWeight: FontWeight.w600,
+            _withTitleTrailing(
+              apple != null
+                  ? Padding(
+                      // 分组外标题：13 号 semibold secondaryLabel（macOS 系统设置
+                      // 的分组标题口径），与卡片内行文字起点（行内边距）左对齐。
+                      padding: EdgeInsets.fromLTRB(
+                        apple.rowHorizontal,
+                        0,
+                        apple.rowHorizontal,
+                        apple.desktop ? 6 * apple.scale : 7,
                       ),
+                      child: Text(
+                        widget.title!,
+                        style: settingsAppleSectionTitleStyle(context),
+                      ),
+                    )
+                  : cupertino
+                  ? Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                      child: Text(
+                        widget.title!.toUpperCase(),
+                        style: tokens.type.metadata.copyWith(
+                          color: CupertinoColors.secondaryLabel.resolveFrom(
+                            context,
+                          ),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    )
+                  : SettingsSectionHeader(
+                      widget.title!,
+                      padding: const EdgeInsets.only(bottom: 6),
                     ),
-                  )
-                : SettingsSectionHeader(
-                    widget.title!,
-                    padding: const EdgeInsets.only(bottom: 6),
-                  ),
+            ),
           group,
           if (widget.footer case final Widget footer) ...<Widget>[
             const SizedBox(height: 6),
             footer,
           ],
+        ],
+      ),
+    );
+  }
+
+  /// 组外标题行挂 [AdaptiveSettingsSection.titleTrailing]：标题与动作按字母基线
+  /// 对齐，标题的内边距（行首对齐行文字、下距卡片）原样保留在外层。
+  Widget _withTitleTrailing(Widget header) {
+    final Widget? trailing = widget.titleTrailing;
+    if (trailing == null) return header;
+    final Widget? title = header is Padding ? header.child : null;
+    if (header is! Padding || title == null) {
+      // M3E 的 SettingsSectionHeader 自带内边距，整块与动作并排、竖直居中。
+      return Row(
+        children: <Widget>[
+          Expanded(child: header),
+          trailing,
+        ],
+      );
+    }
+    return Padding(
+      padding: header.padding,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: <Widget>[
+          Expanded(child: title),
+          trailing,
         ],
       ),
     );
