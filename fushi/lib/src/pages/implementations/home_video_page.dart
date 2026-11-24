@@ -10809,6 +10809,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     return FushiPlaceholderMessage(
       icon: FushiIcons.video,
       message: t.video_library_empty_source_hint,
+      // Apple ContentUnavailable 式说明行：也可以直接拖放（M3E 不变）。
+      detail: isGlassDesign(context) ? t.book_import_drop_hint : null,
       action: widget.onOpenSources == null
           ? null
           : FushiFilledButton.icon(

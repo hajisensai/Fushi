@@ -1539,6 +1539,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     return FushiPlaceholderMessage(
       icon: FushiIcons.games,
       message: t.game_empty,
+      // Apple ContentUnavailable 式说明行：也可以直接拖放（M3E 不变）。
+      detail: isGlassDesign(context) ? t.book_import_drop_hint : null,
       // 嵌壳时空态引导去「导入」分段（唯一入库位置）；独立使用时直接选 exe。
       action: widget.embedded
           ? FushiFilledButton.icon(

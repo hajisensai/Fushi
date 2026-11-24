@@ -4408,6 +4408,44 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       context,
     );
 
+    final Widget button = shell != null
+        ? FushiFilledButton.icon(
+            icon: const FushiIcon(Icons.library_add_outlined, size: 18),
+            label: Text(t.library_empty_go_import),
+            onPressed: () => shell.select(MediaLibraryViewKind.sources),
+          )
+        : FushiFilledButton.icon(
+            icon: const FushiIcon(Icons.library_add_outlined, size: 18),
+            label: Text(_mangaOnly ? t.manga_import_action : t.srt_import),
+            onPressed: () async {
+              // 空态兜底与页头兜底指向同一个对话框：漫画库开漫画框，书架开书籍框。
+              final bool? imported = await showAppDialog<bool>(
+                context: context,
+                builder: (_) => _mangaOnly
+                    ? MangaImportDialog(db: appModel.database)
+                    : BookImportDialog(
+                        prefs: appModel.prefsRepo,
+                        repo: SrtBookRepository(appModel.database),
+                        audiobookRepo: AudiobookRepository(appModel.database),
+                        db: appModel.database,
+                      ),
+              );
+              if (imported == true) {
+                ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
+                ref.invalidate(srtBooksProvider);
+              }
+            },
+          );
+    // Apple：ContentUnavailableView 式——大图标 + 标题 + 说明（可直接拖放）+
+    // 主按钮同一块居中（方案 A 第 24 项）；M3E 版面不变。
+    if (isGlassDesign(context)) {
+      return FushiPlaceholderMessage(
+        icon: mediaSource.icon,
+        message: t.reader_no_books_added,
+        detail: t.book_import_drop_hint,
+        action: button,
+      );
+    }
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -4417,35 +4455,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
             message: t.reader_no_books_added,
           ),
           SizedBox(height: tokens.spacing.gap + tokens.spacing.gap / 2),
-          if (shell != null)
-            FushiFilledButton.icon(
-              icon: const FushiIcon(Icons.library_add_outlined, size: 18),
-              label: Text(t.library_empty_go_import),
-              onPressed: () => shell.select(MediaLibraryViewKind.sources),
-            )
-          else
-            FushiFilledButton.icon(
-              icon: const FushiIcon(Icons.library_add_outlined, size: 18),
-              label: Text(_mangaOnly ? t.manga_import_action : t.srt_import),
-              onPressed: () async {
-                // 空态兜底与页头兜底指向同一个对话框：漫画库开漫画框，书架开书籍框。
-                final bool? imported = await showAppDialog<bool>(
-                  context: context,
-                  builder: (_) => _mangaOnly
-                      ? MangaImportDialog(db: appModel.database)
-                      : BookImportDialog(
-                          prefs: appModel.prefsRepo,
-                          repo: SrtBookRepository(appModel.database),
-                          audiobookRepo: AudiobookRepository(appModel.database),
-                          db: appModel.database,
-                        ),
-                );
-                if (imported == true) {
-                  ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
-                  ref.invalidate(srtBooksProvider);
-                }
-              },
-            ),
+          button,
         ],
       ),
     );
