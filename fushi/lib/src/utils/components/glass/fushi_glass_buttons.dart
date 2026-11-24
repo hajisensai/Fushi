@@ -555,7 +555,10 @@ Widget _glassButton(
       child: content,
     );
   }
-  if (alertAction || sheetAction) {
+  if (alertAction || sheetAction || headerAction) {
+    // sheet 导航栏两端（取消 / 主操作）同样是平填充胶囊：压在 sheet 面板上
+    // 的玻璃胶囊会画出一圈折射 / 吸收描边，看着像包了一道边（用户
+    // 2026-11-24「这包边有点怪」）。主操作强调色实底，取消中性洗色底。
     // alert / sheet 动作区 = UIAlertController 的平填充胶囊
     // （`_UIAlertControllerFilledBackgroundView`，库 GlassAlertPlatter 在
     // iOS 26 / 27 模拟器上实测）：不是玻璃，静止时没有任何高光边 / 折射。
@@ -576,9 +579,7 @@ Widget _glassButton(
       child: content,
     );
   }
-  // sheet 导航栏里的非主操作 / 禁用主操作：无色透明玻璃胶囊（iOS 27 导航栏
-  // 按钮），不落到下面的灰底实色胶囊。
-  if (bordered || (tint == null && !customBg && !headerAction)) {
+  if (bordered || (tint == null && !customBg)) {
     // 只剩禁用的主按钮会走到这里（tint 在禁用时被清空）：iOS
     // `.borderedProminent` 禁用态是灰底 + tertiaryLabel 字，不是一枚透明玻璃。
     // `.bordered`：灰底实色胶囊（禁用态底保留、字褪成 tertiaryLabel）；
