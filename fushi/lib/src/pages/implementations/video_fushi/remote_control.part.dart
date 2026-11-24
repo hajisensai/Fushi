@@ -665,15 +665,51 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       return;
     }
     final VideoBookRow? row = await widget.repo.getByBookUid(uid);
-    if (row == null) {
-      throw const VideoRemoteException(404, 'favorite_source_unavailable');
+    final Widget Function(bool initialFullscreen) buildPage;
+    // 换上的新页接管的现建客户端（只有媒体服务器条目有）：推页之前任一步放弃都要关掉。
+    RemoteVideoClient? handedOverClient;
+    if (row != null) {
+      if (await isLocalVideoResourceMissing(row.videoPath)) {
+        throw const VideoRemoteException(404, 'favorite_source_unavailable');
+      }
+      final Map<String, int> collections = await appModel.database
+          .getPrimaryCollectionIdByEntry();
+      buildPage = (bool initialFullscreen) => VideoFushiPage.neutralized(
+        bookUid: uid,
+        repo: widget.repo,
+        playlistCollectionId: collections[MediaKind.video.compositeKey(uid)],
+        initialRemoteFavorite: favorite,
+        initialEpisodeIndex: favorite.sectionIndex,
+        initialSubtitleListVisible: false,
+        initialFullscreen: initialFullscreen,
+      );
+    } else {
+      // 没有本机库行：从媒体服务器浏览页直接串流时收藏的条目（bookKey = 服务器条目
+      // id），到已登录的服务器上按 id 找回来（BUG-5379）。
+      final ({RemoteVideoClient client, RemoteVideoInfo info})? launch =
+          await resolveMediaServerItemLaunch(
+            itemId: uid,
+            loadConfigs: SyncRepository(appModel.database).getMediaServers,
+          );
+      if (launch == null) {
+        throw const VideoRemoteException(404, 'favorite_source_unavailable');
+      }
+      handedOverClient = launch.client;
+      buildPage = (bool initialFullscreen) => VideoFushiPage.neutralizedRemote(
+        info: launch.info,
+        repo: widget.repo,
+        client: launch.client,
+        ownsRemoteClient: true,
+        initialRemoteFavorite: favorite,
+        initialFullscreen: initialFullscreen,
+      );
     }
-    if (await isLocalVideoResourceMissing(row.videoPath)) {
-      throw const VideoRemoteException(404, 'favorite_source_unavailable');
+    if (!context.mounted) {
+      if (handedOverClient != null) {
+        closeOwnedRemoteVideoClient(handedOverClient);
+      }
+      throw const VideoRemoteException(409, 'no_video');
     }
-    final Map<String, int> collections = await appModel.database
-        .getPrimaryCollectionIdByEntry();
-    if (!context.mounted) throw const VideoRemoteException(409, 'no_video');
     final PageRoute<void>? oldFullscreenRoute = _videoFullscreenRoute;
     final NavigatorState navigator = Navigator.of(context);
     final NavigatorState rootNavigator = Navigator.of(
@@ -687,18 +723,15 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       hasCurrentRoute: currentRoute != null,
     );
     await _controller?.pause();
-    if (!context.mounted) throw const VideoRemoteException(409, 'no_video');
+    if (!context.mounted) {
+      if (handedOverClient != null) {
+        closeOwnedRemoteVideoClient(handedOverClient);
+      }
+      throw const VideoRemoteException(409, 'no_video');
+    }
     final Route<void> route = adaptivePageRoute<void>(
       context: context,
-      builder: (_) => VideoFushiPage.neutralized(
-        bookUid: uid,
-        repo: widget.repo,
-        playlistCollectionId: collections[MediaKind.video.compositeKey(uid)],
-        initialRemoteFavorite: favorite,
-        initialEpisodeIndex: favorite.sectionIndex,
-        initialSubtitleListVisible: false,
-        initialFullscreen: plan.handOverNativeFullscreen,
-      ),
+      builder: (_) => buildPage(plan.handOverNativeFullscreen),
     );
     _unregisterVideoRemote();
     if (plan.mode == EpisodeSwitchMode.replace) {

@@ -13676,6 +13676,7 @@
   "video_external_settings_section": "Внешние провайдеры ресурсов и субтитров",
   "video_external_username_optional": "Имя пользователя (необязательно)",
   "video_favorite_count": "В избранном: $count",
+  "video_favorite_source_unavailable": "This video is no longer in your library. If it was streamed from a media server, sign in to that server and try again.",
   "video_file_error_content": "Не удалось загрузить видеофайл. Убедитесь, что файл существует и находится в каталоге, доступном приложению.",
   "video_file_not_found": "Видеофайл не найден",
   "video_filename_organize_action": "Organize file names",

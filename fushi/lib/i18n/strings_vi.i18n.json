@@ -13676,6 +13676,7 @@
   "video_external_settings_section": "Nhà cung cấp tài nguyên và phụ đề bên ngoài",
   "video_external_username_optional": "Tên người dùng (tùy chọn)",
   "video_favorite_count": "$count câu yêu thích",
+  "video_favorite_source_unavailable": "This video is no longer in your library. If it was streamed from a media server, sign in to that server and try again.",
   "video_file_error_content": "Không thể tải tệp video. Hãy đảm bảo tệp tồn tại và nằm trong thư mục mà ứng dụng có thể truy cập.",
   "video_file_not_found": "Không tìm thấy tệp video",
   "video_filename_organize_action": "Organize file names",

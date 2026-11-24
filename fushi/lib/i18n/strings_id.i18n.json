@@ -13676,6 +13676,7 @@
   "video_external_settings_section": "Penyedia sumber daya dan subtitle eksternal",
   "video_external_username_optional": "Nama pengguna (opsional)",
   "video_favorite_count": "$count favorit",
+  "video_favorite_source_unavailable": "This video is no longer in your library. If it was streamed from a media server, sign in to that server and try again.",
   "video_file_error_content": "Tidak dapat memuat file video. Pastikan file ini ada dan berada di direktori yang dapat diakses oleh aplikasi.",
   "video_file_not_found": "File video tidak ditemukan",
   "video_filename_organize_action": "Organize file names",
