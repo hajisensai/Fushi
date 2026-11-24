@@ -9,7 +9,8 @@
 //
 //   flutter test test/reader/reader_headless_shell_dump_test.dart --no-pub   # 写引擎到 systemTemp
 //   node tool/reader_pitch_headless/continuous_seamless_chapters_probe.mjs
-// 退出码 0 = 横排 / 竖排、真触摸、慢拖跨章只换一章（BUG-4363）、短邻章边界认领、开关关闭各组断言全部成立。
+// 退出码 0 = 横排 / 竖排、真触摸、慢拖跨章只换一章（BUG-4363）、短邻章边界认领、章首空白处晋升
+// 视口不跳（反馈 cdWxWwe-iz）、开关关闭各组断言全部成立。
 // 验证未落盘的改动时可用 FUSHI_ENGINE_JS=<引擎产物路径> 覆盖默认的 systemTemp 产物。
 import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os'; import puppeteer from 'puppeteer-core';
 
@@ -91,7 +92,7 @@ function check(label, ok, detail) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function open(browser, vertical, seamless, opts = {}) {
-  const { paras = null, delays = {}, pinMid = false } = opts;
+  const { paras = null, delays = {}, pinMid = false, epubCss = EPUB_CSS } = opts;
   const fetched = {};
   const page = await browser.newPage();
   await page.emulate({
@@ -109,7 +110,7 @@ async function open(browser, vertical, seamless, opts = {}) {
       if (delays[idx] && fetched[idx] === 1) await sleep(delays[idx]);
       return q.respond({ status: 200, contentType: 'text/html', body: chapterHtml(idx, vertical, paras) });
     }
-    if (u.pathname === '/epub/OEBPS/Styles/style.css') return q.respond({ status: 200, contentType: 'text/css', body: EPUB_CSS });
+    if (u.pathname === '/epub/OEBPS/Styles/style.css') return q.respond({ status: 200, contentType: 'text/css', body: epubCss });
     if (u.pathname === '/epub/OEBPS/Images/pic.svg') return q.respond({ status: 200, contentType: 'image/svg+xml', body: PIC });
     return q.respond({ status: 404, body: '' });
   });
@@ -457,6 +458,35 @@ async function runShortNeighborBoundaryPull(browser) {
   await page.close();
 }
 
+// 反馈 cdWxWwe-iz：章首标题上方有大段外边距（真实 EPUB 常见）时，慢拖越过章界的那一刻视口
+// 中心落在下一章宿主的空白里。旧 captureAnchor 把宿主本身当锚点，晋升移除宿主后不补偿，
+// 卸掉的上一章高度整段丢失，视口被钳到刚晋升那章的章末（第三章 → 第四章 → 终章）。
+async function runTitleMarginSlowDrag(browser) {
+  const tag = '[title margin slow drag]';
+  const page = await open(browser, false, true, {
+    epubCss: EPUB_CSS.replace('margin: 0 0 0.6em 0', 'margin: 8em 0 2em 0'),
+  });
+  const pre = await page.evaluate(() => {
+    const next = window.__fushiSeamless.nextHostElement();
+    window.scrollBy(0, next.getBoundingClientRect().top - innerHeight / 2 - 40);
+    const last = Array.from(document.body.children).filter((e) => e.localName === 'p' && e.textContent.indexOf('【') === 0).pop();
+    window.__probeLast = last;
+    return { mounted: window.__fushiSeamless.mountedChapters(), top: last.getBoundingClientRect().top };
+  });
+  await slowDrag(page, 600, 480, 2, 30);
+  const s = await turnEvents(page);
+  const after = await page.evaluate(() => {
+    const el = window.__probeLast;
+    const root = el.getRootNode();
+    return { top: el.getBoundingClientRect().top, inHost: root !== document };
+  });
+  check(`${tag} drag promotes chapter 2 exactly once`, s.active === 2 && s.seamless.length === 1 && s.boundary.length === 0, s);
+  // 手指走了 120px，chapter 1 末段应同样上移约 120px（加惯性余量），不会被甩出几个屏。
+  check(`${tag} viewport follows the finger across the promotion (no jump to the chapter end)`,
+    after.inHost && Math.abs((pre.top - after.top) - 120) < 200, { pre, after });
+  await page.close();
+}
+
 async function runOff(browser) {
   const page = await open(browser, false, false);
   await sleep(500);
@@ -482,6 +512,7 @@ try {
   await runSlowDragLateMount(browser, false);
   await runSlowDragLateMount(browser, true);
   await runShortNeighborBoundaryPull(browser);
+  await runTitleMarginSlowDrag(browser);
   await runOff(browser);
 } finally {
   await browser.close();
