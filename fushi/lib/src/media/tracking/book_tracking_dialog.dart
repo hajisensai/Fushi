@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveSegmentedButton;
@@ -21,6 +22,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaTrackingMappingRow;
+import 'package:fushi_engine/media/tracking/book_series_link.dart';
 import 'package:fushi_engine/media/tracking/book_tracking_link.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
@@ -28,26 +30,44 @@ import 'package:material_ui/material_ui.dart';
 
 /// Opens the Track view for one book or manga: per site, its link (unit,
 /// how it was made, change volume, unlink), the title matches waiting for
-/// approval, and a manual search (title, ID or link).
+/// approval, and a manual search (title, ID or link). A volume counted by
+/// its card's series link shows how it counts, read-only: the series link
+/// and its volumes are managed on the series card ([openSeriesCard]).
+/// [separateOn]: the site to link this volume on its own (search open).
 Future<void> showBookTrackingDialog(
   BuildContext context, {
   required MediaTrackingService service,
   required String bookKey,
+  String? separateOn,
+  TrackingSeriesCardOpener openSeriesCard = openTrackingSeriesCard,
 }) => showAppDialog<void>(
   context: context,
-  builder: (BuildContext context) =>
-      BookTrackingDialog(service: service, bookKey: bookKey),
+  builder: (BuildContext context) => BookTrackingDialog(
+    service: service,
+    bookKey: bookKey,
+    separateOn: separateOn,
+    openSeriesCard: openSeriesCard,
+  ),
 );
 
 class BookTrackingDialog extends StatefulWidget {
   const BookTrackingDialog({
     required this.service,
     required this.bookKey,
+    this.separateOn,
+    this.openSeriesCard = openTrackingSeriesCard,
     super.key,
   });
 
   final MediaTrackingService service;
   final String bookKey;
+
+  /// The site where this volume is linked on its own although its card's
+  /// series link counts it ("Link this volume separately" on the card).
+  final String? separateOn;
+
+  /// Opens the series card's page (where series links are managed).
+  final TrackingSeriesCardOpener openSeriesCard;
 
   @override
   State<BookTrackingDialog> createState() => _BookTrackingDialogState();
@@ -67,6 +87,10 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
       <String, TextEditingController>{};
   final Map<String, List<TrackingBookSubject>> _results =
       <String, List<TrackingBookSubject>>{};
+
+  /// The site where this volume is linked on its own although a series
+  /// link counts it ([BookTrackingDialog.separateOn]): its search shows.
+  late final String? _separate = widget.separateOn;
 
   MediaTrackingService get _service => widget.service;
 
@@ -161,6 +185,11 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
         if (mounted) setState(() => _results.remove(providerId));
       });
 
+  /// The series card's page, where its series links and the way each volume
+  /// counts are managed.
+  Future<void> _openSeriesCard(({int id, String name}) card) =>
+      widget.openSeriesCard(context, card.id, widget.bookKey);
+
   Future<void> _changeVolume(MediaTrackingMappingRow link) async {
     final String? value = await showFushiTextInputDialog(
       context: context,
@@ -247,7 +276,7 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
                     ],
                     if (overview.isPrivate) ...<Widget>[
                       const SizedBox(height: 8),
-                      _Note(
+                      TrackingNote(
                         icon: FushiIcons.lock,
                         text: t.media_tracking_track_private,
                       ),
@@ -351,12 +380,12 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
     );
     final List<Widget> notes = <Widget>[
       if (overview.ignored)
-        _Note(
+        TrackingNote(
           icon: FushiIcons.block,
           text: t.media_tracking_ignore_item_paused_note,
         ),
       if (overview.seriesIgnored && series != null)
-        _Note(
+        TrackingNote(
           icon: FushiIcons.block,
           text: t.media_tracking_ignore_series_paused_note(name: series.name),
         ),
@@ -426,9 +455,39 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
     final FushiTypography type = context.fushiType;
     final bool busy = _busy.contains(site.providerId);
     final MediaTrackingMappingRow? link = site.link;
+    final MediaTrackingMappingRow? seriesLink = site.seriesLink;
+    final TrackingSeriesMember? member = site.seriesMember;
     final bool usable = site.connected && site.kindEnabled;
     final bool paused = overview.ignored || overview.seriesIgnored;
     final List<TrackingBookSubject>? results = _results[site.providerId];
+    // Counted through the series link (no link of its own on the site).
+    final bool viaSeries = link == null && seriesLink != null;
+    final bool countedViaSeries = viaSeries && (member?.counted ?? false);
+    // A volume counted by a series link searches only when the user asks to
+    // link it on its own.
+    final bool searching =
+        usable &&
+        !overview.isPrivate &&
+        (!viaSeries || _separate == site.providerId);
+    final ({int id, String name})? card = overview.seriesCard;
+    final FushiTagTone badgeTone;
+    final IconData badgeIcon;
+    final String badgeText;
+    if (link != null || countedViaSeries) {
+      badgeTone = paused ? FushiTagTone.warning : FushiTagTone.success;
+      badgeIcon = paused ? FushiIcons.pause : FushiIcons.link;
+      badgeText = paused
+          ? t.media_tracking_ignore_paused
+          : t.media_tracking_track_linked;
+    } else if (viaSeries) {
+      badgeTone = FushiTagTone.warning;
+      badgeIcon = FushiIcons.block;
+      badgeText = t.tracking_series_badge_not_counted;
+    } else {
+      badgeTone = FushiTagTone.neutral;
+      badgeIcon = FushiIcons.linkOff;
+      badgeText = t.media_tracking_track_not_linked;
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -445,32 +504,23 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
             FushiTag(
               key: const ValueKey<String>('book-tracking-site-badge'),
               dense: true,
-              tone: link == null
-                  ? FushiTagTone.neutral
-                  : paused
-                  ? FushiTagTone.warning
-                  : FushiTagTone.success,
-              icon: link == null
-                  ? FushiIcons.linkOff
-                  : paused
-                  ? FushiIcons.pause
-                  : FushiIcons.link,
-              text: link == null
-                  ? t.media_tracking_track_not_linked
-                  : paused
-                  ? t.media_tracking_ignore_paused
-                  : t.media_tracking_track_linked,
+              tone: badgeTone,
+              icon: badgeIcon,
+              text: badgeText,
             ),
           ],
         ),
         const SizedBox(height: 8),
         if (!site.connected)
-          _Note(
+          TrackingNote(
             icon: FushiIcons.info,
             text: t.media_tracking_track_not_connected,
           )
         else if (!site.kindEnabled)
-          _Note(icon: FushiIcons.info, text: t.media_tracking_track_kind_off),
+          TrackingNote(
+            icon: FushiIcons.info,
+            text: t.media_tracking_track_kind_off,
+          ),
         if (link != null)
           _LinkTile(
             link: link,
@@ -478,13 +528,33 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
             onChangeVolume: () => unawaited(_changeVolume(link)),
             onUnlink: () => unawaited(_unlink(link)),
           ),
-        if (usable && !overview.isPrivate) ...<Widget>[
+        // The more specific link wins: this volume's own link counts it.
+        if (link != null &&
+            seriesLink != null &&
+            member?.state == TrackingSeriesMemberState.ownLink) ...<Widget>[
+          const SizedBox(height: 8),
+          TrackingNote(
+            key: ValueKey<String>(
+              'book-tracking-series-own-link-${site.providerId}',
+            ),
+            icon: FushiIcons.info,
+            text: t.tracking_series_state_own_link,
+          ),
+        ],
+        if (viaSeries) _buildSeriesLink(overview, site, seriesLink),
+        if (searching) ...<Widget>[
+          // On a series card without a series link here: a link made in
+          // this sheet covers this volume; the card links every volume.
+          if (card != null && seriesLink == null && link == null) ...<Widget>[
+            const SizedBox(height: 8),
+            _buildLinkSeriesHint(site, card),
+          ],
           if (link == null && site.suggestions.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
             Text(t.media_tracking_track_suggestions, style: type.labelLarge),
             const SizedBox(height: 4),
             for (int i = 0; i < site.suggestions.length; i++)
-              _SubjectTile(
+              TrackingSubjectTile(
                 index: i,
                 count: site.suggestions.length,
                 subject: subjectOfSuggestion(site.suggestions[i]),
@@ -505,7 +575,7 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
               ),
           ],
           const SizedBox(height: 8),
-          _SearchRow(
+          TrackingSearchRow(
             controller: _queries.putIfAbsent(
               site.providerId,
               () => TextEditingController(text: overview.searchQuery),
@@ -516,7 +586,7 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
           if (results != null && results.isEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: _Note(
+              child: TrackingNote(
                 icon: FushiIcons.search,
                 text: t.media_tracking_track_no_results,
               ),
@@ -524,7 +594,7 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
           if (results != null && results.isNotEmpty) ...<Widget>[
             const SizedBox(height: 8),
             for (int i = 0; i < results.length; i++)
-              _SubjectTile(
+              TrackingSubjectTile(
                 index: i,
                 count: results.length,
                 subject: results[i],
@@ -536,10 +606,140 @@ class _BookTrackingDialogState extends State<BookTrackingDialog> {
       ],
     );
   }
+
+  /// "Link the whole series on its card": a link made in this sheet covers
+  /// only this volume.
+  Widget _buildLinkSeriesHint(
+    BookTrackingSite site,
+    ({int id, String name}) card,
+  ) => Column(
+    key: ValueKey<String>('book-tracking-series-hint-${site.providerId}'),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: <Widget>[
+      TrackingNote(
+        icon: FushiIcons.info,
+        text: t.tracking_series_link_on_card_hint(series: card.name),
+      ),
+      FushiPressScale(
+        child: FushiTextButton.icon(
+          key: ValueKey<String>(
+            'book-tracking-series-open-card-${site.providerId}',
+          ),
+          onPressed: () => unawaited(_openSeriesCard(card)),
+          icon: const FushiIcon(FushiIcons.openInNew),
+          label: Text(t.tracking_series_manage_on_card),
+        ),
+      ),
+    ],
+  );
+
+  /// The series link that covers this volume on [site] (it has no link of
+  /// its own there): as which volume it counts, or why it is not counted.
+  /// Read-only: the series link and its volumes are managed on the card.
+  Widget _buildSeriesLink(
+    BookTrackingOverview overview,
+    BookTrackingSite site,
+    MediaTrackingMappingRow seriesLink,
+  ) {
+    final FushiTypography type = context.fushiType;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final String id = site.providerId;
+    final ({int id, String name})? card = overview.seriesCard;
+    final String seriesName = card?.name ?? seriesLink.mediaTitle;
+    final String siteName = _service.siteNameOf(id);
+    final TrackingSeriesMember? member = site.seriesMember;
+    final TrackingSeriesMemberState? state = member?.state;
+    final int? volume = member?.volume;
+    final bool counted = state == TrackingSeriesMemberState.counted;
+    final String? reason = state == null
+        ? null
+        : trackingSeriesStateLabel(state);
+    return FushiGroupedListItem(
+      key: ValueKey<String>('book-tracking-series-$id'),
+      index: 0,
+      count: 1,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: 4,
+          children: <Widget>[
+            Text(
+              counted && volume != null
+                  ? t.tracking_series_tracked_with(
+                      series: seriesName,
+                      site: siteName,
+                      volume: '$volume',
+                    )
+                  : t.tracking_series_link_header(
+                      series: seriesName,
+                      site: siteName,
+                    ),
+              key: ValueKey<String>('book-tracking-series-title-$id'),
+              style: type.bodyLargeEmphasized,
+            ),
+            Text(
+              <String>[
+                seriesLink.subjectName,
+                trackingLinkSourceLabel(seriesLink),
+                '#${seriesLink.subjectId}',
+              ].join(' · '),
+              style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
+            ),
+            if (counted && site.seriesByPosition)
+              TrackingNote(
+                icon: FushiIcons.info,
+                text: t.tracking_series_by_position,
+              ),
+            if (!counted && reason != null)
+              TrackingNote(
+                key: ValueKey<String>('book-tracking-series-reason-$id'),
+                icon: FushiIcons.block,
+                text: reason,
+              ),
+            if (counted)
+              TrackingNote(
+                icon: FushiIcons.info,
+                text: t.tracking_series_earlier_counted,
+              ),
+            if (card != null)
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: FushiPressScale(
+                  child: FushiTextButton.icon(
+                    key: ValueKey<String>('book-tracking-series-manage-$id'),
+                    onPressed: () => unawaited(_openSeriesCard(card)),
+                    icon: const FushiIcon(FushiIcons.openInNew),
+                    label: Text(t.tracking_series_manage_on_card),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
-class _Note extends StatelessWidget {
-  const _Note({required this.icon, required this.text});
+/// How [link] was made, in words (the user's choice, an approved or sure
+/// title match with its score, another site's id).
+String trackingLinkSourceLabel(MediaTrackingMappingRow link) {
+  final String percent = '${((link.confidence ?? 0) * 100).round()}';
+  return switch (link.linkSource) {
+    TrackingLinkSource.auto => t.media_tracking_track_source_auto(
+      percent: percent,
+    ),
+    TrackingLinkSource.suggestion => t.media_tracking_track_source_suggestion(
+      percent: percent,
+    ),
+    TrackingLinkSource.id => t.media_tracking_track_source_id,
+    _ => t.media_tracking_track_source_manual,
+  };
+}
+
+/// A small icon and a line of muted text.
+class TrackingNote extends StatelessWidget {
+  const TrackingNote({required this.icon, required this.text, super.key});
 
   final IconData icon;
   final String text;
@@ -578,20 +778,6 @@ class _LinkTile extends StatelessWidget {
   final VoidCallback onChangeVolume;
   final VoidCallback onUnlink;
 
-  static String sourceLabel(MediaTrackingMappingRow link) {
-    final String percent = '${((link.confidence ?? 0) * 100).round()}';
-    return switch (link.linkSource) {
-      TrackingLinkSource.auto => t.media_tracking_track_source_auto(
-        percent: percent,
-      ),
-      TrackingLinkSource.suggestion => t.media_tracking_track_source_suggestion(
-        percent: percent,
-      ),
-      TrackingLinkSource.id => t.media_tracking_track_source_id,
-      _ => t.media_tracking_track_source_manual,
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     final FushiTypography type = context.fushiType;
@@ -623,7 +809,7 @@ class _LinkTile extends StatelessWidget {
                               volume: '${link.progressOffset}',
                             )
                           : t.media_tracking_track_by_chapter,
-                      sourceLabel(link),
+                      trackingLinkSourceLabel(link),
                       '#${link.subjectId}',
                     ].join(' · '),
                     style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
@@ -653,8 +839,9 @@ class _LinkTile extends StatelessWidget {
 
 /// A suggestion ([score] set) or a search result: name, facts, and Link
 /// (plus "Not this one" for suggestions).
-class _SubjectTile extends StatelessWidget {
-  const _SubjectTile({
+class TrackingSubjectTile extends StatelessWidget {
+  const TrackingSubjectTile({
+    super.key,
     required this.index,
     required this.count,
     required this.subject,
@@ -769,8 +956,10 @@ class _SubjectTile extends StatelessWidget {
   }
 }
 
-class _SearchRow extends StatelessWidget {
-  const _SearchRow({
+/// The search box of a site (title, ID or link) and its Search button.
+class TrackingSearchRow extends StatelessWidget {
+  const TrackingSearchRow({
+    super.key,
     required this.controller,
     required this.busy,
     required this.onSearch,

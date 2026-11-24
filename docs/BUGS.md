@@ -38,6 +38,14 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5368](bugs/BUG-5368-sync-peer-offline-sweep-failure.md) | ✅ | ✅ | sync-peer-offline-sweep-failure |
+> 共 4670 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5369](bugs/BUG-5369-lyric-visualizer-style-desc-truncated.md) | ✅ | ✅ | lyric-visualizer-style-desc-truncated |
+| [BUG-5367](bugs/BUG-5367-music-visualizer-tap-exits.md) | ✅ | ✅ | 全屏歌词动画单击任意位置就退出 |
+| [BUG-5366](bugs/BUG-5366-curator-book-scrape-ignores-series-playlists.md) | ✅ | ✅ | 库管家补刮只认 collection 型合集、系列（playlist）各卷按卷名查而认不出 |
+| [BUG-5365](bugs/BUG-5365-library-agent-review-full-loop.md) | ✅ | ✅ | AI 助手自动全库复查把整库灌进一场对话爆上下文、失败不记进度无限重跑 |
 | [BUG-5364](bugs/BUG-5364-manga-popup-forwarded-keys-block-scroll.md) | ✅ | ✅ | manga-popup-forwarded-keys-block-scroll |
 | [BUG-5363](bugs/BUG-5363-srs-visible-sounds-zero-opacity-animation.md) | ✅ | ✅ | 整面卡面：关键帧 opacity 始终为 0 的动画被当淡入，隐藏发音进自动播放 |
 | [BUG-5362](bugs/BUG-5362-overlay-handoff-reading-mismatch.md) | ✅ | ✅ | 覆盖窗转交高级制卡：同表记异读音时定位到错词条 |
