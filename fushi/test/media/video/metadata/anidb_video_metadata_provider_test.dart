@@ -765,6 +765,78 @@ void main() {
         expect(apiCalls, 0);
       },
     );
+
+    test(
+      'flattens the AniDB tag tree to leaf tags and decodes backtick apostrophes',
+      () async {
+        // 反馈 hUnujr-N2h：BanG Dream! It`s MyGO!!!!!（aid 17981）详情页标签是
+        // 「musical band · dynamic · themes · setting · elements · time ·
+        // place …」、标题 / 集简介全是反引号。下面的 <tags> 是该作 AniDB XML
+        // 的原样子集（id / parentid / weight / 剧透标记照抄），外加一条剧透标签。
+        final _CatalogFixture fixture = await _catalogFixture();
+        addTearDown(fixture.dispose);
+        final AniDbVideoMetadataProvider provider = AniDbVideoMetadataProvider(
+          clientName: 'FushiTest',
+          clientVersion: 7,
+          language: 'en',
+          titleCatalog: fixture.catalog,
+          client: MockClient(
+            (http.Request request) async => http.Response.bytes(
+              utf8.encode(_backtickTagTreeAnimeXml),
+              200,
+              headers: const <String, String>{
+                'content-type': 'application/xml',
+              },
+            ),
+          ),
+        );
+        addTearDown(provider.close);
+        const VideoMetadataLookup lookup = VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.anidb,
+          externalId: '42',
+          mediaKind: VideoMetadataMediaKind.tv,
+        );
+
+        final VideoMetadataWork work = (await provider.fetchWork(lookup))!;
+        final List<VideoMetadataEpisode> episodes = await provider
+            .fetchEpisodes(lookup, seasonNumber: 1);
+
+        expect(work.keywords, <String>[
+          // weight 600 / 500 / 400，同权重按文档顺序。
+          'musical band',
+          'present',
+          'Japan',
+          'plot continuity',
+          'angst',
+          'performance',
+          // weight 0 的叶子标签照留。
+          'character driven',
+          'in medias res',
+          'dialogue driven',
+          'female protagonist',
+          'Japanese production',
+        ]);
+        expect(work.keywords, isNot(contains('twist ending')));
+
+        expect(work.title, "Bang Dream! It's MyGo!!!!!");
+        expect(work.originalTitle, "BanG Dream! It's MyGO!!!!!");
+        expect(work.plot, "Anon can't find a band.");
+        expect(work.studios, <String>["Sakigaki's Studio"]);
+        expect(
+          <String>[
+            ...work.aliases,
+            for (final VideoMetadataCredit credit in work.credits)
+              credit.person.name,
+          ].where((String value) => value.contains('`')),
+          isEmpty,
+        );
+        expect(episodes.single.title, "Haneoka's Quirky Girl");
+        expect(
+          episodes.single.plot,
+          "Everyone is surprised by Rāna's sudden declaration.",
+        );
+      },
+    );
   });
 }
 
@@ -883,6 +955,61 @@ const String _animeXml = '''
     <episode id="4299">
       <epno type="2">S1</epno>
       <title xml:lang="en">Special</title>
+    </episode>
+  </episodes>
+</anime>
+''';
+
+const String _backtickTagTreeAnimeXml = '''
+<?xml version="1.0" encoding="UTF-8"?>
+<anime id="42" restricted="false">
+  <type>TV Series</type>
+  <episodecount>1</episodecount>
+  <startdate>2023-06-29</startdate>
+  <description>Anon can`t find a band.</description>
+  <titles>
+    <title xml:lang="x-jat" type="main">Bang Dream! It`s MyGo!!!!!</title>
+    <title xml:lang="ja" type="official">BanG Dream! It`s MyGO!!!!!</title>
+    <title xml:lang="en" type="official">Bang Dream! It`s MyGo!!!!!</title>
+  </titles>
+  <tags>
+    <tag id="1876" parentid="2794" infobox="true" weight="600" localspoiler="false" globalspoiler="false" verified="true"><name>musical band</name></tag>
+    <tag id="2605" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>dynamic</name></tag>
+    <tag id="2607" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>themes</name></tag>
+    <tag id="2610" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>setting</name></tag>
+    <tag id="2611" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>elements</name></tag>
+    <tag id="2612" parentid="2610" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>time</name></tag>
+    <tag id="2613" parentid="2610" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>place</name></tag>
+    <tag id="2624" parentid="2612" weight="600" localspoiler="false" globalspoiler="false" verified="true"><name>present</name></tag>
+    <tag id="2630" parentid="2613" weight="600" localspoiler="false" globalspoiler="false" verified="true"><name>Earth</name></tag>
+    <tag id="2672" parentid="2834" weight="600" localspoiler="false" globalspoiler="false" verified="true"><name>Japan</name></tag>
+    <tag id="2790" parentid="2605" weight="600" localspoiler="false" globalspoiler="false" verified="true"><name>plot continuity</name></tag>
+    <tag id="2793" parentid="2883" infobox="true" weight="400" localspoiler="false" globalspoiler="false" verified="true"><name>performance</name></tag>
+    <tag id="2794" parentid="2883" infobox="true" weight="600" localspoiler="false" globalspoiler="false" verified="true"><name>music</name></tag>
+    <tag id="2834" parentid="2630" weight="600" localspoiler="false" globalspoiler="false" verified="true"><name>Asia</name></tag>
+    <tag id="2844" parentid="2611" infobox="true" weight="500" localspoiler="false" globalspoiler="false" verified="true"><name>angst</name></tag>
+    <tag id="2883" parentid="2607" infobox="true" weight="600" localspoiler="false" globalspoiler="false" verified="true"><name>the arts</name></tag>
+    <tag id="3683" parentid="2605" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>storytelling</name></tag>
+    <tag id="3809" parentid="2605" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>character driven</name></tag>
+    <tag id="3953" parentid="2605" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>in medias res</name></tag>
+    <tag id="3977" parentid="3683" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>dialogue driven</name></tag>
+    <tag id="5851" parentid="6230" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>female protagonist</name></tag>
+    <tag id="6173" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>origin</name></tag>
+    <tag id="6230" parentid="2605" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>cast</name></tag>
+    <tag id="7885" parentid="6173" weight="0" localspoiler="false" globalspoiler="false" verified="true"><name>Japanese production</name></tag>
+    <tag id="9001" parentid="3683" weight="400" localspoiler="true" globalspoiler="false" verified="true"><name>twist ending</name></tag>
+  </tags>
+  <creators>
+    <name id="12" type="Animation Work">Sakigaki`s Studio</name>
+  </creators>
+  <episodes>
+    <episode id="4201">
+      <epno type="1">1</epno>
+      <length>25</length>
+      <airdate>2023-06-29</airdate>
+      <summary>Everyone is surprised by Rāna`s sudden declaration.</summary>
+      <title xml:lang="en">Haneoka`s Quirky Girl</title>
+      <title xml:lang="ja">羽丘の不思議ちゃん</title>
     </episode>
   </episodes>
 </anime>
