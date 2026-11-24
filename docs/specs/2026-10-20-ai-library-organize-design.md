@@ -99,6 +99,14 @@
 
 **所有权只升不降**：`ai` / `rule` 一旦被用户编辑，就转成 `user`，永不回退。任何一个用户写入口（`renameMediaCollection`、`addToCollection`、`removeFromCollection`、`reorderCollectionItems`、拖拽、合并、详情页拆分）都执行这次转换。自动路径用的 `*Automatically` / AI 内部入口不转。这条单调性是 §8 收敛的前提。
 
+**`user` 合集：动它要用户显式同意（2026-11-24 拍板）**。原设计是「整理器永不移出 `user` 合集的成员、永不把它并掉」的硬禁令；用户 2026-11-24 拍板取消：「用户的合集整理器永远不能往外移成员 取消这个设定吧，我觉得让用户显式同意就行了吧，用户可以永远拒绝」。现在整理器 / 导入器想从 `user` 合集移出成员（如原盘导入把特典从剧集合集里拿出来，`reasonCode = disc_extra`），或收敛想把同键的 `user` 合集并掉，一律记成**待确认建议**（`library_organize_apply.dart`：`recordMemberRemovalProposals` / `recordOrganizeProposals`，进「整理记录」页顶部的待确认区与 `library.organize.proposals`），用户逐条决定：
+
+- **同意**：以用户身份执行（`userIntent: true`），移出前的位置与 pin 记进建议，提示条带「撤销」（`undoLibraryOrganizeProposal`：成员插回原位 / 合并拆回 / 改回原名，建议回到待确认）；
+- **这次不**：设备本地暂缓 7 天（`kOrganizeProposalDeferDuration`，整理记录表不同步，所以别的设备照常会提），期内同签名不再记、列表不显示，到期后可再提；
+- **永远不**：记为拒绝，并把相关成员钉住（`media_collection_items.pinned_by_user`：已有列、随合集清单同步、各端取或，「用户否决过移出」正是它的语义），所以任何设备都不再提。不加表、不加列。
+
+`ai` / `rule` 合集的行为不变（整理器直接改、可撤销）。
+
 ### 5.2 合集级墓碑加两列
 
 合集级删除墓碑是 `CollectionMemberTombstones` 里 `mediaType = entryKey = ''` 的哨兵行。给它加：
@@ -278,11 +286,12 @@ library_organize_changes(id, runId, kind 'create'|'add'|'merge'|'evict'|'tag',
 `convergeOrganizedCollections(CollectionManifest m)` 在两处运行：每次 `CollectionSyncEngine.merge` / `combinePeers` 之后，以及每次本地整理落盘之后。它只读清单里的 wire 字段，不读墙钟、不读本地库、不问 AI。
 
 1. 应用重定向：`organizeKey` 命中重定向的 `ai` / `rule` 合集，改写成目标键。
-2. 按 `(domain, organizeKey)` 分组。只考虑活着的 `ai` / `rule` 合集；`user` 合集不参与被合并，但同键的 `user` 合集存在时它就是胜方。
+2. 按 `(domain, organizeKey)` 分组。`ai` / `rule` 合集认主键与别名；`user` 合集只认主键（且相连双方主键相同）。同键的 `user` 合集存在时它就是胜方。
 3. 再按 §8.3 的重叠规则把组连通（并查集）。
 4. 每组选**胜方**：有 `user` 合集取 `user`（多个取名字字典序最小）；否则取外部 id 键优先、再按名字字典序最小。
 5. 胜方成员 = 组内全部成员的并集，减去任何一方的成员墓碑。墓碑在并集之后生效，所以用户在任何一端移出的成员都不会被并回来。
-6. 失败方变成合集级删除墓碑：`mergedIntoName = 胜方名`、`organizeKey = 失败方原键`、`deletedAt = 组内各合集已知时间戳的最大值`（不用 now）。
+5b. **失败方里的 `user` 合集不直接并**（2026-11-24 拍板，原为「`user` 合集永不当败方」）：规划纯函数 `planOrganizeConvergenceWithProposals` 把它们放进 `ConvergencePlan.proposals`，`convergeOrganizedCollections` 记成待确认的合并建议（自建 trigger `convergence` 的整理运行，同签名已在等确认 / 被拒绝的不重复记），用户同意才并（§5.1「`user` 合集：动它要用户显式同意」）。成员全被钉住（`pinned_by_user`）的 `user` 合集不再当败方提——「永远不」对合并建议 = 把败方成员全钉住，钉住随同步取或，所以拒绝在各端一致、规划仍是各端独立算出同一结果的幂等纯函数。拍板原话：「用户的合集整理器永远不能往外移成员 取消这个设定吧，我觉得让用户显式同意就行了吧，用户可以永远拒绝」。
+6. 失败方（`ai` / `rule`）变成合集级删除墓碑：`mergedIntoName = 胜方名`、`organizeKey = 失败方原键`、`deletedAt = 组内各合集已知时间戳的最大值`（不用 now）。
 7. 胜方的展示名不改。名字是 wire 自然键的一部分，改名等于删了重建，会制造新的分叉。
 
 第 6 步的时间戳可能早于某个对端的同步基线，按现有「早于基线且对端活着 ⇒ 复活」规则，失败方会在那一端被救回来。这没关系：规整在每次合并后都会重跑，失败方仍然同键或仍然重叠，会被立刻再并一次。复活不会造成永久分叉，最多多一轮同步。PR 2 的性质测试要专门覆盖这条路径。
@@ -382,7 +391,7 @@ library_organize_changes(id, runId, kind 'create'|'add'|'merge'|'evict'|'tag',
 
 | 层 | 测试 |
 |---|---|
-| 收敛纯函数（重点） | 性质测试：随机生成 3–5 个设备的清单（随机键、成员、墓碑、所有权），对任意合并顺序 + 任意次数的 `converge`，结果逐字节相同（交换律、结合律、幂等）；用户合集永不被删；成员墓碑永不被并回 |
+| 收敛纯函数（重点） | 性质测试：随机生成 3–5 个设备的清单（随机键、成员、墓碑、所有权），对任意合并顺序 + 任意次数的 `converge`，结果逐字节相同（交换律、结合律、幂等）；用户合集不被自动删（只出待确认合并建议，2026-11-24）；成员墓碑永不被并回 |
 | 同步兼容 | 旧对端丢掉 `origin` / `organizeKey` 后回传清单，新端不丢键、不把 `ai` 降成未知 |
 | 拒绝传播 | A 撤销，B 同步后同键 `ai` 合集被删；B 那边已转成 `user` 时不删只记拒绝 |
 | 引擎纯函数 | prompt 构造快照；回复解析（围栏、多余散文、越界下标、重复成员、空数组）；校验裁决逐条一个用例；键归一化（全角、片假名、空白） |

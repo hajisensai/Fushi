@@ -1,5 +1,9 @@
 import 'package:fushi_engine/media/media_extensions.dart'
     show isAudioOnlyMediaPath;
+import 'package:fushi_engine/media/video/bluray/bluray_episode.dart'
+    show isBlurayEpisodePath;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show discRootForMemberPath;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 
 /// 合集内分季分组的**单一真相源**：键派生规则、多组判定、分节构建、按季重排。
@@ -48,6 +52,58 @@ String collectionGroupKeyForFilename(String filename) {
   final VideoNameInfo info = parseVideoPath(filename);
   return collectionSeasonGroupKey(season: info.season, episode: info.episode);
 }
+
+/// 一批成员路径的分组键：逐个按 [collectionGroupKeyForFilename] 派生，再按原盘结构
+/// 修正（BUG-5391）。「全部播放」被切成各集的蓝光盘上，分集成员
+/// （`00001.p03.mpls`，[isBlurayEpisodePath]）是正片 → 第 1 季；同一张盘上没切的
+/// 整条播放列表（`00005.mpls`）是特典 → PV·特典——与选片第 7b 步（切了集的盘上
+/// 整条标题一律降为特典）同一判据。原盘成员路径里的数字是播放列表号，逐个派生解不出
+/// 集号，全落进 PV·特典组，正片与特典混排、特典占集号。
+///
+/// 只看本批里的路径（纯函数，无 IO）：没有分集成员的盘、非原盘成员照旧逐个派生。
+/// 返回值与 [paths] 同序、同长。手动分栏 / 季集指定照样叠在它上面
+/// （[resolveCollectionSection]）。
+List<String> collectionGroupKeysForPaths(List<String> paths) {
+  final Set<String> splitDiscs = _splitDiscRoots(paths);
+  return <String>[
+    for (final String path in paths)
+      switch (_splitDiscRole(path, splitDiscs)) {
+        true => 's1',
+        false => kCollectionExtrasGroupKey,
+        null => collectionGroupKeyForFilename(path),
+      },
+  ];
+}
+
+/// 一批成员路径（合集内顺序）里原盘分集的显示集号：「全部播放」被切成各集的蓝光盘上
+/// 的分集成员按出现顺序编 1、2、3…（跨盘接着数，与刮削计划
+/// `discOrdinalEpisodeOverrides` 按合集顺序编号同一口径）；同盘特典、别的成员（用户
+/// 自己加进来的普通视频按文件名定号）为 null。返回值与 [paths] 同序、同长。
+List<int?> discEpisodeOrdinalsOf(List<String> paths) {
+  final Set<String> splitDiscs = _splitDiscRoots(paths);
+  int next = 0;
+  return <int?>[
+    for (final String path in paths)
+      _splitDiscRole(path, splitDiscs) == true ? ++next : null,
+  ];
+}
+
+/// [paths] 里带分集成员的盘根（小写、`/` 分隔）。
+Set<String> _splitDiscRoots(List<String> paths) => <String>{
+  for (final String path in paths)
+    if (isBlurayEpisodePath(path))
+      if (discRootForMemberPath(path) case final String root) _rootKey(root),
+};
+
+/// [path] 在切了集的盘上时：分集 → true、整条标题 → false；否则 null。
+bool? _splitDiscRole(String path, Set<String> splitDiscs) {
+  if (splitDiscs.isEmpty) return null;
+  final String? root = discRootForMemberPath(path);
+  if (root == null || !splitDiscs.contains(_rootKey(root))) return null;
+  return isBlurayEpisodePath(path);
+}
+
+String _rootKey(String root) => root.replaceAll(r'\', '/').toLowerCase();
 
 /// 组键还原季号：`s<N>` → N；[kCollectionExtrasGroupKey] / 未知格式 → null。
 int? seasonNumberOfGroupKey(String groupKey) {

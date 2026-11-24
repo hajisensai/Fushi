@@ -18791,7 +18791,8 @@ class MediaCollectionRow extends DataClass
 
   /// 合集由谁建 / 归谁管（schema v124，AI 整理库 spec
   /// `docs/specs/2026-10-20-ai-library-organize-design.md` §5.1）：
-  /// `user`（用户或其它非整理器路径建的，整理器永不改它）/ `rule`（规则归组器）/
+  /// `user`（用户或其它非整理器路径建的；整理器 / 导入器要移出它的成员或把它并掉时
+  /// 只记待确认建议，用户同意才执行，2026-11-24 拍板）/ `rule`（规则归组器）/
   /// `ai`（AI 整理）/ `folder`（目录自动合集）。**只升不降**：`ai` / `rule` 合集一旦
   /// 被用户编辑（加减成员、改名、手动排序、合并）就转成 `user`，跨端同步按秩取大
   /// （[collectionOriginRank]），所以转过的永远转不回来。迁移时存量行一律 `user`、

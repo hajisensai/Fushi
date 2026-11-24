@@ -139,7 +139,8 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
         'undone': await undoLibraryOrganizeRun(database(), id),
       };
     }),
-    // 待确认的合集级建议（AI 库管家设计稿 §8：用户合集的合并 / 改名）。
+    // 待确认的合集级建议（AI 库管家设计稿 §8：用户合集的合并 / 改名 / 移出成员；
+    // 用户 2026-11-24 拍板：动用户合集一律等用户同意 / 这次不 / 永远不）。
     CtlRoute.get('$kLibraryOrganizeCtlRoot/proposals', (CtlCall call) async {
       return <String, Object?>{
         'proposals': <Object?>[
@@ -154,21 +155,50 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
     }),
     CtlRoute.post(
       '$kLibraryOrganizeCtlRoot/proposals/:id/accept',
-      (CtlCall call) => _resolveProposal(call, database, isReadonly, true),
+      (CtlCall call) => _resolveProposal(
+        call,
+        database,
+        isReadonly,
+        OrganizeProposalDecision.accept,
+      ),
     ),
+    // 「这次不」：设备本地暂缓 [kOrganizeProposalDeferDuration]。
+    CtlRoute.post(
+      '$kLibraryOrganizeCtlRoot/proposals/:id/defer',
+      (CtlCall call) => _resolveProposal(
+        call,
+        database,
+        isReadonly,
+        OrganizeProposalDecision.defer,
+      ),
+    ),
+    // 「永远不」（路径沿用 reject）：记为拒绝并钉住相关成员。
     CtlRoute.post(
       '$kLibraryOrganizeCtlRoot/proposals/:id/reject',
-      (CtlCall call) => _resolveProposal(call, database, isReadonly, false),
+      (CtlCall call) => _resolveProposal(
+        call,
+        database,
+        isReadonly,
+        OrganizeProposalDecision.rejectForever,
+      ),
     ),
+    // 撤销一条已接受的建议，建议回到等确认。
+    CtlRoute.post('$kLibraryOrganizeCtlRoot/proposals/:id/undo', (
+      CtlCall call,
+    ) async {
+      final int id = _proposalId(call, isReadonly);
+      if (!await undoLibraryOrganizeProposal(database(), id)) {
+        throw const CtlFailure.notFound('没有这条已接受、还能撤销的建议');
+      }
+      return <String, Object?>{
+        'id': id,
+        'state': OrganizeProposalState.pending.name,
+      };
+    }),
   ];
 }
 
-Future<Map<String, Object?>> _resolveProposal(
-  CtlCall call,
-  FushiDatabase Function() database,
-  bool Function()? isReadonly,
-  bool accept,
-) async {
+int _proposalId(CtlCall call, bool Function()? isReadonly) {
   final int? id = int.tryParse(call.params['id'] ?? '');
   if (id == null || id <= 0) {
     throw const CtlFailure.badRequest('建议 id 必须是正整数');
@@ -176,10 +206,20 @@ Future<Map<String, Object?>> _resolveProposal(
   if (isReadonly?.call() ?? false) {
     throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
   }
+  return id;
+}
+
+Future<Map<String, Object?>> _resolveProposal(
+  CtlCall call,
+  FushiDatabase Function() database,
+  bool Function()? isReadonly,
+  OrganizeProposalDecision decision,
+) async {
+  final int id = _proposalId(call, isReadonly);
   final OrganizeProposalState? state = await resolveLibraryOrganizeProposal(
     database(),
     id,
-    accept: accept,
+    decision: decision,
   );
   if (state == null) {
     throw const CtlFailure.notFound('没有这条待确认建议（或已处理过）');

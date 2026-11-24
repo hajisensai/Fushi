@@ -45,9 +45,9 @@ class LibraryOrganizeResult {
   /// 落了几处改动（不含待确认建议）。
   final int changes;
 
-  /// 这次新产出的待用户确认的合集级建议数。AI 管库 v3（§2.2）起合并 / 改名直接执行、
-  /// 不再产出建议，恒为 0；字段留给读它的线上结果（`library.organize.run` /
-  /// 库管家汇报）保持形状。
+  /// 这次新产出的待用户确认的合集级建议数。AI 管库 v3（§2.2）起 AI 的合并 / 改名
+  /// 直接执行、不再产出建议；只剩收敛想把同键的用户合集并掉时记的合并建议（用户
+  /// 2026-11-24 拍板：动用户合集要用户显式同意）。
   final int proposals;
   final int requests;
   final String? error;
@@ -125,6 +125,7 @@ class LibraryOrganizeService {
           ),
         );
     int changes = 0;
+    int proposals = 0;
     int requests = 0;
     int inputTokens = 0;
     int outputTokens = 0;
@@ -219,14 +220,21 @@ class LibraryOrganizeService {
       }
       // ③ 本机同系列整理器合集合成一个（与同步后同一套收敛规划），并记进这次的整理
       // 记录——撤销整次整理时这些合并也能还原。
+      // 同组里别的用户合集不并，记成待确认的合并建议（用户 2026-11-24 拍板）。
+      final ConvergencePlan convergence = planOrganizeConvergenceWithProposals(
+        await loadConvergenceCollections(db),
+      );
+      proposals = await recordOrganizeProposals(
+        db,
+        runId: runId,
+        proposals: convergenceOrganizeProposals(convergence.proposals),
+      );
       touched.addAll(
         await applyOrganizeActions(
           db,
           runId: runId,
           actions: <OrganizeAction>[
-            for (final ConvergenceMerge m in planOrganizeConvergence(
-              await loadConvergenceCollections(db),
-            ))
+            for (final ConvergenceMerge m in convergence.merges)
               OrganizeAction(
                 kind: OrganizeActionKind.merge,
                 source: 'rule',
@@ -269,6 +277,7 @@ class LibraryOrganizeService {
       status: status,
       runId: runId,
       changes: changes,
+      proposals: proposals,
       requests: requests,
       error: error,
       touchedCollectionIds: touched,

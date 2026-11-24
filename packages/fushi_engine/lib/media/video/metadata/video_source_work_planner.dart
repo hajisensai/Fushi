@@ -192,6 +192,11 @@ class VideoSourceWorkPlanner {
       final bool discWork = entry.value.every(
         (VideoBookRow book) => isDiscMemberPath(book.videoPath),
       );
+      // 盘合集里混着用户自己加进来的普通视频（BUG-5391）：仍是这部作品，按合集顺序
+      // 排、不按「装着不同作品的清单」拆开。
+      final bool hasDiscMember = entry.value.any(
+        (VideoBookRow book) => isDiscMemberPath(book.videoPath),
+      );
       if (discWork && entry.value.length == 1) {
         // 电影盘：盘合集里除正片外的标题都是特典（[discMemberExtras] 已剔除），
         // 剩下的唯一正片就是这部电影本身，与修前同形（书作品），特典挂在它下面。
@@ -205,7 +210,7 @@ class VideoSourceWorkPlanner {
         );
         continue;
       }
-      if (!discWork &&
+      if (!hasDiscMember &&
           _membersAreDifferentWorks(entry.value) &&
           !await _collectionHasIdentity(collection.id)) {
         // 清单合集装的是几部不同的作品（「剧场版合集」「观看顺序」这类 m3u8：
@@ -225,7 +230,7 @@ class VideoSourceWorkPlanner {
         continue;
       }
       entry.value.sort((VideoBookRow a, VideoBookRow b) {
-        if (discWork) {
+        if (hasDiscMember) {
           final int byIndex = (sortIndex[(entry.key, a.bookUid)] ?? 0)
               .compareTo(sortIndex[(entry.key, b.bookUid)] ?? 0);
           if (byIndex != 0) return byIndex;

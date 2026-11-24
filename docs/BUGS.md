@@ -44,6 +44,7 @@
 |---|:--:|:--:|---|
 | [BUG-5389](bugs/BUG-5389-update-install-ui-freeze-rm-getlist.md) | ✅ | ✅ | 更新下载完成后交给安装器前窗口「未响应」：Restart Manager 查询在主 isolate 同步跑 |
 | [BUG-5388](bugs/BUG-5388-windows-silent-process-vanish.md) | 🚧 | 🚧 | Windows 阅读中进程无声消失：无 dump、无 WER、无 exitReason |
+| [BUG-5391](bugs/BUG-5391-bluray-episodic-disc-bonus-takes-episode-number.md) | ✅ | ✅ | bluray-episodic-disc-bonus-takes-episode-number |
 > 共 4699 条。点号进各自文件。
 > 共 4700 条。点号进各自文件。
 

@@ -536,10 +536,14 @@ class _VideoOrganizeCtl {
       for (final VideoBookRow row in members)
         if (!railExtras.contains(row.bookUid)) row,
     ];
+    // 整批派生（[collectionGroupKeysForPaths]，与合集详情页分栏同一判据）：切了集的
+    // 原盘上分集进第 1 季、整条标题进 PV·特典（BUG-5391）。
+    final List<String> derived = collectionGroupKeysForPaths(<String>[
+      for (final VideoBookRow row in listed) row.videoPath,
+    ]);
     final Map<String, CollectionSectionResolution> resolved =
         await loadCollectionSections(_db, <String, String>{
-          for (final VideoBookRow row in listed)
-            row.bookUid: collectionGroupKeyForFilename(row.videoPath),
+          for (int i = 0; i < listed.length; i++) listed[i].bookUid: derived[i],
         });
     final Map<String, VideoEpisodeBindingOverrideRow> pins = await _db
         .getVideoEpisodeBindingOverrides(
@@ -705,10 +709,12 @@ class _VideoOrganizeCtl {
       return snapshot;
     });
     _db.notifyVideoLibraryChanged();
+    final List<String> derived = collectionGroupKeysForPaths(<String>[
+      for (final VideoBookRow row in rows) row.videoPath,
+    ]);
     final Map<String, CollectionSectionResolution> after =
         await loadCollectionSections(_db, <String, String>{
-          for (final VideoBookRow row in rows)
-            row.bookUid: collectionGroupKeyForFilename(row.videoPath),
+          for (int i = 0; i < rows.length; i++) rows[i].bookUid: derived[i],
         });
     return <String, Object?>{
       'applied': key,
