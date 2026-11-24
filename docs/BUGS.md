@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4684 条。点号进各自文件。
+> 共 4685 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5392](bugs/BUG-5392-backup-merge-source-id-cross-db.md) | ✅ | ✅ | 备份合并导入把书 / 视频的 source_id（备份库来源自增 id）原样搬进本机，挂到不相干的来源上 |
 | [BUG-5385](bugs/BUG-5385-lyrics-illustration-viewer-stale-reached.md) | ✅ | ✅ | 有声书插图大图浏览打开期间新走过的插图看不到（只列已听到的、且不随播放刷新） |
 | [BUG-5384](bugs/BUG-5384-manga-ocr-page-identity.md) | ✅ | ✅ | manga-ocr-page-identity |
 | [BUG-5383](bugs/BUG-5383-develop-import-cycle-627.md) | ✅ | ✅ | develop import 环守卫红：最大环 627 > 上限 623 |
