@@ -734,7 +734,7 @@ class MihonManager extends ChangeNotifier {
           '$packageName.${desktop ? 'apk' : 'ext'}',
         );
         // 扩展行与它的源列表一起提交：中途失败（含换库 / 关库把后台自动更新打断，
-        // BUG-5406）整体回滚，不留「行已是新版、源列表还是旧版」的半截状态——下面的
+        // BUG-5449）整体回滚，不留「行已是新版、源列表还是旧版」的半截状态——下面的
         // catch 会把桌面端 APK 回滚成旧版，库里也必须仍是旧版。
         await database.transaction(() async {
           await database.upsertMangaExtension(

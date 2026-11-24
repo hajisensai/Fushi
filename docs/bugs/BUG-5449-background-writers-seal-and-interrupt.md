@@ -1,4 +1,4 @@
-## BUG-5406 · background-writers-seal-and-interrupt
+## BUG-5449 · background-writers-seal-and-interrupt
 - **报告**：2026-11-24（用户：拍板台 review-merge-1124-leftovers 第 1 条「全部根本性修复」，#4364 审查遗留）
 - **真实性**：✅ 真缺陷（BUG-5387 修复的覆盖面不全）。BUG-5387 只把来源扫描、视频刮削 / 补刮、整文件哈希、封面回填、响度测量接进 `DatabaseBackgroundWork`；番剧下载入库（`fushi/lib/src/media/torrent/anime_download_importer.dart` 的 `buildAnimeDownloadImporter` 闭包，海报下载 + 首集抽帧之间穿插写库）、sidecar 封面（`cover_scraper_service.dart` 的 `applySidecarCover`）、在线视频源 / 媒体服务器入库（`anime_source_library.dart` / `media_server_library.dart` 的 `addMissing`、`registerDownloaded`，后台新集探针也走这里）、IPTV 台标回填（`iptv_playlist_import.dart` 的 `applyIptvChannelLogos`）、音乐整库识别（`music_scrape_service.dart` 的 `scrapeLibrary`）、更新探针（`app_model.dart` 的 `startUpdateChecks`）都没登记，换库时照样撞已关连接。更根本的是「登记」靠每个写手自觉：拦截器只拦已取消工作 Zone 里的 SQL，漏登记的写手在 `FushiDatabase.close()` 之后发 SQL 拿到的仍是 drift 的「connection was closed」。另外登记过的工作里，刮削 / 入库的网络请求（`createAppHttpIoClient` 出的 client）与 FFmpeg 抽帧子进程（`ffmpeg_backend.dart` 的 `_runToolProcess`、`ffmpeg_watched_run.dart`、移动端 `ffmpeg_kit_backend.dart`）不受取消约束，关库要等它们自然结束——数据根迁移的 10 秒关库超时后子进程仍可能占着库目录里的文件。
 - **[x] ① 已修复** — 三层：

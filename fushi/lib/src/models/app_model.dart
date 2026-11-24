@@ -8230,7 +8230,7 @@ class AppModel
                   ) {
                     // 探针登记成库的后台工作（[_probesAsDatabaseWork]）：换库 / 关库时
                     // 和「用户开始用在线源」一样在下一条之前停下，不让关库等整批
-                    // APK 下载安装跑完（BUG-5406）。
+                    // APK 下载安装跑完（BUG-5449）。
                     final DatabaseWorkToken? work = DatabaseWorkToken.current;
                     return manager.installMany(
                       targets,

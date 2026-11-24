@@ -207,7 +207,7 @@ void main() {
     skip: !(Platform.isWindows || Platform.isMacOS),
   );
 
-  test('BUG-5406：源列表写不进去时扩展行一起回滚，库里不留「行已是新版、源还是旧版」', () async {
+  test('BUG-5449：源列表写不进去时扩展行一起回滚，库里不留「行已是新版、源还是旧版」', () async {
     await _seedInstalled(database, versionCode: 5, signer: 'aabb');
     await database.trustMangaSigner(
       MangaTrustedSignersCompanion.insert(

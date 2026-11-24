@@ -96,7 +96,7 @@ void installNoVideoCoverBackfill() {
 /// 后台工作（[DatabaseBackgroundWork.debugReleaseWorkInStalledZones]）。
 ///
 /// 组件测试用例体里触发的登记后台工作（sidecar 封面、下载入库、媒体服务器 / 在线源
-/// 入库……，BUG-5406 起全部经 `runBackgroundWork` 登记），真实 I/O 完成后的续体排进
+/// 入库……，BUG-5449 起全部经 `runBackgroundWork` 登记），真实 I/O 完成后的续体排进
 /// 用例的 FakeAsync 队列，用例体结束后没人再推；tearDown 的 `db.close()` 等它就永远
 /// 挂死。这里一次覆盖所有登记写手：关库时对仍在跑的工作做一次确定性的 Zone 推进探针，
 /// 不推进的放掉（库已封口，它即便被推也写不进库）；能推进的照样等到退出。
