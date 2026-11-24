@@ -859,11 +859,15 @@ class DiscLibraryImporter {
 
   /// 按分组键 [organizeKey] 找回这组盘的合集，找不到就新建（`origin = rule`、带键、
   /// 名字取 [nameCandidates] 里第一个没被占的）。找回的顺序：
-  /// 1. 修前建的无键合集（[_adoptableCollection]）认领一次：挂上键、`origin` 原样
-  ///    （存量的多半是 `user`）；
-  /// 2. 持有这个键的合集（`collectionHoldingOrganizeKey`，与整理收敛同一判据：整理器
+  /// 1. 持有这个键的合集（`collectionHoldingOrganizeKey`，与整理收敛同一判据：整理器
   ///    合集认主键与别名，用户合集只认主键——改过名的、被 AI 并进别的合集的都在这）；
-  /// 3. 别名里带这个键、成员也确实是这组盘的合集（用户接手了吸收过它的合集）。
+  /// 2. 别名里带这个键、成员也确实是这组盘的合集（用户接手了吸收过它的合集）；
+  /// 3. 都没有时，修前建的无键合集（[_adoptableCollection]）认领一次：挂上键、
+  ///    `origin` 原样（存量的多半是 `user`）。
+  ///
+  /// 认领只在键还没有归属时做：键已有主时再去认领无键合集，会把用户另建的同组合集
+  /// （拆分合集时「保留原合集」拆出来的「第 1 季」）也挂上同一个键——用户合集在胜方
+  /// 序里排最前，下一轮收敛就把原合集整个并进那个拆出来的合集。
   /// 用户删过（同名合集墓碑 / 分组键被拒绝）且不恢复时返回 null。
   Future<_DiscCollection?> _resolveDiscCollection({
     required String organizeKey,
@@ -874,26 +878,17 @@ class DiscLibraryImporter {
     required int? sourceId,
     required bool restoreDissolvedGroups,
   }) async {
-    final Set<String> wanted = <String>{
-      for (final PlaylistEntry entry in entries) normalizeVideoPath(entry.path),
-    };
-    final ({MediaCollectionRow? keyless, MediaCollectionRow? aliased}) found =
-        await _adoptableCollection(
+    final MediaCollectionRow? existing =
+        await collectionHoldingOrganizeKey(_db, organizeKey) ??
+        await _adoptCollection(
           organizeKey: organizeKey,
-          wantedPaths: wanted,
+          wantedPaths: <String>{
+            for (final PlaylistEntry entry in entries)
+              normalizeVideoPath(entry.path),
+          },
           owns: owns,
           minDiscRoots: minDiscRoots,
         );
-    if (found.keyless case final MediaCollectionRow legacy) {
-      await _db.setMediaCollectionOrganizeState(
-        legacy.id,
-        origin: CollectionOrigin.parse(legacy.origin),
-        organizeKey: organizeKey,
-        organizeAliases: decodeOrganizeAliases(legacy.organizeAliases),
-      );
-    }
-    final MediaCollectionRow? existing =
-        await collectionHoldingOrganizeKey(_db, organizeKey) ?? found.aliased;
     if (existing != null) {
       return _DiscCollection(
         id: existing.id,
@@ -930,6 +925,34 @@ class DiscLibraryImporter {
       title: name,
     );
     return _DiscCollection(id: result.collectionId, name: name, created: true);
+  }
+
+  /// 键还没有归属时（[collectionHoldingOrganizeKey] 找不到）认回这组盘的合集：别名里
+  /// 带键的优先（它已在整理身份层里）；否则把修前的无键合集认领下来、挂上键。都没有
+  /// 返回 null。
+  Future<MediaCollectionRow?> _adoptCollection({
+    required String organizeKey,
+    required Set<String> wantedPaths,
+    required bool Function(String discRoot) owns,
+    required int minDiscRoots,
+  }) async {
+    final ({MediaCollectionRow? keyless, MediaCollectionRow? aliased}) found =
+        await _adoptableCollection(
+          organizeKey: organizeKey,
+          wantedPaths: wantedPaths,
+          owns: owns,
+          minDiscRoots: minDiscRoots,
+        );
+    if (found.aliased case final MediaCollectionRow aliased) return aliased;
+    final MediaCollectionRow? legacy = found.keyless;
+    if (legacy == null) return null;
+    await _db.setMediaCollectionOrganizeState(
+      legacy.id,
+      origin: CollectionOrigin.parse(legacy.origin),
+      organizeKey: organizeKey,
+      organizeAliases: decodeOrganizeAliases(legacy.organizeAliases),
+    );
+    return _db.getMediaCollectionById(legacy.id);
   }
 
   /// 修前（没有分组键时）建的、这组盘的合集。只看 `playlist` 合集（导入器只建这种），

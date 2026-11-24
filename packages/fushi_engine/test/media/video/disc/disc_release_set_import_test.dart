@@ -9,6 +9,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart';
+import 'package:fushi_engine/media/collections/library_organize/organize_convergence.dart'
+    show convergeOrganizedCollections;
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
 import 'package:fushi_engine/media/video/disc/disc_library_import.dart';
 import 'package:fushi_engine/media/video/disc/disc_release_set.dart';
@@ -794,6 +796,39 @@ void main() {
       expect(again.discs.first.collectionId, id);
       expect(await db.getAllMediaCollections(), hasLength(1));
       expect(await memberPaths(id), episodesOf(<int>[1, 2, 3]));
+    });
+
+    test('键已有主时不再认领无键合集：拆分时保留原合集拆出来的「第 1 季」不挂键、不被收敛并掉原合集', () async {
+      final int id = (await import(<String>[
+        volume(1),
+        volume(2),
+      ])).discs.first.collectionId;
+      // 合集详情页「拆分」并勾「保留原合集」：拆出来的是用户的无键 playlist 合集，
+      // 成员与原合集逐个相同。
+      final int split = await db.createMediaCollection(
+        '第 1 季',
+        collectionType: 'playlist',
+      );
+      for (final MediaCollectionItemRow item in await db.getCollectionItems(
+        id,
+      )) {
+        await db.addToCollection(split, MediaKind.video, item.entryKey);
+      }
+
+      final DiscLibraryImportReport again = await import(<String>[
+        volume(1),
+        volume(2),
+        volume(3),
+      ]);
+      expect(again.discs.first.collectionId, id);
+      final MediaCollectionRow kept = (await db.getMediaCollectionById(split))!;
+      expect(kept.organizeKey, isNull, reason: '键已归原合集，拆出来的合集不认领');
+      expect(await memberPaths(split), episodesOf(<int>[1, 2]));
+      expect(await memberPaths(id), episodesOf(<int>[1, 2, 3]));
+
+      expect(await convergeOrganizedCollections(db), 0);
+      expect(await db.getMediaCollectionById(id), isNotNull);
+      expect(await db.getMediaCollectionById(split), isNotNull);
     });
 
     test('被 AI 并进别的合集（键进别名）：重扫认回那个合集', () async {
