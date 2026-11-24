@@ -4184,6 +4184,21 @@ jobs:
             fushi/build/release-artifacts/fushi-*-macos-arm64.zip
             fushi/build/release-artifacts/fushi-*-macos-arm64.dmg
             fushi/build/release-artifacts/fushi-*-ios.ipa
+      # 拍板台 RRYro9vSEU：Releases 列表按 tag 所指提交的日期排，rolling tag 一直指着
+      # 2026-08-10 的提交，调试版沉在第 40 条左右。每次发完把 tag 挪到一个「现在」的
+      # 提交（tree = 默认分支）上，release id / 资产 / 下载链接都不动、没有窗口期。
+      # 失败只 ::warning（资产已发完，排序只是展示），下一次发布自愈。理由与实测见脚本头注释。
+      - name: Bump rolling debug tag to keep it near the top of Releases
+        if: steps.channel.outputs.publish_managed_release == 'true' && steps.channel.outputs.rolling_debug == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PUBLISH_TAG: ${{ steps.channel.outputs.publish_tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BUILD_SHA: ${{ github.sha }}
+        run: bash tool/bump_rolling_release_tag.sh
       # TODO-705: publish a mirror update manifest so beta/debug in-China update
       # checks succeed (raw.githubusercontent.com is proxiable; api.github.com
       # /releases is mirror-403'd, BUG-292). This pushes a DATA FILE to the
