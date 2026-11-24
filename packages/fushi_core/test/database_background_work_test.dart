@@ -9,6 +9,27 @@ import 'package:test/test.dart';
 
 FushiDatabase _memoryDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
+/// 一个「不再推进」的 Zone：微任务进它自己的队列、没人冲（组件测试用例体结束后的
+/// FakeAsync Zone 就是这样）。[flush] 手动把攒下的微任务跑掉。
+final class _ParkedZone {
+  final List<void Function()> _queue = <void Function()>[];
+
+  late final Zone zone = Zone.current.fork(
+    specification: ZoneSpecification(
+      scheduleMicrotask:
+          (Zone self, ZoneDelegate parent, Zone zone, void Function() f) {
+            _queue.add(() => zone.run(f));
+          },
+    ),
+  );
+
+  void flush() {
+    while (_queue.isNotEmpty) {
+      _queue.removeAt(0)();
+    }
+  }
+}
+
 void main() {
   test('close() 取消并等待在跑的后台写手，取消后的写入一条都不落库', () async {
     final FushiDatabase db = _memoryDb();
@@ -348,5 +369,112 @@ void main() {
     final Object? error = await outcome;
     expect(error, isA<DatabaseWorkCancelledException>());
     expect((error! as DatabaseWorkCancelledException).label, 'test.fetch');
+  });
+
+  group('debugReleaseWorkInStalledZones（测试宿主：用例体 Zone 不再推进）', () {
+    tearDown(
+      () => DatabaseBackgroundWork.debugReleaseWorkInStalledZones = false,
+    );
+
+    /// 在 [parked] 里开一份工作，等一个在工作里发起的「I/O」（future 生在 parked 里，
+    /// 完成后的续体排进 parked 的队列——FakeAsync 里真实文件 I/O 就是这样）。返回的
+    /// completer 由用例在外面完成，模拟 I/O 完成。
+    Future<Completer<void>> startParkedWork(
+      FushiDatabase db,
+      _ParkedZone parked,
+      List<String> log,
+    ) {
+      final Completer<Completer<void>> started = Completer<Completer<void>>();
+      parked.zone.run(() {
+        unawaited(
+          db
+              .runBackgroundWork<void>('test.parked', (
+                DatabaseWorkToken _,
+              ) async {
+                final Completer<void> io = Completer<void>();
+                started.complete(io);
+                await io.future;
+                log.add('resumed');
+                await db.setPref('parked', '1');
+                log.add('written');
+              })
+              .then<void>((_) {}, onError: (Object e) => log.add('error:$e')),
+        );
+      });
+      return started.future;
+    }
+
+    test('开关打开：续体停在不推进的 Zone 里的工作，关库不再等它，它也写不进库', () async {
+      DatabaseBackgroundWork.debugReleaseWorkInStalledZones = true;
+      final FushiDatabase db = _memoryDb();
+      final _ParkedZone parked = _ParkedZone();
+      final List<String> log = <String>[];
+      (await startParkedWork(db, parked, log)).complete();
+      expect(db.backgroundWork.inFlightLabels, <String>['test.parked']);
+
+      await db.close().timeout(const Duration(seconds: 5));
+      expect(db.backgroundWork.inFlightLabels, isEmpty);
+      expect(log, isEmpty, reason: '被放掉的工作一行都没再跑');
+
+      // 就算那个 Zone 后来又被推了，库已封口，写入被拦成取消。
+      parked.flush();
+      await Future<void>.delayed(Duration.zero);
+      parked.flush();
+      await Future<void>.delayed(Duration.zero);
+      parked.flush();
+      expect(log, contains('resumed'));
+      expect(log, isNot(contains('written')));
+    });
+
+    test('开关打开：能推进的工作关库照样等它真正退出（生产语义不变）', () async {
+      DatabaseBackgroundWork.debugReleaseWorkInStalledZones = true;
+      final FushiDatabase db = _memoryDb();
+      final Completer<void> release = Completer<void>();
+      final Completer<void> started = Completer<void>();
+      bool exited = false;
+      final Future<void> work = db
+          .runBackgroundWork<void>('test.live', (DatabaseWorkToken _) async {
+            started.complete();
+            await release.future;
+            await db.setPref('live', '1');
+          })
+          .then<void>((_) {}, onError: (Object _) {})
+          .whenComplete(() => exited = true);
+      await started.future;
+
+      bool closed = false;
+      final Future<void> closing = db.close().then((_) => closed = true);
+      for (int i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(closed, isFalse, reason: '活着的工作没退出，close 不能先完成');
+      expect(db.backgroundWork.inFlightLabels, <String>['test.live']);
+
+      release.complete();
+      await closing;
+      await work;
+      expect(exited, isTrue);
+    });
+
+    test('开关关着（生产）：不推进的 Zone 里的工作关库也一直等', () async {
+      final FushiDatabase db = _memoryDb();
+      final _ParkedZone parked = _ParkedZone();
+      final List<String> log = <String>[];
+      (await startParkedWork(db, parked, log)).complete();
+
+      bool closed = false;
+      final Future<void> closing = db.close().then((_) => closed = true);
+      for (int i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(closed, isFalse);
+
+      for (int i = 0; i < 5 && !closed; i++) {
+        parked.flush();
+        await Future<void>.delayed(Duration.zero);
+      }
+      await closing.timeout(const Duration(seconds: 5));
+      expect(log, isNot(contains('written')));
+    });
   });
 }

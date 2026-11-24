@@ -135,6 +135,18 @@ final class _CancelListener {
 
 const Symbol _databaseWorkZoneKey = #fushiDatabaseWorkToken;
 
+/// 一份在跑的后台工作：标签、令牌、它的续体排在哪个 Zone 里。
+final class _InFlightWork {
+  _InFlightWork(this.label, this.token, this.zone);
+
+  final String label;
+  final DatabaseWorkToken token;
+
+  /// 工作体所在的 Zone（[DatabaseBackgroundWork.run] 为它开的那个）。工作里每个异步
+  /// 续体都经它（及其父 Zone）排进微任务队列。
+  final Zone zone;
+}
+
 /// 一个库实例上的后台写库工作登记表：「换库」的生命周期边界。
 ///
 /// - [run]：后台工作（扫描、刮削、哈希升级、封面回填、响度测量……）一律经它跑。库已在
@@ -145,10 +157,30 @@ const Symbol _databaseWorkZoneKey = #fushiDatabaseWorkToken;
 ///   导入、数据根迁移、退出）都不会让后台工作打在已关闭的连接上，也不会让旧库读出的
 ///   行身份在换上新库后写进去。
 final class DatabaseBackgroundWork {
+  /// 测试装配点（生产恒为 false）：关库等后台工作前，先放掉「续体排在一个不再推进的
+  /// Zone 里」的工作，不再等它。
+  ///
+  /// 组件测试（`testWidgets`）的用例体跑在 FakeAsync Zone 里：用例体里开的后台工作，
+  /// 真实 I/O 完成后的续体排进那个 Zone 的假微任务队列，用例体一结束就再没人推——工作
+  /// 永远不会退出，tearDown 里的 `db.close()` 就永远等下去。这和「工作慢」是两回事：
+  /// 那份工作已经不可能再跑任何一行，等它没有意义；它也不可能再发 SQL（就算将来被推，
+  /// 库已封口，一样被拦成取消）。
+  ///
+  /// 判据是确定性的、不靠计时：给每份在跑工作的 Zone 排一个探针微任务，再在关库方
+  /// 自己的 Zone 里排一个；能推进的 Zone 与关库方同在根微任务队列（或同一个假队列）里，
+  /// 按 FIFO 探针一定先跑；关库方的微任务跑到时探针还没跑的，就是排在一个没人推的队列
+  /// 里。生产里所有 Zone 都把微任务交给根队列，这条判据永远不会命中——但它只服务测试
+  /// 宿主，所以仍由开关把守，生产语义（关库等每一份登记工作真正退出）不变。
+  ///
+  /// app 测试套件在 `test/flutter_test_config.dart` 里统一打开，一次覆盖所有登记写手，
+  /// 不必给每个写手各配一个「测试里别起」的开关。
+  static bool debugReleaseWorkInStalledZones = false;
+
   bool _closing = false;
   bool _sealed = false;
   bool _reportedUnregisteredWriter = false;
-  final Map<Future<void>, String> _inFlight = <Future<void>, String>{};
+  final Map<Future<void>, _InFlightWork> _inFlight =
+      <Future<void>, _InFlightWork>{};
   final Set<_CancelListener> _cancelListeners = <_CancelListener>{};
 
   /// 库是否已开始关闭（关闭后不可逆：一个库实例只关一次）。
@@ -223,7 +255,9 @@ final class DatabaseBackgroundWork {
   }
 
   /// 在跑的工作标签（诊断 / 测试用）。
-  List<String> get inFlightLabels => _inFlight.values.toList(growable: false);
+  List<String> get inFlightLabels => <String>[
+    for (final _InFlightWork work in _inFlight.values) work.label,
+  ];
 
   /// 在一个带取消令牌的 Zone 里跑 [body]，登记到关库要等的集合里。
   ///
@@ -241,11 +275,12 @@ final class DatabaseBackgroundWork {
       return Future<T>.error(DatabaseWorkCancelledException(label));
     }
     final DatabaseWorkToken token = DatabaseWorkToken._(this, label);
+    late final Zone workZone;
     final Future<T> result =
-        runZoned<Future<T>>(
-          () => Future<T>.sync(() => body(token)),
-          zoneValues: <Object?, Object?>{_databaseWorkZoneKey: token},
-        ).then<T>(
+        runZoned<Future<T>>(() {
+          workZone = Zone.current;
+          return Future<T>.sync(() => body(token));
+        }, zoneValues: <Object?, Object?>{_databaseWorkZoneKey: token}).then<T>(
           (T value) => value,
           onError: (Object error, StackTrace stack) {
             if (error is! DatabaseWorkCancelledException && token.isCancelled) {
@@ -261,7 +296,7 @@ final class DatabaseBackgroundWork {
       (_) {},
       onError: (Object _, StackTrace _) {},
     );
-    _inFlight[settled] = label;
+    _inFlight[settled] = _InFlightWork(label, token, workZone);
     settled.whenComplete(() {
       _inFlight.remove(settled);
       token._end();
@@ -291,10 +326,39 @@ final class DatabaseBackgroundWork {
     }
     try {
       while (_inFlight.isNotEmpty) {
+        if (debugReleaseWorkInStalledZones) {
+          await _releaseWorkInStalledZones();
+          if (_inFlight.isEmpty) break;
+        }
         await Future.wait(_inFlight.keys.toList(growable: false));
       }
     } finally {
       slow?.cancel();
+    }
+  }
+}
+
+/// 见 [DatabaseBackgroundWork.debugReleaseWorkInStalledZones]。
+extension on DatabaseBackgroundWork {
+  Future<void> _releaseWorkInStalledZones() async {
+    final List<MapEntry<Future<void>, _InFlightWork>> pending = _inFlight
+        .entries
+        .toList(growable: false);
+    final Set<Future<void>> advanced = <Future<void>>{};
+    for (final MapEntry<Future<void>, _InFlightWork> entry in pending) {
+      entry.value.zone.scheduleMicrotask(() => advanced.add(entry.key));
+    }
+    final Completer<void> ownTurn = Completer<void>();
+    scheduleMicrotask(ownTurn.complete);
+    await ownTurn.future;
+    for (final MapEntry<Future<void>, _InFlightWork> entry in pending) {
+      if (advanced.contains(entry.key)) continue;
+      if (_inFlight.remove(entry.key) == null) continue;
+      entry.value.token._end();
+      fushiDebugPrint(
+        '[fushi-db] close: background work "${entry.value.label}" is parked '
+        'in a zone that no longer runs (test FakeAsync); not waiting for it',
+      );
     }
   }
 }

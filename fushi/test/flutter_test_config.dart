@@ -13,6 +13,7 @@ import 'package:fushi/src/media/video/cover_backfill_ledger.dart'
     show debugVideoCoverBackfillEnabled;
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseBackgroundWork;
 import 'package:fushi_engine/stats/stat_facts.dart' show debugStatFactsInline;
 import 'package:fushi_web_core/testing.dart';
 
@@ -45,6 +46,9 @@ import 'package:fushi_web_core/testing.dart';
 /// 9. Keeps the video library's background cover backfill off (its real file
 ///    I/O never completes under FakeAsync and `db.close()` waits for it). See
 ///    [installNoVideoCoverBackfill].
+/// 10. Lets `FushiDatabase.close()` stop waiting for background work whose
+///    continuations are parked in a finished test's FakeAsync zone. See
+///    [installReleaseOfParkedDatabaseWork].
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // 引擎（fushi_engine）的日志 / 数据根 / ffmpeg 平台后端装配点：与 main() 同一份，
   // 让测试里的引擎代码拿到与从前逐字节一致的行为（AppPaths 路径、ErrorLogService）。
@@ -58,6 +62,7 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   installNoGalgameProcessProbe();
   installInlineStatFacts();
   installNoVideoCoverBackfill();
+  installReleaseOfParkedDatabaseWork();
   // 网页内容核心（fushi_web_core）是硬依赖：指向本仓刚编好的原生库（或 FUSHI_WEB_CORE_LIB）。
   // 找不到不在这里报错——用到它的测试第一次加载时抛 FushiWebCoreLibraryMissing，照常失败。
   useDevFushiWebCoreLibrary();
@@ -85,6 +90,18 @@ void installInlineStatFacts() {
 /// 用例体内卸页并推进到关库完成（`home_video_floating_toolbar_test.dart`）。
 void installNoVideoCoverBackfill() {
   debugVideoCoverBackfillEnabled = false;
+}
+
+/// 关库（`FushiDatabase.close()`）不再等「续体停在已结束用例的 FakeAsync Zone 里」的
+/// 后台工作（[DatabaseBackgroundWork.debugReleaseWorkInStalledZones]）。
+///
+/// 组件测试用例体里触发的登记后台工作（sidecar 封面、下载入库、媒体服务器 / 在线源
+/// 入库……，BUG-5406 起全部经 `runBackgroundWork` 登记），真实 I/O 完成后的续体排进
+/// 用例的 FakeAsync 队列，用例体结束后没人再推；tearDown 的 `db.close()` 等它就永远
+/// 挂死。这里一次覆盖所有登记写手：关库时对仍在跑的工作做一次确定性的 Zone 推进探针，
+/// 不推进的放掉（库已封口，它即便被推也写不进库）；能推进的照样等到退出。
+void installReleaseOfParkedDatabaseWork() {
+  DatabaseBackgroundWork.debugReleaseWorkInStalledZones = true;
 }
 
 /// galgame 捕获会话的游戏进程退出监视（BUG-4002）在整个 `test/` 套件里默认**不起**：
