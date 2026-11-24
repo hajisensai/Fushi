@@ -30,7 +30,7 @@ void main() {
     );
     final int start = body.indexOf('_miningCoordinator.startMineLine(');
     final int queued = body.indexOf(
-      'returnGalHookMiningResult.queuedPopupReply;',
+      'returnGalHookMiningResult.queuedPopupReplyFor(job);',
     );
     final int awaitFull = body.indexOf('awaitticket.result');
     expect(start, greaterThanOrEqualTo(0));
@@ -60,6 +60,42 @@ void main() {
       body.contains('retryWrite(repo:model.miningAnkiRepository)'),
       isTrue,
       reason: '重试要写进点重试那一刻的制卡仓库（用户可能刚改了设置）',
+    );
+  });
+
+  // 反馈 Va3bdT-X0r（BUG-5386 遗留）：结局只走主窗 toast 时，游戏全屏下写卡失败用户
+  // 看不见。结局必须按编号推回 app 外查词卡，两处的「重试」共用同一个一次性入口。
+  test('反馈 Va3bdT-X0r：后台结局推回查词卡，toast 重试走同一入口', () {
+    final String src = File(_controllerPath).readAsStringSync();
+    final String mine = compactCode(
+      maskComments(
+        methodBody(src, 'Future<Map<String, Object?>> _mineFromLookup('),
+      ),
+    );
+    expect(
+      mine.contains('GlobalLookupController.instance.beginQueuedMine()'),
+      isTrue,
+      reason: 'queued 回包要带编号，宿主才能按编号把结局推回这颗按钮',
+    );
+    final String land = compactCode(
+      maskComments(
+        methodBody(src, 'Future<void> _landLookupMineInBackground('),
+      ),
+    );
+    expect(
+      land.contains('lookup.settleQueuedMine('),
+      isTrue,
+      reason: '落地 / 失败必须推回 app 外查词卡（主窗 toast 游戏全屏时看不见）',
+    );
+    expect(
+      land.contains('QueuedMineOutcome.requeued'),
+      isTrue,
+      reason: '重试重新排队时卡上要回到「已加入」',
+    );
+    expect(
+      land.contains('()=>lookup.retryQueuedMine(job)'),
+      isTrue,
+      reason: 'toast 上的重试必须走与查词卡同一个一次性入口，否则两处各点一次写两张',
     );
   });
 }

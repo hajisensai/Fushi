@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4699 条。点号进各自文件。
+> 共 4700 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5427](bugs/BUG-5427-gal-lookup-background-mine-failure-invisible-ingame.md) | ✅ | ✅ | 游戏内查词后台写卡失败，app 外查词卡上看不到（BUG-5386 遗留） |
 | [BUG-5402](bugs/BUG-5402-media-server-favorite-jump-dead-end.md) | ✅ | ✅ | 媒体服务器直接串流（未入库）的收藏句在收藏夹点了没反应 |
 | [BUG-5401](bugs/BUG-5401-anilist-cover-search-novels-only.md) | ✅ | ✅ | anilist-cover-search-novels-only |
 | [BUG-5400](bugs/BUG-5400-series-key-split-volume-parts.md) | ✅ | ✅ | series-key-split-volume-parts |

@@ -5501,3 +5501,118 @@ testCrossAppAudioPanelGeometryAndProbe()
     process.exitCode = 1;
   },
 );
+
+// 反馈 Va3bdT-X0r（BUG-5386 遗留）：gal 查词制卡回 `queued` + `queuedJob` 后，后台写卡的
+// 结局由宿主按编号推回查词卡（window.fushiQueuedMineSettled）。以前写卡失败（Anki 没开）
+// 只在主窗 toast，游戏全屏时用户看不见，卡上还一直挂着「已加入」的 ✓。
+// mountMineHeaderFor 走 __fushiRoot 车道，showInlineHint 的提示也挂在那里（__fushiOverlayParent）。
+function rootHintText(context) {
+  const hint = context.window.__fushiRoot.querySelector('.inline-hint');
+  return hint ? (hint.textContent || '') : null;
+}
+
+function overlayQueuedHarness(context) {
+  const state = { mines: 0, retries: [], dupChecks: 0, nextJob: 41 };
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') { state.dupChecks++; return Promise.resolve(false); }
+    if (name === 'mineEntry') {
+      state.mines++;
+      state.nextJob++;
+      return Promise.resolve({ queued: true, ankiConnect: false, queuedJob: state.nextJob });
+    }
+    if (name === 'retryQueuedMine') {
+      state.retries.push(payload);
+      return Promise.resolve(null);
+    }
+    return Promise.resolve(null);
+  };
+  return state;
+}
+
+async function testQueuedMineFailurePushedToCardWithRetry() {
+  const context = loadPopup();
+  context.window.i18nMineRetryHint = 'RETRY_HINT';
+  const state = overlayQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '鍵盤');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1', '采样完 → 「已加入」');
+  assert.equal(button.__fushiQueuedJob, 42, '按钮记着宿主给的编号');
+
+  // 别的编号（别的卡）不认。
+  assert.equal(context.window.fushiQueuedMineSettled({ job: 7, outcome: 'failed' }), 0);
+  assert.equal(button.dataset.queued, '1');
+
+  state.dupChecks = 0;
+  const handled = context.window.fushiQueuedMineSettled({
+    job: 42, outcome: 'failed', message: 'ANKI_DOWN', retryable: true,
+  });
+  await flush();
+  assert.equal(handled, 1, '按编号认到这颗按钮');
+  assert.equal(button.dataset.queued, '', '写卡失败：「已加入」必须撤掉');
+  assert.equal(button.textContent, '+');
+  assert.equal(rootHintText(context), 'ANKI_DOWN RETRY_HINT', '失败原因就地说出来，并提示可重试');
+  assert.equal(state.dupChecks, 0, 'TODO-448：失败不回查 Anki');
+
+  // 点 + = 用原样素材重写，不重新制卡（游戏画面早已换了）。
+  await button.onclick();
+  await flush();
+  assert.deepEqual(state.retries, [42], '请宿主按编号重试');
+  assert.equal(state.mines, 1, '不得重新制一张（会重抓已换掉的画面）');
+  assert.equal(button.dataset.queued, '1', '重试已提交：回到「已加入」');
+  assert.equal(button.disabled, false, 'BUG-077：永不卡死');
+
+  // 重试落地。
+  context.window.fushiQueuedMineSettled({ job: 42, outcome: 'landed', noteId: 9 });
+  await flush();
+  assert.equal(button.dataset.queued, '');
+  assert.equal(button.dataset.mined, '1', '落地 → ✓');
+}
+
+async function testQueuedMineFailureWithoutRetryAndRequeuedFromToast() {
+  const context = loadPopup();
+  const state = overlayQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '鍵穴');
+  await flush();
+  await button.onclick();
+  await flush();
+  const job = button.__fushiQueuedJob;
+
+  // 主窗 toast 上点了重试 → 宿主推 requeued：卡上同步回到「已加入」。
+  context.window.fushiQueuedMineSettled({ job, outcome: 'failed', message: 'E1', retryable: true });
+  context.window.fushiQueuedMineSettled({ job, outcome: 'requeued' });
+  await flush();
+  assert.equal(button.dataset.queued, '1', 'toast 上重试后卡上回到「已加入」');
+  await button.onclick();
+  await flush();
+  assert.equal(state.retries.length, 0, 'requeued 后点击不再发重试');
+
+  // 不可重试的失败：说原因，不带重试提示；下一次点 + 按新卡制作。
+  context.window.fushiQueuedMineSettled({ job, outcome: 'failed', message: 'NO_DECK' });
+  await flush();
+  assert.equal(rootHintText(context), 'NO_DECK');
+  assert.equal(button.dataset.queued, '');
+  const minesBefore = state.mines;
+  await button.onclick();
+  await flush();
+  assert.equal(state.retries.length, 0);
+  assert.equal(state.mines, minesBefore + 1, '不可重试 → 点 + 正常重制');
+
+  // 重复卡失败：宿主的确定事实 → ✓，不给重试。
+  const job2 = button.__fushiQueuedJob;
+  context.window.fushiQueuedMineSettled({ job: job2, outcome: 'failed', message: 'DUP', duplicate: true, retryable: true });
+  await flush();
+  assert.equal(button.dataset.mined, '1', '重复 → 卡确实在 → ✓');
+  assert.equal(rootHintText(context), 'DUP', '重复卡不提示重试');
+}
+
+testQueuedMineFailurePushedToCardWithRetry()
+  .then(testQueuedMineFailureWithoutRetryAndRequeuedFromToast)
+  .then(
+  () => console.log('queued mine settlement tests passed'),
+  (error) => {
+    console.error(error);
+    process.exitCode = 1;
+  },
+);

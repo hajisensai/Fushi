@@ -16,6 +16,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/lookup/overlay_auto_read.dart';
@@ -34,6 +35,7 @@ import 'package:fushi/src/floating_ball/floating_ball_config.dart'
 import 'package:fushi/src/lookup/linux_lookup_card.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
+import 'package:fushi/src/lookup/queued_mine_settlement.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
@@ -1582,6 +1584,76 @@ class GlobalLookupController {
     return route == _activeRoute && GlobalLookupChannel.isRouteValid(route);
   }
 
+  /// 反馈 Va3bdT-X0r：后台写卡（gal 查词制卡回 `queued` 之后）的编号与一次性重试入口。
+  final QueuedMineJobs _queuedMines = QueuedMineJobs();
+
+  /// 给一张转后台写入的卡发编号；编号随 `queued` 回包交给 popup.js。
+  int beginQueuedMine() => _queuedMines.mint();
+
+  /// 后台写卡有了结局（或失败后重新排队）：推给还开着的 app 外查词卡就地说。
+  ///
+  /// 主窗 toast 照报不误，这条是**另一处**——游戏全屏时主窗压在后面，查词卡才是用户
+  /// 看得见的地方。[retry] 只在失败且还能用已做好的画面与句音重写时给，登记成一次性
+  /// 入口（卡上的重试与 toast 上的重试共用，见 [retryQueuedMine]）。发起这张卡的查词
+  /// 卡已关 / 已换词时推送落空（popup.js 按编号认不到按钮），结局仍有主窗 toast。
+  void settleQueuedMine(
+    int job,
+    QueuedMineOutcome outcome, {
+    int? noteId,
+    String? message,
+    bool duplicate = false,
+    void Function()? retry,
+  }) {
+    final bool retryable = outcome == QueuedMineOutcome.failed && retry != null;
+    if (retryable) {
+      _queuedMines.armRetry(job, retry);
+    } else {
+      _queuedMines.disarm(job);
+    }
+    unawaited(
+      _pushQueuedMineSettled(
+        QueuedMineSettlement(
+          job: job,
+          outcome: outcome,
+          noteId: noteId,
+          message: message,
+          duplicate: duplicate,
+          retryable: retryable,
+        ),
+      ),
+    );
+  }
+
+  /// 执行 [job] 的一次性重试入口；返回 false = 已失效（另一处已点过 / 被挤出）。
+  bool retryQueuedMine(int job) => _queuedMines.retry(job);
+
+  /// popup.js 的 `retryQueuedMine` 桥（即时桥，native 已回 null）。入口已失效时也要
+  /// 回一条失败推送——按钮已经画回「已加入」，不回它就永远挂在那儿。
+  void _onRetryQueuedMine(Map<String, Object?> message) {
+    final int? job = _firstIntArg(message);
+    if (job == null || retryQueuedMine(job)) return;
+    settleQueuedMine(
+      job,
+      QueuedMineOutcome.failed,
+      message: t.popup_mine_retry_unavailable,
+    );
+  }
+
+  Future<void> _pushQueuedMineSettled(QueuedMineSettlement settlement) async {
+    final GlobalLookupRoute? route = _activeRoute;
+    if (route == null || !GlobalLookupChannel.isRouteValid(route)) return;
+    try {
+      await GlobalLookupChannel.runWithRoute(
+        route,
+        () => GlobalLookupChannel.render(
+          buildQueuedMineSettledScript(settlement),
+        ),
+      );
+    } catch (e) {
+      glog('mine: queuedMineSettled push failed job=${settlement.job} $e');
+    }
+  }
+
   /// BUG-3652 续：制卡回包时「发起它的那张卡还在不在」——[origin] 是派发时捕获的
   /// 查词 route；真正关窗（[_onOverlayHidden]）与下一次查词（[_activateRoute]）都会
   /// 作废它，所以「仍是当前 route 且有效」就是这张卡还在屏上。
@@ -2207,6 +2279,10 @@ class GlobalLookupController {
         handler != 'favoriteCheck' &&
         handler != 'duplicateCheck') {
       glog('js: handler=$handler args=${message['args']}');
+    }
+    if (handler == 'retryQueuedMine') {
+      _onRetryQueuedMine(message);
+      return;
     }
     if (handler == 'popupEntriesFetchFailed') {
       // 与 in-app 同一回退：**这个**应用外宿主取不回词条（拦截没接住 / 跨源被拒），

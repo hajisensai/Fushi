@@ -149,6 +149,14 @@ class GalHookMiningResult {
     'noteId': null,
     'queued': true,
   };
+
+  /// [queuedPopupReply] 带上后台写卡编号（反馈 Va3bdT-X0r）：popup.js 把它记在按钮上，
+  /// 宿主之后按同一编号推「落地 / 失败 / 重新排队」（`queuedMineSettled`），失败时按钮
+  /// 用它请求重试（`retryQueuedMine`）。
+  static Map<String, Object?> queuedPopupReplyFor(int job) => <String, Object?>{
+    ...queuedPopupReply,
+    'queuedJob': job,
+  };
 }
 
 /// 写卡失败后的重写入口（见 [GalHookMiningResult.retryWrite]）。

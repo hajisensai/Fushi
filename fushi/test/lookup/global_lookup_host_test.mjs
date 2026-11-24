@@ -3720,4 +3720,29 @@ function flushTimers() {
     hostPostLog.filter((m) => m.handler === 'textSelected').length, 0);
 }
 
+// 反馈 Va3bdT-X0r — host.queuedMineSettled forwards the background-write outcome
+// into EVERY loaded card realm (popup.js picks its own button by job id), and a
+// malformed settlement injects nothing.
+{
+  const { host } = freshHost();
+  host.renderStack({
+    popups: [descriptor('frame-0', -1), descriptor('frame-1', 0)],
+  });
+  evalLog = [];
+  const settlement = { job: 7, outcome: 'failed', message: 'Anki 没开', retryable: true };
+  const delivered = host.queuedMineSettled(settlement);
+  assert.strictEqual(delivered, 2, 'both loaded realms receive the settlement');
+  for (const frameId of ['frame-0', 'frame-1']) {
+    const hit = evalLog.find((e) => e.frameId === frameId &&
+        e.code.includes('window.fushiQueuedMineSettled(' + JSON.stringify(settlement) + ')'));
+    assert.ok(hit, `settlement eval ran in ${frameId}`);
+    assert.ok(/window\.fushiQueuedMineSettled &&/.test(hit.code),
+      'guarded: an old popup.js realm without the receiver is a no-op');
+  }
+  evalLog = [];
+  assert.strictEqual(host.queuedMineSettled(null), 0);
+  assert.strictEqual(host.queuedMineSettled({ outcome: 'failed' }), 0, 'no job -> no-op');
+  assert.strictEqual(evalLog.length, 0, 'malformed settlement injects nothing');
+}
+
 console.log('global_lookup_host_test: PASS');

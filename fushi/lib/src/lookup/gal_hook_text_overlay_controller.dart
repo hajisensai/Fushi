@@ -18,6 +18,7 @@ import 'package:fushi/src/lookup/gal_lookup_calibration_capture.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/lookup/queued_mine_settlement.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/gal_line_tts.dart';
 import 'package:fushi/src/lookup/gal_line_tts_player.dart';
@@ -2980,16 +2981,21 @@ class GalHookTextOverlayController extends ChangeNotifier {
     //
     // 仍然陪等的两种：采样就已失败（结论现成，原因要就地回给弹窗）；覆写既有卡
     // （popup.js 的 updateEntry 路径不认 queued，且卡本来就在，与视频覆写同口径）。
+    //
+    // 反馈 Va3bdT-X0r：`queued` 回包带一个编号（queuedJob），后台结局按这个编号推回
+    // 还开着的 app 外查词卡（游戏全屏时主窗 toast 看不见），见 [_landLookupMineInBackground]。
     if (ticket.captured && updateNoteId == null) {
+      final int job = GlobalLookupController.instance.beginQueuedMine();
       unawaited(
         _landLookupMineInBackground(
           ticket.result,
+          job: job,
           model: model,
           fields: fields,
           sentence: mineSentence,
         ),
       );
-      return GalHookMiningResult.queuedPopupReply;
+      return GalHookMiningResult.queuedPopupReplyFor(job);
     }
     return _reportLookupMine(
       await ticket.result,
@@ -3002,8 +3008,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
   /// 后台写卡落地：报结果（成功 / 失败 + 重试），成功时补记统计并让正在显示这个词的
   /// 弹窗重问制卡态。弹窗拿到的是 `queued`，bridge 不会替它记统计（只认
   /// `ankiConnect: true`），所以统计在这里、落地时记，恰好一次。
+  ///
+  /// 反馈 Va3bdT-X0r：结局有两处同时说——主窗 toast，以及推回 app 外查词卡
+  /// （[GlobalLookupController.settleQueuedMine]，按 [job] 认按钮）。游戏全屏时主窗在
+  /// 后面，后者才是用户看得见的那一处。两处的「重试」是同一个一次性入口
+  /// （[GlobalLookupController.retryQueuedMine]），谁先点谁生效，不会写出两张。
   Future<void> _landLookupMineInBackground(
     Future<GalHookMiningResult> pending, {
+    required int job,
     required AppModel model,
     required Map<String, String> fields,
     required String sentence,
@@ -3020,12 +3032,21 @@ class GalHookTextOverlayController extends ChangeNotifier {
       );
       result = GalHookMiningResult(failureReason: '$error');
     }
+    final GlobalLookupController lookup = GlobalLookupController.instance;
     final GalHookRetryWrite? retryWrite = result.retryWrite;
-    _reportLookupMine(
+    final Map<String, Object?> reply = _reportLookupMine(
       result,
       repo: model.miningAnkiRepository,
       fields: fields,
       updateNoteId: null,
+      retry: retryWrite == null ? null : () => lookup.retryQueuedMine(job),
+    );
+    lookup.settleQueuedMine(
+      job,
+      result.success ? QueuedMineOutcome.landed : QueuedMineOutcome.failed,
+      noteId: result.success ? result.outcome?.noteId : null,
+      message: reply['message'] as String?,
+      duplicate: reply['duplicate'] == true,
       retry: retryWrite == null
           ? null
           : () {
@@ -3035,9 +3056,11 @@ class GalHookTextOverlayController extends ChangeNotifier {
                 term: fields['expression'],
                 reading: fields['reading'],
               );
+              lookup.settleQueuedMine(job, QueuedMineOutcome.requeued);
               unawaited(
                 _landLookupMineInBackground(
                   retryWrite(repo: model.miningAnkiRepository),
+                  job: job,
                   model: model,
                   fields: fields,
                   sentence: sentence,

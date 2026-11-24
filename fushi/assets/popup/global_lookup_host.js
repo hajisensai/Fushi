@@ -4099,6 +4099,42 @@
     return true;
   }
 
+  // 反馈 Va3bdT-X0r（BUG-5386 遗留）— 后台写卡的结局推回查词卡。gal 查词制卡采样一
+  // 结束就回 `queued`（按钮画「已加入制卡队列」✓），写卡在后台；以前它落地 / 失败只走
+  // 主窗 toast，游戏全屏时用户看不见。Dart 按 queuedJob 编号推来一条 settlement，这里
+  // 原样转进每个已装好的卡片 realm，由 popup.js 按编号认自己的按钮（认不到就不动）。
+  // 任何一帧 eval 失败都不影响其它帧，也不影响查词本身。返回送达的帧数（测试用）。
+  function queuedMineSettled(settlement) {
+    if (!settlement || typeof settlement.job !== 'number') {
+      return 0;
+    }
+    var script = 'window.fushiQueuedMineSettled && ' +
+        'window.fushiQueuedMineSettled(' + JSON.stringify(settlement) + ');';
+    var delivered = 0;
+    frames.forEach(function (record) {
+      if (!record || !record.loaded) {
+        return;
+      }
+      var win = null;
+      try {
+        win = record.iframe.contentWindow;
+      } catch (e) {
+        win = null;
+      }
+      if (!win || typeof win.eval !== 'function') {
+        return;
+      }
+      try {
+        win.eval(script);
+        delivered++;
+      } catch (e) {
+        window.console?.debug?.(
+            '[global-lookup] queuedMineSettled frame eval failed', e);
+      }
+    });
+    return delivered;
+  }
+
   // BUG-1127 — drive the overlay AUTO-READ through popup.js's own HTML5
   // <audio> (the unified fast path, same playWordAudio the manual ♪ button
   // uses) instead of the Dart/libmpv round-trip. [frameId] is the target frame
@@ -4387,6 +4423,7 @@
     layerIndexOf: layerIndexOf,
     highlightFrame: highlightFrame,
     playWordAudioInFrame: playWordAudioInFrame,
+    queuedMineSettled: queuedMineSettled,
     frameIdAtPoint: frameIdAtPoint,
     handleGlobalClick: handleGlobalClick,
     handleGlobalWheel: handleGlobalWheel,
