@@ -300,6 +300,33 @@ class BookArtRerun {
       originalEditionCovers.containsKey(seriesKey);
 }
 
+/// 合集 [collectionId] 里本地书成员的 bookKey（按成员顺序、去重）。
+Future<List<String>> collectionMemberBookKeys(
+  FushiDatabase db,
+  int collectionId,
+) async => epubMemberBookKeys(db, await db.getCollectionItems(collectionId));
+
+/// 合集成员行 [rows] 里本地书的 bookKey（按成员顺序、去重）。成员行 entryKey 是
+/// 书行 uid（v83；旧行是 bookKey），刮削层按 bookKey 记，经
+/// [FushiDatabase.resolveEpubBookKeysForMembers] 换算；不在本机库的成员跳过。
+Future<List<String>> epubMemberBookKeys(
+  FushiDatabase db,
+  Iterable<MediaCollectionItemRow> rows,
+) async {
+  final List<String> entryKeys = <String>[
+    for (final MediaCollectionItemRow r in rows)
+      if (r.mediaType == 'epub') r.entryKey,
+  ];
+  if (entryKeys.isEmpty) return const <String>[];
+  final Map<String, String> bookKeyOf = await db.resolveEpubBookKeysForMembers(
+    entryKeys,
+  );
+  return <String>{
+    for (final String k in entryKeys)
+      if (bookKeyOf[k] case final String bookKey) bookKey,
+  }.toList();
+}
+
 /// 编排服务。注入 [client] 时不负责关闭它（测试用 MockClient 路由三个 host）。
 class BookArtScrapeService {
   BookArtScrapeService({
@@ -339,13 +366,9 @@ class BookArtScrapeService {
   /// 下载并发上限（图片 CDN 不算 API 配额，但不并发轰炸）。
   static const int downloadConcurrency = 3;
 
-  /// 合集 [collectionId] 里的本地书（`epub` 成员）。
-  Future<List<String>> collectionBookKeys(int collectionId) async => <String>[
-    for (final MediaCollectionItemRow r in await database.getCollectionItems(
-      collectionId,
-    ))
-      if (r.mediaType == 'epub') r.entryKey,
-  ];
+  /// 合集 [collectionId] 里的本地书（`epub` 成员）的 bookKey。
+  Future<List<String>> collectionBookKeys(int collectionId) =>
+      collectionMemberBookKeys(database, collectionId);
 
   /// 处理 [bookKeys]：按系列键分组，逐组匹配、选图；[dryRun] 不下载不写。
   /// [pins] 以系列键为键，钉死某组的系列（跳过搜索与判定）；[onlyPinnedGroups] 时只跑

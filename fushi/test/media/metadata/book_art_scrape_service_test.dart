@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/collections/collection_art_scrape.dart';
 import 'package:fushi/src/media/metadata/book_art_scrape_service.dart';
 import 'package:fushi/src/media/metadata/book_art_store.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart'
@@ -232,6 +233,55 @@ void main() {
     }
     return http.Response('unexpected ${req.url}', 404);
   }
+
+  // BUG-5373：v83 起合集 epub 成员行 entryKey 是书 uid，不是 bookKey。合集入口
+  // 曾把 entryKey 直接当 bookKey 用：一本书都认不出，结果面板只剩「0 / 0 / 0」，
+  // 横幅也按 uid 去查刮削层，永远是空。
+  test('合集成员按 uid 存：刮削认得出书、写入卷封面，横幅能按成员读回', () async {
+    await seed('k1', 'テスト漫画 1');
+    await seed('k2', 'テスト漫画 2');
+    await seed('legacy', 'テスト漫画 3');
+    final String uid1 = (await db.resolveEpubBookUid('k1'))!;
+    final String uid2 = (await db.resolveEpubBookUid('k2'))!;
+    expect(uid1, isNot('k1'));
+    final int collectionId = await db.createMediaCollection('テスト漫画');
+    await db.addToCollection(collectionId, MediaKind.epub, uid1);
+    await db.addToCollection(collectionId, MediaKind.epub, uid2);
+    // v83 前的存量行（bookKey）照样认；远端透传行 / 非书成员跳过。
+    await db.addToCollection(collectionId, MediaKind.epub, 'legacy');
+    await db.addToCollection(collectionId, MediaKind.epub, 'remote-only');
+    await db.addToCollection(collectionId, MediaKind.video, 'k1');
+
+    expect(await collectionMemberBookKeys(db, collectionId), <String>[
+      'k1',
+      'k2',
+      'legacy',
+    ]);
+
+    final BookArtScrapeService svc = service(mangaBakaOk);
+    final BookArtRunResult result = await svc.run(
+      await svc.collectionBookKeys(collectionId),
+    );
+    svc.close();
+
+    expect(result.series, hasLength(1));
+    expect(result.series.single.decision, BookArtDecision.accepted);
+    expect(result.count(BookArtBookOutcome.written), 3);
+    expect(store.hasCover('k1'), isTrue);
+    expect(store.hasCover('k2'), isTrue);
+
+    final CollectionArtScrape art = CollectionArtScrape(
+      database: db,
+      thumbnailsDirectory: thumbs,
+      servicesEnabled: () => true,
+      migrationReadonly: () => false,
+    );
+    final File? banner = await art.bannerFor(
+      await db.getCollectionItems(collectionId),
+    );
+    expect(banner, isNotNull);
+    expect(banner!.existsSync(), isTrue);
+  });
 
   test('MangaBaka 命中：逐卷写入 + 横幅 + 署名标记；UA 不带用户信息', () async {
     await seed('k1', 'テスト漫画 1');

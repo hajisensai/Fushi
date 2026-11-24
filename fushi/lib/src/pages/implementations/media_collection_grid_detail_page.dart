@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -320,15 +321,20 @@ class _MediaCollectionGridDetailPageState
   }
 
   /// 刮削层写入 / 清除（本页按钮、ops 路由、单本编辑弹窗都走它）后重算横幅。
-  void _onArtStoreChanged() {
+  void _onArtStoreChanged() => unawaited(_refreshArtBanner());
+
+  /// 按当前成员重算横幅；算完时成员已被 [_reload] 换掉就丢弃（那次 reload 自带横幅）。
+  Future<void> _refreshArtBanner() async {
     if (!mounted) return;
-    final String? next = _artBannerFor(_rows);
+    final List<MediaCollectionItemRow> rows = _rows;
+    final String? next = await _artBannerFor(rows);
+    if (!mounted || !identical(rows, _rows)) return;
     if (next != _artBannerPath) setState(() => _artBannerPath = next);
   }
 
   /// [rows] 里书成员的合集横幅路径；没有刮削层 / 没下到为 null。
-  String? _artBannerFor(List<MediaCollectionItemRow> rows) =>
-      widget.artScrape?.bannerFor(rows)?.path;
+  Future<String?> _artBannerFor(List<MediaCollectionItemRow> rows) async =>
+      (await widget.artScrape?.bannerFor(rows))?.path;
 
   void _onMemberInfoChanged() {
     if (mounted) setState(() {});
@@ -346,7 +352,7 @@ class _MediaCollectionGridDetailPageState
       _artChanges?.removeListener(_onArtStoreChanged);
       _artChanges = changes;
       _artChanges?.addListener(_onArtStoreChanged);
-      _artBannerPath = _artBannerFor(_rows);
+      unawaited(_refreshArtBanner());
     }
   }
 
@@ -398,6 +404,7 @@ class _MediaCollectionGridDetailPageState
       images,
       MediaImageKind.logo,
     );
+    final String? artBannerPath = await _artBannerFor(rows);
     CollectionMemberSort? savedSort;
     if (!_sortPrefLoaded) {
       final String? raw = await db.getPref(
@@ -427,7 +434,7 @@ class _MediaCollectionGridDetailPageState
       _scrapeMeta = scrapeMeta;
       _backdropPath = backdropPath;
       _logoPath = logoPath;
-      _artBannerPath = _artBannerFor(rows);
+      _artBannerPath = artBannerPath;
       _loading = false;
       _selected.retainWhere(
         (String key) => rows.any(
