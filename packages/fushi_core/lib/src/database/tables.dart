@@ -1057,6 +1057,16 @@ class FavoriteSentences extends Table {
   TextColumn get expression => text().nullable()();
   TextColumn get reading => text().nullable()();
 
+  /// 收藏时句子所在条目的**远端来源身份**（v179，BUG-5379）：从没入库的远端条目
+  /// （媒体服务器浏览页直接串流、互联对端……）收藏时记下播放客户端的
+  /// `RemoteLibrarySource.remoteLibrarySourceId`（Jellyfin / Emby =
+  /// `jellyfin:<地址>|<用户>`、Plex = `plex:<机器>|<账号>`，与
+  /// `MediaServerConfig.sourceId` 同口径）。[bookKey] 此时是该来源内的条目 id，
+  /// Plex ratingKey / Emby id 是各服务器自增数字、跨服务器会撞号，跳回原处必须按它
+  /// 精确找回那一台。NULL = 本机库条目（[bookKey] 本身就是全局身份）或 v179 之前
+  /// 的旧收藏。
+  TextColumn get originSourceId => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }

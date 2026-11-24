@@ -846,6 +846,19 @@ void main() {
     },
   );
 
+  test('媒体服务器直接串流：手机收藏记下播放器的来源身份（BUG-5379）', () async {
+    player.originSourceId = 'plex:m1|a1';
+    await call('favoriteSet', <String, dynamic>{
+      'cueId': 'primary',
+      'favorited': true,
+    });
+    final FavoriteSentence stored = (await FavoriteSentenceRepository(
+      db,
+    ).getAll()).single;
+    expect(stored.bookKey, 'book-one');
+    expect(stored.originSourceId, 'plex:m1|a1');
+  });
+
   test('原盘「全部播放」：手机收藏按句子所在那一集的时间轴落库与匹配（BUG-5356）', () async {
     // 句子在整条播放列表的 1000ms，属于从 600ms 起的那一集 → 记 (episode-two, 400)。
     player.anchor = (int startMs) =>
@@ -1000,6 +1013,9 @@ final class _Player {
 
   /// 播放器时间轴 → 库锚点（原盘「全部播放」，BUG-5356）；null = 同轴同行。
   ({String bookUid, int ms}) Function(int startMs)? anchor;
+
+  /// 播放器的远端来源身份（媒体服务器直接串流，BUG-5379）；null = 本机库条目。
+  String? originSourceId;
   int sectionIndex = 0;
   bool playing = true;
   int controlRevision = 0;
@@ -1078,6 +1094,7 @@ final class _Player {
     },
     libraryAnchor: (int startMs) =>
         anchor?.call(startMs) ?? (bookUid: 'book-one', ms: startMs),
+    originSourceId: () => originSourceId,
     addListener: listeners.add,
     removeListener: listeners.remove,
   );

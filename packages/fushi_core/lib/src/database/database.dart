@@ -3779,6 +3779,19 @@ class FushiDatabase extends _$FushiDatabase
           await m.addColumn(studySegments, studySegments.lookups);
         }
       }
+      if (from < 179) {
+        // v179：favorite_sentences.origin_source_id——远端条目（媒体服务器直接串流 /
+        // 互联对端）收藏时的来源身份（BUG-5379：Plex / Emby 条目 id 跨服务器撞号，
+        // 跳回原处要按它找回那一台）。纯加列、存量 NULL = 本机库条目或旧收藏；按列
+        // 存在性守卫，重跑幂等。
+        if (await _tableExists('favorite_sentences') &&
+            !await _columnExists('favorite_sentences', 'origin_source_id')) {
+          await m.addColumn(
+            favoriteSentences,
+            favoriteSentences.originSourceId,
+          );
+        }
+      }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();
