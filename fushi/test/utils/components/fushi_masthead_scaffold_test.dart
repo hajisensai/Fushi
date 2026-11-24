@@ -2,7 +2,11 @@ import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
-    show FushiPageChromeCapsule, FushiPageChromeCircle, FushiPageChromeTitle;
+    show
+        FushiPageChromeCapsule,
+        FushiPageChromeCircle,
+        FushiPageChromeTitle,
+        FushiPinnedPageChromeScope;
 import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiPageHeader, FushiPageScaffold, FushiToolScaffold;
@@ -80,6 +84,240 @@ void main() {
       find.byType(FushiMastheadPanel),
     );
     expect(panel.progress, greaterThan(0));
+  });
+
+  // 反馈 ONNjqh7wxs / BUG-5409：牌组设置页宽窗两栏各自滚动，页头只认最后一条
+  // 滚动通知，一栏在顶、另一栏已滚动时大字 / 小字来回跳。页头取两栏里滚得最远的。
+  testWidgets('并排两栏各自滚动：页头按滚得最远的一栏收起，不在两栏之间来回跳', (WidgetTester tester) async {
+    final ScrollController left = ScrollController();
+    final ScrollController right = ScrollController();
+    addTearDown(left.dispose);
+    addTearDown(right.dispose);
+    Widget pane(ScrollController controller, String tag) => ListView.builder(
+      controller: controller,
+      itemExtent: 80,
+      itemCount: 60,
+      itemBuilder: (BuildContext context, int i) => Text('$tag $i'),
+    );
+    await pumpHost(
+      tester,
+      FushiMastheadScaffold(
+        title: 'Deck options',
+        // SrsAdaptiveSections 宽窗两栏就是这样声明「并排各自滚动」的。
+        body: FushiPinnedPageChromeScope(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(child: pane(left, 'left')),
+              Expanded(child: pane(right, 'right')),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    double progress() => tester
+        .widget<FushiMastheadHeader>(find.byType(FushiMastheadHeader))
+        .progress;
+    expect(progress(), 0);
+
+    left.jumpTo(400);
+    await tester.pump();
+    final double collapsed = progress();
+    expect(collapsed, greaterThan(0));
+
+    // 另一栏轻轻一动（仍在顶部附近）：页头不因它弹回大字。
+    right.jumpTo(4);
+    await tester.pump();
+    expect(progress(), collapsed);
+    right.jumpTo(0);
+    await tester.pump();
+    expect(progress(), collapsed);
+
+    // 左栏继续滚 / 右栏也滚下去：都保持收起。
+    right.jumpTo(600);
+    await tester.pump();
+    expect(progress(), collapsed);
+
+    // 左栏回到顶，右栏还压在页头下：仍收起。
+    left.jumpTo(0);
+    await tester.pump();
+    expect(progress(), collapsed);
+
+    // 两栏都回到顶才展开。
+    right.jumpTo(0);
+    await tester.pump();
+    expect(progress(), 0);
+  });
+
+  // BUG-5409 审查：取最大值只对声明了「并排各自滚动」的两栏（
+  // FushiPinnedPageChromeScope）成立。分页 / 换页（TabBarView、IndexedStack、
+  // AnimatedSwitcher）里同一深度的几个列表是「换着显示」的，前一页滚下去的位置
+  // 不能把刚换上、停在顶部的那一页的页头压成收起态。
+  testWidgets('分页切到停在顶部的另一页：页头展开，不被前一页的滚动位置压住', (WidgetTester tester) async {
+    final ScrollController first = ScrollController();
+    final ScrollController second = ScrollController();
+    addTearDown(first.dispose);
+    addTearDown(second.dispose);
+    final TabController tabs = TabController(
+      length: 2,
+      vsync: const TestVSync(),
+    );
+    addTearDown(tabs.dispose);
+    Widget page(ScrollController controller, String tag) => ListView.builder(
+      controller: controller,
+      itemExtent: 80,
+      itemCount: 60,
+      itemBuilder: (BuildContext context, int i) => Text('$tag $i'),
+    );
+    await pumpHost(
+      tester,
+      FushiMastheadScaffold(
+        title: 'Statistics',
+        body: TabBarView(
+          controller: tabs,
+          children: <Widget>[page(first, 'first'), page(second, 'second')],
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    double progress() => tester
+        .widget<FushiMastheadHeader>(find.byType(FushiMastheadHeader))
+        .progress;
+
+    first.jumpTo(400);
+    await tester.pump();
+    expect(progress(), greaterThan(0));
+
+    tabs.animateTo(1);
+    await tester.pumpAndSettle();
+    expect(second.offset, 0);
+    expect(progress(), 0);
+  });
+
+  testWidgets('两栏收成一栏（窄窗）：页头跟这一栏走，不留两栏时的位置', (WidgetTester tester) async {
+    final ScrollController left = ScrollController();
+    final ScrollController right = ScrollController();
+    final ScrollController single = ScrollController();
+    addTearDown(left.dispose);
+    addTearDown(right.dispose);
+    addTearDown(single.dispose);
+    final ValueNotifier<bool> wide = ValueNotifier<bool>(true);
+    addTearDown(wide.dispose);
+    Widget pane(ScrollController controller, String tag) => ListView.builder(
+      controller: controller,
+      itemExtent: 80,
+      itemCount: 60,
+      itemBuilder: (BuildContext context, int i) => Text('$tag $i'),
+    );
+    await pumpHost(
+      tester,
+      FushiMastheadScaffold(
+        title: 'Deck options',
+        body: ValueListenableBuilder<bool>(
+          valueListenable: wide,
+          builder: (BuildContext context, bool isWide, Widget? _) => isWide
+              ? FushiPinnedPageChromeScope(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(child: pane(left, 'left')),
+                      Expanded(child: pane(right, 'right')),
+                    ],
+                  ),
+                )
+              : pane(single, 'single'),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    double progress() => tester
+        .widget<FushiMastheadHeader>(find.byType(FushiMastheadHeader))
+        .progress;
+
+    left.jumpTo(400);
+    await tester.pump();
+    expect(progress(), greaterThan(0));
+
+    wide.value = false;
+    await tester.pumpAndSettle();
+    expect(single.offset, 0);
+    expect(progress(), 0);
+  });
+
+  // BUG-5409 复审：主深度要等第一次竖向滚动才定。栏里更深的竖向滚动区（多行
+  // 输入框的内部滚动等）先动时会被当成一栏记下，主深度定到栏这一层后它的记录
+  // 必须作废，否则它的内部偏移一直压着页头，两栏都回顶也展不开。
+  testWidgets('并排两栏：栏里嵌套的竖向滚动区先动过，两栏回顶后页头照样展开', (WidgetTester tester) async {
+    final ScrollController left = ScrollController();
+    final ScrollController right = ScrollController();
+    final ScrollController inner = ScrollController();
+    addTearDown(left.dispose);
+    addTearDown(right.dispose);
+    addTearDown(inner.dispose);
+    Widget rows(String tag) => Column(
+      children: <Widget>[
+        for (int i = 0; i < 60; i++)
+          SizedBox(height: 80, child: Text('$tag $i')),
+      ],
+    );
+    await pumpHost(
+      tester,
+      FushiMastheadScaffold(
+        title: 'Deck options',
+        body: FushiPinnedPageChromeScope(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(
+                child: ListView(
+                  controller: left,
+                  children: <Widget>[
+                    SizedBox(
+                      height: 120,
+                      child: ListView(
+                        controller: inner,
+                        children: <Widget>[rows('inner')],
+                      ),
+                    ),
+                    rows('left'),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: right,
+                  children: <Widget>[rows('right')],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    double progress() => tester
+        .widget<FushiMastheadHeader>(find.byType(FushiMastheadHeader))
+        .progress;
+    expect(progress(), 0);
+
+    // 页面上第一次竖向滚动发生在栏里的小框：主深度暂时落在它那一层。
+    inner.jumpTo(300);
+    await tester.pump();
+
+    // 栏本身滚一下再回顶（小框仍挂着、内部仍停在 300）：页头回到大字。
+    left.jumpTo(100);
+    await tester.pump();
+    expect(progress(), greaterThan(0));
+    left.jumpTo(0);
+    await tester.pump();
+    expect(inner.offset, 300);
+    expect(progress(), 0);
+
+    // 之后再动小框也不驱动页头。
+    inner.jumpTo(600);
+    await tester.pump();
+    expect(progress(), 0);
   });
 
   // 2026-11-20 用户截图「设置的字看着怪」：设置页名用二级字阶（52 / w700），
