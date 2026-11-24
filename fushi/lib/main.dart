@@ -173,6 +173,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/ankimobile_mined_ledger.dart';
 import 'package:fushi/src/anki/ankimobile_repository.dart';
 import 'package:fushi/src/anki/card_source_router.dart';
+import 'package:fushi/src/anki/card_source_relocation_startup.dart';
 import 'package:fushi/src/anki/source_review_navigation.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mining_anki_repository.dart';
@@ -933,6 +934,10 @@ void main([List<String> args = const <String>[]]) {
       // 时 provider 随 srsModuleEnabledProvider 重建 / 销毁。
       StartupTimeline.mark('app-model-init');
       installSrsAppRuntime(container);
+      // 拍板 hSZjfrcejt：BUG-5049 修复（6463f4cf00）之前制的小说卡出处存的是音频
+      // 匹配坐标，后台按卡上句子在原书里重定位、改写成阅读器坐标（一次性、幂等、
+      // 可中断续跑）。
+      scheduleCardSourceRelocationMigration(appModel.database);
       // issue #1949：用户打开了「启动 Fushi 时自动启动 Anki」且本机 AnkiConnect
       // 没在监听时拉起 Anki 桌面版；不等它就绪，不阻塞启动。
       unawaited(

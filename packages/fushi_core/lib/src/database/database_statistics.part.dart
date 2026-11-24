@@ -1963,6 +1963,29 @@ mixin _FushiDbStatistics
             ..limit(limit))
           .get();
 
+  /// 改写一条制卡历史的章内锚点（拍板 hSZjfrcejt：存量小说出处坐标迁移）。只在锚点仍是
+  /// [expectedOffset] / [expectedLength] 时改——读到之后被别的写入动过就不覆盖。返回改到的
+  /// 行数（0 = 行没了或已被改过）。
+  Future<int> updateMinedSentenceCharAnchor(
+    int id, {
+    required int? expectedOffset,
+    required int? expectedLength,
+    required int normCharOffset,
+    required int normCharLength,
+  }) =>
+      (update(minedSentences)..where(
+            (t) =>
+                t.id.equals(id) &
+                t.normCharOffset.equalsNullable(expectedOffset) &
+                t.normCharLength.equalsNullable(expectedLength),
+          ))
+          .write(
+            MinedSentencesCompanion(
+              normCharOffset: Value(normCharOffset),
+              normCharLength: Value(normCharLength),
+            ),
+          );
+
   /// 删除一条制卡历史（按 id）。返回删除的行数。
   Future<int> removeMinedSentence(int id) =>
       (delete(minedSentences)..where((t) => t.id.equals(id))).go();
