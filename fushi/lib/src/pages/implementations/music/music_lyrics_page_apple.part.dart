@@ -33,7 +33,16 @@ KaraokeLyricsAppearance musicAppleLyricsAppearance(
   inactiveOpacity: 0.5,
 );
 
-/// Apple 大封面：连续曲率圆角（12）+ 柔和大半径投影。
+/// 测试钩子：Apple 歌词页封面（大封面复用 [_LyricsCover] 的 3D 倾斜 + 光面）。
+@visibleForTesting
+Widget debugMusicAppleLyricsCover(MusicPlayItem? item, double size) =>
+    _AppleLyricsCover(item: item, size: size);
+
+/// Apple 歌词页封面。大封面（宽窗左列、窄窗封面态）直接用改动前歌词页同一枚
+/// [_LyricsCover]——[musicMaterialCover] 的专辑光面材质（扫光 / 高光、投影随倾斜
+/// 走、光面裁在圆角内）+ [FushiHoverLift] 指针 3D 倾斜视差，强度与 M3E 一致，减弱
+/// 动态效果照原实现判（用户 2026-11-24「专辑的3d斜视差没了而且光面没了」）。
+/// 歌词态顶部的小封面（< 160）只要连续曲率圆角，不倾斜。
 class _AppleLyricsCover extends StatelessWidget {
   const _AppleLyricsCover({required this.item, required this.size});
 
@@ -42,6 +51,13 @@ class _AppleLyricsCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (size >= 160) {
+      return SizedBox.square(
+        key: const ValueKey<String>('music_lyrics_apple_cover'),
+        dimension: size,
+        child: _LyricsCover(item: item, size: size),
+      );
+    }
     final double radius = size >= 160 ? 12 : 7;
     final RoundedSuperellipseBorder shape = RoundedSuperellipseBorder(
       borderRadius: BorderRadius.circular(radius),

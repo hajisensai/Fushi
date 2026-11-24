@@ -3,7 +3,16 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_lyrics_view.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_page.dart'
-    show musicAppleLyricsAppearance;
+    show debugMusicAppleLyricsCover, musicAppleLyricsAppearance;
+import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show ShelfCoverFrame;
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
+    show FushiGlassScope;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -57,6 +66,107 @@ String _method(String src, String start) {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  // 用户 2026-11-24：「专辑的3d斜视差没了而且光面没了」——Apple 大封面要挂着原来的
+  // FushiHoverLift（3D 倾斜）+ 专辑光面材质框；小封面不倾斜。
+  for (final (double size, bool big) in <(double, bool)>[
+    (320, true),
+    (56, false),
+  ]) {
+    testWidgets('Apple cover $size: tilt + sheen = $big', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(
+              seedColor: Colors.teal,
+              brightness: Brightness.dark,
+            ),
+            textTheme: Typography.material2021().white,
+            glass: FushiGlassMaterial.minimal,
+            glassDesign: true,
+            eink: false,
+          ),
+          home: FushiGlassScope(
+            child: Scaffold(
+              body: Center(child: debugMusicAppleLyricsCover(null, size)),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(FushiHoverLift), big ? findsOneWidget : findsNothing);
+      expect(find.byType(ShelfCoverFrame), big ? findsOneWidget : findsNothing);
+    });
+  }
+
+  // 用户 2026-11-24「右上角那三个点改为下拉框吧别用panel」：Apple 下歌词页右上「⋯」
+  // 的来源动作走顶栏 menu（锚在按钮下的下拉菜单），不弹对话框 / 面板。
+  testWidgets('Apple top-bar ⋯ opens a pull-down, not a panel', (
+    WidgetTester tester,
+  ) async {
+    int fired = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildFushiThemeData(
+          scheme: ColorScheme.fromSeed(
+            seedColor: Colors.teal,
+            brightness: Brightness.dark,
+          ),
+          textTheme: Typography.material2021().white,
+          glass: FushiGlassMaterial.minimal,
+          glassDesign: true,
+          eink: false,
+        ),
+        home: FushiGlassScope(
+          child: Scaffold(
+            body: SizedBox(
+              width: 1200,
+              child: FushiFloatingTopBar(
+                bare: true,
+                overflowKey: const ValueKey<String>('music_lyrics_more'),
+                actions: <List<FushiToolbarItem>>[
+                  <FushiToolbarItem>[
+                    FushiToolbarItem(
+                      icon: FushiIcons.search,
+                      label: 'Search',
+                      onPressed: () {},
+                    ),
+                  ],
+                ],
+                menu: <FushiToolbarItem>[
+                  FushiToolbarItem(
+                    key: const ValueKey<String>('music_lyrics_more_0'),
+                    icon: FushiIcons.lyrics,
+                    label: 'Choose lyrics source',
+                    onPressed: () => fired++,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('music_lyrics_more')));
+    await tester.pumpAndSettle();
+    expect(find.text('Choose lyrics source'), findsOneWidget);
+    expect(find.byType(Dialog), findsNothing);
+    expect(find.byType(BottomSheet), findsNothing);
+    await tester.tap(find.text('Choose lyrics source'));
+    await tester.pumpAndSettle();
+    expect(fired, 1);
+    expect(find.text('Choose lyrics source'), findsNothing, reason: '选完收起');
+  });
+
+  test('lyrics page wires its Apple ⋯ to the top-bar pull-down', () {
+    final String page = _page();
+    expect(page, contains('menu: apple'));
+    expect(page, contains('_sourceActionOptions()'));
+    expect(page, contains("? const ValueKey<String>('music_lyrics_more')"));
+  });
 
   test('Apple lyrics appearance: label colours, anchor at 1/3, blur on', () {
     final FushiAppleColors apple = FushiAppleColors.of(

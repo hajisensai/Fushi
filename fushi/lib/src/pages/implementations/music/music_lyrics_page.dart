@@ -2288,14 +2288,33 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               label: t.music_lyrics_search_in_track,
               onPressed: () => unawaited(_searchInTrack()),
             ),
-          FushiToolbarItem(
-            key: const ValueKey<String>('music_lyrics_more'),
-            icon: FushiIcons.moreHoriz,
-            label: MaterialLocalizations.of(context).moreButtonTooltip,
-            onPressed: () => unawaited(_openSourceActions()),
-          ),
+          if (!apple)
+            FushiToolbarItem(
+              key: const ValueKey<String>('music_lyrics_more'),
+              icon: FushiIcons.moreHoriz,
+              label: MaterialLocalizations.of(context).moreButtonTooltip,
+              onPressed: () => unawaited(_openSourceActions()),
+            ),
         ],
       ],
+      // Apple：右上「⋯」是顶栏自己的下拉菜单（锚在按钮下的 Apple pull-down），
+      // 条目 = 原来对话框里的全部来源动作，不再弹面板。
+      overflowKey: apple
+          ? const ValueKey<String>('music_lyrics_more')
+          : kFushiToolbarOverflowKey,
+      menu: apple
+          ? <FushiToolbarItem>[
+              for (final FushiChoiceOption<int> o in _sourceActionOptions())
+                FushiToolbarItem(
+                  key: ValueKey<String>('music_lyrics_more_${o.value}'),
+                  icon: o.icon ?? FushiIcons.lyrics,
+                  label: o.label,
+                  onPressed: o.enabled
+                      ? () => unawaited(_runSourceAction(o.value))
+                      : null,
+                ),
+            ]
+          : const <FushiToolbarItem>[],
     );
   }
 
@@ -3047,62 +3066,74 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   }
 
   Future<void> _openSourceActions() async {
-    final MusicPlayItem? item = _engine.current;
     final int? choice = await showFushiChoiceDialog<int>(
       context: _themedContext,
       title: t.music_lyrics_title,
       icon: FushiIcons.lyrics,
-      options: <FushiChoiceOption<int>>[
-        FushiChoiceOption<int>(
-          value: 0,
-          label: t.music_lyrics_choose_source,
-          icon: FushiIcons.lyrics,
-          enabled: !_searchingOnline,
-        ),
-        FushiChoiceOption<int>(
-          value: 1,
-          label: t.music_lyrics_search_online,
-          icon: FushiIcons.search,
-          enabled: !_searchingOnline,
-        ),
-        if (_lyrics?.timeline.isUserEdited ?? false)
-          FushiChoiceOption<int>(
-            value: 2,
-            label: t.music_lyrics_reset_source,
-            icon: FushiIcons.undo,
-          ),
-        // 「导出到文件旁边」只对本机文件：网络来源 / 插件 / 服务器曲目没有可写的旁边。
-        if (_lyrics != null &&
-            item != null &&
-            musicLyricsTrackRefOf(item).isLocalFile)
-          FushiChoiceOption<int>(
-            value: 3,
-            label: t.music_lyrics_export_ttml,
-            icon: FushiIcons.save,
-          ),
-        // 信号路径从底部播放条挪进这里（用户 2026-10-29：底栏只留循环与音量）。托管播放的
-        // 后端拿不到信号，不给入口。
-        if (_engine.capabilities.signalPath)
-          FushiChoiceOption<int>(
-            value: 4,
-            label: t.music_signal_path_title,
-            icon: FushiIcons.highQuality,
-          ),
-        // 音效：与信号路径同一道能力门（托管播放的后端拿不到信号）。
-        if (_engine.capabilities.signalPath)
-          FushiChoiceOption<int>(
-            value: 6,
-            label: t.music_effects_title,
-            icon: FushiIcons.barChart,
-          ),
-        if (_canGenerateSubtitles)
-          FushiChoiceOption<int>(
-            value: 5,
-            label: t.music_subtitle_generate,
-            icon: FushiIcons.subtitles,
-          ),
-      ],
+      options: _sourceActionOptions(),
     );
+    await _runSourceAction(choice);
+  }
+
+  /// 顶栏「⋯」的歌词来源 / 导出 / 信号路径 / 音效 / 生成字幕动作：M3E 弹选择对话框
+  /// （[_openSourceActions]），Apple 直接作为顶栏「⋯」下拉菜单的条目
+  /// （[FushiFloatingTopBar.menu]，用户 2026-11-24「右上角那三个点改为下拉框吧别用
+  /// panel」）。两边同一份清单、同一个执行体。
+  List<FushiChoiceOption<int>> _sourceActionOptions() {
+    final MusicPlayItem? item = _engine.current;
+    return <FushiChoiceOption<int>>[
+      FushiChoiceOption<int>(
+        value: 0,
+        label: t.music_lyrics_choose_source,
+        icon: FushiIcons.lyrics,
+        enabled: !_searchingOnline,
+      ),
+      FushiChoiceOption<int>(
+        value: 1,
+        label: t.music_lyrics_search_online,
+        icon: FushiIcons.search,
+        enabled: !_searchingOnline,
+      ),
+      if (_lyrics?.timeline.isUserEdited ?? false)
+        FushiChoiceOption<int>(
+          value: 2,
+          label: t.music_lyrics_reset_source,
+          icon: FushiIcons.undo,
+        ),
+      // 「导出到文件旁边」只对本机文件：网络来源 / 插件 / 服务器曲目没有可写的旁边。
+      if (_lyrics != null &&
+          item != null &&
+          musicLyricsTrackRefOf(item).isLocalFile)
+        FushiChoiceOption<int>(
+          value: 3,
+          label: t.music_lyrics_export_ttml,
+          icon: FushiIcons.save,
+        ),
+      // 信号路径从底部播放条挪进这里（用户 2026-10-29：底栏只留循环与音量）。托管播放的
+      // 后端拿不到信号，不给入口。
+      if (_engine.capabilities.signalPath)
+        FushiChoiceOption<int>(
+          value: 4,
+          label: t.music_signal_path_title,
+          icon: FushiIcons.highQuality,
+        ),
+      // 音效：与信号路径同一道能力门（托管播放的后端拿不到信号）。
+      if (_engine.capabilities.signalPath)
+        FushiChoiceOption<int>(
+          value: 6,
+          label: t.music_effects_title,
+          icon: FushiIcons.barChart,
+        ),
+      if (_canGenerateSubtitles)
+        FushiChoiceOption<int>(
+          value: 5,
+          label: t.music_subtitle_generate,
+          icon: FushiIcons.subtitles,
+        ),
+    ];
+  }
+
+  Future<void> _runSourceAction(int? choice) async {
     switch (choice) {
       case 0:
         await _chooseSource();
