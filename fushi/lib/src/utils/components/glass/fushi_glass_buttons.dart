@@ -448,6 +448,16 @@ Widget _glassButton(
     tint = Colors.white;
     fg = Colors.black;
   }
+  // alert / sheet 动作区的主操作 = UIAlertController 的 preferredAction：
+  // 与其余按钮同一枚中性洗色底，只把字加粗（label 色），不着强调色
+  // （库 GlassAlertPlatter 在 iOS 27 模拟器上实测；用户 2026-11-24 选定）。
+  if ((alertAction || sheetAction) &&
+      kind == _FushiButtonKind.filled &&
+      !customBg &&
+      !overImage) {
+    tint = null;
+    fg = destructive ? apple.destructive : apple.label;
+  }
   if (styleFg != null) fg = styleFg;
   if (!enabled) {
     // iOS 禁用态：主按钮褪成中性灰玻璃，文字一律 tertiaryLabel。
