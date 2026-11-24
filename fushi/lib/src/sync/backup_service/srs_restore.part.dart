@@ -278,7 +278,7 @@ Future<List<Map<String, String>>> _stageSrsRestore({
         },
       );
     } finally {
-      core.close();
+      await core.close();
     }
     return pending;
   } on Object {
