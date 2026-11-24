@@ -15,7 +15,6 @@ import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.da
     show resolveDictionaryPopupInputToken;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
     show videoWebBackendSupportsShortcutAction;
-import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 

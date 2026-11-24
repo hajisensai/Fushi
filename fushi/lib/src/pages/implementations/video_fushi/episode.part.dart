@@ -282,7 +282,7 @@ extension _VideoEpisode on _VideoFushiPageState {
       final String? targetUid = openBlurayMenu
           ? _activeBookUid
           : await _episodeTargetBookUid(index);
-      if (targetUid == null || !mounted) return;
+      if (targetUid == null || !context.mounted) return;
       // BUG-839：全屏播放时 app 全屏路由压在剧集页之上（fullscreen.part.dart 推到 root
       // navigator）。裸 pushReplacement 会替换掉栈顶的**全屏路由**、把本集页漏在栈里 →
       // 每连播一集残留一层、ESC 需逐层退。
