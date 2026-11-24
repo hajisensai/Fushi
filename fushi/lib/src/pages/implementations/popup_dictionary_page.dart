@@ -80,7 +80,8 @@ class PopupDictionaryPage extends ConsumerStatefulWidget {
   /// BUG-3487：截屏识字时被点字所在 OCR text block 的全文（块内各行按 `\n` 拼接），
   /// [sourceBlockOffset] 是 [searchTerm] 那一行在块里的起始 UTF-16 偏移。两者都有效时
   /// 制卡 `{sentence}` 取块里包含被点字的整句（[ocrBlockSentenceAt]），竖排 / 折行长句
-  /// 不再只剩被点的那一行；否则回落为整行（BUG-2900）。
+  /// 不再只剩被点的那一行；否则回落为整行（BUG-2900）。源文本条同样显示块里把这一行
+  /// 扩到首尾两句句界的那段（反馈 8Su1XoCjtl，[ocrBlockSpanAroundLine]）。
   final String? sourceBlock;
   final int sourceBlockOffset;
 
@@ -165,6 +166,11 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// （那时结果已与这行无关）。
   String _sourceSentence = '';
 
+  /// 反馈 8Su1XoCjtl：截屏识字带了所属块时源文本条显示的那段（被点行扩到首尾两句的
+  /// 句界、拼掉 OCR 折行，[ocrBlockSpanAroundLine]）；没有块 / 块对不上时为 null，条上
+  /// 是被点的那一行。只随宿主推来的新请求重算（[_sourceSpanOf]）。
+  OcrBlockSpan? _sourceSpan;
+
   /// 最近一次「出自这一行」的基础层查询串：宿主推来整行时的首查（[_lookupWidgetSource]）
   /// 与源文本条点字两个入口记下，[_withSourceSentence] 用**相等**判定基础层当前词条是否
   /// 仍出自这一行。不能用「是这行的子串」判：释义里的词头 / 汉字链接原地跳转后，跳到的
@@ -231,7 +237,8 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     } else {
       _popup.onLookupStarted = onLookupStarted;
     }
-    _sourceLookupText = widget.searchTerm.trim();
+    _sourceSpan = _sourceSpanOf(widget);
+    _sourceLookupText = _sourceSpan?.text ?? widget.searchTerm.trim();
     _sourceSentence = _sentenceOf(widget);
     _sourceLineQuery = '';
     // TODO-951 症状C：开页 seed 一个常驻隐藏热槽，弹窗 WebView 冷加载一次后全程复用
@@ -259,15 +266,56 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 块与行对不上 / 截不出（无标点的超长块）时回落为整行。
   static String _sentenceAtLineUnit(PopupDictionaryPage page, int unitInLine) {
     final String line = page.searchTerm;
+    if (unitInLine < 0 || unitInLine >= line.length) return line.trim();
+    return _sentenceAtBlockUnit(page, page.sourceBlockOffset + unitInLine);
+  }
+
+  /// 块下标 [blockUnit] 那个字所在的整句；没有块 / 块对不上 / 截不出时回落为整行。
+  static String _sentenceAtBlockUnit(PopupDictionaryPage page, int blockUnit) {
     final String? block = _sourceBlockOf(page);
-    if (block != null && unitInLine >= 0 && unitInLine < line.length) {
-      final String? sentence = ocrBlockSentenceAt(
-        block,
-        page.sourceBlockOffset + unitInLine,
-      );
+    if (block != null) {
+      final String? sentence = ocrBlockSentenceAt(block, blockUnit);
       if (sentence != null) return sentence;
     }
-    return line.trim();
+    return page.searchTerm.trim();
+  }
+
+  /// 反馈 8Su1XoCjtl：源文本条显示的那段（见 [_sourceSpan]）。只有带被点字下标的整行
+  /// 入口、且所属块在给定偏移处确实是这一行时才有。
+  static OcrBlockSpan? _sourceSpanOf(PopupDictionaryPage page) {
+    if (page.sourceCharIndex < 0) return null;
+    final String? block = _sourceBlockOf(page);
+    if (block == null) return null;
+    final String line = page.searchTerm;
+    return ocrBlockSpanAroundLine(
+      block,
+      lineStart: page.sourceBlockOffset + line.length - line.trimLeft().length,
+      lineEnd: page.sourceBlockOffset + line.trimRight().length,
+    );
+  }
+
+  /// 外部入口那段原文在源文本条上的文字与被点字在其中的 UTF-16 下标：有 [_sourceSpan]
+  /// 时是块里拼好的那段，否则是被点的那一行（下标即宿主报的行内下标）。
+  ({String text, int tapUnit}) get _sourceStrip {
+    final OcrBlockSpan? span = _sourceSpan;
+    if (span == null) {
+      return (text: widget.searchTerm, tapUnit: widget.sourceCharIndex);
+    }
+    return (
+      text: span.text,
+      tapUnit: span.textIndexOf(
+        widget.sourceBlockOffset + widget.sourceCharIndex,
+      ),
+    );
+  }
+
+  /// 查词串接在条上后缀后面的块内续文（BUG-4707）：条是块里拼好的那段时从那段末尾
+  /// 接，否则从被点行末尾接（[_blockContinuationOf]）。
+  String get _sourceStripContinuation {
+    final OcrBlockSpan? span = _sourceSpan;
+    final String? block = widget.sourceBlock;
+    if (span == null || block == null) return _blockContinuationOf(widget);
+    return ocrBlockContinuationAfterLine(block, lineEnd: span.blockEnd);
   }
 
   /// [PopupDictionaryPage.sourceBlock] 在 [PopupDictionaryPage.sourceBlockOffset] 处
@@ -286,9 +334,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     return block;
   }
 
-  /// BUG-4707：源文本条是被点的那一行，查词串却要跨过 OCR 折行——词被折到下一行时
+  /// BUG-4707：查词串要跨过 OCR 折行——词被折到下一行时
   /// 只扫到行尾会把它截断。返回块里接在这行后面的续文（没有块 / 块对不上时为空串），
-  /// 首查与条上点字都把它接在行内后缀后面。
+  /// 首查与条上点字都把它接在行内后缀后面。源文本条是块里拼好的那段时改从那段末尾接
+  /// （[_sourceStripContinuation]），这里只剩块对不上时的兜底。
   static String _blockContinuationOf(PopupDictionaryPage page) {
     final String? block = _sourceBlockOf(page);
     if (block == null) return '';
@@ -317,12 +366,12 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
 
   void _lookupWidgetSource() {
     final String text = widget.searchTerm;
-    final int unitIndex = widget.sourceCharIndex;
-    final ({String suffix, int start})? scan = unitIndex < 0
+    final ({String text, int tapUnit}) strip = _sourceStrip;
+    final ({String suffix, int start})? scan = widget.sourceCharIndex < 0
         ? null
         : sourceLookupSuffixAt(
-            text,
-            sourceGraphemeIndexOfUnit(text, unitIndex),
+            strip.text,
+            sourceGraphemeIndexOfUnit(strip.text, strip.tapUnit),
           );
     if (scan == null) {
       _sourceLineQuery = '';
@@ -330,10 +379,10 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       _pushSearch(text, Rect.zero, reuseWarmSlot: true);
       return;
     }
-    final String query = scan.suffix + _blockContinuationOf(widget);
+    final String query = scan.suffix + _sourceStripContinuation;
     _sourceLineQuery = query.trim();
     _headwordQuery = query.trim();
-    final String line = text.trim();
+    final String line = strip.text.trim();
     _searchController.text = line;
     _searchController.selection = TextSelection.collapsed(offset: line.length);
     setState(() => _sourceLookupText = line);
@@ -390,6 +439,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 闭锁早退卡死（弹窗打开后关不掉）。每次「重开」在此复位闭锁，让每轮查词都能正常关闭。
     // 放在 isInitialised 门控之前：即便本次查词因未初始化被推迟，闭锁也必须先复位。
     _isClosing = false;
+    _sourceSpan = _sourceSpanOf(widget);
     _sourceSentence = _sentenceOf(widget);
     _sourceLineQuery = '';
     final String trimmed = widget.searchTerm.trim();
@@ -498,9 +548,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
     // 条上是外部入口那一行时，后缀同样接上块里的后续行（BUG-4707）。
     final String query = _sourceSentence.isEmpty
         ? suffix
-        : suffix + _blockContinuationOf(widget);
-    if (_sourceSentence.isNotEmpty && widget.sourceBlock != null) {
-      // BUG-3487：条上点的是同一行的别的字，它可能落在块里的另一句。
+        : suffix + _sourceStripContinuation;
+    final OcrBlockSpan? span = _sourceSpan;
+    if (_sourceSentence.isNotEmpty && span != null) {
+      // BUG-3487：条上点的别的字可能落在块里的另一句（条上可以有好几句）。
+      final int unit = span.text.characters.take(charIndex).toString().length;
+      _sourceSentence = _sentenceAtBlockUnit(widget, span.blockIndexOf(unit));
+    } else if (_sourceSentence.isNotEmpty && widget.sourceBlock != null) {
+      // 块与行对不上：条上是被点的那一行，按行内下标截（截不出回落为整行）。
       final String line = widget.searchTerm;
       final int leading = line.length - line.trimLeft().length;
       final int unit =
@@ -993,10 +1048,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       revealHighlight: true,
       initialCharIndex: widget.sourceCharIndex < 0
           ? 0
-          : sourceGraphemeIndexOfUnit(
-              _sourceLookupText,
-              widget.sourceCharIndex,
-            ),
+          : sourceGraphemeIndexOfUnit(_sourceStrip.text, _sourceStrip.tapUnit),
       // 源文本面板点选 = 扫描查词：复用常驻热槽原地换结果（TODO-951 症状C），
       // 条上的整句与搜索框里的整句都留着，只有高亮跨度跟着挪。
       onLookup: _lookupFromSourceStrip,

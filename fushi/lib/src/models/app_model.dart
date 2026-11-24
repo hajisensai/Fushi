@@ -250,6 +250,8 @@ import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/lookup_ime_language.dart';
 import 'package:fushi/src/lookup/lookup_match_measure.dart'
     show LookupMatchSearchHost;
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart'
+    show TrackingSeriesCardHost;
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
@@ -1067,7 +1069,8 @@ class AppModel
         AudioProductionHost,
         ExternalStorageAccess,
         LookupMatchSearchHost,
-        StudyGoalHost {
+        StudyGoalHost,
+        TrackingSeriesCardHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -12682,6 +12685,7 @@ class AppModel
   /// 平台判据取自 [PlatformServices]（那是本类「不必知道自己跑在哪个平台」的出口），
   /// 不再直读 `dart:io` —— 直读会让 widget 测试无缝可注，Windows 独有的模块
   /// （galgame）在 Linux CI 上被静默滤掉而本机全绿。
+  @override
   ModuleVisibility get moduleVisibility => ModuleVisibility.resolve(
     prefOf: moduleEnabled,
     order: moduleOrder,

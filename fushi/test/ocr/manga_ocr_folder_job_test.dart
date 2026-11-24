@@ -379,6 +379,51 @@ void main() {
       );
     });
 
+    test('BUG-5384 改道按页身份：目录多一张不在页表里的图，任务仍去识别读者那页', () async {
+      // 书目录：images/ 下 3 页 + 一张排在最前、不在阅读器页表里的图。任务页表
+      // = [000_extra, p1, p2, p3]，阅读器页表 = [p1, p2, p3]。
+      final Directory book = Directory.systemTemp.createTempSync(
+        'manga_job_identity_',
+      );
+      addTearDown(() => book.deleteSync(recursive: true));
+      _writePng(p.join(book.path, 'images', '000_extra.png'), 30, 80);
+      _writePng(p.join(book.path, 'images', 'p1.png'), 40, 80);
+      _writePng(p.join(book.path, 'images', 'p2.png'), 50, 80);
+      _writePng(p.join(book.path, 'images', 'p3.png'), 60, 80);
+
+      // 读者在阅读器第 3 页（p3，阅读器页号 2）。按旧的裸页号改道，任务会去跑
+      // 它自己的第 2 张（p2）；按身份改道必须先跑 p3。
+      final List<String?> requests = <String?>['images/p3.png'];
+      final _FakeDetector detector = _FakeDetector();
+      final List<int> progressPages = <int>[];
+      await runMangaOcrFolderJob(
+        imageDirPath: book.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
+        detector: detector,
+        recognizer: _FakeRecognizer(),
+        onProgress: (int done, int total, int pageIndex) =>
+            progressPages.add(pageIndex),
+        takeFocus: () => requests.isEmpty ? null : requests.removeAt(0),
+      );
+
+      expect(detector.detectedSizes.first, '60x80', reason: '先识别的是 p3');
+      expect(progressPages.first, 3, reason: '进度报的是任务自己页表里的页号');
+    });
+
+    test('BUG-5384 改道到不在任务页表里的身份：忽略，不挪游标', () async {
+      final List<String?> requests = <String?>['images/missing.png'];
+      final _FakeDetector detector = _FakeDetector();
+      await runMangaOcrFolderJob(
+        imageDirPath: root.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
+        detector: detector,
+        recognizer: _FakeRecognizer(),
+        startPage: 1,
+        takeFocus: () => requests.isEmpty ? null : requests.removeAt(0),
+      );
+      expect(detector.detectedSizes, <String>['50x80', '60x80', '40x80']);
+    });
+
     test('startPage：当前页先识别、进度带真实页号，manga.json 与从头跑一致', () async {
       final Directory fromStart = Directory.systemTemp.createTempSync(
         'manga_job_start0_',

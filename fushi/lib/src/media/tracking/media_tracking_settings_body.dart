@@ -12,6 +12,7 @@ import 'package:fushi/src/media/tracking/tracking_sites_section.dart';
 import 'package:fushi/src/media/tracking/bangumi_watched_dialog.dart';
 import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page.dart';
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart'
     show kTrackingProviderBangumi;
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
@@ -171,6 +172,7 @@ class _MediaTrackingSettingsBodyState extends State<MediaTrackingSettingsBody> {
         service: widget.appModel.mediaTrackingService,
         database: widget.appModel.database,
         onOpenSettings: navigator.pop,
+        openSeriesCard: trackingSeriesCardOpener(widget.appModel),
       ),
     );
   }

@@ -200,6 +200,72 @@ void main() {
       expect(registry.running('book'), isNull);
     });
 
+    test('BUG-5384 结果按页身份并进书的页表：目录多一张图时页数不变、每页落在自己那页', () async {
+      // 书的页表 2 页；任务目录里多一张排在最前的图，结果 3 页、页号整体错开一位。
+      Map<String, Object?> page(String url, String? text) => <String, Object?>{
+        'url': url,
+        'width': 100,
+        'height': 150,
+        'blocks': <Object?>[
+          if (text != null)
+            <String, Object?>{
+              'box': <int>[10, 20, 60, 120],
+              'vertical': true,
+              'font_size': 20,
+              'z_index': 0,
+              'lines': <String>[text],
+            },
+        ],
+      };
+      File(mangaJsonPath).writeAsStringSync(
+        jsonEncode(<String, Object?>{
+          'pages': <Object?>[
+            page('images/p001.jpg', null),
+            page('images/p002.jpg', null),
+          ],
+        }),
+      );
+      File(resultPath).writeAsStringSync(
+        jsonEncode(<String, Object?>{
+          'pages': <Object?>[
+            page('images/000_cover.jpg', '封面'),
+            page('images/p001.jpg', '一页'),
+            page('images/p002.jpg', '二页'),
+          ],
+        }),
+      );
+      final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
+      final _FakeSource source = _FakeSource();
+      final MangaOcrRunningJob running = registry.start(
+        job: source.job('book', tmp.path),
+        mangaJsonPath: mangaJsonPath,
+      );
+      final Future<void> done = running.events.drain<void>();
+      source.controller.add(
+        MangaOcrBackgroundEvent.finished(
+          pagesTotal: 3,
+          resultPath: resultPath,
+          external: false,
+        ),
+      );
+      await source.controller.close();
+      await done;
+
+      final MokuroPayload written = parseMangaJson(
+        File(mangaJsonPath).readAsStringSync(),
+      );
+      List<String> texts(MokuroPayload payload) => <String>[
+        for (final MokuroImage image in payload.images)
+          image.blocks.map((MokuroBlock b) => b.lines.join()).join(),
+      ];
+      expect(written.images.map((MokuroImage image) => image.url), <String>[
+        'images/p001.jpg',
+        'images/p002.jpg',
+      ], reason: '页表以书的 manga.json 为准，多出的图不进页表');
+      expect(texts(written), <String>['一页', '二页']);
+      expect(texts(running.result!), <String>['一页', '二页']);
+    });
+
     test('finished 在落盘之后才转发：观察者收到时文件已在盘上', () async {
       final MangaOcrJobRegistry registry = MangaOcrJobRegistry();
       final _FakeSource source = _FakeSource();
@@ -879,11 +945,11 @@ void main() {
         job: source.job('book', tmp.path, focus: focus),
         mangaJsonPath: mangaJsonPath,
       );
-      running.focusPage(4);
-      expect(focus.take(), 4);
+      running.focusPage('images/p4.jpg');
+      expect(focus.take(), 'images/p4.jpg');
 
       await registry.cancel('book');
-      running.focusPage(6);
+      running.focusPage('images/p6.jpg');
       expect(focus.take(), isNull);
     });
 
@@ -894,7 +960,7 @@ void main() {
         job: source.job('book', tmp.path),
         mangaJsonPath: mangaJsonPath,
       );
-      running.focusPage(2);
+      running.focusPage('images/p2.jpg');
       await registry.cancelAll();
     });
   });

@@ -40,6 +40,21 @@ bool _isAggregateAsset(String name) =>
     name.endsWith(_aggregateAssetSuffix) ||
     name.endsWith(_legacyAggregateAssetSuffix);
 
+/// 聚合快照资产名（新后缀或 Hibiki 时代旧后缀）→ 写它的设备 id；不是聚合快照
+/// （或设备 id 为空）返回 null。后缀口径只在本文件写一次，app 侧（书级变更闸门识别
+/// 旧版客户端）调它，不另抄一份后缀表。
+String? aggregateSnapshotDeviceOf(String name) {
+  for (final String suffix in const <String>[
+    _aggregateAssetSuffix,
+    _legacyAggregateAssetSuffix,
+  ]) {
+    if (name.endsWith(suffix) && name.length > suffix.length) {
+      return name.substring(0, name.length - suffix.length);
+    }
+  }
+  return null;
+}
+
 /// 设备级「同步浏览历史」开关的偏好键（云备份与互联两条通道共用，host 侧也认）。
 ///
 /// **缺行 = 关**：v128 起浏览历史进聚合快照，若跟「共享收藏」走，已开共享收藏的
