@@ -103,6 +103,7 @@ import 'package:fushi/src/reader/reader_desktop_chrome.dart'
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show MinePopupResult;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/pages/implementations/music/music_disc_face.dart';
 import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_item_links.dart';

@@ -915,15 +915,17 @@ class MediaItemDialogFrame extends StatelessWidget {
         ? appleColorsOf(context).secondaryFill
         : FushiDesignTokens.of(context).surfaces.overlay;
     final ShelfCoverMaterial? material = coverMaterial;
-    final BorderRadius borderRadius = material == null
-        ? BorderRadius.all(Radius.circular(radius))
-        : shelfMaterialRadius(material);
+    // 无材质旧卡的圆角（材质封面的外形归 [ShelfCoverShape]）。
+    final BorderRadius borderRadius = BorderRadius.all(Radius.circular(radius));
     // 前景封面只画这一次（材质 / 旧卡共用）：外层再决定材质框还是圆角投影卡。
-    final Widget clipped = ClipRRect(
-      borderRadius: borderRadius,
-      clipBehavior: Clip.antiAlias,
-      child: cover!,
-    );
+    // 材质封面按材质外形裁（Cupertino 专辑是连续曲率），与外层材质框重合。
+    final Widget clipped = material == null
+        ? ClipRRect(
+            borderRadius: borderRadius,
+            clipBehavior: Clip.antiAlias,
+            child: cover!,
+          )
+        : ShelfCoverShape.of(context, material).clip(child: cover!);
     // NSFW 条目（拍板台 w04vrhUAaX）：前景封面按「模糊 NSFW 封面」打模糊。
     final Widget front = switch (nsfw) {
       final MediaNsfwTarget target => MediaNsfwCover(

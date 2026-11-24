@@ -42,7 +42,8 @@ Widget debugMusicAppleLyricsCover(MusicPlayItem? item, double size) =>
 /// [_LyricsCover]——[musicMaterialCover] 的专辑光面材质（扫光 / 高光、投影随倾斜
 /// 走、光面裁在圆角内）+ [FushiHoverLift] 指针 3D 倾斜视差，强度与 M3E 一致，减弱
 /// 动态效果照原实现判（用户 2026-11-24「专辑的3d斜视差没了而且光面没了」）。
-/// 歌词态顶部的小封面（< 160）只要连续曲率圆角，不倾斜。
+/// 歌词态顶部的小封面（< 160）只要连续曲率圆角（半径同专辑材质
+/// [shelfAppleAlbumRadius]），不倾斜。
 class _AppleLyricsCover extends StatelessWidget {
   const _AppleLyricsCover({required this.item, required this.size});
 
@@ -58,7 +59,8 @@ class _AppleLyricsCover extends StatelessWidget {
         child: _LyricsCover(item: item, size: size),
       );
     }
-    final double radius = size >= 160 ? 12 : 7;
+    // 与专辑材质同一套按尺寸取的连续曲率半径（[shelfAppleAlbumRadius]）。
+    final double radius = shelfAppleAlbumRadius(size);
     final RoundedSuperellipseBorder shape = RoundedSuperellipseBorder(
       borderRadius: BorderRadius.circular(radius),
     );

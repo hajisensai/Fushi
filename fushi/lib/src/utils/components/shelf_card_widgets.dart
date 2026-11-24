@@ -169,17 +169,19 @@ class ShelfSelectedOverlay extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
     final BorderRadius radius = shelfCoverRadius(context);
-    final BoxDecoration decoration;
+    final Decoration decoration;
     if (eink) {
       decoration = BoxDecoration(
         border: Border.all(color: tokens.surfaces.outline, width: 2),
         borderRadius: radius,
       );
     } else if (apple) {
-      decoration = BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.22),
-        borderRadius: radius,
-      );
+      final Color scrim = Colors.black.withValues(alpha: 0.22);
+      final ShelfCoverShape? shape = shelfCoverShapeOf(context);
+      // 连续曲率封面（Cupertino 专辑）：选中罩与封面同一个超椭圆。
+      decoration = shape != null && shape.continuous
+          ? ShapeDecoration(color: scrim, shape: shape.border())
+          : BoxDecoration(color: scrim, borderRadius: radius);
     } else {
       final Color primary = Theme.of(context).colorScheme.primary;
       decoration = BoxDecoration(
@@ -197,13 +199,23 @@ class ShelfSelectedOverlay extends StatelessWidget {
 ///
 /// 祖先有 [ShelfCoverRadiusScope] 时以它为准（游戏卡局部改成 20，书 / 视频库
 /// 共享的封面组件不受影响）。
+///
+/// 材质封面取 [ShelfCoverShape.nominalRadius]（满尺寸圆角）；连续曲率外形
+/// （Cupertino 专辑）真正画封面的各层要用 [shelfCoverShapeOf] 的形状。
 BorderRadius shelfCoverRadius(BuildContext context) {
-  final ShelfCoverMaterial? material = shelfCoverMaterialOf(context);
-  if (material != null) return shelfMaterialRadius(material);
+  final ShelfCoverShape? shape = shelfCoverShapeOf(context);
+  if (shape != null) return shape.nominalRadius;
   final BorderRadius? scoped = ShelfCoverRadiusScope.maybeOf(context);
   if (scoped != null) return scoped;
   final bool apple = isGlassDesign(context) && !isEinkTheme(context);
   return BorderRadius.all(Radius.circular(apple ? 10 : 12));
+}
+
+/// 当前材质封面的外形（[ShelfCoverShape.of]）；没有材质（墨水屏 / 无
+/// [ShelfCoverMaterialScope]）时为 null。
+ShelfCoverShape? shelfCoverShapeOf(BuildContext context) {
+  final ShelfCoverMaterial? material = shelfCoverMaterialOf(context);
+  return material == null ? null : ShelfCoverShape.of(context, material);
 }
 
 /// 局部覆盖 [shelfCoverRadius]：子树里的封面框 / 选中罩 / 无封面占位全部换成
@@ -701,13 +713,17 @@ class ShelfCoverPlaceholder extends StatelessWidget {
         ? apple.tertiaryLabel
         : tokens.surfaces.onVariant;
     final String? label = title;
+    final ShelfCoverShape? shape = shelfCoverShapeOf(context);
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: fill,
-        border: eink ? Border.all(color: tokens.surfaces.outline) : null,
-        // 与封面框同形（MD3 12 / Apple 10），占位换成真封面时轮廓不跳。
-        borderRadius: shelfCoverRadius(context),
-      ),
+      // 与封面框同形（MD3 12 / Apple 10 / 材质外形，Cupertino 专辑是连续曲率），
+      // 占位换成真封面时轮廓不跳。
+      decoration: shape != null && shape.continuous
+          ? ShapeDecoration(color: fill, shape: shape.border())
+          : BoxDecoration(
+              color: fill,
+              border: eink ? Border.all(color: tokens.surfaces.outline) : null,
+              borderRadius: shelfCoverRadius(context),
+            ),
       child: Center(
         child: label == null || label.isEmpty
             ? FushiIcon(icon, size: iconSize, color: foreground)
