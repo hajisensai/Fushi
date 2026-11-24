@@ -339,6 +339,35 @@ void main() {
     expect(await repo.getActiveProfileId(), defaultId, reason: '活偏好不动');
   });
 
+  test('迁移备份写不了：库原样不迁（仍是存量快照）、启动这一步照常完成，下次能写时再迁', () async {
+    final int b = await legacyProfile('B', <String, String>{
+      theme: PrefCodec.encode('glass'),
+    });
+    final Map<SettingKey, String> before = await rawRows(b);
+    // 备份目录的位置被一个普通文件占着：建目录 / 写文件都会失败。
+    final File blocker = File('${backupDir.path}${Platform.pathSeparator}x');
+    await blocker.writeAsString('');
+    final ProfileRepository broken = ProfileRepository(
+      db,
+      anki,
+      srsUserData: (List<String> uids) async => srsData,
+      comboMigrationBackupDirectory: () async => Directory(blocker.path),
+    );
+
+    await broken.ensureDefaultProfile();
+
+    expect(await rawRows(b), before);
+    expect(await broken.combos.defaultComboId(), isNull);
+    expect(await broken.takePendingComboMigrationReport(), isNull);
+
+    await repo.ensureDefaultProfile();
+    expect(await repo.combos.defaultComboId(), defaultId);
+    expect(
+      decodeComboRows(fushiSettingsTree, await rawRows(b)).role,
+      ComboRole.named,
+    );
+  });
+
   test('回退点（绑定临时切换前自己选的）优先当默认组合', () async {
     final int b = await legacyProfile('B', <String, String>{
       theme: PrefCodec.encode('glass'),

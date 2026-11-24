@@ -62,40 +62,54 @@ RemoteDictionaryProfileColumns? decodeRemoteDictionaryProfileColumns(
   );
 }
 
-/// 当前激活配置（[FushiDatabase.resolveActiveProfileId]）快照里 [hostId] 那台 host 的
-/// 服务器词典配置列，按真名索引；没有激活配置（纯 DB 场景）或快照里没有这台 host 时
-/// 返回空表。坏行跳过。
+/// 当前激活配置（[FushiDatabase.resolveActiveProfileId]）的生效值里 [hostId] 那台 host 的
+/// 服务器词典配置列，按真名索引；没有激活配置（纯 DB 场景）或没有这台 host 的行时返回空表。
+/// 坏行跳过。
 ///
-/// 激活配置是组合格式（只存被拆叶子，拍板台 design-combo-node-split）、又没有单独设置词典
-/// 时，它的词典配置继承默认组合：读默认组合那份行。
+/// 激活配置是组合格式（只存被拆叶子，拍板台 design-combo-node-split）时，词典叶子逐行继承
+/// （`absentKeysInherit`）：先取默认组合那份行，它单独设置了词典时再用它自己的行逐个覆盖——
+/// 它那份里没有的词典照样沿用默认组合的选择。
 Future<Map<String, RemoteDictionaryProfileColumns>>
 activeProfileRemoteDictionaryColumns(FushiDatabase db, String hostId) async {
-  int profileId = await db.resolveActiveProfileId();
-  if (profileId <= 0) return const <String, RemoteDictionaryProfileColumns>{};
+  final int activeId = await db.resolveActiveProfileId();
+  if (activeId <= 0) return const <String, RemoteDictionaryProfileColumns>{};
+  final List<int> layers = <int>[activeId];
   final Map<int, String> roles = await db.profileSettingValuesOf(
     kComboSyntheticCategory,
     kComboRoleKey,
   );
-  final String? role = roles[profileId];
+  final String? role = roles[activeId];
   if (role != null && role != ComboRole.defaults.wire) {
+    int? defaultId;
+    for (final MapEntry<int, String> e in roles.entries) {
+      if (e.value != ComboRole.defaults.wire) continue;
+      if (defaultId == null || e.key < defaultId) defaultId = e.key;
+    }
     final bool splitsDictionary = (await db.profileSettingValuesOf(
       kComboSyntheticCategory,
       '$kComboSplitKeyPrefix${FushiComboNode.dictionary}',
-    )).containsKey(profileId);
-    if (!splitsDictionary) {
-      for (final MapEntry<int, String> e in roles.entries) {
-        if (e.value == ComboRole.defaults.wire) profileId = e.key;
-      }
+    )).containsKey(activeId);
+    if (defaultId != null) {
+      layers
+        ..clear()
+        ..add(defaultId);
+      if (splitsDictionary) layers.add(activeId);
     }
   }
   final Map<String, RemoteDictionaryProfileColumns> out =
       <String, RemoteDictionaryProfileColumns>{};
-  for (final ProfileSettingRow row in await db.getProfileSettings(profileId)) {
-    if (row.category != kProfileSettingCategoryRemoteDictionaryMeta) continue;
-    final RemoteDictionaryProfileColumns? columns =
-        decodeRemoteDictionaryProfileColumns(row.key, row.value);
-    if (columns != null && columns.hostId == hostId) {
-      out[columns.name] = columns;
+  for (final int profileId in layers) {
+    for (final ProfileSettingRow row in await db.getProfileSettings(
+      profileId,
+    )) {
+      if (row.category != kProfileSettingCategoryRemoteDictionaryMeta) {
+        continue;
+      }
+      final RemoteDictionaryProfileColumns? columns =
+          decodeRemoteDictionaryProfileColumns(row.key, row.value);
+      if (columns != null && columns.hostId == hostId) {
+        out[columns.name] = columns;
+      }
     }
   }
   return out;

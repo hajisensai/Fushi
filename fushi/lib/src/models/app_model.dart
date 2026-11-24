@@ -3824,24 +3824,13 @@ class AppModel
     comboMigrationBackupDirectory: comboMigrationBackupDirectory,
   );
 
-  /// 组合迁移定复习库归属（拍板台 design-srs-shared-library §4.2）：本机复习库里 [uids] 中哪些
-  /// 有用户数据（[srsProfileHasUserData]，铁律 E 的「有数据」）。本机没有复习库文件 = 都没有
-  /// （不为此建库）；库此刻打不开（换代中 / 别的进程在升级……）= null，归属留到下次再定。
+  /// 组合迁移定复习库归属（拍板台 design-srs-shared-library §4.2）：本机复习数据里 [uids] 中哪些有用户数据；
+  /// null = 此刻判断不了（库打不开、主库里还有没搬过的旧复习表……），归属留到下次再定。判据见
+  /// [SrsStorageHost.profileUidsWithUserData]。
   Future<Set<String>?> comboSrsUserData(List<String> uids) async {
     final SrsStorageHost? host = _srsStorageHost;
     if (host == null) return null;
-    final SrsStorage? storage;
-    try {
-      storage = await host.acquireIfStored(moduleEnabled: false);
-    } on Object catch (e) {
-      debugPrint('[Fushi] combo migration: srs storage unavailable: $e');
-      return null;
-    }
-    if (storage == null) return <String>{};
-    return <String>{
-      for (final String uid in uids)
-        if (await srsProfileHasUserData(storage.core, uid)) uid,
-    };
+    return host.profileUidsWithUserData(uids);
   }
 
   /// 组合迁移前的原快照备份目录（`<support>/combo_migration_backups/`）。

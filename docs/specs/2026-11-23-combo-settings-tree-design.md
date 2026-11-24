@@ -160,7 +160,8 @@
 - 报告存本机偏好 `combo_migration_report`（JSON）+ `combo_migration_notice_pending`，两键不进快照。
 - 复习库判据用 `srsProfileHasUserData`（铁律 E 的「有数据」：笔记、自建牌组、改过的预设 / 内置
   笔记类型、复习日志都算），比原文「有用户笔记」宽——只建了牌组的 Profile 不会被当成空的并进
-  共享库。复习库此刻打不开（换代中）时设置照迁、默认组合不写 `srs_shared_uid`（= 待定标记），下次
+  共享库。复习库此刻打不开（换代中），或本机没有复习库文件、主库里却还留着没搬过的协议 1
+  复习表（`srsLegacyMainDatabasePending`：数据在，只是本版本读不了）时设置照迁、默认组合不写 `srs_shared_uid`（= 待定标记），下次
   能打开时只补复习库归属并补进报告。只有一份 Profile 时不需要读复习库。
 - 迁移后的读写路径：`applyProfile` 对组合格式按「默认组合之上的生效值」应用；`snapshotCurrentSettings`
   对组合格式只写回相对默认组合不同的叶子（`rebaseComboDocument`：原来拆了的保持拆分），默认组合 /

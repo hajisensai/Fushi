@@ -3,9 +3,13 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/profile/combo/combo_repository.dart';
+import 'package:fushi/src/profile/combo/fushi_settings_tree.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_settings_view.dart';
+import 'package:fushi/src/profile/remote_dictionary_profile_meta.dart'
+    show RemoteDictionaryProfileColumns, activeProfileRemoteDictionaryColumns;
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -293,6 +297,44 @@ void main() {
     expect(live['h1/Daijirin']!.hidden, isTrue);
     expect(live['h1/Meikyo']!.order, 0);
     expect(live['h1/Meikyo']!.hidden, isFalse);
+  });
+
+  test('激活的组合单独设置了词典但那份里没有某本服务器词典：那本沿用默认组合的选择', () async {
+    // 默认组合（A，激活中）：大辞林关、排第 5；明镜开、排第 0。
+    await setLive('h1', 'Daijirin', 5, true);
+    await setLive('h1', 'Meikyo', 0, false);
+    await repo.snapshotCurrentSettings(profileA);
+    expect(await repo.combos.defaultComboId(), profileA);
+    // B 单独设置了词典，但它那份只记了大辞林（明镜是它之后才出现的）：词典叶子逐行继承。
+    await repo.combos.saveDocument(
+      profileB,
+      ComboDocument(<String, Map<SettingKey, String>>{
+        FushiComboNode.dictionary: <SettingKey, String>{
+          SettingKey(
+            kProfileSettingCategoryRemoteDictionaryMeta,
+            remoteDictionaryProfileKey('h1', 'Daijirin'),
+          ): jsonEncode(<String, Object>{
+            'order': 1,
+            'hidden': false,
+          }),
+        },
+      }),
+    );
+    await repo.setActiveProfileId(profileB);
+
+    final Map<String, RemoteDictionaryProfileColumns> columns =
+        await activeProfileRemoteDictionaryColumns(db, 'h1');
+    expect(columns['Daijirin']!.order, 1);
+    expect(columns['Daijirin']!.hidden, isFalse);
+    expect(columns['Meikyo']!.order, 0, reason: '继承默认组合');
+    expect(columns['Meikyo']!.hidden, isFalse);
+
+    // 没单独设置词典：整份取默认组合。
+    await repo.combos.saveDocument(profileB, ComboDocument.empty);
+    final Map<String, RemoteDictionaryProfileColumns> inherited =
+        await activeProfileRemoteDictionaryColumns(db, 'h1');
+    expect(inherited['Daijirin']!.order, 5);
+    expect(inherited['Daijirin']!.hidden, isTrue);
   });
 
   test('isRemoteDictionaryPseudoHostId：只有地址形的 id 算伪 id', () {
