@@ -22,6 +22,36 @@ Future<int> _softEdgePixels(ui.Image image) async {
   return n;
 }
 
+/// [image] 里字的边长（像素）：二值化（alpha > 50%）后，四邻域里有透明像素的不透明像素数。
+///
+/// 过渡带像素数要除以它才是「每段边缘糊了几像素宽」：直接排字的过渡带宽度取决于字边落在
+/// 像素网格的哪个相位（测试字体的方块字在 Windows / macOS 上相位不同，同一个字过渡带可以
+/// 是 0 也可以是一整圈），只拿像素数跟直接排字比会随平台漂。
+Future<int> _edgeLength(ui.Image image) async {
+  final ByteData bytes = (await image.toByteData())!;
+  final int w = image.width;
+  final int h = image.height;
+  bool solid(int x, int y) =>
+      x >= 0 &&
+      y >= 0 &&
+      x < w &&
+      y < h &&
+      bytes.getUint8((y * w + x) * 4 + 3) > 127;
+  int n = 0;
+  for (int y = 0; y < h; y++) {
+    for (int x = 0; x < w; x++) {
+      if (solid(x, y) &&
+          (!solid(x - 1, y) ||
+              !solid(x + 1, y) ||
+              !solid(x, y - 1) ||
+              !solid(x, y + 1))) {
+        n++;
+      }
+    }
+  }
+  return n;
+}
+
 /// 经 [LumiereGlyphBatch] 把 [char] 以 [px] 逻辑像素画出来（与场景画字同一条路径）。
 Future<ui.Image> _drawGlyph(
   LumiereGlyphAtlases atlases,
@@ -120,26 +150,29 @@ void main() {
         'x',
       ], const LumiereGlyphStyle());
       addTearDown(set.dispose);
-      final int reference = await _softEdgePixels(await _drawDirect('H', px));
+      final int edge = await _edgeLength(await _drawDirect('H', px));
       final int blurry = await _softEdgePixels(await _drawGlyph(set, 'H', px));
       final double em = set.wantedEm!;
       set.addLevel(
         (await LumiereGlyphAtlas.rasterize(set.chars, set.style, em: em))!,
       );
       final int crisp = await _softEdgePixels(await _drawGlyph(set, 'H', px));
-      expect(reference, greaterThan(0));
-      // 修前：64 档放大 3.75 倍，过渡带是直接排字的数倍。
-      expect(blurry, greaterThan(reference * 2.5), reason: 'blurry=$blurry');
-      // 修后：过渡带收窄到放大版的一半以内，与直接排字同一量级（只剩缩小一点点的重采样）。
+      expect(edge, greaterThan(0));
+      // 按边长折成「过渡带有几像素宽」：直接排字 0～1 像素（看网格相位）。
+      final double blurryBand = blurry / edge;
+      final double crispBand = crisp / edge;
+      // 修前：64 档放大 3.75 倍，边缘糊成 3～5 像素宽。
+      expect(blurryBand, greaterThan(2.5), reason: 'blurry=$blurry edge=$edge');
+      // 修后：只剩从略大一档缩小一点点的重采样，边缘不超过 2 像素宽，且不到修前一半。
+      expect(
+        crispBand,
+        lessThanOrEqualTo(2),
+        reason: 'crisp=$crisp edge=$edge',
+      );
       expect(
         crisp,
         lessThan(blurry / 2),
         reason: 'crisp=$crisp blurry=$blurry',
-      );
-      expect(
-        crisp,
-        lessThanOrEqualTo(reference * 2.2),
-        reason: 'crisp=$crisp reference=$reference',
       );
     });
 
@@ -273,6 +306,58 @@ void main() {
       await g.settled;
       expect(identical(g.current, old), isFalse);
       expect(g.current.style, old.style);
+    });
+
+    test('后台光栅化失败：上报错误、继续画旧图集；换字体可再请求，补档不每帧重试', () async {
+      final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
+      final void Function(FlutterErrorDetails)? previousOnError =
+          FlutterError.onError;
+      FlutterError.onError = errors.add;
+      int attempts = 0;
+      LumiereGlyphAtlas.debugRasterizePage = (_, _, _) async {
+        attempts++;
+        throw StateError('raster failed');
+      };
+      addTearDown(() {
+        FlutterError.onError = previousOnError;
+        LumiereGlyphAtlas.debugRasterizePage = (ui.Picture p, int w, int h) =>
+            p.toImage(w, h);
+      });
+      final LumiereGlyphs g = glyphs0();
+      addTearDown(g.dispose);
+      final LumiereGlyphAtlases old = g.current;
+
+      const LumiereGlyphStyle b = LumiereGlyphStyle(fontFamily: 'B');
+      g.requestStyle(b);
+      await g.settled;
+      expect(identical(g.current, old), isTrue, reason: '失败了继续画旧图集');
+      expect(old.builtEms, <double>[64], reason: '旧图集没被释放');
+      expect(g.debugPendingStyle, isNull, reason: '不卡在「永远在建」');
+      expect(errors, hasLength(1));
+      expect(errors.single.exception, isA<StateError>());
+
+      // 补档失败后同一档不再每帧重试。
+      old.levelFor(500);
+      g.afterFrame();
+      await g.settled;
+      expect(errors, hasLength(2));
+      final int afterFirst = attempts;
+      g.afterFrame();
+      await g.settled;
+      expect(attempts, afterFirst);
+
+      // 恢复后再请求同一字体能换上，失败记录随新图集清空。
+      LumiereGlyphAtlas.debugRasterizePage = (ui.Picture p, int w, int h) =>
+          p.toImage(w, h);
+      g.requestStyle(b);
+      expect(g.debugPendingStyle, b);
+      await g.settled;
+      expect(g.current.style, b);
+      g.current.levelFor(500);
+      g.afterFrame();
+      await g.settled;
+      expect(g.current.builtEms.length, 2);
+      expect(errors, hasLength(2));
     });
 
     test('释放后后台任务不再换图集', () async {

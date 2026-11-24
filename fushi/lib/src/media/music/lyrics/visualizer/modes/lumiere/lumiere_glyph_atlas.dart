@@ -171,24 +171,50 @@ class LumiereGlyphAtlas {
     }
 
     final Stopwatch sw = Stopwatch()..start();
-    while (r.hasNext) {
-      final ui.Picture? page = r.paintNext();
-      if (page != null) {
-        try {
-          sheets.add(await page.toImage(r.width, r.heightOf(sheets.length)));
-        } finally {
-          page.dispose();
+    try {
+      while (r.hasNext) {
+        final ui.Picture? page = r.paintNext();
+        if (page != null) {
+          try {
+            sheets.add(
+              await debugRasterizePage(
+                page,
+                r.width,
+                r.heightOf(sheets.length),
+              ),
+            );
+          } finally {
+            page.dispose();
+          }
+          if (abandon()) return null;
+          sw.reset();
+        } else if (sw.elapsed >= _slice) {
+          await Future<void>.delayed(Duration.zero);
+          if (abandon()) return null;
+          sw.reset();
         }
-        if (abandon()) return null;
-        sw.reset();
-      } else if (sw.elapsed >= _slice) {
-        await Future<void>.delayed(Duration.zero);
-        if (abandon()) return null;
-        sw.reset();
       }
+    } catch (_) {
+      // 光栅化失败：已画好的页不能漏掉不释放，错误原样交给调用方。
+      r.abandon();
+      for (final ui.Image s in sheets) {
+        s.dispose();
+      }
+      rethrow;
     }
     return LumiereGlyphAtlas._(sheets, em, r.advances);
   }
+
+  /// 后台光栅化一页（测试可替换成会失败的实现，验证失败路径）。
+  @visibleForTesting
+  static Future<ui.Image> Function(ui.Picture page, int width, int height)
+  debugRasterizePage = _rasterizePage;
+
+  static Future<ui.Image> _rasterizePage(
+    ui.Picture page,
+    int width,
+    int height,
+  ) => page.toImage(width, height);
 
   void dispose() {
     for (final ui.Image s in sheets) {
@@ -303,17 +329,27 @@ class LumiereGlyphAtlases {
     bool Function()? cancelled,
   }) async {
     final List<LumiereGlyphAtlas> levels = <LumiereGlyphAtlas>[];
+    void release() {
+      for (final LumiereGlyphAtlas done in levels) {
+        done.dispose();
+      }
+    }
+
     for (final double em in <double>{kLumiereAtlasBaseEm, ...ems}) {
-      final LumiereGlyphAtlas? l = await LumiereGlyphAtlas.rasterize(
-        chars,
-        style,
-        em: em,
-        cancelled: cancelled,
-      );
+      final LumiereGlyphAtlas? l;
+      try {
+        l = await LumiereGlyphAtlas.rasterize(
+          chars,
+          style,
+          em: em,
+          cancelled: cancelled,
+        );
+      } catch (_) {
+        release();
+        rethrow;
+      }
       if (l == null) {
-        for (final LumiereGlyphAtlas done in levels) {
-          done.dispose();
-        }
+        release();
         return null;
       }
       levels.add(l);
@@ -487,6 +523,9 @@ class LumiereGlyphs {
   Future<void>? _job;
   bool _disposed = false;
 
+  /// 当前这套图集上光栅化失败过的档：不再每帧重试（换了一套图集才清空）。
+  final Set<double> _failedEms = <double>{};
+
   /// 图集换了（补了档 / 换了字体），要重画。
   Listenable get changed => _changed;
 
@@ -529,10 +568,10 @@ class LumiereGlyphs {
   void afterFrame() {
     if (_disposed || _job != null) return;
     final double? em = _current.wantedEm;
-    if (em == null) return;
+    if (em == null || _failedEms.contains(em)) return;
     final LumiereGlyphAtlases target = _current;
     final int gen = _generation;
-    _run(() async {
+    _run(onError: () => _failedEms.add(em), () async {
       final LumiereGlyphAtlas? level = await LumiereGlyphAtlas.rasterize(
         chars,
         target.style,
@@ -557,33 +596,54 @@ class LumiereGlyphs {
       if (_current.wantedEm != null) _current.wantedEm!,
     };
     final Future<void>? previous = _job;
-    _run(() async {
-      // 等前一个任务退出（它看到代数变了会尽快放弃），同一时刻只排一份字。
-      if (previous != null) await previous;
-      if (_disposed || gen != _generation) return;
-      final LumiereGlyphAtlases? next = await LumiereGlyphAtlases.rasterize(
-        chars,
-        style,
-        ems: ems,
-        cancelled: () => _disposed || gen != _generation,
-      );
-      if (next == null) return;
-      if (_disposed || gen != _generation) {
-        next.dispose();
-        return;
-      }
-      _current.dispose();
-      _current = next;
-      _pendingStyle = null;
-      _changed.fire();
-    });
+    _run(
+      onError: () {
+        // 这次没建成：放下挂起的字体，下次 build 再请求时重新建，不卡在「永远在建」。
+        if (gen == _generation) _pendingStyle = null;
+      },
+      () async {
+        // 等前一个任务退出（它看到代数变了会尽快放弃），同一时刻只排一份字。
+        if (previous != null) await previous;
+        if (_disposed || gen != _generation) return;
+        final LumiereGlyphAtlases? next = await LumiereGlyphAtlases.rasterize(
+          chars,
+          style,
+          ems: ems,
+          cancelled: () => _disposed || gen != _generation,
+        );
+        if (next == null) return;
+        if (_disposed || gen != _generation) {
+          next.dispose();
+          return;
+        }
+        _current.dispose();
+        _current = next;
+        _failedEms.clear();
+        _pendingStyle = null;
+        _changed.fire();
+      },
+    );
   }
 
-  void _run(Future<void> Function() body) {
+  /// 起一个后台任务。失败（如 GPU 上下文不可用时 `toImage` 报错）照常上报 FlutterError，
+  /// 任务本身正常结束：后面排队的任务不会跟着抛，旧图集继续画；[onError] 收拾状态。
+  void _run(Future<void> Function() body, {required void Function() onError}) {
     late final Future<void> job;
-    job = Future<void>(body).whenComplete(() {
-      if (identical(_job, job)) _job = null;
-    });
+    job = Future<void>(body)
+        .catchError((Object error, StackTrace stack) {
+          onError();
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stack,
+              library: 'lumiere glyph atlas',
+              context: ErrorDescription('while rasterizing the glyph atlas'),
+            ),
+          );
+        })
+        .whenComplete(() {
+          if (identical(_job, job)) _job = null;
+        });
     _job = job;
   }
 
