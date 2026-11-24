@@ -84,94 +84,102 @@ class _SrsLibraryMergeDialogState extends State<SrsLibraryMergeDialog> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final TextTheme text = Theme.of(context).textTheme;
     final List<SrsMergeConflict> conflicts = p.conflicts;
-    return FushiAlertDialog(
-      key: const ValueKey<String>('srs_library_merge_dialog'),
-      icon: const FushiIcon(Icons.merge_type),
-      title: Text(t.srs_library_merge_title(name: widget.plan.profileName)),
-      content: SizedBox(
-        width: 560,
-        child: FushiEntranceScope(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              FushiStaggeredEntrance(
-                index: 0,
-                child: Text(
-                  t.srs_library_merge_summary(
-                    notes: '${p.notes}',
-                    reviews: '${p.reviews}',
-                    added: '${p.added}',
-                    shared: '${p.shared}',
-                  ),
-                ),
-              ),
-              SizedBox(height: tokens.spacing.gap),
-              FushiStaggeredEntrance(
-                index: 1,
-                child: Text(
-                  conflicts.isEmpty
-                      ? t.srs_library_merge_no_conflicts
-                      : t.srs_library_merge_conflicts(n: '${conflicts.length}'),
-                  style: text.titleSmall,
-                ),
-              ),
-              if (conflicts.isNotEmpty)
-                Flexible(
-                  child: ListView.builder(
-                    key: const ValueKey<String>('srs_library_merge_conflicts'),
-                    shrinkWrap: true,
-                    itemCount: conflicts.length,
-                    itemBuilder: fushiStaggeredItemBuilder(
-                      (BuildContext context, int i) => _ConflictTile(
-                        conflict: conflicts[i],
-                        choice:
-                            _choices[conflicts[i].note] ??
-                            SrsMergeChoice.shared,
-                        enabled: !_running,
-                        onChanged: (SrsMergeChoice c) => setState(() {
-                          if (c == SrsMergeChoice.shared) {
-                            _choices.remove(conflicts[i].note);
-                          } else {
-                            _choices[conflicts[i].note] = c;
-                          }
-                        }),
-                      ),
+    // 合并在跑时不让点遮罩 / 系统返回关框：内核事务照样会跑完，关了框结果与报错就没处交代了。
+    return PopScope<SrsMergeResult>(
+      canPop: !_running,
+      child: FushiAlertDialog(
+        key: const ValueKey<String>('srs_library_merge_dialog'),
+        icon: const FushiIcon(Icons.merge_type),
+        title: Text(t.srs_library_merge_title(name: widget.plan.profileName)),
+        content: SizedBox(
+          width: 560,
+          child: FushiEntranceScope(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                FushiStaggeredEntrance(
+                  index: 0,
+                  child: Text(
+                    t.srs_library_merge_summary(
+                      notes: '${p.notes}',
+                      reviews: '${p.reviews}',
+                      added: '${p.added}',
+                      shared: '${p.shared}',
                     ),
                   ),
                 ),
-              if (_running) ...<Widget>[
                 SizedBox(height: tokens.spacing.gap),
-                Text(t.srs_library_merge_running),
-                const SizedBox(height: 4),
-                const FushiLinearProgressIndicator(),
-              ],
-              if (_error case final String error) ...<Widget>[
-                SizedBox(height: tokens.spacing.gap),
-                Text(
-                  error,
-                  key: const ValueKey<String>('srs_library_merge_error'),
-                  style: text.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
+                FushiStaggeredEntrance(
+                  index: 1,
+                  child: Text(
+                    conflicts.isEmpty
+                        ? t.srs_library_merge_no_conflicts
+                        : t.srs_library_merge_conflicts(
+                            n: '${conflicts.length}',
+                          ),
+                    style: text.titleSmall,
                   ),
                 ),
+                if (conflicts.isNotEmpty)
+                  Flexible(
+                    child: ListView.builder(
+                      key: const ValueKey<String>(
+                        'srs_library_merge_conflicts',
+                      ),
+                      shrinkWrap: true,
+                      itemCount: conflicts.length,
+                      itemBuilder: fushiStaggeredItemBuilder(
+                        (BuildContext context, int i) => _ConflictTile(
+                          conflict: conflicts[i],
+                          choice:
+                              _choices[conflicts[i].note] ??
+                              SrsMergeChoice.shared,
+                          enabled: !_running,
+                          onChanged: (SrsMergeChoice c) => setState(() {
+                            if (c == SrsMergeChoice.shared) {
+                              _choices.remove(conflicts[i].note);
+                            } else {
+                              _choices[conflicts[i].note] = c;
+                            }
+                          }),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (_running) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap),
+                  Text(t.srs_library_merge_running),
+                  const SizedBox(height: 4),
+                  const FushiLinearProgressIndicator(),
+                ],
+                if (_error case final String error) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap),
+                  Text(
+                    error,
+                    key: const ValueKey<String>('srs_library_merge_error'),
+                    style: text.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
+        actions: <Widget>[
+          FushiTextButton(
+            key: const ValueKey<String>('srs_library_merge_cancel'),
+            onPressed: _running ? null : () => Navigator.of(context).pop(),
+            child: Text(t.dialog_cancel),
+          ),
+          FushiFilledButton(
+            key: const ValueKey<String>('srs_library_merge_confirm'),
+            onPressed: _running ? null : _merge,
+            child: Text(t.srs_library_merge_confirm),
+          ),
+        ],
       ),
-      actions: <Widget>[
-        FushiTextButton(
-          key: const ValueKey<String>('srs_library_merge_cancel'),
-          onPressed: _running ? null : () => Navigator.of(context).pop(),
-          child: Text(t.dialog_cancel),
-        ),
-        FushiFilledButton(
-          key: const ValueKey<String>('srs_library_merge_confirm'),
-          onPressed: _running ? null : _merge,
-          child: Text(t.srs_library_merge_confirm),
-        ),
-      ],
     );
   }
 }

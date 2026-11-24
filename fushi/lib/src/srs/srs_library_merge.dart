@@ -26,6 +26,8 @@ import 'package:fushi_engine/profile/combo/combo_srs_library.dart';
 import 'package:fushi_engine/srs/srs_collection_merge.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_rwkv_attach.dart'
+    show srsDeleteRwkvSnapshots;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:path/path.dart' as p;
 
@@ -265,15 +267,7 @@ class SrsLibraryMerger {
     final Directory support = await _deps.supportRoot();
     final Directory media = SrsMediaStore.directoryFor(support, from);
     if (media.existsSync()) await media.delete(recursive: true);
-    final Directory rwkv = Directory(p.join(support.path, 'srs_rwkv', 'state'));
-    if (rwkv.existsSync()) {
-      final String prefix = 'rwkv-$from-';
-      await for (final FileSystemEntity e in rwkv.list(followLinks: false)) {
-        if (e is File && p.basename(e.path).startsWith(prefix)) {
-          await e.delete();
-        }
-      }
-    }
+    await srsDeleteRwkvSnapshots(support, from);
   }
 
   /// 把 [from] 下的文件按相对路径拷进 [into]；[into] 里已有的不覆盖（文件名按内容寻址）。

@@ -5,6 +5,7 @@
 // - 复习页正看着独立库：合并在那份副本最后一段独占区里做，之后副本作废。
 // - 内核并完、组合还没恢复继承就中断：`finishPending` 补做。
 // - 确认框：冲突逐条选（默认共享库），确认把选择交给合并；失败在框里报错、不关框。
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -144,6 +145,15 @@ void main() {
     expect(c.note, sharedNote);
     expect(c.fields.single.shared, '鳥');
     expect(c.fields.single.merged, '鯨');
+    // 两档模型下的 RWKV 快照：独立库的都删、共享库的不动。
+    File snap(String dir, String uid) =>
+        File('${support.path}/srs_rwkv/$dir/rwkv-$uid-m.snap')
+          ..createSync(recursive: true);
+    final List<File> ownSnaps = <File>[
+      snap('state', ownUid),
+      snap('state-tiny', ownUid),
+    ];
+    final File sharedSnap = snap('state-tiny', sharedUid);
 
     final SrsMergeResult r = await m.merge(
       plan,
@@ -164,6 +174,8 @@ void main() {
       isTrue,
     );
     expect(SrsMediaStore.directoryFor(support, ownUid).existsSync(), isFalse);
+    expect(ownSnaps.where((File f) => f.existsSync()), isEmpty);
+    expect(sharedSnap.existsSync(), isTrue);
     expect(
       SrsLibraryMerger.endpointsOf(await loadComboSrsLibraries(db), mangaId),
       isNull,
@@ -335,6 +347,57 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(SrsLibraryMergeDialog), findsOneWidget);
+    });
+
+    testWidgets('合并在跑时系统返回 / 点遮罩关不掉框；跑完带结果关框', (WidgetTester tester) async {
+      final Completer<SrsMergeResult> running = Completer<SrsMergeResult>();
+      SrsMergeResult? popped;
+      tester.view.physicalSize = const Size(1400, 2000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: TextButton(
+                onPressed: () async {
+                  popped = await showDialog<SrsMergeResult>(
+                    context: context,
+                    builder: (BuildContext _) => SrsLibraryMergeDialog(
+                      plan: planOf(preview),
+                      run: (Map<String, SrsMergeChoice> r) => running.future,
+                      errorText: (Object e) => '$e',
+                    ),
+                  );
+                },
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_library_merge_confirm')),
+      );
+      await tester.pump();
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.byType(SrsLibraryMergeDialog), findsOneWidget);
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pump();
+      expect(find.byType(SrsLibraryMergeDialog), findsOneWidget);
+      const SrsMergeResult result = SrsMergeResult(
+        merged: true,
+        conflicts: 1,
+        rewritten: 0,
+        keptMerged: 0,
+      );
+      running.complete(result);
+      await tester.pumpAndSettle();
+      expect(find.byType(SrsLibraryMergeDialog), findsNothing);
+      expect(popped, same(result));
     });
   });
 }

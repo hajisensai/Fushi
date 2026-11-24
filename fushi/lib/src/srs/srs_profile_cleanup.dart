@@ -29,6 +29,8 @@ import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart';
 import 'package:fushi_engine/srs/srs_reads.dart' show srsReadLib;
+import 'package:fushi_engine/srs/srs_rwkv_attach.dart'
+    show srsDeleteRwkvSnapshots;
 import 'package:fushi_engine/srs/srs_profile_merge.dart'
     show
         SrsPendingProfileMerge,
@@ -281,19 +283,9 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
     return f;
   }
 
-  /// 本机这个 uid 的 RWKV 排程快照（`<support>/srs_rwkv/state/rwkv-<uid>-<模型>.snap`，见 srs_rwkv_service.dart）。
-  Future<void> _deleteRwkvSnapshots(String uid) async {
-    final Directory dir = Directory(
-      p.join((await _deps.supportRoot()).path, 'srs_rwkv', 'state'),
-    );
-    if (!dir.existsSync()) return;
-    final String prefix = 'rwkv-$uid-';
-    await for (final FileSystemEntity e in dir.list(followLinks: false)) {
-      if (e is File && p.basename(e.path).startsWith(prefix)) {
-        await e.delete();
-      }
-    }
-  }
+  /// 本机这个 uid 在每一档模型下的 RWKV 排程快照（[srsDeleteRwkvSnapshots]）。
+  Future<void> _deleteRwkvSnapshots(String uid) async =>
+      srsDeleteRwkvSnapshots(await _deps.supportRoot(), uid);
 }
 
 class _Scan {
