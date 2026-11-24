@@ -183,13 +183,15 @@ class _TrackingPageState extends State<TrackingPage>
         final Set<int> orphanSeries = await _service.orphanSeriesLinkIds();
         final List<TrackingSeriesMergeCandidate> merges = await _service
             .seriesMergeCandidates();
-        final Map<int, TrackingSeriesCoverage> coverage =
-            <int, TrackingSeriesCoverage>{
+        // Every series link planned in one batch (BUG-5372: not one pass of
+        // queries per link).
+        final Map<int, TrackingSeriesCoverage> coverage = await _service
+            .seriesCoverages(<MediaTrackingMappingRow>[
               for (final MediaTrackingMappingRow m in snapshot.mappings)
                 if (m.mediaType == TrackingMediaType.bookCollection.value &&
                     !orphanSeries.contains(m.id))
-                  m.id: await _service.seriesCoverage(m),
-            };
+                  m,
+            ]);
         if (!mounted) return;
         final MediaVisibility visibility = mediaVisibility;
         final TrackingPageData data = TrackingPageData.of(

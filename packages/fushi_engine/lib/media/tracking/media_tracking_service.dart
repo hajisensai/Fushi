@@ -2525,6 +2525,35 @@ class MediaTrackingService {
     return (await _seriesCoverages(<_SeriesCard>[card])).single;
   }
 
+  /// [seriesCoverage] of every link in [mappings] at once: mapping id -> its
+  /// coverage (empty for a link that is not a series link). A fixed number of
+  /// queries however many links: the tracking page plans every series link on
+  /// each load.
+  Future<Map<int, TrackingSeriesCoverage>> seriesCoverages(
+    Iterable<MediaTrackingMappingRow> mappings,
+  ) async {
+    final List<MediaTrackingMappingRow> links = <MediaTrackingMappingRow>[];
+    final List<_SeriesCard> cards = <_SeriesCard>[];
+    final Map<int, TrackingSeriesCoverage> out =
+        <int, TrackingSeriesCoverage>{};
+    for (final MediaTrackingMappingRow mapping in mappings) {
+      final _SeriesCard? card = _seriesCardOf(mapping);
+      if (card == null) {
+        out[mapping.id] = TrackingSeriesCoverage.empty;
+        continue;
+      }
+      links.add(mapping);
+      cards.add(card);
+    }
+    final List<TrackingSeriesCoverage> coverages = await _seriesCoverages(
+      cards,
+    );
+    for (int i = 0; i < links.length; i++) {
+      out[links[i].id] = coverages[i];
+    }
+    return out;
+  }
+
   /// The card a series link ([mapping], a volume-counting `book_collection`
   /// link) covers; null for any other link.
   _SeriesCard? _seriesCardOf(MediaTrackingMappingRow mapping) {

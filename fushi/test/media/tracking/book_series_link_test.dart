@@ -609,8 +609,21 @@ void main() {
         final int candidates = (await service.seriesMergeCandidates()).length;
         final int waiting =
             (await service.seriesVolumesNeedingAttention()).length;
+        // What the tracking page itself loads for the Linked tab (and its
+        // attention rows): every series link's coverage, progress included.
+        final Map<int, TrackingSeriesCoverage> coverage = await service
+            .seriesCoverages(await repository.listMappings());
         expect(candidates, next);
         expect(waiting, next);
+        expect(
+          coverage.values
+              .where(
+                (TrackingSeriesCoverage c) =>
+                    c.countOf(TrackingSeriesMemberState.noNumber) == 1,
+              )
+              .length,
+          next,
+        );
         return (queries.selects, candidates);
       }
 
