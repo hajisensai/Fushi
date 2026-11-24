@@ -278,7 +278,15 @@ VideoAppleChromePlan planVideoAppleChrome({
     addUnique(topTrailing, mergedTop[i]);
   }
 
-  // 后随簇：重新安家的（字幕列表 / 设置）插在全屏键之前（AVKit 全屏在最右）。
+  // 后随簇：重新安家的（字幕列表 / 设置）插在全屏键之前（AVKit 全屏在最右），
+  // 设置恒紧挨全屏键。重新安家的顺序不能取槽位遍历序：出厂设置在 topRight、
+  // 字幕列表在 screenRight，遍历序会把设置排到字幕列表前面。
+  final List<VideoApplePlacement> relocatedTrailOrdered = <VideoApplePlacement>[
+    for (final VideoApplePlacement p in relocatedTrail)
+      if (p.item != VideoControlItem.settings) p,
+    for (final VideoApplePlacement p in relocatedTrail)
+      if (p.item == VideoControlItem.settings) p,
+  ];
   final List<VideoApplePlacement> bottomTrailing = <VideoApplePlacement>[];
   final int fullscreenAt = trail.indexWhere(
     (VideoApplePlacement p) => p.item == VideoControlItem.fullscreen,
@@ -291,7 +299,7 @@ VideoAppleChromePlan planVideoAppleChrome({
       : trail.sublist(fullscreenAt);
   for (final VideoApplePlacement p in <VideoApplePlacement>[
     ...before,
-    ...relocatedTrail,
+    ...relocatedTrailOrdered,
     ...after,
   ]) {
     addUnique(bottomTrailing, p);

@@ -7,6 +7,8 @@ import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -50,7 +52,7 @@ void main() {
           scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
           textTheme: Typography.material2021().black,
           glass: glassDesign
-              ? FushiGlassMaterial.liquid
+              ? FushiGlassMaterial.premium
               : FushiGlassMaterial.off,
           glassDesign: glassDesign,
         ),
@@ -371,26 +373,42 @@ void main() {
   });
 
   group('Apple 玻璃底栏', () {
+    // Apple 平铺底栏是库的 GlassTabBar.minimizable，整条栏只是一个
+    // GamepadNavCluster 焦点站（e03c069c280 / bc47e107bee），不再有逐格
+    // `nav-bar-<序号>` 焦点目标；按各格图标外的 FushiTooltip（名称）取位置。
+    // 库在透镜下另挂一行选中态图标，同名可能有两份，横坐标相同，取第一份。
+    List<String> appleVisualOrder(WidgetTester tester) {
+      final List<MapEntry<String, double>> xs =
+          <MapEntry<String, double>>[
+            for (final AdaptiveNavItem item in items)
+              MapEntry<String, double>(
+                item.label,
+                tester
+                    .getCenter(
+                      find
+                          .byWidgetPredicate(
+                            (Widget w) =>
+                                w is FushiTooltip && w.message == item.label,
+                          )
+                          .first,
+                    )
+                    .dx,
+              ),
+          ]..sort(
+            (MapEntry<String, double> a, MapEntry<String, double> b) =>
+                a.value.compareTo(b.value),
+          );
+      return <String>[for (final MapEntry<String, double> e in xs) e.key];
+    }
+
     testWidgets('反转关：搜索圆钮在最右', (WidgetTester tester) async {
       await pumpBar(tester, reversed: false, glassDesign: true);
-      expect(visualOrder(tester, reversed: false, fab: false), <String>[
-        '首页',
-        '书架',
-        '视频',
-        '设置',
-        '查词',
-      ]);
+      expect(appleVisualOrder(tester), <String>['首页', '书架', '视频', '设置', '查词']);
     });
 
     testWidgets('反转开：搜索圆钮在最左，其余镜像', (WidgetTester tester) async {
       await pumpBar(tester, reversed: true, glassDesign: true);
-      expect(visualOrder(tester, reversed: true, fab: false), <String>[
-        '查词',
-        '设置',
-        '视频',
-        '书架',
-        '首页',
-      ]);
+      expect(appleVisualOrder(tester), <String>['查词', '设置', '视频', '书架', '首页']);
     });
   });
 

@@ -2188,11 +2188,17 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     );
     final Widget toggle = _spot(
       _ThemeRole.container,
-      // 紧凑（窄屏吸顶）预览里示意开关按 28 高等比缩小：原尺寸（MD3 开关
+      // 紧凑（窄屏吸顶）预览里示意开关等比缩进 46×28 的框：原尺寸（MD3 开关
       // 约 66×46）在约 130 宽的 app 截面里把「按钮 / 标签 / 开关」挤成三行，
-      // 吸顶预览超过视口高度的三分之一。
+      // 吸顶预览超过视口高度的三分之一。宽高都要封顶——iOS 27 开关本身就是
+      // 28 高、63 宽（宽高比 2.25），只封高度时它不缩，标签行放不下开关。
+      // FittedBox 在松约束下按子件宽高比取尺寸，MD3 开关（高度先触顶）不受宽度
+      // 上限影响。
       compact
-          ? SizedBox(height: 28, child: FittedBox(child: previewSwitch))
+          ? ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 46, maxHeight: 28),
+              child: FittedBox(child: previewSwitch),
+            )
           : previewSwitch,
     );
     final Widget progress = _spot(

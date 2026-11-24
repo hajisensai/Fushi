@@ -7,6 +7,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show FushiGlassMaterial;
 import 'package:fushi/src/utils/adaptive/nav_shape.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
     show FushiAppleSelectionLens;
@@ -124,7 +126,14 @@ void main() {
       // 读屏语义与 tooltip 仍在目的地上（lens 层不吃语义）。
       final SemanticsHandle semantics = tester.ensureSemantics();
       expect(find.bySemanticsLabel('Books'), findsOneWidget);
-      expect(find.byTooltip('Books'), findsOneWidget);
+      // Apple 档 FushiTooltip 的内层 Tooltip 只带玻璃气泡 WidgetSpan（message 为空），
+      // find.byTooltip 认不出，按 FushiTooltip.message 找。
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) => w is FushiTooltip && w.message == 'Books',
+        ),
+        findsOneWidget,
+      );
       semantics.dispose();
     });
 

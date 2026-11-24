@@ -6,6 +6,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
     show FushiExpressiveLoadingIndicator;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
 /// 顶部悬浮条按宽度自适应溢出（2026-10-06）：宽时全部平铺、不画「⋯」；骤缩到
@@ -812,6 +814,12 @@ void main() {
   group('Apple iOS 档顶栏最多平铺 3 颗（用户 2026-11-24）', () {
     final List<FushiToolbarItem> five = actions.take(5).toList();
 
+    // Apple 档 FushiTooltip 的内层 Tooltip 只带玻璃气泡 WidgetSpan（message 为空），
+    // find.byTooltip 认不出，按 FushiTooltip.message 找。
+    Finder tip(String message) => find.byWidgetPredicate(
+      (Widget w) => w is FushiTooltip && w.message == message,
+    );
+
     Widget bar({required bool apple, required TargetPlatform platform}) =>
         MaterialApp(
           theme: buildFushiThemeData(
@@ -850,10 +858,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       for (int i = 0; i < 3; i++) {
-        expect(find.byTooltip('Action $i'), findsOneWidget);
+        expect(tip('Action $i'), findsOneWidget);
       }
-      expect(find.byTooltip('Action 3'), findsNothing);
-      expect(find.byTooltip('Action 4'), findsNothing);
+      expect(tip('Action 3'), findsNothing);
+      expect(tip('Action 4'), findsNothing);
       expect(more, findsOneWidget);
     });
 
@@ -863,7 +871,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       for (int i = 0; i < 5; i++) {
-        expect(find.byTooltip('Action $i'), findsOneWidget);
+        expect(tip('Action $i'), findsOneWidget);
       }
       expect(more, findsNothing);
     });

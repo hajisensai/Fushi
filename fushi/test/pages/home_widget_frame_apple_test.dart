@@ -98,8 +98,18 @@ void main() {
         matching: find.byType(RichText),
       ),
     );
-    final TextSpan root = figure.text as TextSpan;
-    expect((root.children!.first as TextSpan).style?.color, a.label);
+    // Text.rich 会在外面再包一层带 DefaultTextStyle 的根 span，所以按文字找数字那段，
+    // 不按 children 下标取（下标取到的是无 style 的包装层）。
+    TextSpan? valueSpan;
+    figure.text.visitChildren((InlineSpan span) {
+      if (span is TextSpan && span.text == '226') {
+        valueSpan = span;
+        return false;
+      }
+      return true;
+    });
+    expect(valueSpan, isNotNull);
+    expect(valueSpan!.style?.color, a.label);
 
     await tester.tap(find.byKey(const ValueKey<String>('frame-tap')));
     await tester.pumpAndSettle();
