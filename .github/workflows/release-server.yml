@@ -79,7 +79,9 @@ jobs:
   # 决定这一轮发什么：显式通道原样透传；auto 由 tool/server_release_plan.py 按
   # 「app 正式版 → app 最新 beta → develop 新提交」挑一个 fushi-server 还没发的目标
   # （连续失败 2 次的目标跳过并告警，免得坏 tag 每半小时重编一次）。channel 为空 = 无事可做，
-  # 下游全部跳过。脚本取自本 workflow 自己那一版（job_workflow_sha），与 workflow 定义同步。
+  # 下游全部跳过。脚本取自本 workflow 自己那一版，与 workflow 定义同步：可复用 workflow 里
+  # github.job_workflow_sha 是空的（2026-11-24 fushi-server run 45422872785 实测），所以从调用方
+  # run 的 referenced_workflows 读本文件被解析到的提交，经 workflow_sha 输出给 docker job。
   plan:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -87,11 +89,30 @@ jobs:
       channel: ${{ steps.plan.outputs.channel }}
       source_ref: ${{ steps.plan.outputs.source_ref }}
       tag_name: ${{ steps.plan.outputs.tag_name }}
+      workflow_sha: ${{ steps.self.outputs.sha }}
     steps:
+      - name: Resolve this workflow's commit
+        id: self
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CALLER_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          prefix="${SOURCE_REPO,,}/.github/workflows/release-server.yml@"
+          sha="$(gh api "repos/$CALLER_REPO/actions/runs/$RUN_ID" \
+            --jq "[.referenced_workflows[] | select(.path | ascii_downcase | startswith(\"$prefix\"))][0].sha // empty")"
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Workflow commit unknown::run $RUN_ID has no referenced release-server.yml (got '$sha')"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "release-server.yml resolved to $sha"
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: hajisensai/Fushi
-          ref: ${{ github.job_workflow_sha || 'develop' }}
+          ref: ${{ steps.self.outputs.sha }}
           sparse-checkout: tool/server_release_plan.py
           sparse-checkout-cone-mode: false
       - name: Plan
@@ -136,6 +157,7 @@ jobs:
       prerelease: ${{ steps.resolve.outputs.prerelease }}
       make_latest: ${{ steps.resolve.outputs.make_latest }}
       docker_tags: ${{ steps.resolve.outputs.docker_tags }}
+      workflow_sha: ${{ needs.plan.outputs.workflow_sha }}
       body: ${{ steps.resolve.outputs.body }}
     steps:
       - name: Refuse to publish server releases into the app repo
@@ -867,7 +889,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: hajisensai/Fushi
-          ref: ${{ github.job_workflow_sha || 'develop' }}
+          ref: ${{ needs.channel.outputs.workflow_sha }}
           sparse-checkout: packages/fushi_server/docker
       - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
