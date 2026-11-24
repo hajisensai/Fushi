@@ -10,6 +10,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/pages/implementations/games/galgame_home_model.dart';
 import 'package:fushi/src/pages/implementations/games/galgame_detail_route.dart'
     show galgameCoverFlightShuttle, galgameCoverHeroTag;
 import 'package:fushi/src/pages/implementations/games_library_page.dart'
@@ -100,38 +101,6 @@ Color galgamePlayStatusDotColor(GalgamePlayStatus status, Brightness b) {
     GalgamePlayStatus.dropped =>
       dark ? const Color(0xFFFF9B9B) : const Color(0xFFB3261E),
   };
-}
-
-/// 「游玩状态」块里各档的展示顺序（设计稿：在玩 → 玩过 → 想玩 → 搁置 → 弃坑 →
-/// 未设置）。
-const List<GalgamePlayStatus> kGalgameHomeStatusOrder = <GalgamePlayStatus>[
-  GalgamePlayStatus.playing,
-  GalgamePlayStatus.played,
-  GalgamePlayStatus.wantToPlay,
-  GalgamePlayStatus.onHold,
-  GalgamePlayStatus.dropped,
-  GalgamePlayStatus.unset,
-];
-
-/// 按游玩状态计数（6 档都有键，没有的为 0）。纯函数。
-Map<GalgamePlayStatus, int> countGalgamePlayStatuses(
-  Iterable<GalgameEntry> games,
-) {
-  final Map<GalgamePlayStatus, int> counts = <GalgamePlayStatus, int>{
-    for (final GalgamePlayStatus s in GalgamePlayStatus.values) s: 0,
-  };
-  for (final GalgameEntry g in games) {
-    counts[g.playStatus] = (counts[g.playStatus] ?? 0) + 1;
-  }
-  return counts;
-}
-
-/// 「平均通关约 n 小时」的 n：10 小时内保留一位小数，往上取整；没有或非正为 null。
-String? galgameAverageHoursLabel(double? hours) {
-  if (hours == null || hours <= 0 || !hours.isFinite) return null;
-  return hours < 10
-      ? hours.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '')
-      : '${hours.round()}';
 }
 
 // ── 封面与取色 ──────────────────────────────────────────────────────────────
