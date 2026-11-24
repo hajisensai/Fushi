@@ -14214,6 +14214,7 @@
   "video_screenshot_ready": "截图已准备好：${file}",
   "video_screenshot_saved_to": "截图已保存：${path}",
   "video_screenshot_subtitled": "带字幕截图",
+  "video_screenshot_web_unsupported": "截不到该站点的画面（受版权保护的站点无法截图）",
   "video_search_ai_expand": "AI 补充搜索词",
   "video_search_ai_expanded": "AI 补充了 ${count} 个搜索词",
   "video_search_ai_rank": "AI 排序",

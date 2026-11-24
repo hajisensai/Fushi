@@ -1,8 +1,9 @@
 part of '../video_fushi_page.dart';
 
 /// 网页档（站点视频，[VideoPlayerController.isWebBackend]）能服务的控制条按钮：逐帧 /
-/// 截图 / 片段导出 / 弹幕都要 libmpv 或本地媒体文件，一律不画；识别画面文字只在站点画面能
-/// 截帧时画（[canCaptureFrame]，Netflix DRM 不行）；音轨只在站点上报了音轨时画
+/// 片段导出 / 弹幕都要 libmpv 或本地媒体文件，一律不画；截图与识别画面文字只在站点画面能
+/// 截帧时画（[canCaptureFrame]：页面 canvas 截 `<video>` 当前帧，YouTube 等可以、Netflix DRM
+/// 不行——截图与暂停 OCR 同一条截帧链路，BUG-5417）；音轨只在站点上报了音轨时画
 /// （[hasSiteAudioTracks]，目前只有 Netflix）；章节按钮交给通用门控（站点给了片头片尾标记才
 /// 有章节）。纯函数，控制条门控 `_shouldRenderControlItem` 与测试同源调用。
 @visibleForTesting
@@ -14,15 +15,33 @@ bool videoWebBackendSupportsControlItem(
   switch (item) {
     case VideoControlItem.frameBackward:
     case VideoControlItem.frameForward:
-    case VideoControlItem.screenshot:
     case VideoControlItem.clipExport:
     case VideoControlItem.danmaku:
       return false;
     case VideoControlItem.audioTrack:
       return hasSiteAudioTracks;
-    // 识别画面文字：站点画面能在页面里截帧（非 DRM，YouTube 等）才画。
+    // 截图 / 识别画面文字：站点画面能在页面里截帧（非 DRM，YouTube 等）才画。
+    case VideoControlItem.screenshot:
     case VideoControlItem.ocrFrame:
       return canCaptureFrame;
+    default:
+      return true;
+  }
+}
+
+/// 网页档（站点视频）里键盘 / 手柄 / 自定义按钮触发的视频动作，哪些站点后端服务不了而诚实
+/// no-op：着色器对比、逐帧、小窗都要 libmpv 或本地媒体。截图（页面截帧，截不到时
+/// `_saveScreenshot` 给 OSD 说明）与上 / 下一章（站点章节 [VideoPlayerController.setWebChapters]）
+/// 站点能服务，不在此列——它们曾被一刀切成 no-op，按键「没反应」（BUG-5417）。纯函数，
+/// `_buildVideoShortcutActions` 与测试同源调用。
+@visibleForTesting
+bool videoWebBackendSupportsShortcutAction(ShortcutAction action) {
+  switch (action) {
+    case ShortcutAction.videoToggleShaderCompare:
+    case ShortcutAction.videoPreviousFrame:
+    case ShortcutAction.videoNextFrame:
+    case ShortcutAction.videoToggleMiniWindow:
+      return false;
     default:
       return true;
   }

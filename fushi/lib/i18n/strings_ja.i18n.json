@@ -14214,6 +14214,7 @@
   "video_screenshot_ready": "スクリーンショットの準備ができました：${file}",
   "video_screenshot_saved_to": "スクリーンショットを保存しました：${path}",
   "video_screenshot_subtitled": "字幕付きスクリーンショット",
+  "video_screenshot_web_unsupported": "Can't capture this site's video (DRM-protected sites can't be captured)",
   "video_search_ai_expand": "AIで検索語を追加",
   "video_search_ai_expanded": "AIが追加の検索語を ${count} 件提案しました",
   "video_search_ai_rank": "AIで並べ替え",

@@ -14214,6 +14214,7 @@
   "video_screenshot_ready": "Ảnh chụp đã sẵn sàng: ${file}",
   "video_screenshot_saved_to": "Đã lưu ảnh chụp: ${path}",
   "video_screenshot_subtitled": "Chụp màn hình kèm phụ đề",
+  "video_screenshot_web_unsupported": "Can't capture this site's video (DRM-protected sites can't be captured)",
   "video_search_ai_expand": "Thêm từ khóa bằng AI",
   "video_search_ai_expanded": "AI đã gợi ý thêm ${count} từ khóa tìm kiếm",
   "video_search_ai_rank": "Xếp hạng bằng AI",

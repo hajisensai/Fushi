@@ -14214,6 +14214,7 @@
   "video_screenshot_ready": "لقطة الشاشة جاهزة: ${file}",
   "video_screenshot_saved_to": "تم حفظ لقطة الشاشة: ${path}",
   "video_screenshot_subtitled": "لقطة شاشة مع الترجمة",
+  "video_screenshot_web_unsupported": "Can't capture this site's video (DRM-protected sites can't be captured)",
   "video_search_ai_expand": "مزيد من المصطلحات بالذكاء الاصطناعي",
   "video_search_ai_expanded": "اقترح الذكاء الاصطناعي ${count} مصطلح بحث إضافي",
   "video_search_ai_rank": "ترتيب بالذكاء الاصطناعي",

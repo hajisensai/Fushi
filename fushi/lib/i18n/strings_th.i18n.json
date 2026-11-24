@@ -14214,6 +14214,7 @@
   "video_screenshot_ready": "ภาพหน้าจอพร้อมแล้ว: ${file}",
   "video_screenshot_saved_to": "บันทึกภาพหน้าจอแล้ว: ${path}",
   "video_screenshot_subtitled": "ภาพหน้าจอพร้อมคำบรรยาย",
+  "video_screenshot_web_unsupported": "Can't capture this site's video (DRM-protected sites can't be captured)",
   "video_search_ai_expand": "เพิ่มคำค้นด้วย AI",
   "video_search_ai_expanded": "AI แนะนำคำค้นเพิ่มเติม ${count} คำ",
   "video_search_ai_rank": "จัดอันดับด้วย AI",
