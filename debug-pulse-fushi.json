@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T04:03:00Z",
+ "generatedAt": "2026-11-24T04:35:44Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "d3f6e882208c1dcc10902c971fccecd78d028404",
@@ -12,7 +12,7 @@
    "version": "3.4.0",
    "sha": "88038be0fae7e81865f877429bdf5158877504b7",
    "unknown": false,
-   "publishedAt": "2026-11-24T03:57:38Z",
+   "publishedAt": "2026-11-24T04:35:29Z",
    "testflight": true,
    "baseSeq": 32168,
    "prs": [],
@@ -49,8 +49,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45313353370"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -169,52 +168,6 @@
     },
     "ios": {
      "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32145,
-   "version": "3.4.0",
-   "sha": "10d0d070185cdcef44775d3ad1e445a0218d6325",
-   "unknown": false,
-   "publishedAt": "2026-11-23T23:43:31Z",
-   "testflight": false,
-   "baseSeq": 32137,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "10d0d070185cdcef44775d3ad1e445a0218d6325",
-     "subject": "Merge #4333 (claude/fix-immersion-queue-order-flake) into develop"
-    },
-    {
-     "sha": "ecd64aae2992f34686339675e991489d81ba74cc",
-     "subject": "Merge #4325 (claude/fix-develop-red2-collection) into develop"
-    },
-    {
-     "sha": "583e2139621e5a05f3f650100836dfd8b33b3ad0",
-     "subject": "Merge #4324 (claude/fix-develop-red2-download) into develop"
-    },
-    {
-     "sha": "70acd5c60130b9456a8c9ac24a088ba061ce7bd9",
-     "subject": "Merge #4323 (claude/fix-develop-red2-reader) into develop"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45285085463"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45285085463"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45285085463"
     }
    }
   }
