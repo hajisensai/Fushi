@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T02:10:58Z",
+ "generatedAt": "2026-11-24T02:17:18Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "04c7ec241876aab812fef4fb535095f479a72c65",
-  "seq": 32163
+  "sha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
+  "seq": 32168
  },
  "builds": [
   {
@@ -110,10 +110,14 @@
   }
  ],
  "pending": {
-  "headSha": "04c7ec241876aab812fef4fb535095f479a72c65",
-  "headSeq": 32163,
+  "headSha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
+  "headSeq": 32168,
   "prs": [],
   "direct": [
+   {
+    "sha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
+    "subject": "Merge #4196 (samutw/feat/tracking-series-links) into develop"
+   },
    {
     "sha": "04c7ec241876aab812fef4fb535095f479a72c65",
     "subject": "Merge #4338 (claude/fix-lyric-style-desc-clip) into develop"
@@ -135,19 +139,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45309723979"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920704"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45309724072"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45309724072"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45309724072"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
    }
   }
  },
