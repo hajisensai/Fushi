@@ -543,7 +543,6 @@ class _AppleLineRowState extends ConsumerState<_AppleLineRow>
     final FushiAppleColors apple = appleColorsOf(context);
     final _LineRowModel row = widget.row;
     final TexthookerLineEntry line = _line;
-    final ColorScheme colors = Theme.of(context).colorScheme;
     final TextStyle? wordStyle = ref
         .watch(appProvider)
         .applyGameTextFont(
@@ -620,7 +619,8 @@ class _AppleLineRowState extends ConsumerState<_AppleLineRow>
           presentation: row.presentation,
           words: row.words,
           style: wordStyle,
-          colors: colors,
+          warningColor: apple.warning,
+          hintColor: apple.secondaryLabel,
           onCharTap: widget.onCharTap,
           autoLookupCharIndex: row.autoLookupCharIndex,
           autoLookupAnchorKey: widget.autoLookupAnchorKey,

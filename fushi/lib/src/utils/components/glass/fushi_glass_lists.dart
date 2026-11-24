@@ -53,6 +53,10 @@ class FushiAppleMetrics {
     );
   }
 
+  /// 固定 iOS 档（不随窗口 / 平台换档、不放大）：给自带固定度量的媒体面用
+  /// （如照 Niratan 逐值复刻的歌词播放器），其余一律 [FushiAppleMetrics.of]。
+  static const FushiAppleMetrics ios = FushiAppleMetrics._(desktop: false);
+
   /// 按主题平台取档（没有 BuildContext 的装配点用；与 [FushiAppleMetrics.of] 同一判据）。
   factory FushiAppleMetrics.forPlatform(TargetPlatform platform) {
     return FushiAppleMetrics._(

@@ -898,7 +898,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
       return FushiPlainButton(
         key: key,
         onPressed: onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: FushiAppleRadii.of(context).highlightRadius,
         child: child,
       );
     }

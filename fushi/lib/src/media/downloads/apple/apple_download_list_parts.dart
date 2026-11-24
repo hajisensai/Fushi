@@ -22,6 +22,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart'
     show settingsSectionTitleActionStyle;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 /// 汇总行要的计数（与 M3E 汇总 hero 同一口径，见 `summarizeDownloadTasks`）。
 class AppleDownloadSummaryData {
@@ -115,7 +116,7 @@ class AppleDownloadTextAction extends StatelessWidget {
       onTap: onTap,
       enabled: enabled,
       stateBackground: false,
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: FushiAppleRadii.of(context).selectionRadius,
       child: ConstrainedBox(
         constraints: BoxConstraints(minHeight: metrics.desktop ? 24 : 32),
         child: Padding(
@@ -553,7 +554,7 @@ class AppleDownloadSectionHeader extends StatelessWidget {
               child: FushiAppleRow(
                 onTap: onToggle,
                 stateBackground: false,
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: FushiAppleRadii.of(context).selectionRadius,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 4,

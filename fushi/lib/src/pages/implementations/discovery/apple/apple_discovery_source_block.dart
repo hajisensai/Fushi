@@ -18,6 +18,7 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 TextStyle _nameStyle(BuildContext context) {
   final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
@@ -125,7 +126,9 @@ class AppleDiscoverySourceCard extends StatelessWidget {
                   children: <Widget>[
                     for (final Widget cover in strip)
                       ClipRRect(
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: FushiAppleRadii.of(
+                          context,
+                        ).thumbnailRadius,
                         child: SizedBox(
                           width: 40,
                           height: 60,

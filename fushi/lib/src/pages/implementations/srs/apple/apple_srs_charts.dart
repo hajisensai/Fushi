@@ -17,6 +17,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 /// UIKit 系统色（动态色的 light / dark 两档，HIG「Color」）。复习首页的三色计数
 /// （新 blue / 学习中 red / 待复习 green）、RWKV 三档（red / orange / green）与
@@ -248,6 +249,9 @@ class AppleSrsHeatmap extends StatefulWidget {
 }
 
 /// 四档绿色的不透明度（叠在 systemFill 上）。
+/// 热力图今天 / 选中日描边环向外扩的量；环的圆角同步加这么多，与格子同心。
+const double _kHeatRingInflate = 1.5;
+
 const List<double> _kHeatLevels = <double>[0.30, 0.55, 0.78, 1.0];
 
 class _AppleSrsHeatmapState extends State<AppleSrsHeatmap> {
@@ -400,7 +404,9 @@ class _AppleSrsHeatmapState extends State<AppleSrsHeatmap> {
                               DecoratedBox(
                                 decoration: BoxDecoration(
                                   color: shade(level),
-                                  borderRadius: BorderRadius.circular(2),
+                                  borderRadius: FushiAppleRadii.of(
+                                    context,
+                                  ).markRadius,
                                 ),
                                 child: const SizedBox.square(dimension: 9),
                               ),
@@ -468,8 +474,8 @@ class _AppleHeatPainter extends CustomPainter {
           ring.color = day == selectedDay ? selectedRing : todayRing;
           canvas.drawRRect(
             RRect.fromRectAndRadius(
-              rect.inflate(1.5),
-              r + const Radius.circular(1),
+              rect.inflate(_kHeatRingInflate),
+              r + const Radius.circular(_kHeatRingInflate),
             ),
             ring,
           );

@@ -82,6 +82,7 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/adaptive/fushi_apple_surface.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -2667,7 +2668,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Future<GalCaptureSetupOutcome?> _presentCaptureSetupDialog(
     GalAttachedTextController attachedText,
   ) {
-    return showAppDialog<GalCaptureSetupOutcome>(
+    // M3E 对话框；Apple 下 macOS 档窗口 sheet、iOS 档整页（用户 2026-11-24）。
+    return showAdaptiveDialogSurface<GalCaptureSetupOutcome>(
       context: context,
       builder: (BuildContext dialogContext) => GalCaptureSetupDialog(
         session: _session,
@@ -5572,7 +5574,8 @@ class _TexthookerLine extends ConsumerWidget {
             presentation: presentation,
             words: words,
             style: wordStyle,
-            colors: colors,
+            warningColor: colors.tertiary,
+            hintColor: colors.onSurfaceVariant,
             onCharTap: onCharTap,
             autoLookupCharIndex: autoLookupCharIndex,
             autoLookupAnchorKey: autoLookupAnchorKey,
@@ -5611,7 +5614,8 @@ class _TexthookerLineText extends StatefulWidget {
     required this.presentation,
     required this.words,
     required this.style,
-    required this.colors,
+    required this.warningColor,
+    required this.hintColor,
     required this.onCharTap,
     required this.autoLookupCharIndex,
     required this.autoLookupAnchorKey,
@@ -5623,7 +5627,12 @@ class _TexthookerLineText extends StatefulWidget {
   final TexthookerLinePresentation presentation;
   final List<String> words;
   final TextStyle? style;
-  final ColorScheme colors;
+
+  /// 「整段文本已折叠」提示的警示图标色（M3E tertiary / Apple warning）。
+  final Color warningColor;
+
+  /// 折叠提示文字色（M3E onSurfaceVariant / Apple secondaryLabel）。
+  final Color hintColor;
   final void Function(TexthookerLineEntry line, int charIndex, Rect rect)
   onCharTap;
   final int? autoLookupCharIndex;
@@ -5688,14 +5697,14 @@ class _TexthookerLineTextState extends State<_TexthookerLineText> {
               FushiIcon(
                 Icons.warning_amber_rounded,
                 size: 16,
-                color: widget.colors.tertiary,
+                color: widget.warningColor,
               ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   t.game_line_bulk_text_hint,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: widget.colors.onSurfaceVariant,
+                    color: widget.hintColor,
                   ),
                 ),
               ),

@@ -72,6 +72,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show GlassContainer, LiquidGlassSettings;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 part 'fushi_now_playing_bar_apple.part.dart';
 

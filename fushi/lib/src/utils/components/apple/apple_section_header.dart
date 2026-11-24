@@ -18,6 +18,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 /// 段标题：可选副标题；[onOpen] 非 null 时标题后带 ›，整个标题是去「查看全部」的
 /// 按钮（键盘 / 手柄可聚焦、Enter 激活）。[trailing] 是段头右侧的动作（如「播放」
@@ -81,7 +82,7 @@ class AppleSectionHeader extends StatelessWidget {
         child: FushiFocusable(
           key: openKey,
           onTap: open,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: FushiAppleRadii.of(context).highlightRadius,
           child: titleRow,
         ),
       );

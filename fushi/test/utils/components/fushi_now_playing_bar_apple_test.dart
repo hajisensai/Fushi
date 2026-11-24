@@ -214,7 +214,8 @@ void main() {
     final ClipRSuperellipse clip = tester.widget<ClipRSuperellipse>(
       cover.first,
     );
-    expect(clip.borderRadius, BorderRadius.circular(7));
+    // 封面走 Apple 圆角刻度的 cover 档（FushiAppleRadii.cover = 8，iOS 档与 Mac 不放大）。
+    expect(clip.borderRadius, BorderRadius.circular(8));
     final Size coverSize = tester.getSize(cover.first);
     expect(coverSize.width, coverSize.height, reason: '方形封面');
 

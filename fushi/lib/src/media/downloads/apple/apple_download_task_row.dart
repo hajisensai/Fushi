@@ -38,6 +38,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiPopupMenuItem;
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 /// 行菜单里「展开详情」的保留 id（来源自己没给 `details` 动作时补这一项）。
 const String kAppleDownloadInlineDetailsMenuId = '__apple-inline-details';
@@ -571,7 +572,7 @@ class _AppleDownloadTaskRowState extends State<AppleDownloadTaskRow> {
           color: _focused ? apple.accent : const Color(0x00000000),
           width: 2,
         ),
-        borderRadius: BorderRadius.circular(metrics.desktop ? 6 * k : 10),
+        borderRadius: FushiAppleRadii.of(context).selectionRadius,
       ),
       child: row,
     );

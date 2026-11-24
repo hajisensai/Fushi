@@ -26,6 +26,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 // =========================================================================
 // 分类块的彩色渐变
@@ -99,7 +100,7 @@ class AppleMusicEqualizerGlyph extends StatelessWidget {
           height: h,
           decoration: BoxDecoration(
             color: color,
-            borderRadius: BorderRadius.circular(1),
+            borderRadius: FushiAppleRadii.of(context).markRadius,
           ),
         ),
     ],
@@ -137,12 +138,12 @@ class _AppleMusicRowHighlightState extends State<AppleMusicRowHighlight> {
       onPointerCancel: (_) => _set(false),
       child: FushiFocusable(
         onTap: widget.onTap,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: FushiAppleRadii.of(context).highlightRadius,
         child: AnimatedContainer(
           duration: fushiMotionDuration(context, FushiMotion.micro),
           decoration: BoxDecoration(
             color: _pressed ? c.fill : c.fill.withValues(alpha: 0),
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: FushiAppleRadii.of(context).highlightRadius,
           ),
           child: widget.child,
         ),
@@ -180,7 +181,7 @@ class AppleMusicMvBadge extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: 3 * k),
               decoration: BoxDecoration(
                 border: Border.all(color: c.tertiaryLabel),
-                borderRadius: BorderRadius.circular(4 * k),
+                borderRadius: FushiAppleRadii.of(context).badgeRadius,
               ),
               child: Text(
                 'MV',
