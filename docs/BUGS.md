@@ -39,6 +39,13 @@
 |---|:--:|:--:|---|
 | [BUG-5387](bugs/BUG-5387-restore-quiesce-media-background-writers.md) | ✅ | ✅ | restore-quiesce-media-background-writers |
 | [BUG-5386](bugs/BUG-5386-gal-lookup-mine-blocks-until-card-written.md) | ✅ | ✅ | 游戏内查词制卡要等写卡结束（约 10 秒）才能挖下一句 |
+> 共 4678 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5377](bugs/BUG-5377-dist-mac-orphan-flutter-tester.md) | 🚧 | 🚧 | dist 在 macOS worker 上跑完测试后留下孤儿 flutter_tester 进程 |
+| [BUG-5376](bugs/BUG-5376-android-shared-prefs-multiprocess-clobber.md) | 🚧 | 🚧 | Android 多进程下 SharedPreferences 会被别的进程的旧副本整份覆盖 |
+| [BUG-5375](bugs/BUG-5375-android-library-anchor-clobbered-links-lost.md) | ✅ | ✅ | Android 更新后书库全部失去链接（书库位置锚点被别的进程冲掉 + 沙箱重基不经磁盘核实） |
 > 共 4684 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

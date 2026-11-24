@@ -5649,16 +5649,28 @@ class AppModel
       // 自愈失败只上报、不阻塞启动：用户至多回到修复前的状态，绝不能因为对账
       // 出错而进不去 app（台账故意不写，下次启动会重试）。
       StartupTimeline.mark('pending-restore');
-      await SandboxRelocation.reconcile(
-        db: _database,
-        documentsRoot: _appDirectory.path,
-        supportRoot: _databaseDirectory.path,
-        onError: (Object e, StackTrace stack) => ErrorLogService.instance.log(
+      // 改写了全库路径、或被磁盘反证拒绝的，都要能从反馈日志里看见（反馈
+      // RCv76PPoiJ 时这一步做了什么完全无迹可查）。
+      for (final String note in AppPaths.androidLocationCorrections) {
+        ErrorLogService.instance.logDiagnostic(
+          'AppPaths.androidLocation',
+          note,
+        );
+      }
+      final SandboxRelocationOutcome relocation =
+          await SandboxRelocation.reconcile(
+            db: _database,
+            documentsRoot: _appDirectory.path,
+            supportRoot: _databaseDirectory.path,
+            onError: (Object e, StackTrace stack) => ErrorLogService.instance
+                .log('AppModel.sandboxRelocation', e, stack),
+          );
+      if (relocation.isNoteworthy) {
+        ErrorLogService.instance.logDiagnostic(
           'AppModel.sandboxRelocation',
-          e,
-          stack,
-        ),
-      );
+          relocation.toString(),
+        );
+      }
       //    cloud backup backend can now coexist);
       // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
       //    took turns writing that single pair of keys, so its value can no

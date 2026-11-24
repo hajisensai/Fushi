@@ -2490,6 +2490,7 @@
   "data_storage_migrate_overlay_title": "データを移動中",
   "data_storage_migrate_overlay_warning": "アプリを開いたままにしてください。完了するまでアプリを閉じたりコンピュータをシャットダウンしないでください。",
   "data_storage_migrate_success": "データを移動しました。再起動中…",
+  "data_storage_migrate_target_has_library": "The destination ${path} already holds files your current library doesn't have (e.g. ${file}). It may be your real library, so it was not cleared and nothing was moved.",
   "data_storage_migrating": "データを移動中…",
   "data_storage_reject_install_dir": "そのフォルダはアプリのインストール場所のため、データを保存できません。別の空のフォルダを選択してください。",
   "data_storage_restart_failed": "データを移動しましたが、自動再起動に失敗しました。手動で Fushi を再度開いてください。",
