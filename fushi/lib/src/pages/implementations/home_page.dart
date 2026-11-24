@@ -127,6 +127,10 @@ import 'package:fushi/src/pages/implementations/shell_layout_choice_dialog.dart'
     show maybeShowShellLayoutChoice;
 import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
     show maybeShowBrowseMovedNotice;
+import 'package:fushi/src/profile/combo/combo_migration_report_dialog.dart'
+    show maybeShowComboMigrationNotice;
+import 'package:fushi/src/profile/profile_view_model.dart'
+    show profileRepositoryProvider;
 import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart'
     show maybeShowOverwriteSnapshotNotice;
 import 'package:fushi/src/pages/implementations/android_storage_move_prompt.dart'
@@ -774,6 +778,15 @@ class _HomePageState extends BasePageState<HomePage>
           context: context,
           appModel: appModelNoUpdate,
           freshInstall: freshInstall,
+        );
+      }
+
+      // 配置改成「组合」的迁移报告（拍板台 design-combo-node-split）：迁移改写了存量配置时
+      // 提示一次哪些组合单独设置了哪些项、生效顺序变化等；之后在配置管理页可重看。
+      if (mounted) {
+        await maybeShowComboMigrationNotice(
+          context: context,
+          repository: ref.read(profileRepositoryProvider),
         );
       }
 

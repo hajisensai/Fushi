@@ -1626,7 +1626,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   Future<({List<ProfileRow> profiles, int activeId})> _profileChoices() async {
     final ProfileRepository repo = ref.read(profileRepositoryProvider);
     return (
-      profiles: await repo.getAllProfiles(),
+      profiles: await repo.getListedProfiles(),
       activeId: await repo.getActiveProfileId(),
     );
   }

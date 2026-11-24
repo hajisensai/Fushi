@@ -214,12 +214,26 @@ class _ReaderHistoryDeleteDialogState extends State<ReaderHistoryDeleteDialog> {
 class _BookProfileDialog extends StatefulWidget {
   const _BookProfileDialog({
     required this.bookUid,
+    required this.title,
+    required this.mediaType,
+    required this.languageTag,
     required this.profileRepo,
+    required this.editing,
     required this.profiles,
     required this.activeProfileName,
   });
 
   final String bookUid;
+
+  /// 生效值表的编辑动作（`ProfileViewModel`）。
+  final ComboEditing editing;
+
+  /// 作品名（作品上直接拆出的匿名组合用它起名）。
+  final String title;
+
+  /// 这部作品参与组合解析的媒体类型与内容语言（[resolveBookProfileContext]）。
+  final ProfileMediaKind mediaType;
+  final String? languageTag;
   final ProfileRepository profileRepo;
   final List<ProfileRow> profiles;
   final String activeProfileName;
@@ -233,6 +247,12 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
   bool _loading = true;
   late List<ProfileRow> _profiles;
   late String _activeProfileName;
+
+  /// 作品层此刻挂的是作品上直接拆出的匿名组合（组合阶段 6，由 [WorkComboPanel] 报告）。
+  bool _workLocal = false;
+
+  /// 绑定被改过一次就 +1，生效值表按它重读。
+  int _revision = 0;
 
   @override
   void initState() {
@@ -248,7 +268,7 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
     );
 
     if (_profiles.isEmpty || _activeProfileName.isEmpty) {
-      _profiles = await widget.profileRepo.getAllProfiles();
+      _profiles = await widget.profileRepo.getListedProfiles();
       final int activeId = await widget.profileRepo.getActiveProfileId();
       for (final p in _profiles) {
         if (p.id == activeId) {
@@ -276,6 +296,13 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
     } else {
       await widget.profileRepo.setBookProfile(widget.bookUid, profileId);
     }
+    if (mounted) setState(() => _revision++);
+  }
+
+  /// 生效值表里的直接拆分 / 存成组合改了作品绑定：重读当前绑定与列表。
+  Future<void> _onComboBindingChanged() async {
+    _profiles = await widget.profileRepo.getListedProfiles();
+    await _loadCurrent();
   }
 
   @override
@@ -287,6 +314,30 @@ class _BookProfileDialogState extends State<_BookProfileDialog> {
       selectedProfileId: _selectedProfileId,
       onChanged: _onChanged,
       onClose: () => Navigator.pop(context),
+      workLocalLabel: _workLocal ? t.profile_combo_work_local_label : null,
+      comboPanel: WorkComboPanel(
+        editing: widget.editing,
+        askName: (BuildContext ctx, String initialName) =>
+            showAppDialog<String>(
+              context: ctx,
+              builder: (BuildContext dialogContext) => ProfileNameDialog(
+                title: t.profile_combo_work_save_as,
+                initialName: initialName,
+                submitLabel: t.profile_combo_work_save_as,
+              ),
+            ),
+        bookUid: widget.bookUid,
+        title: widget.title,
+        mediaType: widget.mediaType,
+        languageTag: widget.languageTag,
+        revision: _revision,
+        onBindingChanged: _onComboBindingChanged,
+        onWorkLocalChanged: (bool workLocal) {
+          if (mounted && workLocal != _workLocal) {
+            setState(() => _workLocal = workLocal);
+          }
+        },
+      ),
     );
   }
 }
@@ -301,6 +352,8 @@ class BookProfileDialogFrame extends StatelessWidget {
     required this.onChanged,
     required this.onClose,
     super.key,
+    this.workLocalLabel,
+    this.comboPanel,
   });
 
   final bool loading;
@@ -309,6 +362,12 @@ class BookProfileDialogFrame extends StatelessWidget {
   final int? selectedProfileId;
   final ValueChanged<int?> onChanged;
   final VoidCallback onClose;
+
+  /// 见 [BookProfileDialogContent.workLocalLabel]。
+  final String? workLocalLabel;
+
+  /// 见 [BookProfileDialogContent.comboPanel]。
+  final Widget? comboPanel;
 
   @override
   Widget build(BuildContext context) {
@@ -349,6 +408,8 @@ class BookProfileDialogFrame extends StatelessWidget {
                 profiles: profiles,
                 selectedProfileId: selectedProfileId,
                 onChanged: onChanged,
+                workLocalLabel: workLocalLabel,
+                comboPanel: comboPanel,
               ),
         footer: Align(
           alignment: Alignment.centerRight,
@@ -370,12 +431,21 @@ class BookProfileDialogContent extends StatelessWidget {
     required this.selectedProfileId,
     required this.onChanged,
     super.key,
+    this.workLocalLabel,
+    this.comboPanel,
   });
 
   final String activeProfileName;
   final List<ProfileRow> profiles;
   final int? selectedProfileId;
   final ValueChanged<int?> onChanged;
+
+  /// 作品层挂的是作品上直接拆出的匿名组合（组合阶段 6）时，绑定列表多一行选中的「仅此作品」
+  /// （匿名组合不在配置列表里）。null = 不是。
+  final String? workLocalLabel;
+
+  /// 绑定列表下面的「最终生效值」表与直接拆分（[WorkComboPanel]）；null = 不显示。
+  final Widget? comboPanel;
 
   @override
   Widget build(BuildContext context) {
@@ -400,6 +470,12 @@ class BookProfileDialogContent extends StatelessWidget {
                   selected: selectedProfileId == null,
                   onTap: () => onChanged(null),
                 ),
+                if (workLocalLabel case final String label)
+                  _BookProfileOptionRow(
+                    title: label,
+                    selected: true,
+                    onTap: () {},
+                  ),
                 for (final profile in profiles)
                   _BookProfileOptionRow(
                     title: profile.name,
@@ -408,6 +484,7 @@ class BookProfileDialogContent extends StatelessWidget {
                   ),
               ],
             ),
+            ?comboPanel,
           ],
         ),
       ),

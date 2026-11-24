@@ -10,9 +10,15 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/profile/combo/combo_repository.dart'
+    show ComboMigrationReport;
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
+import 'package:fushi/src/profile/combo/combo_editing.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
+import 'package:fushi/src/profile/combo/fushi_settings_tree.dart'
+    show FushiComboNode;
+import 'package:fushi/src/srs/srs_library_merge.dart';
 import 'package:fushi/src/srs/srs_profile_cleanup.dart';
 
 /// Serializes Profile application with temporary draft persistence.
@@ -162,14 +168,17 @@ class ProfileUiState {
   );
 }
 
-class ProfileViewModel extends StateNotifier<ProfileUiState> {
+class ProfileViewModel extends StateNotifier<ProfileUiState>
+    implements ComboEditing {
   ProfileViewModel(
     this._repo,
     this._onProfileApplied,
     this._profileDraftCoordinator, {
     ProfileDeletionCascade? deletionCascade,
+    SrsLibraryMerger? libraryMerger,
     Future<void> Function()? onWorkScopeSettled,
   }) : _deletionCascade = deletionCascade,
+       _libraryMerger = libraryMerger,
        _onWorkScopeSettled = onWorkScopeSettled ?? _noWorkScopeReload,
        super(
          ProfileUiState(
@@ -197,7 +206,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   }
 
   Future<void> _refreshProfileList() async {
-    final List<ProfileRow> profiles = await _repo.getAllProfiles();
+    final List<ProfileRow> profiles = await _repo.getListedProfiles();
     if (!mounted) return;
     state = state.copyWith(profiles: profiles);
   }
@@ -226,13 +235,16 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   /// 删 Profile 时连带清理的、主库外键级联管不到的数据（复习数据在 srs.db）；null = 不清（测试）。
   final ProfileDeletionCascade? _deletionCascade;
 
+  /// 手动把组合拆出的独立复习库并进共享库（组合阶段 5）；null = 不支持（测试）。
+  final SrsLibraryMerger? _libraryMerger;
+
   Future<T> _whileInvalidatingProfileDrafts<T>(Future<T> Function() action) =>
       _profileDraftCoordinator.runProfileChange(action);
 
   Future<void> _load() async {
     state = state.copyWith(isLoading: true);
     await _repo.ensureDefaultProfile();
-    final profiles = await _repo.getAllProfiles();
+    final profiles = await _repo.getListedProfiles();
     final activeId = await _repo.getActiveProfileId();
     final bindings = await _repo.getAllMediaTypeBindings();
     final languageBindings = await _repo.getAllLanguageBindings();
@@ -329,6 +341,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   /// 用户手动切换：这是新的「自己选的配置」，作废绑定留下的回退点。清回退点与
   /// 切换在同一把锁里，不会被并发的绑定应用夹在中间。
+  @override
   Future<void> switchProfile(int profileId) async {
     // 乐观标签：用户一点选就显示目标配置名，不等排队 / 快照 / 应用这些秒级步骤。
     ProfileRow? target;
@@ -394,7 +407,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         await _repo.snapshotCurrentSettings(newId);
         await _repo.setActiveProfileId(newId);
         state = state.copyWith(
-          profiles: await _repo.getAllProfiles(),
+          profiles: await _repo.getListedProfiles(),
           activeProfileId: newId,
         );
       });
@@ -404,16 +417,20 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       await _repo.snapshotCurrentSettings(sourceId);
     }
     await _repo.copyProfile(sourceId, newName);
-    state = state.copyWith(profiles: await _repo.getAllProfiles());
+    state = state.copyWith(profiles: await _repo.getListedProfiles());
   }
 
   Future<void> renameProfile(int id, String name) async {
     await _repo.renameProfile(id, name);
-    state = state.copyWith(profiles: await _repo.getAllProfiles());
+    state = state.copyWith(profiles: await _repo.getListedProfiles());
   }
 
-  /// 删掉 [id] 会连带删掉的数据规模（确认框用）。
+  /// 删掉 [id] 会连带删掉的数据规模（确认框用）。[id] 承载共享复习库时抛
+  /// [ProfileHostsSharedSrsLibraryException]（确认框写明原因、删除键不可点）。
   Future<ProfileDeletionImpact> deletionImpact(int id) async {
+    if (await _repo.hostsSharedSrsLibrary(id)) {
+      throw ProfileHostsSharedSrsLibraryException(id);
+    }
     final ProfileDeletionCascade? cascade = _deletionCascade;
     if (cascade == null) return const ProfileDeletionImpact.none();
     final ProfileRow? target = _profileById(await _repo.getAllProfiles(), id);
@@ -423,6 +440,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   /// 删 Profile，连带它在 srs.db 里的复习数据与媒体目录（反馈 8TaOy2i-lL）：先备份（失败抛
   /// [ProfileDeletionBackupException]，什么都不删），再删 `profiles` 行（主库外键级联其余），最后清复习数据。
+  /// 承载共享复习库的那份不删，抛 [ProfileHostsSharedSrsLibraryException]。
   /// 只剩一个 Profile 或 [id] 不存在时不删，返回 null。
   Future<ProfileDeletionOutcome?> deleteProfile(int id) =>
       _profileDraftCoordinator._runProfileMutation((
@@ -431,6 +449,10 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         final List<ProfileRow> before = await _repo.getAllProfiles();
         final ProfileRow? target = _profileById(before, id);
         if (target == null || before.length <= 1) return null;
+        // 承载共享复习库的那份不删（备份 / 清理都不开始）。
+        if (await _repo.hostsSharedSrsLibrary(id)) {
+          throw ProfileHostsSharedSrsLibraryException(id);
+        }
         final ProfileDeletionCleanup? cleanup = await _deletionCascade?.prepare(
           target,
         );
@@ -445,7 +467,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         }
 
         await _repo.deleteProfile(id);
-        final profiles = await _repo.getAllProfiles();
+        final profiles = await _repo.getListedProfiles();
         final activeId = await _repo.getActiveProfileId();
         state = state.copyWith(profiles: profiles, activeProfileId: activeId);
         if (deletesActiveProfile && activeId != previousActiveId) {
@@ -468,6 +490,134 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       (_ProfileDraftMutation _) async =>
           cascade.sweepOrphans(await _repo.getAllProfiles()),
     );
+  }
+
+  /// 组合 [id] 拆出的独立复习库并进共享库的预览（冲突表）；它没有独立库时 null。复习库打不开抛
+  /// [SrsLibraryMergeUnavailableException]。
+  Future<SrsLibraryMergePlan?> srsLibraryMergePlan(int id) async =>
+      _libraryMerger?.plan(id);
+
+  /// 按 [plan] 把独立复习库并进共享库（[resolutions]：冲突笔记保留哪一边，没列的保留共享库），之后组合 [plan] 的
+  /// `srs.library` 恢复继承。在配置变更锁里做：快照写回不会把撤掉的拆分写回来。
+  Future<SrsMergeResult> mergeSrsLibraryIntoShared(
+    SrsLibraryMergePlan plan,
+    Map<String, SrsMergeChoice> resolutions,
+  ) {
+    final SrsLibraryMerger? merger = _libraryMerger;
+    if (merger == null) {
+      throw StateError('merging review libraries is not wired');
+    }
+    return _profileDraftCoordinator._runProfileMutation(
+      (_ProfileDraftMutation _) => merger.merge(
+        plan,
+        resolutions,
+        restoreInheritance: () => _restoreSrsLibrary(plan.profileId),
+      ),
+    );
+  }
+
+  /// 补做内核已并完、组合还没恢复继承的合并（进 Profile 管理时与存量扫描一起调）。返回收尾了几条。
+  Future<int> finishPendingSrsLibraryMerges() async {
+    final SrsLibraryMerger? merger = _libraryMerger;
+    if (merger == null) return 0;
+    return _profileDraftCoordinator._runProfileMutation(
+      (_ProfileDraftMutation _) =>
+          merger.finishPending(restoreInheritance: _restoreSrsLibrary),
+    );
+  }
+
+  Future<void> _restoreSrsLibrary(int profileId) =>
+      _repo.combos.restoreInheritanceOf(profileId, FushiComboNode.srsLibrary);
+
+  // ── 组合编辑（拍板台 design-combo-node-split 阶段 6）──────────────────
+  //
+  // 都在配置变更锁里做：激活配置的拆分 / 恢复要先把活偏好写回它，和切换配置的快照不能交错。
+
+  /// 组合编辑页的数据（[ProfileRepository.loadComboEditor]）。
+  @override
+  Future<ComboEditorData?> loadComboEditor(int profileId) =>
+      _repo.loadComboEditor(profileId);
+
+  /// 「单独设置」节点 [nodeId]（复制此刻的生效值）。值不变，不用重新应用。
+  @override
+  Future<void> splitComboNode(int profileId, String nodeId) =>
+      _profileDraftCoordinator._runProfileMutation(
+        (_ProfileDraftMutation _) => _repo.splitComboNode(profileId, nodeId),
+      );
+
+  /// 「恢复继承」节点 [nodeId]。[profileId] 是激活配置时活偏好换成继承来的值（重新应用，作废
+  /// 在飞的设置草稿，刷新各处缓存）。
+  @override
+  Future<void> restoreComboNode(int profileId, String nodeId) =>
+      _profileDraftCoordinator._runProfileMutation((
+        _ProfileDraftMutation mutation,
+      ) async {
+        final bool reapply = await _repo.restoreComboNode(profileId, nodeId);
+        if (!reapply) return;
+        mutation.invalidateDrafts();
+        await _repo.applyProfile(profileId);
+        await _onProfileApplied();
+      });
+
+  /// 「拆成独立复习库」。复习库列表随 `profile_settings` 变更自己重算（`srsLibrariesProvider`）。
+  @override
+  Future<void> splitComboSrsLibrary(int profileId) =>
+      _profileDraftCoordinator._runProfileMutation(
+        (_ProfileDraftMutation _) => _repo.splitComboSrsLibrary(profileId),
+      );
+
+  /// 作品的「最终生效值」表（[ProfileRepository.loadWorkComboTable]）。
+  @override
+  Future<WorkComboTable> loadWorkComboTable({
+    required String bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
+  }) => _repo.loadWorkComboTable(
+    bookUid: bookUid,
+    languageTag: languageTag,
+    mediaType: mediaType,
+  );
+
+  /// 作品上直接「单独设置」节点 [nodeId]（[ProfileRepository.splitWorkNode]）。
+  @override
+  Future<void> splitWorkNode({
+    required String bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
+    required String nodeId,
+    required String anonymousName,
+  }) => _profileDraftCoordinator._runProfileMutation(
+    (_ProfileDraftMutation _) => _repo.splitWorkNode(
+      bookUid: bookUid,
+      languageTag: languageTag,
+      mediaType: mediaType,
+      nodeId: nodeId,
+      anonymousName: anonymousName,
+    ),
+  );
+
+  /// 作品上「恢复继承」节点 [nodeId]（[ProfileRepository.restoreWorkNode]）。
+  @override
+  Future<void> restoreWorkNode({
+    required String bookUid,
+    required String nodeId,
+  }) => _profileDraftCoordinator._runProfileMutation(
+    (_ProfileDraftMutation _) =>
+        _repo.restoreWorkNode(bookUid: bookUid, nodeId: nodeId),
+  );
+
+  /// 作品上的匿名组合「存成组合」，之后出现在配置列表里。
+  @override
+  Future<void> saveWorkComboAs({
+    required String bookUid,
+    required String name,
+  }) async {
+    await _profileDraftCoordinator._runProfileMutation(
+      (_ProfileDraftMutation _) =>
+          _repo.saveWorkComboAs(bookUid: bookUid, name: name),
+    );
+    if (!mounted) return;
+    state = state.copyWith(profiles: await _repo.getListedProfiles());
   }
 
   static ProfileRow? _profileById(List<ProfileRow> profiles, int id) {
@@ -503,6 +653,10 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       languageBindings: await _repo.getAllLanguageBindings(),
     );
   }
+
+  /// 本库最近一次组合迁移的报告（配置管理页「组合迁移报告」行）；没有时 null。
+  Future<ComboMigrationReport?> comboMigrationReport() =>
+      _repo.loadComboMigrationReport();
 
   Future<void> saveCurrentSettingsToActiveProfile() async {
     await _repo.snapshotCurrentSettings(state.activeProfileId);
@@ -543,7 +697,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       mode: mode,
       targetProfileId: targetProfileId,
     );
-    state = state.copyWith(profiles: await _repo.getAllProfiles());
+    state = state.copyWith(profiles: await _repo.getListedProfiles());
     if (overwritesActiveProfile && writtenId == activeProfileId) {
       await _repo.applyProfile(writtenId);
       await _onProfileApplied();
@@ -568,6 +722,9 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
     ankiRepo,
     // BUG-1994：回插被旧 prune 删掉的词典行时，「装没装」只认磁盘目录。
     isDictionaryInstalled: ref.read(appProvider).isDictionaryInstalledOnDisk,
+    // 组合迁移（ensureDefaultProfile 里归一，旧备份恢复后也在这里收敛）。
+    srsUserData: ref.read(appProvider).comboSrsUserData,
+    comboMigrationBackupDirectory: AppModel.comboMigrationBackupDirectory,
   );
 });
 
@@ -619,6 +776,7 @@ final profileViewModelProvider =
         onApplied,
         profileDraftCoordinator,
         deletionCascade: srsProfileCleanupFor(ref),
+        libraryMerger: srsLibraryMergerFor(ref),
         onWorkScopeSettled: () =>
             container.read(appProvider).workProfileScopeSettled,
       );

@@ -11,6 +11,7 @@
 //! - [stats]：复习统计 `stats_report` / `stats_recall` / `stats_rows`（协议 3 `store/stats.rs`，同一份聚合）。
 //! - [center]：冲突中心与时间线的只读命令 `conflicts` / `checkpoints` / `undo_check`（G7-4e）。
 //! - [profile]：按集合的 `binding_get` / `profile_footprint`（G7-4e）。
+//! - [collection_merge]：手动把独立复习库并进共享复习库（组合阶段 5，`collection_merge*`）。
 //! - [identity]：身份命令 `identity` / `binding_set` / `collection_*` / `canonical_ids` / `key_evidence` / `divergence`
 //!   （G9-4；存储层是 `store/gen4/identity.rs` 与 `truth.rs`）。
 //! - [study]：出卡与牌组计数 `study`（协议 3 `store/study.rs`，同一份排队规则；常驻会话与索引的取舍见那里的文件头）。
@@ -56,6 +57,7 @@ use crate::sync2::vv::OpId;
 pub mod backup;
 pub mod browse;
 pub mod center;
+pub mod collection_merge;
 pub mod columns;
 pub mod fushisrs;
 pub mod history;

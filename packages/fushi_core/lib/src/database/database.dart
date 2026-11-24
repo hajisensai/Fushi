@@ -1317,6 +1317,10 @@ class FushiDatabase extends _$FushiDatabase
 
   final bool _isMainProcess;
 
+  /// 本库实例是不是主进程开的（Android `:popup` 等辅助进程为 false）。只有主进程做一次性
+  /// 数据改写（如配置的组合格式迁移），辅助进程只读。
+  bool get isMainProcess => _isMainProcess;
+
   /// 本库实例上的后台写库工作（换库的生命周期边界，见 [DatabaseBackgroundWork]）。
   ///
   /// 扫描、刮削、哈希升级、封面回填、响度测量等后台写手一律经

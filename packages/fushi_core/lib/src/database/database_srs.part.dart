@@ -1,5 +1,13 @@
 part of 'database.dart';
 
+/// 「组合」在 `profile_settings` 里的 category（持久化名，冻结）。引擎 `settings_tree.dart` 的
+/// `kComboSyntheticCategory` 就是它（单一真相源在这里：[FushiDatabase.adoptProfileUid] 也要按它改行）。
+const String kProfileComboCategory = 'combo';
+
+/// 默认组合上记共享复习库集合 uid 的 key（持久化名，冻结）；引擎 `combo_rows.dart` 的
+/// `kComboSrsSharedUidKey` 就是它。
+const String kProfileComboSrsSharedUidKey = 'srs_shared_uid';
+
 /// 「卡片前身链接」修改记录（`historyFrom/<前身卡>`，更改笔记类型时写）的筛选条件：v120 的部分索引
 /// `idx_srs_field_edits_history_from` 的 WHERE，fushi_engine `SrsDbStore` 找后继卡的查询也用这一句。
 ///
@@ -210,10 +218,27 @@ mixin _FushiDbSrs on _$FushiDatabase {
   }
 
   /// 关联到已有 profile 时采用对端的 uid（铁律 E）。调用方负责先检查「没有用户笔记且从未发布过批次」。
-  Future<void> adoptProfileUid(int profileId, String uid) async {
-    await customStatement('UPDATE profiles SET uid = ? WHERE id = ?', <Object>[
-      uid,
-      profileId,
-    ]);
-  }
+  ///
+  /// 共享复习库的指针（默认组合的 `combo/srs_shared_uid` 行，引擎 `combo_rows.dart`）指着旧 uid 时一并改指
+  /// 新 uid：这份 profile 承载的就是共享库，换了集合身份共享库也跟着换，否则共享库指向一个已不存在的
+  /// uid（制卡 / 复习打开一份空库）。同一个事务里改，不会有只改了一半的时刻。
+  Future<void> adoptProfileUid(int profileId, String uid) => transaction(
+    () async {
+      final QueryRow? row = await customSelect(
+        'SELECT uid FROM profiles WHERE id = ?',
+        variables: <Variable<Object>>[Variable<int>(profileId)],
+      ).getSingleOrNull();
+      final String? old = row?.read<String?>('uid');
+      await customStatement(
+        'UPDATE profiles SET uid = ? WHERE id = ?',
+        <Object>[uid, profileId],
+      );
+      if (old == null || old.isEmpty || old == uid) return;
+      await customStatement(
+        'UPDATE profile_settings SET value = ? '
+        'WHERE category = ? AND key = ? AND value = ?',
+        <Object>[uid, kProfileComboCategory, kProfileComboSrsSharedUidKey, old],
+      );
+    },
+  );
 }

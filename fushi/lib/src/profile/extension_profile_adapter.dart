@@ -61,7 +61,8 @@ class AppExtensionProfileApi implements ExtensionProfileApi {
   @override
   Future<ExtensionProfileList> listProfiles() async {
     final ProfileRepository repo = _repository();
-    final List<ProfileRow> profiles = await repo.getAllProfiles();
+    // 作品上直接拆出的匿名组合不列（组合阶段 6）。
+    final List<ProfileRow> profiles = await repo.getListedProfiles();
     return ExtensionProfileList(
       profiles: <ExtensionProfileSummary>[
         for (final ProfileRow p in profiles)

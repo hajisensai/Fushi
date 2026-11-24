@@ -161,6 +161,8 @@ class ServerProfileHub {
         profileName: name,
         schemaVersion: doc.schemaVersion,
         settings: doc.settings.where(isAcceptedProfileSettingEntry).toList(),
+        // v2 的「单独设置了哪些叶子」原样寄存；v1 文件没有（整份快照），转出时为空 = 同一导入结果。
+        splitNodes: doc.splitNodes ?? const <String>[],
       );
       // 先写临时文件再改名：半截文件不会被列表 / 拉取读到。
       final File tmp = File(p.join(directory.path, '$id$_suffix.tmp'));
@@ -184,6 +186,7 @@ class ServerProfileHub {
       profileName: doc.profileName,
       schemaVersion: doc.schemaVersion,
       settings: doc.settings,
+      splitNodes: doc.splitNodes ?? const <String>[],
     );
   }
 

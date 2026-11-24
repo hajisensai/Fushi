@@ -116,6 +116,12 @@ void main() {
     final Directory rwkv = Directory(p.join(support.path, 'srs_rwkv', 'state'));
     await rwkv.create(recursive: true);
     await File(p.join(rwkv.path, 'rwkv-$uid-m.snap')).writeAsBytes(<int>[9]);
+    // 切过档位：Tiny 档的快照在另一个目录。
+    final Directory tiny = Directory(
+      p.join(support.path, 'srs_rwkv', 'state-tiny'),
+    );
+    await tiny.create(recursive: true);
+    await File(p.join(tiny.path, 'rwkv-$uid-m.snap')).writeAsBytes(<int>[9]);
     return s;
   }
 
@@ -206,12 +212,34 @@ void main() {
         ).existsSync(),
         isFalse,
       );
+      expect(
+        File(
+          p.join(
+            support.path,
+            'srs_rwkv',
+            'state-tiny',
+            'rwkv-$goneUid-m.snap',
+          ),
+        ).existsSync(),
+        isFalse,
+      );
       // 另一个 profile 原样。
       expect(await srsProfileFootprint(storage.core, keepUid), keepBefore);
       expect(SrsMediaStore.directoryFor(support, keepUid).existsSync(), isTrue);
       expect(
         File(
           p.join(support.path, 'srs_rwkv', 'state', 'rwkv-$keepUid-m.snap'),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(
+        File(
+          p.join(
+            support.path,
+            'srs_rwkv',
+            'state-tiny',
+            'rwkv-$keepUid-m.snap',
+          ),
         ).existsSync(),
         isTrue,
       );
