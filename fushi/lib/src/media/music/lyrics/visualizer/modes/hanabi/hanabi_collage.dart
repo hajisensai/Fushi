@@ -939,6 +939,11 @@ void drawCollageSprite(
 }
 
 /// 像 Pixi 平铺精灵那样把纹理平铺进 [rect]（当前画布坐标），tile 原点在 rect 左上 + (tileX, tileY)。
+///
+/// 覆盖 [rect] 的每个格子是一个精灵（边缘的格子裁掉 src），整片一次 drawRawAtlas：tint × alpha 走精灵颜色的
+/// modulate，和烟花 / 装饰件同一条路。不用 `ImageShader(repeated)` 画 drawRect：Windows（Impeller GLES /
+/// ANGLE）上每帧这样平铺 toImageSync 出来的纹理，显存在几秒内涨到显卡上限（实测 5–9 GB 锯齿、随后
+/// GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT 崩溃，BUG-5403），换成同一张纹理按精灵画则平稳。
 void drawCollageTiling(
   ui.Canvas canvas,
   CollageTexture texture,
@@ -949,28 +954,117 @@ void drawCollageTiling(
   int? tint,
 }) {
   if (alpha <= 0.002 || rect.width <= 0 || rect.height <= 0) return;
-  final double sx = texture.width / texture.image.width;
-  final double sy = texture.height / texture.image.height;
-  final Float64List matrix = Float64List(16)
-    ..[0] = sx
-    ..[5] = sy
-    ..[10] = 1
-    ..[12] = rect.left + tileX
-    ..[13] = rect.top + tileY
-    ..[15] = 1;
-  final Paint paint = Paint()
-    ..filterQuality = FilterQuality.medium
-    ..shader = ui.ImageShader(
+  final CollageTileBatch? batch = collageTileBatch(
+    texture,
+    rect,
+    tileX: tileX,
+    tileY: tileY,
+    alpha: alpha,
+    tint: tint,
+  );
+  if (batch == null) return;
+  canvas
+    ..save()
+    ..translate(batch.originX, batch.originY)
+    ..scale(batch.scaleX, batch.scaleY)
+    ..drawRawAtlas(
       texture.image,
-      TileMode.repeated,
-      TileMode.repeated,
-      matrix,
+      batch.transforms,
+      batch.rects,
+      batch.colors,
+      BlendMode.modulate,
+      null,
+      _tilePaint,
     )
-    ..color = Color.fromRGBO(255, 255, 255, clamp01(alpha));
-  if (tint != null) {
-    paint.colorFilter = ColorFilter.mode(rgbColor(tint), BlendMode.modulate);
+    ..restore();
+}
+
+final Paint _tilePaint = Paint()..filterQuality = FilterQuality.medium;
+
+/// [drawCollageTiling] 的一批平铺精灵：画布先平移到 tile 原点、按 (scaleX, scaleY) 缩到纹理像素，
+/// 之后每个格子在纹理像素空间里是一个不旋转不缩放的精灵（RSTransform 为 [1, 0, tx, ty]）。
+@visibleForTesting
+class CollageTileBatch {
+  const CollageTileBatch({
+    required this.originX,
+    required this.originY,
+    required this.scaleX,
+    required this.scaleY,
+    required this.transforms,
+    required this.rects,
+    required this.colors,
+  });
+
+  final double originX;
+  final double originY;
+  final double scaleX;
+  final double scaleY;
+  final Float32List transforms;
+  final Float32List rects;
+  final Int32List colors;
+
+  int get length => colors.length;
+}
+
+/// 算出覆盖 [rect] 的格子；纹理或区域为空时返回 null。
+@visibleForTesting
+CollageTileBatch? collageTileBatch(
+  CollageTexture texture,
+  Rect rect, {
+  double tileX = 0,
+  double tileY = 0,
+  double alpha = 1,
+  int? tint,
+}) {
+  final double iw = texture.image.width.toDouble();
+  final double ih = texture.image.height.toDouble();
+  if (iw <= 0 || ih <= 0 || texture.width <= 0 || texture.height <= 0) {
+    return null;
   }
-  canvas.drawRect(rect, paint);
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  final double sx = texture.width / iw;
+  final double sy = texture.height / ih;
+  final double ox = rect.left + tileX;
+  final double oy = rect.top + tileY;
+  // rect 换到以 tile 原点为零点的纹理像素坐标。
+  final double l = (rect.left - ox) / sx;
+  final double t = (rect.top - oy) / sy;
+  final double r = (rect.right - ox) / sx;
+  final double b = (rect.bottom - oy) / sy;
+  final int i0 = (l / iw).floor();
+  final int i1 = (r / iw).ceil();
+  final int j0 = (t / ih).floor();
+  final int j1 = (b / ih).ceil();
+  final int color =
+      ((clamp01(alpha) * 255).round() << 24) | ((tint ?? 0xffffff) & 0xffffff);
+  final List<double> xf = <double>[];
+  final List<double> src = <double>[];
+  final List<int> colors = <int>[];
+  for (int j = j0; j < j1; j++) {
+    final double cellT = j * ih;
+    final double y0 = math.max(cellT, t);
+    final double y1 = math.min(cellT + ih, b);
+    if (y1 <= y0) continue;
+    for (int i = i0; i < i1; i++) {
+      final double cellL = i * iw;
+      final double x0 = math.max(cellL, l);
+      final double x1 = math.min(cellL + iw, r);
+      if (x1 <= x0) continue;
+      xf.addAll(<double>[1, 0, x0, y0]);
+      src.addAll(<double>[x0 - cellL, y0 - cellT, x1 - cellL, y1 - cellT]);
+      colors.add(color.toSigned(32));
+    }
+  }
+  if (colors.isEmpty) return null;
+  return CollageTileBatch(
+    originX: ox,
+    originY: oy,
+    scaleX: sx,
+    scaleY: sy,
+    transforms: Float32List.fromList(xf),
+    rects: Float32List.fromList(src),
+    colors: Int32List.fromList(colors),
+  );
 }
 
 void _rect(ui.Canvas canvas, Rect rect, int color, double alpha) {

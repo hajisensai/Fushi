@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter_test/flutter_test.dart';
@@ -98,7 +99,89 @@ String _describe(CollagePlan plan) => <String>[
     },
 ].join('|');
 
+CollageTexture _texture(int pixels, double logical) {
+  final ui.PictureRecorder recorder = ui.PictureRecorder();
+  ui.Canvas(recorder).drawRect(
+    Rect.fromLTWH(0, 0, pixels.toDouble(), pixels.toDouble()),
+    Paint()..color = const Color(0xFFFFFFFF),
+  );
+  final ui.Picture picture = recorder.endRecording();
+  final ui.Image image = picture.toImageSync(pixels, pixels);
+  picture.dispose();
+  return CollageTexture(image, logical, logical);
+}
+
 void main() {
+  group('BUG-5403 拼贴平铺走精灵批', () {
+    test('格子不重不漏铺满 rect，边缘格子裁 src，tint × alpha 进精灵颜色', () {
+      final CollageTexture tex = _texture(52, 26);
+      addTearDown(tex.image.dispose);
+      const Rect rect = Rect.fromLTWH(-30, 12, 300, 97);
+      final CollageTileBatch batch = collageTileBatch(
+        tex,
+        rect,
+        tileX: 7.5,
+        tileY: -3,
+        alpha: 0.5,
+        tint: 0x123456,
+      )!;
+      expect(batch.scaleX, closeTo(0.5, 1e-9));
+      expect(batch.originX, closeTo(rect.left + 7.5, 1e-9));
+      expect(batch.originY, closeTo(rect.top - 3, 1e-9));
+      double area = 0;
+      for (int k = 0; k < batch.length; k++) {
+        final double l = batch.rects[k * 4];
+        final double t = batch.rects[k * 4 + 1];
+        final double r = batch.rects[k * 4 + 2];
+        final double b = batch.rects[k * 4 + 3];
+        expect(l, greaterThanOrEqualTo(0));
+        expect(t, greaterThanOrEqualTo(0));
+        expect(r, lessThanOrEqualTo(52 + 1e-4));
+        expect(b, lessThanOrEqualTo(52 + 1e-4));
+        // RSTransform 不旋转不缩放，只平移。
+        expect(batch.transforms[k * 4], 1);
+        expect(batch.transforms[k * 4 + 1], 0);
+        // 换回逻辑像素的面积。
+        area += (r - l) * (b - t) * batch.scaleX * batch.scaleY;
+        expect(batch.colors[k], (0x80 << 24 | 0x123456).toSigned(32));
+      }
+      expect(area, closeTo(rect.width * rect.height, 1e-2));
+      // 画布平移到原点后，第一个格子从 rect 左上起。
+      double minX = double.infinity;
+      double minY = double.infinity;
+      for (int k = 0; k < batch.length; k++) {
+        minX = minX < batch.transforms[k * 4 + 2]
+            ? minX
+            : batch.transforms[k * 4 + 2];
+        minY = minY < batch.transforms[k * 4 + 3]
+            ? minY
+            : batch.transforms[k * 4 + 3];
+      }
+      expect(batch.originX + minX * batch.scaleX, closeTo(rect.left, 1e-3));
+      expect(batch.originY + minY * batch.scaleY, closeTo(rect.top, 1e-3));
+
+      expect(collageTileBatch(tex, Rect.zero), isNull);
+      final CollageTileBatch plain = collageTileBatch(tex, rect)!;
+      expect(plain.colors.first, 0xFFFFFFFF.toSigned(32));
+    });
+
+    test('花火源码不再用 ImageShader 平铺（Impeller GLES 上每帧平铺纹理显存暴涨）', () {
+      final Directory dir = Directory(
+        'lib/src/media/music/lyrics/visualizer/modes/hanabi',
+      );
+      final List<String> offenders = <String>[
+        for (final FileSystemEntity f in dir.listSync())
+          if (f is File &&
+              f.path.endsWith('.dart') &&
+              RegExp(
+                r'ImageShader\(',
+              ).hasMatch(f.readAsStringSync().replaceAll(RegExp(r'//.*'), '')))
+            f.path,
+      ];
+      expect(offenders, isEmpty);
+    });
+  });
+
   group('collage plan (folia collagePlan.ts)', () {
     test('same input → same plan; amount 0 → empty', () {
       for (final String family in <String>[

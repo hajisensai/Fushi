@@ -68,16 +68,22 @@ class LyricVisualizerTicks extends ChangeNotifier
   }
 }
 
-/// 驱动器：挂一个 Ticker，播放中或开着动态效果时每帧推 [LyricVisualizerTicks]；
-/// 暂停 + 减弱动态效果时停 Ticker，只在 [LyricVisualizerContext] 变化（拖进度 / 改偏移）时推一次。
+/// 驱动器：挂一个 Ticker，播放中或（开着动态效果且样式有闲置动画）时每帧推 [LyricVisualizerTicks]；
+/// 其余时候停 Ticker，只在 [LyricVisualizerContext] 变化（拖进度 / 改偏移）时推一次。
 class LyricVisualizerFrame extends StatefulWidget {
   const LyricVisualizerFrame({
     super.key,
     required this.context,
     required this.builder,
+    this.idleAnimation = true,
   });
 
   final LyricVisualizerContext context;
+
+  /// 画面是否用到墙钟（[LyricVisualizerTick.elapsed] / [LyricVisualizerTick.dt]：暂停时也走的漂移、粒子）。
+  /// false = 画面只由歌词时间决定，暂停时 Ticker 停掉、不再逐帧要帧——不然整窗照刷新率重合成，
+  /// 重样式（如花火）暂停时的 GPU 占用和播放中一样高。
+  final bool idleAnimation;
 
   /// 只建一次（或在 [context] 变化时）；逐帧变化通过 [LyricVisualizerTicks] 传给 painter /
   /// `ValueListenableBuilder`。
@@ -112,7 +118,8 @@ class _LyricVisualizerFrameState extends State<LyricVisualizerFrame>
     _ticks.value = _read(_wall.elapsedMicroseconds / 1e6);
   }
 
-  bool get _wantsTicker => widget.context.playing || widget.context.motion;
+  bool get _wantsTicker =>
+      widget.context.playing || (widget.context.motion && widget.idleAnimation);
 
   void _sync() {
     if (_wantsTicker) {
