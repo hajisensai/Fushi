@@ -18,16 +18,6 @@
       "dbSchemaVersion": 178
     },
     {
-      "name": "fushi-3.4.0-debug.32189-linux-x86_64.flatpak",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32189-linux-x86_64.flatpak",
-      "releaseSequence": 32189,
-      "tag": "v3.4.0-debug.32189+88038be",
-      "version": "3.4.0-debug.32189",
-      "size": 260070024,
-      "sha256": "c7684adda22429097ed8819aebe5e2f034aae067ef839c0096acae639a0a1df8",
-      "dbSchemaVersion": 178
-    },
-    {
       "name": "fushi-3.4.0-debug.32193-ios.ipa",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32193-ios.ipa",
       "releaseSequence": 32193,
@@ -35,6 +25,16 @@
       "version": "3.4.0-debug.32193",
       "size": 97604907,
       "sha256": "8973f764c3c878d5cc81803cdb6ac19731a276d83ebd8cf0b8ca757ad7457eb7",
+      "dbSchemaVersion": 178
+    },
+    {
+      "name": "fushi-3.4.0-debug.32193-linux-x86_64.flatpak",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32193-linux-x86_64.flatpak",
+      "releaseSequence": 32193,
+      "tag": "v3.4.0-debug.32193+fe7110d",
+      "version": "3.4.0-debug.32193",
+      "size": 260048080,
+      "sha256": "d308914f33209f853e7583a80afeb17a5caae4bdba34c9c81cf03acc6cc241be",
       "dbSchemaVersion": 178
     },
     {
