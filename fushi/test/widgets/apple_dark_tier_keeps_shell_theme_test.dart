@@ -39,7 +39,7 @@ void main() {
     final ThemeData built = buildFushiThemeData(
       scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1E3A8A)),
       textTheme: Typography.material2021().black,
-      glass: apple ? FushiGlassMaterial.frosted : FushiGlassMaterial.off,
+      glass: apple ? FushiGlassMaterial.minimal : FushiGlassMaterial.off,
       glassDesign: apple,
       shell: custom,
     );
@@ -105,7 +105,7 @@ void main() {
           ),
           textTheme: Typography.material2021().black,
           glassDesign: apple,
-          glass: apple ? FushiGlassMaterial.frosted : FushiGlassMaterial.off,
+          glass: apple ? FushiGlassMaterial.minimal : FushiGlassMaterial.off,
           shell: custom,
           lyricsMode: lyricsMode,
         );

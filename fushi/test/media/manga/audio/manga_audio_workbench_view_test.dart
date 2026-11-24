@@ -44,7 +44,7 @@ Future<List<String>> _pump(
       theme: buildFushiThemeData(
         scheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         textTheme: Typography.material2021().black,
-        glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+        glass: glass ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
         glassDesign: glass,
       ),
       home: FushiGlassScope(

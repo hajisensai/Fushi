@@ -277,7 +277,7 @@ void main() {
           theme: buildFushiThemeData(
             scheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
             textTheme: Typography.material2021().black,
-            glass: apple ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+            glass: apple ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
             glassDesign: apple,
           ),
           home: FushiGlassScope(

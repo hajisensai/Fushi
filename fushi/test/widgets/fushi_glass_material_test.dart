@@ -14,11 +14,11 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import '../helpers/glass_unwrap.dart';
 
-// 毛玻璃材质（偏好 `glass_material`）第一阶段契约：
+// 玻璃画质档位（偏好 `glass_quality`，off / minimal / standard / premium）契约：
 // - 偏好值解析容错、主题工厂把材质注入 [FushiGlassTheme]；
 // - 墨水屏 / 系统增强对比度 / 缺扩展一律回退实心（半透明在墨水屏上是抖动残影，
 //   增强对比度是用户明确要求的可读性）；
-// - 功能层表面（对话框 / 底栏）只在 frosted 下才挂 BackdropFilter——off 时
+// - 功能层表面（对话框 / 底栏）只在 minimal 下才挂 BackdropFilter——off 时
 //   不得多出一层模糊合成（性能 + 与改造前像素一致）；
 // - 查词弹窗主题跟随玻璃材质，但弹窗底色恒不透明（见 popup_surface_opaque_guard），
 //   墨水屏下不带玻璃。
@@ -64,26 +64,40 @@ void main() {
       .widgetList<BackdropFilter>(find.byType(BackdropFilter))
       .any((BackdropFilter f) => f.filter is ImageFilter);
 
-  test('fromPrefValue parses known values and falls back to off', () {
+  test('fromPrefValue parses tier names and falls back to minimal', () {
+    for (final FushiGlassMaterial tier in FushiGlassMaterial.values) {
+      expect(FushiGlassMaterial.fromPrefValue(tier.name), tier);
+    }
+    expect(FushiGlassMaterial.defaultTier, FushiGlassMaterial.minimal);
+    expect(FushiGlassMaterial.fromPrefValue(null), FushiGlassMaterial.minimal);
+    expect(
+      FushiGlassMaterial.fromPrefValue('bogus'),
+      FushiGlassMaterial.minimal,
+    );
+    // 旧键 glass_material 的取值（frosted / liquid）不是档位名，不得误命中。
     expect(
       FushiGlassMaterial.fromPrefValue('frosted'),
-      FushiGlassMaterial.frosted,
+      FushiGlassMaterial.minimal,
     );
-    expect(FushiGlassMaterial.fromPrefValue('off'), FushiGlassMaterial.off);
-    expect(FushiGlassMaterial.fromPrefValue(null), FushiGlassMaterial.off);
     expect(
       FushiGlassMaterial.fromPrefValue('liquid'),
-      FushiGlassMaterial.liquid,
+      FushiGlassMaterial.minimal,
     );
-    expect(FushiGlassMaterial.fromPrefValue('bogus'), FushiGlassMaterial.off);
+  });
+
+  test('only standard and premium take the shader path', () {
+    expect(FushiGlassMaterial.off.usesShader, isFalse);
+    expect(FushiGlassMaterial.minimal.usesShader, isFalse);
+    expect(FushiGlassMaterial.standard.usesShader, isTrue);
+    expect(FushiGlassMaterial.premium.usesShader, isTrue);
   });
 
   test('buildFushiThemeData injects the glass extension', () {
     expect(
       theme(
-        glass: FushiGlassMaterial.frosted,
+        glass: FushiGlassMaterial.minimal,
       ).extension<FushiGlassTheme>()?.material,
-      FushiGlassMaterial.frosted,
+      FushiGlassMaterial.minimal,
     );
     expect(
       theme().extension<FushiGlassTheme>()?.material,
@@ -91,37 +105,42 @@ void main() {
     );
   });
 
-  testWidgets('glassMaterialOf honours frosted on a plain theme', (
+  testWidgets('glassMaterialOf honours minimal on a plain theme', (
     WidgetTester tester,
   ) async {
     expect(
-      await resolve(tester, theme(glass: FushiGlassMaterial.frosted)),
-      FushiGlassMaterial.frosted,
+      await resolve(tester, theme(glass: FushiGlassMaterial.minimal)),
+      FushiGlassMaterial.minimal,
     );
   });
 
-  group('liquid', () {
+  group('premium', () {
     late bool Function() original;
     setUp(() => original = debugShaderFilterSupported);
     tearDown(() => debugShaderFilterSupported = original);
 
-    testWidgets('stays liquid when the engine supports shader filters', (
+    testWidgets('stays premium when the engine supports shader filters', (
       WidgetTester tester,
     ) async {
       debugShaderFilterSupported = () => true;
       expect(
-        await resolve(tester, theme(glass: FushiGlassMaterial.liquid)),
-        FushiGlassMaterial.liquid,
+        await resolve(tester, theme(glass: FushiGlassMaterial.premium)),
+        FushiGlassMaterial.premium,
       );
     });
 
-    testWidgets('degrades to frosted without shader filter support', (
+    testWidgets('degrades to standard without shader filter support', (
       WidgetTester tester,
     ) async {
       debugShaderFilterSupported = () => false;
       expect(
-        await resolve(tester, theme(glass: FushiGlassMaterial.liquid)),
-        FushiGlassMaterial.frosted,
+        await resolve(tester, theme(glass: FushiGlassMaterial.premium)),
+        FushiGlassMaterial.standard,
+      );
+      // standard 的轻量着色器不需要 ImageFilter.shader，不再往下降。
+      expect(
+        await resolve(tester, theme(glass: FushiGlassMaterial.standard)),
+        FushiGlassMaterial.standard,
       );
     });
 
@@ -132,19 +151,19 @@ void main() {
       expect(
         await resolve(
           tester,
-          theme(glass: FushiGlassMaterial.liquid, eink: true),
+          theme(glass: FushiGlassMaterial.premium, eink: true),
         ),
         FushiGlassMaterial.off,
       );
     });
 
-    testWidgets('FushiGlassSurface renders the liquid shader container', (
+    testWidgets('FushiGlassSurface renders the premium shader container', (
       WidgetTester tester,
     ) async {
       debugShaderFilterSupported = () => true;
       await tester.pumpWidget(
         Theme(
-          data: theme(glass: FushiGlassMaterial.liquid),
+          data: theme(glass: FushiGlassMaterial.premium),
           child: const Directionality(
             textDirection: TextDirection.ltr,
             child: FushiGlassSurface(
@@ -165,7 +184,7 @@ void main() {
     expect(
       await resolve(
         tester,
-        theme(glass: FushiGlassMaterial.frosted, eink: true),
+        theme(glass: FushiGlassMaterial.minimal, eink: true),
       ),
       FushiGlassMaterial.off,
     );
@@ -177,7 +196,7 @@ void main() {
     expect(
       await resolve(
         tester,
-        theme(glass: FushiGlassMaterial.frosted),
+        theme(glass: FushiGlassMaterial.minimal),
         highContrast: true,
       ),
       FushiGlassMaterial.off,
@@ -190,7 +209,7 @@ void main() {
     expect(await resolve(tester, ThemeData()), FushiGlassMaterial.off);
   });
 
-  testWidgets('FushiGlassSurface blurs only when frosted', (
+  testWidgets('FushiGlassSurface blurs only when minimal', (
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(
@@ -203,7 +222,7 @@ void main() {
 
     await tester.pumpWidget(
       Theme(
-        data: theme(glass: FushiGlassMaterial.frosted),
+        data: theme(glass: FushiGlassMaterial.minimal),
         child: const FushiGlassSurface(child: SizedBox(width: 10, height: 10)),
       ),
     );
@@ -241,10 +260,10 @@ void main() {
     );
   });
 
-  testWidgets('FushiDialogFrame turns translucent when frosted', (
+  testWidgets('FushiDialogFrame turns translucent when minimal', (
     WidgetTester tester,
   ) async {
-    await pumpDialog(tester, theme(glass: FushiGlassMaterial.frosted));
+    await pumpDialog(tester, theme(glass: FushiGlassMaterial.minimal));
     expect(hasBlur(tester), isTrue);
     expect(
       tester
@@ -280,14 +299,14 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('bottom bar blurs only when frosted and keeps its geometry', (
+  testWidgets('bottom bar blurs only when minimal and keeps its geometry', (
     WidgetTester tester,
   ) async {
     await pumpBar(tester, theme());
     expect(find.byType(BackdropFilter), findsNothing);
     final Rect solid = tester.getRect(find.byKey(fushiMaterialNavKey));
 
-    await pumpBar(tester, theme(glass: FushiGlassMaterial.frosted));
+    await pumpBar(tester, theme(glass: FushiGlassMaterial.minimal));
     expect(hasBlur(tester), isTrue);
     // M3E 悬浮导航：带 key 的 Material 恒为透明层（不画底色），底色 / 模糊
     // 画在悬浮胶囊上。
@@ -312,7 +331,7 @@ void main() {
           ColorScheme.fromSeed(seedColor: Colors.teal, brightness: b),
       textTheme: Typography.material2021().black,
       glassDesign: glassDesign,
-      glass: FushiGlassMaterial.frosted,
+      glass: FushiGlassMaterial.minimal,
     );
 
     for (final bool glassDesign in <bool>[false, true]) {
@@ -337,7 +356,7 @@ void main() {
     double alphaOf(Color? c) => c!.a;
 
     test('glass tints every Flutter-built surface translucent', () {
-      final ThemeData t = theme(glass: FushiGlassMaterial.frosted);
+      final ThemeData t = theme(glass: FushiGlassMaterial.minimal);
       expect(alphaOf(t.dialogTheme.backgroundColor), lessThan(1));
       expect(alphaOf(t.popupMenuTheme.color), lessThan(1));
       expect(
@@ -396,7 +415,7 @@ void main() {
     });
 
     test('e-ink never tints component surfaces', () {
-      final ThemeData t = theme(glass: FushiGlassMaterial.frosted, eink: true);
+      final ThemeData t = theme(glass: FushiGlassMaterial.minimal, eink: true);
       expectSolidComponentSurfaces(t);
     });
 
@@ -460,7 +479,7 @@ void main() {
     testWidgets('showAppDialog blurs behind the dialog only under glass', (
       WidgetTester tester,
     ) async {
-      await openDialog(tester, theme(glass: FushiGlassMaterial.frosted));
+      await openDialog(tester, theme(glass: FushiGlassMaterial.minimal));
       expect(find.byType(FushiGlassDialogBackdrop), findsOneWidget);
       expect(hasBlur(tester), isTrue);
       final Rect glassRect = tester.getRect(find.byType(AlertDialog));
@@ -497,7 +516,7 @@ void main() {
         await pump(theme());
         expect(find.byType(FushiGlassSurface), findsNothing);
 
-        await pump(theme(glass: FushiGlassMaterial.frosted));
+        await pump(theme(glass: FushiGlassMaterial.minimal));
         // MaterialApp 换主题走 AnimatedTheme 插值，等它落定。
         await tester.pumpAndSettle();
         expect(find.byType(FushiGlassSurface), findsOneWidget);

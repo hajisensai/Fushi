@@ -30,7 +30,7 @@ void main() {
         theme: buildFushiThemeData(
           scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
           textTheme: Typography.material2021().black,
-          glass: FushiGlassMaterial.liquid,
+          glass: FushiGlassMaterial.premium,
           glassDesign: true,
         ),
         themeAnimationDuration: Duration.zero,

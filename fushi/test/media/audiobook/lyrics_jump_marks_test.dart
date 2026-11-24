@@ -31,7 +31,7 @@ ThemeData _theme({required bool apple}) => apple
     ? buildFushiThemeData(
         scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
         textTheme: Typography.material2021().black,
-        glass: FushiGlassMaterial.frosted,
+        glass: FushiGlassMaterial.minimal,
         glassDesign: true,
       ).copyWith(platform: TargetPlatform.windows)
     : ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal));
