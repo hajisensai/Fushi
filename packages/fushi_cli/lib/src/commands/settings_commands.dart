@@ -76,7 +76,7 @@ const List<CtlCommandGroup> settingsCommandGroups = <CtlCommandGroup>[
         name: 'backdrop-image',
         summary:
             '用一张图当页面背景（外观 › 页面背景的「图片」；--portrait 竖屏图，'
-            '--module 只给某个主模块；直接用原图，不裁剪）',
+            '--module 只给某个主模块，--page 只给模块里的某一页；直接用原图，不裁剪）',
         usage: '<图片>',
         configure: _configureBackdropImage,
         build: _buildBackdropImage,
@@ -973,7 +973,8 @@ void _configureBackdropImage(ArgParser parser) {
       help:
           '只给这个主模块设（home / books / manga / video / music / browse / '
           'dictionaries / srs / games / web / settings）',
-    );
+    )
+    ..addOption('page', help: '只给模块里的这一页设（srs_review = 复习答题页；与 --module 二选一）');
 }
 
 CtlRequestSpec _buildBackdropImage(CtlCommandContext c) => CtlRequestSpec.post(
@@ -982,5 +983,6 @@ CtlRequestSpec _buildBackdropImage(CtlCommandContext c) => CtlRequestSpec.post(
     'path': ctlAbsolutePath(c.positional(0, '图片')),
     if (c.flag('portrait')) 'portrait': true,
     'module': ?c.option('module'),
+    'page': ?c.option('page'),
   },
 );

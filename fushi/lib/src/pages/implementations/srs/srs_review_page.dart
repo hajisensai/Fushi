@@ -95,6 +95,10 @@ import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/srs/srs_review_undo.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show FushiBackdropPage;
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
+    show PageBackdropPage;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -2374,65 +2378,72 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     final bool floating = ref.watch(srsReviewChromeFloatingProvider);
     // 手柄：Actions 必须是本页焦点节点的祖先——桌面轮询与 Android 键事件都从
     // primaryFocus 往上派发 GamepadButtonIntent。
-    return Actions(
-      actions: <Type, Action<Intent>>{
-        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
-          onInvoke: (GamepadButtonIntent intent) =>
-              _handleGamepadButton(intent.button),
-        ),
-      },
-      child: Focus(
-        focusNode: _focusNode,
-        autofocus: true,
-        onKeyEvent: _onKey,
-        child: FushiPageScaffold(
-          title: _title,
-          masthead: false,
-          header: floating
-              ? const SizedBox.shrink()
-              : (apple ? null : _buildTopBar(context)),
-          actions: apple && !floating ? _buildAppleActions() : const <Widget>[],
-          headerBottom:
-              apple &&
-                  !floating &&
-                  !_finished &&
-                  ref.watch(srsReviewShowCountsProvider)
-              ? SrsCountTriple(
-                  newCount: _newCount,
-                  learnCount: _learnCount,
-                  reviewCount: _reviewCount,
-                  reviewMinutesLeft: _reviewMinutesLeft,
-                  dense: true,
-                )
-              : null,
-          body: Builder(
-            builder: (BuildContext context) => _withFloatingChrome(
-              context,
-              floating: floating,
-              child: Padding(
-                // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
-                // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
-                // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
-                padding: EdgeInsets.only(
-                  top: _cardScrollsUnderHeader
-                      ? 0
-                      : MediaQuery.paddingOf(context).top,
-                ),
-                child: AnimatedSwitcher(
-                  duration: fushiMotionDuration(context, FushiMotion.medium),
-                  switchInCurve: FushiMotion.enter,
-                  switchOutCurve: FushiMotion.exit,
-                  child: KeyedSubtree(
-                    // 读首张卡期间与出卡后同一棵子树（'review'）：卡面平台视图在读库的同时
-                    // 就开始创建，不在数据到了之后才冷建（见 [_buildBody]）。
-                    key: ValueKey<String>(
-                      _error != null
-                          ? 'error'
-                          : _finished
-                          ? 'finished'
-                          : 'review',
+    // 复习答题页单独取背景（拍板台 xxbbL0j15l）：默认继承复习模块（牌组总览），
+    // 可在「外观 › 页面背景 › 复习」里单独换图或关掉。
+    return FushiBackdropPage(
+      page: PageBackdropPage.srsReview,
+      child: Actions(
+        actions: <Type, Action<Intent>>{
+          GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+            onInvoke: (GamepadButtonIntent intent) =>
+                _handleGamepadButton(intent.button),
+          ),
+        },
+        child: Focus(
+          focusNode: _focusNode,
+          autofocus: true,
+          onKeyEvent: _onKey,
+          child: FushiPageScaffold(
+            title: _title,
+            masthead: false,
+            header: floating
+                ? const SizedBox.shrink()
+                : (apple ? null : _buildTopBar(context)),
+            actions: apple && !floating
+                ? _buildAppleActions()
+                : const <Widget>[],
+            headerBottom:
+                apple &&
+                    !floating &&
+                    !_finished &&
+                    ref.watch(srsReviewShowCountsProvider)
+                ? SrsCountTriple(
+                    newCount: _newCount,
+                    learnCount: _learnCount,
+                    reviewCount: _reviewCount,
+                    reviewMinutesLeft: _reviewMinutesLeft,
+                    dense: true,
+                  )
+                : null,
+            body: Builder(
+              builder: (BuildContext context) => _withFloatingChrome(
+                context,
+                floating: floating,
+                child: Padding(
+                  // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
+                  // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
+                  // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
+                  padding: EdgeInsets.only(
+                    top: _cardScrollsUnderHeader
+                        ? 0
+                        : MediaQuery.paddingOf(context).top,
+                  ),
+                  child: AnimatedSwitcher(
+                    duration: fushiMotionDuration(context, FushiMotion.medium),
+                    switchInCurve: FushiMotion.enter,
+                    switchOutCurve: FushiMotion.exit,
+                    child: KeyedSubtree(
+                      // 读首张卡期间与出卡后同一棵子树（'review'）：卡面平台视图在读库的同时
+                      // 就开始创建，不在数据到了之后才冷建（见 [_buildBody]）。
+                      key: ValueKey<String>(
+                        _error != null
+                            ? 'error'
+                            : _finished
+                            ? 'finished'
+                            : 'review',
+                      ),
+                      child: _buildBody(context),
                     ),
-                    child: _buildBody(context),
                   ),
                 ),
               ),

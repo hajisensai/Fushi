@@ -1505,7 +1505,7 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
     kPageBackdropModuleImagesPrefKey,
     PathRebaseKind.notAPath,
     PathValueShape.none,
-    '按模块的背景图 JSON（{模块: {landscape, portrait}}），值同横屏图存文件名。',
+    '按模块 / 页面的背景图 JSON（{层级 wire: {landscape, portrait}}），值同横屏图存文件名。',
   ),
   PathRebasePref(
     kPageBackdropSeedCachePrefKey,

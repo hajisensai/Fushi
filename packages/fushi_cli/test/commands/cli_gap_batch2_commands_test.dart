@@ -82,5 +82,16 @@ void main() {
     expect(r.body!['portrait'], isTrue);
     expect(r.body!['module'], 'music');
     expect('${r.body!['path']}', endsWith('bg.png'));
+    expect(r.body!.containsKey('page'), isFalse);
+  });
+
+  test('config backdrop-image：--page 只给模块里的某一页（拍板台 xxbbL0j15l）', () {
+    final CtlRequestSpec r = _build('config', 'backdrop-image', <String>[
+      'review.png',
+      '--page',
+      'srs_review',
+    ]);
+    expect(r.body!['page'], 'srs_review');
+    expect(r.body!.containsKey('module'), isFalse);
   });
 }
