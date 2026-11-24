@@ -137,6 +137,9 @@ class VideoSourceMetadataIndexer {
         workId = (await store.apply(
           work,
           metadata,
+          // 占位作品（没有 NFO）只补旧投影的空位：库里已有的旧刮削行带着在线身份与
+          // 简介，不能被文件名推出的空壳顶掉（BUG-5418 审查）。
+          preserveExistingLegacyProjection: nfoMetadata == null,
           seasonEpisodesAuthoritative: metadata.seasons.isNotEmpty,
         )).workId;
         changed = true;

@@ -195,9 +195,17 @@ class VideoMetadataDatabaseStore {
   /// [additionalEpisodeBindings]：一文件多集的额外绑定（见
   /// [AnidbAdditionalEpisodeBindings]）；同一文件因此出现在多条分集行上，
   /// v110 起 `book_uid` 不再唯一。
+  ///
+  /// [preserveExistingLegacyProjection]：只补写还不存在的旧投影行
+  /// （`collection_scrape_meta` / `video_scrape_meta`），已有的一行不动。本地索引给
+  /// 没有 NFO 的作品建占位作品时传 true：占位只有文件名推出的标题、没有任何外部
+  /// 身份，而库里已有的旧刮削行带着在线来源的身份（`source` / `subjectId`，Bangumi
+  /// 追番映射靠它）、简介与分集资料——占位覆盖上去就是把用户的刮削资料换成空壳
+  /// （BUG-5418 审查）。
   Future<PersistedVideoMetadata> apply(
     VideoSourceScrapeWork localWork,
     VideoMetadataWork metadata, {
+    bool preserveExistingLegacyProjection = false,
     bool seasonEpisodesAuthoritative = true,
     Map<String, (int, int)> episodeOverrides = const <String, (int, int)>{},
     Map<String, AnidbEpisodeXref> anidbEpisodeXrefs =
@@ -637,7 +645,12 @@ class VideoMetadataDatabaseStore {
           }
         }
       }
-      await _writeLegacyProjection(localWork, metadata, episodesByBookUid);
+      await _writeLegacyProjection(
+        localWork,
+        metadata,
+        episodesByBookUid,
+        preserveExisting: preserveExistingLegacyProjection,
+      );
     });
 
     return PersistedVideoMetadata(
@@ -1381,11 +1394,14 @@ class VideoMetadataDatabaseStore {
     );
   }
 
+  /// [preserveExisting] 为 true 时只补写不存在的行（见
+  /// [apply] 的 `preserveExistingLegacyProjection`）。
   Future<void> _writeLegacyProjection(
     VideoSourceScrapeWork localWork,
     VideoMetadataWork metadata,
-    Map<String, VideoMetadataEpisode> episodeByBook,
-  ) async {
+    Map<String, VideoMetadataEpisode> episodeByBook, {
+    required bool preserveExisting,
+  }) async {
     final String subjectId = _primaryId(metadata)?.value ?? metadata.title;
     final String source = metadata.provider.name;
     final String? tags = metadata.genres.isEmpty && metadata.keywords.isEmpty
@@ -1400,31 +1416,37 @@ class VideoMetadataDatabaseStore {
     final String? infobox = _legacyInfobox(metadata);
     final DateTime scrapedAt = DateTime.now();
     if (localWork.collection case final MediaCollectionRow collection) {
-      await database.upsertCollectionScrapeMeta(
-        CollectionScrapeMetaCompanion.insert(
-          collectionId: Value<int>(collection.id),
-          source: source,
-          subjectId: subjectId,
-          title: metadata.title,
-          originalTitle: Value<String?>(metadata.originalTitle),
-          summary: Value<String?>(metadata.plot),
-          airDate: Value<String?>(metadata.premiered),
-          rating: Value<double?>(metadata.rating),
-          ratingCount: Value<int?>(metadata.ratingVotes),
-          episodeCount: Value<int?>(metadata.episodeCount),
-          tagsJson: Value<String?>(tags),
-          infoboxJson: Value<String?>(infobox),
-          backdropPath: const Value<String?>(null),
-          detailUrl: Value<String?>(_detailUrl(metadata)),
-          scrapedAt: scrapedAt,
-        ),
-      );
+      final bool keepCollectionRow =
+          preserveExisting &&
+          await database.getCollectionScrapeMeta(collection.id) != null;
+      if (!keepCollectionRow) {
+        await database.upsertCollectionScrapeMeta(
+          CollectionScrapeMetaCompanion.insert(
+            collectionId: Value<int>(collection.id),
+            source: source,
+            subjectId: subjectId,
+            title: metadata.title,
+            originalTitle: Value<String?>(metadata.originalTitle),
+            summary: Value<String?>(metadata.plot),
+            airDate: Value<String?>(metadata.premiered),
+            rating: Value<double?>(metadata.rating),
+            ratingCount: Value<int?>(metadata.ratingVotes),
+            episodeCount: Value<int?>(metadata.episodeCount),
+            tagsJson: Value<String?>(tags),
+            infoboxJson: Value<String?>(infobox),
+            backdropPath: const Value<String?>(null),
+            detailUrl: Value<String?>(_detailUrl(metadata)),
+            scrapedAt: scrapedAt,
+          ),
+        );
+      }
       for (final VideoBookRow book in localWork.members) {
         final VideoMetadataEpisode? episode = episodeByBook[book.bookUid];
         if (episode == null) continue;
         final VideoScrapeMetaRow? previous = await database.getVideoScrapeMeta(
           book.bookUid,
         );
+        if (preserveExisting && previous != null) continue;
         await database.upsertVideoScrapeMeta(
           VideoScrapeMetaCompanion.insert(
             bookUid: book.bookUid,
@@ -1457,9 +1479,14 @@ class VideoMetadataDatabaseStore {
         }
       }
     } else {
+      final String bookUid = localWork.members.single.bookUid;
+      if (preserveExisting &&
+          await database.getVideoScrapeMeta(bookUid) != null) {
+        return;
+      }
       await database.upsertVideoScrapeMeta(
         VideoScrapeMetaCompanion.insert(
-          bookUid: localWork.members.single.bookUid,
+          bookUid: bookUid,
           source: source,
           subjectId: subjectId,
           title: metadata.title,

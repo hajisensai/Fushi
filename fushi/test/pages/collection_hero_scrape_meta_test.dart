@@ -343,6 +343,56 @@ void main() {
     );
   });
 
+  // BUG-5418 审查：本地索引给无来源成员补建作品后（详情页兜底 / 启动回填），单成员
+  // 合集经 resolve 落到成员的占位作品上。占位只有文件名标题、没有简介；旧刮削资料
+  // 必须照常显示，标题仍是合集名。上面几条用例的页面兜底索引就会建出这样的占位，
+  // 这里把它显式种出来，不依赖兜底时序。
+  testWidgets('成员占位作品不顶掉旧刮削资料与合集名', (WidgetTester tester) async {
+    await saveMeta();
+    await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        bookUid: const Value<String?>('video/e1'),
+        mediaType: 'tv',
+        title: 'S01E01',
+        updatedAt: 1,
+      ),
+    );
+    await pumpWide(tester);
+
+    expect(inHero(find.text('Tensei Oujo v2 播放列表')), findsOneWidget);
+    expect(find.textContaining('公主与令嬢携手掀起魔法革命'), findsOneWidget);
+    expect(find.text('奇幻'), findsOneWidget, reason: '占位作品没有词条，旧标签照常出');
+    expect(find.text('転生王女と天才令嬢の魔法革命'), findsOneWidget);
+  });
+
+  testWidgets('成员作品带外部身份 → hero 用作品正名', (WidgetTester tester) async {
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        bookUid: const Value<String?>('video/e1'),
+        mediaType: 'tv',
+        title: '转生王女与天才令嬢的魔法革命',
+        overview: const Value<String?>('规范简介'),
+        updatedAt: 1,
+      ),
+    );
+    await db.replaceVideoMetadataProviderIdentities(
+      workId: workId,
+      identities: <VideoMetadataProviderIdentitiesCompanion>[
+        VideoMetadataProviderIdentitiesCompanion.insert(
+          identityKey: 'work:$workId:anidb',
+          provider: 'anidb',
+          externalId: '17000',
+          isPrimary: const Value<bool>(true),
+          updatedAt: 1,
+        ),
+      ],
+    );
+    await pumpWide(tester);
+
+    expect(inHero(find.text('转生王女与天才令嬢的魔法革命')), findsOneWidget);
+    expect(find.textContaining('规范简介'), findsOneWidget);
+  });
+
   testWidgets('有横版 backdrop → 背景用 backdrop + 左侧独立海报卡', (
     WidgetTester tester,
   ) async {
