@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T08:15:08Z",
+ "generatedAt": "2026-11-24T08:30:39Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "fb8ddd06dd5cc99920ece20b74d9c06fbff8d2d8",
-  "seq": 32217
+  "sha": "07de68e36ad3f3c58bf39ec726a2b66a4ab11a0d",
+  "seq": 32218
  },
  "builds": [
   {
@@ -154,10 +154,14 @@
   }
  ],
  "pending": {
-  "headSha": "fb8ddd06dd5cc99920ece20b74d9c06fbff8d2d8",
-  "headSeq": 32217,
+  "headSha": "07de68e36ad3f3c58bf39ec726a2b66a4ab11a0d",
+  "headSeq": 32218,
   "prs": [],
   "direct": [
+   {
+    "sha": "07de68e36ad3f3c58bf39ec726a2b66a4ab11a0d",
+    "subject": "docs(agent): 开 PR 前不跑全量 analyze，只由合并任务在合并结果上跑一次（反馈 SBuUIb9dYT）"
+   },
    {
     "sha": "fb8ddd06dd5cc99920ece20b74d9c06fbff8d2d8",
     "subject": "docs(release): 3.4.0 公告补本轮合入项（选集面板剧照、进度口径、插图浏览、制卡提示位置与四项修复）"
@@ -194,7 +198,7 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855449"
    },
    "windows": {
@@ -202,7 +206,7 @@
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
    },
    "macos": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
    },
    "ios": {
