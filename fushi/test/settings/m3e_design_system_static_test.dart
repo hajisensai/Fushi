@@ -1968,8 +1968,8 @@ class AnotherPopupPart {
         'SwitchListTile(',
         'CheckboxListTile(',
       },
+      // 输入框外壳 / 焦点框圆角已走 FushiAppleRadii，只剩字号是组件自身度量。
       'lib/src/utils/components/glass/fushi_glass_inputs.dart': <String>{
-        'BorderRadius.circular(',
         'fontSize:',
       },
       'lib/src/utils/components/fushi_date_time_picker.dart': <String>{
