@@ -64,6 +64,20 @@ class QueuedMineSettlement {
   };
 }
 
+/// 一次后台写卡的结局要推给查词卡的状态；`null` = 不推。
+///
+/// [queued] 是写卡链路自己的「已收下、稍后送达」（本机待发队列 / 批量模式 / 复习后台
+/// 队列，`MineResult.queued`）：卡没有丢，查词卡上的「已加入制卡队列」本来就是真话。
+/// 把它当失败推回去会撤掉「已加入」、把按钮翻回 +，用户再点就又制一张。
+QueuedMineOutcome? queuedMineOutcomeOf({
+  required bool success,
+  required bool queued,
+}) {
+  if (success) return QueuedMineOutcome.landed;
+  if (queued) return null;
+  return QueuedMineOutcome.failed;
+}
+
 /// 宿主脚本：交给 global_lookup_host.js 转发进每个已装好的卡片 realm。宿主未装好时是
 /// 空操作（与同文件族的 build*Script 同一守卫）。
 String buildQueuedMineSettledScript(QueuedMineSettlement settlement) {

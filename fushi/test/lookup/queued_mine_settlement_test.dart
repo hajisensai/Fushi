@@ -57,6 +57,24 @@ void main() {
     });
   });
 
+  group('queuedMineOutcomeOf', () {
+    test('写进 Anki = landed；真失败 = failed', () {
+      expect(
+        queuedMineOutcomeOf(success: true, queued: false),
+        QueuedMineOutcome.landed,
+      );
+      expect(
+        queuedMineOutcomeOf(success: false, queued: false),
+        QueuedMineOutcome.failed,
+      );
+    });
+
+    test('进本机待发 / 复习后台队列不是失败：不推，查词卡保持「已加入」', () {
+      // 推 failed 会把按钮翻回 +，用户再点就在待发队列里多制一张。
+      expect(queuedMineOutcomeOf(success: false, queued: true), isNull);
+    });
+  });
+
   group('settlement wire', () {
     test('toJson 只带有意义的字段', () {
       expect(

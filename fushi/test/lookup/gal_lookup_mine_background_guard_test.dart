@@ -88,6 +88,13 @@ void main() {
       reason: '落地 / 失败必须推回 app 外查词卡（主窗 toast 游戏全屏时看不见）',
     );
     expect(
+      land.contains(
+        'queuedMineOutcomeOf(success:result.success,queued:result.queued,)',
+      ),
+      isTrue,
+      reason: '进待发队列（MineResult.queued）不是失败，不得推 failed 把「已加入」撤成 +',
+    );
+    expect(
       land.contains('QueuedMineOutcome.requeued'),
       isTrue,
       reason: '重试重新排队时卡上要回到「已加入」',

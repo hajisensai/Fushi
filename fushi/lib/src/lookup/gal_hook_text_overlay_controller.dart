@@ -3041,33 +3041,41 @@ class GalHookTextOverlayController extends ChangeNotifier {
       updateNoteId: null,
       retry: retryWrite == null ? null : () => lookup.retryQueuedMine(job),
     );
-    lookup.settleQueuedMine(
-      job,
-      result.success ? QueuedMineOutcome.landed : QueuedMineOutcome.failed,
-      noteId: result.success ? result.outcome?.noteId : null,
-      message: reply['message'] as String?,
-      duplicate: reply['duplicate'] == true,
-      retry: retryWrite == null
-          ? null
-          : () {
-              FushiToast.showMine(
-                msg: t.card_mining_pending,
-                status: MineToastStatus.pending,
-                term: fields['expression'],
-                reading: fields['reading'],
-              );
-              lookup.settleQueuedMine(job, QueuedMineOutcome.requeued);
-              unawaited(
-                _landLookupMineInBackground(
-                  retryWrite(repo: model.miningAnkiRepository),
-                  job: job,
-                  model: model,
-                  fields: fields,
-                  sentence: sentence,
-                ),
-              );
-            },
+    // 卡进了本机待发队列 / 复习后台队列（MineResult.queued）不是失败：卡没丢，查词卡
+    // 上的「已加入」本来就对，不推（推 failed 会把按钮翻回 +、再点就多制一张）。
+    final QueuedMineOutcome? settled = queuedMineOutcomeOf(
+      success: result.success,
+      queued: result.queued,
     );
+    if (settled != null) {
+      lookup.settleQueuedMine(
+        job,
+        settled,
+        noteId: result.success ? result.outcome?.noteId : null,
+        message: reply['message'] as String?,
+        duplicate: reply['duplicate'] == true,
+        retry: retryWrite == null
+            ? null
+            : () {
+                FushiToast.showMine(
+                  msg: t.card_mining_pending,
+                  status: MineToastStatus.pending,
+                  term: fields['expression'],
+                  reading: fields['reading'],
+                );
+                lookup.settleQueuedMine(job, QueuedMineOutcome.requeued);
+                unawaited(
+                  _landLookupMineInBackground(
+                    retryWrite(repo: model.miningAnkiRepository),
+                    job: job,
+                    model: model,
+                    fields: fields,
+                    sentence: sentence,
+                  ),
+                );
+              },
+      );
+    }
     if (!result.success) return;
     unawaited(
       recordOverlayMinedStats(model, fields, result.outcome?.noteId, sentence),

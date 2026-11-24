@@ -15,3 +15,9 @@ toast 一条出口。gal 查词卡是独立的 native WebView2 窗口，游戏�
 
 给 `GlobalLookupController` 加「后台写卡结局」推送（脚本经现有 render 通道下发、
 宿主 JS 转进各帧），popup.js 按 `queuedJob` 编号收；失败重试走一次性入口。
+
+审查补（PR #4413）：写卡链路自己的 `MineResult.queued`（本机待发队列 / 批量模式 / 复习
+后台队列）`success` 为假，初版把它当 `failed` 推回查词卡——撤掉「已加入」翻回 +、说
+「制卡失败」，用户再点就在待发队列里多制一张。改由 `queuedMineOutcomeOf` 判：进队列不推
+（查词卡上的「已加入」本来就是真话），测试见 `queued_mine_settlement_test.dart`
+「queuedMineOutcomeOf」组与 guard。
