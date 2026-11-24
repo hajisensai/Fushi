@@ -2178,6 +2178,7 @@
   "card_source_open": "回到出处",
   "card_source_origin_episode": "第 $n 集",
   "card_source_origin_page": "第 $n 页",
+  "card_source_relocation_report": "已修正 $fixed 张旧小说卡片的「回到出处」定位；$missed 张未能定位，保留原位置。",
   "card_source_remote_loading_hint": "正在从互联主机获取视频清单…",
   "card_source_remote_loading_title": "正在打开来源",
   "card_source_review_after": "修改后",
