@@ -333,8 +333,13 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
 ///
 /// [toExternal] 为真 = 迁到 `Android/data/<包名>/files/data`，否则迁回内部
 /// `app_flutter/<容器>/data`。目标是固定位置、不是用户挑的：上次迁移中途被杀进程留下的
-/// 半成品（引擎复制阶段不删源、提交前位置锚点没写）一定不是活数据——活的书库根就是
-/// 当前根——所以在这里先清掉，否则引擎会以「目标已有数据」永远拒绝这个固定目标。
+/// 半成品（引擎复制阶段不删源、提交前位置锚点没写）要先清掉，否则引擎会以「目标已有
+/// 数据」永远拒绝这个固定目标。
+///
+/// 但「目标一定不是活数据」只在位置锚点正确时成立。锚点错指空根时（反馈 RCv76PPoiJ），
+/// 用户点「移回内部」的目标恰好就是真正的书库（#4366 指出）。所以清之前先核实它确是
+/// 半成品——每个文件在源里都有同名相对路径（[AppPaths.firstAndroidMigrationTargetOnlyFile]）；
+/// 有源里没有的文件就拒绝，一个字节都不删。
 Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
   required AppModel appModel,
   required bool toExternal,
@@ -371,6 +376,24 @@ Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
     );
   }
   try {
+    final String? targetOnly =
+        await AppPaths.firstAndroidMigrationTargetOnlyFile(
+          target: newDocs,
+          source: Directory(oldDocs),
+        );
+    if (targetOnly != null) {
+      ErrorLogService.instance.logDiagnostic(
+        'DataRootMigration.androidClearStaleTarget',
+        '拒绝清空目标 ${newDocs.path}：$targetOnly 在当前书库根 $oldDocs 里没有，'
+            '目标可能是真正的书库',
+      );
+      throw DataRootMigrationPrecheckFailure(
+        t.data_storage_migrate_target_has_library(
+          path: newDocs.path,
+          file: targetOnly,
+        ),
+      );
+    }
     if (await newDocs.exists()) await newDocs.delete(recursive: true);
   } on FileSystemException catch (e, stack) {
     ErrorLogService.instance.logFatal(
@@ -623,36 +646,35 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
   /// 迁过，不再弹）。迁回内部时布局锚点一起锚成 nested——目标就是 `app_flutter/<容器>/data`，
   /// 留着 flat 锚点会让下次启动解析回 `app_flutter` 根，书库在 UI 上集体消失。任一步失败
   /// 复原已改的键并抛错，由引擎回滚整次迁移。
+  ///
+  /// 位置与布局的真相源是 support 根下的锚点文件（[AndroidLibraryAnchor]，多进程安全，
+  /// 反馈 RCv76PPoiJ）；布局键在 prefs 里照写一份，供不经 Android 锚点的通用布局判定读。
   static Future<void> _commitAndroidLocation(
     SharedPreferences sp,
     String location,
   ) async {
-    final String? previousLocation = sp.getString(
-      AppPaths.androidDocumentsLocationPrefKey,
-    );
     final String? previousLayout = sp.getString(
       AppPaths.documentsLayoutPrefKey,
     );
+    final bool toInternal =
+        location == AppPaths.androidDocumentsLocationInternal;
     try {
-      if (location == AppPaths.androidDocumentsLocationInternal &&
+      if (toInternal &&
           !await sp.setString(
             AppPaths.documentsLayoutPrefKey,
             AppPaths.documentsLayoutNested,
           )) {
         throw const DataRootMigrationException('写入数据位置布局设置失败');
       }
-      if (!await sp.setString(
-        AppPaths.androidDocumentsLocationPrefKey,
-        location,
-      )) {
-        throw const DataRootMigrationException('写入数据位置设置失败');
-      }
-    } catch (e) {
-      await _restorePrefString(
-        sp,
-        AppPaths.androidDocumentsLocationPrefKey,
-        previousLocation,
+      // 锚点是最后一步：它写成功 = 提交成功；它抛错时锚点文件原子替换没发生，
+      // 只需复原上面的布局键。
+      await AppPaths.commitAndroidLibraryAnchor(
+        AndroidLibraryAnchor(
+          location: location,
+          layout: toInternal ? AppPaths.documentsLayoutNested : null,
+        ),
       );
+    } catch (e) {
       await _restorePrefString(
         sp,
         AppPaths.documentsLayoutPrefKey,

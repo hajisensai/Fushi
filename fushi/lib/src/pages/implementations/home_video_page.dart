@@ -2054,24 +2054,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         : const <String>['landscape', 'thumb', 'backdrop'],
   );
 
-  /// 主卡横图的第一选择：续播点所在那一集自己的刮削剧照（thumb，本地文件优先，
-  /// 其次远程 URL）；一文件多集时按 [resumedFileEpisodeStills] 定位那一集。
-  /// 没有剧照（未刮削 / 刮削源不给）返回 null，由调用方回落到原有选图链。
-  ImageProvider? _episodeStillProvider(VideoBookRow book) {
-    final List<VideoFileEpisodeStills>? episodes =
-        _fileEpisodesByBook[book.bookUid];
-    if (episodes == null) return null;
-    for (final VideoMetadataImageRow row in resumedFileEpisodeStills(
-      episodes,
-      positionMs: book.lastPositionMs,
-    )) {
-      final ImageProvider? local = _localFileCover(row.localPath);
-      if (local != null) return local;
-      // 远程回落与本地分支同一解码上限（#3722 video-18：刮削剧照是原图）。
-      if (row.remoteUrl.isNotEmpty) return metadataRemoteImage(row.remoteUrl);
-    }
-    return null;
-  }
+  /// 主卡横图的第一选择：续播点所在那一集自己的刮削剧照（与合集选集页同一份
+  /// [videoFileEpisodeStillImage]）。没有剧照返回 null，由调用方回落到原有选图链。
+  ImageProvider? _episodeStillProvider(VideoBookRow book) =>
+      videoFileEpisodeStillImage(
+        _fileEpisodesByBook[book.bookUid],
+        positionMs: book.lastPositionMs,
+        localExists: _coverExists.lookupOptional,
+      );
 
   ImageProvider? _canonicalWorkImageProvider(
     VideoMetadataWorkRow? work,
@@ -2159,82 +2149,91 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     }
 
     try {
-      final List<VideoBookRow> rows = await widget.repo.listAll();
-      for (final VideoBookRow row in rows) {
-        if (!mounted) return;
-        final String? cover = row.coverPath;
-        // 全部 async：回填循环跑在 UI isolate，视频 / 封面常在网络盘上，同步 stat
-        // 逐条冻结界面与同 isolate 的互联 host（BUG-3756）。
-        if (cover != null && cover.isNotEmpty && await File(cover).exists()) {
-          continue; // 已有封面。
-        }
-        final String path = row.videoPath;
-        if (!isLocalFrameExtractableVideoSource(path)) {
-          continue; // 空 / 流 URL / 播放列表清单：无本地帧可抽。
-        }
-        if (!await File(path).exists()) {
-          // 文件不在磁盘上（外接盘未挂载 / 已被移走 / 库里是陈旧路径）：抽不出帧，
-          // 而这条路径**整个 ffmpeg 子进程期间都占着进程级封面写锁**
-          // （VideoCoverMutationGate），白等一个必然失败的抽帧会把同期的删除、
-          // 手选封面、刮削一起堵在后面。判据必须在进闸门之前。
-          continue;
-        }
-        if (!await CoverBackfillLedger.instance.shouldAttempt(path)) {
-          continue; // 此前失败且文件未变：不再白烧 ffmpeg。
-        }
-        // 上面几次 async 文件判据期间页面可能已经销毁：不再进闸门读写库 / 起 ffmpeg。
-        if (!mounted) return;
-        bool admitted = false;
-        final String? extracted = await VideoCoverMutationGate.runExclusive(
-          () async {
-            // listAll 快照与真正拿到封面写锁之间，路径自愈、刮削或手选封面都可能已经
-            // 提交。临界区内重读当前行，已有可用封面或视频路径已变时不再拿旧快照覆盖。
-            final VideoBookRow? current = await widget.repo.getByBookUid(
-              row.bookUid,
-            );
-            if (current == null || current.videoPath != path) return null;
-            final String? currentCover = current.coverPath;
-            if (currentCover != null &&
-                currentCover.isNotEmpty &&
-                await File(currentCover).exists()) {
-              return null;
-            }
-            final CoverMetaStore? coverMetaStore = await _prepareAutoFrameCover(
-              row.bookUid,
-            );
-            if (coverMetaStore == null) return null;
-            admitted = true;
-            final String? result = await extractVideoCover(
-              videoPath: path,
-              bookUid: row.bookUid,
-              // BUG-1867：回填是 best-effort 后台产线，「这文件给不出封面」（无视频流
-              // 的 BDMV 音轨 m2ts、seek 落在空洞区、torrent 还没下完）是预期内的正常
-              // 结果，不是 app 出错——书架显示占位图本身就是反馈。降级后这两段
-              // （内嵌封面 + 抽帧）的失败**不计入错误计数、不落盘**，转入日志页的
-              // 诊断/取证分节，证据照旧随复制/上传带走。ffmpeg 根本起不来仍是真错误。
-              diagnosticOnly: true,
-            );
-            if (result == null) return null;
-            await widget.repo.updateCover(row.bookUid, result);
-            return await _commitAutoFrameCover(coverMetaStore, row.bookUid)
-                ? result
-                : null;
-          },
-        );
-        if (!admitted) continue;
-        if (extracted == null) {
-          await CoverBackfillLedger.instance.recordFailure(
-            path,
-            reason: await File(path).exists()
-                ? 'extract-failed'
-                : 'file-missing',
+      // BUG-5387：整轮回填登记成当前库的后台工作。关库 / 换库（备份恢复等）时被取消，
+      // 取消后的 SQL 发不出去，关库等这一轮退出才真关——不会再有「旧库快照里的封面」
+      // 打在已关闭或已换掉的库上。
+      await appModel.database.runBackgroundWork<void>('video.coverBackfill', (
+        DatabaseWorkToken work,
+      ) async {
+        final List<VideoBookRow> rows = await widget.repo.listAll();
+        for (final VideoBookRow row in rows) {
+          if (!mounted) return;
+          work.throwIfCancelled();
+          final String? cover = row.coverPath;
+          // 全部 async：回填循环跑在 UI isolate，视频 / 封面常在网络盘上，同步 stat
+          // 逐条冻结界面与同 isolate 的互联 host（BUG-3756）。
+          if (cover != null && cover.isNotEmpty && await File(cover).exists()) {
+            continue; // 已有封面。
+          }
+          final String path = row.videoPath;
+          if (!isLocalFrameExtractableVideoSource(path)) {
+            continue; // 空 / 流 URL / 播放列表清单：无本地帧可抽。
+          }
+          if (!await File(path).exists()) {
+            // 文件不在磁盘上（外接盘未挂载 / 已被移走 / 库里是陈旧路径）：抽不出帧，
+            // 而这条路径**整个 ffmpeg 子进程期间都占着进程级封面写锁**
+            // （VideoCoverMutationGate），白等一个必然失败的抽帧会把同期的删除、
+            // 手选封面、刮削一起堵在后面。判据必须在进闸门之前。
+            continue;
+          }
+          if (!await CoverBackfillLedger.instance.shouldAttempt(path)) {
+            continue; // 此前失败且文件未变：不再白烧 ffmpeg。
+          }
+          // 上面几次 async 文件判据期间页面可能已经销毁：不再进闸门读写库 / 起 ffmpeg。
+          if (!mounted) return;
+          bool admitted = false;
+          final String? extracted = await VideoCoverMutationGate.runExclusive(
+            () async {
+              // listAll 快照与真正拿到封面写锁之间，路径自愈、刮削或手选封面都可能已经
+              // 提交。临界区内重读当前行，已有可用封面或视频路径已变时不再拿旧快照覆盖。
+              final VideoBookRow? current = await widget.repo.getByBookUid(
+                row.bookUid,
+              );
+              if (current == null || current.videoPath != path) return null;
+              final String? currentCover = current.coverPath;
+              if (currentCover != null &&
+                  currentCover.isNotEmpty &&
+                  await File(currentCover).exists()) {
+                return null;
+              }
+              final CoverMetaStore? coverMetaStore =
+                  await _prepareAutoFrameCover(row.bookUid);
+              if (coverMetaStore == null) return null;
+              admitted = true;
+              final String? result = await extractVideoCover(
+                videoPath: path,
+                bookUid: row.bookUid,
+                // BUG-1867：回填是 best-effort 后台产线，「这文件给不出封面」（无视频流
+                // 的 BDMV 音轨 m2ts、seek 落在空洞区、torrent 还没下完）是预期内的正常
+                // 结果，不是 app 出错——书架显示占位图本身就是反馈。降级后这两段
+                // （内嵌封面 + 抽帧）的失败**不计入错误计数、不落盘**，转入日志页的
+                // 诊断/取证分节，证据照旧随复制/上传带走。ffmpeg 根本起不来仍是真错误。
+                diagnosticOnly: true,
+              );
+              if (result == null) return null;
+              await widget.repo.updateCover(row.bookUid, result);
+              return await _commitAutoFrameCover(coverMetaStore, row.bookUid)
+                  ? result
+                  : null;
+            },
           );
-          continue;
+          if (!admitted) continue;
+          if (extracted == null) {
+            await CoverBackfillLedger.instance.recordFailure(
+              path,
+              reason: await File(path).exists()
+                  ? 'extract-failed'
+                  : 'file-missing',
+            );
+            continue;
+          }
+          CoverBackfillLedger.instance.clear(path);
+          if (!mounted) return;
+          refreshShelfThrottled();
         }
-        CoverBackfillLedger.instance.clear(path);
-        if (!mounted) return;
-        refreshShelfThrottled();
-      }
+      });
+    } on DatabaseWorkCancelledException {
+      // 库要关了：剩下的下次进视频页再补。
     } finally {
       // 兜底刷新放 finally：循环中途抛异常 / 提前 return 时，已落库落盘的封面
       // 不能停留在「书架看不见」的状态。

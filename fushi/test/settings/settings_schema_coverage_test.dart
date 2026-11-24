@@ -128,6 +128,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 本批合入的三组新设置（拍板 R721ZgWVSB / EuOLprw_dV / zTedU_pOQF）：生效点分别在
   // 漫画阅读器的翻页手势、截屏识字浮层的制卡、视频页的聊天回放栏，harness 设置页里
   // 都没有。偏好 → 生效的链由各自专项测试咬住。
+  // 漫画「反转方向键翻页」（反馈 uz_2m0E_Eu ④）：生效点是漫画页的键盘解析，harness
+  // 设置页里没有漫画页；偏好 → resolveMangaArrowPageTurn(reverse:) 的链由专项测试咬住。
+  'manga/Reverse arrow-key page turns':
+      'test/shortcuts/page_turn_unify_test.dart（reverse 对调跨页方向校正结果；漫画页按 mangaReverseArrowPageTurn 传 reverse）',
   'manga/Swipe page-turn sensitivity':
       'test/media/manga/manga_swipe_sensitivity_test.dart（阈值 = 基准 / 灵敏度，注入手势 JS 后慢拖翻不翻页随值变）',
   'floatingBall/Frame the screenshot when adding a card':
@@ -223,6 +227,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 生效由 music_lyrics_page_test 咬住，blurInactive 开 / 关下非当前行有无模糊层由
   // karaoke_lyrics_view_test 咬住。
   'music/Blur surrounding lines': 'test/pages/music_lyrics_page_test.dart',
+  // 歌词副行三开关：设置值 → AppModel.musicLyricsShow* → 歌词页 KaraokeLyricsView
+  // 的 appearance.showTranslation / showRomanization / showRuby 由 music_lyrics_page_test
+  // 咬住；三个开关关掉后对应副行 / 注音不渲染由 karaoke_lyrics_view_test 咬住。
+  'music/Show translation': 'test/pages/music_lyrics_page_test.dart',
+  'music/Show romanization': 'test/pages/music_lyrics_page_test.dart',
+  'music/Show furigana': 'test/pages/music_lyrics_page_test.dart',
   // 服务器曲库的码率上限：生效点是播放服务器曲目时向服务器要的流（直出 / 转码），harness
   // 里没有服务器。设置值 → musicServerBitrateLimit → streamFor 的直出 / 转码与信号路径源
   // 属性由 music_server_test 咬住。

@@ -37,11 +37,13 @@ import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/deletion_tombstone_bundle.dart';
+import 'package:fushi/src/sync/book_change_gate.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/online_library_items.dart';
 import 'package:fushi_engine/sync/online_library_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
+import 'package:fushi/src/sync/interconnect_manga_chapter_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_source_share_kinds.dart'
     show sourceSharePluginStores, sourceSharePrefWriter, SharedPluginStore;
@@ -56,6 +58,8 @@ import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
 import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/manga_chapter_progress_sync.dart'
+    show kMangaChapterProgressCapability;
 import 'package:fushi/src/sync/sync_peer_gap.dart';
 import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
     show RemoteDictionaryCatalogService;
@@ -66,6 +70,8 @@ import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_baseline_scope.dart'
+    show SyncRemoteIdentityUnavailableError, progressBaselineStorageFor;
 import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
 import 'package:fushi/src/sync/sync_module_gate.dart';
@@ -95,6 +101,7 @@ part 'sync_orchestrator/online_library.part.dart';
 part 'sync_orchestrator/video_metadata.part.dart';
 part 'sync_orchestrator/tombstones.part.dart';
 part 'sync_orchestrator/books.part.dart';
+part 'sync_orchestrator/book_change.part.dart';
 part 'sync_orchestrator/videos.part.dart';
 part 'sync_orchestrator/stream_videos.part.dart';
 part 'sync_orchestrator/audiobooks.part.dart';
@@ -461,6 +468,16 @@ class SyncRunReport {
   /// 诊断日志（见 [describeTiming]），下一份反馈就能直接定位。
   final Map<String, int> phaseMs = <String, int>{};
 
+  /// 书阶段的书级变更筛选（wiO0nN8aiG）：null = 本轮没有筛选（互联 / 无设备 id /
+  /// 认不出远端），否则是 `snapshot` / `manifest`，manifest 模式触发全扫时带原因。
+  String? bookChangeMode;
+
+  /// 本轮真正进了逐本阶段的书数（有筛选时）。
+  int booksChecked = 0;
+
+  /// 本轮判定「未变」、没进逐本阶段的书数。
+  int booksUnchanged = 0;
+
   /// 「阅读数据」阶段里每本书的耗时（毫秒），只留最慢的 [_slowBookKeep] 本。
   final List<({String title, int ms})> slowestBooks =
       <({String title, int ms})>[];
@@ -486,6 +503,12 @@ class SyncRunReport {
             '${e.key}=${e.value}ms',
         ].join(', '),
       );
+    final String? mode = bookChangeMode;
+    if (mode != null) {
+      out.write(
+        '; books: $mode checked=$booksChecked unchanged=$booksUnchanged',
+      );
+    }
     if (slowestBooks.isNotEmpty) {
       out
         ..write('; slowest books: ')
@@ -1110,6 +1133,8 @@ class SyncOrchestrator {
       // 一本小说的进度要等所有视频传完才到对端。
       _emitPhaseStart(SyncPhase.readingData);
       await _syncBookProgressLive(report, b);
+      // 章节式互联漫画的章级进度（书级位置对它们不带章身份，上一步已排除）。
+      await _syncMangaChapterProgressLive(report, b);
       mark('bookProgressLive');
     }
 
@@ -1170,6 +1195,17 @@ class SyncOrchestrator {
     final BookFolderListingObservations bookFolderNames =
         BookFolderListingObservations();
     if (!isInterconnect) {
+      // wiO0nN8aiG：哪些书需要进逐本阶段（设计见
+      // docs/specs/2026-11-24-sync-book-change-manifest.md）。准备失败只是这一轮不筛。
+      _checkpoint();
+      final int bookStageStartMs = DateTime.now().millisecondsSinceEpoch;
+      final BookChangeGate? changeGate = await _prepareBookChangeGate(
+        report,
+        listing,
+      );
+      mark('bookChangeGate');
+      _emitPhaseStart(SyncPhase.readingData);
+      bool bookStageComplete = false;
       try {
         bookResults =
             await SyncManager(
@@ -1193,6 +1229,7 @@ class SyncOrchestrator {
               listing: listing,
               observations: bookFolderNames,
               skipBookKeys: cloudVetoedBookKeys,
+              changeGate: changeGate,
               onBookProgress: (int done, int itemTotal, String title) {
                 // 安全检查点：在 [SyncManager.syncAllBooks] 的循环头、拿这本书的
                 // 锁之前回调，上一本已整本落地。
@@ -1211,6 +1248,7 @@ class SyncOrchestrator {
                 );
               },
             );
+        bookStageComplete = true;
       } on SyncAuthError {
         rethrow;
       } on SyncCancelledException {
@@ -1224,6 +1262,15 @@ class SyncOrchestrator {
       }
       settleReadingBook();
       mark('readingData');
+      if (changeGate != null) {
+        await _finishBookChangeGate(
+          report,
+          changeGate,
+          bookStageComplete: bookStageComplete,
+          bookStageStartMs: bookStageStartMs,
+        );
+        mark('bookManifestPublish');
+      }
     }
     _collectConflicts(bookResults, report);
     // 进度已落地、补传书文件 / 元数据失败的书：单独进报告（进度结果照实，不改判失败）。
@@ -1420,6 +1467,7 @@ class SyncOrchestrator {
   static const String _kMediaLinksMirror = 'media_links';
   static const String _kOnlineLibraryMirror = 'online_library';
   static const String _kVideoManifestMirror = 'videos';
+  static const String _kBookManifestMirror = 'book_manifests';
 
   /// 整轮超过这么久才把分阶段耗时写进诊断日志（快的同步每分钟都可能跑一次，
   /// 不该刷屏；慢到用户会来反馈的那种一定留下记录）。
@@ -2468,6 +2516,13 @@ class SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) => _syncBookProgressLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncMangaChapterProgressLive]。
+  @visibleForTesting
+  Future<void> syncMangaChapterProgressLiveForTest(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) => _syncMangaChapterProgressLive(report, backend);
 
   /// 测试入口：直接调用 [_syncVideoProgressLive]。
   @visibleForTesting

@@ -41,6 +41,9 @@ enum AiThemeRole {
   /// 查词选区高亮 → `selectionColor`。
   selection,
 
+  /// 查词高亮里被选中文字的字色 → `selectionTextColor`（null = 跟随正文）。
+  selectionText,
+
   /// 有声书当前句高亮 → `sentenceAudioHighlightColor`（全局偏好）。
   audioHighlight,
 
@@ -58,6 +61,7 @@ enum AiThemeRole {
   bool get allowsAlpha => switch (this) {
     AiThemeRole.readerText ||
     AiThemeRole.selection ||
+    AiThemeRole.selectionText ||
     AiThemeRole.audioHighlight => true,
     _ => false,
   };
@@ -121,6 +125,10 @@ class AiThemeSuggestion {
       bgColor: pick(AiThemeRole.readerBackground, base.bgColor),
       linkColor: pick(AiThemeRole.link, base.linkColor),
       selectionColor: pick(AiThemeRole.selection, base.selectionColor),
+      selectionTextColor: pick(
+        AiThemeRole.selectionText,
+        base.selectionTextColor,
+      ),
       sentenceAudioHighlightColor: pick(
         AiThemeRole.audioHighlight,
         base.sentenceAudioHighlightColor,
@@ -151,6 +159,10 @@ String _roleSemantics(AiThemeRole role) => switch (role) {
     'in-book hyperlinks and selection drag handles. Opaque only.',
   AiThemeRole.selection =>
     'lookup selection highlight painted over text; usually translucent.',
+  AiThemeRole.selectionText =>
+    'text colour of the looked-up word inside the selection highlight. Omit '
+        'to keep the body text colour; set it (with an opaque selection) for '
+        'an inverted highlight such as white text on a dark highlight.',
   AiThemeRole.audioHighlight =>
     'audiobook current-sentence highlight painted over text; usually '
         'translucent.',
@@ -218,6 +230,7 @@ String buildAiThemeUserPrompt({
     AiThemeRole.readerBackground.name: _hexOrNull(current.bgColor),
     AiThemeRole.link.name: _hexOrNull(current.linkColor),
     AiThemeRole.selection.name: _hexOrNull(current.selectionColor),
+    AiThemeRole.selectionText.name: _hexOrNull(current.selectionTextColor),
     AiThemeRole.audioHighlight.name: _hexOrNull(
       audioHighlight ?? current.sentenceAudioHighlightColor,
     ),

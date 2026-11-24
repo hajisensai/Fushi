@@ -257,10 +257,13 @@ SettingsTree _buildFushiSettingsTree() {
   );
 }
 
-/// 不归组合管理的键：设备本地 / 凭据 / 本安装状态（与 Profile 快照同一判据），以及只在
-/// 旧快照里出现、迁移前要先 [normalizeLegacySettingKey] 的旧 category。
+/// 不归组合管理的键：设备本地 / 凭据 / 本安装状态（与 Profile 快照同一判据）、组合格式
+/// 元数据行，以及只在旧快照里出现、迁移前要先 [normalizeLegacySettingKey] 的旧 category。
 bool _isExcludedFromCombos(SettingKey key) {
   if (key.category == _pref) return ProfileKeys.isExcludedPref(key.key);
+  // `combo` category 里除合成设置项（树上登记的，优先于本判据）以外都是格式元数据
+  // （`role` / `split:*` / `srs_shared_uid`，见 combo_rows.dart），不是设置值。
+  if (key.category == kComboSyntheticCategory) return true;
   return key.category == ProfileKeys.categoryDictionary ||
       key.category == ProfileKeys.categoryReader;
 }

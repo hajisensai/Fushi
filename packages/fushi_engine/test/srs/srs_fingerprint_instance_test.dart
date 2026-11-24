@@ -63,7 +63,7 @@ void main() {
   }
 
   Future<void> close(_Opened o) async {
-    o.core.close();
+    await o.core.close();
   }
 
   Future<String> addNote(SrsDbStore s, String expression) => s.createNote(

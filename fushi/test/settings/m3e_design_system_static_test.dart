@@ -826,6 +826,10 @@ class AnotherPopupPart {
           kLyricVisualizerSceneContent,
       'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_ambient.dart':
           kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_collage.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_ornaments.dart':
+          kLyricVisualizerSceneContent,
       'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_scene.dart':
           kLyricVisualizerSceneContent,
       'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text.dart':
@@ -839,6 +843,8 @@ class AnotherPopupPart {
       'lib/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_glyphs.dart':
           kLyricVisualizerSceneContent,
       'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_floating_decor.dart':
           kLyricVisualizerSceneContent,
       'lib/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart':
           kLyricVisualizerSceneContent,
@@ -1584,6 +1590,10 @@ class AnotherPopupPart {
           <String>{'fontSize:'},
       'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_ambient.dart':
           <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_collage.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_ornaments.dart':
+          <String>{'fontSize:'},
       'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_scene.dart':
           <String>{'fontSize:'},
       'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text.dart':
@@ -1597,6 +1607,8 @@ class AnotherPopupPart {
       'lib/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_glyphs.dart':
           <String>{'fontSize:'},
       'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_floating_decor.dart':
           <String>{'fontSize:'},
       'lib/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart':
           <String>{'fontSize:'},

@@ -1676,6 +1676,46 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     return bookKey;
   }
 
+  /// 合集 epub 成员行键 → 本机书 bookKey 的批量换算（[resolveEpubBookKeyByUid] 的
+  /// 批量版）。v83 起成员行 entryKey 是书行 uid，v83 前的存量行是 bookKey：两种都认。
+  /// 不在本机库的键（远端透传行）不出现在结果里。按 bookKey 读书的消费者（书图刮削层
+  /// 等）拿合集成员前必须经此换算，不能把 entryKey 当 bookKey 用。
+  Future<Map<String, String>> resolveEpubBookKeysForMembers(
+    Iterable<String> entryKeys,
+  ) async {
+    final List<String> keys = <String>{
+      for (final String k in entryKeys)
+        if (k.isNotEmpty) k,
+    }.toList();
+    final Map<String, String> out = <String, String>{};
+    // 分批绑定参数（每批两组 IN），不撞 SQLite 变量上限。
+    const int chunk = 400;
+    for (int i = 0; i < keys.length; i += chunk) {
+      final List<String> part = keys.sublist(
+        i,
+        i + chunk < keys.length ? i + chunk : keys.length,
+      );
+      final Set<String> wanted = part.toSet();
+      final List<TypedResult> rows =
+          await (selectOnly(epubBooks)
+                ..addColumns(<Expression<Object>>[
+                  epubBooks.bookKey,
+                  epubBooks.uid,
+                ])
+                ..where(
+                  epubBooks.uid.isIn(part) | epubBooks.bookKey.isIn(part),
+                ))
+              .get();
+      for (final TypedResult r in rows) {
+        final String bookKey = r.read(epubBooks.bookKey)!;
+        final String? uid = r.read(epubBooks.uid);
+        if (uid != null && wanted.contains(uid)) out[uid] = bookKey;
+        if (wanted.contains(bookKey)) out[bookKey] = bookKey;
+      }
+    }
+    return out;
+  }
+
   /// 成员墓碑键域归一（v83）：墓碑冻结在 **bookKey 域**（= wire 域）——它是
   /// 跨端防复活证据，必须在成员行消亡后仍可与对端（bookKey 键）直比。epub 成
   /// 员行键是本机 uid → 写/清墓碑前反查 bookKey；反查不上 = 透传行（原值本就

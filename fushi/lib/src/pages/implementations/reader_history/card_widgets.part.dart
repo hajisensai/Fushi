@@ -326,21 +326,17 @@ extension _ReaderHistoryCardWidgets on _ReaderFushiHistoryPageState {
       (label: tag.name, color: Color(tag.colorValue)),
   ];
 
-  /// 条目的阅读比例（0–1）：标了读完恒为 1；超过 97% 视同读完（跳过后记 / 附录）。
-  double _itemReadFraction(MediaItem item, {bool completed = false}) {
-    if (completed) return 1;
-    if (item.duration <= 0) return 0;
-    final double v = item.position / item.duration;
-    if (!v.isFinite) return 0;
-    return v > 0.97 ? 1 : v.clamp(0.0, 1.0);
-  }
+  /// 条目的阅读比例（0–1），口径见 [shelfReadFraction]。
+  double _itemReadFraction(MediaItem item, {bool completed = false}) =>
+      shelfReadFraction(
+        completed: completed,
+        position: item.position,
+        duration: item.duration,
+      );
 
-  /// 阅读状态文案：已读完 / 未读 / 百分比（不足 1% 记 1%，避免「0%」与「未读」混淆）。
-  String _readProgressLabel(double fraction, {bool completed = false}) {
-    if (completed || fraction >= 1) return t.shelf_filter_read_status_finished;
-    if (fraction <= 0) return t.shelf_filter_read_status_unread;
-    return '${(fraction * 100).floor().clamp(1, 99)}%';
-  }
+  /// 阅读状态文案，口径见 [bookReadProgressLabel]。
+  String _readProgressLabel(double fraction, {bool completed = false}) =>
+      bookReadProgressLabel(fraction, completed: completed);
 
   /// 本地书卡的副行：普通书 / 漫画只写阅读状态（不标类型）；有声书写「🎧 有声书 ·
   /// 46%」，对齐失败 / 部分对齐换错误 / 警示语气与原因。

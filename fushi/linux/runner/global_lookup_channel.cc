@@ -27,7 +27,8 @@ constexpr char kHelperName[] = "fushi_lookup_card";
 // is no reason to start a web view just to say so.
 FlMethodResponse* AnswerWithoutHelper(const std::string& method) {
   if (method == "isShowing" || method == "isWebViewReady" ||
-      method == "suspendForCapture" || method == "restoreAfterCapture") {
+      method == "suspendForCapture" || method == "restoreAfterCapture" ||
+      method == "lookupOverlaySelection") {
     g_autoptr(FlValue) result = fl_value_new_bool(FALSE);
     return FL_METHOD_RESPONSE(fl_method_success_response_new(result));
   }

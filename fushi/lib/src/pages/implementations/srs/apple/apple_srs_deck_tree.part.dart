@@ -22,12 +22,15 @@ double _appleSrsBlockGap(BuildContext context) =>
 
 /// 牌组菜单（Apple 档）：与 [_deckMenuItems] 同项同序；带 SF 风格图标，删除单独
 /// 一节画成 destructive 红字。远程（已配对设备）只有三项。
+///
+/// [details]：第一项放「牌组详情」（与 [_deckMenuItems] 同口径：牌组行的菜单）。
 List<PopupMenuEntry<_DeckAction>> _appleDeckMenuItems(
   BuildContext context, {
   required bool isDefault,
   required bool canMoveUp,
   required bool canMoveDown,
   bool remote = false,
+  bool details = false,
 }) {
   FushiPopupMenuItem<_DeckAction> item(
     _DeckAction action,
@@ -41,8 +44,12 @@ List<PopupMenuEntry<_DeckAction>> _appleDeckMenuItems(
     label: label,
     color: color,
   );
+  final List<PopupMenuEntry<_DeckAction>> head = <PopupMenuEntry<_DeckAction>>[
+    if (details) item(_DeckAction.details, FushiIcons.info, t.srs_deck_details),
+  ];
   if (remote) {
     return <PopupMenuEntry<_DeckAction>>[
+      ...head,
       item(
         _DeckAction.customStudy,
         FushiIcons.moreTime,
@@ -53,6 +60,7 @@ List<PopupMenuEntry<_DeckAction>> _appleDeckMenuItems(
     ];
   }
   return <PopupMenuEntry<_DeckAction>>[
+    ...head,
     item(
       _DeckAction.customStudy,
       FushiIcons.moreTime,

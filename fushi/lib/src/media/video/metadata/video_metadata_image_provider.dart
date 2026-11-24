@@ -14,6 +14,10 @@ library;
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
+import 'package:fushi/src/media/async_file_existence_cache.dart'
+    show kPendingCoverImage;
+import 'package:fushi/src/media/video/video_home_layout.dart'
+    show VideoFileEpisodeStills, resumedFileEpisodeStills;
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -71,3 +75,86 @@ ImageProvider? videoMetadataRowImage(
   }
   return null;
 }
+
+/// 一个本地视频文件「这一集自己的剧照」：[resumedFileEpisodeStills] 定位续播点
+/// 所在那一集（一文件一集时就是它），取那一集的 thumb 图，本地文件优先、其次远程
+/// URL（解码上限同 [metadataRemoteImage]）。首页主卡与合集选集页共用这一份
+/// （拍板 GLMHiavo0y）。
+///
+/// [localExists] 是调用方的零 IO 存在性缓存（`AsyncFileExistenceCache.lookupOptional`
+/// 口径：null = 还在探测，空路径答 false）。某张本地图还在探测时返回
+/// [kPendingCoverImage]，不先闪成远程图或别的回落。那一集没有剧照返回 null——
+/// 不拿别的集的剧照冒充，由调用方回落。
+ImageProvider? videoFileEpisodeStillImage(
+  Iterable<VideoFileEpisodeStills>? episodes, {
+  required int positionMs,
+  required bool? Function(String? path) localExists,
+}) {
+  if (episodes == null) return null;
+  for (final VideoMetadataImageRow row in resumedFileEpisodeStills(
+    episodes,
+    positionMs: positionMs,
+  )) {
+    switch (localExists(row.localPath)) {
+      case null:
+        return kPendingCoverImage;
+      case true:
+        return resizedFileImage(File(row.localPath!));
+      case false:
+        break;
+    }
+    // 远程回落与本地分支同一解码上限（#3722 video-18：刮削剧照是原图）。
+    if (row.remoteUrl.isNotEmpty) return metadataRemoteImage(row.remoteUrl);
+  }
+  return null;
+}
+
+/// 选集页一集缩略图的候选序（拍板 GLMHiavo0y）：用户手动设置的封面 > 分集剧照 >
+/// 自动截图。
+///
+/// [cover] 是这一集的封面（`video_books.cover_path`，自动截帧与手动封面同一个槽），
+/// [coverIsUserChosen] 由封面来源（`CoverOrigin.isUserChosen`）判定。返回去掉空值后
+/// 的候选，渲染端从第一张起显示，加载 / 解码失败依次回落下一张（剧照远程地址失效
+/// 时退回截图；手动封面文件坏了时退回剧照）。
+///
+/// [coverIsUserChosen] 为 null 表示封面来源表（`cover_meta.json`）还在后台读：封面与
+/// 剧照**都有**时先后顺序取决于它，此时停在 [kPendingCoverImage]（与
+/// `AsyncFileExistenceCache` 探测中同一口径），不先闪成剧照再跳回手动封面；只有其中
+/// 一张时顺序无关，直接给出。
+List<ImageProvider> videoEpisodeThumbCandidates({
+  required ImageProvider? cover,
+  required bool? coverIsUserChosen,
+  required ImageProvider? still,
+}) {
+  if (coverIsUserChosen == null && cover != null && still != null) {
+    return const <ImageProvider>[kPendingCoverImage];
+  }
+  return <ImageProvider>[
+    for (final ImageProvider? image
+        in (coverIsUserChosen ?? false)
+            ? <ImageProvider?>[cover, still]
+            : <ImageProvider?>[still, cover])
+      ?image,
+  ];
+}
+
+/// 播放器选集面板一集的取图链（拍板 design-player-episode-rail-stills）：与合集
+/// 选集页**同一套** [videoEpisodeThumbCandidates]（手动封面 > 分集剧照 > 自动截图），
+/// 末尾再垫上合集段回落 [seriesFallback]（原盘盘面图 / 合集横图 / 背景，见播放器
+/// `_playlistSeriesFallbackCover`）。渲染端从第一张起显示，加载失败依次回落。
+///
+/// 远端集没有剧照与封面来源：[still] 传 null、[coverIsUserChosen] 传 false，
+/// 退化成「host 封面 > 合集段」。
+List<ImageProvider> videoPanelEpisodeThumbCandidates({
+  required ImageProvider? cover,
+  required bool? coverIsUserChosen,
+  required ImageProvider? still,
+  required ImageProvider? seriesFallback,
+}) => <ImageProvider>[
+  ...videoEpisodeThumbCandidates(
+    cover: cover,
+    coverIsUserChosen: coverIsUserChosen,
+    still: still,
+  ),
+  ?seriesFallback,
+];

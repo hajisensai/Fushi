@@ -141,9 +141,17 @@ import 'package:test/test.dart';
 /// 剩下新进环的只有新分类 schema 文件 `settings_schema_media_privacy`（设置 schema 整族
 /// 本就在环里，同 2026-11-15 的理由），而 `media_nsfw_cover` 出环，回到 623。
 ///
+/// 2026-11-24 develop 实测 627（+5 −1）。不调上限，拆两处：#4196 系列追踪的「打开系列卡」
+/// 实现 `tracking_series_card_open` 直读 AppModel（取书目 / 模块开关），又被追踪对话框、
+/// 追踪页当默认参数 import，于是两者连同系列卡追踪区一起进环——签名挪到叶子
+/// `tracking_series_card_opener.dart`、对话框 / 追踪页改成必填参数由调用方传，实现改读窄接口
+/// `TrackingSeriesCardHost`（AppModel 实现），四个文件全出环；#4250 的首页默认配置胶囊
+/// `home_profile_chip` 为取库 / 打开配置管理 / 切换配置 import AppModel 与
+/// `profile_view_model`——改由首页注入库与两个回调。最大环降到 622，上限随之下调。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 623;
+const int kMaxCycleFiles = 622;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 
@@ -175,6 +183,13 @@ const List<String> kLeafEntries = <String>[
   'lib/src/media/nsfw/media_nsfw_cover.dart',
   // 查词命中量长只经窄接口 LookupMatchSearchHost（AppModel 实现）查词。
   'lib/src/lookup/lookup_match_measure.dart',
+  // 追踪对话框 / 追踪页只持「打开系列卡」的签名，实现经窄接口 TrackingSeriesCardHost
+  // 读库与模块开关；默认参数直连读 AppModel 的实现会把它们拖回大环（2026-11-24 实测 627）。
+  'lib/src/media/tracking/tracking_series_card_open.dart',
+  'lib/src/media/tracking/book_tracking_dialog.dart',
+  'lib/src/media/tracking/page/tracking_page.dart',
+  // 首页默认配置胶囊的库与动作由首页注入。
+  'lib/src/pages/implementations/home_profile_chip.dart',
 ];
 
 const List<String> kBarrels = <String>[

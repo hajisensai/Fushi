@@ -65,7 +65,7 @@ class HangWatchdogLog {
       // 开发者的一行——它指向诊断区里那份可分享的 hang dump。
       ErrorLogService.instance.log(
         'MainThread.hangRecovered',
-        '上次运行主线程停泵 ≥3 秒（界面卡住、键鼠无响应），看门狗已抓取全线程栈 dump——'
+        '上次运行看门狗抓过全线程栈 dump（主线程停泵 ≥3 秒，或主线程在泵消息但 Dart 心跳静默 ≥10 秒，界面卡住 / 黑屏）——'
             '请在「诊断 → 崩溃转储」分享 hang-*.dmp：\n$content',
       );
     } catch (e) {

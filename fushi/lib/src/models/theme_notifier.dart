@@ -637,6 +637,7 @@ class CustomThemeEntry {
     this.fontColor,
     this.bgColor,
     this.selectionColor,
+    this.selectionTextColor,
     this.primaryColor,
     this.secondaryColor,
     this.tertiaryColor,
@@ -654,6 +655,10 @@ class CustomThemeEntry {
   final int? fontColor;
   final int? bgColor;
   final int? selectionColor;
+
+  /// 查词高亮里被选中文字的字色（拍板台 -8azTfJh_v）。null = 跟随正文字色；设了就
+  /// 能做「白底黑字 → 选中黑底白字」这种反色高亮。
+  final int? selectionTextColor;
   final int? primaryColor;
   final int? secondaryColor;
   final int? tertiaryColor;
@@ -680,6 +685,7 @@ class CustomThemeEntry {
       fontColor: fontColor,
       bgColor: bgColor,
       selectionColor: selectionColor,
+      selectionTextColor: selectionTextColor,
       primaryColor: primaryColor,
       secondaryColor: secondaryColor,
       tertiaryColor: tertiaryColor,
@@ -699,6 +705,7 @@ class CustomThemeEntry {
     if (fontColor != null) 'fontColor': fontColor,
     if (bgColor != null) 'bgColor': bgColor,
     if (selectionColor != null) 'selectionColor': selectionColor,
+    if (selectionTextColor != null) 'selectionTextColor': selectionTextColor,
     if (primaryColor != null) 'primaryColor': primaryColor,
     if (secondaryColor != null) 'secondaryColor': secondaryColor,
     if (tertiaryColor != null) 'tertiaryColor': tertiaryColor,
@@ -722,6 +729,7 @@ class CustomThemeEntry {
       fontColor: asInt(json['fontColor']),
       bgColor: asInt(json['bgColor']),
       selectionColor: asInt(json['selectionColor']),
+      selectionTextColor: asInt(json['selectionTextColor']),
       primaryColor: asInt(json['primaryColor']),
       secondaryColor: asInt(json['secondaryColor']),
       tertiaryColor: asInt(json['tertiaryColor']),
@@ -896,6 +904,7 @@ class ThemeNotifier extends ChangeNotifier {
     // 全局 [pageBackdropSettings] 的那份——否则浏览器扩展按别的配置查词时，弹窗配色取的是
     // 激活配置那张图的颜色。
     _pageBackdropImagePresence.addAll(live._pageBackdropImagePresence);
+    _pageBackdropImageDirPath = live._pageBackdropImageDirPath;
     final PageBackdropSettings backdrop = _readPageBackdropSettings();
     _viewPageBackdropSettings = backdrop;
     _pageBackdropSeeds = _profileViewPageBackdropSeeds(live, backdrop);
@@ -916,7 +925,7 @@ class ThemeNotifier extends ChangeNotifier {
     PageBackdropSettings backdrop,
   ) {
     if (!backdrop.hasCustomImage) return const <Color>[];
-    final String? path = backdrop.landscapeImagePath;
+    final String path = backdrop.landscapeImagePath!;
     final PageBackdropSettings liveBackdrop = pageBackdropSettings.value;
     if (liveBackdrop.hasCustomImage &&
         liveBackdrop.landscapeImagePath == path) {
@@ -924,7 +933,7 @@ class ThemeNotifier extends ChangeNotifier {
     }
     final ({String path, String stamp, List<int> seeds})? cache =
         _readPageBackdropSeedCache();
-    return cache != null && cache.path == path
+    return cache != null && _pageBackdropSeedCacheMatches(cache.path, path)
         ? cache.seeds.map(Color.new).toList(growable: false)
         : const <Color>[];
   }
@@ -1001,6 +1010,9 @@ class ThemeNotifier extends ChangeNotifier {
     SystemTransparency.reduceTransparency.removeListener(notifyListeners);
     currentAppIconSelection.removeListener(_onAppIconSelectionChanged);
     _appIconSeedGeneration++;
+    // 载入后的背景图改写 / 取色还在路上：释放后不再发布、不再通知。
+    _pageBackdropDisposed = true;
+    _pageBackdropSeedGeneration++;
     super.dispose();
   }
 
@@ -1166,6 +1178,32 @@ class ThemeNotifier extends ChangeNotifier {
     return Directory('${root.path}${Platform.pathSeparator}page_backdrop');
   }
 
+  /// 解析本机背景图目录（[pageBackdropImageDirectory]，测试可替换），交给
+  /// [usePageBackdropImageDirectory] 用。
+  static Future<Directory> resolvePageBackdropImageDirectory() =>
+      pageBackdropImageDirectory();
+
+  /// 本机背景图目录的绝对路径（[pageBackdropImageDirectory] 解析过一次后记下）；偏好里
+  /// 存的是文件名，快照发布时同步拼成绝对路径（BUG-5370）。null = 还没解析：存文件名
+  /// 的图先当作没有，[_healStoredPageBackdropImagePaths] 解析后重发布。
+  String? _pageBackdropImageDirPath;
+
+  Future<Directory> _resolvePageBackdropImageDirectory() async {
+    final Directory dir = await pageBackdropImageDirectory();
+    _pageBackdropImageDirPath = dir.path;
+    return dir;
+  }
+
+  /// 在 [loadFromPrefsSnapshot] 之前交给本实例已解析好的背景图目录
+  /// （[pageBackdropImageDirectory] 的结果），冷启动第一帧就能把偏好里的文件名拼成
+  /// 路径，不先闪一下默认背景。不给也行：载入后异步解析、重发布。
+  void usePageBackdropImageDirectory(Directory dir) {
+    _pageBackdropImageDirPath = dir.path;
+  }
+
+  String? _resolvePageBackdropImage(Object? raw) =>
+      resolvePageBackdropImagePath(raw, directory: _pageBackdropImageDirPath);
+
   PageBackdropPreset get pageBackdropPreset =>
       PageBackdropPreset.fromWire(_get(kPageBackdropPresetPrefKey));
 
@@ -1270,11 +1308,11 @@ class ThemeNotifier extends ChangeNotifier {
     strength: pageBackdropStrength,
     motion: pageBackdropMotion,
     landscapeImagePath: existingPageBackdropImagePath(
-      _get(kPageBackdropLandscapeImagePrefKey),
+      _resolvePageBackdropImage(_get(kPageBackdropLandscapeImagePrefKey)),
       exists: _pageBackdropImageKnownPresent,
     ),
     portraitImagePath: existingPageBackdropImagePath(
-      _get(kPageBackdropPortraitImagePrefKey),
+      _resolvePageBackdropImage(_get(kPageBackdropPortraitImagePrefKey)),
       exists: _pageBackdropImageKnownPresent,
     ),
     blur: pageBackdropBlur,
@@ -1296,11 +1334,11 @@ class ThemeNotifier extends ChangeNotifier {
           e.key: PageBackdropModuleOverride(
             preset: e.value,
             landscapeImagePath: existingPageBackdropImagePath(
-              images[e.key]?.landscape,
+              _resolvePageBackdropImage(images[e.key]?.landscape),
               exists: _pageBackdropImageKnownPresent,
             ),
             portraitImagePath: existingPageBackdropImagePath(
-              images[e.key]?.portrait,
+              _resolvePageBackdropImage(images[e.key]?.portrait),
               exists: _pageBackdropImageKnownPresent,
             ),
           ),
@@ -1308,21 +1346,26 @@ class ThemeNotifier extends ChangeNotifier {
     );
   }
 
-  /// 偏好里所有背景图路径（全局两张 + 各模块的），供存在性核对。
+  /// 偏好里所有背景图（全局两张 + 各模块的）的本机绝对路径，供存在性核对。
   Iterable<String> _storedPageBackdropImagePaths() sync* {
     for (final String key in const <String>[
       kPageBackdropLandscapeImagePrefKey,
       kPageBackdropPortraitImagePrefKey,
     ]) {
-      final Object? raw = _get(key);
-      if (raw is String && raw.isNotEmpty) yield raw;
+      if (_resolvePageBackdropImage(_get(key)) case final String path) {
+        yield path;
+      }
     }
     for (final PageBackdropModuleImages images
         in decodePageBackdropModuleImages(
           _get(kPageBackdropModuleImagesPrefKey),
         ).values) {
-      if (images.landscape case final String path) yield path;
-      if (images.portrait case final String path) yield path;
+      if (_resolvePageBackdropImage(images.landscape) case final String path) {
+        yield path;
+      }
+      if (_resolvePageBackdropImage(images.portrait) case final String path) {
+        yield path;
+      }
     }
   }
 
@@ -1350,7 +1393,130 @@ class ThemeNotifier extends ChangeNotifier {
 
   void _onPageBackdropPreferencesLoaded() {
     _publishPageBackdrop();
-    unawaited(refreshPageBackdropSeeds());
+    // 冷启动首帧就套上取色缓存（不等下面的异步改写 / 核对），不先闪一下原主题。
+    final PageBackdropSettings settings = pageBackdropSettings.value;
+    if (settings.hasCustomImage) {
+      _applyPageBackdropSeedCache(settings.landscapeImagePath!);
+    }
+    final Future<void> settle = _settleStoredPageBackdropImages();
+    _pageBackdropImagesSettled = settle;
+    unawaited(settle);
+  }
+
+  Future<void> _pageBackdropImagesSettled = Future<void>.value();
+  bool _pageBackdropDisposed = false;
+
+  /// 最近一次载入后的「存量路径改写 + 取色核对」跑完（测试等它）。
+  @visibleForTesting
+  Future<void> get pageBackdropImagesSettled => _pageBackdropImagesSettled;
+
+  /// 载入后：先把存量绝对路径改写成文件名（顺带解析背景图目录），再取色 + 核对存在性。
+  Future<void> _settleStoredPageBackdropImages() async {
+    // 这份配置没设任何背景图：不用解析目录、不用改写（别的配置停放的旧值切过来变成
+    // live 时，那次载入再改写）。
+    if (!_hasStoredPageBackdropImage()) {
+      await refreshPageBackdropSeeds();
+      return;
+    }
+    try {
+      await _serializePageBackdropImageMutation(
+        _healStoredPageBackdropImagePaths,
+      );
+    } catch (error, stack) {
+      // 改写失败不影响能找到的图（读路径照常按文件名 / 原路径解析），下次载入再试；
+      // 记应用日志以便排查。
+      ErrorLogService.instance.log('page_backdrop.heal_paths', error, stack);
+    }
+    if (_pageBackdropDisposed) return;
+    await refreshPageBackdropSeeds();
+  }
+
+  /// live 偏好里有没有设任何背景图（全局两张 + 各模块），不看文件在不在。
+  bool _hasStoredPageBackdropImage() {
+    for (final String key in const <String>[
+      kPageBackdropLandscapeImagePrefKey,
+      kPageBackdropPortraitImagePrefKey,
+    ]) {
+      final Object? raw = _get(key);
+      if (raw is String && raw.isNotEmpty) return true;
+    }
+    return decodePageBackdropModuleImages(
+      _get(kPageBackdropModuleImagesPrefKey),
+    ).isNotEmpty;
+  }
+
+  /// BUG-5370：把偏好里早先写下的背景图绝对路径改写成文件名——live 的全局两张、
+  /// 模块 JSON，以及各配置停放的值（`kPageBackdropProfileParkedPrefKeyPrefixes`）。
+  /// 只在文件名确实在当前背景图目录里时改写（iOS 换了容器 UUID / 桌面换了数据根，文件
+  /// 跟着目录搬过来了，旧路径却悬空）；找不到的原样留着，按不存在回落默认样式。幂等：
+  /// 全是文件名时只列一次目录。只在 [_serializePageBackdropImageMutation] 里调用。
+  Future<void> _healStoredPageBackdropImagePaths() async {
+    final Directory dir = await _resolvePageBackdropImageDirectory();
+    final Set<String> names = <String>{};
+    try {
+      await for (final FileSystemEntity entity in dir.list(
+        followLinks: false,
+      )) {
+        if (entity is File) names.add(pageBackdropImageFileName(entity.path));
+      }
+    } on PathNotFoundException {
+      // 目录还没建过：没有可找回的文件，只需按解析出的目录重发布。
+    }
+    if (_pageBackdropDisposed) return;
+    if (names.isNotEmpty) {
+      for (final String key in const <String>[
+        kPageBackdropLandscapeImagePrefKey,
+        kPageBackdropPortraitImagePrefKey,
+      ]) {
+        final String? healed = healPageBackdropImageRef(
+          _get(key),
+          inDirectory: names.contains,
+        );
+        if (healed != null) await _set(key, healed);
+      }
+      final String? modules = healPageBackdropModuleImagesValue(
+        _get(kPageBackdropModuleImagesPrefKey),
+        inDirectory: names.contains,
+      );
+      if (modules != null) {
+        await _set(kPageBackdropModuleImagesPrefKey, modules);
+      }
+      final Map<String, String> all = await _db.getAllPrefs();
+      for (final MapEntry<String, String> pref in all.entries) {
+        final String? healed = _healParkedPageBackdropImagePref(
+          pref.key,
+          pref.value,
+          names,
+        );
+        if (healed != null) {
+          await _db.setPref(pref.key, PrefCodec.encode(healed));
+        }
+      }
+    }
+    if (_pageBackdropDisposed) return;
+    _publishPageBackdrop();
+  }
+
+  /// 停放键 [key]（原始编码值 [raw]）里存量绝对路径的改写结果；不是图片停放键或不用改
+  /// 返回 null。
+  static String? _healParkedPageBackdropImagePref(
+    String key,
+    String raw,
+    Set<String> names,
+  ) {
+    for (final MapEntry<String, String> e
+        in kPageBackdropProfileParkedPrefKeyPrefixes.entries) {
+      if (e.key == kPageBackdropSeedCachePrefKey) continue;
+      if (!key.startsWith(e.value) || raw.isEmpty) continue;
+      final Object? value = PrefCodec.decodeUntyped(raw);
+      return e.key == kPageBackdropModuleImagesPrefKey
+          ? healPageBackdropModuleImagesValue(
+              value,
+              inDirectory: names.contains,
+            )
+          : healPageBackdropImageRef(value, inDirectory: names.contains);
+    }
+    return null;
   }
 
   Future<void> setPageBackdropPreset(PageBackdropPreset preset) async {
@@ -1397,8 +1563,8 @@ class ThemeNotifier extends ChangeNotifier {
   /// （[_sweepUnreferencedPageBackdropImages]）。
   Future<void> importPageBackdropImage(File source, {required bool portrait}) =>
       _serializePageBackdropImageMutation(() async {
-        final Directory dir = await pageBackdropImageDirectory();
-        final String target = await _copyPageBackdropImage(
+        final Directory dir = await _resolvePageBackdropImageDirectory();
+        final String name = await _copyPageBackdropImage(
           source,
           dir,
           portrait ? 'portrait' : 'landscape',
@@ -1406,7 +1572,7 @@ class ThemeNotifier extends ChangeNotifier {
         final String key = portrait
             ? kPageBackdropPortraitImagePrefKey
             : kPageBackdropLandscapeImagePrefKey;
-        await _set(key, target);
+        await _set(key, name);
         if (!portrait) await _set(kPageBackdropPresetPrefKey, 'custom');
         await _sweepUnreferencedPageBackdropImages();
         _publishPageBackdrop();
@@ -1417,7 +1583,7 @@ class ThemeNotifier extends ChangeNotifier {
       });
 
   /// 把 [source] 复制进 [dir]（文件名 `<slot>-<毫秒>.<扩展名>`，每次换图都是新名字），
-  /// 记为存在，返回目标路径。
+  /// 记为存在，返回**文件名**（偏好只存文件名，BUG-5370）。
   Future<String> _copyPageBackdropImage(
     File source,
     Directory dir,
@@ -1427,12 +1593,15 @@ class ThemeNotifier extends ChangeNotifier {
     final String name = source.path.split(RegExp(r'[\\/]')).last;
     final int dot = name.lastIndexOf('.');
     final String ext = dot > 0 ? name.substring(dot).toLowerCase() : '.img';
-    final String target =
-        '${dir.path}${Platform.pathSeparator}$slot-'
-        '${DateTime.now().millisecondsSinceEpoch}$ext';
+    final String fileName =
+        '$slot-${DateTime.now().millisecondsSinceEpoch}$ext';
+    final String target = resolvePageBackdropImagePath(
+      fileName,
+      directory: dir.path,
+    )!;
     await source.copy(target);
     _pageBackdropImagePresence[target] = true;
-    return target;
+    return fileName;
   }
 
   // ── 按模块单独设置背景（反馈 DYI1IOZxSM）──────────────────────────────
@@ -1486,9 +1655,9 @@ class ThemeNotifier extends ChangeNotifier {
     File source, {
     required bool portrait,
   }) => _serializePageBackdropImageMutation(() async {
-    final Directory dir = await pageBackdropImageDirectory();
+    final Directory dir = await _resolvePageBackdropImageDirectory();
     final String wire = pageBackdropModuleWire(tab);
-    final String target = await _copyPageBackdropImage(
+    final String name = await _copyPageBackdropImage(
       source,
       dir,
       'module-$wire-${portrait ? 'portrait' : 'landscape'}',
@@ -1498,8 +1667,8 @@ class ThemeNotifier extends ChangeNotifier {
     final PageBackdropModuleImages current =
         images[tab] ?? (landscape: null, portrait: null);
     images[tab] = portrait
-        ? (landscape: current.landscape, portrait: target)
-        : (landscape: target, portrait: current.portrait);
+        ? (landscape: current.landscape, portrait: name)
+        : (landscape: name, portrait: current.portrait);
     await _set(
       kPageBackdropModuleImagesPrefKey,
       encodePageBackdropModuleImages(images),
@@ -1554,7 +1723,7 @@ class ThemeNotifier extends ChangeNotifier {
   /// 只在 [_serializePageBackdropImageMutation] 里调用：并发换图时别的调用刚复制、还没写进偏好的
   /// 新文件会被当成孤儿。
   Future<void> _sweepUnreferencedPageBackdropImages() async {
-    final Directory dir = await pageBackdropImageDirectory();
+    final Directory dir = await _resolvePageBackdropImageDirectory();
     final Map<String, String> prefs = await _db.getAllPrefs();
     String? activeUid;
     try {
@@ -1570,7 +1739,7 @@ class ThemeNotifier extends ChangeNotifier {
             ? null
             : activeUid,
       ))
-        _pageBackdropPathKey(path),
+        _pageBackdropNameKey(path),
     };
     final List<File> orphans = <File>[];
     try {
@@ -1578,7 +1747,7 @@ class ThemeNotifier extends ChangeNotifier {
         followLinks: false,
       )) {
         if (entity is! File) continue;
-        if (referenced.contains(_pageBackdropPathKey(entity.path))) continue;
+        if (referenced.contains(_pageBackdropNameKey(entity.path))) continue;
         orphans.add(entity);
       }
     } on PathNotFoundException {
@@ -1603,13 +1772,18 @@ class ThemeNotifier extends ChangeNotifier {
     }
   }
 
-  /// 路径比较用的键：绝对路径，Windows / macOS 默认文件系统不分大小写时统一小写。
-  static String _pageBackdropPathKey(String path) {
-    final String absolute = File(path).absolute.path;
-    return Platform.isWindows || Platform.isMacOS
-        ? absolute.toLowerCase()
-        : absolute;
+  /// 清扫比对用的键：文件名（偏好里存文件名，存量值是绝对路径也只看文件名——旧容器
+  /// 路径悬空时按整条路径比，会把目录里正被引用的同名文件当孤儿删掉，BUG-5370）；
+  /// Windows / macOS 默认文件系统不分大小写时统一小写。
+  static String _pageBackdropNameKey(String path) {
+    final String name = pageBackdropImageFileName(path);
+    return Platform.isWindows || Platform.isMacOS ? name.toLowerCase() : name;
   }
+
+  /// 取色缓存记的图与 [path] 是否同一张：按文件名比（缓存写文件名，存量缓存是绝对
+  /// 路径；背景图文件名带毫秒时间戳，同名即同图）。
+  static bool _pageBackdropSeedCacheMatches(String cached, String path) =>
+      pageBackdropImageFileName(cached) == pageBackdropImageFileName(path);
 
   /// 背景图的写操作排队执行：一次换图的「复制 → 写偏好 → 收孤儿」不与另一次交错，
   /// 否则后者刚复制、还没写进偏好的文件会被前者的清扫当孤儿删掉。
@@ -1653,13 +1827,8 @@ class ThemeNotifier extends ChangeNotifier {
       return;
     }
     // 同步段：先套缓存（冷启动首帧就是缓存里的颜色，不先闪一下原主题）。
-    final Color? before = pageBackdropAccentSeed;
     final ({String path, String stamp, List<int> seeds})? cache =
-        _readPageBackdropSeedCache();
-    _pageBackdropSeeds = cache != null && cache.path == path
-        ? cache.seeds.map(Color.new).toList(growable: false)
-        : const <Color>[];
-    if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
+        _applyPageBackdropSeedCache(path);
     // 异步核对图片还在不在；不在会重发布快照（回落默认样式），取色随之作废。
     await _verifyPageBackdropImages();
     if (generation != _pageBackdropSeedGeneration) return;
@@ -1674,7 +1843,11 @@ class ThemeNotifier extends ChangeNotifier {
       final FileStat stat = await File(path).stat();
       stamp = '${stat.modified.millisecondsSinceEpoch}:${stat.size}';
       if (generation != _pageBackdropSeedGeneration) return;
-      if (cache != null && cache.path == path && cache.stamp == stamp) return;
+      if (cache != null &&
+          _pageBackdropSeedCacheMatches(cache.path, path) &&
+          cache.stamp == stamp) {
+        return;
+      }
       seeds = await pageBackdropSeedExtractor(path);
     } catch (error, stack) {
       // 取色失败（图片解码不了等）不影响背景本身，只是不覆盖配色；记应用日志。
@@ -1690,9 +1863,24 @@ class ThemeNotifier extends ChangeNotifier {
     if (seeds.isNotEmpty) {
       await _set(
         kPageBackdropSeedCachePrefKey,
-        '$path|$stamp|${seeds.join(',')}',
+        '${pageBackdropImageFileName(path)}|$stamp|${seeds.join(',')}',
       );
     }
+  }
+
+  /// 按取色缓存套上 [path] 的候选色（缓存不是这张图就清空），返回读到的缓存。
+  ({String path, String stamp, List<int> seeds})? _applyPageBackdropSeedCache(
+    String path,
+  ) {
+    final Color? before = pageBackdropAccentSeed;
+    final ({String path, String stamp, List<int> seeds})? cache =
+        _readPageBackdropSeedCache();
+    _pageBackdropSeeds =
+        cache != null && _pageBackdropSeedCacheMatches(cache.path, path)
+        ? cache.seeds.map(Color.new).toList(growable: false)
+        : const <Color>[];
+    if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
+    return cache;
   }
 
   ({String path, String stamp, List<int> seeds})? _readPageBackdropSeedCache() {
@@ -2805,6 +2993,13 @@ class ThemeNotifier extends ChangeNotifier {
   Color? get activeCustomThemeSelectionColor => _activeCustomRole(
     (CustomThemeEntry e) => e.selectionColor,
     () => customThemeSelectionColor,
+  );
+
+  /// 当前生效自定义主题的查词高亮文字色（null = 跟随正文字色）。新角色，没有旧扁平
+  /// 偏好可兜底。
+  Color? get activeCustomThemeSelectionTextColor => _activeCustomRole(
+    (CustomThemeEntry e) => e.selectionTextColor,
+    () => null,
   );
 
   /// 当前生效自定义主题的书内链接色（null = 跟随主题）。

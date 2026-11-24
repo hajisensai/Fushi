@@ -35,6 +35,9 @@ class BookCatalogException implements Exception {
 }
 
 /// 书目源返回的一本书（各源解析器的共同输出）。
+/// 书目条目的形态（AniList `format`）：弹窗据此写明候选是轻小说还是漫画。
+enum BookCatalogFormat { novel, manga, manhwa, manhua, oneShot }
+
 class BookCatalogRecord {
   const BookCatalogRecord({
     required this.id,
@@ -54,6 +57,7 @@ class BookCatalogRecord {
     this.bannerUrl,
     this.pageUrl,
     this.isAdult = false,
+    this.format,
   });
 
   /// 源内 id：AniList media id / ISBN-13（openBD、NDL、楽天）/ iTunes trackId 或 collectionId。
@@ -96,6 +100,9 @@ class BookCatalogRecord {
   /// 源站详情页。
   final String? pageUrl;
   final bool isAdult;
+
+  /// 形态（轻小说 / 漫画 / 韩漫 / 国漫 / 短篇）；源不区分时为 null。
+  final BookCatalogFormat? format;
 }
 
 // ---------------------------------------------------------------------------

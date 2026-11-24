@@ -44,7 +44,7 @@ class _CapturingAnkiRepo extends BaseAnkiRepository {
     capturedPayloadJson = rawPayloadJson;
     final String? audio = context.sentenceAudioPath;
     sentenceAudioExisted = audio == null ? null : File(audio).existsSync();
-    // result != success → `_mineEntry` skips `_recordMinedStats` (no DB touch).
+    // result != success → `_mineEntry` skips `recordOverlayMinedStats` (no DB touch).
     return MineOutcome.failure('capture');
   }
 

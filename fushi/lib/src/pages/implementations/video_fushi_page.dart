@@ -232,6 +232,17 @@ import 'package:fushi/src/media/video/subtitle_retiming_service.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/remote_session_reload.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
+import 'package:fushi/src/media/async_file_existence_cache.dart'
+    show AsyncFileExistenceCache;
+import 'package:fushi/src/media/video/metadata/video_metadata_image_provider.dart'
+    show videoFileEpisodeStillImage, videoPanelEpisodeThumbCandidates;
+import 'package:fushi/src/media/video/video_cover_meta_loader.dart';
+import 'package:fushi/src/media/video/video_home_layout.dart'
+    show VideoFileEpisodeStills;
+import 'package:fushi/src/media/video/video_library_scrape_maps.dart'
+    show videoFileEpisodeStillsByBook;
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart'
+    show CoverMeta, CoverOriginDisplay;
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_study_clock_cover.dart';
 import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
@@ -939,6 +950,7 @@ class _PlaylistEpisodeRef {
     this.started = false,
     this.progress,
     this.sectionKey,
+    this.positionMs = 0,
   });
   final String? bookUid;
   final String title;
@@ -974,6 +986,10 @@ class _PlaylistEpisodeRef {
   /// 观看进度 0..1（断点 / 时长），只在两者都已知时给（远端 host 下发时长；
   /// 本地集行没有时长列，恒 null）。选集卡底部进度条的数据源，纯展示。
   final double? progress;
+
+  /// 本地集的续播点（`video_books.lastPositionMs`；远端集恒 0）。一文件多集时据此
+  /// 挑「续播点所在那一集」的剧照（`videoFileEpisodeStillImage`，与合集选集页同口径）。
+  final int positionMs;
 }
 
 class VideoFushiPage extends ConsumerStatefulWidget {
@@ -999,6 +1015,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     super.key,
   }) : remoteInfo = null,
        remoteClient = null,
+       ownsRemoteClient = false,
        remoteCollectionMembers = null;
 
   VideoFushiPage.remote({
@@ -1012,11 +1029,12 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.initialEpisodeIndex,
     this.initialSubtitleListVisible = false,
     this.remoteCollectionMembers,
+    this.ownsRemoteClient = false,
+    this.initialFullscreen = false,
     super.key,
   }) : bookUid = info.id,
        remoteInfo = info,
        remoteClient = client,
-       initialFullscreen = false,
        initialImmersiveLocked = false,
        openBlurayMenu = false,
        discLaunchCover = null,
@@ -1031,6 +1049,12 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   final VideoBookRepository repo;
   final RemoteVideoInfo? remoteInfo;
   final RemoteVideoClient? remoteClient;
+
+  /// [remoteClient] 是不是调用方为这一页现建、交给本页的（媒体服务器收藏跳转按条目 id
+  /// 现解析出的客户端，`resolveMediaServerItemLaunch`，BUG-5402）。真 = 退页时与本页
+  /// 自建的流客户端同一条收尾（[RemoteClientTeardown]，等断点落库 / 停止上报用完再关）；
+  /// 假（缺省）= 归调用方（互联 host、浏览页的媒体服务器浏览器），本页不碰。
+  final bool ownsRemoteClient;
 
   /// 客户端互联视频合集播放：本远端视频所属合集的**有序成员**（含自己）。非空且 >1 = 作为
   /// 合集某一集打开，播放器据此建剧集列表 + 跨成员自动连播（成员各自独立 video id，换集换
@@ -1053,7 +1077,9 @@ class VideoFushiPage extends ConsumerStatefulWidget {
 
   /// BUG-839：作为「从全屏页连播/换集而来」的新页打开——首帧就绪后自动重进全屏路由，
   /// 保持连播全屏沉浸不被换集打断。仅本地 pushReplacement 换集在换集前处于全屏时置真
-  /// （见 [_VideoEpisode._switchEpisode]）；首开 / 远端恒 false。
+  /// （见 [_VideoEpisode._switchEpisode]），以及全屏中被遥控跳到另一部视频的收藏
+  /// （`_openRemoteVideoFavorite`；媒体服务器条目经远端构造器接管，BUG-5402）；
+  /// 其余首开 / 远端恒 false。
   final bool initialFullscreen;
 
   /// 作为「从沉浸锁定态换集 / 连播而来」的新页打开：首帧起就处于沉浸锁定
@@ -1167,6 +1193,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     int? initialEpisodeIndex,
     bool initialSubtitleListVisible = false,
     List<RemoteVideoInfo>? remoteCollectionMembers,
+    bool ownsRemoteClient = false,
+    bool initialFullscreen = false,
   }) => FushiAppUiScaleNeutralizer(
     child: VideoFushiPage.remote(
       info: info,
@@ -1179,6 +1207,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       initialEpisodeIndex: initialEpisodeIndex,
       initialSubtitleListVisible: initialSubtitleListVisible,
       remoteCollectionMembers: remoteCollectionMembers,
+      ownsRemoteClient: ownsRemoteClient,
+      initialFullscreen: initialFullscreen,
     ),
   );
 
@@ -2646,6 +2676,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 锁屏卡封面（本机文件）：按路径缓存是否存在，卡片每次推送都现取信息。
   ({String path, Uri? uri})? _backgroundMediaCover;
 
+  /// 正在异步探测是否存在的封面路径（BUG-3756：封面常在网络盘上，不许同步 stat）。
+  String? _backgroundMediaCoverProbing;
+
   /// BUG-939：`_subtitleMenuSources` 已成功枚举时对应的本地视频路径。字幕轨枚举
   /// （ffprobe 探测内嵌轨 + 同目录外挂）按此 key 记忆：同一视频重开「字幕」分类直接
   /// 用缓存渲染，不再每次重跑 ffprobe 显加载条、也不再把已枚举出的字幕轨先清空重来
@@ -3727,6 +3760,28 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// titleCard → backdrop）。仅本地合集连播路径填充；单视频/远端恒空。
   List<MediaImageRow> _playlistCollectionImages = const <MediaImageRow>[];
 
+  /// 播放中合集各本地集 → 绑到它的分集与各集刮削剧照（[videoFileEpisodeStillsByBook]，
+  /// 与合集选集页同一份聚合）。选集面板取图链「手动封面 > 分集剧照 > 自动截图」的
+  /// 剧照一环（拍板 design-player-episode-rail-stills）。成员列表建好后后台读
+  /// （[_loadPlaylistEpisodeThumbSources]），不挡首帧；整体替换、从不原地改。
+  Map<String, List<VideoFileEpisodeStills>> _playlistFileEpisodes =
+      const <String, List<VideoFileEpisodeStills>>{};
+
+  /// 播放中合集各本地集的封面来源（`cover_meta.json`）：判定集封面是不是用户手动
+  /// 设置的。null = 还没读到（封面与剧照都有的集先停在待定占位，见
+  /// `videoEpisodeThumbCandidates`）。整体替换、从不原地改。
+  Map<String, CoverMeta>? _playlistCoverMeta;
+
+  /// 选集面板剧照本地文件的「在不在」异步记忆表（零同步 IO，BUG-3756 口径）：
+  /// 探测落定后作废面板 memo 并重建。
+  late final AsyncFileExistenceCache _playlistStillExists =
+      AsyncFileExistenceCache(
+        onChanged: () {
+          if (!mounted) return;
+          setState(() => _episodePanelEntriesMemo = null);
+        },
+      );
+
   /// [_episodePanelEntries] 的 memo 及其三个输入的身份快照。
   ///
   /// 剧集面板常驻挂在 [_videoWithSubtitlePanel] 的 Stack 里（隐藏态留树做
@@ -3734,13 +3789,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// N 集重新 new [VideoEpisodeEntry] + 远端封面 provider + 跑
   /// [parsedEpisodeNumberOf] 正则，远端合集几十集时每帧白做几十次正则与 provider
   /// 构造，新 provider 实例还让每张卡的 `Image` 逐帧走 key 比较。三个输入
-  /// （[_episodes] / 封面拉取器 / [_playlistCollectionImages]）都是**整体替换、
+  /// （[_episodes] / 封面拉取器 / [_playlistCollectionImages] / [_playlistFileEpisodes] /
+  /// [_playlistCoverMeta]）都是**整体替换、
   /// 从不原地改**的列表 / 对象，按身份缓存即与重算逐字等价；当前集 / 高亮由面板
   /// 按 [_currentEpisode] 单独跟随，不在 entries 里。
   List<VideoEpisodeEntry>? _episodePanelEntriesMemo;
   List<_PlaylistEpisodeRef>? _episodePanelEntriesEpisodes;
   RemoteCoverFetcher? _episodePanelEntriesFetcher;
   List<MediaImageRow>? _episodePanelEntriesImages;
+  Map<String, List<VideoFileEpisodeStills>>? _episodePanelEntriesStills;
+  Map<String, CoverMeta>? _episodePanelEntriesCoverMeta;
 
   /// 当前集索引（[_episodes] 下标）；单视频恒 0。
   int _currentEpisode = 0;
@@ -4568,14 +4626,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
   }
 
+  /// 只读缓存：卡片信息在每次控制器 notify 时同步现取，不能在这里碰文件系统——封面
+  /// 常落在网络盘（BUG-3756），冷目录一次同步 stat 就是数秒的 UI 冻结。缓存未命中先不
+  /// 带封面，交给 [_probeBackgroundMediaCover] 异步探测，探完再把卡片重推一次。
   Uri? _backgroundMediaCoverUri() {
     final String? path = _bookRow?.coverPath;
     if (path == null || path.isEmpty) return null;
     final ({String path, Uri? uri})? cached = _backgroundMediaCover;
     if (cached != null && cached.path == path) return cached.uri;
-    final Uri? uri = File(path).existsSync() ? File(path).uri : null;
-    _backgroundMediaCover = (path: path, uri: uri);
-    return uri;
+    _probeBackgroundMediaCover(path);
+    return null;
+  }
+
+  void _probeBackgroundMediaCover(String path) {
+    if (_backgroundMediaCoverProbing == path) return;
+    _backgroundMediaCoverProbing = path;
+    unawaited(() async {
+      final File file = File(path);
+      final bool exists = await file.exists();
+      // 探测期间换了集（封面路径变了）或已离页：这次结果作废，由新路径自己的探测接手。
+      if (!mounted || _backgroundMediaCoverProbing != path) return;
+      _backgroundMediaCoverProbing = null;
+      _backgroundMediaCover = (path: path, uri: exists ? file.uri : null);
+      if (exists) _backgroundMediaSession?.refreshInfo();
+    }());
   }
 
   /// BUG-2544：回前台（`resumed`）时把上面停下的播放续上。
@@ -5180,10 +5254,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             completed: er.completedAt != null,
             started: er.lastPositionMs > 0,
             sectionKey: sectionKeys[er.bookUid],
+            positionMs: er.lastPositionMs,
           ),
         );
       }
       _episodes = refs;
+      // 选集面板的剧照与封面来源后台读，不挡首帧（拍板
+      // design-player-episode-rail-stills）。
+      unawaited(_loadPlaylistEpisodeThumbSources(refs));
       final int idx = refs.indexWhere(
         (_PlaylistEpisodeRef e) => e.bookUid == _activeBookUid,
       );
@@ -8076,15 +8154,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    _playlistStillExists.dispose();
+    // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
+    // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
+    _frameProbe.stop();
     // 拍板台 42UUu_kcwD-media：离页即让出系统媒体会话（已被别的页面 / 有声书 /
     // 音乐接手时只拆自己的监听）。
     _backgroundMediaSession?.dispose();
     _backgroundMediaSession = null;
     // 反馈 kEFPY4cuKZ：离开这部作品 = 撤掉它的作品级配置覆盖层。
     WorkProfileScope.instance.leave(this);
-    // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
-    // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
-    _frameProbe.stop();
     _playbackRouteMark.dispose();
     _subtitleMaskDraft.dispose();
     _themeSongTracker.dispose();
@@ -8208,6 +8287,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 断点写入、退出路径发起的落库与停止上报都已登记进 [_remoteTeardown]，等它们用完。
     final RemoteVideoClient? ownedStreamClient = _resolvedStreamClient;
     if (ownedStreamClient != null) _releaseOwnedStreamClient(ownedStreamClient);
+    final RemoteVideoClient? handedOverClient = widget.remoteClient;
+    if (widget.ownsRemoteClient && handedOverClient != null) {
+      _releaseOwnedStreamClient(handedOverClient);
+    }
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
     _videoTimeShowsRemainingNotifier?.dispose();

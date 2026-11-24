@@ -1088,6 +1088,40 @@ extension _ReaderChrome on _ReaderFushiPageState {
   // reuses [_navigateToChapter] (no second navigation path). Reads
   // [_currentChapter] only -- never writes reader/WebView state.
 
+  /// 揭开一张书中图片的防剧透遮罩（[key] = 归一化 `revealKey`）：内存集 + Drift
+  /// `revealed_images` + 正文 WebView 里同一张图当场去模糊。插图册「仍要查看」与
+  /// 歌词模式插图大图浏览「点一下揭开」共用这一条，揭开状态在各表面之间一致。
+  void _markReaderImageRevealed(String key) {
+    if (!_revealedImageKeys.add(key)) return;
+    final String? bookUid = _bookUid;
+    if (bookUid != null) {
+      unawaited(
+        appModel.database.markImageRevealed(
+          bookUid,
+          key,
+          DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+    }
+    unawaited(
+      _controller?.evaluateJavascript(
+        source:
+            '''
+      (function() {
+        var key = ${jsonEncode(key)};
+        if (window.__fushiMarkImageRevealed) {
+          window.__fushiMarkImageRevealed(key);
+        }
+        if (!window.__fushiImageRevealKey) return;
+        document.querySelectorAll('img.blurred, svg.blurred').forEach(function(el) {
+          if (window.__fushiImageRevealKey(el) === key) el.classList.remove('blurred');
+        });
+      })();
+    ''',
+      ),
+    );
+  }
+
   Future<void> _openGallery() async {
     final EpubBook? book = _book;
     if (book == null) return;
@@ -1130,36 +1164,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
               currentNormCharOffset: currentNormCharOffset,
               blurImages: _settings?.blurImages ?? false,
               revealedImageKeys: _revealedImageKeys,
-              onRevealImage: (String key) {
-                if (!_revealedImageKeys.add(key)) return;
-                final String? bookUid = _bookUid;
-                if (bookUid != null) {
-                  unawaited(
-                    appModel.database.markImageRevealed(
-                      bookUid,
-                      key,
-                      DateTime.now().millisecondsSinceEpoch,
-                    ),
-                  );
-                }
-                unawaited(
-                  _controller?.evaluateJavascript(
-                    source:
-                        '''
-                  (function() {
-                    var key = ${jsonEncode(key)};
-                    if (window.__fushiMarkImageRevealed) {
-                      window.__fushiMarkImageRevealed(key);
-                    }
-                    if (!window.__fushiImageRevealKey) return;
-                    document.querySelectorAll('img.blurred, svg.blurred').forEach(function(el) {
-                      if (window.__fushiImageRevealKey(el) === key) el.classList.remove('blurred');
-                    });
-                  })();
-                ''',
-                  ),
-                );
-              },
+              onRevealImage: _markReaderImageRevealed,
               onUnrevealImage: (String key) {
                 if (!_revealedImageKeys.remove(key)) return;
                 final String? bookUid = _bookUid;
@@ -4085,6 +4090,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     bg: appModel.activeCustomThemeBackgroundColor,
     fg: appModel.activeCustomThemeFontColor,
     selection: appModel.activeCustomThemeSelectionColor,
+    selectionText: appModel.activeCustomThemeSelectionTextColor,
     link: appModel.activeCustomThemeLinkColor,
   );
 

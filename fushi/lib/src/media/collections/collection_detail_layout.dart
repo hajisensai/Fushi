@@ -1058,24 +1058,27 @@ const double kCollectionEpisodeThumbWidth =
 int collectionEpisodeColumns(double maxWidth) =>
     maxWidth >= kCollectionEpisodeTwoColumnMinWidth ? 2 : 1;
 
-/// 集卡缩略图：有图走 [PortraitCoverImage] 横槽（解码失败退占位），无图占位。
+/// 集卡缩略图：有图走 [PortraitCoverImage] 横槽，无图占位。
+/// [image] 加载 / 解码失败时依次换 [fallbacks] 里的下一张（选集页「剧照失败退回
+/// 自动截图」，拍板 GLMHiavo0y），全失败才退占位。
 /// 外框是 16:9 的光面海报材质（与视频库同一套，2026-10-26 用户拍板「海报材质
 /// 横版」），材质按实际尺寸画。
 Widget collectionEpisodeThumb(
   BuildContext context,
   ImageProvider? image, {
+  List<ImageProvider> fallbacks = const <ImageProvider>[],
   double w = kCollectionEpisodeThumbWidth,
   double h = kCollectionEpisodeThumbHeight,
 }) {
   final ColorScheme cs = Theme.of(context).colorScheme;
-  final Widget content = image == null
+  Widget chain(List<ImageProvider> images) => images.isEmpty
       ? collectionEpisodeThumbPlaceholder(w, h, cs)
       : PortraitCoverImage(
-          image: image,
+          image: images.first,
           landscapeSlot: true,
-          errorBuilder: (BuildContext _) =>
-              collectionEpisodeThumbPlaceholder(w, h, cs),
+          errorBuilder: (BuildContext _) => chain(images.sublist(1)),
         );
+  final Widget content = chain(<ImageProvider>[?image, ...fallbacks]);
   return SizedBox(
     width: w,
     height: h,

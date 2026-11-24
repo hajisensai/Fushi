@@ -180,6 +180,23 @@ void main() {
       );
     });
 
+    // BUG-5400：只有上 / 中 / 下自己时规则排得出（不问 AI），次序上 → 中 → 下。
+    test('书：只有结尾上 / 中 / 下分册时规则排得出', () {
+      final List<AiCollectionOrderMember> members = <AiCollectionOrderMember>[
+        _book('化物語 下巻'),
+        _book('化物語 上巻'),
+        _book('化物語 中巻'),
+      ];
+      expect(
+        collectionOrderAmbiguousIndices(members, AiCollectionOrderKind.book),
+        isEmpty,
+      );
+      expect(
+        ruleOrderCollectionMembers(members, AiCollectionOrderKind.book),
+        <int>[1, 2, 0],
+      );
+    });
+
     test('书：上 / 下卷、汉字卷号、外传、卷号冲突、多本无卷号都判不出', () {
       expect(
         collectionOrderAmbiguousIndices(<AiCollectionOrderMember>[

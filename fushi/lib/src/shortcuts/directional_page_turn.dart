@@ -35,8 +35,9 @@ DirectionalPageTurnSide? directionalPageTurnSideForGamepad(
 /// [backward]、右 → [forward]）。用户把该键改绑成相反的翻页方向、别的动作或解绑，都
 /// 是明确意图，返回 null 交回注册表解析真实绑定（BUG-3805 / 反馈 aiRZmYl5zS）。
 ///
-/// [reverse] 在阅读方向算出的结果上整体左右对调（小说的「反转方向键翻页」开关，只管
-/// 键盘）；与 [rtl] 正交叠加：`leftIsForward = rtl ^ reverse`。
+/// [reverse] 在阅读方向算出的结果上整体左右对调（「反转方向键翻页」开关，只管键盘；
+/// 小说与漫画各有一个，偏好各自落盘——维护者 2026-11-23 拍板「两边分开」，反馈
+/// uz_2m0E_Eu ④）；与 [rtl] 正交叠加：`leftIsForward = rtl ^ reverse`。
 ///
 /// 此前两个阅读器各写一份：小说只接管出厂绑定、漫画只要是翻页动作就一律按跨页方向
 /// 改写（用户改绑的相反方向会被改回去），小说的 D-pad 则完全不看阅读方向——同一个
@@ -55,4 +56,37 @@ ShortcutAction? resolveDirectionalPageTurn({
   if (boundAction != factoryBinding) return null;
   final bool leftIsForward = rtl ^ reverse;
   return isLeft == leftIsForward ? forward : backward;
+}
+
+/// 有声在场时裸 ← / → 由「翻页」改作「上一句 / 下一句」——小说与漫画共用的判据
+/// （反馈 uz_2m0E_Eu ①，维护者拍板「小说跟漫画走」；漫画此前由 BUG-5178 /
+/// 反馈 WrLFAXNkSw 先做了）。
+///
+/// [pageAction] 必须是已经过 [resolveDirectionalPageTurn] 按阅读方向（与「反转方向键
+/// 翻页」开关）校正好的**页序**动作：下一页 → [nextLine]、上一页 → [previousLine]。
+/// 校正只在该键仍是出厂翻页绑定时发生，所以用户改绑 / 解绑过左右键就自然让路，
+/// 不必在这里再判一次。
+///
+/// 不接管的情形（返回 null，交回原解析）：
+///  * 没有在场的有声（[audioActive] 假）；
+///  * 带修饰键（Ctrl+← → 本就是两边的切句键，Shift 等组合归各自绑定）；
+///  * 不是裸 ← / →（PageUp / PageDown / ↑ / ↓ 仍然翻页，空格由各自的空格覆写管）；
+///  * 查词弹窗可见（[dictionaryShown]）：← → 是「关弹窗并翻页」（反馈 uz_2m0E_Eu ③），
+///    两个阅读器一致。
+ShortcutAction? resolveAudioArrowTakeover({
+  required LogicalKeyboardKey key,
+  required Set<ModifierKey> modifiers,
+  required ShortcutAction? pageAction,
+  required ShortcutAction pageForward,
+  required ShortcutAction pageBackward,
+  required ShortcutAction nextLine,
+  required ShortcutAction previousLine,
+  required bool audioActive,
+  required bool dictionaryShown,
+}) {
+  if (!audioActive || dictionaryShown || modifiers.isNotEmpty) return null;
+  if (directionalPageTurnSideForKey(key) == null) return null;
+  if (pageAction == pageForward) return nextLine;
+  if (pageAction == pageBackward) return previousLine;
+  return null;
 }

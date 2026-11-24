@@ -245,6 +245,14 @@ Future<void> _settle(WidgetTester tester) async {
   await tester.pump();
 }
 
+/// 原文条里的那个字。查不到结果时空态会把查询词拆成可点的词块
+/// （`LookupRefinePanel`，拍板台 Um72dWD9Cz），同一个字会在词块里再出现一次，
+/// 所以按字找必须限定在原文条 [SourceLookupTextPanel] 里。
+Finder _sourceGlyph(String glyph) => find.descendant(
+  of: find.byType(SourceLookupTextPanel),
+  matching: find.text(glyph),
+);
+
 DictionaryPopupLayer _baseLayer(WidgetTester tester) =>
     tester.widget(find.byType(DictionaryPopupLayer).first);
 
@@ -358,7 +366,7 @@ void main() {
       expect(
         tester
             .getRect(viewport)
-            .contains(tester.getCenter(find.text(text[360]))),
+            .contains(tester.getCenter(_sourceGlyph(text[360]))),
         isTrue,
       );
       expect(
@@ -467,7 +475,7 @@ void main() {
       final double height = tester.getSize(viewport).height;
       expect(height, greaterThan(0));
       expect(height, lessThan(200));
-      final Rect selected = tester.getRect(find.text(text[360]));
+      final Rect selected = tester.getRect(_sourceGlyph(text[360]));
       expect(tester.getRect(viewport).contains(selected.center), isTrue);
       expect(
         tester.getSize(find.byType(DictionaryPopupLayer).first).height,
@@ -776,7 +784,10 @@ void main() {
       final SourceLookupTextPanel panel = tester.widget(
         find.byType(SourceLookupTextPanel),
       );
-      expect(panel.text, line, reason: '源文本条仍是被点的那一行');
+      // 反馈 8Su1XoCjtl：源文本条也是跨行拼回的整句，被点的「良」在条上第 3 个字。
+      expect(panel.text, '今日は良い天気ですね。');
+      expect(panel.initialCharIndex, 3);
+      expect(appModel.searched.first, '良い天気ですね。散歩に行こう。');
       expect(
         await _mineSentence(tester, repo),
         '今日は良い天気ですね。',
@@ -806,10 +817,51 @@ void main() {
       expect(await _mineSentence(tester, repo), 'もう行く。');
 
       // 同一行上点「雨」：它在块里的下一句。
-      await tester.tap(find.text('雨'));
+      await tester.tap(_sourceGlyph('雨'));
       await _settle(tester);
       expect(appModel.searched.last, '雨');
       expect(await _mineSentence(tester, repo), '今日は雨');
+    },
+  );
+
+  testWidgets(
+    'feedback 8Su1XoCjtl: the source strip shows the whole sentence across '
+    'OCR line breaks, not only the tapped line',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      // 「スタンプ」被折成「…スタン」/「プが…」两行，句首还在上一行。点的是「ス」。
+      const String block = 'さっき\n新しいコラボLINEスタン\nプが映りました。次は';
+      const String line = '新しいコラボLINEスタン';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: repo,
+          text: line,
+          charIndex: line.indexOf('ス'),
+          sourceBlock: block,
+          sourceBlockOffset: block.indexOf(line),
+        ),
+      );
+      await _settle(tester);
+
+      final SourceLookupTextPanel panel = tester.widget(
+        find.byType(SourceLookupTextPanel),
+      );
+      expect(panel.text, 'さっき新しいコラボLINEスタンプが映りました。');
+      expect(
+        panel.initialCharIndex,
+        'さっき新しいコラボLINE'.length,
+        reason: '被点的「ス」换算到整句里的位置',
+      );
+      expect(appModel.searched.first, 'スタンプが映りました。次は');
+      expect(await _mineSentence(tester, repo), 'さっき新しいコラボLINEスタンプが映りました。');
+
+      // 下一行折过来的字也在条上，能直接点。
+      await tester.tap(_sourceGlyph('映'));
+      await _settle(tester);
+      expect(appModel.searched.last, '映りました。次は');
+      expect(await _mineSentence(tester, repo), 'さっき新しいコラボLINEスタンプが映りました。');
     },
   );
 
@@ -842,7 +894,9 @@ void main() {
       final SourceLookupTextPanel panel = tester.widget(
         find.byType(SourceLookupTextPanel),
       );
-      expect(panel.text, line, reason: '源文本条仍是被点的那一行');
+      // 反馈 8Su1XoCjtl：条上是跨行拼回的整句，被点的「天」在条上第 5 个字。
+      expect(panel.text, '今日は良い天気ですね。');
+      expect(panel.initialCharIndex, 5);
       expect(await _mineSentence(tester, repo), '今日は良い天気ですね。');
 
       // 条上再点「良」：后缀同样接上下一行。

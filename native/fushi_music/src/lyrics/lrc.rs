@@ -5,7 +5,8 @@
 //! - `[offset:+500]` 烘进时间（正 = 歌词提前，与 LRC 惯例一致）；
 //! - 只有时间戳没有正文的行是「间奏」：给上一行当终点，不成行；
 //! - 同一时间戳的第二行起视为上一行的翻译（网易云 / QQ 导出的「原文 + 译文」合并 LRC）；
-//! - 词级时间是绝对时间；行首多时间戳又带词级时间时，按与第一个行首时间戳的差平移。
+//! - 词级时间是绝对时间；行首多时间戳又带词级时间时，按与第一个行首时间戳的差平移；
+//! - 正文「漢字(かな)」内联读音挂成 ruby，见 [super::inline_ruby]。
 
 use super::model::*;
 use super::time::lrc_stamp;
@@ -145,8 +146,18 @@ pub fn parse(text: &str, duration_ms: Option<i64>) -> Timeline {
             }
         }
     }
+    // 正文内联读音在翻译折叠之后挂（翻译行保留原文），行终点要等 finalize 才知道，
+    // 被拆开的音节在那之后再按字数平分共享的起点。
+    for l in &mut lines {
+        super::inline_ruby::apply(l);
+    }
     t.lines = lines;
     t.finalize(duration_ms);
+    for l in &mut t.lines {
+        if l.syllables.iter().any(|s| s.ruby.is_some()) {
+            spread_shared_starts(l);
+        }
+    }
     t
 }
 
@@ -300,5 +311,65 @@ mod tests {
         assert_eq!(t.lines[0].text(), "夜に駆ける");
         assert_eq!(t.lines[0].syllables.len(), 5);
         assert_eq!(t.lines[0].syllables[4].end_ms, 12_000);
+    }
+
+    #[test]
+    fn inline_kana_readings_become_ruby_and_survive_ttml_export() {
+        let t = parse(
+            "[00:01.00]彗星(すいせい)の停留所（バスストップ）で
+[00:01.00]在彗星的停靠站
+[00:04.00](woo) 夜(yeah)
+[00:06.00]",
+            None,
+        );
+        assert_eq!(t.lines.len(), 2);
+        let l = &t.lines[0];
+        let got: Vec<_> = l
+            .syllables
+            .iter()
+            .map(|s| (s.text.as_str(), s.ruby.as_deref(), s.start_ms, s.end_ms))
+            .collect();
+        // 行 1000–4000，按字数（2+1+3+1=7）平分。
+        assert_eq!(
+            got,
+            vec![
+                ("彗星", Some("すいせい"), 1000, 1857),
+                ("の", None, 1857, 2285),
+                ("停留所", Some("バスストップ"), 2285, 3571),
+                ("で", None, 3571, 4000),
+            ]
+        );
+        assert_eq!(l.translations[0].1, "在彗星的停靠站");
+        assert_eq!(t.lines[1].text(), "(woo) 夜(yeah)");
+        assert!(t.lines[1].syllables.iter().all(|s| s.ruby.is_none()));
+
+        let ttml = super::super::export::to_ttml(&t);
+        let back = super::super::ttml::parse(&ttml, None).unwrap();
+        let rubies: Vec<_> = back.lines[0]
+            .syllables
+            .iter()
+            .map(|s| (s.text.as_str(), s.ruby.as_deref()))
+            .collect();
+        assert_eq!(
+            rubies,
+            vec![
+                ("彗星", Some("すいせい")),
+                ("の", None),
+                ("停留所", Some("バスストップ")),
+                ("で", None),
+            ]
+        );
+    }
+
+    #[test]
+    fn unsynced_plain_text_gets_inline_ruby() {
+        let t = super::super::plain(
+            "君(きみ)の名(な)は
+(Oh) 未来(Future)",
+        );
+        assert_eq!(t.lines[0].text(), "君の名は");
+        assert_eq!(t.lines[0].syllables[0].ruby.as_deref(), Some("きみ"));
+        assert_eq!(t.lines[0].syllables[2].ruby.as_deref(), Some("な"));
+        assert_eq!(t.lines[1].text(), "(Oh) 未来(Future)");
     }
 }

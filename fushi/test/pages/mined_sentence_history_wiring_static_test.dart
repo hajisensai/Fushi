@@ -73,10 +73,25 @@ void main() {
       methodBody(src, 'Future<MinePopupResult> _onMineEntryImpl('),
     );
     expect(mine, contains('VideoMiningHistorySnapshot.capture('));
+    // 制卡时冻结句子所属那一行的 uid：原盘菜单切标题后不能仍记入口视频；原盘「全部
+    // 播放」按句子所在那一集记（BUG-5340 / BUG-5356，与收藏句同一口径），不在原盘
+    // 播放列表里时 [_libraryAnchorAt] 自己回落到当前真实标题 [_activeBookUid]。
     expect(
       mine,
-      contains('bookKey:_activeBookUid,'),
+      contains('_libraryAnchorAt(historyCue.startMs)'),
+      reason: '制卡历史锚点必须按句子所在那一集的时间轴算',
+    );
+    expect(
+      mine,
+      contains('bookKey:historyAnchor?.bookUid??_activeBookUid,'),
       reason: '制卡时冻结当前真实标题的 uid，原盘菜单切标题后不能仍记入口视频',
+    );
+    expect(
+      compactCode(src),
+      contains(
+        '({StringbookUid,intms})_libraryAnchorAt(intplayerMs)=>_discMenuEpisodes?.anchorAt(playerMs)??(bookUid:_activeBookUid,ms:playerMs);',
+      ),
+      reason: '不在原盘播放列表里时锚点回落到当前真实标题',
     );
     expect(
       compactCode(src),

@@ -65,6 +65,32 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         poster: poster,
       ),
       HomeWidgetKind.languageGoals => _languageGoalsCell(tokens, item, poster),
+      HomeWidgetKind.favorites => HomeFavoritesCard(
+        key: const ValueKey<String>('home-favorites-card'),
+        database: appModel.database,
+        todayKey: statTodayKey,
+        titleOf: _homeFavoriteTitle,
+        poster: poster,
+        onOpenCollections: _openFavoriteSentences,
+        canOpenFavorite: (FavoriteSentence f) =>
+            favoriteSentenceOriginReachable(f, appModel.moduleVisibility),
+        onOpenFavorite: (HomeFavoriteEntry e) =>
+            FavoriteOriginNavigator.openFavoriteSentence(
+              context: context,
+              ref: ref,
+              appModel: appModel,
+              favorite: e.favorite,
+              displayTitle: e.title,
+            ),
+        onCreateCards: favoriteBatchMiningAvailable(appModel)
+            ? (List<FavoriteSentence> favorites) => unawaited(
+                showFavoriteBatchMining(context, <FavoriteMiningItem>[
+                  for (final FavoriteSentence f in favorites)
+                    ?favoriteMiningItemOfSentence(f),
+                ]),
+              )
+            : null,
+      ),
     };
   }
 
@@ -1533,7 +1559,8 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     );
   }
 
-  /// 「今日」的大字版：今日字数；不矮时下面一行是目标进度（没设目标时是时长）；
+  /// 「今日」的大字版：今日字数；内容区放得下时下面一行是目标进度（没设目标时是时长，
+  /// [HomeWidgetFigureWithLine]）；
   /// [wide]（色块外观的宽格）时起始侧再挂目标环。
   Widget _todayFigure(
     FushiDesignTokens tokens, {
@@ -1591,42 +1618,37 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
             ],
           ),
         );
-        final Widget column = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            figure,
-            if (!dense) ...<Widget>[
-              const SizedBox(height: 4),
-              // 宽格有目标时目标进度与今日时长同一行：时长不让位，目标文字放不下才省略。
-              if (goalLine != null && wide)
-                Row(
-                  children: <Widget>[
-                    Flexible(
-                      child: Text(
-                        goalLine,
-                        key: const ValueKey<String>('home-today-goal-line'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: caption,
-                      ),
+        // 宽格有目标时目标进度与今日时长同一行：时长不让位，目标文字放不下才省略。
+        final Widget line = goalLine != null && wide
+            ? Row(
+                children: <Widget>[
+                  Flexible(
+                    child: Text(
+                      goalLine,
+                      key: const ValueKey<String>('home-today-goal-line'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: caption,
                     ),
-                    Text(' · ', maxLines: 1, style: caption),
-                    time,
-                  ],
-                )
-              else
-                time,
-            ],
-          ],
-        );
+                  ),
+                  Text(' · ', maxLines: 1, style: caption),
+                  time,
+                ],
+              )
+            : time;
+        // TinO49VcdQ：挂不挂副行、大字多大按内容区实际高度定（整格高度减掉卡头后
+        // 更矮），副行完整画出，不再竖向居中裁掉下半截。
         final FushiCoverBlockColors? colors = style?.colors;
-        if (!wide || colors == null) {
-          // Apple：大数字贴着小标题排（各卡「标题 → 数字」间距一致），不竖向居中。
-          return isGlassDesign(context) && colors == null
-              ? HomeWidgetOverflowClip(child: column)
-              : _fitCenter(column);
-        }
+        final Widget column = HomeWidgetFigureWithLine(
+          figure: figure,
+          line: line,
+          lineStyle: caption,
+          // Apple 分区卡：大数字贴着小标题排（各卡「标题 → 数字」间距一致），不竖向居中。
+          alignment: isGlassDesign(context) && colors == null
+              ? AlignmentDirectional.topStart
+              : AlignmentDirectional.centerStart,
+        );
+        if (!wide || colors == null) return column;
         return Row(
           children: <Widget>[
             ExcludeSemantics(
@@ -1651,7 +1673,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               ),
             ),
             const SizedBox(width: 12),
-            Expanded(child: _fitCenter(column)),
+            Expanded(child: column),
           ],
         );
       },
@@ -2510,4 +2532,19 @@ double _lineHeight(BuildContext context, TextStyle style) {
   final double h = painter.height;
   painter.dispose();
   return h;
+}
+
+/// 首页「收藏句子」一句的来源作品显示名（与收藏夹 `_displayBookTitleFor` 同口径）：
+/// 视频按库行（[videoRow]）现取（改名直写行），网页收藏标题快照即网页名，其余按
+/// bookKey 过 override 门面。
+String _homeFavoriteTitle(FavoriteSentence f, VideoBookRow? videoRow) {
+  final String raw = f.bookTitle;
+  final String? key = f.bookKey;
+  if (key == null || key.isEmpty) return raw;
+  if (f.source == kFavoriteSentenceSourceWeb) return raw.isEmpty ? key : raw;
+  if (f.source == kFavoriteSentenceSourceVideo) {
+    return videoRow != null ? displayTitleForVideo(videoRow) : raw;
+  }
+  final String display = displayTitleForBook(bookKey: key, rawTitle: raw);
+  return display.isEmpty ? raw : display;
 }

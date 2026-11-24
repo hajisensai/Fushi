@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -80,5 +81,54 @@ void main() {
     expect(changed, isFalse);
     expect(store.recordFor('k1'), isNotNull);
     expect(File('${store.coverPathFor('k1')}.json').existsSync(), isTrue);
+  });
+
+  // BUG-5396：合集 epub 成员行 entryKey 是书 uid（v83）；清除曾按 uid 去找按
+  // bookKey 记的刮削层，一本都删不掉。
+  testWidgets('成员按 uid 存：Enter 确认后清掉该书的刮削层', (WidgetTester tester) async {
+    await seedBook(db, 'k1');
+    final String uid = (await db.resolveEpubBookUid('k1'))!;
+    final int collectionId = await db.createMediaCollection('Series');
+    await db.addToCollection(collectionId, MediaKind.epub, uid);
+
+    late BuildContext host;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(useMaterial3: true),
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) {
+              host = context;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      ),
+    );
+
+    bool changed = false;
+    final Future<void> done = CollectionArtScrape(
+      database: db,
+      thumbnailsDirectory: thumbs,
+      servicesEnabled: () => true,
+      migrationReadonly: () => model.isMigrationReadonly,
+    ).clear(host, collectionId: collectionId, onChanged: () => changed = true);
+    await tester.pumpAndSettle();
+    expect(find.text(t.collection_art_scrape_clear_confirm), findsOneWidget);
+
+    bool finished = false;
+    unawaited(done.then((_) => finished = true));
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    // 确认后：drift 查询走假时钟、刮削层删文件走真实 IO，交替推进到清除做完。
+    for (int i = 0; i < 100 && !finished; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+    }
+    expect(finished, isTrue);
+
+    expect(changed, isTrue);
+    expect(store.recordFor('k1'), isNull);
   });
 }

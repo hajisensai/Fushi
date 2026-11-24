@@ -333,7 +333,7 @@ void main() {
     });
 
     test(
-      'resolveProfileId precedence: book > language > mediaType > active',
+      'resolveProfileId precedence: book > mediaType > language > active',
       () async {
         final db = await _openDb();
         final repo = _repo(db);
@@ -361,8 +361,16 @@ void main() {
             languageTag: 'ja',
             mediaType: ProfileMediaKind.epub,
           ),
+          b,
+        ); // 组合模型：媒体类型高于语言（拍板台 design-combo-node-split）
+        expect(
+          await repo.resolveProfileId(
+            bookUid: 'book/none',
+            languageTag: 'ja',
+            mediaType: ProfileMediaKind.video,
+          ),
           l,
-        ); // language wins over mediaType
+        ); // 媒体类型没绑定时落到语言
         expect(
           await repo.resolveProfileId(
             bookUid: 'book/none',

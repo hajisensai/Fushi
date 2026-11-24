@@ -945,7 +945,8 @@ class _PairedDeckActions {
           'SrsPairedHosts.settings',
           () => _push((_) => SrsDeckSettingsPage(deckId: deck.deck.id)),
         );
-      case _DeckAction.addChild ||
+      case _DeckAction.details ||
+          _DeckAction.addChild ||
           _DeckAction.rename ||
           _DeckAction.move ||
           _DeckAction.moveUp ||

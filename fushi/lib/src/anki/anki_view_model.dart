@@ -938,15 +938,17 @@ Future<SrsMiner?> _readSrsMiner(
     // 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，卡落进**那份配置**的复习副本（牌组 /
     // 笔记类型 id 带它的 uid）；落点（[AppModel.srsMiningDestination]）读的就是作品会话。
     // 绑定的就是激活配置时没有会话，走下面的激活副本。
-    final WorkProfileSession? session = followWorkSession
-        ? WorkProfileScope.instance.active
+    // 组合模型下取复习落点（牌组 / 笔记类型叶子）的来源组合（[WorkProfileSession.miningProfileId]）；
+    // 落点都继承默认组合时同样走激活副本。
+    final int? miningProfileId = followWorkSession
+        ? WorkProfileScope.instance.active?.miningProfileId
         : null;
-    if (session != null) {
+    if (miningProfileId != null) {
       final AppModel app = ref.read(appProvider);
       return await ref
           .read(srsProfileStoresProvider)
           .minerFor(
-            profileUid: await app.database.profileUidOf(session.profileId),
+            profileUid: await app.database.profileUidOf(miningProfileId),
             destination: app.srsMiningDestination,
             fallbackRolloverHour: () => app.statDayResetHour,
           );

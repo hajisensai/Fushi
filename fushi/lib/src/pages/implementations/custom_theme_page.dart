@@ -72,6 +72,9 @@ enum _ThemeRole {
   /// 查词选区高亮。
   selection,
 
+  /// 查词高亮里被选中文字的字色（拍板台 -8azTfJh_v）：默认跟随正文，改了能做反色高亮。
+  selectionText,
+
   /// 有声书当前句高亮（全局偏好，对所有主题生效）。
   audioHighlight,
 
@@ -255,6 +258,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       ..[_ThemeRole.readerBackground] = roleColor(entry.bgColor)
       ..[_ThemeRole.link] = roleColor(entry.linkColor)
       ..[_ThemeRole.selection] = roleColor(entry.selectionColor)
+      ..[_ThemeRole.selectionText] = roleColor(entry.selectionTextColor)
       ..[_ThemeRole.secondary] = roleColor(entry.secondaryColor)
       ..[_ThemeRole.tertiary] = roleColor(entry.tertiaryColor)
       ..[_ThemeRole.container] = roleColor(entry.containerColor)
@@ -324,6 +328,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         bg: _overrides[_ThemeRole.readerBackground],
         fg: _overrides[_ThemeRole.readerText],
         selection: _overrides[_ThemeRole.selection],
+        selectionText: _overrides[_ThemeRole.selectionText],
         link: _overrides[_ThemeRole.link],
       ),
       audioHighlightOverride: _overrides[_ThemeRole.audioHighlight],
@@ -347,6 +352,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         return reader.link;
       case _ThemeRole.selection:
         return reader.selection;
+      case _ThemeRole.selectionText:
+        return reader.selectionText ?? reader.fg;
       case _ThemeRole.audioHighlight:
         return reader.sentenceAudioHighlight;
       case _ThemeRole.secondary:
@@ -387,6 +394,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         return t.theme_role_link;
       case _ThemeRole.selection:
         return t.theme_role_selection;
+      case _ThemeRole.selectionText:
+        return t.theme_role_selection_text;
       case _ThemeRole.audioHighlight:
         return t.theme_role_audio_highlight;
       case _ThemeRole.secondary:
@@ -412,6 +421,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         return t.theme_role_link_desc;
       case _ThemeRole.selection:
         return t.theme_role_selection_desc;
+      case _ThemeRole.selectionText:
+        return t.theme_role_selection_text_desc;
       case _ThemeRole.audioHighlight:
         return t.theme_role_audio_highlight_desc;
       case _ThemeRole.secondary:
@@ -437,6 +448,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         return FushiIcons.link;
       case _ThemeRole.selection:
         return FushiIcons.lookup;
+      case _ThemeRole.selectionText:
+        return FushiIcons.textFields;
       case _ThemeRole.audioHighlight:
         return FushiIcons.audio;
       case _ThemeRole.secondary:
@@ -453,6 +466,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     switch (role) {
       case _ThemeRole.readerText:
       case _ThemeRole.selection:
+      case _ThemeRole.selectionText:
       case _ThemeRole.audioHighlight:
         return true;
       case _ThemeRole.accent:
@@ -524,6 +538,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       fontColor: argb(_overrides[_ThemeRole.readerText]),
       bgColor: argb(_overrides[_ThemeRole.readerBackground]),
       selectionColor: argb(_overrides[_ThemeRole.selection]),
+      selectionTextColor: argb(_overrides[_ThemeRole.selectionText]),
       linkColor: argb(_overrides[_ThemeRole.link]),
       secondaryColor: argb(_overrides[_ThemeRole.secondary]),
       tertiaryColor: argb(_overrides[_ThemeRole.tertiary]),
@@ -556,6 +571,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     segment('fc', entry.fontColor);
     segment('bg', entry.bgColor);
     segment('sc', entry.selectionColor);
+    segment('st', entry.selectionTextColor);
     segment('pr', entry.primaryColor);
     segment('sr', entry.secondaryColor);
     segment('tr', entry.tertiaryColor);
@@ -590,6 +606,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       fontColor: segments['fc'],
       bgColor: segments['bg'],
       selectionColor: segments['sc'],
+      selectionTextColor: segments['st'],
       primaryColor: segments['pr'],
       secondaryColor: segments['sr'],
       tertiaryColor: segments['tr'],
@@ -1120,6 +1137,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
             _ThemeRole.readerBackground,
             _ThemeRole.link,
             _ThemeRole.selection,
+            _ThemeRole.selectionText,
             _ThemeRole.audioHighlight,
           ]),
         ],
@@ -1868,6 +1886,11 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     );
   }
 
+  /// 「跟随」态的标签：查词高亮文字默认跟随的是正文字色而不是主题，单独说明。
+  String _followLabel(_ThemeRole role) => role == _ThemeRole.selectionText
+      ? t.theme_role_follows_body_text
+      : t.theme_role_follows_theme;
+
   /// tile 上的「跟随主题 / 自定义」小切换：未选 = 跟随主题，选中 = 自定义；
   /// 取消选中即恢复跟随主题。
   Widget _buildFollowToggle(_ThemeRole role, bool custom) {
@@ -1880,7 +1903,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         visualDensity: VisualDensity.compact,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         label: Text(
-          custom ? t.theme_role_customize : t.theme_role_follows_theme,
+          custom ? t.theme_role_customize : _followLabel(role),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -2387,7 +2410,15 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                   _ThemeRole.selection,
                   ColoredBox(
                     color: selectionOnPage,
-                    child: Text('テキスト', style: bodyStyle),
+                    child: _spot(
+                      _ThemeRole.selectionText,
+                      Text(
+                        'テキスト',
+                        style: bodyStyle.copyWith(
+                          color: reader.selectionText ?? reader.fg,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 Text('を読む。', style: bodyStyle),

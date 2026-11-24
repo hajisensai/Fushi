@@ -105,7 +105,7 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
       _s._streamOcr?.request(pageIndex);
     } else {
       await _s._maybeStartVolumeOcr(userInitiated: true);
-      _s._observedOcrJob?.focusPage(pageIndex);
+      _s._focusVolumeOcrOn(pageIndex);
     }
     _settleOrphanWaiters();
     return waiter.future;

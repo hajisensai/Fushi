@@ -250,6 +250,8 @@ import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/lookup_ime_language.dart';
 import 'package:fushi/src/lookup/lookup_match_measure.dart'
     show LookupMatchSearchHost;
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart'
+    show TrackingSeriesCardHost;
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
@@ -882,14 +884,21 @@ String normalizeSearchTerm(
 /// 词典搜索结果缓存键的单一真相，逐字不变（变=缓存击穿/旧条目命中不了）。格式：
 /// `<term.length>:<term>/<maxTerms>/<maxResults>`。此前是 [AppModel.searchDictionary]
 /// 内联插值，无法独立断言「键格式不漂移」。
+///
+/// [scanLength]：本次查词交给引擎的扫描窗口（[FushiDicts.scanLength]，反馈
+/// ezCjUoU2QM）。同一个查询串在不同窗口下最长匹配不同，键必须带它；出厂值时后缀为空，
+/// 键与此前逐字相同（[scanLengthCacheSuffix]）。
 @visibleForTesting
 String buildSearchCacheKey({
   required String term,
   required int maxTerms,
   required int maxResults,
+  required int scanLength,
   bool chineseSimpToTrad = false,
 }) {
-  return '${term.length}:$term/$maxTerms/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
+  return '${term.length}:$term/$maxTerms/$maxResults'
+      '${scanLengthCacheSuffix(scanLength)}'
+      '${chineseSimpToTrad ? '/zh' : ''}';
 }
 
 /// 「按中文处理（引擎双向展开简体 ↔ 繁體拼写）」的唯一判据（反馈 3FY6vTqwV-）。
@@ -1060,7 +1069,8 @@ class AppModel
         AudioProductionHost,
         ExternalStorageAccess,
         LookupMatchSearchHost,
-        StudyGoalHost {
+        StudyGoalHost,
+        TrackingSeriesCardHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -2995,6 +3005,18 @@ class AppModel
   bool get musicLyricsBlurInactive => prefsRepo.musicLyricsBlurInactive;
   Future<void> setMusicLyricsBlurInactive(bool value) =>
       prefsRepo.setMusicLyricsBlurInactive(value);
+
+  bool get musicLyricsShowTranslation => prefsRepo.musicLyricsShowTranslation;
+  Future<void> setMusicLyricsShowTranslation(bool value) =>
+      prefsRepo.setMusicLyricsShowTranslation(value);
+
+  bool get musicLyricsShowRomanization => prefsRepo.musicLyricsShowRomanization;
+  Future<void> setMusicLyricsShowRomanization(bool value) =>
+      prefsRepo.setMusicLyricsShowRomanization(value);
+
+  bool get musicLyricsShowRuby => prefsRepo.musicLyricsShowRuby;
+  Future<void> setMusicLyricsShowRuby(bool value) =>
+      prefsRepo.setMusicLyricsShowRuby(value);
 
   /// 本地 MV 后台自动匹配（音乐来源扫完后跑；「有 MV 时背景放 MV」关着不跑）。
   late final MusicVideoAutoMatcher musicVideoAutoMatch = MusicVideoAutoMatcher(
@@ -5639,16 +5661,28 @@ class AppModel
       // 自愈失败只上报、不阻塞启动：用户至多回到修复前的状态，绝不能因为对账
       // 出错而进不去 app（台账故意不写，下次启动会重试）。
       StartupTimeline.mark('pending-restore');
-      await SandboxRelocation.reconcile(
-        db: _database,
-        documentsRoot: _appDirectory.path,
-        supportRoot: _databaseDirectory.path,
-        onError: (Object e, StackTrace stack) => ErrorLogService.instance.log(
+      // 改写了全库路径、或被磁盘反证拒绝的，都要能从反馈日志里看见（反馈
+      // RCv76PPoiJ 时这一步做了什么完全无迹可查）。
+      for (final String note in AppPaths.androidLocationCorrections) {
+        ErrorLogService.instance.logDiagnostic(
+          'AppPaths.androidLocation',
+          note,
+        );
+      }
+      final SandboxRelocationOutcome relocation =
+          await SandboxRelocation.reconcile(
+            db: _database,
+            documentsRoot: _appDirectory.path,
+            supportRoot: _databaseDirectory.path,
+            onError: (Object e, StackTrace stack) => ErrorLogService.instance
+                .log('AppModel.sandboxRelocation', e, stack),
+          );
+      if (relocation.isNoteworthy) {
+        ErrorLogService.instance.logDiagnostic(
           'AppModel.sandboxRelocation',
-          e,
-          stack,
-        ),
-      );
+          relocation.toString(),
+        );
+      }
       //    cloud backup backend can now coexist);
       // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
       //    took turns writing that single pair of keys, so its value can no
@@ -5817,7 +5851,12 @@ class AppModel
 
       final Map<String, String> prefsSnapshot = prefsRepo.prefsSnapshot;
 
-      themeNotifier = ThemeNotifier(_database, () => textTheme);
+      // 背景图偏好存文件名，先解析目录，首帧就能拼出路径（BUG-5370）。构造与载入
+      // 之间不让出事件循环，别处读不到一个还没载入偏好的主题。
+      final Directory pageBackdropDir =
+          await ThemeNotifier.resolvePageBackdropImageDirectory();
+      themeNotifier = ThemeNotifier(_database, () => textTheme)
+        ..usePageBackdropImageDirectory(pageBackdropDir);
       themeNotifier.loadFromPrefsSnapshot(prefsSnapshot);
       themeNotifier.addListener(notifyListeners);
       _themeListenerAdded = true;
@@ -6367,7 +6406,10 @@ class AppModel
       // appModel.theme/darkTheme/themeMode which delegate to themeNotifier,
       // so it MUST be constructed here exactly as in initialise() — otherwise
       // the late final throws LateInitializationError (HBK-AUDIT-003).
-      themeNotifier = ThemeNotifier(_database, () => textTheme);
+      final Directory pageBackdropDir =
+          await ThemeNotifier.resolvePageBackdropImageDirectory();
+      themeNotifier = ThemeNotifier(_database, () => textTheme)
+        ..usePageBackdropImageDirectory(pageBackdropDir);
       themeNotifier.loadFromPrefsSnapshot(prefsRepo.prefsSnapshot);
       themeNotifier.addListener(notifyListeners);
       _themeListenerAdded = true;
@@ -7122,6 +7164,8 @@ class AppModel
       themeNotifier.activeCustomThemeBackgroundColor;
   Color? get activeCustomThemeSelectionColor =>
       themeNotifier.activeCustomThemeSelectionColor;
+  Color? get activeCustomThemeSelectionTextColor =>
+      themeNotifier.activeCustomThemeSelectionTextColor;
   Color? get activeCustomThemeLinkColor =>
       themeNotifier.activeCustomThemeLinkColor;
   Color? get activeCustomThemeSurfaceColor =>
@@ -11322,6 +11366,8 @@ class AppModel
       filters: filtersOverride ?? profileView?.lookupFilters,
       requestedScriptVariants: requestedScriptVariants,
     );
+    // 扫描窗口只取一次：缓存键与交给引擎的是同一个值（反馈 ezCjUoU2QM）。
+    final int scanLength = FushiDicts.scanLength;
     // 原文振假名改变同长度候选的先后：带 ruby 的查询单独成键（无 ruby 时后缀为空，
     // 键与此前逐字相同）。
     final String cacheKey =
@@ -11331,6 +11377,7 @@ class AppModel
           term: searchTerm,
           maxTerms: effectiveMaxTerms,
           maxResults: effectiveMaxTerms,
+          scanLength: scanLength,
           chineseSimpToTrad: simpToTrad,
         ) +
         rubySpansCacheSuffix(rubySpans);
@@ -11352,6 +11399,7 @@ class AppModel
           FushiLookupRequest(
             text: searchTerm,
             maxResults: effectiveMaxTerms,
+            scanLength: scanLength,
             includeKanji: isSingleKanji(searchTerm),
             hiddenDictionaries: filters.hiddenDictionaryNames,
             // 纯汉字词典的排除单独一个集合：hiddenDictionaries 是术语开关，混合
@@ -12230,7 +12278,7 @@ class AppModel
   String? _mirroredWorkSession;
 
   /// 弹窗进程：按主进程发布的作品会话（[kWorkProfileSessionPrefKey]，读自刚重载的偏好缓存）
-  /// 装上 / 换掉 / 撤下本 isolate 的作品会话覆盖层——与主进程同一条 [WorkProfileScope.enterProfile]，
+  /// 装上 / 换掉 / 撤下本 isolate 的作品会话覆盖层——与主进程同一条 [WorkProfileScope.enterCombos]，
   /// 不另写一份作品配置逻辑。返回时按新会话重读的缓存已就绪。
   Future<void> mirrorMainProcessWorkSession() async {
     final String published = prefsRepo.workProfileSession;
@@ -12649,6 +12697,7 @@ class AppModel
   /// 平台判据取自 [PlatformServices]（那是本类「不必知道自己跑在哪个平台」的出口），
   /// 不再直读 `dart:io` —— 直读会让 widget 测试无缝可注，Windows 独有的模块
   /// （galgame）在 Linux CI 上被静默滤掉而本机全绿。
+  @override
   ModuleVisibility get moduleVisibility => ModuleVisibility.resolve(
     prefOf: moduleEnabled,
     order: moduleOrder,
@@ -12695,6 +12744,12 @@ class AppModel
   @override
   int get maximumTerms => prefsRepo.maximumTerms;
   void setMaximumTerms(int value) => prefsRepo.setMaximumTerms(value);
+
+  /// 词典扫描窗口长度（码点，反馈 ezCjUoU2QM）；引擎经 [FushiDicts.scanLengthReader]
+  /// 直接读同一个偏好，这里只给设置页用。
+  int get lookupScanLength => prefsRepo.lookupScanLength;
+  Future<void> setLookupScanLength(int value) =>
+      prefsRepo.setLookupScanLength(value);
 
   void addToDictionaryHistory({required DictionarySearchResult result}) {
     MediaType mediaType = mediaTypes.values.toList()[currentHomeTabIndex];
@@ -12805,6 +12860,12 @@ class AppModel
 
   Future<void> closeDatabase({Duration? pipelineDrainTimeout}) async {
     _isInitialised = false;
+    // BUG-5387：换库的生命周期边界。先让本库名下的后台写库工作（来源扫描、视频刮削 /
+    // 补刮、整文件哈希升级、封面回填、响度测量……）全部收到取消，与下面其它写手的收尾
+    // 并行停下；关连接前等它们真正退出。此后它们发出的 SQL 被拦下，旧库里读到的行身份
+    // 不会写进备份恢复 / 迁移换上来的新库。
+    final Future<void> backgroundWorkStopped = _database
+        .quiesceBackgroundWork();
     // BUG-1569②：合集观察者持有本库的表订阅 + 未决防抖 Timer，关库前必须撤——
     // 否则防抖到点后 _runCollectionsSync 会对已关闭的 db 发起查询（drift「connection
     // was closed」异常）。initialise 装载（installCollectionsSyncWatcher），此前只有
@@ -12815,6 +12876,7 @@ class AppModel
       pipelineDrainTimeout: pipelineDrainTimeout,
     );
     await _drainDictionaryWritesForClose('AppModel.closeDatabase');
+    await backgroundWorkStopped;
     // srs.db 先关：覆盖恢复随后要换 / 删这个文件（POSIX 上删开着的库只是 unlink，连接还写旧 inode）。
     await _closeSrsStorage();
     await _database.close();
@@ -15597,6 +15659,10 @@ class AppModel
   Future<void> setMangaSwipePageTurnSensitivity(double value) =>
       prefsRepo.setMangaSwipePageTurnSensitivity(value);
 
+  bool get mangaReverseArrowPageTurn => prefsRepo.mangaReverseArrowPageTurn;
+  Future<void> setMangaReverseArrowPageTurn(bool value) =>
+      prefsRepo.setMangaReverseArrowPageTurn(value);
+
   bool get mangaVolumeKeyPaging => prefsRepo.mangaVolumeKeyPaging;
   Future<void> setMangaVolumeKeyPaging(bool value) =>
       prefsRepo.setMangaVolumeKeyPaging(value);
@@ -16756,7 +16822,8 @@ class _AppModelRemoteLookupService
       );
       // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）；
       // 按配置视图查时带它的命名空间（App 自己的键不变），按请求方词典选择查时再加
-      // 它的指纹命名空间。
+      // 它的指纹命名空间。扫描窗口只取一次，键与交给引擎的是同一个值。
+      final int scanLength = FushiDicts.scanLength;
       final String searchCacheKey =
           (view?.lookupCacheNamespace ?? '') +
           AppModel._requesterFiltersNamespace(requesterFilters) +
@@ -16764,6 +16831,7 @@ class _AppModelRemoteLookupService
             term: searchTerm,
             maxTerms: maximumTerms,
             maxResults: maximumTerms,
+            scanLength: scanLength,
             chineseSimpToTrad: simpToTrad,
           ) +
           rubySpansCacheSuffix(alignedRuby);
@@ -16817,6 +16885,7 @@ class _AppModelRemoteLookupService
             FushiLookupRequest(
               text: searchTerm,
               maxResults: maximumTerms,
+              scanLength: scanLength,
               popupOnly: true,
               hiddenDictionaries: filters.hiddenDictionaryNames,
               dictionaryOrder: filters.termDictionaryOrder,

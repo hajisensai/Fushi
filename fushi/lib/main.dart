@@ -84,6 +84,7 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 import 'package:fushi/src/utils/misc/hang_watchdog_log.dart';
 import 'package:fushi/src/utils/misc/wgc_capture_log.dart';
 import 'package:fushi/src/utils/rasterized_frame_size_reporter.dart';
+import 'package:fushi/src/utils/dart_heartbeat.dart';
 import 'package:fushi/src/utils/scheduling/ambient_ticker.dart'
     show waitForUiIdle;
 import 'package:fushi/src/utils/settled_theme.dart';
@@ -139,6 +140,7 @@ import 'package:fushi/src/settings/settings_schema_tracking.dart'
     show buildMediaTrackingDestination;
 import 'package:fushi/src/media/tracking/page/tracking_page.dart'
     show openTrackingPage;
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page_data.dart'
     show TrackingPageTab;
 import 'package:fushi/src/media/tracking/tracking_auto_link_notice.dart';
@@ -518,6 +520,7 @@ void main([List<String> args = const <String>[]]) {
       // 首帧起 runner 就在等这条上报来确认它交付的第一个尺寸。
       StartupTimeline.mark('app-icon');
       installRasterizedFrameSizeReporter();
+      installDartHeartbeat();
       if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
         await windowManager.ensureInitialized();
         await WindowCaptionChannel.beginStartupWindowPreparation();
@@ -1175,6 +1178,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             navContext,
             service: appModel.mediaTrackingService,
             database: appModel.database,
+            openSeriesCard: trackingSeriesCardOpener(appModel),
             initialTab: TrackingPageTab.linked,
             onOpenSettings: () {
               final NavigatorState? navigator =

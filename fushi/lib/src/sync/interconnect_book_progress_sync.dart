@@ -138,7 +138,7 @@ class InterconnectBookProgressSync {
   ///   书级进度（章级进度在 `manga_chapter_states`，见 BUG-5352「未尽事项」）。
   /// - 其余书：本机键就是 wire 键。
   static String? hostBookKeyOf(EpubBookRow book) {
-    final OnlineMangaLibraryEntry? entry = _interconnectMangaEntryOf(book);
+    final OnlineMangaLibraryEntry? entry = interconnectMangaEntryOf(book);
     if (entry == null) return book.bookKey;
     if (entry.series.raw['chaptered'] == true) return null;
     final String peerKey = entry.series.key;
@@ -150,7 +150,7 @@ class InterconnectBookProgressSync {
       hostBookKeyOf(book) != null;
 
   /// 经互联收下的漫画行的描述符；其它书 null（非漫画不解析 JSON）。
-  static OnlineMangaLibraryEntry? _interconnectMangaEntryOf(EpubBookRow book) {
+  static OnlineMangaLibraryEntry? interconnectMangaEntryOf(EpubBookRow book) {
     if (BookFormat.parseOrEpub(book.format) != BookFormat.manga) return null;
     final OnlineMangaLibraryEntry? entry = OnlineMangaLibraryEntry.tryParse(
       book.sourceMetadata,
@@ -605,11 +605,16 @@ class InterconnectBookProgressSync {
   /// 单卷互联漫画行还要把位置落进那唯一一章的 `manga_chapter_states`（BUG-5352）：
   /// 书架在线条目开章时起始页只认章级进度，不读书级那行 `reader_positions`
   /// （`MangaFushiPage` 的书架开章路径），只落书级那行，阅读器照样从第 1 页开始。
+  ///
+  /// 书级比较后写入与章级落地在**同一个事务**里（BUG-5358）：drift 把事务外的语句
+  /// 排到事务之后，阅读器存进度（同样一个事务写两张表，先书级后章级）只会整体落在
+  /// 这次落地之前（书级戳已变 → 前置条件不成立，两张表都不动）或之后（整体盖掉），
+  /// 不会夹在两次写之间让章级退回 host 旧页；章级写失败时书级一并回滚，不留半截。
   Future<bool> _upsertLocalIfUnchanged(
     EpubBookRow book,
     RemoteBookProgress p, {
     required RemoteBookProgress expected,
-  }) async {
+  }) => _db.transaction<bool>(() async {
     final bool written = await _db.upsertReaderPositionIfUnchanged(
       ReaderPositionsCompanion(
         bookUid: Value(book.uid),
@@ -622,7 +627,7 @@ class InterconnectBookProgressSync {
     );
     if (written) await _landInterconnectVolumeChapter(book, p);
     return written;
-  }
+  });
 
   /// 把落到本端的书级位置同步进单卷互联漫画那唯一一章的章级进度；其它书不动。
   ///
@@ -634,7 +639,7 @@ class InterconnectBookProgressSync {
     RemoteBookProgress p,
   ) async {
     if (book.uid.isEmpty) return;
-    final OnlineMangaLibraryEntry? entry = _interconnectMangaEntryOf(book);
+    final OnlineMangaLibraryEntry? entry = interconnectMangaEntryOf(book);
     if (entry == null || entry.series.raw['chaptered'] == true) return;
     if (entry.series.key.isEmpty) return;
     final String chapterKey = InterconnectMangaCatalog.chapterFor(

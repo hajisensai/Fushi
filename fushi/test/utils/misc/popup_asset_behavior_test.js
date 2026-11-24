@@ -4584,11 +4584,29 @@ async function testEntryDomIndexForHandoff() {
   const find = context.window.fushiPopupEntryDomIndexFor;
   assert.equal(find('事典', 'ことてん', '事典'), 1, 'exact identity wins over the first same-expression entry');
   assert.equal(find('事典', 'じてん', '事'), 0, 'expression + reading when the matched span differs');
-  assert.equal(find('自体', 'ちがう', ''), 2, 'expression alone as the last tier');
+  // HBK-AUDIT-005：带了读音就必须表记 + 读音都对上，同表记异读音不是同一个词条。
+  assert.equal(find('自体', 'ちがう', ''), -1, 'a different reading is a different entry, never the expression-only fallback');
+  assert.equal(find('自体', '', ''), 2, 'expression alone only when the handoff carries no reading');
   assert.equal(find('辞書', 'じしょ', '辞書'), -1, 'an entry without DOM is never targeted');
   assert.equal(find('無い', '', ''), -1, 'unknown entry → -1, never a guessed index');
   context.window._renderInProgress = true;
   assert.equal(find('自体', 'じたい', '自体'), -2, 'tail still rendering → ask again later');
+
+  // 覆盖窗选的是 生（なま），主窗结果已完整加载、只剩 生（せい）：不得回后者的下标。
+  context.window._renderInProgress = false;
+  context.window.lookupEntries = [
+    { expression: '生', reading: 'せい', matched: '生' },
+  ];
+  context.window._entryDomIndex = [0];
+  assert.equal(find('生', 'なま', '生'), -1, 'nama handoff must not land on sei');
+  assert.equal(find('生', 'せい', '生'), 0, 'same reading still resolves');
+  // なま 那条被隐藏词典过滤掉（无 DOM），只剩 せい 有 DOM：同样找不到，不落到 せい。
+  context.window.lookupEntries = [
+    { expression: '生', reading: 'なま', matched: '生' },
+    { expression: '生', reading: 'せい', matched: '生' },
+  ];
+  context.window._entryDomIndex = [-1, 0];
+  assert.equal(find('生', 'なま', '生'), -1, 'hidden nama entry is not replaced by visible sei');
 }
 
 Promise.all([

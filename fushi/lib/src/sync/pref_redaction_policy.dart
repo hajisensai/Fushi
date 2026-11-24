@@ -6,6 +6,8 @@ import 'package:fushi/src/models/preference_keys.dart'
         kSrsDayRolloverPendingPrefKeyPrefix,
         kSrsDayRolloverSeenPrefKeyPrefix;
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
+    show kTrackingSeriesMergeDeclinedPrefSuffix;
 import 'package:fushi_engine/sync/online_library_sync.dart'
     show OnlineLibraryMailbox;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
@@ -162,13 +164,22 @@ abstract final class PrefRedactionPolicy {
         OnlineLibraryMailbox.keyPrefix,
       ]);
 
+  /// 后缀登记：前缀里夹着可变段（如追踪站点 id，插件站点 id 不可枚举）、只能按结尾认的**设备本地状态**。
+  ///
+  /// - 追踪站点的「不合并」系列卡清单（`media_tracking_<site>_book_series_merge_declined_v1`，
+  ///   `MediaTrackingService.declineSeriesMerge`，BUG-5373）：值是本机合集自增 id，带到别的设备就指向
+  ///   别的系列卡——那边真该提示合并的卡被静默跳过。
+  static final List<String> deviceLocalKeySuffixes = List<String>.unmodifiable(
+    <String>[kTrackingSeriesMergeDeclinedPrefSuffix],
+  );
+
   /// key 是否属于「设备本地 / 凭据」，即备份、Profile 快照与 Profile 分享 JSON
   /// 三条出境通道都必须剔除、且导入时必须从本机保留的那一类。
   ///
   /// 判定顺序（任一命中即 true）：
   /// 1. [SyncRepository.deviceLocalPrefKeys] 白名单——主防线，同步后端凭据 +
   ///    设备本地配置（device_id / 端口 / 因果基线等）的单一真相源；
-  /// 1b. [deviceLocalKeyPrefixes] 前缀——按 id 展开的设备本地状态；
+  /// 1b. [deviceLocalKeyPrefixes] 前缀 / [deviceLocalKeySuffixes] 后缀——按 id 展开的设备本地状态；
   /// 2. [sensitiveKeys] 点名——名字不像凭据但值是凭据的；
   /// 3. [sensitiveKeyPrefixes] 前缀——按行 id 展开的整族凭据；
   /// 4. [credentialSubstrings] 形状兜底——将来新增、还没进前三条的凭据 key 也
@@ -178,6 +189,9 @@ abstract final class PrefRedactionPolicy {
     if (SyncRepository.deviceLocalPrefKeys.contains(key)) return true;
     for (final String prefix in deviceLocalKeyPrefixes) {
       if (key.startsWith(prefix)) return true;
+    }
+    for (final String suffix in deviceLocalKeySuffixes) {
+      if (key.endsWith(suffix)) return true;
     }
     if (sensitiveKeys.contains(key)) return true;
     final String lower = key.toLowerCase();

@@ -8,6 +8,10 @@
 //
 // 在真实 headless Chrome 里跑生产外壳 + 带入场淡入的卡面，断言淡入中的发音键被报成可见，
 // 静态隐藏（display:none / 定住的 opacity:0）的副本仍不报（HrB0STYm3E 不回退）。
+//
+// HBK-AUDIT-006：只有会把 opacity 带到大于 0 的动画才算淡入。关键帧 opacity 始终为 0、只拿
+// 动画移动隐藏容器的，以及反向 / 交替后不再回到可见值的动画，里面的发音键不报；真正会到达
+// 可见值的反向 / 交替动画照报。（步进缓动把当前值钉在 0，判定时刻确定。）
 @Tags(<String>['chrome'])
 library;
 
@@ -65,6 +69,56 @@ const String _staticHiddenCss = '''
 .clear { opacity: 0; }
 ''';
 
+/// 隐藏的发音容器只被动画移动、关键帧 opacity 始终为 0（无限循环 / 有限 + fill forwards）。
+const String _zeroOpacityMotionBody = '''
+<div class="shown">[sound:shown.mp3]</div>
+<div class="loop">[sound:hidden_loop.mp3]</div>
+<div class="held">[sound:hidden_held.mp3]</div>
+''';
+
+const String _zeroOpacityMotionCss = '''
+.loop { animation: fushiTestSlide 3s linear infinite; }
+.held { animation: fushiTestSlide 10s linear forwards; }
+@keyframes fushiTestSlide {
+  from { opacity: 0; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(40px); }
+}
+''';
+
+/// 反向播放：一条朝可见值走（报），一条朝 opacity:0 那一端走、之后不再可见（不报）。
+const String _reverseBody = '''
+<div class="toward">[sound:reverse_visible.mp3]</div>
+<div class="away">[sound:reverse_hidden.mp3]</div>
+''';
+
+const String _reverseCss = '''
+.toward { animation: fushiTestRevIn 10s -2s linear reverse both; }
+@keyframes fushiTestRevIn {
+  0% { opacity: 1; animation-timing-function: step-start; }
+  100% { opacity: 0; }
+}
+.away { animation: fushiTestRevOut 10s -2s linear reverse both; }
+@keyframes fushiTestRevOut {
+  0% { opacity: 0; animation-timing-function: step-end; }
+  100% { opacity: 1; }
+}
+''';
+
+/// 交替播放：无限交替会回到可见值（报）；两轮交替、正处于最后一轮回程（不报）。
+const String _alternateBody = '''
+<div class="loop">[sound:alternate_visible.mp3]</div>
+<div class="last">[sound:alternate_hidden.mp3]</div>
+''';
+
+const String _alternateCss = '''
+.loop { animation: fushiTestAlt 10s -2s linear infinite alternate; }
+.last { animation: fushiTestAlt 10s -12s linear 2 alternate both; }
+@keyframes fushiTestAlt {
+  0% { opacity: 0; animation-timing-function: step-end; }
+  100% { opacity: 1; }
+}
+''';
+
 SrsCardFaceDocument _doc(String cardId, String body, String css) =>
     SrsCardFaceDocument.of(
       SrsCardFace(
@@ -96,7 +150,7 @@ void main() {
   );
 
   test(
-    '真实 Chrome：淡入中的答案面发音键报成可见，静态隐藏的副本仍不报',
+    '真实 Chrome：淡入中的答案面发音键报成可见，静态隐藏 / 不会变可见的动画里的副本不报',
     () async {
       final String node = browserRuntime.requireNode();
       final Directory temp = Directory.systemTemp.createTempSync('srs-vis-');
@@ -111,6 +165,13 @@ void main() {
               'staticHidden': _page(
                 _doc('hidden', _staticHiddenBody, _staticHiddenCss),
               ),
+              'zeroOpacityMotion': _page(
+                _doc('motion', _zeroOpacityMotionBody, _zeroOpacityMotionCss),
+              ),
+              'reverse': _page(_doc('reverse', _reverseBody, _reverseCss)),
+              'alternate': _page(
+                _doc('alternate', _alternateBody, _alternateCss),
+              ),
             }),
           );
         final ProcessResult result = await Process.run(node, <String>[
@@ -122,7 +183,7 @@ void main() {
           0,
           reason: '${result.stdout}\n${result.stderr}',
         );
-        expect(result.stdout, contains('PASS 3 browser cases'));
+        expect(result.stdout, contains('PASS 6 browser cases'));
       } finally {
         temp.deleteSync(recursive: true);
       }

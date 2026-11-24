@@ -46,6 +46,9 @@ import 'package:fushi/src/models/shelf_collection_open_request.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/media/collections/book_continue.dart';
+import 'package:fushi/src/media/collections/book_read_progress.dart';
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show shelfReadFraction;
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
@@ -71,12 +74,27 @@ import 'package:fushi/src/pages/implementations/home_panorama_panel.dart';
 import 'package:fushi/src/media/panorama/panorama_library.dart'
     show PanoramaWork, PanoramaWorkKind;
 import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
+import 'package:fushi/src/pages/implementations/home_favorites_panel.dart';
+import 'package:fushi/src/media/display_title.dart'
+    show displayTitleForBook, displayTitleForVideo;
+import 'package:fushi/src/pages/implementations/stat_activity.dart'
+    show statTodayKey;
+import 'package:fushi/src/media/favorites/favorite_batch_mining.dart'
+    show favoriteBatchMiningAvailable, showFavoriteBatchMining;
+import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
+import 'package:fushi_audio/fushi_audio.dart'
+    show
+        FavoriteSentence,
+        kFavoriteSentenceSourceVideo,
+        kFavoriteSentenceSourceWeb;
 import 'package:fushi/src/pages/implementations/home_tracking_panel.dart';
 import 'package:fushi/src/pages/implementations/home_profile_chip.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
     show FushiPageTitleMetrics;
 import 'package:fushi/src/pages/implementations/home_collage_widgets.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page.dart';
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page_data.dart'
     show TrackingPageTab;
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
@@ -544,7 +562,15 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         button,
-        HomeProfileChip(extent: chipExtent, floating: !masthead && !apple),
+        HomeProfileChip(
+          extent: chipExtent,
+          floating: !masthead && !apple,
+          database: ref.read(appProvider).database,
+          onManageProfiles: () => ref.read(appProvider).showProfilesMenu(),
+          onSwitchProfile: (int profileId) => ref
+              .read(profileViewModelProvider.notifier)
+              .switchProfile(profileId),
+        ),
       ],
     );
   }
@@ -3240,9 +3266,13 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   /// 还没开读时 0% 没有信息量），进度条照画。
   _ContinueEntry _bookContinueEntry(HomeContinueBookUnit unit) {
     final MediaItem item = unit.item;
-    final int percent = item.duration > 0
-        ? ((item.position / item.duration) * 100).clamp(0, 100).round()
-        : 0;
+    // 进度与书架卡同一口径（[shelfReadFraction] / [bookReadProgressLabel]），
+    // 同一本书在首页和书架上的百分比一致（都向下取整）。
+    final double fraction = shelfReadFraction(
+      completed: false,
+      position: item.position,
+      duration: item.duration,
+    );
     // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后首页
     // 「继续」区同步显示新名），不直接读 DB 原名。
     final String title = unit.title;
@@ -3263,10 +3293,10 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       kind: unit.kind,
       title: title,
       recentMs: unit.recentMs,
-      progress: percent / 100,
+      progress: fraction,
       badgeLabel: volume != null
           ? t.home_continue_volume(n: volume)
-          : '$percent%',
+          : bookReadProgressLabel(fraction),
       collectionName: unit.collectionName,
       book: item,
     );
@@ -4825,6 +4855,19 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     );
   }
 
+  /// 首页「收藏句子」小组件点标题：进收藏夹，预选「句子」页签。
+  void _openFavoriteSentences() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const CollectionsPage(
+          initialFilter: CollectionsInitialFilter.sentence,
+        ),
+      ),
+    );
+  }
+
   /// 排行榜入口（统计中心入口旁的独立按钮）。
   void _openLeaderboard() {
     Navigator.push(
@@ -4920,13 +4963,17 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         if (collectionId != null)
           (type: TrackingMediaType.videoCollection, key: '$collectionId'),
       ],
-      if (entry.book case final MediaItem book)
+      if (entry.book case final MediaItem book) ...<HomeTrackingKey>[
         (
           type: TrackingMediaType.book,
           key:
               ReaderFushiSource.parseBookKey(book.mediaIdentifier) ??
               book.mediaIdentifier,
         ),
+        // A volume counted by its series card's series link.
+        if (collectionId != null)
+          (type: TrackingMediaType.bookCollection, key: '$collectionId'),
+      ],
       if (entry.game case final GalgameEntry game)
         (type: TrackingMediaType.game, key: game.id),
     ];
@@ -4944,6 +4991,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         service: appModel.mediaTrackingService,
         database: appModel.database,
         onOpenSettings: _openTrackingSettings,
+        openSeriesCard: trackingSeriesCardOpener(appModel),
         initialTab: summary.needsAttention ? TrackingPageTab.attention : null,
       ),
     );

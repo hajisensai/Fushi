@@ -266,11 +266,12 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   /// 反馈 kEFPY4cuKZ：进入一部作品（阅读器 / 视频 / 漫画开页、gal hook 会话开始）。
   ///
-  /// 解析绑定（book 级 > 语言级 > 媒体类型级，见 [ProfileRepository.resolveBoundProfileId]），
-  /// 命中且不是激活配置时，把那份配置作为**会话作用域的覆盖层**装进 [WorkProfileScope]：
-  /// 阅读样式与字体、有声书悬浮字幕样式、主题、视频字幕样式、Anki 牌组 / 复习制卡目标、查词
-  /// 词典按它生效（清单见 [WorkProfileSession]），App 的激活配置与全局偏好一概不动。
-  /// 没命中（或命中的就是激活配置）时撤掉 [owner] 之前的那层。离开作品调
+  /// 取作品 / 媒体类型 / 语言三个绑定层（[ProfileRepository.resolveBindingLayers]），逐叶子
+  /// 按 作品 → 媒体类型 → 语言 → 默认组合 解析（组合模型，拍板台 design-combo-node-split），
+  /// 作为**会话作用域的覆盖层**装进 [WorkProfileScope]：阅读样式与字体、有声书悬浮字幕样式、
+  /// 主题、视频字幕样式、Anki 牌组 / 复习制卡目标、查词词典按解析结果生效（清单见
+  /// [WorkProfileSession]），App 的激活配置与全局偏好一概不动。没有不同于激活配置的绑定层时
+  /// 撤掉 [owner] 之前的那层。离开作品调
   /// [leaveWorkSession]；没有页面生命周期的会话传 [endWhen]（每次 `listenable` 通知时问
   /// `ended`，为 true 即离开）。
   ///
@@ -287,10 +288,10 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     ({Listenable listenable, bool Function() ended})? endWhen,
   }) async {
     final WorkProfileScope scope = WorkProfileScope.instance;
-    final bool installed = await scope.enterProfile(
+    final bool installed = await scope.enterCombos(
       owner: owner,
       repository: _repo,
-      resolveProfileId: () => _repo.resolveBoundProfileId(
+      resolveLayers: () => _repo.resolveBindingLayers(
         bookUid: bookUid,
         languageTag: languageTag,
         mediaType: mediaType,

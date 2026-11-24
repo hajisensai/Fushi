@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
 import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
@@ -435,6 +436,9 @@ class PreferencesRepository extends ChangeNotifier
     gitHubMirrorsEnabledReader = () => gitHubMirrorsEnabled;
     // 同一时机、同一理由：引擎里真正跑 ffmpeg 的动图抽取函数读它决定 `-loop`。
     miningAnimatedPlayOnceReader = () => miningAnimatedPlayOnce;
+    // 词典扫描窗口（反馈 ezCjUoU2QM）：查词、匹配长度、分词散在拿不到 AppModel 的
+    // 语言层（JapaneseLanguage）与语料服务里，同一时机绑到偏好，改完下一次调用即生效。
+    FushiDicts.scanLengthReader = () => lookupScanLength;
   }
 
   Map<String, String> get prefsSnapshot => Map<String, String>.unmodifiable(
@@ -2140,6 +2144,19 @@ class PreferencesRepository extends ChangeNotifier
 
   void setMaximumTerms(int value) async {
     await setPref('maximum_terms', value);
+    notifyListeners();
+  }
+
+  /// 词典扫描窗口长度（码点，反馈 ezCjUoU2QM）：查词与分词从查询串开头最多取几个码点
+  /// 当最长候选。int，默认 [FushiDicts.defaultScanLength]，读写都夹到
+  /// [FushiDicts.minScanLength]..[FushiDicts.maxScanLength]（库里存了越界值也不外泄）。
+  int get lookupScanLength => FushiDicts.clampScanLength(
+    getPref('lookup_scan_length', defaultValue: FushiDicts.defaultScanLength)
+        as int,
+  );
+
+  Future<void> setLookupScanLength(int value) async {
+    await setPref('lookup_scan_length', FushiDicts.clampScanLength(value));
     notifyListeners();
   }
 
@@ -6114,6 +6131,36 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 音乐库生成字幕前「先分离人声」按条目记住的选择（拍板 W_wrz-ZPU8）：条目身份
+  /// （`AppVideoSubtitleTarget.settingScopes` 里的一项）→ 开 / 关。没记过的条目不在
+  /// map 里（按默认开）。解析失败回退空 map。设备本地。
+  Map<String, bool> get musicSubtitleVocalSeparation {
+    final Object? raw = getPref(
+      'music_subtitle_vocal_separation',
+      defaultValue: '',
+    );
+    if (raw is! String || raw.trim().isEmpty) return <String, bool>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      return <String, bool>{
+        if (decoded is Map<String, Object?>)
+          for (final MapEntry<String, Object?> e in decoded.entries)
+            if (e.value case final bool on) e.key: on,
+      };
+    } on FormatException {
+      return <String, bool>{};
+    }
+  }
+
+  /// 记下条目 [scope] 的「先分离人声」选择（读改写整 map）。
+  Future<void> setMusicSubtitleVocalSeparation(String scope, bool on) async {
+    final Map<String, bool> map = musicSubtitleVocalSeparation;
+    if (map[scope] == on) return;
+    map[scope] = on;
+    await setPref('music_subtitle_vocal_separation', jsonEncode(map));
+    notifyListeners();
+  }
+
   /// 服务器曲库的码率上限（kbps）：0 = 原样直出（direct play，缺省），其余请服务器转码。
   int get musicServerMaxBitrate {
     final Object? raw = getPref('music_server_max_bitrate', defaultValue: 0);
@@ -6224,6 +6271,33 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMusicLyricsBlurInactive(bool value) async {
     await setPref('music_lyrics_blur_inactive', value);
+    notifyListeners();
+  }
+
+  /// 歌词翻译副行（双语 / 单语，[KaraokeLyricsAppearance.showTranslation]）。默认开。
+  bool get musicLyricsShowTranslation =>
+      getPref('music_lyrics_show_translation', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsShowTranslation(bool value) async {
+    await setPref('music_lyrics_show_translation', value);
+    notifyListeners();
+  }
+
+  /// 歌词罗马音副行（[KaraokeLyricsAppearance.showRomanization]）。默认开。
+  bool get musicLyricsShowRomanization =>
+      getPref('music_lyrics_show_romanization', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsShowRomanization(bool value) async {
+    await setPref('music_lyrics_show_romanization', value);
+    notifyListeners();
+  }
+
+  /// 歌词注音（音节 ruby，[KaraokeLyricsAppearance.showRuby]）。默认开。
+  bool get musicLyricsShowRuby =>
+      getPref('music_lyrics_show_ruby', defaultValue: true) == true;
+
+  Future<void> setMusicLyricsShowRuby(bool value) async {
+    await setPref('music_lyrics_show_ruby', value);
     notifyListeners();
   }
 
@@ -7323,6 +7397,17 @@ class PreferencesRepository extends ChangeNotifier
       kMangaSwipePageTurnSensitivityKey,
       normalizeMangaSwipePageTurnSensitivity(value),
     );
+    notifyListeners();
+  }
+
+  /// 漫画「反转方向键翻页」（默认关）：键盘裸 ← / → 在按跨页方向校正后的结果上整体
+  /// 左右对调。与小说的 `reverse_arrow_page_turn` 分开各一个（维护者 2026-11-23 拍板，
+  /// 反馈 uz_2m0E_Eu ④），手柄 D-pad 不受影响。
+  bool get mangaReverseArrowPageTurn =>
+      getPref('manga_reverse_arrow_page_turn', defaultValue: false) as bool;
+
+  Future<void> setMangaReverseArrowPageTurn(bool value) async {
+    await setPref('manga_reverse_arrow_page_turn', value);
     notifyListeners();
   }
 

@@ -1856,6 +1856,7 @@ extension _ReaderHistoryBooks on _ReaderFushiHistoryPageState {
       context,
       service: appModel.mediaTrackingService,
       bookKey: bookKey,
+      openSeriesCard: trackingSeriesCardOpener(appModel),
     );
   }
 

@@ -196,6 +196,12 @@ void main() {
                                   context,
                                   service: service,
                                   bookKey: 'Ajin 01',
+                                  openSeriesCard:
+                                      (
+                                        BuildContext _,
+                                        int _,
+                                        String _,
+                                      ) async {},
                                 ),
                               ),
                             ),

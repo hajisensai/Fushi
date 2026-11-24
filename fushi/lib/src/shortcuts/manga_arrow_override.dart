@@ -22,11 +22,16 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 ///
 /// 上下键 / PageUp / PageDown / 空格**不参与**校正：它们是屏幕轴语义（下 = 往后
 /// 读），与跨页方向无关，任何排版下都一致。
+///
+/// [reverse] = 漫画自己的「反转方向键翻页」开关（偏好 `manga_reverse_arrow_page_turn`，
+/// 默认关；与小说的 `reverse_arrow_page_turn` 分开各一个，反馈 uz_2m0E_Eu ④）。只管
+/// 键盘，与小说同一定义——手柄 D-pad 不受它影响。
 ShortcutAction? resolveMangaArrowPageTurn({
   required LogicalKeyboardKey key,
   required Set<ModifierKey> modifiers,
   required bool rtl,
   required ShortcutAction? boundAction,
+  bool reverse = false,
 }) {
   if (modifiers.isNotEmpty) return null;
   return resolveDirectionalPageTurn(
@@ -35,6 +40,7 @@ ShortcutAction? resolveMangaArrowPageTurn({
     forward: ShortcutAction.mangaPageForward,
     backward: ShortcutAction.mangaPageBackward,
     rtl: rtl,
+    reverse: reverse,
   );
 }
 
@@ -67,15 +73,18 @@ ShortcutAction? resolveMangaAudioKeyTakeover({
       null) {
     return ShortcutAction.mangaAudioPlayPause;
   }
-  if (key != LogicalKeyboardKey.arrowLeft &&
-      key != LogicalKeyboardKey.arrowRight) {
-    return null;
-  }
-  return switch (pageAction) {
-    ShortcutAction.mangaPageForward => ShortcutAction.mangaAudioNextLine,
-    ShortcutAction.mangaPageBackward => ShortcutAction.mangaAudioPreviousLine,
-    _ => null,
-  };
+  // 左右键切句与小说同一判据（反馈 uz_2m0E_Eu ①）。
+  return resolveAudioArrowTakeover(
+    key: key,
+    modifiers: modifiers,
+    pageAction: pageAction,
+    pageForward: ShortcutAction.mangaPageForward,
+    pageBackward: ShortcutAction.mangaPageBackward,
+    nextLine: ShortcutAction.mangaAudioNextLine,
+    previousLine: ShortcutAction.mangaAudioPreviousLine,
+    audioActive: audioActive,
+    dictionaryShown: dictionaryShown,
+  );
 }
 
 /// 漫画手柄 D-pad 左/右的跨页方向校正——[resolveMangaArrowPageTurn] 的手柄同构。

@@ -112,6 +112,7 @@ void main() {
                 const FushiLookupRequest(
                   text: '猫舌',
                   maxResults: 1,
+                  scanLength: FushiDicts.defaultScanLength,
                   popupOnly: true,
                 ),
               );
@@ -122,6 +123,7 @@ void main() {
                 const FushiLookupRequest(
                   text: '猫舌',
                   maxResults: 1,
+                  scanLength: FushiDicts.defaultScanLength,
                   popupOnly: true,
                   hiddenDictionaries: <String>{gone},
                 ),

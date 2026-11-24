@@ -127,7 +127,12 @@ void main() {
       Dictionary(name: 'JMdict-local', formatKey: 'yomitan', order: 0),
     );
     dictRepo.cacheSearchResult(
-      buildSearchCacheKey(term: term, maxTerms: maxTerms, maxResults: maxTerms),
+      buildSearchCacheKey(
+        term: term,
+        maxTerms: maxTerms,
+        maxResults: maxTerms,
+        scanLength: FushiDicts.defaultScanLength,
+      ),
       resultOf('JMdict-local', 'local'),
     );
     tmpDir = Directory.systemTemp.createTempSync('fushi_remote_reachability_');

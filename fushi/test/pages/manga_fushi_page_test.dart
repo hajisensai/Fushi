@@ -1325,7 +1325,7 @@ void main() {
       reason: '重进正在跑 OCR 的书，HUD 必须接回进度',
     );
     // 接回的任务可能是别处从第一页排的：阅读器要把它改道到读者眼前这页。
-    expect(focus.take(), 0, reason: '接回任务时要把读者当前页送给任务（边看边识别）');
+    expect(focus.take(), 'images/p001.jpg', reason: '接回任务时要把读者当前页送给任务（边看边识别）');
 
     // 退出阅读页：只是不再观察，底层任务不得被取消。
     await tester.pumpWidget(const SizedBox.shrink());
@@ -1833,15 +1833,17 @@ void main() {
       contains('stopImmediatePropagation()'),
       reason: '导航键必须独占给 Dart',
     );
+    // 反馈 uz_2m0E_Eu ②：长按 ← / → 也连发翻页，桥把长按转发过来并带上 e.repeat，
+    // 由 Dart 侧 _heldInputVerdict 等上一页动画落定才放行（不堆翻页风暴）。
     expect(
       script,
-      contains('if (e.repeat) return;'),
-      reason: '按住方向键不得堆翻页风暴（本页既有语义）',
+      isNot(contains('if (e.repeat) return;')),
+      reason: '长按要转发给 Dart 做节流，不能在 JS 里丢掉',
     );
     expect(
       script,
-      contains("callHandler('onMangaNavigationKey', _hit)"),
-      reason: '回传的是命中的 token（裸键时与 e.key 同值），不再是原始 e.key',
+      contains("callHandler('onMangaNavigationKey', _hit, !!e.repeat)"),
+      reason: '回传命中的 token 与是否长按重复，Dart 侧据此节流',
     );
   });
 

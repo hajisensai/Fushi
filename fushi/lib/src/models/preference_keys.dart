@@ -560,6 +560,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（默认 true = 原行为）：查词结果滚到顶后继续下拉 = 清空查询、回到搜索
   // 历史（反馈 3D-JH966Kr）。关掉后下拉不再清空。
   'lookup_page_pull_to_clear',
+  // int（默认 16，夹到 8..32）：词典扫描窗口长度（码点），查词与分词共用
+  // （`FushiDicts.scanLength`，反馈 ezCjUoU2QM）。
+  'lookup_scan_length',
   'low_memory_mode',
   // String（`MangaBackground.key`，默认 `black`）：页图周围留白的底色。
   'manga_background',
@@ -606,6 +609,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（`MangaResumeTarget.key`，默认 `furthest`）：在线漫画重新打开时回到
   // 进度（读完过的章跳过）还是最后停下的那一页（`last`）。
   'manga_resume_target',
+  // bool（默认 false）：漫画「反转方向键翻页」——键盘裸 ← / → 在跨页方向校正后整体
+  // 对调；与小说的 `reverse_arrow_page_turn` 分开（反馈 uz_2m0E_Eu ④）。
+  'manga_reverse_arrow_page_turn',
   // int（默认 1）：跨页配对的整体偏移，用来把「封面独占一页」这类错位掰回来。
   'manga_spread_offset',
   'manga_spread_preference',
@@ -747,6 +753,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_online',
   // String（JSON 数组 [{id, enabled}]）：歌词插件来源的顺序与启停；LRCLIB 结构上固定在最前、不存。
   'music_lyrics_providers',
+  // bool（默认 true）：歌词页 / MV 结构化歌词显示罗马音副行。设备本地观感偏好
+  // （KaraokeLyricsAppearance.showRomanization）。
+  'music_lyrics_show_romanization',
+  // bool（默认 true）：显示音节注音（歌词源自带的 ruby，QRC 注音轨 / ASS / TTML）。
+  // 设备本地观感偏好（KaraokeLyricsAppearance.showRuby）。
+  'music_lyrics_show_ruby',
+  // bool（默认 true）：显示翻译副行（false = 单语，只看原文）。设备本地观感偏好
+  // （KaraokeLyricsAppearance.showTranslation）。
+  'music_lyrics_show_translation',
   // String（JSON 数组 [{id, enabled}]）：音乐在线来源（插件 `plugin:<id>` / 服务器
   // `server:<serverId>` / `apple-music`）的顺序与「推荐 / 搜索里显示」开关。
   'music_online_sources',
@@ -770,6 +785,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // base64 的密码 / API key → 同时登记在 kCredentialPreferenceKeys、
   // PrefRedactionPolicy.sensitiveKeys 与 deviceLocalPrefKeys。
   'music_subsonic_servers',
+  // String（JSON map `{条目身份: bool}`，默认空 = 全部按默认开）：音乐库生成字幕前
+  // 「先分离人声」按条目记住的选择（拍板 W_wrz-ZPU8；身份是 `music:track:<uid>` /
+  // `music:album:<uid>` / `music:source:<本库 id>`）。键含本库自增 id 与本机曲库身份：
+  // 设备本地（deviceLocalPrefKeys）。
+  'music_subtitle_vocal_separation',
   // bool（默认 false）：VGMdb 补充（社区镜像 vgmdb.info，无官方 API，频率保守、可关）。
   'music_vgmdb_enabled',
   // bool（默认 false）：打开全屏歌词动画时给还没有 AI 主题的歌自动生成一份

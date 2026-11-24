@@ -399,14 +399,25 @@ class VideoContentFullHashUpgrader {
   Future<int> _run() async {
     int total = 0;
     try {
-      do {
-        _again = false;
-        total += await upgradeVideoContentFingerprintsToFullHash(
-          _db,
-          fullHashOf: _fullHashOf,
-          isCancelled: () => _disposed,
-        );
-      } while (_again && !_disposed);
+      // BUG-5387：登记成本库的后台工作。关库 / 换库（备份恢复等）时它被取消：正在算的
+      // 那份整文件哈希不再等（[DatabaseWorkToken.guard]），之后的 SQL 一条都发不出去，
+      // 关库等它退出后才真关。
+      total = await _db.runBackgroundWork<int>('video.contentFullHashUpgrade', (
+        DatabaseWorkToken work,
+      ) async {
+        int sum = 0;
+        do {
+          _again = false;
+          sum += await upgradeVideoContentFingerprintsToFullHash(
+            _db,
+            fullHashOf: (String path) => work.guard(_fullHashOf(path)),
+            isCancelled: () => _disposed || work.isCancelled,
+          );
+        } while (_again && !_disposed && !work.isCancelled);
+        return sum;
+      });
+    } on DatabaseWorkCancelledException {
+      // 库要关了：这轮没做完，下次开库再补（下一轮从没升级的行接着算）。
     } on Object catch (error, stack) {
       engineLog.log('video.contentFullHashUpgrade', error, stack);
     } finally {

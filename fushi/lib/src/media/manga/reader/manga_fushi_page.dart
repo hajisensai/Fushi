@@ -45,6 +45,7 @@ import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show isMangaOcrRelayoutCandidate, isMangaOcrRelayoutPending;
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';
 import 'package:fushi/src/media/manga/manga_reading_mode.dart';
+import 'package:fushi_engine/media/manga/manga_page_identity.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi/src/media/manga/manga_reading_stats.dart';
 import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
@@ -158,6 +159,7 @@ import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/reader/reader_statistics_sheet.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/tts/tts_pronunciation.dart';
+import 'package:fushi/src/media/manga/reader/manga_held_turn_gate.dart';
 import 'package:fushi/src/media/manga/reader/manga_volume_key_paging_controller.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
@@ -190,6 +192,8 @@ import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/manga/reader/manga_window_document_snapshot.dart';
 import 'package:fushi/src/media/manga/reader/manga_window_load_gate.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart'
+    show DictionaryPopupInputSpec, dictionaryPopupInputSpecArrowPageTurn;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/reader/page_curl/page_curl.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
@@ -373,6 +377,9 @@ const bool kMangaWebViewPreventGestureDelay = true;
 /// 换章往回翻时用它，让上一章**一开始**就停在末页，而不是先画第 0 页再跳。
 const int kMangaLandOnLastPage = 1 << 30;
 
+/// 长按自动重复的处理结论（[_MangaFushiPageState._heldInputVerdict]）。
+enum _MangaHeldInputVerdict { accept, throttled, notRepeatable }
+
 enum _MangaReaderInputSource {
   flutter,
   nativeWebView,
@@ -434,6 +441,10 @@ class MangaTurnQueue {
 
   @visibleForTesting
   bool get isDraining => _draining;
+
+  /// 没有在跑的 drain、也没有攒着的步数——长按连发节流（[MangaHeldTurnGate]）
+  /// 判「有没有翻页在飞」用。
+  bool get isIdle => !_draining && _pendingDelta == 0;
 
   Future<void> enqueue(
     int delta, {
@@ -879,14 +890,17 @@ class MangaFushiPage extends BaseSourcePage {
   /// 走共享生成器而非自写一份：手写版少了「放行修饰键组合 / IME 组字 / 输入框」
   /// 三条放行判据，会吞掉 Ctrl+方向键，以及词典搜索框里的方向键。
   ///
-  /// `forwardRepeats: false` 保留本页既有语义（按住方向键不堆翻页风暴）；
+  /// 长按转发且回传 `e.repeat`（`reportRepeats`）：长按 ← / → 连发翻页，但由 Dart 侧
+  /// [_heldInputVerdict] 等上一页动画落定才放行（反馈 uz_2m0E_Eu ②），Esc / F11 的
+  /// 自动重复在那里按「不可连发」丢掉——与 Flutter 持焦路径同一判据；
   /// `stopPropagation: true` 保留独占（这些键必须只给 Dart）。`'Esc'` 与
   /// `'Escape'` 都列进键表，旧浏览器归一由 [_handleNativeNavigationKey] 完成。
   @visibleForTesting
   static final String navigationKeyBridgeScript = webViewKeyBridgeScript(
     handlerName: 'onMangaNavigationKey',
     keys: _kNavigationBridgeKeys,
-    forwardRepeats: false,
+    forwardRepeats: true,
+    reportRepeats: true,
     stopPropagation: true,
   );
 
@@ -1660,6 +1674,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   bool _navigating = false;
   final MangaTurnQueue _turnQueue = MangaTurnQueue();
 
+  /// 长按 ← / → 连发翻页的节流（反馈 uz_2m0E_Eu ②）：等上一页翻页动画落定才放行
+  /// 下一次自动重复。
+  final MangaHeldTurnGate _heldTurnGate = MangaHeldTurnGate();
+
   /// 翻页 / 换窗卡顿诊断（BUG-3623）：一步超过 [_kTurnStallLogAfter] 还没返回就
   /// 记一条日志（卡在哪个 await + 闸门状态），**只记录不干预**。翻页队列是串行的，
   /// 任何一步永不返回都会让之后所有滚轮 / 点击 / 滑动翻页静默失效直到重进，
@@ -2086,7 +2104,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     unawaited(_resolveAndApplyMangaProfile());
   }
 
-  /// 解析并应用 Profile 绑定（book 级 > 语言级 > 'manga' 媒体类型级 > 当前激活）。
+  /// 解析并应用 Profile 绑定（逐叶子：作品 > 'manga' 媒体类型 > 语言 > 默认组合）。
   ///
   /// 漫画与 EPUB 共用 `epub_books` 表，语言取该行的 `language` 列。**注意当前它
   /// 对漫画基本恒为 NULL**：`manga_importer` 的插入不带 language（CBZ / 图片包
@@ -4125,6 +4143,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   }
 
   Future<void> _applyMangaTurnStep(int delta) async {
+    _noteHeldTurnStarted();
     final Timer stall = Timer(
       _kTurnStallLogAfter,
       () => _logTurnStall('turn step (delta=$delta)', _turnStage),
@@ -4365,6 +4384,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 换章前排队的剩余步（长按 / 连滑撞到章尾时攒下的）属于旧章，丢掉，否则
     // 新章一装好就被继续消费成「自己往后翻几页」（BUG-3221）。
     _turnQueue.clear();
+    _heldTurnGate.reset();
     try {
       // 目标章下没下载都能换：已下载从章目录读，未下载在线直读（2026-09-26 用户
       // 撤回设计稿 §1.1），分流在 [_openShelfChapter] 里只做一次。
@@ -4507,6 +4527,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         .clamp(0, _spreads.length - 1)
         .toInt();
     if (target == _currentSpread) return;
+    _noteHeldTurnStarted();
     _currentSpread = target;
     _currentFraction = 0;
     await _controller?.evaluateJavascript(
@@ -4522,13 +4543,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 桌面键盘翻页（webtoon 交 WebView 原生竖滚，方向键一律 ignored）。
   ///
-  /// - 只认 KeyDownEvent；KeyRepeatEvent（按住）丢弃，按住方向键不堆翻页风暴。
+  /// - KeyRepeatEvent（按住）只放给可连发的动作（[_heldInputVerdict]）：翻页连发但
+  ///   等上一页动画落定（反馈 uz_2m0E_Eu ②），平移 / 切句照常连发，其余丢弃。
   /// - 查词弹窗显示时，左右键关闭弹窗并翻页，Escape 只关闭弹窗；避免原生词典
   ///   WebView 持焦后把翻页键吞掉或让 Escape 落到外层退书。
   KeyEventResult _handleReaderKey(FocusNode node, KeyEvent event) {
-    // 长按连发**只放给平移**：按住方向键持续挪画面是正常操作，而翻页恒不连发
-    // （本页既有语义，与 navigationKeyBridgeScript 的 forwardRepeats:false 同口径，
-    // 两条输入路径必须一致，否则 WebView 持焦与否手感不同）。
+    // 长按连发的放行判据与 WebView 持焦那条键桥（navigationKeyBridgeScript 回传
+    // e.repeat）共用 [_heldInputVerdict]，两条输入路径手感一致。
     final bool repeat = event is KeyRepeatEvent;
     if (event is! KeyDownEvent && !repeat) {
       return KeyEventResult.ignored;
@@ -4554,11 +4575,56 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       physicalKey: event.physicalKey,
     );
     if (action == null) return KeyEventResult.ignored;
-    if (repeat && _panStepFor(action) == null) {
-      return KeyEventResult.ignored;
+    if (repeat) {
+      switch (_heldInputVerdict(action)) {
+        case _MangaHeldInputVerdict.notRepeatable:
+          return KeyEventResult.ignored;
+        case _MangaHeldInputVerdict.throttled:
+          // 吞掉而不是 ignored：冒泡上去会被全局方向键焦点导航当成移焦。
+          return KeyEventResult.handled;
+        case _MangaHeldInputVerdict.accept:
+          break;
+      }
     }
     _executeReaderInputAction(action, source: _MangaReaderInputSource.flutter);
     return KeyEventResult.handled;
+  }
+
+  /// 长按（OS 自动重复）的这一次 [action] 怎么处理（反馈 uz_2m0E_Eu ②，与小说
+  /// `isRepeatableReaderKeyboardShortcut` 同一份白名单语义）：
+  ///  * 平移、有声上一句 / 下一句 → 照常连发；
+  ///  * 翻页（上一页 / 下一页）→ 连发，但只在没有翻页在飞、上一页翻页动画已落定时
+  ///    放行（[MangaHeldTurnGate]），否则丢掉这一次——不进翻页队列攒步数；
+  ///  * 其余（关词典 / 返回 / 书签 / 全屏 …）→ 一次一按，不连发。
+  _MangaHeldInputVerdict _heldInputVerdict(MangaReaderInputAction action) {
+    if (_panStepFor(action) != null) return _MangaHeldInputVerdict.accept;
+    switch (action) {
+      case MangaReaderInputAction.readAloudNext:
+      case MangaReaderInputAction.readAloudPrevious:
+        return _MangaHeldInputVerdict.accept;
+      case MangaReaderInputAction.next:
+      case MangaReaderInputAction.previous:
+        return _heldTurnGate.acceptsHeldTurn(
+              now: DateTime.now(),
+              turnInFlight:
+                  !_turnQueue.isIdle || _navigating || _switchingChapter,
+            )
+            ? _MangaHeldInputVerdict.accept
+            : _MangaHeldInputVerdict.throttled;
+      default:
+        return _MangaHeldInputVerdict.notRepeatable;
+    }
+  }
+
+  /// 一步翻页开始执行：记下这一步的动画落定时刻，长按连发据此节流。
+  void _noteHeldTurnStarted() {
+    _heldTurnGate.noteTurnStarted(
+      now: DateTime.now(),
+      animation: pageTurnAnimationDuration(
+        _effectivePageAnimation,
+        _pageAnimationSpeed,
+      ),
+    );
   }
 
   MangaReaderInputAction? _lastReaderInputAction;
@@ -4883,6 +4949,25 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ShortcutAction.globalToggleFullscreen,
       };
 
+  static const Set<ShortcutAction> _kPopupPageTurnActions = <ShortcutAction>{
+    ShortcutAction.mangaPageForward,
+    ShortcutAction.mangaPageBackward,
+  };
+
+  /// 弹窗持焦时交回宿主的键：翻页动作**只交回裸 ← / →**（BUG-5364，与小说同一套
+  /// [withPopupArrowPageTurnKeys]）。翻页动作的其余键位（PageDown / ↓ / ↑ / 空格）
+  /// 留给弹窗滚动释义——此前整组翻页键位都被截走，弹窗里这些键一按就关弹窗翻页。
+  /// 鼠标翻页键照旧交回（[dictionaryPopupForwardedActions] 仍含翻页动作，鼠标那条
+  /// 落地判据不变）。
+  @override
+  DictionaryPopupInputSpec get dictionaryPopupInputSpec =>
+      dictionaryPopupInputSpecArrowPageTurn(
+        registry: appModel.shortcutRegistry,
+        scope: ShortcutScope.manga,
+        forwardedActions: dictionaryPopupForwardedActions,
+        pageTurnActions: _kPopupPageTurnActions,
+      );
+
   @override
   bool onDictionaryPopupInputToken(String token) {
     // 鼠标 token 不参与「跨页方向校正」（那是方向键专属语义），交回基类按注册表
@@ -4984,6 +5069,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           modifiers: modifiers,
           rtl: _spreadDirection == 'rtl',
           boundAction: bound,
+          reverse: appModel.mangaReverseArrowPageTurn,
         ) ??
         bound;
     // 有声在场：裸空格 / 左右键默认改作播放暂停 / 上下句（与有声书同一惯例）。
@@ -5096,7 +5182,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   /// 返回**本次是否真的执行了**动作。BUG-2031：查词弹窗 barrier 那条路要靠这个
   /// 回答决定要不要向 `MouseBindingDispatch` 认领这次鼠标按下。
-  bool _handleNativeNavigationKey(String key) {
+  ///
+  /// [repeat] = 翻页键桥回传的 `e.repeat`（长按的自动重复），按 [_heldInputVerdict]
+  /// 与 Flutter 持焦路径同一判据放行 / 节流 / 丢弃。
+  bool _handleNativeNavigationKey(String key, {bool repeat = false}) {
     // 鼠标桥回传的是 `Mouse<n>`（与键盘 token 取值域天然不相交：
     // `InputBinding.deserialize('Mouse3')` 与 `MouseBinding.deserialize('Escape')`
     // 都是 null），故先试鼠标、再试键盘，不需要额外的类型标记位。与查词弹窗桥
@@ -5131,6 +5220,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       binding.modifiers,
     );
     if (action == null) return false;
+    if (repeat) {
+      switch (_heldInputVerdict(action)) {
+        case _MangaHeldInputVerdict.notRepeatable:
+          return false;
+        case _MangaHeldInputVerdict.throttled:
+          return true;
+        case _MangaHeldInputVerdict.accept:
+          break;
+      }
+    }
     _executeReaderInputAction(
       action,
       source: _MangaReaderInputSource.nativeWebView,
@@ -5429,11 +5528,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
+  /// 让在跑的整卷任务（默认是正在观察的那个）改道到阅读器第 [pageIndex] 页。
+  ///
+  /// 交给任务的是这页的页身份（[mangaPageId]），不是页号：任务按自己枚举的目录
+  /// 编页号，与本卷页表不一定一一对应（反馈 -5BJ11GqOk）。
+  void _focusVolumeOcrOn(int pageIndex, {MangaOcrRunningJob? job}) {
+    final MangaOcrRunningJob? target = job ?? _observedOcrJob;
+    final MokuroPayload? payload = _payload;
+    if (target == null ||
+        payload == null ||
+        pageIndex < 0 ||
+        pageIndex >= payload.images.length) {
+      return;
+    }
+    target.focusPage(mangaPageId(payload.images[pageIndex].url));
+  }
+
   /// 读者翻页：在跑的整卷任务改道到这页。起点只在开跑时定一次，而手机上本地
   /// 模型一页几十秒、读者翻得比识别快，不改道的话翻到的页永远还没轮到，体感就是
   /// 「要等整卷识别完才能查词」。
   void _onReaderPageChanged() {
-    _observedOcrJob?.focusPage(_pageNotifier.value);
+    _focusVolumeOcrOn(_pageNotifier.value);
     _streamOcr?.focus(_pageNotifier.value);
     _companion.publishNow();
     _controllerLookupTarget?.onPageChanged();
@@ -5633,7 +5748,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _observedOcrJob = running;
     // 接回的可能是下载钩子 / 作品页从第一页排的任务：先让它从读者眼前这页跑。
-    running.focusPage(_currentPage);
+    _focusVolumeOcrOn(_currentPage, job: running);
     final MangaOcrBackgroundEvent? snapshot = running.lastEvent;
     setState(() {
       _wholeVolumeOcrRunning = true;
@@ -5685,16 +5800,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _wholeVolumeOcrTotal = event.pagesTotal;
       _wholeVolumeOcrUploading = event.uploading;
     });
-    final int? pageIndex = event.pageIndex;
     final MokuroImage? page = event.page;
     final MokuroPayload? current = _payload;
-    if (pageIndex == null ||
-        page == null ||
-        current == null ||
-        pageIndex < 0 ||
-        pageIndex >= current.images.length) {
-      return;
-    }
+    if (page == null || current == null) return;
+    // 按页身份对回本卷的页：event.pageIndex 是任务自己枚举目录得到的页号，目录里
+    // 多一张不在页表里的图时与阅读器页号错开，按它写会把框挂到邻页（反馈
+    // -5BJ11GqOk）。不在页表里的图（任务多识别的那张）没有可挂的页。
+    final int? pageIndex = mangaPageIndexOf(
+      current.images.map((MokuroImage image) => image.url),
+      mangaPageId(page.url),
+    );
+    if (pageIndex == null) return;
     final List<MokuroImage> images = List<MokuroImage>.of(current.images);
     // 逐页进度只带 OCR 块：保留这页的 PDF 文字层（与落盘时同一合并规则）。
     final MokuroImage merged = preservePdfTextLayerPage(
@@ -6730,21 +6846,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 都无处可落，整段跳过——不拿 bookKey / 现造 uid 兜底写孤儿行。
     final String? bookUid = _bookUid;
     if (bookUid == null) return;
-    try {
-      await ReaderPositionRepository(db).save(
-        bookUid: bookUid,
-        sectionIndex: page,
-        normCharOffset: 0,
-        // 漫画无章内字符偏移。**必须显式传值**（传 null 会掉进 EPUB 专用的「跨
-        // section 精确锚失效」启发式）：spread 恒 0；webtoon 复用 charOffset 存
-        // 页内滚动千分比（0..1000），恢复时换算回 fraction。
-        charOffset: isWebtoon
-            ? MangaFushiPage.webtoonFractionToCharOffset(fraction)
-            : 0,
-      );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('MangaFushiPage._persistPosition', e, stack);
-    }
     // 翻到最后一页 → 幂等写「已读完」（判据用总页数；双页展开看整屏，见
     // [MangaFushiPage.spreadReachesLastPage]）。
     final int pageCount = _payload?.images.length ?? 0;
@@ -6753,9 +6854,46 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       page,
       pageCount,
     );
+    // 每章状态跟着同一个收口走：位置写哪儿、章状态就写哪儿，不另开一条会漏的
+    // 时机。书架在线条目才有「章」，本地卷 _shelfChapterKey 恒 null 自然跳过。
+    final String? chapterKey = _shelfChapterKey;
+    // 漫画无章内字符偏移。webtoon 复用 charOffset 存页内滚动千分比（0..1000），
+    // 恢复时换算回 fraction；spread 恒 0（书级）/ -1（章级「无精确偏移」）。
+    final int webtoonOffset = MangaFushiPage.webtoonFractionToCharOffset(
+      fraction,
+    );
+    bool chapterSaved = false;
+    try {
+      // 书级位置与章级进度一个事务落盘（BUG-5358）：与互联同步的落地
+      // （`InterconnectBookProgressSync` 同样一个事务、先书级后章级）互斥，
+      // 两张表不会一张是新页、一张被同步退回 host 旧页；任一写失败两张一起回滚。
+      await db.transaction(() async {
+        await ReaderPositionRepository(db).save(
+          bookUid: bookUid,
+          sectionIndex: page,
+          normCharOffset: 0,
+          // **必须显式传值**（传 null 会掉进 EPUB 专用的「跨 section 精确锚失效」
+          // 启发式）。
+          charOffset: isWebtoon ? webtoonOffset : 0,
+        );
+        if (chapterKey == null) return;
+        await db.saveMangaChapterState(
+          bookUid: bookUid,
+          chapterKey: chapterKey,
+          lastPage: page,
+          lastFraction: isWebtoon ? webtoonOffset : -1,
+          pageCount: pageCount > 0 ? pageCount : null,
+          readAt: atLastPage ? DateTime.now().millisecondsSinceEpoch : null,
+        );
+        chapterSaved = true;
+      });
+    } catch (e, stack) {
+      chapterSaved = false;
+      ErrorLogService.instance.log('MangaFushiPage._persistPosition', e, stack);
+    }
     // 「末页」是**当前载荷**的末页：本地卷一个载荷就是整本，书架在线条目一个载荷
     // 只是一章。整本「读完」只在读到阅读顺序上的最后一话时才成立
-    // （[mangaChapterCompletesSeries]，BUG-4356）；其余章的末页只写下面的章级 readAt。
+    // （[mangaChapterCompletesSeries]，BUG-4356）；其余章的末页只写上面的章级 readAt。
     final OnlineMangaLibraryEntry? shelfEntry = _shelfEntry;
     final bool completesBook =
         atLastPage &&
@@ -6771,27 +6909,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ErrorLogService.instance.log('MangaFushiPage.markCompleted', e, stack);
       }
     }
-    // 每章状态跟着同一个收口走：位置写哪儿、章状态就写哪儿，不另开一条会漏的
-    // 时机。书架在线条目才有「章」，本地卷 _shelfChapterKey 恒 null 自然跳过。
-    final String? chapterKey = _shelfChapterKey;
-    if (chapterKey == null) {
-      _reportTracking(reachedEnd: atLastPage);
-      return;
-    }
-    try {
-      await db.saveMangaChapterState(
-        bookUid: bookUid,
-        chapterKey: chapterKey,
-        lastPage: page,
-        lastFraction: isWebtoon
-            ? MangaFushiPage.webtoonFractionToCharOffset(fraction)
-            : -1,
-        pageCount: pageCount > 0 ? pageCount : null,
-        readAt: atLastPage ? DateTime.now().millisecondsSinceEpoch : null,
-      );
+    if (chapterKey != null && chapterSaved) {
       _reportKavitaMangaPage(chapterKey, page);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('MangaFushiPage.saveChapterState', e, stack);
     }
     _reportTracking(reachedEnd: atLastPage);
   }
@@ -9733,7 +9852,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           handlerName: 'onMangaNavigationKey',
           callback: (List<dynamic> args) {
             if (args.isEmpty || args[0] is! String) return;
-            _handleNativeNavigationKey(args[0] as String);
+            _handleNativeNavigationKey(
+              args[0] as String,
+              repeat: args.length > 1 && args[1] == true,
+            );
           },
         );
         // 平移桥（第二座，允许连发）。回调与翻页桥同一个——token 一律走

@@ -1676,6 +1676,38 @@ mixin _FushiDbContentMisc
     });
   }
 
+  /// 跨设备落地章状态（互联按章 LWW，`fushi_engine` 的 `landMangaChapterStates`）：一个事务内
+  /// 读出既有行，逐行问 [replaces]（既有行 / 没有 = null，待写行），为真才**原样**整行写下（含
+  /// `updatedAt`——它是「继续阅读」选章的依据，换成本机此刻会让刚同步来的旧章被当成最近读的）。
+  /// 返回写下的章 key。读-比较-写在同一事务里，与本机阅读器的进度写入互不插队。
+  ///
+  /// [rows] 的 `bookUid` 一律以参数 [bookUid] 为准。
+  Future<List<String>> upsertMangaChapterStatesWhere({
+    required String bookUid,
+    required List<MangaChapterStateRow> rows,
+    required bool Function(
+      MangaChapterStateRow? existing,
+      MangaChapterStateRow incoming,
+    )
+    replaces,
+  }) async {
+    if (bookUid.isEmpty || rows.isEmpty) return const <String>[];
+    return transaction(() async {
+      final Map<String, MangaChapterStateRow> existing =
+          await getMangaChapterStates(bookUid);
+      final List<String> written = <String>[];
+      for (final MangaChapterStateRow row in rows) {
+        if (row.chapterKey.isEmpty) continue;
+        if (!replaces(existing[row.chapterKey], row)) continue;
+        await into(mangaChapterStates).insertOnConflictUpdate(
+          row.copyWith(bookUid: bookUid).toCompanion(false),
+        );
+        written.add(row.chapterKey);
+      }
+      return written;
+    });
+  }
+
   /// 显式把一章标回未读（作品页的「标为未读」动作）。
   Future<void> clearMangaChapterRead({
     required String bookUid,

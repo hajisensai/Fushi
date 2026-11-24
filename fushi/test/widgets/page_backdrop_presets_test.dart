@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -249,5 +250,34 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(drift(), isNot(equals(before)));
     });
+  });
+
+  // BUG-5370：偏好存文件名，读时按当前目录拼；存量绝对路径按文件名改写。
+  test('背景图偏好值的解析与改写', () {
+    expect(pageBackdropImageFileName(r'C:\a\page_backdrop\x.jpg'), 'x.jpg');
+    expect(pageBackdropImageFileName('/var/c/page_backdrop/y.png'), 'y.png');
+    expect(pageBackdropImageFileName('z.png'), 'z.png');
+    expect(resolvePageBackdropImagePath('z.png', directory: null), isNull);
+    expect(resolvePageBackdropImagePath('', directory: '/d'), isNull);
+    expect(
+      resolvePageBackdropImagePath('/abs/z.png', directory: '/d'),
+      '/abs/z.png',
+    );
+    bool inDir(String name) => name == 'x.jpg';
+    expect(
+      healPageBackdropImageRef(r'C:\old\x.jpg', inDirectory: inDir),
+      'x.jpg',
+    );
+    expect(healPageBackdropImageRef('x.jpg', inDirectory: inDir), isNull);
+    expect(healPageBackdropImageRef('/old/q.jpg', inDirectory: inDir), isNull);
+    expect(
+      healPageBackdropModuleImagesValue(
+        jsonEncode(<String, Object>{
+          'books': <String, String>{'landscape': 'x.jpg'},
+        }),
+        inDirectory: inDir,
+      ),
+      isNull,
+    );
   });
 }

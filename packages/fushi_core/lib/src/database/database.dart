@@ -21,6 +21,7 @@ import 'book_format.dart';
 import 'collection_order.dart';
 import 'collection_organize.dart';
 import 'collection_book_identity.dart';
+import 'database_background_work.dart';
 import 'db_disk_space.dart';
 import 'db_schema_version.dart';
 import 'epub_book_meta.dart';
@@ -1279,7 +1280,13 @@ class FushiDatabase extends _$FushiDatabase
     _OpenedExecutorRef ref,
   ) : _isMainProcess = isMainProcess,
       _openedRef = ref,
-      super(_openDb(dbDirectory, isMainProcess: isMainProcess, ref: ref));
+      super(
+        _openDb(
+          dbDirectory,
+          isMainProcess: isMainProcess,
+          ref: ref,
+        ).interceptWith(databaseWorkInterceptor),
+      );
 
   /// Opens a specific `.db` FILE (not a directory). Backup MERGE import
   /// (TODO-888) uses this to migrate an extracted backup DB to the current
@@ -1287,9 +1294,17 @@ class FushiDatabase extends _$FushiDatabase
   FushiDatabase.atFile(String dbFilePath, {bool isMainProcess = true})
     : _isMainProcess = isMainProcess,
       _openedRef = null,
-      super(_openDbFile(dbFilePath, isMainProcess: isMainProcess));
+      super(
+        _openDbFile(
+          dbFilePath,
+          isMainProcess: isMainProcess,
+        ).interceptWith(databaseWorkInterceptor),
+      );
 
-  FushiDatabase.forTesting(super.e) : _isMainProcess = true, _openedRef = null;
+  FushiDatabase.forTesting(QueryExecutor e)
+    : _isMainProcess = true,
+      _openedRef = null,
+      super(e.interceptWith(databaseWorkInterceptor));
 
   /// 在**另一个 isolate** 里接上同一个库：[connection] 来自
   /// [backgroundConnection]（`DriftIsolate.connect()`）。语句与事务都经同一个 drift
@@ -1298,9 +1313,37 @@ class FushiDatabase extends _$FushiDatabase
   FushiDatabase.shared(DatabaseConnection connection)
     : _isMainProcess = false,
       _openedRef = null,
-      super(connection);
+      super(connection.interceptWith(databaseWorkInterceptor));
 
   final bool _isMainProcess;
+
+  /// 本库实例上的后台写库工作（换库的生命周期边界，见 [DatabaseBackgroundWork]）。
+  ///
+  /// 扫描、刮削、哈希升级、封面回填、响度测量等后台写手一律经
+  /// [runBackgroundWork] 跑；[close] 先取消并等它们全部退出再关连接。
+  final DatabaseBackgroundWork backgroundWork = DatabaseBackgroundWork();
+
+  /// 见 [DatabaseBackgroundWork.run]。
+  Future<T> runBackgroundWork<T>(
+    String label,
+    Future<T> Function(DatabaseWorkToken token) body,
+  ) => backgroundWork.run<T>(label, body);
+
+  /// 关库前的「换库」边界：取消本库名下的后台工作并等它们退出（幂等）。
+  ///
+  /// [close] 会自动调用；关库方可以提前调用，让后台工作与其它收尾并行停下。
+  Future<void> quiesceBackgroundWork() => backgroundWork.quiesce(
+    onSlow: (List<String> stillRunning) => fushiDebugPrint(
+      '[fushi-db] close is waiting for background work: '
+      '${stillRunning.join(', ')}',
+    ),
+  );
+
+  @override
+  Future<void> close() async {
+    await quiesceBackgroundWork();
+    await super.close();
+  }
 
   /// 见 [_OpenedExecutorRef]；只有按目录开的主库有。
   final _OpenedExecutorRef? _openedRef;
@@ -3777,6 +3820,19 @@ class FushiDatabase extends _$FushiDatabase
         if (await _tableExists('study_segments') &&
             !await _columnExists('study_segments', 'lookups')) {
           await m.addColumn(studySegments, studySegments.lookups);
+        }
+      }
+      if (from < 179) {
+        // v179：favorite_sentences.origin_source_id——远端条目（媒体服务器直接串流 /
+        // 互联对端）收藏时的来源身份（BUG-5402：Plex / Emby 条目 id 跨服务器撞号，
+        // 跳回原处要按它找回那一台）。纯加列、存量 NULL = 本机库条目或旧收藏；按列
+        // 存在性守卫，重跑幂等。
+        if (await _tableExists('favorite_sentences') &&
+            !await _columnExists('favorite_sentences', 'origin_source_id')) {
+          await m.addColumn(
+            favoriteSentences,
+            favoriteSentences.originSourceId,
+          );
         }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建

@@ -103,7 +103,7 @@ void main() {
       expect(source.contains('_buildTonalPalette()'), isTrue);
     });
 
-    test('十个角色全部用 theme_role_* 文案，不再出现 Material 术语 key', () {
+    test('十一个角色全部用 theme_role_* 文案，不再出现 Material 术语 key', () {
       for (final String key in <String>[
         'theme_role_accent',
         'theme_role_surface',
@@ -111,6 +111,7 @@ void main() {
         'theme_role_reader_background',
         'theme_role_link',
         'theme_role_selection',
+        'theme_role_selection_text',
         'theme_role_audio_highlight',
         'theme_role_secondary',
         'theme_role_tertiary',

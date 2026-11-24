@@ -63,6 +63,27 @@ const CASES = {
     check(!has('clear.mp3'), 'static opacity:0 copy not reported: ' + JSON.stringify(visible()));
     check(reports().length === 1, 'one report per face: ' + reports().length);
   `,
+  // HBK-AUDIT-006: an animation that only moves a hidden container while every
+  // keyframe keeps opacity 0 is not a fade-in; its sound must not reach
+  // autoplay / replay.
+  zeroOpacityMotion: `
+    check(has('shown.mp3'), 'plain visible audio reported: ' + JSON.stringify(visible()));
+    check(!has('hidden_loop.mp3'), 'infinite opacity-0 motion copy not reported: ' + JSON.stringify(visible()));
+    check(!has('hidden_held.mp3'), 'forwards-held opacity-0 motion copy not reported: ' + JSON.stringify(visible()));
+    check(reports().length === 1, 'one report per face: ' + reports().length);
+  `,
+  // Reverse playback: heading toward the visible end counts, heading toward
+  // the opacity-0 end (never visible again) does not.
+  reverse: `
+    check(has('reverse_visible.mp3'), 'reverse fade-in reported: ' + JSON.stringify(visible()));
+    check(!has('reverse_hidden.mp3'), 'reverse toward opacity 0 not reported: ' + JSON.stringify(visible()));
+  `,
+  // Alternate: an infinite alternation comes back to visible; the final
+  // return leg of a two-iteration alternation never does.
+  alternate: `
+    check(has('alternate_visible.mp3'), 'infinite alternate reported: ' + JSON.stringify(visible()));
+    check(!has('alternate_hidden.mp3'), 'last alternate leg toward opacity 0 not reported: ' + JSON.stringify(visible()));
+  `,
 };
 
 const driver = await launchChromeDriver();

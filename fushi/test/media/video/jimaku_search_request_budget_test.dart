@@ -136,6 +136,237 @@ void main() {
     ]);
   });
 
+  group('集号歧义：本地有命中也要问服务端（BUG-5360）', () {
+    VideoSubtitleSearchRequest sequel({required int episode}) =>
+        VideoSubtitleSearchRequest(
+          media: VideoMediaReference(
+            providerId: 'anilist',
+            mediaId: '130298',
+            mediaKind: VideoMetadataMediaKind.tv,
+            discoveryCategory: VideoDiscoveryCategory.anime,
+            title: 'Kage no Jitsuryokusha ni Naritakute!',
+            anilistId: 130298,
+          ),
+          season: 2,
+          episode: episode,
+          languages: const <String>['ja'],
+        );
+
+    /// 假 Jimaku：全表 [all]；`?episode=` 回 [byEpisode]（null = 回 429）。
+    MockClient fake(
+      List<Uri> calls, {
+      required List<Map<String, Object?>> all,
+      List<Map<String, Object?>>? byEpisode,
+    }) => MockClient((http.Request req) async {
+      calls.add(req.url);
+      if (req.url.path == '/api/entries/search') {
+        return http.Response.bytes(utf8.encode(entries), 200);
+      }
+      if (req.url.queryParameters.containsKey('episode')) {
+        if (byEpisode == null) {
+          return http.Response('{"error":"rate limited"}', 429);
+        }
+        return http.Response.bytes(utf8.encode(jsonEncode(byEpisode)), 200);
+      }
+      return http.Response.bytes(utf8.encode(jsonEncode(all)), 200);
+    });
+
+    Future<ProviderBatchResult<VideoSubtitleCandidate>> run(
+      MockClient client,
+      VideoSubtitleSearchRequest req,
+    ) => JimakuVideoSubtitleProvider(
+      client: JimakuClient(apiKey: 'k', client: client),
+    ).search(req);
+
+    test('续作混合编号：本季编号的英文命中，不挡住服务端映射来的日文第 2 集', () async {
+      final List<Uri> calls = <Uri>[];
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await run(
+        fake(
+          calls,
+          all: <Map<String, Object?>>[
+            file('[Subs] Kage no Jitsuryokusha ni Naritakute! S2 - 01.en.srt'),
+            file('[Subs] Kage no Jitsuryokusha ni Naritakute! S2 - 02.en.srt'),
+            file('[Group] Kage no Jitsuryokusha ni Naritakute! - 13.ja.srt'),
+            file('[Group] Kage no Jitsuryokusha ni Naritakute! - 14.ja.srt'),
+            file('Kage no Jitsuryokusha ni Naritakute! S2 (13-24).zip'),
+          ],
+          byEpisode: <Map<String, Object?>>[
+            file('[Subs] Kage no Jitsuryokusha ni Naritakute! S2 - 02.en.srt'),
+            file('[Group] Kage no Jitsuryokusha ni Naritakute! - 14.ja.srt'),
+          ],
+        ),
+        sequel(episode: 2),
+      );
+
+      expect(result.failures, isEmpty);
+      expect(
+        result.items.map((VideoSubtitleCandidate c) => c.fileName).toSet(),
+        <String>{
+          '[Group] Kage no Jitsuryokusha ni Naritakute! - 14.ja.srt',
+          'Kage no Jitsuryokusha ni Naritakute! S2 (13-24).zip',
+        },
+        reason: '英文被语言过滤掉后，日文第 2 集不能凭空消失',
+      );
+      final VideoSubtitleCandidate mapped = result.items.firstWhere(
+        (VideoSubtitleCandidate c) => !c.isArchivePack,
+      );
+      expect(mapped.episode, 2, reason: '服务端映射来的候选集号是请求的第 2 集，不是文件名里的 14');
+      expect(calls.last.queryParameters['episode'], '2');
+      expect(calls, hasLength(3), reason: '条目搜索 + 全表 + 一次按集');
+    });
+
+    test('同语言两种编号：两个版本都在，且只列一次（去重）', () async {
+      final List<Uri> calls = <Uri>[];
+      final List<Map<String, Object?>> both = <Map<String, Object?>>[
+        file('[A] Kage no Jitsuryokusha ni Naritakute! S2 - 02.ja.srt'),
+        file('[B] Kage no Jitsuryokusha ni Naritakute! - 14.ja.srt'),
+      ];
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await run(
+        fake(calls, all: both, byEpisode: both),
+        sequel(episode: 2),
+      );
+
+      expect(
+        result.items.map((VideoSubtitleCandidate c) => c.fileName).toList(),
+        unorderedEquals(<String>[
+          '[A] Kage no Jitsuryokusha ni Naritakute! S2 - 02.ja.srt',
+          '[B] Kage no Jitsuryokusha ni Naritakute! - 14.ja.srt',
+        ]),
+      );
+      expect(
+        result.items.map((VideoSubtitleCandidate c) => c.episode).toSet(),
+        <int>{2},
+      );
+    });
+
+    test('区间命名：本地只认得一端，服务端补上覆盖本集的区间文件', () async {
+      final List<Uri> calls = <Uri>[];
+      final List<Map<String, Object?>> files = <Map<String, Object?>>[
+        file('[A] Kage no Jitsuryokusha ni Naritakute! - 01-02.ja.ass'),
+        file('[B] Kage no Jitsuryokusha ni Naritakute! - 02.ja.srt'),
+      ];
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await run(
+        fake(calls, all: files, byEpisode: files),
+        request(episode: 2),
+      );
+
+      expect(
+        result.items.map((VideoSubtitleCandidate c) => c.fileName).toSet(),
+        <String>{
+          '[A] Kage no Jitsuryokusha ni Naritakute! - 01-02.ja.ass',
+          '[B] Kage no Jitsuryokusha ni Naritakute! - 02.ja.srt',
+        },
+      );
+      expect(calls.last.queryParameters['episode'], '2');
+    });
+
+    test('续作里全按本季编号：没有歧义，不多花一次配额', () async {
+      final List<Uri> calls = <Uri>[];
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await run(
+        fake(
+          calls,
+          all: <Map<String, Object?>>[
+            for (int ep = 1; ep <= 12; ep++)
+              file(
+                '[Subs] Kage no Jitsuryokusha ni Naritakute! S2 - '
+                '${ep.toString().padLeft(2, '0')}.ja.srt',
+              ),
+          ],
+        ),
+        sequel(episode: 2),
+      );
+
+      expect(result.items.single.episode, 2);
+      expect(
+        calls.where((Uri u) => u.queryParameters.containsKey('episode')),
+        isEmpty,
+      );
+    });
+
+    test('按集回退被限流：保留本地命中与整季包，如实报部分失败、不再多打', () async {
+      final List<Uri> calls = <Uri>[];
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await run(
+        fake(
+          calls,
+          all: <Map<String, Object?>>[
+            file('[Subs] Kage no Jitsuryokusha ni Naritakute! S2 - 02.ja.srt'),
+            file('[Group] Kage no Jitsuryokusha ni Naritakute! - 14.ja.srt'),
+            file('Kage no Jitsuryokusha ni Naritakute! S2 (13-24).zip'),
+          ],
+        ),
+        sequel(episode: 2),
+      );
+
+      expect(
+        result.items.map((VideoSubtitleCandidate c) => c.fileName).toSet(),
+        <String>{
+          '[Subs] Kage no Jitsuryokusha ni Naritakute! S2 - 02.ja.srt',
+          'Kage no Jitsuryokusha ni Naritakute! S2 (13-24).zip',
+        },
+      );
+      expect(result.isPartial, isTrue);
+      expect(
+        result.failures.single.kind,
+        ExternalProviderFailureKind.rateLimited,
+      );
+      expect(calls, hasLength(3), reason: '限流后不再重试');
+    });
+
+    test('按集回退被限流且什么也没拿到：整次搜索失败，不是「没有字幕」', () async {
+      final List<Uri> calls = <Uri>[];
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await run(
+        fake(
+          calls,
+          all: <Map<String, Object?>>[
+            file('[Subs] Kage no Jitsuryokusha ni Naritakute! S2 - 02.en.srt'),
+            file('[Group] Kage no Jitsuryokusha ni Naritakute! - 14.ja.srt'),
+          ],
+        ),
+        sequel(episode: 2),
+      );
+
+      expect(result.isTotalFailure, isTrue);
+      expect(result.failures.single.statusCode, 429);
+    });
+  });
+
+  group('jimakuEpisodeNumberingAmbiguous', () {
+    JimakuFile f(String name) => JimakuFile(name: name, url: 'u/$name');
+
+    test('第一季零散上传不算歧义；续作里从 >1 起编的同模板组算', () {
+      final List<JimakuFile> partial = <JimakuFile>[
+        f('[Erai-raws] Show - 15.ja.srt'),
+        f('[Erai-raws] Show - 16.ja.srt'),
+      ];
+      expect(jimakuEpisodeNumberingAmbiguous(partial, season: 1), isFalse);
+      expect(jimakuEpisodeNumberingAmbiguous(partial, season: null), isFalse);
+      expect(jimakuEpisodeNumberingAmbiguous(partial, season: 2), isTrue);
+    });
+
+    test('区间与解析不出算歧义；季号分隔、日期、压缩包不算', () {
+      expect(
+        jimakuEpisodeNumberingAmbiguous(<JimakuFile>[
+          f('Show - 01~02.ja.ass'),
+        ], season: null),
+        isTrue,
+      );
+      expect(
+        jimakuEpisodeNumberingAmbiguous(<JimakuFile>[
+          f('Show Special.ja.srt'),
+        ], season: null),
+        isTrue,
+      );
+      expect(
+        jimakuEpisodeNumberingAmbiguous(<JimakuFile>[
+          f('Show S3 - 05.ja.srt'),
+          f('Show 2024-01-02 - 06.ja.srt'),
+          f('Show (01-26).zip'),
+        ], season: 1),
+        isFalse,
+      );
+    });
+  });
+
   test('条目里只有压缩包：本地没筛中也不多问服务端（按集筛只会把包滤掉）', () async {
     final List<Uri> calls = <Uri>[];
     final MockClient client = MockClient((http.Request req) async {

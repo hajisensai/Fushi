@@ -18,6 +18,7 @@ import 'package:fushi/src/lookup/lookup_match_measure.dart'
     show lookupHighlightCharCount;
 import 'package:fushi/src/pages/base_tab_page.dart';
 import 'package:fushi/src/lookup/advanced_mining_handoff.dart';
+import 'package:fushi/src/lookup/advanced_mining_handoff_gate.dart';
 import 'package:fushi/src/lookup/captured_context_sentences.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
@@ -249,16 +250,24 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   final MiningSentenceDraft _capturedDraft = MiningSentenceDraft();
 
   /// 拍板台 rf--UcsGta-overlay：应用外查词覆盖窗点「高级制卡」转交过来的词条。结果区
-  /// 画完**这次请求**的结果（[_pendingAdvancedMiningGeneration] 仍是当前查词代）后为它
-  /// 打开高级制卡对话框；用户先改查了别的词就作废。
-  AdvancedMiningHandoff? _pendingAdvancedMining;
-  int _pendingAdvancedMiningGeneration = -1;
-
-  /// 正在问 popup.js 词条下标（一次往返）。期间又来的 `popupRendered` 记在
-  /// [_advancedMiningRenderedWhileBusy]，往返回来若是「还在渲染」就立刻再问一次——
-  /// 尾批画完的那次信号不能因为撞上往返就丢掉。
-  bool _advancedMiningLocating = false;
-  bool _advancedMiningRenderedWhileBusy = false;
+  /// 画完**这次请求**的结果后为它打开高级制卡对话框；用户先改查了别的词就作废——
+  /// 铸新查词代（[_mintSearchGeneration]）时立刻撤销，在途的定位回包也会被闸门挡下
+  /// （HBK-AUDIT-003）。状态机见 [AdvancedMiningHandoffGate]。
+  late final AdvancedMiningHandoffGate<
+    DictionarySearchResult,
+    DictionaryPopupWebViewState
+  >
+  _advancedMiningGate =
+      AdvancedMiningHandoffGate<
+        DictionarySearchResult,
+        DictionaryPopupWebViewState
+      >(
+        currentGeneration: () => _searchGeneration,
+        renderedTarget: _advancedMiningRenderTarget,
+        locate: _locateHandedOffEntry,
+        open: _openHandedOffAdvancedMining,
+        onNotFound: _onHandedOffEntryNotFound,
+      );
 
   /// 源文本条上「这次查的是哪几个字」的 Yomitan 式扫描高亮。
   ///
@@ -496,8 +505,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     _capturedContext = request.capturedContext;
     _capturedSourceText = request.text;
     _capturedDraft.clear();
-    _pendingAdvancedMining = request.advancedMining;
-    _pendingAdvancedMiningGeneration = -1;
+    // 新的外部查词请求取代之前等着的转交；这次带来的转交在它的查词铸代后才挂上。
+    _advancedMiningGate.revoke();
     if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.idle) {
       _runDesktopLookup(request);
     } else {
@@ -513,77 +522,77 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     unawaited(DesktopLookupService.instance.bringPendingLookupToFront());
     // force——显式查词意图，即便与上次同词也要重查，页面不叠加「同词不重查」去重。
     _search(request.text, autoRead: false, force: true);
-    // 转交来的高级制卡只认这一次查词的结果（_search 已同步铸出它的查词代）。
-    if (_pendingAdvancedMining != null) {
-      _pendingAdvancedMiningGeneration = _searchGeneration;
-    }
+    // 转交来的高级制卡只认这一次查词的结果（_search 已同步铸出它的查词代，铸代时
+    // 撤销的是旧转交，这里才挂上本次的）。
+    _advancedMiningGate.arm(
+      request.advancedMining,
+      generation: _searchGeneration,
+    );
+  }
+
+  /// 铸新查词代。一次新查词 / 清空都意味着之前等着的转交不再属于眼下的结果，
+  /// 当场撤销（HBK-AUDIT-003），不留到下一次渲染或在途回包才发现。
+  int _mintSearchGeneration() {
+    _advancedMiningGate.revoke();
+    return ++_searchGeneration;
   }
 
   /// 结果区 WebView 每画完一次（`popupRendered`）都会来；有转交来的高级制卡在等时，
-  /// 确认画好的是那次请求的结果，再去定位词条、打开对话框。
+  /// 由闸门确认画好的是那次请求的结果，再去定位词条、打开对话框。
   void _onResultRendered() {
-    final AdvancedMiningHandoff? handoff = _pendingAdvancedMining;
-    if (handoff == null) return;
-    if (_advancedMiningLocating) {
-      _advancedMiningRenderedWhileBusy = true;
-      return;
-    }
-    if (_pendingAdvancedMiningGeneration != _searchGeneration) {
-      // 用户已改查别的词（或这次请求没能发出查词）：转交作废。
-      _pendingAdvancedMining = null;
-      return;
-    }
-    final DictionarySearchResult? result = _result;
-    final DictionaryPopupWebViewState? webView = _resultWebViewKey.currentState;
-    if (_isSearching ||
-        result == null ||
-        webView == null ||
-        !webView.hasRenderedResult(result)) {
-      return;
-    }
-    _advancedMiningLocating = true;
-    _advancedMiningRenderedWhileBusy = false;
-    unawaited(_openHandedOffAdvancedMining(handoff, webView));
+    unawaited(_advancedMiningGate.onRendered());
   }
 
-  Future<void> _openHandedOffAdvancedMining(
-    AdvancedMiningHandoff handoff,
-    DictionaryPopupWebViewState webView,
-  ) async {
-    bool retry = false;
-    try {
-      final int index = await webView.entryDomIndexFor(
-        expression: handoff.expression,
-        reading: handoff.reading,
-        matched: handoff.matched,
-      );
-      if (!mounted || !identical(_pendingAdvancedMining, handoff)) return;
-      if (index == kPopupEntryIndexStillRendering) {
-        // 尾批还在画：等它画完那次 popupRendered；往返途中已经来过就立刻再问。
-        retry = _advancedMiningRenderedWhileBusy;
-        return;
-      }
-      _pendingAdvancedMining = null;
-      if (index < 0) {
-        // 主窗结果里没有这个词条（两边词典配置不同步之类）。结果已经摆在眼前，
-        // 用户可以自己点；不猜下标，猜错就是制错卡。
-        ErrorLogService.instance.log(
-          'HomeDictionaryPage.advancedMiningHandoff',
-          'entry not found in the main-window result: $handoff',
-          StackTrace.current,
-        );
-        return;
-      }
-      await advancedMiningOpenerFor(
-        _resultWebViewKey,
-        lookupContext: () => _resultLookupContext,
-        sentenceSection: _capturedSentenceSection,
-      )?.call(index, handoff.matched, handoff.expression, handoff.reading);
-    } finally {
-      _advancedMiningLocating = false;
-      _advancedMiningRenderedWhileBusy = false;
-      if (retry && mounted) _onResultRendered();
+  /// 结果区此刻画好的是当前结果时回它与承载它的 WebView；还在查 / 没画完回 null。
+  AdvancedMiningRenderTarget<
+    DictionarySearchResult,
+    DictionaryPopupWebViewState
+  >?
+  _advancedMiningRenderTarget() {
+    if (!mounted || _isSearching) return null;
+    final DictionarySearchResult? result = _result;
+    final DictionaryPopupWebViewState? webView = _resultWebViewKey.currentState;
+    if (result == null ||
+        webView == null ||
+        !webView.hasRenderedResult(result)) {
+      return null;
     }
+    return (result: result, view: webView);
+  }
+
+  Future<int> _locateHandedOffEntry(
+    AdvancedMiningRenderTarget<
+      DictionarySearchResult,
+      DictionaryPopupWebViewState
+    >
+    target,
+    AdvancedMiningHandoff handoff,
+  ) => target.view.entryDomIndexFor(
+    expression: handoff.expression,
+    reading: handoff.reading,
+    matched: handoff.matched,
+  );
+
+  Future<void> _openHandedOffAdvancedMining(
+    int index,
+    AdvancedMiningHandoff handoff,
+  ) async {
+    if (!mounted) return;
+    await advancedMiningOpenerFor(
+      _resultWebViewKey,
+      lookupContext: () => _resultLookupContext,
+      sentenceSection: _capturedSentenceSection,
+    )?.call(index, handoff.matched, handoff.expression, handoff.reading);
+  }
+
+  /// 主窗结果里没有这个词条（两边词典配置不同步、读音对不上之类）。结果已经摆在
+  /// 眼前，用户可以自己点；不猜下标，猜错就是制错卡。
+  void _onHandedOffEntryNotFound(AdvancedMiningHandoff handoff) {
+    ErrorLogService.instance.log(
+      'HomeDictionaryPage.advancedMiningHandoff',
+      'entry not found in the main-window result: $handoff',
+      StackTrace.current,
+    );
   }
 
   void _onFocusChanged() {
@@ -685,6 +694,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   @override
   void dispose() {
+    _advancedMiningGate.dispose();
     _sourceScrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     widget.focusSignal?.removeListener(_consumeFocusRequest);
@@ -765,7 +775,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   /// 清掉查询串、结果与扫描状态（不碰焦点）。[_clearSearch] 清完把用户送回
   /// 搜索框；Apple 搜索栏的「取消」（[_cancelSearch]）清完交出焦点。
   void _resetQuery() {
-    _searchGeneration++;
+    _mintSearchGeneration();
     _debounceTimer?.cancel();
     _debounceTimer = null;
     _controller.clear();
@@ -1864,7 +1874,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     }
 
     if (mounted) {
-      final int searchGeneration = ++_searchGeneration;
+      final int searchGeneration = _mintSearchGeneration();
       setState(() {
         _isSearching = true;
         if (replaceSourceLookupText) _sourceLookupText = trimmed;

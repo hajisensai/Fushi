@@ -12,6 +12,7 @@ import 'package:fushi/src/media/downloads/download_task_entry.dart'
     show DownloadTaskEntry, DownloadTaskStatus;
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/collections/book_continue.dart';
+import 'package:fushi/src/media/collections/book_read_progress.dart';
 import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
     show filterShelfEntriesByMangaSplit;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -132,6 +133,8 @@ import 'package:fushi/src/utils/misc/dashboard_server_continue_gates.dart'
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart'
     show collectionMemberVolumeNumber;
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show shelfReadFraction;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart'
     show playlistEpisodeCount;
 import 'package:fushi_engine/stats/stat_facts.dart'
@@ -363,6 +366,27 @@ planBookNavPeek<T>({
   );
 }
 
+/// 书 / 漫画速览条目的进度条比例与副行进度文案，与书架卡同一口径
+/// （[shelfReadFraction] / [bookReadProgressLabel]）：标了读完的书满格写「已读完」，
+/// 不按阅读位置写成 0%；百分比与书架一样向下取整。没有进度维度（`duration<=0`）
+/// 且没标读完的条目两项都是 null（不画进度条）。
+({double? fraction, String? label}) bookNavPeekProgress({
+  required bool completed,
+  required int position,
+  required int duration,
+}) {
+  if (!completed && duration <= 0) return (fraction: null, label: null);
+  final double fraction = shelfReadFraction(
+    completed: completed,
+    position: position,
+    duration: duration,
+  );
+  return (
+    fraction: fraction,
+    label: bookReadProgressLabel(fraction, completed: completed),
+  );
+}
+
 Future<NavPeekFeed> _loadBooks({
   required WidgetRef ref,
   required AppModel appModel,
@@ -450,10 +474,14 @@ Future<NavPeekFeed> _loadBooks({
         .getDisplayThumbnailFromMediaItem(appModel: appModel, item: item);
     final bool noCover =
         image is MemoryImage && identical(image.bytes, kTransparentImage);
-    final double? progress = item.duration > 0
-        ? (item.position / item.duration).clamp(0.0, 1.0)
-        : null;
     final String bookKey = keyOf(item);
+    final ({double? fraction, String? label}) readProgress =
+        bookNavPeekProgress(
+          completed: completed.contains(bookKey),
+          position: item.position,
+          duration: item.duration,
+        );
+    final double? progress = readProgress.fraction;
     final _MangaPeekAudio? audioState = audio[bookKey];
     final bool hasAudio = audioState == _MangaPeekAudio.ready;
     return AdaptiveNavPeekEntry(
@@ -475,10 +503,7 @@ Future<NavPeekFeed> _loadBooks({
             )
           : null,
       progress: progress,
-      subtitle: _peekSubtitle(
-        seriesCue,
-        progress == null ? null : '${(progress * 100).round()}%',
-      ),
+      subtitle: _peekSubtitle(seriesCue, readProgress.label),
       onOpen: () => unawaited(
         appModel.openMedia(
           ref: ref,

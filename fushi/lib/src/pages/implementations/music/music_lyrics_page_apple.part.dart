@@ -16,10 +16,13 @@ part of 'music_lyrics_page.dart';
 /// Apple 下歌词区的外观：左对齐大号粗体、当前行停在视口约 1/3 高处，已唱 = label、
 /// 未唱 = label 35%，注音 / 罗马音 / 翻译副行 secondaryLabel；非当前行按与当前行的
 /// 距离递增模糊、递减不透明度（[KaraokeLyricsView] 自己按距离分级，[blur] 跟随
-/// 「非当前行模糊」偏好）。
+/// 「非当前行模糊」偏好）。翻译 / 罗马音 / 注音三条副行的显隐跟 M3E 同一组偏好。
 KaraokeLyricsAppearance musicAppleLyricsAppearance(
   FushiAppleColors apple, {
   required bool blur,
+  bool showTranslation = true,
+  bool showRomanization = true,
+  bool showRuby = true,
 }) => KaraokeLyricsAppearance(
   fontSize: 34,
   fontWeight: FontWeight.w800,
@@ -27,6 +30,9 @@ KaraokeLyricsAppearance musicAppleLyricsAppearance(
   inactiveColor: apple.label.withValues(alpha: 0.35),
   secondaryColor: apple.secondaryLabel,
   blurInactive: blur,
+  showTranslation: showTranslation,
+  showRomanization: showRomanization,
+  showRuby: showRuby,
   anchor: 1 / 3,
   rowSpacing: 38,
   horizontalPadding: 8,

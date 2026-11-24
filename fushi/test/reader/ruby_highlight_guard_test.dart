@@ -131,11 +131,21 @@ void main() {
   // 查词优先、无双重高亮，且不再抹任何字。无头 Chromium 复现+验证；这里守 CSS/JS 结构契约。
   group('BUG-125 查词高亮不抹字 + 与音频重叠不双重高亮', () {
     test('CSS：删掉旧的 <rt>/<rp> 不透明遮罩（会抹基字右缘）', () {
-      expect(
-        styles.contains('ruby.fushi-selection-ruby-active > rt'),
-        isFalse,
-        reason: 'rt 遮罩会抹掉基字右缘，必须删除（BUG-125）',
-      );
+      // 拍板台 -8azTfJh_v 起允许一条只管字色的 rt 规则（查词高亮文字色换了 ruby 的字色时，
+      // 让不在窄条底色上的振假名留原色）；任何给 rt 铺底色的规则仍禁止。
+      const String rtSelector = 'ruby.fushi-selection-ruby-active > rt';
+      for (
+        int i = styles.indexOf(rtSelector);
+        i >= 0;
+        i = styles.indexOf(rtSelector, i + rtSelector.length)
+      ) {
+        final String rule = styles.substring(i, styles.indexOf('}', i));
+        expect(
+          rule.contains('background'),
+          isFalse,
+          reason: 'rt 遮罩会抹掉基字右缘，必须删除（BUG-125）：$rule',
+        );
+      }
       expect(
         styles.contains('ruby.fushi-selection-ruby-active > rp'),
         isFalse,

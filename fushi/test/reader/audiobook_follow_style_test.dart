@@ -10,6 +10,7 @@ import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/node_runtime.dart';
@@ -24,9 +25,12 @@ import '../helpers/node_runtime.dart';
 /// * 连续「整行对齐」（方案 B）：句子不在正文带内时，句首所在行的行框起始边对齐
 ///   正文起始边；整句已在带内时再揭示不滚；开关关掉时仍是旧的 15% 边距跟随。
 void main() {
+  // 用字只取随测试入库的 CJK 子集字体（test/reader/fixtures/eink_cjk_subset.woff2，Noto Sans
+  // JP）里有的字：Linux CI 没有 CJK 字体，回退字形更窄，正文排得更短——分页横排找不到跨页句、
+  // 连续横排滚到文档尽头被钳住，与本机 Windows 的排版不是同一份。
   const String pool =
-      'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわ'
-      '山川空海花雨雪風森林春夏秋冬朝昼夜星月光音色声言葉心夢道町村駅橋窓扉部屋机椅子本紙筆';
+      'あいうえかがきくしじずそただちつてとなにのはまめもらりるれをんキメラ'
+      '中何創包合囲場女姿少尽年彼成抱満狭獣痍立見言身';
 
   /// 互不相同的句子（每句只含会被计数的假名 / 汉字，句末一个「。」）。
   List<String> sentences() {
@@ -42,6 +46,9 @@ void main() {
     return out;
   }
 
+  String dataUri(String path) =>
+      'data:font/woff2;base64,${base64Encode(File(path).readAsBytesSync())}';
+
   Future<String> page({
     required String writingMode,
     required String viewMode,
@@ -53,7 +60,22 @@ void main() {
     await settings.refreshFromDb();
     await settings.setWritingMode(writingMode);
     await settings.setViewMode(viewMode);
-    final String css = ReaderContentStyles.css(settings: settings);
+    // 正文字体钉成上面的子集字体、竖排标点子集换成 data URI（与 BUG-3886 的 harness 同法）：
+    // 字形宽度决定句子在哪换行、跨不跨页，必须与宿主字体无关。harness 断言子集字体已加载。
+    final String css =
+        ReaderContentStyles.css(
+          settings: settings,
+          fontFaces:
+              '@font-face { font-family: "$_fixtureFamily"; '
+              'src: url("${dataUri('test/reader/fixtures/eink_cjk_subset.woff2')}") '
+              'format("woff2"); }',
+          fontFamily: '"$_fixtureFamily"',
+        ).replaceAll(
+          ReaderCustomFontCss.resourceUrl(
+            ReaderVerticalPunctuationFont.urlPath,
+          ),
+          dataUri(ReaderVerticalPunctuationFont.assetKey),
+        );
     final String engine = ReaderPaginationScripts.engineShell(
       vnMode: false,
       continuousMode: viewMode == 'continuous',
@@ -169,3 +191,5 @@ void main() {
     timeout: const Timeout(Duration(seconds: 150)),
   );
 }
+
+const String _fixtureFamily = 'Fushi Follow Fixture CJK';

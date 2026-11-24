@@ -109,8 +109,10 @@ class AiAgentController extends ChangeNotifier
     DateTime Function()? clock,
     AgentLiveSessions? live,
     AiAgentUiHost? host,
+    AgentLimits limits = const AgentLimits(),
   }) : _opContext = opContext,
        _llmFactory = llmFactory,
+       _limits = limits,
        _clock = clock ?? DateTime.now,
        _live = live ?? appAgentLiveSessions,
        host = host ?? AiAgentUiHost() {
@@ -142,12 +144,17 @@ class AiAgentController extends ChangeNotifier
   /// 没人看着的独立会话（AI 管库自动复查，spec
   /// `docs/specs/2026-11-22-ai-library-agent-design.md` §7）：确认卡一律按拒绝、候选卡
   /// 一律按取消收尾（[AiAgentUnattendedHost]），绝不替用户表态，也不会挂住等人。
-  /// 对话照常存档，「AI 操作记录」里能看、能整场撤销。
-  static AiAgentController unattended(OpContext context) => AiAgentController._(
+  /// 对话照常存档，「AI 操作记录」里能看、能整场撤销。没人能按「停止」，[limits]
+  /// 用来给这场对话设 token 上限（[AgentLimits.maxSessionTokens]，BUG-5365）。
+  static AiAgentController unattended(
+    OpContext context, {
+    AgentLimits limits = const AgentLimits(),
+  }) => AiAgentController._(
     database: context.appModel.database,
     settings: context.appModel.prefsRepo,
     opContext: context,
     host: AiAgentUnattendedHost(),
+    limits: limits,
   );
 
   @visibleForTesting
@@ -160,6 +167,7 @@ class AiAgentController extends ChangeNotifier
     DateTime Function()? clock,
     AgentLiveSessions? live,
     McpClientToolbox? mcpToolbox,
+    AgentLimits limits = const AgentLimits(),
   }) =>
       AiAgentController._(
           database: database,
@@ -168,6 +176,7 @@ class AiAgentController extends ChangeNotifier
           llmFactory: llmFactory,
           clock: clock,
           live: live ?? AgentLiveSessions(),
+          limits: limits,
         )
         .._invoker = invoker
         .._mcp = mcpToolbox;
@@ -178,6 +187,9 @@ class AiAgentController extends ChangeNotifier
   final AgentLlm Function(AiProviderConfig provider)? _llmFactory;
   final DateTime Function() _clock;
   final AiAgentUiHost host;
+
+  /// 本控制器新开会话的运行时限额（无人值守的复查设 token 上限）。
+  final AgentLimits _limits;
 
   /// 进程里正打开着的会话（与互联 host 的远端会话共用）：别处开着的不续接。
   final AgentLiveSessions _live;
@@ -344,6 +356,7 @@ class AiAgentController extends ChangeNotifier
       llm: _llm(provider),
       toolbox: _agentToolbox,
       host: host,
+      limits: _limits,
       clock: _clock,
     );
     _attach(session);

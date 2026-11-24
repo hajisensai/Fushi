@@ -364,6 +364,12 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
       result(nil)
     case "isShowing":
       result(isShowing)
+    case "lookupOverlaySelection":
+      // BUG-5310: only the Windows card reports its in-card selection
+      // (overlaySelection), so a lookup hotkey never hands off to this card; the
+      // explicit false tells Dart to dismiss it and capture the foreground
+      // selection as usual.
+      result(false)
     case "suspendForCapture":
       result(suspendForCapture(int64Arg(args, "captureGeneration", 0)))
     case "restoreAfterCapture":

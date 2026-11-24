@@ -137,6 +137,9 @@ part 'apple/apple_srs_tips.part.dart';
 
 /// 行内菜单动作。
 enum _DeckAction {
+  /// 看牌组详情（宽屏 = 选中、手机 = 进详情页）：只在牌组行菜单里出，由
+  /// [_showDeckMenu] 直接交给行的 `onOpen`，不经 `onAction`。
+  details,
   customStudy,
   browse,
   addChild,
@@ -482,6 +485,9 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
 
   void _onDeckAction(SrsDeckSummary deck, _DeckAction action) {
     switch (action) {
+      case _DeckAction.details:
+        // 行菜单「牌组详情」在 [_showDeckMenu] 里直接交给行的 onOpen，到不了这里。
+        break;
       case _DeckAction.customStudy:
         srsRunLogged('SrsDeckList.customStudy', () => _customStudy(deck));
       case _DeckAction.browse:
@@ -1161,10 +1167,10 @@ class _DeckList extends StatefulWidget {
   /// 列表内边距（左右边距同时给「移到顶层」落点用）。
   final EdgeInsets padding;
 
-  /// 点行：宽屏 = 选中，手机 = 进详情页。
+  /// 看详情：宽屏 = 选中，手机 = 进详情页。没活的行点行、行菜单「牌组详情」、点计数区走它。
   final void Function(SrsDeckSummary deck) onOpen;
 
-  /// 行尾播放按钮：直接复习。
+  /// 直接复习：行尾播放按钮；有活的行点行 / Enter 也走它（拍板台 Zb_fKx6zWU 方案 a）。
   final void Function(SrsDeckSummary deck) onReview;
   final void Function(SrsDeckSummary deck, _DeckAction action) onAction;
 
@@ -1453,7 +1459,10 @@ class _DeckListState extends State<_DeckList> {
 /// 计数 chip、圆形 tonal 播放钮，见 srs_deck_tree_band.dart）；null = 分段卡行（墨水屏）。
 /// 本机牌组树与「已配对设备」分区用的都是这一个行组件、同一套外壳判据。
 ///
-/// 点行交给 [onOpen]（宽屏选中、手机进详情页）；右键 / 菜单键 / 窄屏长按弹出牌组菜单。
+/// 点行（键盘 Enter 同）：今天有活 = 直接复习（[onReview]，与行尾播放钮同一入口），没活 =
+/// [onOpen]（宽屏选中、手机进详情页）——用户想开始复习时总点到行本身（拍板台 Zb_fKx6zWU
+/// 方案 a）。看详情：右键 / 菜单键 / Shift+F10 / 窄屏长按弹出的牌组菜单第一项「牌组详情」，
+/// 或点行尾计数区（宽屏触摸的长按是拖动排序，计数区是触摸上看详情的入口）。
 class _DeckRow extends StatelessWidget {
   const _DeckRow({
     required this.deck,
@@ -1764,13 +1773,15 @@ class _DeckRow extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               spacing: compact ? tokens.spacing.gap / 4 : tokens.spacing.gap,
               children: <Widget>[
-                SrsDeckCountChips(
-                  compact: compact,
-                  colors: colors,
-                  newCount: deck.newCount,
-                  learnCount: deck.learnCount,
-                  reviewCount: deck.reviewCount,
-                  reviewPending: deck.rwkvPending,
+                _countsTarget(
+                  SrsDeckCountChips(
+                    compact: compact,
+                    colors: colors,
+                    newCount: deck.newCount,
+                    learnCount: deck.learnCount,
+                    reviewCount: deck.reviewCount,
+                    reviewPending: deck.rwkvPending,
+                  ),
                 ),
                 // 没活时留位不画：各行的计数列照样对齐。
                 Visibility(
@@ -1821,7 +1832,19 @@ class _DeckRow extends StatelessWidget {
     canMoveDown: canMoveDown,
     remote: remote,
     onAction: onAction,
+    // 远程牌组没有详情页（点行 / 详情都是复习）。
+    onDetails: remote ? null : () => onOpen(deck),
   );
+
+  /// 行尾计数区：本机牌组点它看详情（[onOpen]），远程牌组原样不可点。
+  Widget _countsTarget(Widget counts) {
+    if (remote) return counts;
+    return _DeckCountsDetailsTarget(
+      key: ValueKey<String>('srs-counts-details-${deck.deck.id}'),
+      onTap: () => onOpen(deck),
+      child: counts,
+    );
+  }
 
   Widget _buildRow(BuildContext context, {required bool compact}) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -1833,10 +1856,12 @@ class _DeckRow extends StatelessWidget {
     final _LeadingProbe probe = _LeadingProbe();
     // 有子牌组时，从行的最左缘到行首块（缩进 + 箭头 + 徽章）的右缘、整行高度都是
     // 展开 / 收起（用户 2026-10-17：箭头左边的行内留白一点就开始复习，仍太容易误触）。
-    // 按下点落在这片区域就折叠，否则交给 [onOpen]；键盘 Enter 没有按下点，照常 [onOpen]。
+    // 按下点落在这片区域就折叠，否则有活就复习、没活看详情；键盘 Enter 没有按下点，同点行。
     void onRowTap() {
       if (hasChildren && probe.downInLeading()) {
         onSetCollapsed(!collapsed);
+      } else if (_srsDeckHasWork(deck)) {
+        onReview(deck);
       } else {
         onOpen(deck);
       }
@@ -1935,14 +1960,16 @@ class _DeckRow extends StatelessWidget {
                               ? tokens.spacing.gap / 4
                               : tokens.spacing.gap / 2,
                           children: <Widget>[
-                            SrsCountTriple(
-                              dense: compact,
-                              tight: compact,
-                              newCount: deck.newCount,
-                              learnCount: deck.learnCount,
-                              reviewCount: deck.reviewCount,
-                              reviewPending: deck.rwkvPending,
-                              reviewMinutesLeft: deck.reviewMinutesLeft,
+                            _countsTarget(
+                              SrsCountTriple(
+                                dense: compact,
+                                tight: compact,
+                                newCount: deck.newCount,
+                                learnCount: deck.learnCount,
+                                reviewCount: deck.reviewCount,
+                                reviewPending: deck.rwkvPending,
+                                reviewMinutesLeft: deck.reviewMinutesLeft,
+                              ),
                             ),
                             // 没活时留位不画：各行的三色计数列照样对齐。
                             Visibility(
@@ -1962,6 +1989,43 @@ class _DeckRow extends StatelessWidget {
                       ),
                     ),
                   ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 牌组行尾的计数区：点它看牌组详情（[_DeckRow.onOpen]）。有活的行点行是复习，这里是
+/// 触摸上（尤其宽屏，长按是拖动排序）看详情的入口；命中区至少 48 高，悬停给点按指针与
+/// 「牌组详情」提示，读屏报成按钮。
+class _DeckCountsDetailsTarget extends StatelessWidget {
+  const _DeckCountsDetailsTarget({
+    super.key,
+    required this.onTap,
+    required this.child,
+  });
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiTooltip(
+      message: t.srs_deck_details,
+      child: Semantics(
+        button: true,
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: kMinInteractiveDimension,
+              ),
+              child: Align(widthFactor: 1, heightFactor: 1, child: child),
+            ),
           ),
         ),
       ),

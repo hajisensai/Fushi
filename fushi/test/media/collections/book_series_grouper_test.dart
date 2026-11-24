@@ -31,6 +31,61 @@ void main() {
       });
     });
 
+    // BUG-5395：中文（简 / 繁、港台「第N集」）与韩文「N권」卷号单位。
+    test('中文 / 韩文卷号单位：卷 / 冊 / 册 / 集 / 권', () {
+      final Map<String, (String, num)> volumes = <String, (String, num)>{
+        '进击的巨人 第1卷': ('进击的巨人', 1),
+        '進擊的巨人 第2冊': ('進擊的巨人', 2),
+        '一人之下 第3册': ('一人之下', 3),
+        '龍珠 第4集': ('龍珠', 4),
+        '나 혼자만 레벨업 5권': ('나 혼자만 레벨업', 5),
+      };
+      volumes.forEach((String title, (String, num) want) {
+        final BookSeriesKey key = parseBookSeriesKey(title)!;
+        expect(key.seriesTitle, want.$1, reason: title);
+        expect(key.volume, want.$2, reason: title);
+      });
+    });
+
+    // BUG-5400：结尾「上 / 中 / 下」分册以前整个书名当系列名，上下两册散成两张卡。
+    test('分册：上 / 中 / 下（空格、括号、巻 / 卷 / 册）归同一系列，按分册排', () {
+      final Map<String, int> splits = <String, int>{
+        '化物語 上': 1,
+        '化物語（中）': 2,
+        '化物語 <下>': 3,
+        '化物語〈上〉': 1,
+        '化物語 上巻': 1,
+        '化物語下巻': 3,
+        '化物語 上卷': 1,
+        '化物語 下册': 3,
+        '化物語 【中】': 2,
+      };
+      splits.forEach((String title, int split) {
+        final BookSeriesKey key = parseBookSeriesKey(title)!;
+        expect(key.seriesTitle, '化物語', reason: title);
+        expect(key.split, split, reason: title);
+        expect(key.volume, isNull, reason: '分册不折成卷号：$title');
+      });
+      // 分册在卷号外侧：卷号照读，同卷上册排在下册前。
+      final BookSeriesKey v2a = parseBookSeriesKey('物語シリーズ 第2巻 上')!;
+      final BookSeriesKey v2b = parseBookSeriesKey('物語シリーズ 2 下')!;
+      expect((v2a.seriesTitle, v2a.volume, v2a.split), ('物語シリーズ', 2, 1));
+      expect((v2b.seriesTitle, v2b.volume, v2b.split), ('物語シリーズ', 2, 3));
+      expect(compareBookSeriesPosition(v2a, v2b), lessThan(0));
+      expect(
+        compareBookSeriesPosition(
+          parseBookSeriesKey('化物語 下')!,
+          parseBookSeriesKey('化物語 上')!,
+        ),
+        greaterThan(0),
+      );
+      // 反例：以「上」结尾的书名、单字书名不剥。
+      expect(parseBookSeriesKey('本好きの下剋上')!.seriesTitle, '本好きの下剋上');
+      expect(parseBookSeriesKey('本好きの下剋上')!.split, 0);
+      expect(parseBookSeriesKey('上')!.seriesTitle, '上');
+      expect(parseBookSeriesKey('川の上')!.split, 0);
+    });
+
     // rT5chqFYOK：按话发布的漫画「X 第N話 前編 [hash]」每话各占一张卡。
     test('漫画按话：第N話（可带前編 / 中編 / 後編）归到同一系列，话号不当卷号', () {
       final Map<String, BookEpisodeNumber> episodes =
@@ -237,6 +292,17 @@ void main() {
       expect(fullWidth.key, parseBookSeriesKey('Re:ゼロ! 2')!.key);
       expect(parseBookSeriesKey('86')!.volume, isNull);
       expect(parseBookSeriesKey('86─エイティシックス─')!.volume, isNull);
+      // BUG-5399：前面只剩数字时成对破折号那段是书名本身，不当副标题剥掉。
+      final BookSeriesKey eightySix = parseBookSeriesKey('86―エイティシックス― 3')!;
+      expect(eightySix.seriesTitle, '86―エイティシックス―');
+      expect(eightySix.volume, 3);
+      expect(eightySix.key, parseBookSeriesKey('86―エイティシックス―')!.key);
+      expect(parseBookSeriesKey('86─エイティシックス─')!.seriesTitle, '86─エイティシックス─');
+      // 对照：正文有字时照常剥副标题。
+      expect(
+        parseBookSeriesKey('週に一度クラスメイトを買う話 ～ふたりの時間～ 2')!.seriesTitle,
+        '週に一度クラスメイトを買う話',
+      );
       expect(parseBookSeriesKey('3月のライオン')!.volume, isNull);
       expect(parseBookSeriesKey('Catch22')!.volume, isNull);
       expect(

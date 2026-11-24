@@ -64,7 +64,9 @@ String? blurayDiscRootForStreamFilePath(String path) {
     '.ssif' => 4,
     _ => 0,
   };
-  if (up == 0) return null;
+  // 盘根要拿来在本机读盘：只接受宿主平台能切开的路径。另一平台的路径（Linux 上的
+  // `D:\…`）[isDiscStreamFilePath] 认得，但本机 `package:path` 切不开、也读不到。
+  if (up == 0 || parts.length <= up) return null;
   return p.joinAll(parts.sublist(0, parts.length - up));
 }
 

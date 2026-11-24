@@ -576,6 +576,46 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     }
   }
 
+  /// 章级阅读进度（[MangaChapterProgressHost]，拍板 design-ic-manga-chapter-progress）：漫画
+  /// [bookKey] 的全部 `manga_chapter_states`。书不在库 / 不是漫画 → null。
+  @override
+  Future<Map<String, RemoteMangaChapterState>?> readMangaChapterProgress(
+    String bookKey,
+  ) async {
+    final EpubBookRow? row = await _mangaRowOrNull(bookKey);
+    if (row == null) return null;
+    return readMangaChapterStates(_db, row.uid);
+  }
+
+  /// 按章 LWW 合并对端上报的章状态（[landMangaChapterStates]，一个事务内读-比较-写），返回合并后的
+  /// 全部章状态。书不在库 / 不是漫画 → null，不写孤儿行（同书进度 `putBookProgressChecked`）。
+  @override
+  Future<Map<String, RemoteMangaChapterState>?> mergeMangaChapterProgress(
+    String bookKey,
+    Map<String, RemoteMangaChapterState> incoming,
+  ) async {
+    final EpubBookRow? row = await _mangaRowOrNull(bookKey);
+    if (row == null) return null;
+    await landMangaChapterStates(
+      _db,
+      bookUid: row.uid,
+      incoming: incoming,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    return readMangaChapterStates(_db, row.uid);
+  }
+
+  /// [_requireMangaRow] 的「没有就 null」版（uid 为空的行也当没有：章状态按 uid 记）。
+  Future<EpubBookRow?> _mangaRowOrNull(String bookKey) async {
+    if (bookKey.isEmpty) return null;
+    try {
+      final EpubBookRow row = await _requireMangaRow(bookKey);
+      return row.uid.isEmpty ? null : row;
+    } on StateError {
+      return null;
+    }
+  }
+
   /// [bookKey] 对应的漫画行；不存在 / 不是漫画 一律 [StateError] → 404。
   ///
   /// 「有内容」不在这里判：单卷（根 `manga.json`）与章节式（`chapters/`）的判据不同，

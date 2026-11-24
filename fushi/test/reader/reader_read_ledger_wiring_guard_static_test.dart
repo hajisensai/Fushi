@@ -596,9 +596,13 @@ void main() {
       );
       expect(
         '_scheduleReanchorSettleProgressRefresh('.allMatches(masked),
-        hasLength(4),
+        hasLength(6),
         // 2026-10-04：退出歌词覆盖层时把正文 reveal 到当前句，同一个补刷。
-        reason: '定义 + 听书 reveal + B-3 丢弃 + 退出歌词 reveal，共用一个单 Timer',
+        // 2026-11-23（反馈 tUJsiLpL9d）：分页跨页句读到页边翻到后半截、音频退回分界前
+        // 重揭句首页，这两次程序化翻页同样先武装 B-3 窗，落定后排同一个补刷。
+        reason:
+            '定义 + 听书 reveal + B-3 丢弃 + 退出歌词 reveal + 页边翻后半截 + '
+            '退回重揭句首，共用一个单 Timer',
       );
     });
   });

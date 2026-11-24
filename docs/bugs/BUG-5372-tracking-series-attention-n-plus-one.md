@@ -1,0 +1,11 @@
+## BUG-5372 · 追踪页加载时系列合并候选 / 系列待处理卷逐条查库（N+1）
+- **报告**：2026-11-24（来源：#4196 图书追踪系列关联审查遗留）
+- **真实性**：✅ 真 bug（性能）。追踪页每次加载调 `seriesMergeCandidates()`（`fushi/lib/src/media/tracking/page/tracking_page.dart:185`），并对每条系列关联逐条调 `seriesCoverage()`（`tracking_page.dart:186-192`，已关联页与「需要注意」的系列卷行都由它算；`tracking_page_data.dart:284` 只是注释提到与 `seriesVolumesNeedingAttention()` 结果相同，页面并不调后者），都在循环里逐条查库（行号为 ec4b8dd51f）：
+  - `packages/fushi_engine/lib/media/tracking/media_tracking_service.dart:2786-2850` `_seriesMergeCandidates`：每条按卷关联调一次 `bookSeriesCard`（取书 + 合集成员 + 合集，3 次查询），每张卡一次 `findMapping` 找系列关联，每条主关联再 `loadBook` 一次；且逐站点重复整套。
+  - `tracking_page.dart:186-192` 与 `media_tracking_service.dart:2586-2601` `seriesVolumesNeedingAttention`：每条系列关联走一次 `seriesCoverage` → `_seriesCoverage`（`:2519-2572`），每张卡 `collectionBooks`（2 次）+ 忽略表 + 私密快照，每卷再 `loadBookReadState`（读位置）+ `findMapping`（有无单卷关联）。`seriesVolumesNeedingAttention` 只要成员状态（无编号 / 别的系列），状态与阅读进度无关，读进度纯属浪费。
+  - 影响：查询数随「关联数 × 卷数」线性增长，关联多时追踪页每次打开 / 刷新都变慢。
+- **[x] ① 已修复** — 批量查询，查询数不再随关联数增长：
+  - `media_tracking_repository.dart` 新增 `bookSeriesCards()`（全部书的系列卡，3 次查询）、`collectionsBooks(ids)`（多张卡的书按卡序一次取回，`collectionBooks` 改为它的单卡特例）、`loadBooks(keys)`、`bookLinkProviders(keys)`（哪些书在哪个站点有单卷关联）、`loadBookReadStates(books)`（读位置一次取回，`loadBookReadState` 改为单本特例）；`IN` 列表按 500 分块。
+  - `media_tracking_service.dart`：`_seriesCoverage` 改为批量 `_seriesCoverages(cards, {readState})` 的单卡特例，规划逻辑只有一份；`seriesVolumesNeedingAttention` 一次批量规划全部系列关联、`readState: false` 不读进度；新增公开的 `seriesCoverages(mappings)`（全部系列关联一次批量规划、带进度），追踪页改调它，不再逐条 `seriesCoverage`；`seriesMergeCandidates` 全部关联与系列卡各取一次、各站点共用，主关联的书一次批量取回，系列关联从已取的关联里找。`mergeSeriesLinks` 复核时走同一路径。
+- **[x] ② 已加自动化测试** — `fushi/test/media/tracking/book_series_link_test.dart`「the page's series planning takes the same number of queries however many links (BUG-5372)」：用 drift `QueryInterceptor` 数 SELECT，2 组卡与 10 组卡（每组一张可合并卡 + 一张带无编号卷的系列关联卡）跑 `seriesMergeCandidates` / `seriesVolumesNeedingAttention` / `seriesCoverages`（追踪页实际走的路径），断言结果条数正确且查询数相同。
+- **备注**：在线漫画（`sourceMetadata` 带章节表）的阅读进度仍经 app 侧回调逐本取章节状态（`mangaReadProgressOf`），需要进度的路径（发进度 / 追踪面板 / 追踪页已关联页的 `seriesCoverages`）仍按卷调这一回调，本地书不受影响；`seriesVolumesNeedingAttention` 不读进度。

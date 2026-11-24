@@ -7141,6 +7141,9 @@ window.fushiPopupBuildMinePayloadByIndex = async function(idx) {
 // 不保证一致，下标错一位就制错卡。
 // 尾批词条还在分片渲染（_renderInProgress）时 _entryDomIndex 还不全，回 -2，宿主等
 // 下一次 popupRendered（尾批画完必发）再问；找不到回 -1。
+// 覆盖窗那边的词条带了读音时，表记 + 读音必须都对上：同表记异读音（生 なま / 生 せい）
+// 是另一个词条，退到「只认表记」会把预填和制卡都套到错词上（HBK-AUDIT-005）。只有
+// 转交没带读音时才退到只认表记。
 window.fushiPopupEntryDomIndexFor = function(expression, reading, matched) {
     if (window._renderInProgress) return -2;
     const entries = window.lookupEntries;
@@ -7155,8 +7158,8 @@ window.fushiPopupEntryDomIndexFor = function(expression, reading, matched) {
             && (e.matched || '') === wantMatched,
         (e) => e.expression === wantExpression
             && (e.reading || '') === wantReading,
-        (e) => e.expression === wantExpression,
     ];
+    if (!wantReading) tiers.push((e) => e.expression === wantExpression);
     for (const tier of tiers) {
         for (let i = 0; i < entries.length; i++) {
             const dom = domIndex[i];
