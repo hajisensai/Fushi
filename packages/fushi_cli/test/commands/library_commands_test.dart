@@ -79,6 +79,14 @@ void main() {
       final CtlRequestSpec r = _build('organize-reject', <String>['7']);
       expect(r.path, '/api/admin/library/organize/proposals/7/reject');
       expect(
+        _build('organize-defer', <String>['7']).path,
+        '/api/admin/library/organize/proposals/7/defer',
+      );
+      expect(
+        _build('organize-unaccept', <String>['7']).path,
+        '/api/admin/library/organize/proposals/7/undo',
+      );
+      expect(
         () => _build('organize-accept', <String>['0']),
         throwsA(isA<CtlUsageError>()),
       );
@@ -268,6 +276,8 @@ void main() {
         'organize-proposals',
         'organize-accept',
         'organize-reject',
+        'organize-defer',
+        'organize-unaccept',
         'map',
         'apply-changes',
         'curate',
