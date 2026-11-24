@@ -5501,3 +5501,140 @@ testCrossAppAudioPanelGeometryAndProbe()
     process.exitCode = 1;
   },
 );
+
+// ---------------------------------------------------------------------------
+// 反馈 Va3bdT-X0r（BUG-5386 遗留）：gal 查词卡制卡回 `queued` 后，写卡在宿主后台落地。
+// app 外覆盖窗的宿主不能主动推，popup.js 凭回包里的 settleToken 长挂 awaitMineSettled，
+// 写卡落地 / 失败时宿主兑现它：失败撤「已加入」、就地说原因、可重写的按钮进「重试」态。
+// ---------------------------------------------------------------------------
+
+function settlementHarness(context, { retryStatus = 'queued' } = {}) {
+  const state = { mines: 0, awaits: [], retries: [], unseen: 0, settle: null };
+  context.window.allowDupes = false;
+  context.window.i18nMineRetryWrite = 'RETRY_HINT';
+  context.window.flutter_inappwebview.callHandler = (name, args) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'mineEntry') {
+      state.mines++;
+      return Promise.resolve({ ankiConnect: false, noteId: null, queued: true, settleToken: 7 });
+    }
+    if (name === 'awaitMineSettled') {
+      state.awaits.push(args.token);
+      return new Promise((resolve) => { state.settle = resolve; });
+    }
+    if (name === 'retryQueuedMine') {
+      state.retries.push(args.token);
+      return Promise.resolve({ status: retryStatus });
+    }
+    if (name === 'mineFailureUnseen') {
+      state.unseen++;
+      return Promise.resolve(null);
+    }
+    return Promise.resolve(null);
+  };
+  return state;
+}
+
+async function testQueuedSettlementFailureSaidInCardAndRetried() {
+  const context = loadPopup();
+  const state = settlementHarness(context);
+  const { mineButton } = mountedMineButton(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+  assert.equal(mineButton.dataset.queued, '1', 'queued → 「已加入」');
+  assert.deepStrictEqual(state.awaits, [7], 'queued 带令牌 → 立刻长挂 awaitMineSettled');
+  assert.equal(mineButton.disabled, false, '等结局时按钮不锁（反馈 y90oiVojic）');
+
+  state.settle({ settled: 'failed', message: 'ANKI_DOWN', retryable: true });
+  await flush();
+  assert.equal(mineButton.dataset.queued, '', '写卡失败：「已加入」必须撤掉');
+  assert.equal(mineButton.textContent, '+');
+  assert.equal(inlineHintText(context), 'ANKI_DOWN RETRY_HINT', '失败原因 + 重试提示就地说');
+  assert.equal(state.unseen, 0, '就地说了就不交回宿主 toast');
+
+  await mineButton.onclick();
+  await flush();
+  assert.deepStrictEqual(state.retries, [7], '单击 + 重写原卡');
+  assert.equal(state.mines, 1, '重试不得重新制一张（那会重抓此刻的画面）');
+  assert.equal(mineButton.dataset.queued, '1', '重写进行中 → 「已加入」');
+  assert.deepStrictEqual(state.awaits, [7, 7], '重写后继续等同一张单');
+
+  state.settle({ settled: 'landed', noteId: 42 });
+  await flush();
+  assert.equal(mineButton.dataset.queued, '');
+  assert.equal(mineButton.dataset.mined, '1', '落地 → ✓');
+  assert.equal(mineButton.dataset.latest, '1', '带 note id 的落地卡成为最新可改');
+}
+
+async function testQueuedSettlementHostReportedStaysSilent() {
+  const context = loadPopup();
+  const state = settlementHarness(context);
+  const { mineButton } = mountedMineButton(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+  state.settle({ settled: 'failed', hostReported: true, retryable: false });
+  await flush();
+  assert.equal(inlineHintText(context), null, '宿主已 toast（卡当时不在屏上）：不说第二遍');
+  assert.equal(state.unseen, 0);
+  assert.equal(mineButton.dataset.queued, '');
+  await mineButton.onclick();
+  await flush();
+  assert.equal(state.retries.length, 0, '不可重写的失败：+ 按新卡制作');
+  assert.equal(state.mines, 2);
+}
+
+async function testQueuedSettlementDuplicatePaintsCheck() {
+  const context = loadPopup();
+  const state = settlementHarness(context);
+  const { mineButton } = mountedMineButton(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+  state.settle({ settled: 'failed', message: 'DUP', duplicate: true, retryable: false });
+  await flush();
+  assert.equal(mineButton.dataset.mined, '1', '重复卡 = Anki 里确实有，画 ✓');
+  assert.equal(inlineHintText(context), 'DUP');
+}
+
+async function testQueuedSettlementRetryUnavailableFallsBackToMine() {
+  const context = loadPopup();
+  const state = settlementHarness(context, { retryStatus: 'unavailable' });
+  const { mineButton } = mountedMineButton(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+  state.settle({ settled: 'failed', message: 'X', retryable: true });
+  await flush();
+  await mineButton.onclick();
+  await flush();
+  assert.deepStrictEqual(state.retries, [7]);
+  assert.equal(state.mines, 2, '宿主已不记得这张单：落到普通制卡');
+}
+
+async function testQueuedWithoutTokenDoesNotWait() {
+  const context = loadPopup();
+  const state = settlementHarness(context);
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, args) => {
+    if (name === 'mineEntry') return Promise.resolve({ ankiConnect: false, queued: true });
+    return base(name, args);
+  };
+  const { mineButton } = mountedMineButton(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+  assert.equal(mineButton.dataset.queued, '1');
+  assert.equal(state.awaits.length, 0, '没有令牌的宿主（app 内后台制卡）不发 awaitMineSettled');
+}
+
+Promise.all([
+  testQueuedSettlementFailureSaidInCardAndRetried(),
+  testQueuedSettlementHostReportedStaysSilent(),
+  testQueuedSettlementDuplicatePaintsCheck(),
+  testQueuedSettlementRetryUnavailableFallsBackToMine(),
+  testQueuedWithoutTokenDoesNotWait(),
+]).then(() => console.log('queued mine settlement tests passed'))
+  .catch((error) => { console.error(error); process.exitCode = 1; });

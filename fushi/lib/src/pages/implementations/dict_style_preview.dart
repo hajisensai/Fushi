@@ -275,6 +275,8 @@ class _DictStylePreviewState extends State<DictStylePreview> {
 /// 这份名单必须覆盖 popup.html 加载的所有脚本里的 `callHandler('X')`，
 /// 守卫测试：`fushi/test/pages/dict_style_preview_handler_coverage_test.dart`。
 const List<String> kDictStylePreviewNoopHandlers = <String>[
+  // 反馈 Va3bdT-X0r：后台写卡单的结局 / 重试。只有带令牌的 queued 回包才会发；预览不制卡。
+  'awaitMineSettled',
   'clearSentenceDraft',
   // 跨应用语音缓存「调整句子音频」：预览从不注入 __fushiCrossAppAudioHost，不会真发。
   'crossAppAudioAvailable',
@@ -307,6 +309,7 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'queueOverwrite',
   'reportJsError',
   'resolveWordAudio',
+  'retryQueuedMine',
   'setSentenceContext',
   // 复习词状态标记：预览不显示复习状态（回 null = 不渲染标记）、不打开卡片。
   'srsOpenCard',

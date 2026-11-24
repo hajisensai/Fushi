@@ -30,7 +30,7 @@ void main() {
     );
     final int start = body.indexOf('_miningCoordinator.startMineLine(');
     final int queued = body.indexOf(
-      'returnGalHookMiningResult.queuedPopupReply;',
+      '...GalHookMiningResult.queuedPopupReply,QueuedMineSettlements.tokenKey:settleToken,',
     );
     final int awaitFull = body.indexOf('awaitticket.result');
     expect(start, greaterThanOrEqualTo(0));
@@ -55,11 +55,57 @@ void main() {
       ),
     );
     expect(body.contains('recordOverlayMinedStats('), isTrue);
+    expect(
+      body.contains('settlements.land(settleToken'),
+      isTrue,
+      reason: '反馈 Va3bdT-X0r：落地结局要交给还在等的 app 外查词卡',
+    );
+    expect(
+      body.contains('settlements.fail(settleToken'),
+      isTrue,
+      reason: '反馈 Va3bdT-X0r：失败先交给查词卡就地说，主窗 toast 只在 onUnseen 里',
+    );
+    expect(
+      body.contains('()=>settlements.retry(settleToken)'),
+      isTrue,
+      reason: '主窗 toast 的重试与卡上的重试必须经同一个收口，避免一次失败重写两次',
+    );
     expect(body.contains('MinedStateSignal.instance.notifyWord('), isTrue);
     expect(
       body.contains('retryWrite(repo:model.miningAnkiRepository)'),
       isTrue,
       reason: '重试要写进点重试那一刻的制卡仓库（用户可能刚改了设置）',
+    );
+  });
+
+  test('反馈 Va3bdT-X0r：app 外覆盖窗的结局推送通道接通（桥 + native deferred）', () {
+    final String bridge = File(
+      'lib/src/lookup/overlay_bridge_handlers.dart',
+    ).readAsStringSync();
+    expect(bridge.contains("case 'awaitMineSettled':"), isTrue);
+    expect(bridge.contains("case 'retryQueuedMine':"), isTrue);
+    expect(
+      bridge.contains('QueuedMineSettlements.instance.bindOrigin('),
+      isTrue,
+      reason: '转交 queued 回包时要登记发起这张卡的在屏探针',
+    );
+    final String native = File(
+      'windows/runner/global_lookup_window.cpp',
+    ).readAsStringSync();
+    for (final String name in <String>['awaitMineSettled', 'retryQueuedMine']) {
+      expect(
+        native.contains('body.find("\\"$name\\"")'),
+        isTrue,
+        reason: '$name 必须是 native deferred 桥，否则立即被回 null，卡永远等不到结局',
+      );
+    }
+    final String channel = File(
+      'lib/src/lookup/global_lookup_channel.dart',
+    ).readAsStringSync();
+    expect(
+      channel.contains('QueuedMineSettlements.instance.recheckHeld()'),
+      isTrue,
+      reason: 'route 作废（关卡 / 换词）时压着的失败要改走主窗 toast',
     );
   });
 }

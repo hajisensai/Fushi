@@ -17,6 +17,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/anki/queued_mine_settlement.dart';
 import 'package:fushi/src/lookup/overlay_window_channel.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
@@ -61,6 +62,9 @@ abstract final class GlobalLookupChannel {
     if (route.lookupEpoch > previous) {
       _invalidatedLookupHighWater[family] = route.lookupEpoch;
     }
+    // 反馈 Va3bdT-X0r：这张卡关了 / 换了词。压着等它来说的后台写卡失败（卡在屏上时
+    // 先交给卡就地说）改走主窗 toast——route 作废是所有关卡路径的唯一汇合点。
+    QueuedMineSettlements.instance.recheckHeld();
   }
 
   static bool isRouteValid(GlobalLookupRoute route) =>

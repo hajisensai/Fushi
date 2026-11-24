@@ -614,9 +614,14 @@ function parseMineResult(reply) {
             // BUG-3652 续：宿主发现发起制卡的弹窗已不在屏上，已自己 toast 过这次失败
             // （MineFailureNotice.settle）。这里就不能再说第二遍。
             hostReported: reply.hostReported === true,
+            // 反馈 Va3bdT-X0r：`queued` 带来的后台写卡单令牌。有它 = 宿主会在写卡落地 /
+            // 失败时兑现 awaitMineSettled（app 外覆盖窗唯一的「后来怎样了」通道）。
+            settleToken: (typeof reply.settleToken === 'number' && Number.isFinite(reply.settleToken))
+                ? reply.settleToken
+                : null,
         };
     }
-    return { ankiConnect: reply === true, noteId: null, message: '', duplicate: false };
+    return { ankiConnect: reply === true, noteId: null, message: '', duplicate: false, settleToken: null };
 }
 
 // BUG-3652 续：制卡失败的原因**恰好说一次**。
@@ -6404,6 +6409,9 @@ function createEntryHeader(entry, idx) {
     //   word, or re-querying, supersedes it back to an ordinary ✓ (only the most
     //   recent card stays editable). AnkiDroid returns no id → never green ✓⤺.
     let queuedLocally = false;
+    // 反馈 Va3bdT-X0r：后台写卡失败且宿主能用原画面 / 原句音重写时，那张单的令牌。非 null
+    // 时单击「+」走 retryQueuedMine（重写原卡），不重新制一张（那会重抓此刻的画面）。
+    let retryToken = null;
     const hostOwnsQueue = () => typeof window.fushiIsEntryQueued === 'function';
     const isEntryQueued = () => hostOwnsQueue()
         ? window.fushiIsEntryQueued({ expression, reading }) === true
@@ -6411,7 +6419,10 @@ function createEntryHeader(entry, idx) {
     const setMineState = (isMined) => {
         // BUG-3492：Anki 里已经有这张卡 = 后台那次制卡已经落地，本弹窗记的「已加入」
         // 标记就此作废（宿主落地后推来的刷新、点击时的回问都经这里）。
-        if (isMined) queuedLocally = false;
+        if (isMined) {
+            queuedLocally = false;
+            retryToken = null;
+        }
         // 本按钮的制卡态至少有过一次真值（lookup-time 探测，或点按钮后的回问）。
         // 「范围未知」的宿主刷新只重问这类按钮，见 refreshRenderedMineStates。
         mineButton.__fushiMineStateKnown = true;
@@ -6424,7 +6435,9 @@ function createEntryHeader(entry, idx) {
             ? (window.i18nMineQueued || '已加入制卡队列')
             : (isMined
                 ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片')
-                : fushiMineShortcutHint()));
+                : (retryToken !== null
+                    ? (window.i18nMineRetryWrite || '点 + 用原画面和语音重新写入')
+                    : fushiMineShortcutHint())));
         mineButton.classList.toggle('queued', queued);
         // Single source of truth for the button's lookup-time-detected state.
         // The optional second flag is the "latest editable" sub-state; it is only
@@ -6452,6 +6465,46 @@ function createEntryHeader(entry, idx) {
         if (openAnkiButton) {
             openAnkiButton.classList.toggle('open-anki-hidden', !isMined);
         }
+    };
+    // 反馈 Va3bdT-X0r：跟住一张后台写卡单直到它有结局。宿主（app 外覆盖窗）不能主动往
+    // 页面里推，awaitMineSettled 是一颗长挂的桥 promise，写卡落地 / 失败时才兑现：
+    //   landed → 撤「已加入」、按 Anki 真值画 ✓（带 note id 的成为最新可改）；
+    //   failed → 撤「已加入」、就地说原因（游戏全屏时主窗 toast 看不见，这里是唯一说法），
+    //            能重写的按钮进「重试」态，单击用原画面 / 原句音重写；
+    //   unknown（宿主已不记得这张单）→ 不动，点击时照旧回问 Anki。
+    const followQueuedSettlement = async (token) => {
+        let settled = null;
+        try {
+            settled = await window.flutter_inappwebview.callHandler(
+                'awaitMineSettled', { token });
+        } catch (e) {
+            console.error('mine button: awaitMineSettled failed', e);
+            return;
+        }
+        if (!settled || typeof settled !== 'object') return;
+        if (settled.settled === 'landed') {
+            const noteId = settled.noteId;
+            if (typeof noteId === 'number' && Number.isFinite(noteId)) {
+                rememberLatestMined(expression, reading, noteId);
+            }
+            setMineState(true);
+            return;
+        }
+        if (settled.settled !== 'failed') return;
+        queuedLocally = false;
+        retryToken = settled.retryable === true ? token : null;
+        // 重复卡 = Anki 里确实有这张卡（BUG-1908 同一判据），画 ✓；其余回「+」。
+        setMineState(settled.duplicate === true);
+        const reason = (typeof settled.message === 'string' && settled.message)
+            || window.i18nMineFailed || '制卡失败';
+        const retryHint = retryToken !== null
+            ? (window.i18nMineRetryWrite || '点 + 用原画面和语音重新写入')
+            : '';
+        reportMineFailure(mineButton, {
+            message: retryHint ? `${reason} ${retryHint}` : reason,
+            duplicate: settled.duplicate === true,
+            hostReported: settled.hostReported === true,
+        });
     };
     // BUG-932/1895：挂 `inline-action-button` 基类是**有意的**，与上面 TODO-1325
     // 「不再走 SVG 图标」不矛盾：基类只给**布局**（inline-flex 居中 + pointer
@@ -6507,6 +6560,27 @@ function createEntryHeader(entry, idx) {
             mineButton.dataset.mining = '1';
             mineButton.disabled = true;
             try {
+                // 反馈 Va3bdT-X0r：后台写卡失败过、可重写——单击「+」重写原卡（原画面 /
+                // 原句音），不重新制一张。宿主说这张单已不可重写（被逐出）才落到下面的
+                // 普通制卡。
+                if (retryToken !== null && !openChooser) {
+                    const token = retryToken;
+                    retryToken = null;
+                    const reply = await window.flutter_inappwebview.callHandler(
+                        'retryQueuedMine', { token });
+                    const status = reply && typeof reply === 'object' ? reply.status : null;
+                    if (status === 'queued') {
+                        queuedLocally = true;
+                        setMineState(false);
+                        followQueuedSettlement(token);
+                        return;
+                    }
+                    if (status === 'landed') {
+                        setMineState(true);
+                        return;
+                    }
+                    setMineState(false);
+                }
                 // BUG-3492：app 内（在线视频后台制卡）的「已加入」只是本弹窗记下的一个
                 // 标记，卡落地后没有任何东西会把它撤掉——以前这里一律 return，于是同一个
                 // 弹窗里再点 ✓、或从「高级制卡」回点，都永远没反应，只有关掉弹窗重新查词
@@ -6666,6 +6740,7 @@ function createEntryHeader(entry, idx) {
                 if (result.queued) {
                     queuedLocally = true;
                     setMineState(false);
+                    if (result.settleToken !== null) followQueuedSettlement(result.settleToken);
                 } else if (result.cancelled) {
                     // 拍板 EuOLprw_dV：用户自己在框选页放弃了这次制卡——不是失败，不说
                     // 「制卡失败」，也不回查 Anki（TODO-448），按钮放回可点的 '+'。

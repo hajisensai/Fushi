@@ -3484,6 +3484,14 @@ void GlobalLookupWindow::ConfigureWebView() {
                   body.find("\"findMinedMatches\"") != std::string::npos ||
                   body.find("\"openMinedNote\"") != std::string::npos ||
                   body.find("\"openInAnki\"") != std::string::npos ||
+                  // 反馈 Va3bdT-X0r: background card write outcome. popup.js parks
+                  // awaitMineSettled right after a `queued` reply carrying a
+                  // settleToken; Dart resolves it when the write lands or fails
+                  // (the only way to push "this card failed later" into this
+                  // bare WebView2). retryQueuedMine re-writes a failed card from
+                  // the already-captured screenshot/audio and replies its status.
+                  body.find("\"awaitMineSettled\"") != std::string::npos ||
+                  body.find("\"retryQueuedMine\"") != std::string::npos ||
                   // Cross-app audio cache: the "adjust sentence audio" panel is
                   // drawn by popup.js inside THIS card (no foreground steal from
                   // the game); the main Dart engine answers whether this lookup

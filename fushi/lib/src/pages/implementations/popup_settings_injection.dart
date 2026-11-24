@@ -1352,6 +1352,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nMineFailed = ${jsonEncode(t.card_export_failed)};
     // BUG-3492：后台制卡（在线视频）还没落地时再点 ✓ 的就地提示。
     window.i18nMineStillQueued = ${jsonEncode(t.popup_mine_still_queued)};
+    // 反馈 Va3bdT-X0r：后台写卡失败、可用原画面原语音重写时，「+」按钮的提示。
+    window.i18nMineRetryWrite = ${jsonEncode(t.popup_mine_retry_write)};
     // 「＋」按钮的制卡快捷键提示；空串 = 本表面没有键盘制卡派发，不提示。
     window.i18nMineShortcutHint = ${jsonEncode(mineShortcutHint)};
     // BUG-1064：点已制卡 ✓ 的「卡片已在 Anki 中」操作面板归属。

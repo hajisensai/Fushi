@@ -17,6 +17,7 @@ import 'dart:io' show Directory;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/anki/mined_card_tap_policy.dart';
+import 'package:fushi/src/anki/queued_mine_settlement.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_frame.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
@@ -126,6 +127,26 @@ bool maybeHandleOverlayDeferredBridge({
       MineFailureNotice.reportUnseen(
         args is List && args.isNotEmpty ? args.first : null,
       );
+      return true;
+    // 反馈 Va3bdT-X0r：后台写卡单的结局（QueuedMineSettlements）。查词卡拿到带令牌的
+    // `queued` 后长挂这根桥，写卡落地 / 失败时宿主兑现它——app 外覆盖窗宿主不能主动
+    // 往页面里推，这就是「这张卡后来失败了」的推送通道。
+    case 'awaitMineSettled':
+      unawaited(
+        _handleAwaitMineSettledBridge(message, resolveBridge, isOriginOnScreen),
+      );
+      return true;
+    // 失败可重写的卡，查词卡按钮上的「重试」：用原画面与原句音重写，不重抓窗口。
+    case 'retryQueuedMine':
+      final int? retryToken = _settleTokenArg(message);
+      final int? retryId = _bridgeIdOf(message);
+      final String status = retryToken == null
+          ? 'unavailable'
+          : QueuedMineSettlements.instance.retry(retryToken);
+      glog('mine: retryQueuedMine token=$retryToken -> $status');
+      if (retryId != null) {
+        unawaited(resolveBridge(retryId, <String, Object?>{'status': status}));
+      }
       return true;
     case 'duplicateCheck':
       unawaited(_handleDuplicateBridge(model, message, resolveBridge));
@@ -491,10 +512,45 @@ Future<void> _handleMineBridge(
     reply,
     originOnScreen: isOriginOnScreen?.call() ?? true,
   );
+  // 反馈 Va3bdT-X0r：后台写卡单记下发起它的这张卡的探针，结局出来时据此决定由卡就地
+  // 说还是主窗 toast。
+  final Object? settleToken = reply[QueuedMineSettlements.tokenKey];
+  if (settleToken is int) {
+    QueuedMineSettlements.instance.bindOrigin(
+      settleToken,
+      isOriginOnScreen ?? () => true,
+    );
+  }
   if (id != null) {
     glog('mine: mineEntry -> reply=$reply (id=$id)');
     unawaited(resolveBridge(id, reply));
   }
+}
+
+/// popup.js `awaitMineSettled` / `retryQueuedMine` 的令牌参数（`{token}`）。
+int? _settleTokenArg(Map<String, Object?> message) {
+  final Object? token = _firstMapArg(message)['token'];
+  return token is num ? token.toInt() : null;
+}
+
+/// 反馈 Va3bdT-X0r：等一张后台写卡单的结局再兑现查词卡的 `awaitMineSettled`。
+/// 应答走 [OverlayBridgeResolver]（不受 route 作废影响，见 resolveBridge 注释）；卡在
+/// 不在屏上由 [QueuedMineSettlements] 按 [isOriginOnScreen] 判。
+Future<void> _handleAwaitMineSettledBridge(
+  Map<String, Object?> message,
+  OverlayBridgeResolver resolveBridge,
+  MineOriginOnScreen? isOriginOnScreen,
+) async {
+  final int? id = _bridgeIdOf(message);
+  final int? token = _settleTokenArg(message);
+  final Map<String, Object?> settled = token == null
+      ? const <String, Object?>{'settled': 'unknown'}
+      : await QueuedMineSettlements.instance.wait(
+          token,
+          origin: isOriginOnScreen ?? () => true,
+        );
+  glog('mine: awaitMineSettled token=$token -> $settled (id=$id)');
+  if (id != null) unawaited(resolveBridge(id, settled));
 }
 
 /// TODO-1188 follow-up — mines [fields] to Anki through the same

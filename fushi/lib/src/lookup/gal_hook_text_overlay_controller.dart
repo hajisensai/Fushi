@@ -11,6 +11,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/anki/mined_state_signal.dart';
+import 'package:fushi/src/anki/queued_mine_settlement.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
@@ -2980,16 +2981,25 @@ class GalHookTextOverlayController extends ChangeNotifier {
     //
     // 仍然陪等的两种：采样就已失败（结论现成，原因要就地回给弹窗）；覆写既有卡
     // （popup.js 的 updateEntry 路径不认 queued，且卡本来就在，与视频覆写同口径）。
+    //
+    // 反馈 Va3bdT-X0r：`queued` 回包带一张后台写卡单的令牌。查词卡凭它长挂
+    // `awaitMineSettled`，写卡落地 / 失败时就地翻 ✓ 或说原因（失败可点重试）——游戏全屏
+    // 时主窗在后面，主窗 toast 看不见，只有卡已关掉时才退回 toast。
     if (ticket.captured && updateNoteId == null) {
+      final int settleToken = QueuedMineSettlements.instance.open();
       unawaited(
         _landLookupMineInBackground(
           ticket.result,
           model: model,
           fields: fields,
           sentence: mineSentence,
+          settleToken: settleToken,
         ),
       );
-      return GalHookMiningResult.queuedPopupReply;
+      return <String, Object?>{
+        ...GalHookMiningResult.queuedPopupReply,
+        QueuedMineSettlements.tokenKey: settleToken,
+      };
     }
     return _reportLookupMine(
       await ticket.result,
@@ -2999,14 +3009,19 @@ class GalHookTextOverlayController extends ChangeNotifier {
     );
   }
 
-  /// 后台写卡落地：报结果（成功 / 失败 + 重试），成功时补记统计并让正在显示这个词的
-  /// 弹窗重问制卡态。弹窗拿到的是 `queued`，bridge 不会替它记统计（只认
-  /// `ankiConnect: true`），所以统计在这里、落地时记，恰好一次。
+  /// 后台写卡落地：结局先交给发起它的查词卡（[QueuedMineSettlements]），成功时补记
+  /// 统计并让正在显示这个词的应用内弹窗重问制卡态。弹窗拿到的是 `queued`，bridge 不会
+  /// 替它记统计（只认 `ankiConnect: true`），所以统计在这里、落地时记，恰好一次。
+  ///
+  /// 失败（反馈 Va3bdT-X0r）：查词卡还在屏上 → 卡上就地说、按钮进「重试」态，主窗不再
+  /// 弹第二遍；卡已关 / 换了词 → 主窗 toast 带「重试」。两个重试入口经
+  /// [QueuedMineSettlements.retry] 收口，同一次失败只重写一次。
   Future<void> _landLookupMineInBackground(
     Future<GalHookMiningResult> pending, {
     required AppModel model,
     required Map<String, String> fields,
     required String sentence,
+    required int settleToken,
   }) async {
     GalHookMiningResult result;
     try {
@@ -3020,12 +3035,31 @@ class GalHookTextOverlayController extends ChangeNotifier {
       );
       result = GalHookMiningResult(failureReason: '$error');
     }
+    final QueuedMineSettlements settlements = QueuedMineSettlements.instance;
+    if (result.success) {
+      _toastLookupMine(
+        result,
+        repo: model.miningAnkiRepository,
+        fields: fields,
+        updateNoteId: null,
+      );
+      settlements.land(settleToken, noteId: result.outcome?.noteId);
+      unawaited(
+        recordOverlayMinedStats(
+          model,
+          fields,
+          result.outcome?.noteId,
+          sentence,
+        ),
+      );
+      // 卡真正进 Anki 是现在，让还开着的应用内弹窗重问一次。
+      MinedStateSignal.instance.notifyWord(fields['expression'] ?? '');
+      return;
+    }
     final GalHookRetryWrite? retryWrite = result.retryWrite;
-    _reportLookupMine(
-      result,
-      repo: model.miningAnkiRepository,
-      fields: fields,
-      updateNoteId: null,
+    settlements.fail(
+      settleToken,
+      failure: _lookupMineReply(result, updateNoteId: null),
       retry: retryWrite == null
           ? null
           : () {
@@ -3041,21 +3075,70 @@ class GalHookTextOverlayController extends ChangeNotifier {
                   model: model,
                   fields: fields,
                   sentence: sentence,
+                  settleToken: settleToken,
                 ),
               );
             },
+      onUnseen: () => _toastLookupMine(
+        result,
+        repo: model.miningAnkiRepository,
+        fields: fields,
+        updateNoteId: null,
+        retry: retryWrite == null ? null : () => settlements.retry(settleToken),
+      ),
     );
-    if (!result.success) return;
-    unawaited(
-      recordOverlayMinedStats(model, fields, result.outcome?.noteId, sentence),
-    );
-    // 弹窗手里是「已加入」：卡真正进 Anki 是现在，让还开着的应用内弹窗重问一次。
-    MinedStateSignal.instance.notifyWord(fields['expression'] ?? '');
   }
 
-  /// 把一次 gal 查词制卡的结局告诉用户（toast），并返回给弹窗的回包。陪等与后台两条
-  /// 路共用；[retry] 只在后台路径上给（弹窗早已放手，结果卡是唯一的重来入口）。
+  /// 陪等路径（采样失败 / 覆写既有卡）：主窗 toast 结局，并返回给弹窗的回包。
   Map<String, Object?> _reportLookupMine(
+    GalHookMiningResult result, {
+    required BaseAnkiRepository repo,
+    required Map<String, String> fields,
+    required int? updateNoteId,
+  }) {
+    _toastLookupMine(
+      result,
+      repo: repo,
+      fields: fields,
+      updateNoteId: updateNoteId,
+    );
+    // BUG-1908：同一句话也回给浮窗——游戏全屏时主 app 窗在后台，toast 用户看不见。
+    return _lookupMineReply(result, updateNoteId: updateNoteId);
+  }
+
+  /// 一次 gal 查词制卡结局的那句话（失败 / 中止原因；成功为 null）。toast 与弹窗回包
+  /// 共用这一句（BUG-1908：浮窗与主窗说同一句本地化文案）。
+  String? _lookupMineFailureMessage(
+    GalHookMiningResult result, {
+    required int? updateNoteId,
+  }) {
+    if (result.aborted) {
+      // 截图已经成功后，resource-only 音频门禁也可能中止制卡。不要把所有
+      // abort 都误报成“窗口截图失败”；与 texthooker 页入口保持同一分流。
+      return result.audioFallbackDisabled
+          ? t.game_audio_fallback_disabled_missing
+          : result.failureReason != null
+          ? '${t.external_window_capture_failed}：${result.failureReason}'
+          : t.external_window_capture_failed;
+    }
+    final described = describeMineOutcome(
+      result.outcome!,
+      overwrite: updateNoteId != null,
+    );
+    return described.success ? null : described.message;
+  }
+
+  /// 给弹窗的回包：失败时带上与 toast 同一句原因（成功不带，浮窗靠 ➕→✓ 翻转表达）。
+  Map<String, Object?> _lookupMineReply(
+    GalHookMiningResult result, {
+    required int? updateNoteId,
+  }) => result.toPopupReply(
+    message: _lookupMineFailureMessage(result, updateNoteId: updateNoteId),
+  );
+
+  /// 把一次 gal 查词制卡的结局用主窗 toast 告诉用户。[retry] 只在后台路径上给（弹窗
+  /// 早已放手、且发起它的卡已不在屏上时，结果卡是唯一的重来入口）。
+  void _toastLookupMine(
     GalHookMiningResult result, {
     required BaseAnkiRepository repo,
     required Map<String, String> fields,
@@ -3066,23 +3149,14 @@ class GalHookTextOverlayController extends ChangeNotifier {
         ? null
         : MineNoticeAction(label: t.card_notice_retry, onPressed: retry);
     if (result.aborted) {
-      // 截图已经成功后，resource-only 音频门禁也可能中止制卡。不要把所有
-      // abort 都误报成“窗口截图失败”；与 texthooker 页入口保持同一分流。
-      final String abortMessage = result.audioFallbackDisabled
-          ? t.game_audio_fallback_disabled_missing
-          : result.failureReason != null
-          ? '${t.external_window_capture_failed}：${result.failureReason}'
-          : t.external_window_capture_failed;
       FushiToast.showMine(
-        msg: abortMessage,
+        msg: _lookupMineFailureMessage(result, updateNoteId: updateNoteId)!,
         status: MineToastStatus.failed,
         term: fields['expression'],
         reading: fields['reading'],
         action: retryAction,
       );
-      // BUG-1908：同一句话也回给浮窗——游戏全屏时主 app 窗在后台，上面那个 toast
-      // 用户看不见。
-      return result.toPopupReply(message: abortMessage);
+      return;
     }
     final MineOutcome outcome = result.outcome!;
     final described = describeMineOutcome(
@@ -3106,9 +3180,6 @@ class GalHookTextOverlayController extends ChangeNotifier {
               overwrite: updateNoteId != null,
             ),
     );
-    // BUG-1908：失败时把 describeMineOutcome 算出的**同一句**本地化文案回给浮窗。
-    // 成功不带（浮窗靠 ➕→✓ 翻转表达成功，不需要多一条提示）。
-    final String? failureMessage = described.success ? null : described.message;
     if (result.sentenceAudioMissing) {
       // 卡片建成了、只是缺句子音频 = 部分成功。
       FushiToast.show(
@@ -3124,7 +3195,6 @@ class GalHookTextOverlayController extends ChangeNotifier {
         severity: ToastSeverity.warning,
       );
     }
-    return result.toPopupReply(message: failureMessage);
   }
 }
 
