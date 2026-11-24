@@ -49,6 +49,36 @@ Future<void> pushMediaServerPlayer(
   );
 }
 
+/// 分区嵌套 [Navigator] 的根路由：**透明、不读主题转场、零时长**。
+///
+/// 根页是分区本身的内容（与兄弟分区同级），不是「推进来的一页」。此前它也走
+/// [adaptivePageRoute]：主题的页面转场（`FushiBackdropPageTransitionsBuilder`）
+/// 给它垫了第二层 `FushiPageBackdrop`——用户背景图片在分区范围内按分区尺寸重画一遍
+/// （不同裁切 + 自己的缓慢漂移缩放 + 换尺寸后重新烘焙模糊时淡入），遮罩叠两层，
+/// 还按首次挂载时的模块重新发布背景作用域（底色是否透明）。Material 下看到画面
+/// 「缩放闪动」，Apple 下分区整块发白盖住壁纸（反馈 vhFvt3IkHm，BUG-5412）。
+///
+/// 这里换成不经主题的 [PageRouteBuilder]：页面直接叠在外壳那一页已画好的背景上，
+/// 背景作用域沿用外壳页的；无进场过渡（初始路由本就不该有进场动画）。往后推进来的
+/// 网格 / 详情要盖住下面那页，照旧用 [adaptivePageRoute]。
+Route<void> mediaServerNestedRootRoute({
+  required RouteSettings settings,
+  required WidgetBuilder builder,
+}) {
+  return PageRouteBuilder<void>(
+    settings: settings,
+    opaque: false,
+    transitionDuration: Duration.zero,
+    reverseTransitionDuration: Duration.zero,
+    pageBuilder:
+        (
+          BuildContext context,
+          Animation<double> animation,
+          Animation<double> secondaryAnimation,
+        ) => builder(context),
+  );
+}
+
 /// 视频页「媒体服务器」分区：服务器列表 → 服务器首页 → 库网格 / 搜索 / 详情 → 播放。
 ///
 /// 前三层是**分区内**的嵌套 [Navigator]：切到别的分区再切回来栈原样保留（壳把本页
@@ -237,9 +267,11 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
                     child: HeroControllerScope.none(
                       child: Navigator(
                         key: _navigatorKey,
+                        // 根页（服务器列表）是分区本身的内容，不是推进来的一页：
+                        // 透明、无进场过渡（[mediaServerNestedRootRoute]）。往后
+                        // 推的网格 / 详情才用自适应路由（media_server_routes.dart）。
                         onGenerateRoute: (RouteSettings settings) =>
-                            adaptivePageRoute<void>(
-                              context: context,
+                            mediaServerNestedRootRoute(
                               settings: settings,
                               builder: (_) => MediaServerListView(
                                 loadServers: widget.loadServers,
