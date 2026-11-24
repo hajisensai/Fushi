@@ -103,6 +103,56 @@ String aiSrsSanitizeFieldHtml(String raw) {
   return s.length <= kAiSrsFieldMax ? s : s.substring(0, kAiSrsFieldMax);
 }
 
+/// 每个字段交给 AI 的内容上限（字符，整理后）。
+const int kAiSrsFieldSampleMax = 300;
+
+final RegExp _rubyReading = RegExp(
+  r'<(rt|rp)\b[^>]*>[\s\S]*?</\1\s*>',
+  caseSensitive: false,
+);
+final RegExp _clozeMark = RegExp(r'\{\{c\d+::([\s\S]*?)(?:::[\s\S]*?)?\}\}');
+final RegExp _lineBreakTag = RegExp(
+  r'<br\s*/?>|</(p|div|li)\s*>',
+  caseSensitive: false,
+);
+final RegExp _boldTag = RegExp(
+  r'<(/?)(b|strong)\b[^>]*>',
+  caseSensitive: false,
+);
+// 除了已规整成 `<b>` / `</b>` 的加粗，其余标签一律去掉。
+final RegExp _nonBoldTag = RegExp(r'<(?!/?b>)/?[a-zA-Z][^>]*>');
+final RegExp _partialTail = RegExp(r'<[^>]*$');
+
+/// 把字段的 HTML 整理成交给 AI 的内容：只留 `<b>`（字段里标出的目标词，挖空
+/// `{{c1::词}}` 也记成 `<b>词</b>`）与换行，其余标签**原地去掉、不补空格**。
+///
+/// 以前统一走 `aiSrsPlainText`：每个标签换成一个空格。那样 `それに<b>気づいた</b>時` 变成
+/// `それに 気づいた 時`——目标词标记没了（翻译任务要求把它的译文加粗，模型只能猜），日文里
+/// 还平白多出空格；振假名 `<rt>` 的读音也混进正文（`漢字かんじ`）。振假名读音整段丢掉。
+String aiSrsFieldSample(String raw, {int max = kAiSrsFieldSampleMax}) {
+  String s = raw
+      .replaceAll(_dropBlocks, '')
+      .replaceAll(_comment, '')
+      .replaceAll(_rubyReading, '')
+      .replaceAllMapped(_clozeMark, (Match m) => '<b>${m.group(1)}</b>')
+      .replaceAll(_lineBreakTag, '\n')
+      .replaceAllMapped(_boldTag, (Match m) => '<${m.group(1)}b>')
+      .replaceAll(_nonBoldTag, '')
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&amp;', '&')
+      .replaceAll(RegExp(r'[ \t\r\f\v]+'), ' ')
+      .replaceAll(RegExp(r' *\n\s*'), '\n')
+      .trim();
+  if (s.length > max) {
+    s = s.substring(0, max).replaceFirst(_partialTail, '');
+    if ('<b>'.allMatches(s).length > '</b>'.allMatches(s).length) {
+      s = '$s</b>';
+    }
+  }
+  return s;
+}
+
 String _taskLine(AiSrsFieldTask task, String outputLanguage) => switch (task) {
   AiSrsFieldTask.define =>
     'Task: write a concise definition of the headword for this field, in '
@@ -121,6 +171,14 @@ const String kAiSrsFieldSystemPrompt = '''
 You help a language learner edit ONE field of a flashcard note (Anki-compatible).
 You get the note type, every field with its meaning and current content, the
 field to write, and a task. Write only that field's new content.
+
+Field contents are plain text with line breaks. <b>…</b> in them marks the
+target word of the note.
+
+Languages: definitions, translations and explanations are written in the
+output language given in the request. New example sentences, and any text that
+belongs to the language being learned, are written in the language of the
+note's sentence and headword, unless the user instruction says otherwise.
 
 Formatting: plain text or simple inline HTML only: <b>, <i>, <u>, <br>, <ul>,
 <ol>, <li>, <ruby>/<rt>. No attributes, no styles, no scripts, no links.
@@ -149,6 +207,7 @@ String buildAiSrsFieldUserPrompt({
       'Fields: ${jsonEncode(<Map<String, Object?>>[for (final AiSrsFieldBrief f in fields) f.toJson()])}',
     )
     ..writeln('Field to write: ${target?.name ?? targetFieldId}')
+    ..writeln('Output language: $outputLanguage')
     ..writeln(_taskLine(task, outputLanguage));
   if (instruction.trim().isNotEmpty) {
     b.writeln('User instruction: ${instruction.trim()}');
@@ -194,7 +253,7 @@ Future<AiSrsFieldSuggestion> requestAiSrsField({
             for (final SrsFieldDef f in noteType.fields)
               AiSrsFieldBrief.of(
                 f,
-                sample: aiSrsPlainText(valuesById[f.id] ?? '', 300),
+                sample: aiSrsFieldSample(valuesById[f.id] ?? ''),
               ),
           ],
           targetFieldId: targetFieldId,
