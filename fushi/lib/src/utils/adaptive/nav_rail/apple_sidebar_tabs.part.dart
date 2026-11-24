@@ -25,7 +25,6 @@ bool adaptiveAppleTabBarMode(
 /// 贴边侧栏的内容内边距（行离侧栏左右缘 / 上下缘的距离）。
 const double _kAppleSidebarPadding = 10;
 const double _kAppleSidebarHeaderHeight = 44;
-const double _kAppleSidebarSearchHeight = 28;
 const double _kAppleSidebarSectionHeight = 26;
 const double _kAppleSidebarRowGap = 2;
 
@@ -127,13 +126,11 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     initial: widget.tabBar ? 1 : 0,
     spring: _kAppleMorphSpring,
   );
-  final TextEditingController _query = TextEditingController();
   final Set<int> _shutSections = <int>{};
 
   @override
   void initState() {
     super.initState();
-    _query.addListener(() => setState(() {}));
     widget.libraryHost?.addListener(_onLibraryRows);
   }
 
@@ -160,7 +157,6 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   void dispose() {
     widget.libraryHost?.removeListener(_onLibraryRows);
     _t.dispose();
-    _query.dispose();
     super.dispose();
   }
 
@@ -168,35 +164,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   /// Windows / Linux 宽窗放大，Mac 与 iPad 1.0。标签栏形态不随它变。
   double get _k => fushiAppleMacScale(context);
 
-  /// 此刻看得见的库页交来的搜索绑定（侧栏形态 + macOS 档才接）：有它时侧栏顶部
-  /// 搜索框就是该库的搜索框（搜当前库），目的地不再按输入过滤。
-  /// 清空侧栏搜索框：借用库页控制器时走库页自己的清空回调（同时清掉库页的
-  /// 搜索状态），否则清本地目的地过滤词。
-  void _clearSidebarSearch(AppleSidebarLibrarySearch? librarySearch) {
-    if (librarySearch != null) {
-      librarySearch.onClear();
-    } else {
-      _query.clear();
-    }
-  }
-
-  AppleSidebarLibrarySearch? get _librarySearch {
-    final AppleSidebarLibraryHost? host = widget.libraryHost;
-    if (host == null || widget.tabBar || !fushiAppleUsesMacMetrics(context)) {
-      return null;
-    }
-    return host.search;
-  }
-
-  bool _matches(int index) {
-    if (_librarySearch != null) return true;
-    return matchesMediaSearch(
-      query: _query.text,
-      titles: <String>[widget.items[index].label],
-    );
-  }
-
-  /// 侧栏模式下每个目的地行的矩形（shell 坐标）；被折叠 / 过滤掉的行给 null。
+  /// 侧栏模式下每个目的地行的矩形（shell 坐标）；被折叠的行给 null。
   /// 同时返回每个分组标题的纵向位置。
   ({
     Map<int, Rect> rows,
@@ -212,9 +180,9 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     double y =
         topInset +
         _kAppleSidebarPadding +
-        _kAppleSidebarHeaderHeight +
-        _kAppleSidebarSearchHeight * k +
-        8;
+        // 无搜索框：首节标题紧接窗口控件 / 品牌行下方（macOS 27 Finder / Music
+        // 侧栏）。
+        _kAppleSidebarHeaderHeight;
     final Map<int, Rect> rows = <int, Rect>{};
     final List<double> sectionTops = <double>[];
     final List<AppleSidebarLibraryRow> library = _libraryRows;
@@ -230,7 +198,6 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
       }
       if (_shutSections.contains(s)) continue;
       for (final int i in section.indices) {
-        if (!_matches(i)) continue;
         rows[i] = Rect.fromLTWH(left, y, width, rowHeight);
         y += rowHeight + rowGap;
         // 当前模块下展开库页登记的分区行（缩进一级 / 两级）。
@@ -520,8 +487,6 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     const double left = _kAppleSidebarPadding;
     const double width = kGlassNavSidebarWidth - 2 * left;
     final double k = _k;
-    final TextTheme text = Theme.of(context).textTheme;
-    final AppleSidebarLibrarySearch? librarySearch = _librarySearch;
     Widget fade(Widget child) => Opacity(
       opacity: opacity,
       child: IgnorePointer(ignoring: opacity < 1, child: child),
@@ -540,115 +505,6 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
               const Spacer(),
               _toggleButton(apple, toTabBar: true),
             ],
-          ),
-        ),
-      ),
-      Positioned(
-        left: left,
-        top: topInset + _kAppleSidebarPadding + _kAppleSidebarHeaderHeight,
-        width: width,
-        height: _kAppleSidebarSearchHeight * k,
-        child: fade(
-          Focus(
-            // Esc 清空（输入框有焦点时冒泡上来；空了就不吃，让 Esc 继续往外走）。
-            canRequestFocus: false,
-            skipTraversal: true,
-            onKeyEvent: (FocusNode node, KeyEvent event) {
-              if (event is! KeyDownEvent ||
-                  event.logicalKey != LogicalKeyboardKey.escape) {
-                return KeyEventResult.ignored;
-              }
-              final TextEditingController field =
-                  librarySearch?.controller ?? _query;
-              if (field.text.isEmpty) return KeyEventResult.ignored;
-              _clearSidebarSearch(librarySearch);
-              return KeyEventResult.handled;
-            },
-            child: DecoratedBox(
-              // macOS 26 侧栏搜索框：胶囊形 tertiaryFill 井。
-              decoration: BoxDecoration(
-                color: apple.tertiaryFill,
-                borderRadius: BorderRadius.circular(
-                  _kAppleSidebarSearchHeight * k / 2,
-                ),
-              ),
-              child: Row(
-                children: <Widget>[
-                  SizedBox(width: 9 * k),
-                  FushiIcon(
-                    FushiIcons.search,
-                    size: 14 * k,
-                    color: apple.secondaryLabel,
-                  ),
-                  SizedBox(width: 6 * k),
-                  Expanded(
-                    // 胶囊（tertiaryFill 圆角 10 + 放大镜）由侧栏自己画，输入框
-                    // 走设计系统分派但不带装饰（decoration: null 在两套设计系统
-                    // 下都不加壳）；占位符随空值显隐，与原 collapsed 样式一致。
-                    child: Stack(
-                      alignment: AlignmentDirectional.centerStart,
-                      children: <Widget>[
-                        ValueListenableBuilder<TextEditingValue>(
-                          valueListenable: librarySearch?.controller ?? _query,
-                          builder:
-                              (
-                                BuildContext context,
-                                TextEditingValue value,
-                                Widget? hint,
-                              ) =>
-                                  value.text.isEmpty ? hint! : const SizedBox(),
-                          child: IgnorePointer(
-                            child: Text(
-                              librarySearch?.hint ?? t.search,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: text.bodyMedium?.copyWith(
-                                fontSize: _kAppleSidebarFontSize * k,
-                                color: apple.secondaryLabel,
-                              ),
-                            ),
-                          ),
-                        ),
-                        FushiTextFieldControl(
-                          // 库页可见时借用库页自己的搜索控制器（搜当前库）。
-                          key: ValueKey<Object>(
-                            librarySearch?.controller ?? _query,
-                          ),
-                          controller: librarySearch?.controller ?? _query,
-                          onChanged: librarySearch?.onChanged,
-                          style: text.bodyMedium?.copyWith(
-                            fontSize: _kAppleSidebarFontSize * k,
-                            color: apple.label,
-                          ),
-                          decoration: null,
-                        ),
-                      ],
-                    ),
-                  ),
-                  // 清除按钮：有字才出（借用库页控制器时清的是库页搜索词）。
-                  ValueListenableBuilder<TextEditingValue>(
-                    valueListenable: librarySearch?.controller ?? _query,
-                    builder:
-                        (
-                          BuildContext context,
-                          TextEditingValue value,
-                          Widget? _,
-                        ) => value.text.isEmpty
-                        ? SizedBox(width: 9 * k)
-                        : FushiIconButton(
-                            key: const ValueKey<String>(
-                              'apple_sidebar_search_clear',
-                            ),
-                            icon: FushiIcons.cancel,
-                            tooltip: t.clear,
-                            size: 14 * k,
-                            padding: EdgeInsets.symmetric(horizontal: 6 * k),
-                            onTap: () => _clearSidebarSearch(librarySearch),
-                          ),
-                  ),
-                ],
-              ),
-            ),
           ),
         ),
       ),
@@ -787,7 +643,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     required bool iconOnly,
     required bool windowActive,
   }) {
-    // 侧栏里被折叠 / 过滤掉的行：侧栏模式下不画，标签栏模式下从胶囊格位置
+    // 侧栏里被折叠的行：侧栏模式下不画，标签栏模式下从胶囊格位置
     // 原地淡入。
     final Rect start = from ?? to;
     final double visible = from == null ? t.clamp(0.0, 1.0) : 1;

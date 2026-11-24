@@ -9,7 +9,6 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/apple_sidebar_library_host.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show fushiAppleUsesMacMetrics;
-import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart';
@@ -242,11 +241,7 @@ class LibraryFilterChip extends StatelessWidget
 /// [FushiSearchBar]（MD3 填充胶囊、Apple 搜索胶囊），
 /// 高度见 [librarySearchFieldHeight]。有搜索词时尾部出清除钮。搜索词只影响本次
 /// 会话、不落库，由调用方持有 [controller]。
-///
-/// Apple macOS 档宽窗侧栏形态下，库页搜索就是侧栏顶部那一个搜索框（方案 A 第 7
-/// 项，见 [AppleSidebarLibrarySearch]）：本控件把 [controller] 登记给侧栏、自己
-/// 不画（零尺寸），所在 tab 隐藏即撤回。
-class LibrarySearchField extends StatefulWidget {
+class LibrarySearchField extends StatelessWidget {
   const LibrarySearchField({
     required this.fieldKey,
     required this.controller,
@@ -266,63 +261,18 @@ class LibrarySearchField extends StatefulWidget {
   final VoidCallback onClear;
 
   @override
-  State<LibrarySearchField> createState() => _LibrarySearchFieldState();
-}
-
-/// 侧栏顶部搜索框是否承载库页搜索（Apple + 宽窗侧栏形态 + macOS 档）。
-bool librarySearchInSidebar(BuildContext context) =>
-    isGlassDesign(context) &&
-    appleSidebarHostsLibraryChrome(
-      host: AppleSidebarLibraryScope.maybeOf(context),
-      macMetrics: fushiAppleUsesMacMetrics(context),
-    );
-
-class _LibrarySearchFieldState extends State<LibrarySearchField> {
-  AppleSidebarLibraryHost? _host;
-
-  @override
-  void deactivate() {
-    _host?.publishSearch(this, null);
-    super.deactivate();
-  }
-
-  @override
-  void dispose() {
-    _host?.publishSearch(this, null);
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final bool inSidebar = librarySearchInSidebar(context);
-    final AppleSidebarLibraryHost? host = AppleSidebarLibraryScope.peek(
-      context,
-    );
-    if (_host != host) _host?.publishSearch(this, null);
-    _host = host;
-    host?.publishSearch(
-      this,
-      inSidebar && SectionVisibility.of(context)
-          ? AppleSidebarLibrarySearch(
-              controller: widget.controller,
-              hint: widget.hintText,
-              onChanged: widget.onChanged,
-              onClear: widget.onClear,
-            )
-          : null,
-    );
-    if (inSidebar) return const SizedBox.shrink();
     // 共享 M3E 搜索栏（FushiSearchBar）：形态与其它搜索框同一实现（MD3 填充
     // 胶囊 / Apple 搜索胶囊、紧凑清除钮），行为上补齐 IME 组字期间不过滤、
     // Esc 清空。高度仍按库页工具条的行内控件高。
     return SizedBox(
       height: librarySearchFieldHeight(context),
       child: FushiSearchBar(
-        fieldKey: widget.fieldKey,
-        controller: widget.controller,
-        hintText: widget.hintText,
-        onQueryChanged: widget.onChanged,
-        onClear: widget.onClear,
+        fieldKey: fieldKey,
+        controller: controller,
+        hintText: hintText,
+        onQueryChanged: onChanged,
+        onClear: onClear,
       ),
     );
   }
@@ -436,9 +386,6 @@ class LibraryToolbar extends StatelessWidget {
       builder: (BuildContext context, BoxConstraints constraints) {
         final double width = constraints.maxWidth;
         final bool wide = width >= wideBreakpoint;
-        // 搜索在侧栏顶部（Apple macOS 档）：搜索位不再占宽，搜索控件零尺寸挂着
-        // 只为登记绑定。
-        final bool searchInSidebar = librarySearchInSidebar(context);
         final double hPad = FushiDesignTokens.of(context).spacing.page;
         final Widget searchSlot = FocusTraversalOrder(
           order: const NumericFocusOrder(1),
@@ -466,15 +413,12 @@ class LibraryToolbar extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(hPad, 4, hPad, 4),
             child: Row(
               children: <Widget>[
-                if (searchInSidebar)
-                  searchSlot
-                else
-                  SizedBox(width: searchWidth, child: searchSlot),
+                SizedBox(width: searchWidth, child: searchSlot),
                 if (filterSlot != null) ...<Widget>[
-                  if (!searchInSidebar) const SizedBox(width: 12),
+                  const SizedBox(width: 12),
                   Expanded(child: filterSlot),
                 ] else if (wideMiddle != null) ...<Widget>[
-                  if (!searchInSidebar) const SizedBox(width: 12),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: FocusTraversalOrder(
                       order: const NumericFocusOrder(2),
@@ -527,11 +471,7 @@ class LibraryToolbar extends StatelessWidget {
                   padding: EdgeInsets.symmetric(horizontal: hPad),
                   child: Row(
                     children: <Widget>[
-                      if (searchInSidebar) ...<Widget>[
-                        searchSlot,
-                        const Spacer(),
-                      ] else
-                        Expanded(child: searchSlot),
+                      Expanded(child: searchSlot),
                       if (trailingSlot != null) ...<Widget>[
                         const SizedBox(width: _gap),
                         trailingSlot,
@@ -548,7 +488,12 @@ class LibraryToolbar extends StatelessWidget {
           );
         }
         final Widget? filterRow = appleFilterRow;
-        if (filterRow == null || !isGlassDesign(context) || searchInSidebar) {
+        // macOS 档侧栏承载标签（侧栏标签节）时不画 iOS 档筛选行。
+        if (filterRow == null ||
+            !isGlassDesign(context) ||
+            ((AppleSidebarLibraryScope.maybeOf(context)?.sidebarMode ??
+                    false) &&
+                fushiAppleUsesMacMetrics(context))) {
           return FocusTraversalGroup(
             policy: OrderedTraversalPolicy(),
             child: body,

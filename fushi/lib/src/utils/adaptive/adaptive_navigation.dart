@@ -36,7 +36,6 @@ import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
-import 'package:fushi/src/media/media_search_text.dart' show matchesMediaSearch;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -73,11 +72,8 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
         LiquidRoundedSuperellipse,
         SpringBuilder,
         VelocitySpringBuilder;
-import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
     show FushiFilledButton, FushiTextButton, fushiClearGlassSettings;
-import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart'
-    show FushiTextFieldControl;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';

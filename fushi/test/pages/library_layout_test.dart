@@ -817,9 +817,12 @@ void main() {
         find.byKey(const ValueKey<String>('library_tag_settings')),
         findsNothing,
       );
-      // 7 搜索并入侧栏顶部搜索框：内容区搜索框零尺寸，绑定交给侧栏。
-      expect(host.search?.controller, same(search));
-      expect(host.search?.hint, 'Search books');
+      // 7 侧栏不带搜索框（用户 2026-11-24）：库内搜索在内容区自己的搜索框。
+      final Finder pageSearch = find.byKey(
+        const ValueKey<String>('shelf_search_field'),
+      );
+      expect(pageSearch, findsOneWidget);
+      expect(tester.getSize(pageSearch).width, greaterThan(100));
       // 11 macOS 工具栏：缩放滑杆不裸露，「每行数量」钮（命中 ≥36、有 tooltip）
       // 点开才弹出滑杆，Esc 关闭。
       final Finder slider = find.byKey(
@@ -844,31 +847,13 @@ void main() {
     });
   });
 
-  group('侧栏搜索框（macOS 档）', () {
-    testWidgets('借用库页控制器时：清除按钮与 Esc 都走库页的清空', (WidgetTester tester) async {
+  group('侧栏（macOS 档）', () {
+    testWidgets('侧栏不带搜索框，首节标题紧接品牌 / 折叠钮那一行', (WidgetTester tester) async {
       tester.view.physicalSize = const Size(1280, 800);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final AppleSidebarLibraryHost host = AppleSidebarLibraryHost();
       addTearDown(host.dispose);
-      final TextEditingController controller = TextEditingController(
-        text: 'abc',
-      );
-      addTearDown(controller.dispose);
-      int cleared = 0;
-      final Object owner = Object();
-      host.publishSearch(
-        owner,
-        AppleSidebarLibrarySearch(
-          controller: controller,
-          hint: 'Search books',
-          onChanged: (_) {},
-          onClear: () {
-            cleared++;
-            controller.clear();
-          },
-        ),
-      );
       await tester.pumpWidget(
         MaterialApp(
           theme: buildFushiThemeData(
@@ -885,7 +870,7 @@ void main() {
               currentIndex: 0,
               onTap: (_) {},
               sections: const <AppleSidebarSection>[
-                AppleSidebarSection(indices: <int>[0]),
+                AppleSidebarSection(indices: <int>[0], title: 'Library'),
               ],
               footer: const <int>[1],
               tabBar: false,
@@ -897,27 +882,12 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      final Finder clear = find.byKey(
-        const ValueKey<String>('apple_sidebar_search_clear'),
+      expect(find.byType(EditableText), findsNothing);
+      // 节标题顶边 = 顶部内边距 10 + 品牌行 44 之内（不再隔一条搜索框）。
+      expect(
+        tester.getTopLeft(find.text('Library')).dy,
+        lessThan(10 + 44 + 26),
       );
-      expect(clear, findsOneWidget);
-      await tester.tap(clear);
-      await tester.pumpAndSettle();
-      expect(cleared, 1);
-      expect(controller.text, isEmpty);
-      expect(clear, findsNothing, reason: '空了就不出清除按钮');
-
-      // Esc：输入框有焦点、有字时清空；空了不吃 Esc。
-      await tester.tap(find.byType(EditableText));
-      controller.text = 'xyz';
-      await tester.pumpAndSettle();
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
-      expect(cleared, 2);
-      expect(controller.text, isEmpty);
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
-      expect(cleared, 2);
     });
   });
 }
