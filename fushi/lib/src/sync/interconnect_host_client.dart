@@ -18,9 +18,14 @@ export 'package:fushi/src/sync/interconnect_host_channel.dart'
 /// [statusCode] is null when no HTTP response arrived, i.e. the request may or
 /// may not have reached the host.
 class InterconnectHostError implements Exception {
-  const InterconnectHostError(this.message, {this.statusCode});
+  const InterconnectHostError(this.message, {this.statusCode, this.reason});
   final String message;
   final int? statusCode;
+
+  /// The host's optional refinement of [message] (the error body's `reason`,
+  /// see the engine's `VideoRemoteException.reason`); null when the host sent
+  /// none (older hosts, or a failure without one).
+  final String? reason;
 
   /// No candidate address of the selected host produced an HTTP response.
   static const String unreachableCode = 'unreachable';
@@ -164,6 +169,10 @@ class InterconnectHostClient {
           json?['message']?.toString() ??
           'HTTP $status',
       statusCode: status,
+      reason: switch (json?['reason']) {
+        final String reason when reason.isNotEmpty => reason,
+        _ => null,
+      },
     );
   }
 

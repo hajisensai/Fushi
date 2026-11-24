@@ -204,6 +204,31 @@ void main() {
     },
   );
 
+  test(
+    'reported error carries its reason on the snapshot, cleared with it',
+    () async {
+      host.reportError('favorite_source_unavailable', reason: 'peer_offline');
+      Map<String, Object?> state = await host.handle(
+        'snapshot',
+        <String, dynamic>{},
+        'phone',
+      );
+      expect(state['error'], 'favorite_source_unavailable');
+      expect(state['errorReason'], 'peer_offline');
+      await call('command', <String, dynamic>{'action': 'pause'});
+      state = await host.handle('snapshot', <String, dynamic>{}, 'phone');
+      expect(state.containsKey('error'), isFalse);
+      expect(state.containsKey('errorReason'), isFalse);
+
+      // A failure reported without a reason does not inherit an old one.
+      host.reportError('favorite_source_unavailable', reason: 'peer_offline');
+      host.reportError('favorite_subtitle_ambiguous');
+      state = await host.handle('snapshot', <String, dynamic>{}, 'phone');
+      expect(state['error'], 'favorite_subtitle_ambiguous');
+      expect(state.containsKey('errorReason'), isFalse);
+    },
+  );
+
   group('lookupContext (adjust sentence context)', () {
     // Four primary rows around one secondary row: the context must stay on
     // the anchor's own track, in time order.
@@ -857,6 +882,21 @@ void main() {
     ).getAll()).single;
     expect(stored.bookKey, 'book-one');
     expect(stored.originSourceId, 'plex:m1|a1');
+    expect(stored.originLocator, isNull);
+  });
+
+  test('在线视频源：手机收藏同时记下那一集的重开规格（v180）', () async {
+    player.originSourceId = 'anime-source:ext:42';
+    player.originLocator = (String bookUid) => '{"kind":"spec-of-$bookUid"}';
+    await call('favoriteSet', <String, dynamic>{
+      'cueId': 'primary',
+      'favorited': true,
+    });
+    final FavoriteSentence stored = (await FavoriteSentenceRepository(
+      db,
+    ).getAll()).single;
+    expect(stored.originSourceId, 'anime-source:ext:42');
+    expect(stored.originLocator, '{"kind":"spec-of-book-one"}');
   });
 
   test('原盘「全部播放」：手机收藏按句子所在那一集的时间轴落库与匹配（BUG-5356）', () async {
@@ -1016,6 +1056,9 @@ final class _Player {
 
   /// 播放器的远端来源身份（媒体服务器直接串流，BUG-5402）；null = 本机库条目。
   String? originSourceId;
+
+  /// 播放器给出的重开规格（在线视频源，v180）；null = 没有。
+  String? Function(String bookUid)? originLocator;
   int sectionIndex = 0;
   bool playing = true;
   int controlRevision = 0;
@@ -1095,6 +1138,7 @@ final class _Player {
     libraryAnchor: (int startMs) =>
         anchor?.call(startMs) ?? (bookUid: 'book-one', ms: startMs),
     originSourceId: () => originSourceId,
+    originLocator: (String bookUid) => originLocator?.call(bookUid),
     addListener: listeners.add,
     removeListener: listeners.remove,
   );

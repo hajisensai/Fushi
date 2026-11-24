@@ -910,6 +910,35 @@ void main() {
       }
     });
 
+    test('收藏跳回在线源集时，重建客户端挂在同一道门后', () {
+      // 在线源收藏（originSourceId = anime-source:…）经同步出现在任何平台上；收藏夹 /
+      // 手机遥控跳回它时若在门外取扩展 manager，iOS 上就会起在线源宿主。真实来源只在
+      // AppModel 装配一处，门的判据由 live 工厂接 isVideoOnlineSourcesAvailable，
+      // 解析器先问门、门不过不碰 onlineEpisode。
+      final String resolver = compactCode(
+        read('lib/src/media/favorites/favorite_video_origin.dart'),
+      );
+      expect(
+        resolver,
+        contains('onlineSourcesAvailable:isVideoOnlineSourcesAvailable,'),
+      );
+      const String gate =
+          'if(!sources.onlineSourcesAvailable){'
+          'returnconstFavoriteVideoOriginResult.failed('
+          'FavoriteVideoOriginFailure.onlineSourceUnsupported,);}';
+      expect(resolver, contains(gate));
+      expect(
+        resolver.indexOf(gate),
+        lessThan(resolver.indexOf('awaitsources.onlineEpisode(')),
+        reason: '门必须先于重建在线集。',
+      );
+      expect(
+        'animeMihonManager'.allMatches(resolver).length,
+        0,
+        reason: '解析器不自己取 manager，由调用方经 live 工厂的回调给。',
+      );
+    });
+
     test('小说源三段（LNReader，浏览模块）由 onlineNovelSource 门控', () {
       final String gate = compactCode(
         read('lib/src/media/novel/online/novel_online_sources_gate.dart'),

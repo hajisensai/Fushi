@@ -119,6 +119,9 @@ import 'package:fushi/src/media/video/media_server/media_server_route_failover.d
 import 'package:fushi_engine/media/video/media_server/media_server_route_failover.dart'
     show MediaServerStreamInterrupted;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
+import 'package:fushi/src/media/favorites/favorite_video_origin.dart';
+import 'package:fushi/src/sync/remote_library_cache.dart'
+    show remoteLibraryCacheProvider;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
@@ -530,7 +533,7 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart'
-    show VideoRemoteException;
+    show VideoRemoteException, videoRemoteFavoriteSourceUnavailable;
 import 'package:fushi/src/sync/sync_backend.dart'
     show SyncAuthError, SyncPeerUnreachableError;
 import 'package:fushi/src/sync/sync_error_messages.dart'
@@ -4247,6 +4250,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 用到远端客户端的退出收尾（断点落库、停止上报）在途登记，见 [RemoteClientTeardown]。
   final RemoteClientTeardown _remoteTeardown = RemoteClientTeardown();
 
+  /// 手机跳收藏打开的本页没能起播：错误码 `favorite_source_unavailable` 不变（旧版
+  /// 手机只认它），[failure] 作 `errorReason` 细分。
+  void _reportRemoteFavoriteUnavailable(FavoriteVideoOriginFailure failure) {
+    appModel.videoRemoteHost.reportError(
+      videoRemoteFavoriteSourceUnavailable,
+      reason: failure.wireReason,
+    );
+  }
+
   /// 在线视频源（Aniyomi）入库集重开时，同一作品合集里的在线行（连播成员）与起播
   /// 下标（见 `buildAnimeSourceLaunch`）。其它流媒体书恒 null。
   List<RemoteVideoInfo>? _resolvedStreamMembers;
@@ -4820,7 +4832,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _failReason = t.video_load_failed_not_opened;
         });
         if (widget.initialRemoteFavorite != null) {
-          appModel.videoRemoteHost.reportError('favorite_source_unavailable');
+          _reportRemoteFavoriteUnavailable(
+            FavoriteVideoOriginFailure.playbackFailed,
+          );
         }
       },
     );
@@ -4861,7 +4875,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _failReason = t.video_load_failed_not_opened;
         });
         if (widget.initialRemoteFavorite != null) {
-          appModel.videoRemoteHost.reportError('favorite_source_unavailable');
+          _reportRemoteFavoriteUnavailable(
+            FavoriteVideoOriginFailure.playbackFailed,
+          );
         }
       },
     );
@@ -4952,7 +4968,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     } finally {
       if (widget.initialRemoteFavorite != null &&
           (_failed || _missingResource)) {
-        appModel.videoRemoteHost.reportError('favorite_source_unavailable');
+        _reportRemoteFavoriteUnavailable(
+          _missingResource
+              ? FavoriteVideoOriginFailure.localFileMissing
+              : FavoriteVideoOriginFailure.playbackFailed,
+        );
       }
     }
   }
@@ -7397,11 +7417,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           await _openRemoteVideoFavorite(widget.initialRemoteFavorite!);
         } catch (error, stack) {
           // 可预期的失败（歧义 / 字幕缺失 / 来源不可用）带自己的稳定码报回手机。
-          appModel.videoRemoteHost.reportError(
-            error is VideoRemoteException
-                ? error.code
-                : 'favorite_source_unavailable',
-          );
+          if (error is VideoRemoteException) {
+            appModel.videoRemoteHost.reportError(
+              error.code,
+              reason: error.reason,
+            );
+          } else {
+            _reportRemoteFavoriteUnavailable(
+              FavoriteVideoOriginFailure.playbackFailed,
+            );
+          }
           ErrorLogService.instance.log(
             'VideoFushi.remoteFavorite',
             error,

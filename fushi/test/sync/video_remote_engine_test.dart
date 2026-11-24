@@ -252,6 +252,23 @@ void main() {
       );
       expect(failureStatus, 409);
       expect((jsonDecode(failureBody) as Map)['error'], 'stale_session');
+      // 不带 reason 的失败：错误体里没有 reason 键（与旧 host 同形）。
+      expect((jsonDecode(failureBody) as Map).containsKey('reason'), isFalse);
+      // 带 reason：错误码不变（旧手机照旧认得），reason 并排给出。
+      service.failure = const VideoRemoteException(
+        404,
+        videoRemoteFavoriteSourceUnavailable,
+        reason: 'peer_offline',
+      );
+      final (int reasonStatus, String reasonBody) = await send(
+        '/api/video-remote/openFavorite',
+        token: 'paired',
+      );
+      expect(reasonStatus, 404);
+      expect(jsonDecode(reasonBody), <String, Object?>{
+        'error': videoRemoteFavoriteSourceUnavailable,
+        'reason': 'peer_offline',
+      });
       service.failure = null;
       service.crash = StateError('adapter bug');
       final (int crashStatus, String crashBody) = await send(

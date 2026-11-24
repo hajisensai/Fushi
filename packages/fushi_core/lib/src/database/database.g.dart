@@ -15107,6 +15107,17 @@ class $FavoriteSentencesTable extends FavoriteSentences
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _originLocatorMeta = const VerificationMeta(
+    'originLocator',
+  );
+  @override
+  late final GeneratedColumn<String> originLocator = GeneratedColumn<String>(
+    'origin_locator',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -15125,6 +15136,7 @@ class $FavoriteSentencesTable extends FavoriteSentences
     expression,
     reading,
     originSourceId,
+    originLocator,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -15258,6 +15270,15 @@ class $FavoriteSentencesTable extends FavoriteSentences
         ),
       );
     }
+    if (data.containsKey('origin_locator')) {
+      context.handle(
+        _originLocatorMeta,
+        originLocator.isAcceptableOrUnknown(
+          data['origin_locator']!,
+          _originLocatorMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -15331,6 +15352,10 @@ class $FavoriteSentencesTable extends FavoriteSentences
         DriftSqlType.string,
         data['${effectivePrefix}origin_source_id'],
       ),
+      originLocator: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}origin_locator'],
+      ),
     );
   }
 
@@ -15375,6 +15400,13 @@ class FavoriteSentenceRow extends DataClass
   /// 精确找回那一台。NULL = 本机库条目（[bookKey] 本身就是全局身份）或 v179 之前
   /// 的旧收藏。
   final String? originSourceId;
+
+  /// 回到收藏时那个远端条目的**重开规格**（v180）：只靠 [originSourceId] +
+  /// [bookKey] 找不回条目的来源才记——在线视频源（Aniyomi 扩展）的一集要知道是哪部
+  /// 作品（作品 URL / 标题 / 封面）才能重建播放客户端，此时是与入库在线行
+  /// `video_books.stream_spec_json` 同形的 JSON（`AnimeSourceBookSpec`）。媒体服务器 /
+  /// 互联对端 / 云盘按条目 id 就能找回，恒 NULL。NULL 也包括 v180 之前的旧收藏。
+  final String? originLocator;
   const FavoriteSentenceRow({
     required this.id,
     required this.sentence,
@@ -15392,6 +15424,7 @@ class FavoriteSentenceRow extends DataClass
     this.expression,
     this.reading,
     this.originSourceId,
+    this.originLocator,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -15433,6 +15466,9 @@ class FavoriteSentenceRow extends DataClass
     }
     if (!nullToAbsent || originSourceId != null) {
       map['origin_source_id'] = Variable<String>(originSourceId);
+    }
+    if (!nullToAbsent || originLocator != null) {
+      map['origin_locator'] = Variable<String>(originLocator);
     }
     return map;
   }
@@ -15477,6 +15513,9 @@ class FavoriteSentenceRow extends DataClass
       originSourceId: originSourceId == null && nullToAbsent
           ? const Value.absent()
           : Value(originSourceId),
+      originLocator: originLocator == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originLocator),
     );
   }
 
@@ -15502,6 +15541,7 @@ class FavoriteSentenceRow extends DataClass
       expression: serializer.fromJson<String?>(json['expression']),
       reading: serializer.fromJson<String?>(json['reading']),
       originSourceId: serializer.fromJson<String?>(json['originSourceId']),
+      originLocator: serializer.fromJson<String?>(json['originLocator']),
     );
   }
   @override
@@ -15524,6 +15564,7 @@ class FavoriteSentenceRow extends DataClass
       'expression': serializer.toJson<String?>(expression),
       'reading': serializer.toJson<String?>(reading),
       'originSourceId': serializer.toJson<String?>(originSourceId),
+      'originLocator': serializer.toJson<String?>(originLocator),
     };
   }
 
@@ -15544,6 +15585,7 @@ class FavoriteSentenceRow extends DataClass
     Value<String?> expression = const Value.absent(),
     Value<String?> reading = const Value.absent(),
     Value<String?> originSourceId = const Value.absent(),
+    Value<String?> originLocator = const Value.absent(),
   }) => FavoriteSentenceRow(
     id: id ?? this.id,
     sentence: sentence ?? this.sentence,
@@ -15569,6 +15611,9 @@ class FavoriteSentenceRow extends DataClass
     originSourceId: originSourceId.present
         ? originSourceId.value
         : this.originSourceId,
+    originLocator: originLocator.present
+        ? originLocator.value
+        : this.originLocator,
   );
   FavoriteSentenceRow copyWithCompanion(FavoriteSentencesCompanion data) {
     return FavoriteSentenceRow(
@@ -15604,6 +15649,9 @@ class FavoriteSentenceRow extends DataClass
       originSourceId: data.originSourceId.present
           ? data.originSourceId.value
           : this.originSourceId,
+      originLocator: data.originLocator.present
+          ? data.originLocator.value
+          : this.originLocator,
     );
   }
 
@@ -15625,7 +15673,8 @@ class FavoriteSentenceRow extends DataClass
           ..write('dateKey: $dateKey, ')
           ..write('expression: $expression, ')
           ..write('reading: $reading, ')
-          ..write('originSourceId: $originSourceId')
+          ..write('originSourceId: $originSourceId, ')
+          ..write('originLocator: $originLocator')
           ..write(')'))
         .toString();
   }
@@ -15648,6 +15697,7 @@ class FavoriteSentenceRow extends DataClass
     expression,
     reading,
     originSourceId,
+    originLocator,
   );
   @override
   bool operator ==(Object other) =>
@@ -15668,7 +15718,8 @@ class FavoriteSentenceRow extends DataClass
           other.dateKey == this.dateKey &&
           other.expression == this.expression &&
           other.reading == this.reading &&
-          other.originSourceId == this.originSourceId);
+          other.originSourceId == this.originSourceId &&
+          other.originLocator == this.originLocator);
 }
 
 class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
@@ -15688,6 +15739,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
   final Value<String?> expression;
   final Value<String?> reading;
   final Value<String?> originSourceId;
+  final Value<String?> originLocator;
   final Value<int> rowid;
   const FavoriteSentencesCompanion({
     this.id = const Value.absent(),
@@ -15706,6 +15758,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     this.expression = const Value.absent(),
     this.reading = const Value.absent(),
     this.originSourceId = const Value.absent(),
+    this.originLocator = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FavoriteSentencesCompanion.insert({
@@ -15725,6 +15778,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     this.expression = const Value.absent(),
     this.reading = const Value.absent(),
     this.originSourceId = const Value.absent(),
+    this.originLocator = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        sentence = Value(sentence),
@@ -15746,6 +15800,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     Expression<String>? expression,
     Expression<String>? reading,
     Expression<String>? originSourceId,
+    Expression<String>? originLocator,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -15765,6 +15820,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
       if (expression != null) 'expression': expression,
       if (reading != null) 'reading': reading,
       if (originSourceId != null) 'origin_source_id': originSourceId,
+      if (originLocator != null) 'origin_locator': originLocator,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -15786,6 +15842,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     Value<String?>? expression,
     Value<String?>? reading,
     Value<String?>? originSourceId,
+    Value<String?>? originLocator,
     Value<int>? rowid,
   }) {
     return FavoriteSentencesCompanion(
@@ -15805,6 +15862,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
       expression: expression ?? this.expression,
       reading: reading ?? this.reading,
       originSourceId: originSourceId ?? this.originSourceId,
+      originLocator: originLocator ?? this.originLocator,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -15860,6 +15918,9 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     if (originSourceId.present) {
       map['origin_source_id'] = Variable<String>(originSourceId.value);
     }
+    if (originLocator.present) {
+      map['origin_locator'] = Variable<String>(originLocator.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -15885,6 +15946,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
           ..write('expression: $expression, ')
           ..write('reading: $reading, ')
           ..write('originSourceId: $originSourceId, ')
+          ..write('originLocator: $originLocator, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -100717,6 +100779,7 @@ typedef $$FavoriteSentencesTableCreateCompanionBuilder =
       Value<String?> expression,
       Value<String?> reading,
       Value<String?> originSourceId,
+      Value<String?> originLocator,
       Value<int> rowid,
     });
 typedef $$FavoriteSentencesTableUpdateCompanionBuilder =
@@ -100737,6 +100800,7 @@ typedef $$FavoriteSentencesTableUpdateCompanionBuilder =
       Value<String?> expression,
       Value<String?> reading,
       Value<String?> originSourceId,
+      Value<String?> originLocator,
       Value<int> rowid,
     });
 
@@ -100826,6 +100890,11 @@ class $$FavoriteSentencesTableFilterComposer
 
   ColumnFilters<String> get originSourceId => $composableBuilder(
     column: $table.originSourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originLocator => $composableBuilder(
+    column: $table.originLocator,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -100918,6 +100987,11 @@ class $$FavoriteSentencesTableOrderingComposer
     column: $table.originSourceId,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get originLocator => $composableBuilder(
+    column: $table.originLocator,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FavoriteSentencesTableAnnotationComposer
@@ -100992,6 +101066,11 @@ class $$FavoriteSentencesTableAnnotationComposer
     column: $table.originSourceId,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get originLocator => $composableBuilder(
+    column: $table.originLocator,
+    builder: (column) => column,
+  );
 }
 
 class $$FavoriteSentencesTableTableManager
@@ -101050,6 +101129,7 @@ class $$FavoriteSentencesTableTableManager
                 Value<String?> expression = const Value.absent(),
                 Value<String?> reading = const Value.absent(),
                 Value<String?> originSourceId = const Value.absent(),
+                Value<String?> originLocator = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FavoriteSentencesCompanion(
                 id: id,
@@ -101068,6 +101148,7 @@ class $$FavoriteSentencesTableTableManager
                 expression: expression,
                 reading: reading,
                 originSourceId: originSourceId,
+                originLocator: originLocator,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -101088,6 +101169,7 @@ class $$FavoriteSentencesTableTableManager
                 Value<String?> expression = const Value.absent(),
                 Value<String?> reading = const Value.absent(),
                 Value<String?> originSourceId = const Value.absent(),
+                Value<String?> originLocator = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FavoriteSentencesCompanion.insert(
                 id: id,
@@ -101106,6 +101188,7 @@ class $$FavoriteSentencesTableTableManager
                 expression: expression,
                 reading: reading,
                 originSourceId: originSourceId,
+                originLocator: originLocator,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
