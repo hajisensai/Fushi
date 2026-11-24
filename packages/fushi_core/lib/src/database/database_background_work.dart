@@ -223,7 +223,11 @@ final class DatabaseBackgroundWork {
   /// 在一个带取消令牌的 Zone 里跑 [body]，登记到关库要等的集合里。
   ///
   /// 库已开始关闭 → 抛 [DatabaseWorkCancelledException]，[body] 不执行。
-  /// [body] 自己抛的异常原样传给调用方（含取消）。
+  /// [body] 自己抛的异常原样传给调用方（含取消）——**库开始关之后**才抛出的异常除外：
+  /// 那时工作里被中断的网络请求（`RequestAbortedException`）、被杀的子进程留下的读写
+  /// 错误等都是关库造成的，一律归一成 [DatabaseWorkCancelledException]。调用方只认这一
+  /// 种取消就能分清「被换库打断」与「真失败」，不会把中断当失败记下（计划标 failed、
+  /// 探针记「已检查」、批处理当单条失败接着跑）。
   Future<T> run<T>(
     String label,
     Future<T> Function(DatabaseWorkToken token) body,
@@ -232,10 +236,22 @@ final class DatabaseBackgroundWork {
       return Future<T>.error(DatabaseWorkCancelledException(label));
     }
     final DatabaseWorkToken token = DatabaseWorkToken._(this, label);
-    final Future<T> result = runZoned<Future<T>>(
-      () => Future<T>.sync(() => body(token)),
-      zoneValues: <Object?, Object?>{_databaseWorkZoneKey: token},
-    );
+    final Future<T> result =
+        runZoned<Future<T>>(
+          () => Future<T>.sync(() => body(token)),
+          zoneValues: <Object?, Object?>{_databaseWorkZoneKey: token},
+        ).then<T>(
+          (T value) => value,
+          onError: (Object error, StackTrace stack) {
+            if (error is! DatabaseWorkCancelledException && token.isCancelled) {
+              Error.throwWithStackTrace(
+                DatabaseWorkCancelledException(label),
+                stack,
+              );
+            }
+            Error.throwWithStackTrace(error, stack);
+          },
+        );
     final Future<void> settled = result.then<void>(
       (_) {},
       onError: (Object _, StackTrace _) {},

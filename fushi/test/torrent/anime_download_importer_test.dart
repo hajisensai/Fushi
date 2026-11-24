@@ -149,6 +149,32 @@ void main() {
     expect(await run, isA<DatabaseWorkCancelledException>());
   });
 
+  test('海报请求随关库中止被吞掉时，入库仍按取消上报，不当成已入库（计划留待重放补封面）', () async {
+    final FushiDatabase local = FushiDatabase.forTesting(
+      NativeDatabase.memory(),
+    );
+    final Completer<void> posterRequested = Completer<void>();
+    final Future<Object?> run =
+        buildAnimeDownloadImporter(
+              local,
+              // 模拟可中止请求：关库信号一到就以请求中止失败（海报下载是 best-effort，
+              // 入库内部会吞掉这个错误）。
+              httpClient: MockClient((http.Request req) async {
+                posterRequested.complete();
+                await DatabaseWorkToken.current!.cancelled;
+                throw http.ClientException('request aborted', req.url);
+              }),
+              collectionCoversDirectory: tmp,
+            )(_plan(coverUrl: 'https://img.anili.st/poster.jpg'), <String>[
+              p.join('D:', 'dl', '某番剧 - 01.mkv'),
+            ])
+            .then<Object?>((Object? v) => v, onError: (Object e) => e);
+
+    await posterRequested.future;
+    await local.close();
+    expect(await run, isA<DatabaseWorkCancelledException>());
+  });
+
   test('无海报 URL：合集 coverPath 保持空，不误写', () async {
     final AnimeDownloadImportOutcome? outcome = await importer()(
       _plan(),

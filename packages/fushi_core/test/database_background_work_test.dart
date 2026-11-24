@@ -319,4 +319,34 @@ void main() {
     expect(await db.getPref('still'), 'open');
     await db.close();
   });
+
+  test('关库后工作里冒出的非取消异常（被中止的请求等）归一成取消；关库前的异常原样', () async {
+    final FushiDatabase db = _memoryDb();
+    await expectLater(
+      db.runBackgroundWork<void>(
+        'test.realFailure',
+        (DatabaseWorkToken _) async => throw const FormatException('bad'),
+      ),
+      throwsA(isA<FormatException>()),
+    );
+
+    final Completer<void> started = Completer<void>();
+    final Future<void> work = db.runBackgroundWork<void>('test.fetch', (
+      DatabaseWorkToken token,
+    ) async {
+      started.complete();
+      // 模拟可中止请求：关库信号一到就抛请求被中止（不是 DatabaseWorkCancelledException）。
+      await token.cancelled;
+      throw const HttpException('request aborted');
+    });
+    final Future<Object?> outcome = work.then<Object?>(
+      (_) => null,
+      onError: (Object e) => e,
+    );
+    await started.future;
+    await db.close();
+    final Object? error = await outcome;
+    expect(error, isA<DatabaseWorkCancelledException>());
+    expect((error! as DatabaseWorkCancelledException).label, 'test.fetch');
+  });
 }

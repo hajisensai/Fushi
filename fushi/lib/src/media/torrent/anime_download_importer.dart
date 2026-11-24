@@ -73,7 +73,8 @@ buildAnimeDownloadImporter(
   return (AnimeDownloadPlan plan, List<String> videoAbsolutePaths) =>
       db.runBackgroundWork<AnimeDownloadImportOutcome?>(
         'torrent.animeImport',
-        (DatabaseWorkToken _) => _importAnimeDownload(
+        (DatabaseWorkToken work) => _importAnimeDownload(
+          work,
           db,
           repo,
           plan,
@@ -85,6 +86,7 @@ buildAnimeDownloadImporter(
 }
 
 Future<AnimeDownloadImportOutcome?> _importAnimeDownload(
+  DatabaseWorkToken work,
   FushiDatabase db,
   VideoBookRepository repo,
   AnimeDownloadPlan plan,
@@ -209,5 +211,9 @@ Future<AnimeDownloadImportOutcome?> _importAnimeDownload(
     }
   }
 
+  // 海报下载 / 首集抽帧是 best-effort，被关库中断时（请求被中止、子进程被杀）在上面
+  // 静默跳过——但那是「没做完」不是「做完了」：库已开始关就按取消上报，计划保持
+  // importInProgress，下次启动幂等重放把封面补上，而不是带着缺封面的合集记成已入库。
+  work.throwIfCancelled();
   return AnimeDownloadImportOutcome(collectionId: result.collectionId);
 }
