@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -164,7 +165,16 @@ class FushiPlaceholderMessage extends StatelessWidget {
                     opacity: fade,
                     child: Transform.translate(
                       offset: Offset(0, 8 * (1 - fade)),
-                      child: text,
+                      child: FushiBackdropFrost(
+                        outset: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        borderRadius: const BorderRadius.all(
+                          Radius.circular(20),
+                        ),
+                        child: text,
+                      ),
                     ),
                   ),
                 ],
@@ -187,36 +197,41 @@ class FushiPlaceholderMessage extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 360),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FushiIcon(icon, size: iconSize ?? 48, color: foreground),
-              const SizedBox(height: 14),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style:
-                    messageStyle ??
-                    tt.titleMedium?.copyWith(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      color: color ?? apple.label,
-                    ),
-              ),
-              for (final String line in _detailLines) ...[
-                const SizedBox(height: 6),
+          // 自定义背景图上整块垫毛玻璃底（iOS 空状态本身无底色）。
+          child: FushiBackdropFrost(
+            outset: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            borderRadius: const BorderRadius.all(Radius.circular(20)),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FushiIcon(icon, size: iconSize ?? 48, color: foreground),
+                const SizedBox(height: 14),
                 Text(
-                  line,
+                  message,
                   textAlign: TextAlign.center,
-                  maxLines: detailMaxLines,
-                  overflow: detailMaxLines == null
-                      ? null
-                      : TextOverflow.ellipsis,
-                  style: tt.bodyMedium?.copyWith(color: apple.secondaryLabel),
+                  style:
+                      messageStyle ??
+                      tt.titleMedium?.copyWith(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: color ?? apple.label,
+                      ),
                 ),
+                for (final String line in _detailLines) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    line,
+                    textAlign: TextAlign.center,
+                    maxLines: detailMaxLines,
+                    overflow: detailMaxLines == null
+                        ? null
+                        : TextOverflow.ellipsis,
+                    style: tt.bodyMedium?.copyWith(color: apple.secondaryLabel),
+                  ),
+                ],
+                if (action != null) ...[const SizedBox(height: 18), action!],
               ],
-              if (action != null) ...[const SizedBox(height: 18), action!],
-            ],
+            ),
           ),
         ),
       ),

@@ -4,6 +4,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiHeaderCrampScope;
@@ -1317,10 +1318,19 @@ class FushiMastheadBadge extends StatelessWidget {
   }
 }
 
+/// 自定义背景图下页头底板的进度下限：未滚动时就是一层 ~54% 页面底色 + sigma ~11
+/// 的毛玻璃。
+const double kFushiMastheadImageProgressFloor = 0.6;
+
 /// 页头底板（设计稿 `.cap-B .mast`）：内容滚到页头下面时，页面底色按进度
 /// 铺到 90% 不透明 + 背后高斯模糊（sigma 按进度到 18），裁在底板矩形内；未
 /// 滚动（p = 0）时不画底、不开模糊。系统「降低透明度」/「增强对比度」下不
 /// 开模糊，退成不透明底色（按进度淡入）。
+///
+/// 页底是用户的**自定义背景图**时（[FushiPageBackdrop.imageOf]），未滚动也常驻
+/// 一层毛玻璃（进度下限 [kFushiMastheadImageProgressFloor]）：页名大字、一级切换
+/// 直接压在图上看不清（2026-11-24 用户：「自定义了背景，文字后面没有描边或毛玻璃」）。
+/// 滚动后照旧加浓到 90%。
 class FushiMastheadPanel extends StatelessWidget {
   const FushiMastheadPanel({
     required this.height,
@@ -1343,6 +1353,10 @@ class FushiMastheadPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final double progress =
+        FushiPageBackdrop.imageOf(context) && !isEinkTheme(context)
+        ? math.max(this.progress, kFushiMastheadImageProgressFloor)
+        : this.progress;
     if (progress <= 0 || height <= 0) return const SizedBox.shrink();
     if (!backdropBlur) {
       return SizedBox(
