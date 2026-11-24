@@ -27,6 +27,7 @@ import 'package:fushi_engine/models/content_language.dart'
     show resolveContentLanguage;
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
+import 'package:fushi/src/lookup/overlay_queued_mines.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
@@ -2981,9 +2982,18 @@ class GalHookTextOverlayController extends ChangeNotifier {
     // 仍然陪等的两种：采样就已失败（结论现成，原因要就地回给弹窗）；覆写既有卡
     // （popup.js 的 updateEntry 路径不认 queued，且卡本来就在，与视频覆写同口径）。
     if (ticket.captured && updateNoteId == null) {
+      // review-gal-overlay-mine-fail：记下这张卡由哪条查词路由（哪个覆盖窗）发起，结局
+      // 落地时推回那里——弹窗撤掉「已加入」、就地说原因（全屏游戏里看不到主窗 toast，
+      // BUG-1908）；同一弹窗再点 ✓ 的 queueOverwrite 也照这本台账如实回答。
+      final QueuedMineTicket queued = OverlayQueuedMines.begin(
+        expression: fields['expression'] ?? '',
+        reading: fields['reading'] ?? '',
+        route: GlobalLookupChannel.currentRoute,
+      );
       unawaited(
         _landLookupMineInBackground(
           ticket.result,
+          queued: queued,
           model: model,
           fields: fields,
           sentence: mineSentence,
@@ -2999,11 +3009,13 @@ class GalHookTextOverlayController extends ChangeNotifier {
     );
   }
 
-  /// 后台写卡落地：报结果（成功 / 失败 + 重试），成功时补记统计并让正在显示这个词的
-  /// 弹窗重问制卡态。弹窗拿到的是 `queued`，bridge 不会替它记统计（只认
+  /// 后台写卡落地：报结果（主窗 toast：成功 / 失败 + 重试；同时把结局推回发起它的
+  /// 覆盖窗 [queued]，弹窗就地翻面 / 说原因），成功时补记统计并让正在显示这个词的
+  /// 应用内弹窗重问制卡态。弹窗拿到的是 `queued`，bridge 不会替它记统计（只认
   /// `ankiConnect: true`），所以统计在这里、落地时记，恰好一次。
   Future<void> _landLookupMineInBackground(
     Future<GalHookMiningResult> pending, {
+    required QueuedMineTicket queued,
     required AppModel model,
     required Map<String, String> fields,
     required String sentence,
@@ -3021,7 +3033,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       result = GalHookMiningResult(failureReason: '$error');
     }
     final GalHookRetryWrite? retryWrite = result.retryWrite;
-    _reportLookupMine(
+    final Map<String, Object?> reply = _reportLookupMine(
       result,
       repo: model.miningAnkiRepository,
       fields: fields,
@@ -3038,6 +3050,12 @@ class GalHookTextOverlayController extends ChangeNotifier {
               unawaited(
                 _landLookupMineInBackground(
                   retryWrite(repo: model.miningAnkiRepository),
+                  // 重试的结局同样推回原来那个覆盖窗（卡还开着就跟着翻成 ✓）。
+                  queued: OverlayQueuedMines.begin(
+                    expression: queued.expression,
+                    reading: queued.reading,
+                    route: queued.route,
+                  ),
                   model: model,
                   fields: fields,
                   sentence: sentence,
@@ -3045,6 +3063,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
               );
             },
     );
+    // 主窗 toast 在游戏全屏时看不见：同一个结局（含失败原因）推回发起它的查词卡。
+    unawaited(OverlayQueuedMines.settle(queued, reply));
     if (!result.success) return;
     unawaited(
       recordOverlayMinedStats(model, fields, result.outcome?.noteId, sentence),

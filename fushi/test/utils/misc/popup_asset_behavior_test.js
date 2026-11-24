@@ -4002,6 +4002,116 @@ Promise.all([
   testHostRefreshAfterBackgroundLandingClearsAppQueuedMark(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
+// review-gal-overlay-mine-fail：gal 查词制卡采样完就回 queued（按钮「已加入」），写卡在
+// 宿主后台完成。结局以前只走主窗 toast——游戏全屏时看不见（回退 BUG-1908），「已加入」
+// 也永远撤不掉。宿主现在落地时推 window.fushiSettleQueuedMine(settlement)。
+// mountMineHeaderFor 把按钮挂在 window.__fushiRoot（shadow-root 车道）下，提示也画在那里。
+function mountedHintText(context) {
+  const root = context.window.__fushiRoot;
+  const hint = (root && root.querySelector('.inline-hint')) ||
+    context.document.querySelector('.inline-hint');
+  return hint ? (hint.textContent || '') : null;
+}
+
+async function testHostSettledFailureClearsQueuedMarkInPlace() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '離陸');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1');
+  const probesBefore = state.mines;
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離陸',
+    reading: '',
+    outcome: 'failed',
+    message: 'ANKI_DOWN',
+  });
+  await flush();
+  assert.equal(claimed, 1, '排过队的那颗按钮认领结局');
+  assert.equal(mountedHintText(context), 'ANKI_DOWN', '失败原因必须在查词卡上就地说');
+  assert.equal(button.dataset.queued, '', '「已加入」必须撤掉');
+  assert.equal(button.textContent, '+', '写卡失败：回可点的 +');
+  assert.equal(state.mines, probesBefore);
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 2, '失败后再点按新卡制作，不再走排队');
+  assert.equal(state.queueCalls.length, 0);
+}
+
+async function testHostSettledLandingPaintsLatestEditableCheck() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '離脱');
+  await flush();
+  await button.onclick();
+  await flush();
+  state.inAnki = true;
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離脱',
+    reading: '',
+    outcome: 'landed',
+    noteId: 42,
+  });
+  await flush();
+  assert.equal(claimed, 1);
+  assert.equal(button.dataset.queued, '', '落地：「已加入」撤掉');
+  assert.equal(button.dataset.mined, '1', '落地：重问 Anki 后画 ✓');
+  assert.equal(button.dataset.latest, '1', '带回真 note id 的卡是「最新可改」✓↩');
+  assert.equal(mountedHintText(context), null, '成功不说话');
+}
+
+async function testHostSettledDuplicatePaintsCheckWithoutProbe() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  let probes = 0;
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') probes++;
+    return base(name, payload);
+  };
+  const button = mountMineHeaderFor(context, '離農');
+  await flush();
+  await button.onclick();
+  await flush();
+  const before = probes;
+  await context.window.fushiSettleQueuedMine({
+    expression: '離農',
+    outcome: 'duplicate',
+    message: 'DUP',
+  });
+  await flush();
+  assert.equal(probes, before, '失败 / 重复按宿主给的事实画，不回查（TODO-448）');
+  assert.equal(button.dataset.mined, '1', '重复 = 卡确实在 Anki 里');
+  assert.equal(mountedHintText(context), 'DUP');
+  assert.equal(state.mines, 1);
+}
+
+async function testHostSettledFailureIgnoresButtonsThatDidNotQueue() {
+  const context = loadPopup();
+  appQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '離任');
+  await flush();
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離任',
+    outcome: 'failed',
+    message: 'NOT_MINE',
+  });
+  await flush();
+  assert.equal(claimed, 0, '没排过队的按钮不认领');
+  assert.equal(mountedHintText(context), null, '不在没排队的按钮旁说别人的失败');
+  assert.equal(button.textContent, '+');
+  assert.equal(await context.window.fushiSettleQueuedMine({ outcome: 'failed' }), 0);
+}
+
+Promise.all([
+  testHostSettledFailureClearsQueuedMarkInPlace(),
+  testHostSettledLandingPaintsLatestEditableCheck(),
+  testHostSettledDuplicatePaintsCheckWithoutProbe(),
+  testHostSettledFailureIgnoresButtonsThatDidNotQueue(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
 // 宿主主动刷新已渲染的「已制卡 ✓ / 可制卡 +」（window.fushiRefreshMineStates）。
 //
 // 为什么需要这条入口：查词时探测出的 ✓ 画完就不再动。AnkiMobile 后端上「卡真的进库

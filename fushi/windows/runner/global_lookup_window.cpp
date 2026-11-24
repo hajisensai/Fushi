@@ -3481,6 +3481,14 @@ void GlobalLookupWindow::ConfigureWebView() {
                   body.find("\"duplicateCheck\"") != std::string::npos ||
                   body.find("\"overwriteTargetNoteId\"") != std::string::npos ||
                   body.find("\"updateEntry\"") != std::string::npos ||
+                  // review-gal-overlay-mine-fail: popup.js asks queueOverwrite
+                  // when the user clicks a "queued" (written-in-background) ✓
+                  // again. An immediate null here read as "host refused, still
+                  // writing" forever -- even after that background write had
+                  // already FAILED, so the same card kept saying "still
+                  // writing". Dart answers from the background-mine ledger
+                  // (pending / landed / failed + reason).
+                  body.find("\"queueOverwrite\"") != std::string::npos ||
                   body.find("\"findMinedMatches\"") != std::string::npos ||
                   body.find("\"openMinedNote\"") != std::string::npos ||
                   body.find("\"openInAnki\"") != std::string::npos ||
@@ -3601,6 +3609,26 @@ void GlobalLookupWindow::DispatchGamepadAction(const std::string& action,
       L"window.__globalLookupHost && "
       L"window.__globalLookupHost.gamepadAction('" + action_w + L"', " +
       std::to_wstring(dy) + L");";
+  webview_->ExecuteScript(script.c_str(), nullptr);
+}
+
+void GlobalLookupWindow::SettleQueuedMine(const std::string& json_literal) {
+  if (recovering_ || !webview_ready_ || !webview_) {
+    // The card page (and every "queued" mark it held) is gone or not built
+    // yet: nothing to settle. Dart already toasted the outcome in the main
+    // window, so dropping this is lossless.
+    return;
+  }
+  // |json_literal| is a JS string literal (Dart double-encodes the settlement,
+  // same as ResolveBridge); the host JSON.parses it. Never splice raw objects.
+  if (json_literal.empty() || json_literal.front() != '"' ||
+      json_literal.back() != '"') {
+    return;
+  }
+  const std::wstring script =
+      L"window.__globalLookupHost && "
+      L"window.__globalLookupHost.settleQueuedMine(" +
+      Utf8ToWide(json_literal) + L");";
   webview_->ExecuteScript(script.c_str(), nullptr);
 }
 

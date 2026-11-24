@@ -3720,4 +3720,40 @@ function flushTimers() {
     hostPostLog.filter((m) => m.handler === 'textSelected').length, 0);
 }
 
+// review-gal-overlay-mine-fail: native SettleQueuedMine pushes a background
+// card write's outcome. The host must forward it into EVERY card frame (the
+// button that queued the card may sit in the root card under a nested child),
+// parse the double-encoded JSON text, and never throw on garbage.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 200, top: 30, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const shells = shellsOf(document);
+  const received = [];
+  for (const shell of shells) {
+    const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+    const id = shell.getAttribute('data-frame-id');
+    iframe.contentWindow.fushiSettleQueuedMine = (settlement) => {
+      received.push({ id, settlement });
+      return Promise.resolve(1);
+    };
+  }
+  const forwarded = host.settleQueuedMine(JSON.stringify({
+    expression: '猫', reading: 'ねこ', outcome: 'failed', message: 'ANKI_DOWN',
+  }));
+  assert.strictEqual(forwarded, 2, 'forwarded into both the root and the child card');
+  assert.deepStrictEqual(received.map((r) => r.id).sort(), ['frame-0', 'frame-1']);
+  // host.js runs in its own vm realm: compare by value, not by prototype.
+  assert.strictEqual(JSON.stringify(received[0].settlement), JSON.stringify({
+    expression: '猫', reading: 'ねこ', outcome: 'failed', message: 'ANKI_DOWN',
+  }), 'the settlement arrives parsed, field for field');
+  assert.strictEqual(host.settleQueuedMine('{not json'), 0, 'bad JSON is a no-op');
+  assert.strictEqual(host.settleQueuedMine(JSON.stringify({ outcome: 'failed' })), 0,
+    'no expression -> no-op');
+}
+
 console.log('global_lookup_host_test: PASS');

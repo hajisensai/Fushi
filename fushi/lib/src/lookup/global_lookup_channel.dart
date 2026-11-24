@@ -112,6 +112,10 @@ abstract final class GlobalLookupChannel {
   static Future<void> resolveBridge(int id, Object? value) =>
       _impl.resolveBridge(id, value);
 
+  /// 后台写卡结局推进当前路由的覆盖窗（见 [OverlayWindowChannel.settleQueuedMine]）。
+  static Future<void> settleQueuedMine(Map<String, Object?> settlement) =>
+      _impl.settleQueuedMine(settlement);
+
   static Future<void> reveal({required int width, required int height}) =>
       _impl.reveal(width: width, height: height);
 

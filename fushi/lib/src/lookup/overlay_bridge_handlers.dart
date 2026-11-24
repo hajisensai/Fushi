@@ -14,6 +14,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory;
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/anki/mined_card_tap_policy.dart';
@@ -21,6 +23,7 @@ import 'package:fushi/src/floating_ball/screen_ocr_card_frame.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
+import 'package:fushi/src/lookup/overlay_queued_mines.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
 import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_preview.dart';
@@ -185,6 +188,21 @@ bool maybeHandleOverlayDeferredBridge({
         ),
       );
       return true;
+    // review-gal-overlay-mine-fail：「已加入」（后台写卡）的 ✓ 再点一次。native 以前
+    // 不 defer 它、即时回 null，popup.js 读成「还在写入」——写卡早已失败也这么说，永远
+    // 撤不掉。现在照后台写卡台账如实回答（还在写 / 已落地 / 已失败 + 原因），恒回非 null
+    // （与 app 内 queueOverwrite 同契约，BUG-1918）。
+    case 'queueOverwrite':
+      final int? queueOverwriteId = _bridgeIdOf(message);
+      if (queueOverwriteId != null) {
+        unawaited(
+          resolveBridge(
+            queueOverwriteId,
+            queueOverwriteBridgeReply(_firstMapArg(message)).toJson(),
+          ),
+        );
+      }
+      return true;
     case 'updateEntry':
       unawaited(
         _handleUpdateBridge(
@@ -271,6 +289,18 @@ double zoomFontSizeAfterSteps(double current, int steps) {
 String resolveMineSentence(Map<String, String> fields, String sentenceContext) {
   final String fromJs = fields['sentence'] ?? '';
   return fromJs.isNotEmpty ? fromJs : sentenceContext;
+}
+
+/// deferred `queueOverwrite` 桥的回答：[payload] 是 popup.js `buildMinePayload` 组出的
+/// 制卡字段（只用 expression / reading）。见 [OverlayQueuedMines.queueOverwriteReply]。
+@visibleForTesting
+QueuedOverwriteReply queueOverwriteBridgeReply(Map<Object?, Object?> payload) {
+  final String expression = payload['expression']?.toString() ?? '';
+  if (expression.trim().isEmpty) return const QueuedOverwriteReply();
+  return OverlayQueuedMines.queueOverwriteReply(
+    expression: expression,
+    reading: payload['reading']?.toString() ?? '',
+  );
 }
 
 int? _bridgeIdOf(Map<String, Object?> message) => (message['__bridgeId'] is num)

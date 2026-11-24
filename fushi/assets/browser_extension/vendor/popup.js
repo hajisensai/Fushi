@@ -289,6 +289,41 @@ async function refreshRenderedMineStates(target) {
 }
 window.fushiRefreshMineStates = refreshRenderedMineStates;
 
+// review-gal-overlay-mine-fail —— 宿主推来的「后台写卡结局」。
+//
+// gal 查词制卡（反馈 y90oiVojic / BUG-5386）采样完就回 queued，按钮画成「已加入」的
+// ✓ 并解锁，写卡在宿主后台完成。以前结局只走主窗 toast：游戏全屏时主窗在后台，写卡
+// 失败（Anki 没开等）用户一个字也看不到，等于回退了 BUG-1908「失败要在弹窗就地说」；
+// 「已加入」也永远撤不掉——再点 ✓ 只会一直说「还在写入」。现在宿主在落地时推来
+// settlement = {expression, reading, outcome: 'landed'|'failed'|'duplicate',
+// noteId?, message?}，交给每颗同词按钮挂着的 __fushiSettleQueuedMine 闭包：只有本弹窗
+// 排过队的那颗才撤「已加入」、才就地说原因（同词的别的按钮只在落地时跟着重问一次）。
+//
+// 返回认领了这次结局的按钮数（诊断与测试用）。
+async function settleQueuedMine(settlement) {
+    if (!settlement || typeof settlement.expression !== 'string') return 0;
+    const wantedExpression = settlement.expression.trim();
+    if (!wantedExpression) return 0;
+    const wantedReading = typeof settlement.reading === 'string'
+        ? settlement.reading.trim()
+        : '';
+    const pending = [];
+    for (const button of __fushiRootNode().querySelectorAll('.mine-button')) {
+        const settle = button.__fushiSettleQueuedMine;
+        if (typeof settle !== 'function') continue;
+        if ((button.__fushiMineExpression || '').trim() !== wantedExpression) continue;
+        if (wantedReading &&
+            (button.__fushiMineReading || '').trim() !== wantedReading) {
+            continue;
+        }
+        pending.push(settle(settlement));
+    }
+    if (pending.length === 0) return 0;
+    const claimed = await Promise.all(pending);
+    return claimed.filter((value) => value === true).length;
+}
+window.fushiSettleQueuedMine = settleQueuedMine;
+
 // Fushi 复习（SRS）词状态小标记（「复习中 · 3天后」/「新卡」/「已暂停」）。
 //
 // 与「已制卡 ✓ / 可制卡 +」是两件独立的事：✓ 问的是 Anki（duplicateCheck，bool
@@ -6814,6 +6849,35 @@ function createEntryHeader(entry, idx) {
                 // 用户再制一张重复卡，比不刷新更糟）。
                 console.error('refreshMineState failed', e);
             }
+        };
+        // 宿主推来的后台写卡结局（window.fushiSettleQueuedMine → 本闭包）。返回本按钮
+        // 是否认领了它（= 本弹窗排过这张卡的队）。
+        mineButton.__fushiSettleQueuedMine = async (settlement) => {
+            const outcome = settlement && settlement.outcome;
+            if (!queuedLocally) {
+                // 不是本按钮排的队：只在卡真的进了 Anki 时，让已经探测过的同词按钮
+                // 跟着重问一次（失败 / 重复对它没有新信息，不动）。
+                if (outcome === 'landed' && mineButton.__fushiMineStateKnown === true) {
+                    await mineButton.__fushiRefreshMineState();
+                }
+                return false;
+            }
+            queuedLocally = false;
+            if (outcome === 'landed') {
+                // 与陪等路径的成功分支同口径：带回真 note id 的这张卡成为「最新可改」✓↩。
+                rememberLatestMined(expression, reading,
+                    typeof settlement.noteId === 'number' ? settlement.noteId : null);
+                await mineButton.__fushiRefreshMineState();
+                return true;
+            }
+            // 失败 / 重复：与陪等路径的失败分支同口径（TODO-448）——不回查 Anki，按宿主
+            // 给的确定事实画（重复 = 卡确实在 Anki 里 → ✓；失败 → 可点的 +，用户可重挖）。
+            setMineState(outcome === 'duplicate');
+            const message = typeof settlement.message === 'string' ? settlement.message : '';
+            if (message && mineButton.isConnected !== false) {
+                showInlineHint(mineButton, message);
+            }
+            return true;
         };
         scheduleEntryStateCheck(
             mineButton,

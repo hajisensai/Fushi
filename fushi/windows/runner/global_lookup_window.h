@@ -200,6 +200,16 @@ class GlobalLookupWindow {
   // 卡片窗口 WS_EX_NOACTIVATE、永不成为前台，前台抓取只会抓到底下程序里原来那个词。
   void LookupOverlaySelection(std::function<void(bool)> done);
 
+  // review-gal-overlay-mine-fail: pushes the outcome of a BACKGROUND card write
+  // (the popup only got "queued" and painted "added") into every card frame via
+  // window.__globalLookupHost.settleQueuedMine -> popup.js
+  // fushiSettleQueuedMine, so the card drops its "queued" mark and says the
+  // failure reason in place -- the main-window toast is invisible over a
+  // fullscreen game (BUG-1908). |json_literal| is a JS string literal (Dart
+  // double-encodes it); anything else is dropped. No-op while the WebView is
+  // not ready (the page holding the mark is gone).
+  void SettleQueuedMine(const std::string& json_literal);
+
   // Resolves a deferred JS bridge promise. |json_value| is a JSON literal
   // (e.g. "\"file:///a.mp3\"", "true", "null") passed straight to
   // window.__fushiBridgeResolve(id, json_value). Used by the audio handlers,
