@@ -27,14 +27,15 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
+use crate::dart_port::{DartPort, PostCObjectFn};
 use crate::{guard, hand_over_bytes, status};
 use format::Analysis;
 use pipeline::{ModelPaths, Sink};
 
 use crate::upscale::runtime::Backend;
 
-/// 事件回调：`(kind, token, value)`。
-pub type ManaCallback = extern "C" fn(kind: i32, token: u64, value: u32);
+/// 事件发往的 Dart 端口：每条消息是 `[kind, token, value]`（见 [crate::dart_port]）。
+type ManaSink = DartPort;
 
 /// 开始分析这首（出队）。
 pub const EVENT_STARTED: i32 = 1;
@@ -77,7 +78,7 @@ struct Job {
 
 #[derive(Default)]
 struct State {
-    callback: Option<ManaCallback>,
+    sink: Option<ManaSink>,
     queue: VecDeque<Job>,
     running: Option<(u64, Arc<AtomicBool>)>,
     models: ModelPaths,
@@ -103,9 +104,10 @@ fn lock() -> std::sync::MutexGuard<'static, State> {
 }
 
 fn emit(kind: i32, token: u64, value: u32) {
-    let cb = lock().callback;
-    if let Some(cb) = cb {
-        cb(kind, token, value);
+    let sink = lock().sink;
+    if let Some(sink) = sink {
+        // 接收的 isolate 没了（引擎被销毁）时发不出去，消息丢掉即可。
+        sink.post_ints(&[kind as i64, token as i64, value as i64]);
     }
 }
 
@@ -236,15 +238,17 @@ pub extern "C" fn ffc_mana_pipeline_version() -> u32 {
     format::PIPELINE_VERSION
 }
 
-/// 启动引擎（幂等；再调只换回调）。
+/// 启动引擎（幂等；再调只换事件端口）。事件发到 Dart 端口 `port`（`SendPort.nativePort`），`post` 是
+/// `NativeApi.postCObject`。端口而不是 `NativeCallable`：工作线程活得比 isolate 久，isolate 没了之后
+/// 再调它的 callable 会让 VM abort 整个进程（BUG-5413），发往已关端口则只是丢掉。
 #[no_mangle]
-pub extern "C" fn ffc_mana_start(callback: Option<ManaCallback>) -> i32 {
+pub extern "C" fn ffc_mana_start(post: Option<PostCObjectFn>, port: i64) -> i32 {
     guard(|| {
-        let Some(callback) = callback else {
+        let Some(sink) = DartPort::new(post, port) else {
             return status::NULL_ARGUMENT;
         };
         let mut st = lock();
-        st.callback = Some(callback);
+        st.sink = Some(sink);
         if !st.worker {
             let spawned = std::thread::Builder::new()
                 .name("fushi-music-analysis".into())
@@ -439,10 +443,22 @@ mod tests {
 
     static EVENTS: Mutex<Option<mpsc::Sender<(i32, u64, u32)>>> = Mutex::new(None);
 
-    extern "C" fn on_event(kind: i32, token: u64, value: u32) {
-        if let Some(tx) = EVENTS.lock().unwrap().as_ref() {
-            let _ = tx.send((kind, token, value));
+    /// 测试里的「Dart 端口」：端口号 [OPEN_PORT] 的消息进 [EVENTS]，别的端口当作已关（isolate 没了）。
+    const OPEN_PORT: i64 = 7001;
+
+    unsafe extern "C" fn post_event(
+        port: i64,
+        message: *mut crate::dart_port::DartCObject,
+    ) -> bool {
+        if port != OPEN_PORT {
+            return false;
         }
+        let m = crate::dart_port::testing::decode(message);
+        assert_eq!(m.len(), 3, "[kind, token, value]");
+        if let Some(tx) = EVENTS.lock().unwrap().as_ref() {
+            let _ = tx.send((m[0] as i32, m[1] as u64, m[2] as u32));
+        }
+        true
     }
 
     fn write_pcm(path: &Path, pcm: &pcm::StereoPcm) {
@@ -458,7 +474,7 @@ mod tests {
     fn engine_runs_queue_and_reports_events() {
         let (tx, rx) = mpsc::channel();
         *EVENTS.lock().unwrap() = Some(tx);
-        assert_eq!(ffc_mana_start(Some(on_event)), status::OK);
+        assert_eq!(ffc_mana_start(None, OPEN_PORT), status::NULL_ARGUMENT);
         let dir = std::env::temp_dir().join(format!("ffc_mana_test_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let pcm_path = dir.join("song.s16le");
@@ -466,11 +482,34 @@ mod tests {
         write_pcm(&pcm_path, &pipeline::tests::synthetic_song(8.0, 120.0));
         let pcm_c = CString::new(pcm_path.to_str().unwrap()).unwrap();
         let out_c = CString::new(out_path.to_str().unwrap()).unwrap();
+        // BUG-5413：先登记一个已关的端口（登记它的 isolate 已经没了），工作线程照常跑完、事件丢掉、
+        // 不碰已失效的东西；新 isolate 再登记自己的端口就能收到之后的事件。
+        let dead_pcm = dir.join("dead.s16le");
+        let dead_out = dir.join("dead.fma");
+        write_pcm(&dead_pcm, &pipeline::tests::synthetic_song(2.0, 120.0));
+        let dead_pcm_c = CString::new(dead_pcm.to_str().unwrap()).unwrap();
+        let dead_out_c = CString::new(dead_out.to_str().unwrap()).unwrap();
+        assert_eq!(ffc_mana_start(Some(post_event), OPEN_PORT + 1), status::OK);
         unsafe {
             assert_eq!(
                 ffc_mana_configure(std::ptr::null(), std::ptr::null(), std::ptr::null(), 1, 0),
                 status::OK
             );
+            assert_eq!(
+                ffc_mana_submit(6, dead_pcm_c.as_ptr(), dead_out_c.as_ptr(), 0),
+                status::OK
+            );
+        }
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while lock().running.is_some() || !lock().queue.is_empty() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "job on the closed port never finished"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert_eq!(ffc_mana_start(Some(post_event), OPEN_PORT), status::OK);
+        unsafe {
             assert_eq!(
                 ffc_mana_submit(7, pcm_c.as_ptr(), out_c.as_ptr(), SUBMIT_DELETE_INPUT),
                 status::OK
@@ -479,6 +518,10 @@ mod tests {
         let mut kinds = Vec::new();
         loop {
             let (kind, token, _) = rx.recv_timeout(std::time::Duration::from_secs(60)).unwrap();
+            if token == 6 {
+                // 已关端口那一首在换端口前就出队了，它的尾巴事件可能落到新端口上：无害，跳过。
+                continue;
+            }
             assert_eq!(token, 7);
             kinds.push(kind);
             if kind == EVENT_DONE || kind == EVENT_FAILED {

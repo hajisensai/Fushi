@@ -2,9 +2,10 @@
 //!
 //! Rust 持有全部状态：ORT 运行时、按档加载的模型会话、按「离当前页多远」排序的任务队列（含往后预取）、
 //! 磁盘 LRU 缓存、一个后台工作线程。Dart 只发粗粒度命令（启动 / 配置档位 / 提交一页 / 换当前页 /
-//! 清队列 / 查缓存）并经一个回调收事件（`NativeCallable.listener`，任意线程可调），不存镜像状态。
+//! 清队列 / 查缓存）并经一个 Dart 原生端口收事件（[crate::dart_port]，任意线程可发；接收的 isolate 没了也
+//! 只是丢消息），不存镜像状态。
 //!
-//! 事件：`callback(kind, token)`，kind 见 [EVENT_DONE] 等；`token` 是提交时调用方给的值。
+//! 事件：每条消息 `[kind, token]`，kind 见 [EVENT_DONE] 等；`token` 是提交时调用方给的值。
 
 mod cache;
 mod pipeline;
@@ -18,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread;
 
+use crate::dart_port::{DartPort, PostCObjectFn};
 use crate::{guard, hand_over_bytes, status};
 use cache::{DiskCache, PendingPut};
 use pipeline::{Nets, Outcome, Tier};
@@ -76,7 +78,8 @@ const SWIN_ALIGN: usize = 64;
 const ARTCNN_SPEC: TileSpec = TileSpec { tile: 512, ctx: 16 };
 const ARTCNN_ALIGN: usize = 1;
 
-type Callback = extern "C" fn(i32, u64);
+/// 事件发往的 Dart 端口：每条消息是 `[kind, token]`（见 [crate::dart_port]，BUG-5413）。
+type Callback = DartPort;
 
 /// 这一档在这个后端上能不能跑（设计文档 §4.2 实测）：
 /// - 轻量档（ArtCNN）各后端都行；
@@ -180,8 +183,9 @@ fn engine() -> &'static Arc<Engine> {
 }
 
 fn emit(callback: Option<Callback>, kind: i32, token: u64) {
-    if let Some(cb) = callback {
-        cb(kind, token);
+    if let Some(port) = callback {
+        // 接收的 isolate 没了（引擎被销毁）时发不出去，消息丢掉即可。
+        port.post_ints(&[kind as i64, token as i64]);
     }
 }
 
@@ -438,17 +442,20 @@ unsafe fn opt_str<'a>(p: *const c_char) -> Result<Option<&'a str>, i32> {
 }
 
 /// 启动（或更新）引擎：接上 ORT（`ort_path` 为空 = 从本进程符号找，只在 Apple 上可用），打开缓存目录
-/// （`cache_bytes` 上限），登记事件回调。可重复调用；ORT 只接第一次。
+/// （`cache_bytes` 上限），登记事件端口（`port` = `SendPort.nativePort`，`post` = `NativeApi.postCObject`；
+/// `post` 为空 = 不发事件）。可重复调用，后一次换掉端口；ORT 只接第一次。
 ///
 /// # Safety
-/// 字符串为 NUL 结尾 UTF-8；`callback` 在引擎存活期间一直可调（`NativeCallable.listener`）。
+/// 字符串为 NUL 结尾 UTF-8；`post` 为空或是 `Dart_PostCObject`。
 #[no_mangle]
 pub unsafe extern "C" fn ffc_upscale_start(
     ort_path: *const c_char,
     cache_dir: *const c_char,
     cache_bytes: u64,
-    callback: Option<Callback>,
+    post: Option<PostCObjectFn>,
+    port: i64,
 ) -> i32 {
+    let callback = DartPort::new(post, port);
     guard(|| {
         let Ok(ort_path) = opt_str(ort_path) else {
             return status::INVALID_ARGUMENT;
@@ -1095,14 +1102,16 @@ mod tests {
     }
 
     /// 只有 [old_generation_model_failure_cannot_disable_the_new_configuration] 用这个回调。
-    static EVENTS: Mutex<Vec<(i32, u64)>> = Mutex::new(Vec::new());
-
-    extern "C" fn record_event(kind: i32, token: u64) {
-        EVENTS.lock().unwrap().push((kind, token));
-    }
+    const EVENT_PORT: i64 = 8001;
 
     fn events() -> Vec<(i32, u64)> {
-        EVENTS.lock().unwrap().clone()
+        crate::dart_port::testing::received(EVENT_PORT)
+            .into_iter()
+            .map(|m| {
+                assert_eq!(m.len(), 2, "[kind, token]");
+                (m[0] as i32, m[1] as u64)
+            })
+            .collect()
     }
 
     /// HBK-AUDIT-006：模型加载失败归属发起加载的那一代配置。旧档在加载中、调用方换了新档并提交了新页，
@@ -1112,7 +1121,10 @@ mod tests {
     fn old_generation_model_failure_cannot_disable_the_new_configuration() {
         use std::sync::mpsc;
         use std::time::Duration;
-        let (engine, dir) = test_engine("generation", Some(record_event));
+        let (engine, dir) = test_engine(
+            "generation",
+            Some(crate::dart_port::testing::port(EVENT_PORT)),
+        );
 
         // 换代丢掉旧一代排队的任务；同配置重复启用不换代、不丢。
         let g0 = engine.configure(config(Tier::Light, "light.onnx"));
