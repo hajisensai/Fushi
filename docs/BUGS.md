@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4685 条。点号进各自文件。
+> 共 4686 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5389](bugs/BUG-5389-update-install-ui-freeze-rm-getlist.md) | ✅ | ✅ | 更新下载完成后交给安装器前窗口「未响应」：Restart Manager 查询在主 isolate 同步跑 |
 | [BUG-5388](bugs/BUG-5388-windows-silent-process-vanish.md) | 🚧 | 🚧 | Windows 阅读中进程无声消失：无 dump、无 WER、无 exitReason |
 | [BUG-5385](bugs/BUG-5385-lyrics-illustration-viewer-stale-reached.md) | ✅ | ✅ | 有声书插图大图浏览打开期间新走过的插图看不到（只列已听到的、且不随播放刷新） |
 | [BUG-5384](bugs/BUG-5384-manga-ocr-page-identity.md) | ✅ | ✅ | manga-ocr-page-identity |
