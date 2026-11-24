@@ -7,6 +7,12 @@
 // the process-exit quiesce entry point and its isolate is then torn down
 // without disposing the player, as an engine shutdown during process
 // termination does. libmpv must no longer reach the deleted callback.
+//
+// Mode `port` (feedback Wgbo462Sfc) installs the app's port wakeup
+// (`installFushiMpvPortWakeup`, fushi_compute's native trampoline) and does
+// NOT quiesce: the owner isolate dies with the player still registered, as on
+// Android when audio_service destroys the engine after the activity finished.
+// libmpv's wakeup then posts to a closed port instead of a deleted callback.
 // ignore_for_file: implementation_imports
 
 import 'dart:async';
@@ -15,6 +21,7 @@ import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:fushi/src/platform/mpv_port_wakeup.dart';
 import 'package:media_kit/ffi/ffi.dart';
 import 'package:media_kit/generated/libmpv/bindings.dart' as generated;
 import 'package:media_kit/native_exit.dart';
@@ -122,7 +129,12 @@ Future<void> _owner(List<Object> arguments) async {
     'config': 'no',
   };
   Future<void> ignoreEvent(Pointer<generated.mpv_event> event) async {}
-  final Pointer<generated.mpv_handle> handle = mode == 'quiesce'
+  if (mode == 'port') {
+    installFushiMpvPortWakeup();
+    await _checkpoint('PORT WAKEUP INSTALLED');
+  }
+  final Pointer<generated.mpv_handle> handle =
+      mode == 'quiesce' || mode == 'port'
       ? await InitializerNativeCallable(
           mpv,
         ).create(ignoreEvent, options: options)
@@ -141,8 +153,8 @@ Future<void> _owner(List<Object> arguments) async {
 
 Future<void> main(List<String> arguments) async {
   if (arguments.length != 2 ||
-      !<String>{'kill', 'dispose', 'quiesce'}.contains(arguments[1])) {
-    throw ArgumentError('Expected <libmpv path> <kill|dispose|quiesce>');
+      !<String>{'kill', 'dispose', 'quiesce', 'port'}.contains(arguments[1])) {
+    throw ArgumentError('Expected <libmpv path> <kill|dispose|quiesce|port>');
   }
   final String mode = arguments[1];
   await _checkpoint('PROBE START $mode debug=$kDebugMode');

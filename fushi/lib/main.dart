@@ -180,6 +180,7 @@ import 'package:fushi/src/anki/pending_mining/pending_mines_page.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:fushi/src/platform/app_exit_coordinator.dart';
+import 'package:fushi/src/platform/mpv_port_wakeup.dart';
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
@@ -588,6 +589,9 @@ void main([List<String> args = const <String>[]]) {
       JustAudioMediaKit.pitch = false;
       JustAudioMediaKit.ensureInitialized();
       MediaKit.ensureInitialized();
+      // 反馈 Wgbo462Sfc：libmpv 唤醒走原生端口，不给它 NativeCallable（引擎先于播放器
+      // 销毁时那个回调会被删，libmpv 再唤醒就整进程 abort）。必须在建第一个播放器之前。
+      installFushiMpvPortWakeup();
       // 液态玻璃材质的着色器预热：只把 FragmentProgram 读进内存，免得第一次打开
       // 弹层时闪一帧占位。纯 IO、与启动无依赖，后台跑不挡首帧；没开 liquid 档的
       // 用户也只是多读几个着色器文件。

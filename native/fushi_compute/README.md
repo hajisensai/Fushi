@@ -289,11 +289,11 @@ flutter_tester 有 94 个差 1 ULP，旧实现自己在两个宿主上也不一�
 低中高频段 / 起音 / 人声，按 folia 播放器 `AnalyserNode` 的同一套公式）、拍点 / 强拍 / BPM、每拍重音
 （folia `beatAccents`：impact、低中高占比、有无节奏、听感拍、整曲动感系数，`accents.rs`）、鼓点、人声起音，
 结果写成 `.fma` 文件（布局见 `format.rs` 头注，Dart 读取方 `fushi/lib/src/media/music/analysis/`）。
-进程级单例引擎（一个工作线程 + FIFO 队列），事件回调 `(kind, token, value)`。
+进程级单例引擎（一个工作线程 + FIFO 队列），事件投 Dart 原生端口 `[kind, token, value]`（见下「原生 → Dart 事件端口」）。
 
 | 符号 | 作用 |
 |---|---|
-| `ffc_mana_start(cb)` | 启动工作线程（幂等，再调换回调） |
+| `ffc_mana_start(post, port)` | 启动工作线程（幂等，再调换端口；`post` = Dart `NativeApi.postCObject`） |
 | `ffc_mana_configure(ort, beat_this, htdemucs, threads, backend)` | 配置可选模型；有模型时经 `upscale::runtime` 接上本进程那份 ORT；`backend` 与超分同码（0 CPU / 1 DirectML / 2 CoreML / 3 XNNPACK），失败退 CPU 并发一次 `EVENT_BACKEND_FALLBACK` |
 | `ffc_mana_submit(token, pcm, out, flags)` / `ffc_mana_cancel(token)` | 排队一首（44.1 kHz 立体声 s16le raw）/ 取消 |
 | `ffc_mana_analyze_file(pcm, out, flags)` | 同步分析（无头 / 测试） |
@@ -674,3 +674,16 @@ spec `docs/specs/2026-11-22-game-ocr-line-stream-design.md`）。连续 OCR 的�
 | `ffc_ocrline_configure(void*, u32 flags) -> i32` | 送 OCR 前的预处理选项：bit0 = Otsu 二值化（白底黑字）；未知位 `-2`。选项变了同一画面会按新选项再交出（BUG-5141） |
 | `ffc_ocrline_feed_png(void*, const u8* png, usize, const f32 region[4], u8** out, usize* out_len, u32 meta[3]) -> i32` | 整窗 PNG + 客户区归一化框 → `meta = [action, w, h]`（0 idle / 1 settling / 2 ocr / 3 cleared）；ocr 时交出裁好并预处理过的 RGBA（`ffc_free_bytes`；字高 < 16 px 时整数倍放大到约 24 px、最长边不超 2600，`w` / `h` 是放大后的尺寸）。稳定判据排除循环小动画的易变格。坏 PNG `-3`，框在图外 `-2` |
 | `ffc_ocrline_feed_text(void*, const u8* utf8, usize, u8** out, usize* out_len, u32* kind) -> i32` | OCR 全文（行间 `\n`）→ kind（0 empty / 1 duplicate / 2 new / 3 extend）；new / extend 交出这一句的显示文本（CJK 间空白已去；extend 是「上一句 + 新尾巴」） |
+
+## 原生 → Dart 事件端口（`src/dart_port.rs`）
+
+进程级引擎（音频分析、漫画超分）与 libmpv 唤醒都活得比 Dart isolate 久（Android 上 audio_service 在 Activity
+退出后销毁引擎，进程与原生线程还在）。`NativeCallable` 的跳板随 isolate 关闭被删，原生线程再调就整进程
+abort（`Callback invoked after it has been deleted`，反馈 Wgbo462Sfc / BUG-5426），所以本库**不收 Dart 函数
+指针**：Dart 交 `NativeApi.postCObject` 与一个 `RawReceivePort` 的 `nativePort`，原生线程用 `Dart_PostCObject`
+投整数 / 整数数组；端口已关时只返回 false。
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_port_signal_new(post, port, value)` / `ffc_port_signal_free(target)` | 建 / 释放一个唤醒目标（释放前外部库必须已停止唤醒它） |
+| `ffc_port_signal_fire(target)` | `void(*)(void*)` 形状的唤醒函数：把 `value` 投到 `port`（libmpv `mpv_set_wakeup_callback` 用） |

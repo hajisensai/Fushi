@@ -4,7 +4,7 @@
 //! 拍点 / 强拍 / BPM / 每小节拍数、鼓点（时间 / 强度 / 底鼓·军鼓·镲片）、人声起音。
 //!
 //! 引擎是**进程级单例**（与 [crate::upscale] 同型）：一个后台工作线程 + 一条 FIFO 队列（加急的插队），
-//! Dart 只发粗粒度命令（配置模型 / 提交 / 取消），事件经一个回调回到 Dart（`NativeCallable.listener`），
+//! Dart 只发粗粒度命令（配置模型 / 提交 / 取消），事件投到 Dart 原生端口（`dart_port.rs`），
 //! 每一步做完把完整结果原子写到调用方给的路径（Dart 整份读进来按偏移切 TypedData，逐帧取值不跨 FFI）。
 //! 解码不在这里：Dart 经统一 FFmpeg 后端把音轨解成 44.1 kHz 立体声 s16le 临时文件再提交（[pcm]）。
 //!
@@ -27,14 +27,15 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
+use crate::dart_port::{DartPort, PostCObject};
 use crate::{guard, hand_over_bytes, status};
 use format::Analysis;
 use pipeline::{ModelPaths, Sink};
 
 use crate::upscale::runtime::Backend;
 
-/// 事件回调：`(kind, token, value)`。
-pub type ManaCallback = extern "C" fn(kind: i32, token: u64, value: u32);
+// 事件经 Dart 原生端口投递（[DartPort]，不用 `NativeCallable`，见 `dart_port.rs`）：每条是
+// `[kind, token, value]` 三个整数；`token` 按位当 i64 投（Dart 的 int 同为 64 位，位型不变）。
 
 /// 开始分析这首（出队）。
 pub const EVENT_STARTED: i32 = 1;
@@ -77,7 +78,7 @@ struct Job {
 
 #[derive(Default)]
 struct State {
-    callback: Option<ManaCallback>,
+    port: Option<DartPort>,
     queue: VecDeque<Job>,
     running: Option<(u64, Arc<AtomicBool>)>,
     models: ModelPaths,
@@ -103,9 +104,11 @@ fn lock() -> std::sync::MutexGuard<'static, State> {
 }
 
 fn emit(kind: i32, token: u64, value: u32) {
-    let cb = lock().callback;
-    if let Some(cb) = cb {
-        cb(kind, token, value);
+    // 锁里取端口、锁外投递。端口所在 isolate 已关时投递只返回 false（不像回调跳板那样整进程
+    // abort），事件本就没人收了，丢掉即可。
+    let port = lock().port;
+    if let Some(port) = port {
+        let _ = port.post_ints(&[i64::from(kind), token as i64, i64::from(value)]);
     }
 }
 
@@ -236,15 +239,16 @@ pub extern "C" fn ffc_mana_pipeline_version() -> u32 {
     format::PIPELINE_VERSION
 }
 
-/// 启动引擎（幂等；再调只换回调）。
+/// 启动引擎（幂等；再调只换事件端口）。`post` 是 Dart 的 `NativeApi.postCObject`，`port` 是收事件的
+/// `RawReceivePort.sendPort.nativePort`；新 isolate 接手时再调一次换成它的端口。
 #[no_mangle]
-pub extern "C" fn ffc_mana_start(callback: Option<ManaCallback>) -> i32 {
+pub extern "C" fn ffc_mana_start(post: Option<PostCObject>, port: i64) -> i32 {
     guard(|| {
-        let Some(callback) = callback else {
+        let Some(port) = DartPort::new(post, port) else {
             return status::NULL_ARGUMENT;
         };
         let mut st = lock();
-        st.callback = Some(callback);
+        st.port = Some(port);
         if !st.worker {
             let spawned = std::thread::Builder::new()
                 .name("fushi-music-analysis".into())
@@ -434,16 +438,12 @@ pub unsafe extern "C" fn ffc_mana_last_error(out_ptr: *mut *mut u8, out_len: *mu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dart_port::tests::{DEAD_PORT, Decoded, fake_post, take};
     use std::ffi::CString;
-    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
 
-    static EVENTS: Mutex<Option<mpsc::Sender<(i32, u64, u32)>>> = Mutex::new(None);
-
-    extern "C" fn on_event(kind: i32, token: u64, value: u32) {
-        if let Some(tx) = EVENTS.lock().unwrap().as_ref() {
-            let _ = tx.send((kind, token, value));
-        }
-    }
+    /// 本模块测试用的端口号（`dart_port` 的假投递按端口分拣，和别的模块的测试互不干扰）。
+    const PORT: i64 = 4242;
 
     fn write_pcm(path: &Path, pcm: &pcm::StereoPcm) {
         let mut bytes = Vec::with_capacity(pcm.len() * 4);
@@ -456,11 +456,21 @@ mod tests {
 
     #[test]
     fn engine_runs_queue_and_reports_events() {
-        let (tx, rx) = mpsc::channel();
-        *EVENTS.lock().unwrap() = Some(tx);
-        assert_eq!(ffc_mana_start(Some(on_event)), status::OK);
+        assert_eq!(ffc_mana_start(None, PORT), status::NULL_ARGUMENT);
         let dir = std::env::temp_dir().join(format!("ffc_mana_test_{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
+        // 先接一个已关的端口（= 收事件的 isolate 已经没了，反馈 Wgbo462Sfc）：工作线程照常跑完一首、
+        // 投递失败就丢，不崩。之后新 isolate 再 start 一次换端口，事件照常到。
+        assert_eq!(ffc_mana_start(Some(fake_post), DEAD_PORT), status::OK);
+        let missing = CString::new(dir.join("missing.s16le").to_str().unwrap()).unwrap();
+        let orphan_out = CString::new(dir.join("orphan.fma").to_str().unwrap()).unwrap();
+        unsafe {
+            assert_eq!(
+                ffc_mana_submit(6, missing.as_ptr(), orphan_out.as_ptr(), 0),
+                status::OK
+            );
+        }
+        assert_eq!(ffc_mana_start(Some(fake_post), PORT), status::OK);
         let pcm_path = dir.join("song.s16le");
         let out_path = dir.join("song.fma");
         write_pcm(&pcm_path, &pipeline::tests::synthetic_song(8.0, 120.0));
@@ -477,13 +487,25 @@ mod tests {
             );
         }
         let mut kinds = Vec::new();
-        loop {
-            let (kind, token, _) = rx.recv_timeout(std::time::Duration::from_secs(60)).unwrap();
-            assert_eq!(token, 7);
-            kinds.push(kind);
-            if kind == EVENT_DONE || kind == EVENT_FAILED {
-                break;
+        let deadline = Instant::now() + Duration::from_secs(60);
+        'wait: loop {
+            assert!(Instant::now() < deadline, "timed out, got {kinds:?}");
+            for event in take(PORT) {
+                let Decoded::Ints(v) = event else {
+                    panic!("unexpected message {event:?}");
+                };
+                assert_eq!(v.len(), 3);
+                // 没收到端口的那首（令牌 6）的收尾事件可能落在换端口之后，按令牌只看第 7 首。
+                if v[1] != 7 {
+                    continue;
+                }
+                let kind = v[0] as i32;
+                kinds.push(kind);
+                if kind == EVENT_DONE || kind == EVENT_FAILED {
+                    break 'wait;
+                }
             }
+            std::thread::sleep(Duration::from_millis(20));
         }
         assert_eq!(kinds.first(), Some(&EVENT_STARTED));
         assert!(kinds.contains(&EVENT_UPDATED));

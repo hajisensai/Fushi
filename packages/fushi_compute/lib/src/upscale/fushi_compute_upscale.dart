@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:ffi/ffi.dart';
 import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
+import '../dart_port/ffc_dart_port.dart';
 import '../fushi_compute_library.dart';
 
 /// 超分档（与 native/fushi_compute/src/upscale/pipeline.rs 的 `Tier` 一致）。
@@ -124,21 +125,10 @@ enum FfcUpscaleKeyState {
   failed,
 }
 
-typedef _Callback = Void Function(Int32, Uint64);
 typedef _StartC =
-    Int32 Function(
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      Uint64,
-      Pointer<NativeFunction<_Callback>>,
-    );
+    Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Uint64, Pointer<Void>, Int64);
 typedef _StartDart =
-    int Function(
-      Pointer<Utf8>,
-      Pointer<Utf8>,
-      int,
-      Pointer<NativeFunction<_Callback>>,
-    );
+    int Function(Pointer<Utf8>, Pointer<Utf8>, int, Pointer<Void>, int);
 typedef _AvailC = Int32 Function(Uint32);
 typedef _AvailDart = int Function(int);
 typedef _TierSupportedC = Int32 Function(Uint32, Uint32);
@@ -189,7 +179,8 @@ typedef _LastErrorDart = int Function(Pointer<Pointer<Uint8>>, Pointer<Size>);
 /// 漫画页超分引擎的 Dart 绑定（设计文档 `docs/specs/2026-11-20-manga-upscale-design.md` §4）。
 ///
 /// 引擎在 Rust 里是**进程级单例**：持有 ORT 运行时、模型会话、任务队列（含往后预取）、磁盘 LRU
-/// 与工作线程；这里只发粗粒度命令，事件经一个 `NativeCallable.listener` 回到本 isolate 的 [events]，
+/// 与工作线程；这里只发粗粒度命令，事件经一个原生端口（[FfcEventPort]，不用 `NativeCallable`：引擎活得
+/// 比 isolate 久）回到本 isolate 的 [events]，
 /// 不存镜像状态。只应在一个 isolate（UI isolate）里用。
 class FushiComputeUpscale {
   FushiComputeUpscale._(FushiCompute lib)
@@ -255,15 +246,18 @@ class FushiComputeUpscale {
   final StreamController<FfcUpscaleEvent> _events =
       StreamController<FfcUpscaleEvent>.broadcast();
 
-  // 进程级引擎的回调：建一次、永不关闭（Rust 工作线程随时可能调它）。
-  NativeCallable<_Callback>? _callback;
+  // 收进程级引擎事件的端口：本 isolate 里建一次、一直开着。isolate 没了它随之关闭，引擎往里投只是
+  // 失败；新 isolate 的 [start] 换上自己的端口。
+  FfcEventPort? _port;
 
   /// 引擎事件（广播）。
   Stream<FfcUpscaleEvent> get events => _events.stream;
 
-  void _onEvent(int kind, int token) {
-    final FfcUpscaleEventKind? k = FfcUpscaleEventKind.fromCode(kind);
-    if (k != null) _events.add(FfcUpscaleEvent(k, token));
+  /// 原生投来的 `[kind, token]`（upscale.rs `emit`）。
+  void _onEvent(List<int> v) {
+    if (v.length != 2) return;
+    final FfcUpscaleEventKind? k = FfcUpscaleEventKind.fromCode(v[0]);
+    if (k != null) _events.add(FfcUpscaleEvent(k, v[1]));
   }
 
   /// 启动（或更新）引擎。[ortPath] 是本进程那份 onnxruntime 动态库；null = 从本进程符号找（Apple）。
@@ -273,14 +267,14 @@ class FushiComputeUpscale {
     required String cacheDir,
     required int cacheBytes,
   }) {
-    final NativeCallable<_Callback> callback = _callback ??=
-        NativeCallable<_Callback>.listener(_onEvent);
+    final FfcEventPort port = _port ??= FfcEventPort(_onEvent);
     return using((Arena arena) {
       return _start(
         ortPath == null ? nullptr : ortPath.toNativeUtf8(allocator: arena),
         cacheDir.toNativeUtf8(allocator: arena),
         cacheBytes,
-        callback.nativeFunction,
+        FfcEventPort.postCObject,
+        port.nativePort,
       );
     });
   }

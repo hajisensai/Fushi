@@ -159,6 +159,33 @@ isolate killed without dispose after quiescing; exits `-1073740791` with
 `Callback invoked after it has been deleted` without the fix). Remove when
 upstream unregisters its callbacks before the engine can free them.
 
+## BUG-5426: libmpv wakeups go through a native port (feedback Wgbo462Sfc)
+
+`lib/src/player/native/core/initializer_native_callable.dart` gains a static
+`InitializerNativeCallable.portWakeup` (`MpvPortWakeup`, new file
+`lib/src/player/native/core/port_wakeup.dart`), set through the new public
+library `lib/native_wakeup.dart` (`installMpvPortWakeup`). When it is set,
+`create` hands libmpv the implementation's native trampoline plus a target
+that posts the handle address to a `RawReceivePort` of this isolate, instead
+of a `NativeCallable.listener`. `dispose` frees the target after
+`mpv_set_wakeup_callback(ctx, NULL, NULL)`; `quiesceForProcessExit` clears
+both kinds of handles. Without an installed wakeup the upstream
+NativeCallable path is unchanged.
+
+A `NativeCallable` dies with its isolate; libmpv does not. On Android
+`MainActivity` extends `AudioServiceActivity`, and once the activity finishes
+audio_service's `AudioService.onDestroy` calls `FlutterEngine.destroy()` while
+the process and every undisposed player live on. Java destroys the engine
+synchronously, so Dart has no point at which to unregister first, and the next
+wakeup aborts the process with `Callback invoked after it has been deleted`.
+Posting to a closed port merely fails. Fushi installs fushi_compute's
+`ffc_port_signal_*` trampoline at startup (`fushi/lib/src/platform/mpv_port_wakeup.dart`).
+
+Regression test: the `port` mode of
+`fushi/test/third_party/media_kit_hot_restart_test.dart` (real libmpv: owner
+isolate killed without quiescing or disposing, then wakeup / quit). Remove when
+upstream stops handing libmpv a callback that can outlive its isolate.
+
 ## BUG-5027: a locked screenshot holds the player lock for the capture only
 
 `lib/src/player/native/player/real.dart` splits `NativePlayer.screenshot` in

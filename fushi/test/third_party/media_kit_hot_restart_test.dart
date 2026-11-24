@@ -211,13 +211,20 @@ void main() {
       // their 25s execution deadline and 35s enclosing test timeout.
       probe = await _compileProbe();
     });
-    for (final String mode in <String>['kill', 'dispose', 'quiesce']) {
-      final String name = mode == 'quiesce'
-          // H6Vou-6uYX: the release NativeCallable backend, quiesced the way
-          // every exit chain does first, then its isolate torn down without
-          // Player.dispose (macOS NSApp terminate shuts the engine down).
-          ? 'H6Vou-6uYX: release callback quiesced before its isolate dies'
-          : 'BUG-3003: native wakeup/quit survives owner $mode';
+    for (final String mode in <String>['kill', 'dispose', 'quiesce', 'port']) {
+      final String name = switch (mode) {
+        // H6Vou-6uYX: the release NativeCallable backend, quiesced the way
+        // every exit chain does first, then its isolate torn down without
+        // Player.dispose (macOS NSApp terminate shuts the engine down).
+        'quiesce' =>
+          'H6Vou-6uYX: release callback quiesced before its isolate dies',
+        // Wgbo462Sfc: the app's port wakeup, NOT quiesced, then its isolate
+        // torn down without Player.dispose (Android: audio_service destroys
+        // the engine after the activity finished; the process lives on).
+        'port' =>
+          'Wgbo462Sfc: port wakeup survives its isolate dying unquiesced',
+        _ => 'BUG-3003: native wakeup/quit survives owner $mode',
+      };
       test(name, () async {
         final ProcessResult result = await _runBoundedProcess(
           probe.dart,
@@ -245,6 +252,14 @@ void main() {
         }
         if (mode == 'quiesce') {
           expect(result.stdout, contains('QUIESCE RETURNED'), reason: evidence);
+        }
+        if (mode == 'port') {
+          expect(
+            result.stdout,
+            contains('PORT WAKEUP INSTALLED'),
+            reason: evidence,
+          );
+          expect(result.stdout, isNot(contains('QUIESCE')), reason: evidence);
         }
       }, timeout: const Timeout(Duration(seconds: 35)));
     }

@@ -4,6 +4,7 @@ library;
 
 export 'src/archive/fushi_compute_archive.dart';
 export 'src/crypto/fushi_compute_crypto.dart';
+export 'src/dart_port/ffc_dart_port.dart';
 export 'src/font/fushi_font.dart';
 export 'src/fushi_compute_library.dart';
 export 'src/galcal/fushi_compute_galcal.dart';

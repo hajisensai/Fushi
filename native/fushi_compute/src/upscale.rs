@@ -2,9 +2,10 @@
 //!
 //! Rust 持有全部状态：ORT 运行时、按档加载的模型会话、按「离当前页多远」排序的任务队列（含往后预取）、
 //! 磁盘 LRU 缓存、一个后台工作线程。Dart 只发粗粒度命令（启动 / 配置档位 / 提交一页 / 换当前页 /
-//! 清队列 / 查缓存）并经一个回调收事件（`NativeCallable.listener`，任意线程可调），不存镜像状态。
+//! 清队列 / 查缓存）并经 Dart 原生端口收事件（`dart_port.rs`；不用 `NativeCallable`：跳板随 isolate
+//! 关闭被删，工作线程再调就整进程 abort，反馈 Wgbo462Sfc），不存镜像状态。
 //!
-//! 事件：`callback(kind, token)`，kind 见 [EVENT_DONE] 等；`token` 是提交时调用方给的值。
+//! 事件：投到端口的 `[kind, token]`，kind 见 [EVENT_DONE] 等；`token` 是提交时调用方给的值（按位当 i64）。
 
 mod cache;
 mod pipeline;
@@ -18,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread;
 
+use crate::dart_port::{DartPort, PostCObject};
 use crate::{guard, hand_over_bytes, status};
 use cache::{DiskCache, PendingPut};
 use pipeline::{Nets, Outcome, Tier};
@@ -76,8 +78,6 @@ const SWIN_ALIGN: usize = 64;
 const ARTCNN_SPEC: TileSpec = TileSpec { tile: 512, ctx: 16 };
 const ARTCNN_ALIGN: usize = 1;
 
-type Callback = extern "C" fn(i32, u64);
-
 /// 这一档在这个后端上能不能跑（设计文档 §4.2 实测）：
 /// - 轻量档（ArtCNN）各后端都行；
 /// - 高质量档（swin_unet）只在 DirectML 上：CPU 一页 50～90 秒不可用；CoreML（ORT 1.23，MLProgram）建
@@ -101,7 +101,7 @@ struct Config {
 struct State {
     queue: Queue,
     cache: Option<DiskCache>,
-    callback: Option<Callback>,
+    port: Option<DartPort>,
     config: Option<Config>,
     /// 配置变了，工作线程下一个任务前重载模型。
     generation: u64,
@@ -120,7 +120,7 @@ impl State {
         Self {
             queue: Queue::new(),
             cache: None,
-            callback: None,
+            port: None,
             config: None,
             generation: 0,
             running: None,
@@ -179,15 +179,16 @@ fn engine() -> &'static Arc<Engine> {
     })
 }
 
-fn emit(callback: Option<Callback>, kind: i32, token: u64) {
-    if let Some(cb) = callback {
-        cb(kind, token);
+/// 投一条事件。端口所在 isolate 已关时投递只返回 false（事件没人收了，丢掉）。
+fn emit(port: Option<DartPort>, kind: i32, token: u64) {
+    if let Some(port) = port {
+        let _ = port.post_ints(&[i64::from(kind), token as i64]);
     }
 }
 
-fn emit_all(callback: Option<Callback>, kind: i32, tokens: Vec<u64>) {
+fn emit_all(port: Option<DartPort>, kind: i32, tokens: Vec<u64>) {
     for t in tokens {
-        emit(callback, kind, t);
+        emit(port, kind, t);
     }
 }
 
@@ -238,7 +239,7 @@ fn worker_loop(engine: &Engine) {
 fn run_worker(engine: &Engine, load: impl Fn(&Config) -> Result<Nets, String>) {
     let mut nets: Option<(u64, Nets)> = None;
     loop {
-        let (job, config, generation, callback) = {
+        let (job, config, generation, port) = {
             let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
             loop {
                 if state.ready() {
@@ -248,7 +249,7 @@ fn run_worker(engine: &Engine, load: impl Fn(&Config) -> Result<Nets, String>) {
                             job,
                             state.config.clone().unwrap(),
                             state.generation,
-                            state.callback,
+                            state.port,
                         );
                     }
                 }
@@ -274,9 +275,9 @@ fn run_worker(engine: &Engine, load: impl Fn(&Config) -> Result<Nets, String>) {
                             Vec::new()
                         }
                     };
-                    emit(callback, EVENT_MODELS_FAILED, generation);
-                    emit(callback, EVENT_FAILED, job.token);
-                    emit_all(callback, EVENT_CANCELLED, dropped);
+                    emit(port, EVENT_MODELS_FAILED, generation);
+                    emit(port, EVENT_FAILED, job.token);
+                    emit_all(port, EVENT_CANCELLED, dropped);
                     continue;
                 }
             }
@@ -315,9 +316,9 @@ fn run_worker(engine: &Engine, load: impl Fn(&Config) -> Result<Nets, String>) {
                 _ => {}
             }
         }
-        let callback = state.callback;
+        let port = state.port;
         drop(state);
-        emit(callback, kind, job.token);
+        emit(port, kind, job.token);
     }
 }
 
@@ -362,10 +363,10 @@ impl Engine {
             dropped = state.queue.clear();
         }
         let generation = state.generation;
-        let callback = state.callback;
+        let port = state.port;
         drop(state);
         self.wake.notify_all();
-        emit_all(callback, EVENT_CANCELLED, dropped);
+        emit_all(port, EVENT_CANCELLED, dropped);
         generation
     }
 
@@ -382,10 +383,10 @@ impl Engine {
             _ => {}
         }
         let dropped = state.queue.push(job);
-        let callback = state.callback;
+        let port = state.port;
         drop(state);
         self.wake.notify_all();
-        emit_all(callback, EVENT_CANCELLED, dropped);
+        emit_all(port, EVENT_CANCELLED, dropped);
         status::OK
     }
 
@@ -438,18 +439,23 @@ unsafe fn opt_str<'a>(p: *const c_char) -> Result<Option<&'a str>, i32> {
 }
 
 /// 启动（或更新）引擎：接上 ORT（`ort_path` 为空 = 从本进程符号找，只在 Apple 上可用），打开缓存目录
-/// （`cache_bytes` 上限），登记事件回调。可重复调用；ORT 只接第一次。
+/// （`cache_bytes` 上限），登记事件端口（`post` = Dart 的 `NativeApi.postCObject`，`port` = 收事件的
+/// `RawReceivePort.sendPort.nativePort`）。可重复调用（新 isolate 接手时换端口）；ORT 只接第一次。
 ///
 /// # Safety
-/// 字符串为 NUL 结尾 UTF-8；`callback` 在引擎存活期间一直可调（`NativeCallable.listener`）。
+/// 字符串为 NUL 结尾 UTF-8。
 #[no_mangle]
 pub unsafe extern "C" fn ffc_upscale_start(
     ort_path: *const c_char,
     cache_dir: *const c_char,
     cache_bytes: u64,
-    callback: Option<Callback>,
+    post: Option<PostCObject>,
+    port: i64,
 ) -> i32 {
     guard(|| {
+        let Some(port) = DartPort::new(post, port) else {
+            return status::NULL_ARGUMENT;
+        };
         let Ok(ort_path) = opt_str(ort_path) else {
             return status::INVALID_ARGUMENT;
         };
@@ -489,7 +495,7 @@ pub unsafe extern "C" fn ffc_upscale_start(
                 }
                 (None, None) => Vec::new(),
             };
-            state.callback = callback;
+            state.port = Some(port);
             victims
         };
         cache::remove_files(&victims);
@@ -636,9 +642,9 @@ pub extern "C" fn ffc_upscale_focus(page: i32, window: u32) -> i32 {
         let engine = engine();
         let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
         let dropped = state.queue.set_focus(page, window.min(64) as i32);
-        let callback = state.callback;
+        let port = state.port;
         drop(state);
-        emit_all(callback, EVENT_CANCELLED, dropped);
+        emit_all(port, EVENT_CANCELLED, dropped);
         status::OK
     })
 }
@@ -650,9 +656,9 @@ pub extern "C" fn ffc_upscale_clear() -> i32 {
         let engine = engine();
         let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
         let dropped = state.queue.clear();
-        let callback = state.callback;
+        let port = state.port;
         drop(state);
-        emit_all(callback, EVENT_CANCELLED, dropped);
+        emit_all(port, EVENT_CANCELLED, dropped);
         status::OK
     })
 }
@@ -969,6 +975,11 @@ mod tests {
     #[test]
     fn ffi_rejects_bad_arguments_before_touching_the_runtime() {
         unsafe {
+            // 没给 Dart 的投递函数：事件无处可去，拒绝启动（不会去接 ORT）。
+            assert_eq!(
+                ffc_upscale_start(std::ptr::null(), c"cache".as_ptr(), 1, None, 1),
+                status::NULL_ARGUMENT
+            );
             assert_eq!(
                 ffc_upscale_configure(9, 0, std::ptr::null(), c"x".as_ptr(), std::ptr::null_mut()),
                 status::INVALID_ARGUMENT
@@ -1062,12 +1073,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    fn test_engine(tag: &str, callback: Option<Callback>) -> (Arc<Engine>, PathBuf) {
+    fn test_engine(tag: &str, port: Option<DartPort>) -> (Arc<Engine>, PathBuf) {
         let dir = std::env::temp_dir().join(format!("fushi_upscale_{tag}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut state = State::new();
         state.cache = Some(DiskCache::open(&dir, 1 << 20).unwrap());
-        state.callback = callback;
+        state.port = port;
         let engine = Arc::new(Engine {
             state: Mutex::new(state),
             wake: Condvar::new(),
@@ -1094,15 +1105,25 @@ mod tests {
         }
     }
 
-    /// 只有 [old_generation_model_failure_cannot_disable_the_new_configuration] 用这个回调。
+    /// 只有 [old_generation_model_failure_cannot_disable_the_new_configuration] 用这个端口。
+    const EVENT_PORT: i64 = 5151;
     static EVENTS: Mutex<Vec<(i32, u64)>> = Mutex::new(Vec::new());
 
-    extern "C" fn record_event(kind: i32, token: u64) {
-        EVENTS.lock().unwrap().push((kind, token));
+    fn event_port() -> Option<DartPort> {
+        DartPort::new(Some(crate::dart_port::tests::fake_post), EVENT_PORT)
     }
 
+    /// 到目前为止投到 [EVENT_PORT] 的全部事件（解码成 `(kind, token)`）。
     fn events() -> Vec<(i32, u64)> {
-        EVENTS.lock().unwrap().clone()
+        let mut seen = EVENTS.lock().unwrap();
+        for m in crate::dart_port::tests::take(EVENT_PORT) {
+            let crate::dart_port::tests::Decoded::Ints(v) = m else {
+                panic!("unexpected message {m:?}");
+            };
+            assert_eq!(v.len(), 2);
+            seen.push((v[0] as i32, v[1] as u64));
+        }
+        seen.clone()
     }
 
     /// HBK-AUDIT-006：模型加载失败归属发起加载的那一代配置。旧档在加载中、调用方换了新档并提交了新页，
@@ -1112,7 +1133,7 @@ mod tests {
     fn old_generation_model_failure_cannot_disable_the_new_configuration() {
         use std::sync::mpsc;
         use std::time::Duration;
-        let (engine, dir) = test_engine("generation", Some(record_event));
+        let (engine, dir) = test_engine("generation", event_port());
 
         // 换代丢掉旧一代排队的任务；同配置重复启用不换代、不丢。
         let g0 = engine.configure(config(Tier::Light, "light.onnx"));
