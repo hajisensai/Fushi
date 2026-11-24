@@ -39,7 +39,7 @@ typedef BookCoverDownloader =
 /// 那部分不计入 [hiddenNsfw]。
 ///
 /// [query] 是实际命中的搜索词：原词零结果时按 `bookSearchQueries` 改写后重试
-/// （去卷号 / 拆混写名 / 去打头标签，BUG-5372），弹窗据此提示「显示的是 X 的结果」。
+/// （去卷号 / 拆混写名 / 去打头标签，BUG-5395），弹窗据此提示「显示的是 X 的结果」。
 typedef BookScrapeSearchResult = ({
   List<BookScrapeCandidate> candidates,
   int hiddenNsfw,

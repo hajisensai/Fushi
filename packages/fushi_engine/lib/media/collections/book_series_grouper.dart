@@ -571,7 +571,7 @@ class BookSeriesOrder {
     if (positions.where((Object? p) => p == null).length > 1) return null;
     if (positions.toSet().length != positions.length) return null;
     // 无卷号的分册（`XYZ (上)`）与带卷号的卷混在一起：分册排在哪一卷前后说不准，不
-    // 自愈（只有上 / 中 / 下自己时次序是确定的，BUG-5377）。
+    // 自愈（只有上 / 中 / 下自己时次序是确定的，BUG-5400）。
     final List<_Volume> mainVolumes = bySeries[mainKey]!;
     if (mainVolumes.any((_Volume v) => v.key.volume != null) &&
         mainVolumes.any(

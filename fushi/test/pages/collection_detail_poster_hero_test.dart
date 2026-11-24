@@ -277,7 +277,7 @@ void main() {
           ),
         );
 
-    // 成员行存书 uid（v83），刮削层按 bookKey 记（BUG-5373：曾直接拿 uid 查刮削层）。
+    // 成员行存书 uid（v83），刮削层按 bookKey 记（BUG-5396：曾直接拿 uid 查刮削层）。
     testWidgets('取到横幅后 hero 背景带即时换成它；清除后退回无背景', (WidgetTester tester) async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),

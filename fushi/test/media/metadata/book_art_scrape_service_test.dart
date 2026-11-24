@@ -234,7 +234,7 @@ void main() {
     return http.Response('unexpected ${req.url}', 404);
   }
 
-  // BUG-5373：v83 起合集 epub 成员行 entryKey 是书 uid，不是 bookKey。合集入口
+  // BUG-5396：v83 起合集 epub 成员行 entryKey 是书 uid，不是 bookKey。合集入口
   // 曾把 entryKey 直接当 bookKey 用：一本书都认不出，结果面板只剩「0 / 0 / 0」，
   // 横幅也按 uid 去查刮削层，永远是空。
   test('合集成员按 uid 存：刮削认得出书、写入卷封面，横幅能按成员读回', () async {

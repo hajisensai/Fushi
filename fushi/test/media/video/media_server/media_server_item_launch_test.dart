@@ -84,13 +84,13 @@ class _Config implements MediaServerConfig {
 }
 
 /// Plex ratingKey / Emby id 是各服务器自增数字：两台服务器上同一个 id 是两部
-/// 毫不相干的视频（BUG-5379 审查缺口）。
+/// 毫不相干的视频（BUG-5402 审查缺口）。
 const String _itemId = '1234';
 
 MediaServerItem _episode(String name) =>
     MediaServerItem(id: _itemId, name: name, type: MediaServerItemType.episode);
 
-/// BUG-5379：从媒体服务器浏览页直接串流（没入库）时收藏的句子，bookKey 是服务器
+/// BUG-5402：从媒体服务器浏览页直接串流（没入库）时收藏的句子，bookKey 是服务器
 /// 条目 id、本机没有库行。收藏记下来源身份（`FavoriteSentence.originSourceId`），
 /// 跳回原处按它回到那一台；旧收藏挨台问，必须核对标题。
 void main() {

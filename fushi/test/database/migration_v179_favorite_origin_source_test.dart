@@ -7,7 +7,7 @@ import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:test/test.dart';
 
 /// v179：`favorite_sentences.origin_source_id`——远端条目收藏时的来源身份
-/// （BUG-5379：Plex / Emby 条目 id 跨服务器撞号，跳回原处按它找回那一台）。纯加列：
+/// （BUG-5402：Plex / Emby 条目 id 跨服务器撞号，跳回原处按它找回那一台）。纯加列：
 /// 存量行原样、新列 NULL；重跑幂等。起点是真实的 v178 形状（建当前库再删掉新列）。
 void main() {
   late Directory tmp;

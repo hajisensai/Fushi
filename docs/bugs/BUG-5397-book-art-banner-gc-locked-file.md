@@ -1,5 +1,5 @@
-## BUG-5374 · 孤儿横幅删不掉时整个清除中断
-- **报告**：2026-11-23（BUG-5373 修复时发现：合集详情页 hero 测试在 Windows 上清除时抛 `PathAccessException ... errno = 32`）
+## BUG-5397 · 孤儿横幅删不掉时整个清除中断
+- **报告**：2026-11-23（BUG-5396 修复时发现：合集详情页 hero 测试在 Windows 上清除时抛 `PathAccessException ... errno = 32`）
 - **真实性**：✅ 真 bug（根因 `fushi/lib/src/media/metadata/book_art_store.dart:484` `collectOrphanBanners` 对每个孤儿横幅直接 `await e.delete()`，文件被占用时抛出，向上冒到 `remove` / `rejectCover` / 刮削收尾 / ops 撤销）
 - **[x] ① 已修复** — 孤儿回收改为尽力而为：删不掉的那张记诊断日志、留到下一次回收（每次刮削收尾 / 清除 / 否决都会跑）
 - **[x] ② 已加自动化测试** — `fushi/test/media/metadata/book_art_store_test.dart`（打开横幅文件期间清除不抛、记录已删，关闭后下一次回收删掉）；`fushi/test/pages/collection_detail_poster_hero_test.dart`（Windows 上背景带正在读横幅时清除）

@@ -317,7 +317,7 @@ final class VideoRemotePlaybackBinding {
   final ({String bookUid, int ms}) Function(int startMs)? libraryAnchor;
 
   /// The remote-source identity favorites written through this binding record
-  /// ([FavoriteSentence.originSourceId], BUG-5379): the player's
+  /// ([FavoriteSentence.originSourceId], BUG-5402): the player's
   /// `RemoteLibrarySource.remoteLibrarySourceId` when it streams an item that
   /// is not in the local library. Null (or returning null) = a library row.
   final String? Function()? originSourceId;

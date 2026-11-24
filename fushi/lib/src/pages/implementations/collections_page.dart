@@ -362,7 +362,7 @@ class _CollectionItem {
   final String? headwordReading;
 
   /// 收藏时所在远端条目的来源身份（[FavoriteSentence.originSourceId]，收藏句专用；
-  /// 制卡历史 / 收藏词没有）。视频跳回原处据此回到那一台媒体服务器（BUG-5379）。
+  /// 制卡历史 / 收藏词没有）。视频跳回原处据此回到那一台媒体服务器（BUG-5402）。
   final String? originSourceId;
 
   bool get isWord => type == _CollectionType.word;
@@ -2494,7 +2494,7 @@ class FavoriteOriginNavigator {
     final VideoBookRow? row = await repo.getByBookUid(bookUid);
     if (row == null) {
       // 没有本机库行：从媒体服务器浏览页直接串流（没「加入媒体库」）时收藏的句子，
-      // bookKey 是服务器条目 id，按收藏时记下的来源身份回到那一台服务器（BUG-5379）。
+      // bookKey 是服务器条目 id，按收藏时记下的来源身份回到那一台服务器（BUG-5402）。
       await _openMediaServerVideoSentence(repo, bookUid, item);
       return;
     }

@@ -1,4 +1,4 @@
-## BUG-5373 · 合集「获取各卷封面与横幅」对按 uid 存的成员一本都认不出
+## BUG-5396 · 合集「获取各卷封面与横幅」对按 uid 存的成员一本都认不出
 - **报告**：2026-11-23（用户：合集「Horimiya ホリミヤ」点「获取各卷封面与横幅」，结果只有「0 covers updated, 0 kept, 0 failed」，没有任何系列行，横幅也没有）
 - **真实性**：✅ 真 bug（根因 `fushi/lib/src/media/metadata/book_art_scrape_service.dart:343` `collectionBookKeys` 把合集成员行 `entryKey` 直接当 bookKey 交给 `run()`，`run()` 里 `getEpubBook(key)` 按 bookKey 查不到就 `continue`；v83 起 epub 成员行 `entryKey` 是 `epub_books.uid`）
 - **[x] ① 已修复** — `FushiDatabase.resolveEpubBookKeysForMembers`（成员行键 → bookKey 批量换算，uid 与 v83 前的 bookKey 都认），书图刮削的四个合集入口统一经 `collectionMemberBookKeys` / `epubMemberBookKeys` 取 bookKey

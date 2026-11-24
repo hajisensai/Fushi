@@ -1,7 +1,7 @@
 /// AniList 书目（GraphQL `https://graphql.anilist.co`，`type: MANGA`：轻小说、漫画、
 /// 韩漫、国漫、短篇都在这个类型里）。
 ///
-/// 以前搜索写死 `format: NOVEL`，漫画在这个源永远搜不到（BUG-5378）；现在不限形态，
+/// 以前搜索写死 `format: NOVEL`，漫画在这个源永远搜不到（BUG-5401）；现在不限形态，
 /// 每条带 [BookCatalogRecord.format]，弹窗写明是轻小说还是漫画。
 ///
 /// 免 key。限流见 [kBookCatalogMinIntervals]。映射：标题取日文原名（native），罗马字

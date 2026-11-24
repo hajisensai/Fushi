@@ -1,4 +1,4 @@
-## BUG-5375 · 双语书名（罗马字 + 日文）的系列永远拿不到 Bangumi 候选
+## BUG-5398 · 双语书名（罗马字 + 日文）的系列永远拿不到 Bangumi 候选
 - **报告**：2026-11-23（用户要求验证「获取各卷封面与横幅」每个来源都能用；实网核对合集「Horimiya ホリミヤ」：MangaBaka 有候选，Bangumi 一个都没有）
 - **真实性**：✅ 真 bug（根因两处：`fushi/lib/src/media/metadata/book_art_scrape_service.dart:1178` `_bangumiSearch` 只用全名搜一次；`packages/fushi_engine/lib/media/metadata/book_art/book_art_matcher.dart:437` 标题档位只拿整名比）
 - **[x] ① 已修复** — Bangumi 与 MangaBaka 用同一查询序列（全名 → 双语书名的日文段 → 去副标题）；双语书名整名对不上时，任一段对得上给 `localExtends`（最多待确认）

@@ -156,7 +156,7 @@ class FavoriteSentence {
   final String? reading;
 
   /// 收藏时所在条目的远端来源身份（`RemoteLibrarySource.remoteLibrarySourceId`，
-  /// v179，BUG-5379）：只有从没入库的远端条目（媒体服务器直接串流、互联对端）收藏
+  /// v179，BUG-5402）：只有从没入库的远端条目（媒体服务器直接串流、互联对端）收藏
   /// 时才有，此时 [bookKey] 是该来源内的条目 id，跳回原处按它找回那一台服务器。
   /// null = 本机库条目，或 v179 之前的旧收藏。wire 上是可选字段 `originSourceId`，
   /// 旧版本读到会忽略。

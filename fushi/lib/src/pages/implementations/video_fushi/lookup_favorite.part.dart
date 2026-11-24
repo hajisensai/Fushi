@@ -20,7 +20,7 @@ part of '../video_fushi_page.dart';
 /// [_videoFavoriteCacheKey], [_matchingVideoFavorites]). The popup-stack
 /// infrastructure and the @override mining hooks stay in the main shell.
 extension _VideoLookupFavorite on _VideoFushiPageState {
-  /// 本页写收藏时记下的远端来源身份（[FavoriteSentence.originSourceId]，BUG-5379）：
+  /// 本页写收藏时记下的远端来源身份（[FavoriteSentence.originSourceId]，BUG-5402）：
   /// 远端页（媒体服务器浏览页直接串流 / 互联对端 / 在线源……）= 播放客户端的
   /// `remoteLibrarySourceId`，此时 bookKey 只是该来源内的条目 id；本机库条目 = null。
   String? get _favoriteOriginSourceId =>

@@ -451,7 +451,7 @@ void main() {
     };
   }
 
-  testWidgets('BUG-5379 点卷封面：弹窗关闭并返回该卷封面 + 系列资料（不卡转圈）', (
+  testWidgets('BUG-5402 点卷封面：弹窗关闭并返回该卷封面 + 系列资料（不卡转圈）', (
     WidgetTester tester,
   ) async {
     final List<String> downloaded = <String>[];
@@ -478,7 +478,7 @@ void main() {
     expect(selection.candidate.volume, '2');
   });
 
-  testWidgets('BUG-5379「使用系列封面」：弹窗关闭并返回系列候选', (WidgetTester tester) async {
+  testWidgets('BUG-5402「使用系列封面」：弹窗关闭并返回系列候选', (WidgetTester tester) async {
     final List<String> downloaded = <String>[];
     final BookCoverScrapeSelection? Function() result = await openDialogRoute(
       tester,
@@ -499,7 +499,7 @@ void main() {
     expect(selection!.candidate.subjectId, '100');
     expect(selection.candidate.coverUrl, 'https://images.mangabaka.dev/c');
   });
-  testWidgets('BUG-5372 分卷混写书名切到 MangaBaka：原词零结果自动换系列名，提示实际搜的词，卷号预选', (
+  testWidgets('BUG-5395 分卷混写书名切到 MangaBaka：原词零结果自动换系列名，提示实际搜的词，卷号预选', (
     WidgetTester tester,
   ) async {
     final List<String> searches = <String>[];
@@ -531,7 +531,7 @@ void main() {
     expect(tester.getTopLeft(v2).dx, lessThan(tester.getTopLeft(v1).dx));
   });
 
-  testWidgets('BUG-5372 改写词命中时显示「显示的是 X 的结果」', (WidgetTester tester) async {
+  testWidgets('BUG-5395 改写词命中时显示「显示的是 X 的结果」', (WidgetTester tester) async {
     await tester.pumpWidget(
       wrap(
         BookCoverScrapeDialog(
@@ -598,7 +598,7 @@ void main() {
     );
   });
 
-  // BUG-5378：AniList 源不再只搜轻小说；候选写明形态，同名的轻小说与漫画分得清。
+  // BUG-5401：AniList 源不再只搜轻小说；候选写明形态，同名的轻小说与漫画分得清。
   testWidgets('AniList：漫画与轻小说都搜出来，候选写明形态', (WidgetTester tester) async {
     final List<String> queries = <String>[];
     Map<String, Object?> media(int id, String format, String title) =>

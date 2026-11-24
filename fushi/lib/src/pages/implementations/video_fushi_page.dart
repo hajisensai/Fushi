@@ -1046,7 +1046,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   final RemoteVideoClient? remoteClient;
 
   /// [remoteClient] 是不是调用方为这一页现建、交给本页的（媒体服务器收藏跳转按条目 id
-  /// 现解析出的客户端，`resolveMediaServerItemLaunch`，BUG-5379）。真 = 退页时与本页
+  /// 现解析出的客户端，`resolveMediaServerItemLaunch`，BUG-5402）。真 = 退页时与本页
   /// 自建的流客户端同一条收尾（[RemoteClientTeardown]，等断点落库 / 停止上报用完再关）；
   /// 假（缺省）= 归调用方（互联 host、浏览页的媒体服务器浏览器），本页不碰。
   final bool ownsRemoteClient;
@@ -1073,7 +1073,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// BUG-839：作为「从全屏页连播/换集而来」的新页打开——首帧就绪后自动重进全屏路由，
   /// 保持连播全屏沉浸不被换集打断。仅本地 pushReplacement 换集在换集前处于全屏时置真
   /// （见 [_VideoEpisode._switchEpisode]），以及全屏中被遥控跳到另一部视频的收藏
-  /// （`_openRemoteVideoFavorite`；媒体服务器条目经远端构造器接管，BUG-5379）；
+  /// （`_openRemoteVideoFavorite`；媒体服务器条目经远端构造器接管，BUG-5402）；
   /// 其余首开 / 远端恒 false。
   final bool initialFullscreen;
 

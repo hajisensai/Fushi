@@ -72,7 +72,7 @@ void main() {
       expect(await client.fetchById('999999999'), isNull);
     });
 
-    // BUG-5378：以前写死 format: NOVEL，漫画在 AniList 源永远搜不到。
+    // BUG-5401：以前写死 format: NOVEL，漫画在 AniList 源永远搜不到。
     test('搜索请求是 MANGA 类型、不限形态的 GraphQL POST，带通用 UA，要回 format', () async {
       late http.Request seen;
       final AniListBookClient client = AniListBookClient(

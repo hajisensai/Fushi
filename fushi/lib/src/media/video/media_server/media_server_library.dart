@@ -589,7 +589,7 @@ bool _isMediaServerItemMissing(Object error) => switch (error) {
 /// 的 `bookUid = info.id`），而 Plex ratingKey / Emby id 是各服务器自增数字、跨服务器
 /// 会撞号，所以**按收藏时记下的来源身份**（[originSourceId] =
 /// `FavoriteSentence.originSourceId` = [MediaServerConfig.sourceId] 同口径）精确找回
-/// 那一台，不挨台问（BUG-5379）。
+/// 那一台，不挨台问（BUG-5402）。
 ///
 /// [originSourceId] 为 null 的是 v179 之前的旧收藏：只能挨台问已登录的服务器，而且
 /// 详情标题必须与收藏时的标题 [expectedTitle] 一致才算命中——不核对就会跳到别台

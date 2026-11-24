@@ -227,7 +227,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   /// 上次搜索因书没标 NSFW 藏起来的候选条数。
   int _hiddenNsfw = 0;
 
-  /// 上次搜索实际命中的词与搜索框里的词不同时（原词零结果、改写后命中，BUG-5372）
+  /// 上次搜索实际命中的词与搜索框里的词不同时（原词零结果、改写后命中，BUG-5395）
   /// 记下它，结果区顶上写「显示的是 X 的结果」；null = 就是框里的词。
   String? _matchedQuery;
 
@@ -439,7 +439,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     _finish((cover: file, candidate: _volumeSeries!.forVolume(cover)));
   }
 
-  /// 弹窗唯一的「选中」出口。BUG-5379：`Navigator.pop(file)` 按实参推断类型，传错
+  /// 弹窗唯一的「选中」出口。BUG-5402：`Navigator.pop(file)` 按实参推断类型，传错
   /// 类型编译期不报、运行时在 pop 里抛类型错误（弹窗卡在转圈、导航栈半弹出）；所有
   /// 出口都经这里，结果类型由签名钉死。
   void _finish(BookCoverScrapeSelection selection) =>

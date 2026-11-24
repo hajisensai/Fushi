@@ -148,7 +148,7 @@ void main() {
       );
     });
 
-    // BUG-5377：无卷号的上 / 中 / 下按同系列分册名次算「第 N 卷」。
+    // BUG-5400：无卷号的上 / 中 / 下按同系列分册名次算「第 N 卷」。
     test('分册：上下两册的「下」是第 2 卷，上中下三册的「下」是第 3 卷', () {
       num vol(String title, List<String> members) =>
           collectionMemberVolumeNumber(

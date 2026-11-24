@@ -57,7 +57,7 @@ class BookSeriesKey {
   final BookEpisodeNumber? episode;
 
   /// 分册：书名结尾的「上 / 中 / 下」（`X 上`、`X (下)`、`X 上巻`、`X 下册`），1 = 上、
-  /// 2 = 中、3 = 下，没有为 0（BUG-5377）。
+  /// 2 = 中、3 = 下，没有为 0（BUG-5400）。
   ///
   /// 不折成卷号：只看一个书名不知道「下」是第 2 卷还是第 3 卷（上下两册 / 上中下
   /// 三册）。排序排在卷号之后（`第2巻 上` < `第2巻 下`），续读卡的「第 N 卷」按同系列
@@ -263,7 +263,7 @@ final RegExp _trailingSubtitle = RegExp(
 
 /// 剥掉成对副标题后剩下的 [head] 能不能单独当系列名：至少要有一个不是数字的字。
 /// 只剩数字时成对的那段就是书名本身（「86―エイティシックス―」），剥了合集名只剩
-/// 「86」、拿去在线源搜也搜不到（BUG-5376）。
+/// 「86」、拿去在线源搜也搜不到（BUG-5399）。
 bool _namesSeriesAlone(String head) => RegExp(r'[^\d\s.]').hasMatch(head);
 
 /// 卷号夹在系列名与自由副标题之间：`ソードアート・オンライン3 フェアリィ・ダンス`、
@@ -638,7 +638,7 @@ num collectionMemberVolumeNumber({
   final num? volume = own.volume;
   if (volume != null) return volume;
   // 无卷号的分册（上 / 中 / 下）：按同系列分册里的名次算，上下两册的「下」是第 2 卷、
-  // 上中下三册的「下」是第 3 卷（BUG-5377）。
+  // 上中下三册的「下」是第 3 卷（BUG-5400）。
   if (own.split > 0) {
     final Set<int> splits = <int>{
       for (final BookSeriesKey k in siblings)

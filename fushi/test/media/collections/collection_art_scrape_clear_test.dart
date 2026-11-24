@@ -83,7 +83,7 @@ void main() {
     expect(File('${store.coverPathFor('k1')}.json').existsSync(), isTrue);
   });
 
-  // BUG-5373：合集 epub 成员行 entryKey 是书 uid（v83）；清除曾按 uid 去找按
+  // BUG-5396：合集 epub 成员行 entryKey 是书 uid（v83）；清除曾按 uid 去找按
   // bookKey 记的刮削层，一本都删不掉。
   testWidgets('成员按 uid 存：Enter 确认后清掉该书的刮削层', (WidgetTester tester) async {
     await seedBook(db, 'k1');

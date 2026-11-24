@@ -15,7 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-5379：从媒体服务器浏览页直接串流（没「加入媒体库」）时收藏的视频句，
+/// BUG-5402：从媒体服务器浏览页直接串流（没「加入媒体库」）时收藏的视频句，
 /// bookKey 是服务器条目 id、本机没有 `video_books` 行。旧实现在收藏夹里点这一行
 /// `getByBookUid` 得 null 就静默 return——用户看到的是「点了没反应」。
 ///

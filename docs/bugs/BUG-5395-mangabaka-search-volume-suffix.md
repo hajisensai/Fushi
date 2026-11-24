@@ -1,4 +1,4 @@
-## BUG-5372 · mangabaka-search-volume-suffix
+## BUG-5395 · mangabaka-search-volume-suffix
 - **报告**：2026-11-23（用户：漫画「Horimiya ホリミヤ 第01巻」开「在线匹配封面」切到 MangaBaka，结果区空白；追问「其他源也这样吗」，要求顾及中文漫画 / 漫画书名）
 - **真实性**：✅ 真 bug。弹窗与控制通道 `book.scrape.search` 都把书架上的单卷书名（`displayTitleForBook`）原样发给在线源。2026-11-23 实测：
   - MangaBaka：`Horimiya ホリミヤ 第01巻` 0 条，`ホリミヤ` / `Horimiya` 命中；中文名（`堀与宫村`、`进击的巨人`）、韩文名能直接命中，带卷号就 0 条。
@@ -21,8 +21,8 @@
   - `packages/fushi_engine/test/media/metadata/books/book_search_query_test.dart`：日 / 简 / 繁 / 港台 / 韩卷号，混写名，打头标签，整名在括号里，不切开的书名。
   - `fushi/test/media/metadata/book_metadata_scrape_facade_test.dart`「searchDetailed 改写重搜」：重试顺序、命中即停、全零、出错不续打、不改写的输入。
   - `fushi/test/media/metadata/book_cover_scrape_dialog_test.dart`：
-    - 「BUG-5372 分卷混写书名切到 MangaBaka…」：发出的 `q` 序列、搜索框不变、预选顺序；
-    - 「BUG-5372 改写词命中时显示…」；
+    - 「BUG-5395 分卷混写书名切到 MangaBaka…」：发出的 `q` 序列、搜索框不变、预选顺序；
+    - 「BUG-5395 改写词命中时显示…」；
     - 「中文书：只有日文版卷封面时回落并提示；有中文版时不提示」。
   - `fushi/test/media/collections/book_series_grouper_test.dart`「中文 / 韩文卷号单位」。
 - **备注（已知未覆盖）**

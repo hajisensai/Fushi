@@ -3824,7 +3824,7 @@ class FushiDatabase extends _$FushiDatabase
       }
       if (from < 179) {
         // v179：favorite_sentences.origin_source_id——远端条目（媒体服务器直接串流 /
-        // 互联对端）收藏时的来源身份（BUG-5379：Plex / Emby 条目 id 跨服务器撞号，
+        // 互联对端）收藏时的来源身份（BUG-5402：Plex / Emby 条目 id 跨服务器撞号，
         // 跳回原处要按它找回那一台）。纯加列、存量 NULL = 本机库条目或旧收藏；按列
         // 存在性守卫，重跑幂等。
         if (await _tableExists('favorite_sentences') &&

@@ -846,7 +846,7 @@ void main() {
     },
   );
 
-  test('媒体服务器直接串流：手机收藏记下播放器的来源身份（BUG-5379）', () async {
+  test('媒体服务器直接串流：手机收藏记下播放器的来源身份（BUG-5402）', () async {
     player.originSourceId = 'plex:m1|a1';
     await call('favoriteSet', <String, dynamic>{
       'cueId': 'primary',
@@ -1014,7 +1014,7 @@ final class _Player {
   /// 播放器时间轴 → 库锚点（原盘「全部播放」，BUG-5356）；null = 同轴同行。
   ({String bookUid, int ms}) Function(int startMs)? anchor;
 
-  /// 播放器的远端来源身份（媒体服务器直接串流，BUG-5379）；null = 本机库条目。
+  /// 播放器的远端来源身份（媒体服务器直接串流，BUG-5402）；null = 本机库条目。
   String? originSourceId;
   int sectionIndex = 0;
   bool playing = true;

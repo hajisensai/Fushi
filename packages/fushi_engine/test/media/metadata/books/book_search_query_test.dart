@@ -1,7 +1,7 @@
 import 'package:fushi_engine/media/metadata/books/book_search_query.dart';
 import 'package:test/test.dart';
 
-/// BUG-5372：书架单卷名 → 在线源搜索词。实测（2026-11-23）：MangaBaka 对带卷号 /
+/// BUG-5395：书架单卷名 → 在线源搜索词。实测（2026-11-23）：MangaBaka 对带卷号 /
 /// 中英混写的词零结果，Bangumi 对混写名零结果，拆开后都能命中。
 void main() {
   List<String> series(String q) =>

@@ -2,7 +2,7 @@ import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:test/test.dart';
 
-/// v179 收藏句的远端来源身份（[FavoriteSentence.originSourceId]，BUG-5379）跨设备
+/// v179 收藏句的远端来源身份（[FavoriteSentence.originSourceId]，BUG-5402）跨设备
 /// 不丢：wire JSON 往返保留、旧条目字节不变；同步 / 备份合并时一侧记着、一侧没记
 /// （旧版本设备同步过来的同一条收藏）取记着的那一侧，两种参数顺序结果一致。
 void main() {

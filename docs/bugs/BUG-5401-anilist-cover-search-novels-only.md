@@ -1,5 +1,5 @@
-## BUG-5378 · anilist-cover-search-novels-only
-- **报告**：2026-11-23（BUG-5372 排查时发现：「在线匹配封面」切到 AniList，漫画永远搜不到）
+## BUG-5401 · anilist-cover-search-novels-only
+- **报告**：2026-11-23（BUG-5395 排查时发现：「在线匹配封面」切到 AniList，漫画永远搜不到）
 - **真实性**：✅ 真 bug。`packages/fushi_engine/lib/media/metadata/books/anilist_novels.dart` `aniListNovelSearchQuery` 写死 `type: MANGA, format: NOVEL`，书架上的漫画（含韩漫、国漫）在 AniList 源一条候选都没有；按 id 直取不限形态，搜索却限了，两条路径口径不一。
 - **[x] ① 已修复**
   - 搜索去掉 `format: NOVEL`，按匹配度回轻小说、漫画、短篇；文件与类改名为 `anilist_books.dart` / `AniListBookClient`。

@@ -686,7 +686,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       );
     } else {
       // 没有本机库行：从媒体服务器浏览页直接串流时收藏的条目（bookKey = 服务器条目
-      // id），按收藏时记下的来源身份回到那一台服务器（BUG-5379；旧收藏由解析器挨台
+      // id），按收藏时记下的来源身份回到那一台服务器（BUG-5402；旧收藏由解析器挨台
       // 问并核对标题）。来源不是媒体服务器（互联对端 / 在线源）的找不回来。找不回来
       // 的原因（没登录 / 条目没了 / 连不上）不进 wire：旧版手机只认这一个错误码。
       final String? origin = favorite.originSourceId;

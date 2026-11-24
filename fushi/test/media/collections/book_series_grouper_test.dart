@@ -31,7 +31,7 @@ void main() {
       });
     });
 
-    // BUG-5372：中文（简 / 繁、港台「第N集」）与韩文「N권」卷号单位。
+    // BUG-5395：中文（简 / 繁、港台「第N集」）与韩文「N권」卷号单位。
     test('中文 / 韩文卷号单位：卷 / 冊 / 册 / 集 / 권', () {
       final Map<String, (String, num)> volumes = <String, (String, num)>{
         '进击的巨人 第1卷': ('进击的巨人', 1),
@@ -47,7 +47,7 @@ void main() {
       });
     });
 
-    // BUG-5377：结尾「上 / 中 / 下」分册以前整个书名当系列名，上下两册散成两张卡。
+    // BUG-5400：结尾「上 / 中 / 下」分册以前整个书名当系列名，上下两册散成两张卡。
     test('分册：上 / 中 / 下（空格、括号、巻 / 卷 / 册）归同一系列，按分册排', () {
       final Map<String, int> splits = <String, int>{
         '化物語 上': 1,
@@ -292,7 +292,7 @@ void main() {
       expect(fullWidth.key, parseBookSeriesKey('Re:ゼロ! 2')!.key);
       expect(parseBookSeriesKey('86')!.volume, isNull);
       expect(parseBookSeriesKey('86─エイティシックス─')!.volume, isNull);
-      // BUG-5376：前面只剩数字时成对破折号那段是书名本身，不当副标题剥掉。
+      // BUG-5399：前面只剩数字时成对破折号那段是书名本身，不当副标题剥掉。
       final BookSeriesKey eightySix = parseBookSeriesKey('86―エイティシックス― 3')!;
       expect(eightySix.seriesTitle, '86―エイティシックス―');
       expect(eightySix.volume, 3);

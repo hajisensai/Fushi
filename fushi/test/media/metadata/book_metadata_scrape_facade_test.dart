@@ -82,7 +82,7 @@ void main() {
     });
   });
 
-  // BUG-5372：书架单卷名原词零结果时按源的粒度改写重搜，命中即停。
+  // BUG-5395：书架单卷名原词零结果时按源的粒度改写重搜，命中即停。
   group('searchDetailed 改写重搜', () {
     /// Bangumi 桩：只有 [hit] 这个词有结果；记下每次搜的 keyword。
     BookMetadataScrapeFacade bangumiOnly(

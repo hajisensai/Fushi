@@ -1057,7 +1057,7 @@ class FavoriteSentences extends Table {
   TextColumn get expression => text().nullable()();
   TextColumn get reading => text().nullable()();
 
-  /// 收藏时句子所在条目的**远端来源身份**（v179，BUG-5379）：从没入库的远端条目
+  /// 收藏时句子所在条目的**远端来源身份**（v179，BUG-5402）：从没入库的远端条目
   /// （媒体服务器浏览页直接串流、互联对端……）收藏时记下播放客户端的
   /// `RemoteLibrarySource.remoteLibrarySourceId`（Jellyfin / Emby =
   /// `jellyfin:<地址>|<用户>`、Plex = `plex:<机器>|<账号>`，与

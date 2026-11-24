@@ -79,7 +79,7 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
         return <String, Object?>{
           'source': source.name,
           'query': query,
-          // 原词零结果时实际命中的改写词（去卷号 / 拆混写名，BUG-5372）。
+          // 原词零结果时实际命中的改写词（去卷号 / 拆混写名，BUG-5395）。
           if (found.query != query.trim()) 'matchedQuery': found.query,
           'candidates': <Map<String, Object?>>[
             for (final BookScrapeCandidate c in found.candidates)

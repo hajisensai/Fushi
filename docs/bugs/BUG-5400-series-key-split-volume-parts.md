@@ -1,5 +1,5 @@
-## BUG-5377 · series-key-split-volume-parts
-- **报告**：2026-11-23（BUG-5372 排查时发现：结尾「上 / 中 / 下」的分册不认）
+## BUG-5400 · series-key-split-volume-parts
+- **报告**：2026-11-23（BUG-5395 排查时发现：结尾「上 / 中 / 下」的分册不认）
 - **真实性**：✅ 真 bug。`packages/fushi_engine/lib/media/collections/book_series_key.dart` `_splitVolumeSuffix` 只认数字卷号，「化物語 上」「化物語 下」整个书名当系列名，上下两册散成两张卡、不进同一合集；「化物語（上）」这类括号形态被当成出版标签剥掉，两册同键却分不出先后。
 - **[x] ① 已修复**
   - 新增 `_splitSuffix`：认结尾 `上 / 中 / 下`，带空白、括号（`()`、`<>`、`〈〉`、`【】`）或巻 / 卷 / 册 / 冊 / 集（`X下巻` 可不带空白）。「本好きの下剋上」这种以「上」结尾的书名不算。
