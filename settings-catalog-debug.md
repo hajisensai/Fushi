@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 924 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 927 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -486,6 +486,9 @@ How to read this:
 | `music.lyrics_online` | Online lyrics (LRCLIB) | 在线歌词（LRCLIB） | Lyrics | bool |  | `true` | When no local lyrics exist, match title, artist, album and duration on LRCLIB |
 | `music.lyrics_lookup_pause` | Pause while looking up words | 查词时暂停 | Lyrics | bool |  | `true` | Pause playback while looking up a word on the lyrics page; resume when the popup closes |
 | `music.lyrics_blur_inactive` | Blur surrounding lines | 模糊非当前行 | Lyrics | bool |  | `true` | Softly blur lyric lines other than the current one. Turn off to keep the previous and next lines sharp |
+| `music.lyrics_show_translation` | Show translation | 显示翻译 | Lyrics | bool |  | `true` | Show the translated line under each lyric. Turn off to see the original only |
+| `music.lyrics_show_romanization` | Show romanization | 显示罗马音 | Lyrics | bool |  | `true` | Show the romanized reading under each lyric |
+| `music.lyrics_show_ruby` | Show furigana | 显示注音 | Lyrics | bool |  | `true` | Show readings that come with the lyrics source. Readings are never generated |
 | `music.desktop_lyrics` | Desktop lyrics | 桌面歌词 | Lyrics | bool |  | `false` | Show the current lyric line in a floating always-on-top window while music plays |
 | `music.lyrics_media_session` | Lyrics on the lock screen | 锁屏显示歌词 | Lyrics | bool |  | `true` | Show the current line as the subtitle of the media notification and lock screen |
 | `music.karaoke_ass_render` | ASS karaoke subtitles | ASS 卡拉 OK 字幕 | Lyrics | choice | `auto`, `original`, `structured` | `auto` | Automatic: subtitles with effects render as authored; plain karaoke timing uses synced lyrics. |

@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 924,
+ "count": 927,
  "settings": [
   {
    "key": "appearance.language",
@@ -9228,6 +9228,60 @@
    "description": {
     "en": "Softly blur lyric lines other than the current one. Turn off to keep the previous and next lines sharp",
     "zh-CN": "歌词（含 MV 页）中当前行以外的歌词轻微模糊；关闭后上一句和下一句保持清晰"
+   },
+   "default": true
+  },
+  {
+   "key": "music.lyrics_show_translation",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Show translation",
+    "zh-CN": "显示翻译"
+   },
+   "path": {
+    "en": "Music › Lyrics",
+    "zh-CN": "音乐 › 歌词"
+   },
+   "description": {
+    "en": "Show the translated line under each lyric. Turn off to see the original only",
+    "zh-CN": "在原文下显示译文，关掉即单语"
+   },
+   "default": true
+  },
+  {
+   "key": "music.lyrics_show_romanization",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Show romanization",
+    "zh-CN": "显示罗马音"
+   },
+   "path": {
+    "en": "Music › Lyrics",
+    "zh-CN": "音乐 › 歌词"
+   },
+   "description": {
+    "en": "Show the romanized reading under each lyric",
+    "zh-CN": "在原文下显示罗马音"
+   },
+   "default": true
+  },
+  {
+   "key": "music.lyrics_show_ruby",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Show furigana",
+    "zh-CN": "显示注音"
+   },
+   "path": {
+    "en": "Music › Lyrics",
+    "zh-CN": "音乐 › 歌词"
+   },
+   "description": {
+    "en": "Show readings that come with the lyrics source. Readings are never generated",
+    "zh-CN": "显示歌词源自带的注音，不会自动生成"
    },
    "default": true
   },
