@@ -376,7 +376,7 @@ class LibraryCurateState {
   }
 
   String encode() => jsonEncode(<String, Object?>{
-    'v': 1,
+    'v': kLibraryCurateStateVersion,
     'runs': <Object?>[for (final LibraryCurateRun r in runs) r.toJson()],
     'watermarks': watermarks,
     'progress': <String, Object?>{
@@ -402,7 +402,7 @@ class LibraryCurateState {
         for (final Object? s in v)
           if (s is String) s,
     };
-    return LibraryCurateState(
+    final LibraryCurateState state = LibraryCurateState(
       runs: <LibraryCurateRun>[
         for (final Object? r in (data['runs'] as List?) ?? const <Object?>[])
           ?LibraryCurateRun.fromJson(r),
@@ -422,8 +422,33 @@ class LibraryCurateState {
       suppressed: strings(data['suppressed']),
       seen: strings(data['seen']),
     );
+    final int version = (data['v'] as num?)?.toInt() ?? 1;
+    if (version < 2) state._resetBookScrapeVerdicts();
+    return state;
+  }
+
+  /// v1 → v2（BUG-5366）：书 / 漫画补刮换了判据（按系列身份归组、按系列名查、唯一
+  /// 同名候选直接认、唯一不同名候选也交 AI），旧判据下「查过没认出来」的结论作废：
+  /// 清掉该阶段的水位与进度、`seen` 里的 `scrape.books:<单元>`，以及运行记录里的
+  /// `book_scrape_pending` 待确认项——下一趟自动路径按新判据把缺资料的书全量重看
+  /// 一遍。已经写回过的（`scrape.books.done:`）与撤销抑制（[suppressed]）保留：
+  /// 那是写入事实和用户意思，不是判据结论。
+  void _resetBookScrapeVerdicts() {
+    final String stage = LibraryCurateStage.scrapeBooks.wire;
+    watermarks.remove(stage);
+    progress.remove(stage);
+    seen.removeWhere((String k) => k.startsWith('$stage:'));
+    for (final LibraryCurateRun run in runs) {
+      run.pendingItems.removeWhere(
+        (LibraryCuratePendingItem p) => p.kind == 'book_scrape_pending',
+      );
+    }
   }
 }
+
+/// [LibraryCurateState.encode] 写的格式版本。升版 = 某阶段换了判据、旧结论要作废，
+/// 迁移写在 [LibraryCurateState.decode] 里。
+const int kLibraryCurateStateVersion = 2;
 
 /// 状态的读写（app：偏好；服务端：JSON 文件；测试：内存）。
 abstract interface class LibraryCurateStore {
