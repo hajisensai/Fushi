@@ -195,29 +195,58 @@ final String kSeamlessChaptersInstallJs =
     }
     return el;
   }
-  function fallbackAnchor() {
-    // 中心点落在 body / html 本身（段间空白）时，取主轴上覆盖或最靠近视口中心的直接子元素。
+  // 锚点只能是章节正文里的元素：活动章 light DOM 的正文，或邻章宿主 shadow body 里的正文。
+  // 晋升（S.promote）会移除被晋升的宿主、把旧活动章正文包进新建的宿主——正文节点只是换了
+  // 父节点、始终连在文档上，宿主与 .fushi-seamless-html / -body 包装层则会被丢弃。锚点
+  // 一旦落在它们上面，restoreAnchor 见锚点已脱离文档就不补偿，同一任务里卸掉的上上章
+  // 高度整段不补，scrollTop 被钳到新文档尽头 = 一下跳到刚晋升那章的章末；邻章挂上后视口
+  // 中心又越过下一道章界，再晋升、再跳（反馈 cdWxWwe-iz：章首标题上方的空白正好落在视口
+  // 中心时慢拖，第三章 → 第四章 → 终章）。
+  function isContentAnchor(el) {
+    if (!el || el.nodeType !== 1) return false;
+    var root = el.getRootNode();
+    if (root === document) {
+      if (el === document.body || el === document.documentElement) return false;
+      var top = el;
+      while (top.parentNode && top.parentNode !== document.body) top = top.parentNode;
+      return top.parentNode === document.body && !isHost(top) && !isEngineNode(top);
+    }
+    var host = root.host;
+    if (!isHost(host) || !host.__fushiSeamless) return false;
+    var inner = host.__fushiSeamless.body;
+    return el !== inner && inner.contains(el);
+  }
+  function isLayoutContent(el) {
+    var tag = el.localName;
+    return tag !== 'style' && tag !== 'script' && tag !== 'template' && tag !== 'link';
+  }
+  // 中心点落在空白（段间距、标题上方的外边距、宿主的 padding-block）时，按阅读序走一遍
+  // 活动章正文与各邻章宿主内的正文子元素，取主轴上覆盖或最靠近视口中心的那个。
+  function nearestContentAnchor() {
     var c = viewportMain() / 2;
-    var best = null, bestDist = Infinity;
+    var best = null, bestDist = Infinity, done = false;
+    function consider(el) {
+      if (done || !isLayoutContent(el)) return;
+      var r = mainRange(el.getBoundingClientRect());
+      if (r.end <= r.start) return;
+      var d = c < r.start ? r.start - c : (c > r.end ? c - r.end : 0);
+      if (d < bestDist) { best = el; bestDist = d; }
+      if (d === 0) done = true;
+    }
     var kids = document.body.children;
-    for (var i = 0; i < kids.length; i++) {
+    for (var i = 0; i < kids.length && !done; i++) {
       var k = kids[i];
       if (isEngineNode(k)) continue;
-      var r = mainRange(k.getBoundingClientRect());
-      if (r.end <= r.start) continue;
-      var d = c < r.start ? r.start - c : (c > r.end ? c - r.end : 0);
-      if (d < bestDist) { best = k; bestDist = d; }
-      if (d === 0) break;
+      if (!isHost(k)) { consider(k); continue; }
+      var inner = k.__fushiSeamless ? k.__fushiSeamless.body.children : [];
+      for (var j = 0; j < inner.length && !done; j++) consider(inner[j]);
     }
     return best;
   }
   function captureAnchor() {
     var x = window.innerWidth / 2, y = window.innerHeight / 2;
     var el = deepElementAt(x, y);
-    if (!el || el === document.body || el === document.documentElement ||
-        (el.classList && (el.classList.contains('fushi-seamless-body') || el.classList.contains('fushi-seamless-html')))) {
-      el = fallbackAnchor();
-    }
+    if (!isContentAnchor(el)) el = nearestContentAnchor();
     if (!el) return null;
     return {el: el, pos: mainRange(el.getBoundingClientRect()).start};
   }
