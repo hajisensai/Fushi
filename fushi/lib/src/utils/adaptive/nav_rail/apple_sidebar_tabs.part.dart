@@ -684,7 +684,16 @@ class AppleEdgeSidebarSurface extends StatelessWidget {
           useOwnLayer: true,
           shape: const LiquidRoundedSuperellipse(borderRadius: 0),
           quality: fushiGlassQuality(context, prominent: true),
-          settings: fushiGlassSettings(context).copyWith(shadowElevation: 0),
+          // macOS 27 侧栏是贴边的磨砂材质（vibrancy），不是一块悬浮玻璃：
+          // 没有镜面高光、菲涅尔亮边与边缘折射，只留模糊与底色。
+          settings: fushiGlassSettings(context).copyWith(
+            shadowElevation: 0,
+            thickness: 0,
+            lightIntensity: 0,
+            ambientRim: 0,
+            fresnelStrength: 0,
+            chromaticAberration: 0,
+          ),
           child: const SizedBox.expand(),
         ),
         hairline,
