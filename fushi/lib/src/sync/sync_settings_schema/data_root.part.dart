@@ -329,12 +329,44 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
       : DataRootMigrationRunOutcome.restarting;
 }
 
+/// 清理 Android 迁移目标目录的纯判据：只有当源根确实持有书库文件（证明目标里的只是
+/// 上次中断留下的半成品），或目标根里本就没有真实书库文件时，才允许在迁移前清理目标。
+/// 若源根为空而目标根存有真实书库文件，说明位置锚点可能错位，绝不允许删除目标书库。
+bool canClearStaleAndroidMigrationTarget({
+  required bool oldHasLibrary,
+  required bool newHasLibrary,
+}) => oldHasLibrary || !newHasLibrary;
+
+/// Android 迁移前安全清理 [newDocs] 中的陈旧残留；若 [newDocs] 持有真实书库且
+/// [oldDocs] 没有书库文件则拒绝清理并保留 [newDocs] 原样（返回 false）。
+@visibleForTesting
+Future<bool> clearStaleAndroidMigrationTargetIfSafe({
+  required Directory oldDocs,
+  required Directory newDocs,
+}) async {
+  if (!await newDocs.exists()) return true;
+  final bool newHasLibrary = await AppPaths.hasLibraryFiles(
+    newDocs,
+    onTimeout: true,
+  );
+  final bool oldHasLibrary = newHasLibrary
+      ? await AppPaths.hasLibraryFiles(oldDocs, onTimeout: false)
+      : false;
+  if (!canClearStaleAndroidMigrationTarget(
+    oldHasLibrary: oldHasLibrary,
+    newHasLibrary: newHasLibrary,
+  )) {
+    return false;
+  }
+  await newDocs.delete(recursive: true);
+  return true;
+}
+
 /// Android：书库根在内部 / 外部之间迁移的计划（数据库不动）。
 ///
 /// [toExternal] 为真 = 迁到 `Android/data/<包名>/files/data`，否则迁回内部
-/// `app_flutter/<容器>/data`。目标是固定位置、不是用户挑的：上次迁移中途被杀进程留下的
-/// 半成品（引擎复制阶段不删源、提交前位置锚点没写）一定不是活数据——活的书库根就是
-/// 当前根——所以在这里先清掉，否则引擎会以「目标已有数据」永远拒绝这个固定目标。
+/// `app_flutter/<容器>/data`。目标是固定位置、不是用户挑的：只有当源根持有真实书库或
+/// 目标根不含真实书库文件时才先清掉残留，否则拒绝清空以防止位置锚点错位时误删活书库。
 Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
   required AppModel appModel,
   required bool toExternal,
@@ -371,7 +403,24 @@ Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
     );
   }
   try {
-    if (await newDocs.exists()) await newDocs.delete(recursive: true);
+    final bool cleared = await clearStaleAndroidMigrationTargetIfSafe(
+      oldDocs: Directory(oldDocs),
+      newDocs: newDocs,
+    );
+    if (!cleared) {
+      ErrorLogService.instance.log(
+        'DataRootMigration.androidRefuseClearLiveTarget',
+        '拒绝清空非空目标书库（源根不含书库文件）：old=$oldDocs new=${newDocs.path}',
+      );
+      throw DataRootMigrationPrecheckFailure(
+        _DataRootWidgetState._rejectionMessage(
+          DataRootTargetRejection.targetNotEmpty,
+        ),
+        rejection: DataRootTargetRejection.targetNotEmpty,
+      );
+    }
+  } on DataRootMigrationPrecheckFailure {
+    rethrow;
   } on FileSystemException catch (e, stack) {
     ErrorLogService.instance.logFatal(
       'DataRootMigration.androidClearStaleTarget',
@@ -623,36 +672,38 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
   /// 迁过，不再弹）。迁回内部时布局锚点一起锚成 nested——目标就是 `app_flutter/<容器>/data`，
   /// 留着 flat 锚点会让下次启动解析回 `app_flutter` 根，书库在 UI 上集体消失。任一步失败
   /// 复原已改的键并抛错，由引擎回滚整次迁移。
+  ///
+  /// 位置与布局的真相源是 support 根下的锚点文件（[AndroidLibraryAnchor]，多进程安全，
+  /// 反馈 RCv76PPoiJ）；布局键在 prefs 里照写一份，供不经 Android 锚点的通用布局判定读。
   static Future<void> _commitAndroidLocation(
     SharedPreferences sp,
     String location,
   ) async {
-    final String? previousLocation = sp.getString(
-      AppPaths.androidDocumentsLocationPrefKey,
-    );
     final String? previousLayout = sp.getString(
       AppPaths.documentsLayoutPrefKey,
     );
+    final bool toInternal =
+        location == AppPaths.androidDocumentsLocationInternal;
     try {
-      if (location == AppPaths.androidDocumentsLocationInternal &&
+      if (toInternal &&
           !await sp.setString(
             AppPaths.documentsLayoutPrefKey,
             AppPaths.documentsLayoutNested,
           )) {
         throw const DataRootMigrationException('写入数据位置布局设置失败');
       }
-      if (!await sp.setString(
-        AppPaths.androidDocumentsLocationPrefKey,
-        location,
-      )) {
-        throw const DataRootMigrationException('写入数据位置设置失败');
-      }
-    } catch (e) {
-      await _restorePrefString(
-        sp,
-        AppPaths.androidDocumentsLocationPrefKey,
-        previousLocation,
+      // 锚点是最后一步：它写成功 = 提交成功；它抛错时锚点文件原子替换没发生，
+      // 只需复原上面的布局键。
+      await AppPaths.commitAndroidLibraryAnchor(
+        AndroidLibraryAnchor(
+          location: location,
+          layout: toInternal ? AppPaths.documentsLayoutNested : null,
+          container: toInternal
+              ? AppPaths.defaultDocumentsChildSegments.first
+              : null,
+        ),
       );
+    } catch (e) {
       await _restorePrefString(
         sp,
         AppPaths.documentsLayoutPrefKey,

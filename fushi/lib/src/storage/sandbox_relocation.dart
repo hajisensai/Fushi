@@ -117,6 +117,27 @@ class SandboxRelocation {
         // 恰好落在旧根之下，就会被一起改写。
         scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
       );
+
+      // 反馈 RCv76PPoiJ：台账只说明「上次启动解析到的根是哪个」，不说明「文件现在在
+      // 哪」。本次解析出的根如果是**错的**（Android 书库位置锚点被另一个进程的旧
+      // SharedPreferences 副本冲掉、或锚点指向了空的外部/内部目录），照台账改写就会
+      // 把全库本来正确的路径改到一个什么都没有的根上——整个书架封面、有声书音频集体
+      // 「丢失」，而且改写后台账跟着换掉，下次启动也救不回来。所以台账路径与反推
+      // 路径同一纪律：改写前抽样让磁盘作证，**旧路径还在、改写后的路径不在**就拒绝
+      // 改写，台账不动。
+      final SandboxRebaseEvidence evidence = await _sampleRebaseEvidence(
+        db,
+        docs,
+      );
+      if (evidence.contradicted > 0) {
+        return SandboxRelocationOutcome.refused(
+          source: source,
+          oldDocumentsRoot: oldRoot,
+          newDocumentsRoot: documentsRoot,
+          evidence: evidence,
+        );
+      }
+
       await DataRootMigrator.rebaseOpenDatabasePaths(
         db: db,
         docs: docs,
@@ -214,6 +235,45 @@ class SandboxRelocation {
     return paths;
   }
 
+  static Future<SandboxRebaseEvidence> _sampleRebaseEvidence(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async => rebaseEvidenceFor(
+    storedPaths: await _sampleStoredPaths(db),
+    docs: docs,
+    exists: _pathExists,
+  );
+
+  /// 台账给出的映射 `旧根 → 当前根` 在磁盘上的证据（纯函数，[exists] 注入以便单测）。
+  ///
+  /// 只看落在映射作用域内的样本（[DocumentsPathRebaser.isInScope]）：
+  ///  - **证实**：旧路径不在、改写后的路径在——容器真的被挪走了；
+  ///  - **反证**：旧路径在、改写后的路径不在——文件还在旧根，是当前根解析错了，
+  ///    改写只会把好路径改坏；
+  ///  - 两边都在 / 都不在：不说明问题（中性）。
+  static SandboxRebaseEvidence rebaseEvidenceFor({
+    required Iterable<String> storedPaths,
+    required DocumentsPathRebaser docs,
+    required bool Function(String path) exists,
+  }) {
+    int confirmed = 0;
+    int contradicted = 0;
+    int sampled = 0;
+    for (final String stored in storedPaths) {
+      if (!docs.isInScope(stored)) continue;
+      sampled++;
+      final bool oldExists = exists(stored);
+      final bool newExists = exists(docs.rebase(stored));
+      if (!oldExists && newExists) confirmed++;
+      if (oldExists && !newExists) contradicted++;
+    }
+    return SandboxRebaseEvidence(
+      sampled: sampled,
+      confirmed: confirmed,
+      contradicted: contradicted,
+    );
+  }
+
   static bool _pathExists(String path) =>
       Directory(path).existsSync() || File(path).existsSync();
 
@@ -262,6 +322,28 @@ enum SandboxRelocationSource {
   derivedFromData,
 }
 
+/// 台账映射的磁盘证据（见 [SandboxRelocation.rebaseEvidenceFor]）。
+class SandboxRebaseEvidence {
+  const SandboxRebaseEvidence({
+    required this.sampled,
+    required this.confirmed,
+    required this.contradicted,
+  });
+
+  /// 落在映射作用域内的样本数。
+  final int sampled;
+
+  /// 旧路径不在、改写后在。
+  final int confirmed;
+
+  /// 旧路径在、改写后不在。
+  final int contradicted;
+
+  @override
+  String toString() =>
+      'sampled=$sampled confirmed=$confirmed contradicted=$contradicted';
+}
+
 /// 一次启动期对账的结果。
 class SandboxRelocationOutcome {
   const SandboxRelocationOutcome._({
@@ -270,6 +352,7 @@ class SandboxRelocationOutcome {
     this.oldDocumentsRoot,
     this.newDocumentsRoot,
     this.error,
+    this.refusedEvidence,
   });
 
   factory SandboxRelocationOutcome.unchanged(SandboxRelocationSource source) =>
@@ -293,6 +376,20 @@ class SandboxRelocationOutcome {
         error: error,
       );
 
+  /// 磁盘反证了 `旧根 → 当前根` 的映射：一个字节都没改，台账也没动。
+  factory SandboxRelocationOutcome.refused({
+    required SandboxRelocationSource source,
+    required String oldDocumentsRoot,
+    required String newDocumentsRoot,
+    required SandboxRebaseEvidence evidence,
+  }) => SandboxRelocationOutcome._(
+    rebased: false,
+    source: source,
+    oldDocumentsRoot: oldDocumentsRoot,
+    newDocumentsRoot: newDocumentsRoot,
+    refusedEvidence: evidence,
+  );
+
   /// 本次是否真的改写了库里的路径。
   final bool rebased;
 
@@ -303,9 +400,22 @@ class SandboxRelocationOutcome {
   /// 非 null = 本次自愈失败（已上报，启动照常继续，下次启动会再试）。
   final Object? error;
 
+  /// 非 null = 磁盘反证、拒绝改写（文件还在旧根，多半是本次解析出的根不对）。
+  final SandboxRebaseEvidence? refusedEvidence;
+
+  /// 值得写进诊断日志的结果：真的改写了，或被磁盘反证拒绝。
+  bool get isNoteworthy => rebased || refusedEvidence != null;
+
   @override
-  String toString() => rebased
-      ? 'SandboxRelocation(rebased ${source.name}: '
-            '$oldDocumentsRoot -> $newDocumentsRoot)'
-      : 'SandboxRelocation(unchanged${error == null ? '' : ', error: $error'})';
+  String toString() {
+    if (rebased) {
+      return 'SandboxRelocation(rebased ${source.name}: '
+          '$oldDocumentsRoot -> $newDocumentsRoot)';
+    }
+    if (refusedEvidence != null) {
+      return 'SandboxRelocation(refused ${source.name}: '
+          '$oldDocumentsRoot -> $newDocumentsRoot, $refusedEvidence)';
+    }
+    return 'SandboxRelocation(unchanged${error == null ? '' : ', error: $error'})';
+  }
 }

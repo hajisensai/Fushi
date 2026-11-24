@@ -9,6 +9,10 @@ import 'package:fushi/src/pages/implementations/android_storage_move_prompt.dart
     show shouldShowAndroidStorageMovePrompt;
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/data_root_migrator.dart';
+import 'package:fushi/src/sync/sync_settings_schema.dart'
+    show
+        canClearStaleAndroidMigrationTarget,
+        clearStaleAndroidMigrationTargetIfSafe;
 
 /// Android 书库根：新装默认外部 app 专属目录（`Android/data/<包名>/files/data`），
 /// 老安装锚定内部、一次性提示后走带进度的迁移（数据库始终留在内部）。
@@ -318,6 +322,417 @@ void main() {
         await extractDirInDb(),
         p.join(appFlutter.path, 'fushi_books', 'Bk'),
       );
+    });
+  });
+
+  group('反馈 RCv76PPoiJ：书库位置锚点多进程安全 + 磁盘对账', () {
+    const String internal = AppPaths.androidDocumentsLocationInternal;
+    const String external = AppPaths.androidDocumentsLocationExternal;
+
+    test('锚定的根是空的、另一个根有书 → 以磁盘为准改正锚点', () {
+      expect(
+        AppPaths.reconcileAndroidDocumentsLocation(
+          anchored: internal,
+          anchoredHasLibrary: false,
+          otherHasLibrary: true,
+        ),
+        external,
+        reason: '锚点被冲回 internal，但书全在外部：必须回到外部，而不是对着空根',
+      );
+      expect(
+        AppPaths.reconcileAndroidDocumentsLocation(
+          anchored: external,
+          anchoredHasLibrary: false,
+          otherHasLibrary: true,
+        ),
+        internal,
+      );
+    });
+
+    test('锚定的根有书 / 两边都空 → 沿用锚点', () {
+      for (final (bool, bool) c in <(bool, bool)>[
+        (true, true),
+        (true, false),
+        (false, false),
+      ]) {
+        expect(
+          AppPaths.reconcileAndroidDocumentsLocation(
+            anchored: external,
+            anchoredHasLibrary: c.$1,
+            otherHasLibrary: c.$2,
+          ),
+          external,
+          reason: '$c：迁移中断（两边都有）与全新安装（两边都空）都不改锚点',
+        );
+      }
+    });
+
+    group('磁盘探测与纠偏', () {
+      late Directory tmp;
+      setUp(() => tmp = Directory.systemTemp.createTempSync('fushi_anchor_'));
+      tearDown(() {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      });
+
+      test(
+        'hasLibraryFiles 忽略空目录与启动占位 (.nomedia / fushiExport / 工作目录)',
+        () async {
+          Directory(
+            p.join(tmp.path, 'fushi_books', 'empty', 'deeper'),
+          ).createSync(recursive: true);
+          Directory(p.join(tmp.path, 'thumbnails')).createSync(recursive: true);
+          Directory(
+            p.join(tmp.path, 'dictionaryResources'),
+          ).createSync(recursive: true);
+          File(p.join(tmp.path, 'not_owned', 'x.txt'))
+            ..createSync(recursive: true)
+            ..writeAsStringSync('x');
+          // 启动期在 Android 上必然建出 fushiExport/.nomedia，不应被误判为已有书库。
+          File(p.join(tmp.path, 'fushiExport', '.nomedia'))
+            ..createSync(recursive: true)
+            ..writeAsBytesSync(const <int>[]);
+          File(p.join(tmp.path, 'hibikiExport', '.nomedia'))
+            ..createSync(recursive: true)
+            ..writeAsBytesSync(const <int>[]);
+          File(p.join(tmp.path, 'thumbnails', '.nomedia'))
+            ..createSync(recursive: true)
+            ..writeAsBytesSync(const <int>[]);
+          File(p.join(tmp.path, 'fushiExport', 'temp.jpg'))
+            ..createSync(recursive: true)
+            ..writeAsStringSync('tmp');
+          File(p.join(tmp.path, 'dictionaryImportWorkingDirectory', 'tmp.bin'))
+            ..createSync(recursive: true)
+            ..writeAsStringSync('tmp');
+
+          expect(await AppPaths.hasLibraryFiles(tmp, onTimeout: true), isFalse);
+
+          File(
+            p.join(tmp.path, 'fushi_books', 'empty', 'deeper', 'c.jpg'),
+          ).writeAsStringSync('jpg');
+          expect(await AppPaths.hasLibraryFiles(tmp, onTimeout: false), isTrue);
+        },
+      );
+
+      test(
+        '真机现场：external 仅有 fushiExport/.nomedia 与空运行目录、书库仍在 internal → 纠回 internal',
+        () async {
+          final Directory platformDocs = Directory(
+            p.join(tmp.path, 'data', 'app_flutter'),
+          )..createSync(recursive: true);
+          final Directory extDocs = Directory(
+            p.join(
+              tmp.path,
+              'sdcard',
+              'Android',
+              'data',
+              'pkg',
+              'files',
+              'data',
+            ),
+          )..createSync(recursive: true);
+          File(p.join(extDocs.path, 'fushiExport', '.nomedia'))
+            ..createSync(recursive: true)
+            ..writeAsBytesSync(const <int>[]);
+          for (final String dir in <String>[
+            'thumbnails',
+            'dictionaryResources',
+            'dictionaryImportWorkingDirectory',
+          ]) {
+            Directory(p.join(extDocs.path, dir)).createSync(recursive: true);
+          }
+          File(p.join(platformDocs.path, 'fushi_books', 'norway', 'cover.jpg'))
+            ..createSync(recursive: true)
+            ..writeAsStringSync('jpg');
+
+          final List<String> corrections = <String>[];
+          final AndroidLibraryAnchor resolved =
+              await AppPaths.reconcileAndroidLibraryAnchorWithDisk(
+                anchored: const AndroidLibraryAnchor(location: external),
+                defaultFlatLayout: true,
+                defaultContainer: 'Fushi',
+                platformDocuments: platformDocs,
+                externalDocuments: extDocs,
+                corrections: corrections,
+              );
+
+          expect(resolved.location, internal);
+          expect(corrections, hasLength(1));
+        },
+      );
+
+      test(
+        '跨内部布局兜底：锚 external（空）且默认 Fushi/data 空，真书在 Hibiki/data 或 flat → 纠回对应内部布局',
+        () async {
+          final Directory platformDocs = Directory(
+            p.join(tmp.path, 'data', 'app_flutter'),
+          )..createSync(recursive: true);
+          final Directory extDocs = Directory(
+            p.join(
+              tmp.path,
+              'sdcard',
+              'Android',
+              'data',
+              'pkg',
+              'files',
+              'data',
+            ),
+          )..createSync(recursive: true);
+          File(p.join(extDocs.path, 'fushiExport', '.nomedia'))
+            ..createSync(recursive: true)
+            ..writeAsBytesSync(const <int>[]);
+          Directory(
+            p.join(platformDocs.path, 'Fushi', 'data'),
+          ).createSync(recursive: true);
+          File(
+              p.join(
+                platformDocs.path,
+                'Hibiki',
+                'data',
+                'audiobooks',
+                'bk',
+                'a.mp3',
+              ),
+            )
+            ..createSync(recursive: true)
+            ..writeAsBytesSync(<int>[1, 2]);
+
+          final List<String> corrections = <String>[];
+          final AndroidLibraryAnchor resolved =
+              await AppPaths.reconcileAndroidLibraryAnchorWithDisk(
+                anchored: const AndroidLibraryAnchor(location: external),
+                defaultFlatLayout: false,
+                defaultContainer: 'Fushi',
+                platformDocuments: platformDocs,
+                externalDocuments: extDocs,
+                corrections: corrections,
+              );
+
+          expect(
+            resolved,
+            const AndroidLibraryAnchor(
+              location: internal,
+              layout: AppPaths.documentsLayoutNested,
+              container: 'Hibiki',
+            ),
+          );
+          expect(corrections, hasLength(1));
+        },
+      );
+
+      test('反向场景：internal 只有 .nomedia、书全在 external → 纠回 external', () async {
+        final Directory platformDocs = Directory(
+          p.join(tmp.path, 'data', 'app_flutter'),
+        )..createSync(recursive: true);
+        final Directory extDocs = Directory(
+          p.join(tmp.path, 'sdcard', 'Android', 'data', 'pkg', 'files', 'data'),
+        )..createSync(recursive: true);
+        File(p.join(platformDocs.path, 'fushiExport', '.nomedia'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(const <int>[]);
+        File(p.join(extDocs.path, 'fushi_books', 'norway', 'cover.jpg'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('jpg');
+
+        final List<String> corrections = <String>[];
+        final AndroidLibraryAnchor resolved =
+            await AppPaths.reconcileAndroidLibraryAnchorWithDisk(
+              anchored: const AndroidLibraryAnchor(location: internal),
+              defaultFlatLayout: true,
+              defaultContainer: 'Fushi',
+              platformDocuments: platformDocs,
+              externalDocuments: extDocs,
+              corrections: corrections,
+            );
+
+        expect(resolved.location, external);
+        expect(corrections, hasLength(1));
+      });
+
+      test('全新安装（两侧均无真书库文件，仅有 .nomedia）→ 保持原锚点不变', () async {
+        final Directory platformDocs = Directory(
+          p.join(tmp.path, 'data', 'app_flutter'),
+        )..createSync(recursive: true);
+        final Directory extDocs = Directory(
+          p.join(tmp.path, 'sdcard', 'Android', 'data', 'pkg', 'files', 'data'),
+        )..createSync(recursive: true);
+        File(p.join(extDocs.path, 'fushiExport', '.nomedia'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(const <int>[]);
+
+        final List<String> corrections = <String>[];
+        final AndroidLibraryAnchor resolved =
+            await AppPaths.reconcileAndroidLibraryAnchorWithDisk(
+              anchored: const AndroidLibraryAnchor(location: external),
+              defaultFlatLayout: false,
+              defaultContainer: 'Fushi',
+              platformDocuments: platformDocs,
+              externalDocuments: extDocs,
+              corrections: corrections,
+            );
+
+        expect(resolved, const AndroidLibraryAnchor(location: external));
+        expect(corrections, isEmpty);
+      });
+
+      test('锚点文件原子写、读回一致；坏内容按不存在处理', () async {
+        expect(await AppPaths.readAndroidLibraryAnchor(tmp), isNull);
+        const AndroidLibraryAnchor anchor = AndroidLibraryAnchor(
+          location: internal,
+          layout: AppPaths.documentsLayoutNested,
+          container: 'Hibiki',
+        );
+        await AppPaths.writeAndroidLibraryAnchor(tmp, anchor);
+        expect(await AppPaths.readAndroidLibraryAnchor(tmp), anchor);
+        expect(
+          tmp.listSync().whereType<File>().map((File f) => p.basename(f.path)),
+          <String>[AppPaths.androidLibraryAnchorFileName],
+          reason: '临时文件不留残渣',
+        );
+
+        File(
+          p.join(tmp.path, AppPaths.androidLibraryAnchorFileName),
+        ).writeAsStringSync('{"location":"sdcard"}');
+        expect(await AppPaths.readAndroidLibraryAnchor(tmp), isNull);
+      });
+    });
+
+    group('迁移目标清理保护（防锚点错位时误删活书库）', () {
+      late Directory tmp;
+      setUp(() => tmp = Directory.systemTemp.createTempSync('fushi_clr_'));
+      tearDown(() {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      });
+
+      test('canClearStaleAndroidMigrationTarget 纯判据', () {
+        expect(
+          canClearStaleAndroidMigrationTarget(
+            oldHasLibrary: false,
+            newHasLibrary: true,
+          ),
+          isFalse,
+        );
+        expect(
+          canClearStaleAndroidMigrationTarget(
+            oldHasLibrary: true,
+            newHasLibrary: true,
+          ),
+          isTrue,
+        );
+        expect(
+          canClearStaleAndroidMigrationTarget(
+            oldHasLibrary: false,
+            newHasLibrary: false,
+          ),
+          isTrue,
+        );
+      });
+
+      test('源根仅含 .nomedia 而目标根有真书库文件 → 拒绝清理且完整保留目标文件', () async {
+        final Directory oldDocs = Directory(p.join(tmp.path, 'ext', 'data'))
+          ..createSync(recursive: true);
+        final Directory newDocs = Directory(
+          p.join(tmp.path, 'internal', 'Fushi', 'data'),
+        )..createSync(recursive: true);
+        File(p.join(oldDocs.path, 'fushiExport', '.nomedia'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(const <int>[]);
+        final File liveBook =
+            File(p.join(newDocs.path, 'fushi_books', 'norway', 'cover.jpg'))
+              ..createSync(recursive: true)
+              ..writeAsStringSync('jpg');
+
+        final bool cleared = await clearStaleAndroidMigrationTargetIfSafe(
+          oldDocs: oldDocs,
+          newDocs: newDocs,
+        );
+
+        expect(cleared, isFalse);
+        expect(liveBook.existsSync(), isTrue, reason: '绝不误删活书库');
+      });
+
+      test('源根也有真书库（迁移中断重试）或目标仅有空目录/.nomedia → 允许清理陈旧目标', () async {
+        final Directory oldDocs = Directory(p.join(tmp.path, 'old'))
+          ..createSync(recursive: true);
+        final Directory newDocs = Directory(p.join(tmp.path, 'new'))
+          ..createSync(recursive: true);
+        File(p.join(oldDocs.path, 'fushi_books', 'a', 'c.jpg'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('old');
+        final File halfCopied =
+            File(p.join(newDocs.path, 'fushi_books', 'a', 'c.jpg'))
+              ..createSync(recursive: true)
+              ..writeAsStringSync('half');
+
+        expect(
+          await clearStaleAndroidMigrationTargetIfSafe(
+            oldDocs: oldDocs,
+            newDocs: newDocs,
+          ),
+          isTrue,
+        );
+        expect(halfCopied.existsSync(), isFalse);
+        expect(newDocs.existsSync(), isFalse);
+
+        final Directory emptyOld = Directory(p.join(tmp.path, 'empty_old'))
+          ..createSync(recursive: true);
+        final Directory nomediaTarget = Directory(
+          p.join(tmp.path, 'nomedia_target'),
+        )..createSync(recursive: true);
+        File(p.join(nomediaTarget.path, 'fushiExport', '.nomedia'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(const <int>[]);
+
+        expect(
+          await clearStaleAndroidMigrationTargetIfSafe(
+            oldDocs: emptyOld,
+            newDocs: nomediaTarget,
+          ),
+          isTrue,
+        );
+        expect(nomediaTarget.existsSync(), isFalse);
+      });
+    });
+
+    test('AndroidLibraryAnchor 编解码', () {
+      expect(
+        AndroidLibraryAnchor.tryParse(
+          const AndroidLibraryAnchor(
+            location: external,
+            layout: AppPaths.documentsLayoutNested,
+            container: 'Fushi',
+          ).encode(),
+        ),
+        const AndroidLibraryAnchor(
+          location: external,
+          layout: AppPaths.documentsLayoutNested,
+          container: 'Fushi',
+        ),
+      );
+      expect(AndroidLibraryAnchor.tryParse('not json'), isNull);
+      expect(
+        AndroidLibraryAnchor.tryParse(
+          '{"location":"internal","layout":"x","container":"y"}',
+        ),
+        const AndroidLibraryAnchor(location: internal),
+        reason: '布局或容器是垃圾值时当没给',
+      );
+    });
+
+    test('守卫：位置锚点不再写进 SharedPreferences（多进程会被旧副本整份覆盖）', () {
+      final RegExp write = RegExp(
+        r'set(String|Bool)\(\s*AppPaths\.androidDocumentsLocationPrefKey|'
+        r'set(String|Bool)\(\s*androidDocumentsLocationPrefKey',
+      );
+      final List<String> offenders = <String>[
+        for (final FileSystemEntity e in Directory(
+          'lib',
+        ).listSync(recursive: true))
+          if (e is File &&
+              e.path.endsWith('.dart') &&
+              write.hasMatch(e.readAsStringSync()))
+            e.path,
+      ];
+      expect(offenders, isEmpty);
     });
   });
 }
