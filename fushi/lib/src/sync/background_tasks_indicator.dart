@@ -92,11 +92,14 @@ String? syncTaskDetailLine(SyncTask task) {
 
 /// 任务表里的一轮同步 → 入口 / 明细的一项。
 BackgroundTask syncTaskToBackgroundTask(SyncTask task) {
-  final SyncProgress? p = task.progress;
+  // BUG-5368：已结束的一轮不再沿用最后一个进度阶段——失败项写着「正在读取远端文件
+  // 清单」是在撒谎。结束了就说这轮是谁（全量同步 / 合集 / 单本），结局在第二行
+  // （「已结束，N 项失败」）与错误列表里。
+  final SyncProgress? p = task.isActive ? task.progress : null;
   return BackgroundTask(
     id: 'sync-${task.id}',
     icon: syncItemKindIcon(p?.itemKind),
-    // 两级取值（BUG-1260）：有阶段 tick 用它，否则说清这轮同步是谁。
+    // 两级取值（BUG-1260）：在跑且有阶段 tick 用它，否则说清这轮同步是谁。
     line: p != null
         ? syncProgressLine(p)
         : syncActivityLine(SyncActivity(task.kind, title: task.title)),
