@@ -45,6 +45,7 @@ on:
       - 'tool/merge_update_manifest.py'
       - 'tool/gen_debug_pulse.py'
       - 'tool/feedback_mark_released.sh'
+      - 'tool/bump_rolling_release_tag.sh'
       - 'tool/publish_settings_catalog.sh'
       - '.github/workflows/release.yml'
       - '.github/workflows/release-desktop.yml'

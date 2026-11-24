@@ -44,6 +44,7 @@ on:
       - 'tool/merge_update_manifest.py'
       - 'tool/gen_debug_pulse.py'
       - 'tool/feedback_mark_released.sh'
+      - 'tool/bump_rolling_release_tag.sh'
       - 'tool/notarize_submit.sh'
       - 'tool/mihon/**'
       - 'tool/ffmpeg-unified/**'
