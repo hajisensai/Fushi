@@ -611,7 +611,13 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       supporting: FushiSidePaneScrollScope(
         child: _glassSidebarBackdrop(
           Padding(
-            padding: EdgeInsets.only(bottom: mediaPadding.bottom),
+            // 侧栏底从窗口顶画起（[_glassSidebarBackdrop]，Apple 宽窗外壳把设置
+            // tab 铺到窗口顶、顶部让位以 MediaQuery padding 交下来，见 home_page
+            // `_appleSidebarTopInsetFor`），搜索框与分类排在让位（窗口按钮行）下面。
+            padding: EdgeInsets.only(
+              top: mediaPadding.top,
+              bottom: mediaPadding.bottom,
+            ),
             child: _wideNavPanel(
               FushiDesignTokens.of(context),
               glass: true,
@@ -860,12 +866,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         child: SafeArea(
           bottom: false,
           child: Padding(
-            // 侧栏底从窗口顶画起（[_glassSidebarBackdrop]），搜索框与分类排在
-            // 顶部让位（窗口按钮行）下面。
-            padding: EdgeInsets.only(
-              top: mediaPadding.top,
-              bottom: mediaPadding.bottom,
-            ),
+            // 外层 SafeArea 已让开顶部，这里只让底部。
+            padding: EdgeInsets.only(bottom: mediaPadding.bottom),
             child: _wideNavPanel(
               tokens,
               glass: false,

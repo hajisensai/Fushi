@@ -2053,7 +2053,9 @@ class _HomePageState extends BasePageState<HomePage>
                 builder: (BuildContext context, Widget? _) =>
                     FushiAppleScrollEdge(
                       side: FushiScrollEdgeSide.top,
-                      visible: _appleChrome.contentUnderTop,
+                      visible:
+                          _appleChrome.contentUnderTop &&
+                          !_tabOwnsTopScrollEdge(_visibleTab),
                       blur: false,
                     ),
               ),
@@ -2063,6 +2065,13 @@ class _HomePageState extends BasePageState<HomePage>
       ],
     );
   }
+
+  /// [tab] 自己在顶栏 / 工具栏下沿画 scroll edge，外壳不再在内容区顶部叠一条。
+  /// 设置页各形态（窄屏导航栏、宽屏详情的 macOS 27 窗口工具栏、二级侧栏）都把
+  /// 滚动内容排在自己的栏下面并自带渐隐；外壳这条带贴的是**内容区顶部**，对设置
+  /// 来说那是栏的上沿——宽窗会在窗口按钮行与设置工具栏之间压出一道页面底色
+  /// （深色是黑）的横带，并横穿二级侧栏的搜索框（2026-11-24 用户截图）。
+  bool _tabOwnsTopScrollEdge(HomeTab tab) => tab == HomeTab.settings;
 
   /// 外壳为 [tab] 显示的页面大标题：有自己分区页签行、却没有页面名的库页
   /// （书架 / 漫画 / 视频 / 游戏）与浏览、浏览器、查词。桌面自绘控制条已不再显示
