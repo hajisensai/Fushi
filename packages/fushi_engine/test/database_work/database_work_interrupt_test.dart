@@ -103,6 +103,99 @@ void main() {
     await db.close();
   });
 
+  test('一份工作里逐个发的请求，读完就从工作上注销中止触发器（长工作不累积）', () async {
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    addTearDown(() => server.close(force: true));
+    server.listen((HttpRequest request) async {
+      request.response.write('ok');
+      await request.response.close();
+    });
+    final http.Client client = createAppHttpIoClient();
+    addTearDown(client.close);
+    final FushiDatabase db = _memoryDb();
+    final Uri uri = Uri.parse('http://127.0.0.1:${server.port}/item');
+
+    final List<int> pendingAfterEach = await db.runBackgroundWork<List<int>>(
+      'test.batchScrape',
+      (DatabaseWorkToken _) async {
+        final List<int> pending = <int>[];
+        for (int i = 0; i < 5; i++) {
+          expect((await client.get(uri)).body, 'ok');
+          pending.add(db.backgroundWork.pendingCancelListenerCount);
+        }
+        // 调用方拿到响应头就放弃读正文：同样算请求结束、注销触发器。
+        final http.StreamedResponse dropped = await client.send(
+          http.Request('GET', uri),
+        );
+        await dropped.stream.listen(null).cancel();
+        pending.add(db.backgroundWork.pendingCancelListenerCount);
+        return pending;
+      },
+    );
+    // 工作还在跑时，每个请求结束后工作上已不挂它的中止回调。
+    expect(pendingAfterEach, everyElement(0));
+    await db.close();
+  });
+
+  test('响应体读到一半时关库，正文流以中止报错收尾', () async {
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    final List<HttpRequest> held = <HttpRequest>[];
+    server.listen((HttpRequest request) async {
+      held.add(request);
+      request.response.bufferOutput = false;
+      request.response.contentLength = 1 << 20;
+      request.response.add(List<int>.filled(1024, 65));
+      await request.response.flush();
+      // 余下正文永不发出：模拟卡住的大海报下载。
+    });
+    addTearDown(() async {
+      for (final HttpRequest r in held) {
+        try {
+          await r.response.detachSocket().then((Socket s) => s.destroy());
+        } on Object {
+          // 客户端已中止。
+        }
+      }
+      await server.close(force: true);
+    });
+    final http.Client client = createAppHttpIoClient();
+    addTearDown(client.close);
+    final FushiDatabase db = _memoryDb();
+    final Uri uri = Uri.parse('http://127.0.0.1:${server.port}/poster');
+    final Completer<void> firstChunk = Completer<void>();
+    Object? bodyError;
+    final Future<Object?> work = db
+        .runBackgroundWork<int>('test.poster', (DatabaseWorkToken _) async {
+          final http.StreamedResponse response = await client.send(
+            http.Request('GET', uri),
+          );
+          int received = 0;
+          try {
+            await for (final List<int> chunk in response.stream) {
+              received += chunk.length;
+              if (!firstChunk.isCompleted) firstChunk.complete();
+            }
+          } on Object catch (error) {
+            bodyError = error;
+            rethrow;
+          }
+          return received;
+        })
+        .then<Object?>((int r) => r, onError: (Object e) => e);
+
+    await firstChunk.future;
+    await db.close().timeout(const Duration(seconds: 10));
+    expect(bodyError, isA<http.RequestAbortedException>());
+    expect(await work, isA<DatabaseWorkCancelledException>());
+    expect(db.backgroundWork.pendingCancelListenerCount, 0);
+  });
+
   test('后台工作里的 FFmpeg 子进程，关库时被杀掉并回收', () async {
     // 用一个会跑很久的系统命令代替 ffmpeg：进程模型与 ffmpeg 抽帧一致。
     final (String exe, List<String> args) = Platform.isWindows

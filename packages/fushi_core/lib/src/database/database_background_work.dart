@@ -46,9 +46,14 @@ final class DatabaseWorkToken {
   void Function()? _unlinkCancelled;
   bool _ended = false;
 
-  /// 库开始关闭时完成的信号（已取消就是已完成的 future）。给能接「中止触发器」的长操作
-  /// 用（`http` 的 `Abortable` 请求）。这份工作结束（[DatabaseBackgroundWork.run] 返回）
-  /// 时自动注销，不在库上留回调；工作结束后才第一次取的信号永不完成。
+  /// 库开始关闭时完成的信号（已取消就是已完成的 future）。这份工作结束
+  /// （[DatabaseBackgroundWork.run] 返回）时自动注销，不在库上留回调；工作结束后才第一次
+  /// 取的信号永不完成。
+  ///
+  /// 只适合「一份工作里挂一两次」的等待。一份工作里会反复挂上去的东西（逐个请求的
+  /// `http` 中止触发器、逐个子进程）不要挂在它上面：挂上的回调要等工作结束才随信号一起
+  /// 释放，长工作里会无界累积——那种场合用 [onCancelled] 按次登记、操作结束即注销
+  /// （`createAppHttpIoClient` 就是这么做的）。
   Future<void> get cancelled {
     final Completer<void>? existing = _cancelled;
     if (existing != null) return existing.future;

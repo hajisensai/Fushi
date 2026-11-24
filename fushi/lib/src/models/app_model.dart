@@ -8185,14 +8185,21 @@ class AppModel
                   (
                     List<MihonAvailableExtension> targets,
                     bool Function() isCancelled,
-                  ) => manager.installMany(
-                    targets,
-                    upgrade: true,
-                    // 签名变了的在 SIGNATURE_CHANGED 门就进 failed；这里再保证
-                    // 后台绝不替用户信任任何新签名。
-                    trustSigner: false,
-                    isCancelled: isCancelled,
-                  ),
+                  ) {
+                    // 探针登记成库的后台工作（[_probesAsDatabaseWork]）：换库 / 关库时
+                    // 和「用户开始用在线源」一样在下一条之前停下，不让关库等整批
+                    // APK 下载安装跑完（BUG-5406）。
+                    final DatabaseWorkToken? work = DatabaseWorkToken.current;
+                    return manager.installMany(
+                      targets,
+                      upgrade: true,
+                      // 签名变了的在 SIGNATURE_CHANGED 门就进 failed；这里再保证
+                      // 后台绝不替用户信任任何新签名。
+                      trustSigner: false,
+                      isCancelled: () =>
+                          isCancelled() || (work?.isCancelled ?? false),
+                    );
+                  },
             )
           : null,
     );

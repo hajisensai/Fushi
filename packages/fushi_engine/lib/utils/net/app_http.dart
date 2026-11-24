@@ -31,6 +31,7 @@
 /// 与替换前的裸 client 行为逐字一致。本次改动**不新增任何用户可见配置**。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -79,31 +80,53 @@ http.Client createAppHttpIoClient({
     .._configureWith(configure),
 );
 
-/// [createAppHttpIoClient] 的实现：在后台写库工作里发的请求换成可中止请求，中止触发器
-/// 是那份工作的 [DatabaseWorkToken.cancelled]。调用方已自带中止触发器的请求原样发出。
+/// [createAppHttpIoClient] 的实现：在后台写库工作里发的请求换成可中止请求。
+///
+/// 中止触发器**每个请求一份**，经 [DatabaseWorkToken.onCancelled] 挂到工作上，请求结束
+/// （响应体读完 / 出错 / 调用方放弃读取 / 发送本身失败）就注销。不能直接拿工作级的
+/// [DatabaseWorkToken.cancelled] 当触发器：`IOClient` 会在触发器上挂两个捕获整个
+/// `HttpClientRequest` / 响应流的回调，触发器不完成就永不释放——整库刮削、IPTV 台标这类
+/// 一份工作发几千个请求的长工作，会把每个请求的对象一直攒到工作结束。
+/// 调用方已自带中止触发器的请求原样发出。
 class DatabaseWorkAwareIoClient extends IOClient {
   DatabaseWorkAwareIoClient([super.inner]);
 
   @override
-  Future<IOStreamedResponse> send(http.BaseRequest request) =>
-      super.send(abortableInCurrentDatabaseWork(request));
+  Future<IOStreamedResponse> send(http.BaseRequest request) async {
+    final DatabaseWorkToken? work = DatabaseWorkToken.current;
+    if (work == null || _hasOwnAbortTrigger(request)) {
+      return super.send(request);
+    }
+    final Completer<void> trigger = Completer<void>();
+    final void Function() unlink = work.onCancelled(() {
+      if (!trigger.isCompleted) trigger.complete();
+    });
+    final IOStreamedResponse response;
+    try {
+      response = await super.send(abortableWith(request, trigger.future));
+    } catch (_) {
+      unlink();
+      rethrow;
+    }
+    return _WorkBoundStreamedResponse(response, unlink);
+  }
 }
 
-/// 当前 Zone 在后台写库工作里时，把 [request] 换成以那份工作取消信号为触发器的
-/// [http.AbortableStreamedRequest]（方法、地址、头、正文、重定向 / 长连接设置原样
-/// 搬过去）；不在工作里、或请求已自带中止触发器时原样返回。
-http.BaseRequest abortableInCurrentDatabaseWork(http.BaseRequest request) {
-  final DatabaseWorkToken? work = DatabaseWorkToken.current;
-  if (work == null) return request;
-  if (request case http.Abortable(abortTrigger: final Future<void> _)) {
-    return request;
-  }
+bool _hasOwnAbortTrigger(http.BaseRequest request) =>
+    request is http.Abortable && request.abortTrigger != null;
+
+/// 把 [request] 换成以 [abortTrigger] 为中止触发器的 [http.AbortableStreamedRequest]
+/// （方法、地址、头、正文、重定向 / 长连接设置原样搬过去）。
+http.BaseRequest abortableWith(
+  http.BaseRequest request,
+  Future<void> abortTrigger,
+) {
   // 先 finalize：有的请求（multipart）在 finalize 里才写定 content-type / 长度。
   final http.ByteStream body = request.finalize();
   final http.AbortableStreamedRequest out = http.AbortableStreamedRequest(
     request.method,
     request.url,
-    abortTrigger: work.cancelled,
+    abortTrigger: abortTrigger,
   );
   out.headers.addAll(request.headers);
   out.contentLength = request.contentLength;
@@ -117,6 +140,63 @@ http.BaseRequest abortableInCurrentDatabaseWork(http.BaseRequest request) {
     cancelOnError: true,
   );
   return out;
+}
+
+/// 响应体流结束（读完 / 出错 / 调用方取消订阅）时调 `settled` 的响应包装；其余字段与
+/// [detachSocket] 原样转给内层响应。
+class _WorkBoundStreamedResponse extends IOStreamedResponse
+    implements http.BaseResponseWithUrl {
+  _WorkBoundStreamedResponse(this._original, void Function() settled)
+    : url = _original is http.BaseResponseWithUrl
+          ? (_original as http.BaseResponseWithUrl).url
+          : _original.request?.url ?? Uri(),
+      super(
+        _onSettled(_original.stream, settled),
+        _original.statusCode,
+        contentLength: _original.contentLength,
+        request: _original.request,
+        headers: _original.headers,
+        isRedirect: _original.isRedirect,
+        persistentConnection: _original.persistentConnection,
+        reasonPhrase: _original.reasonPhrase,
+      );
+
+  final IOStreamedResponse _original;
+
+  @override
+  final Uri url;
+
+  @override
+  Future<Socket> detachSocket() => _original.detachSocket();
+}
+
+Stream<List<int>> _onSettled(
+  Stream<List<int>> source,
+  void Function() settled,
+) {
+  StreamSubscription<List<int>>? subscription;
+  late final StreamController<List<int>> controller;
+  controller = StreamController<List<int>>(
+    sync: true,
+    onListen: () {
+      subscription = source.listen(
+        controller.add,
+        onError: controller.addError,
+        onDone: () {
+          subscription = null;
+          settled();
+          unawaited(controller.close());
+        },
+      );
+    },
+    onPause: () => subscription?.pause(),
+    onResume: () => subscription?.resume(),
+    onCancel: () {
+      settled();
+      return subscription?.cancel();
+    },
+  );
+  return controller.stream;
 }
 
 extension on HttpClient {
