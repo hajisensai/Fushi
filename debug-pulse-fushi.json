@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T18:15:05Z",
+ "generatedAt": "2026-11-24T19:19:49Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "073033d43c75b31fb022d3d5882ee498af9d8a87",
   "seq": 32274
  },
  "builds": [
+  {
+   "seq": 32274,
+   "version": "3.4.0",
+   "sha": "073033d43c75b31fb022d3d5882ee498af9d8a87",
+   "unknown": false,
+   "publishedAt": "2026-11-24T19:19:26Z",
+   "testflight": true,
+   "baseSeq": 32272,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "073033d43c75b31fb022d3d5882ee498af9d8a87",
+     "subject": "Merge #4408 (claude/main-dev-branch-roles-3228aa) into develop"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "queued",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45437823764"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 32272,
    "version": "3.4.0",
@@ -131,8 +163,8 @@
    "version": "3.4.0",
    "sha": "58b4601e536e05ee724872e8e37574956fa3af8c",
    "unknown": false,
-   "publishedAt": "2026-11-24T09:49:56Z",
-   "testflight": true,
+   "publishedAt": "2026-11-24T09:48:45Z",
+   "testflight": false,
    "baseSeq": 32203,
    "prs": [],
    "direct": [
@@ -171,46 +203,20 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
     }
    }
   }
  ],
- "pending": {
-  "headSha": "073033d43c75b31fb022d3d5882ee498af9d8a87",
-  "headSeq": 32274,
-  "prs": [],
-  "direct": [
-   {
-    "sha": "073033d43c75b31fb022d3d5882ee498af9d8a87",
-    "subject": "Merge #4408 (claude/main-dev-branch-roles-3228aa) into develop"
-   }
-  ],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45437823764"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45437823652"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45437823652"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45437823652"
-   }
-  }
- },
+ "pending": null,
  "prs": {}
 }
