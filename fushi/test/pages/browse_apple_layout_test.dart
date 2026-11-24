@@ -11,7 +11,13 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_shelf.dart';
 import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_source_block.dart';
 import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_widgets.dart';
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_media.dart';
+import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_source_block.dart';
+import 'package:fushi/src/pages/implementations/discovery/discovery_widgets.dart'
+    show DiscoveryShelf;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlock;
 import 'package:fushi/src/platform/host_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
@@ -245,6 +251,145 @@ void main() {
         src,
         contains('StoreRestrictedCapability.externalDiscovery.isAvailable'),
       );
+    });
+  });
+
+  group('媒体条目（视频 / 漫画 / 书共用件）Apple 分派', () {
+    Widget card({VoidCallback? onTap}) => SizedBox(
+      width: 140,
+      height: 320,
+      child: DiscoveryCoverCard(
+        key: const ValueKey<String>('card'),
+        title: 'Work A',
+        subtitle: '8.4 · 2026',
+        leadingIcon: Icons.star_rounded,
+        cover: const DiscoveryImageCover(image: null),
+        onTap: onTap,
+      ),
+    );
+
+    testWidgets('Apple 下是海报卡（无取色色块拼贴）', (WidgetTester tester) async {
+      await pump(tester, Center(child: card(onTap: () {})), glass: true);
+      expect(find.byType(AppleDiscoveryPosterCard), findsOneWidget);
+      expect(find.byType(FushiCoverBlock), findsNothing);
+      expect(find.text('Work A'), findsWidgets);
+      expect(find.text('8.4 · 2026'), findsOneWidget);
+    });
+
+    testWidgets('M3E 下仍是色块媒体块', (WidgetTester tester) async {
+      await pump(tester, Center(child: card(onTap: () {})), glass: false);
+      expect(find.byType(AppleDiscoveryPosterCard), findsNothing);
+      expect(find.byType(FushiCoverBlock), findsOneWidget);
+    });
+
+    testWidgets('海报卡焦点 + Enter 打开', (WidgetTester tester) async {
+      int taps = 0;
+      await pump(tester, Center(child: card(onTap: () => taps++)), glass: true);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(taps, 1);
+    });
+
+    testWidgets('货架：Apple 是海报货架（横滑 + 悬停箭头），M3E 原样', (
+      WidgetTester tester,
+    ) async {
+      Widget shelf() => SingleChildScrollView(
+        child: DiscoveryShelf(
+          title: 'Hot',
+          itemWidth: 300,
+          itemCount: 12,
+          trailing: DiscoveryViewAllButton(onPressed: () {}),
+          itemBuilder: (BuildContext context, int index) => DiscoveryCoverCard(
+            title: 'Work $index',
+            cover: const DiscoveryImageCover(image: null),
+            onTap: () {},
+          ),
+        ),
+      );
+      await pump(
+        tester,
+        shelf(),
+        glass: true,
+        platform: TargetPlatform.macOS,
+        size: const Size(1000, 800),
+      );
+      expect(find.byType(AppleDiscoveryPosterShelf), findsOneWidget);
+      expect(find.byType(AppleShelfHoverArrows), findsOneWidget);
+      expect(find.byType(AppleShelfViewAllButton), findsOneWidget);
+      final Finder horizontal = find.byWidgetPredicate(
+        (Widget w) => w is Scrollable && w.axisDirection == AxisDirection.right,
+      );
+      final ScrollableState state = tester.state<ScrollableState>(
+        horizontal.first,
+      );
+      expect(state.position.maxScrollExtent, greaterThan(0));
+      await tester.drag(horizontal.first, const Offset(-400, 0));
+      await tester.pump(const Duration(seconds: 1));
+      expect(state.position.pixels, greaterThan(0));
+
+      await pump(tester, shelf(), glass: false, size: const Size(1000, 800));
+      expect(find.byType(AppleDiscoveryPosterShelf), findsNothing);
+      expect(find.byType(AppleShelfViewAllButton), findsNothing);
+    });
+
+    testWidgets('首块横幅：Apple 是大图横幅，Enter 打开', (WidgetTester tester) async {
+      int opens = 0;
+      await pump(
+        tester,
+        ListView(
+          children: <Widget>[
+            DiscoveryHeroBanner(
+              title: 'Hero work',
+              eyebrow: 'Hot',
+              rank: 1,
+              metaParts: const <String>['2026', '★ 8.4'],
+              onOpen: () => opens++,
+            ),
+          ],
+        ),
+        glass: true,
+      );
+      expect(find.byType(AppleDiscoveryHeroBanner), findsOneWidget);
+      expect(find.byType(FushiCoverBlock), findsNothing);
+      expect(find.text('Hero work'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(opens, 1);
+    });
+
+    test('视频发现 Apple 画法不再用 Material 弹出菜单 / chip 行做筛选', () {
+      final String part = File(
+        'lib/src/pages/implementations/discovery/apple/apple_video_discovery.part.dart',
+      ).readAsStringSync();
+      for (final String m3e in <String>[
+        '_buildYearField(',
+        '_buildRegionMenu(',
+        '_buildGenreMenu(',
+        '_buildSortMenu(',
+        '_openFilterSheet',
+        'FushiSelectableChip(',
+      ]) {
+        expect(part, isNot(contains(m3e)), reason: m3e);
+      }
+      expect(part, contains('_openAppleFilterSheet'));
+      expect(
+        part,
+        contains('AppleDiscoveryPullDown<discovery.VideoDiscoverySort>'),
+      );
+      final String page = File(
+        'lib/src/pages/implementations/video_discovery_page.dart',
+      ).readAsStringSync();
+      expect(page, contains('_buildAppleChrome()'));
+      expect(page, contains('_buildAppleSectionHeader('));
+      final String airing = File(
+        'lib/src/pages/implementations/discovery/airing_today_shelf.dart',
+      ).readAsStringSync();
+      expect(airing, contains('_buildAppleStrip('));
+      expect(airing, contains('AppleDiscoveryShelfHeader('));
     });
   });
 }

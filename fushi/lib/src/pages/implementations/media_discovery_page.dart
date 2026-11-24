@@ -1369,7 +1369,26 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
             displayNameFor: (String id) => _sourceDisplayName(service, id),
           ),
         ),
-      if (title != null)
+      if (title != null && isGlassDesign(context))
+        // Apple：结果头 = 货架头字阶（标题 + 「n 个来源 · m 条」副行）。
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              appleDiscoveryPageInset(context),
+              16,
+              appleDiscoveryPageInset(context),
+              4,
+            ),
+            child: AppleDiscoveryShelfHeader(
+              title: title,
+              subtitle: t.discovery_results_summary(
+                sources: sourceCount,
+                n: visible.entries.length,
+              ),
+            ),
+          ),
+        )
+      else if (title != null)
         SliverToBoxAdapter(
           child: FushiSectionTitle(
             title,

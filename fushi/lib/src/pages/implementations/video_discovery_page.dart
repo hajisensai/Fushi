@@ -45,6 +45,12 @@ import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellTitleScope;
 
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_shelf.dart'
+    show AppleDiscoveryShelfHeader;
+
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsRow, AdaptiveSettingsSection;
+
 part 'discovery/apple/apple_video_discovery.part.dart';
 
 /// Aggregated discovery port consumed by the page. Implementations may fan a
@@ -1138,17 +1144,24 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
             ),
           ),
         SliverToBoxAdapter(
-          child: FushiSectionTitle(
-            searchMode
-                ? t.video_discovery_search_results
-                : t.video_discovery_all_works,
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              searchMode ? tokens.spacing.card : tokens.spacing.section,
-              tokens.spacing.page,
-              tokens.spacing.gap,
-            ),
-          ),
+          child: isGlassDesign(context)
+              ? _buildAppleSectionHeader(
+                  searchMode
+                      ? t.video_discovery_search_results
+                      : t.video_discovery_all_works,
+                  top: searchMode ? 8 : 24,
+                )
+              : FushiSectionTitle(
+                  searchMode
+                      ? t.video_discovery_search_results
+                      : t.video_discovery_all_works,
+                  padding: EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    searchMode ? tokens.spacing.card : tokens.spacing.section,
+                    tokens.spacing.page,
+                    tokens.spacing.gap,
+                  ),
+                ),
         ),
         // 已显示先返回的来源，其余来源还在路上。
         if (_loading)

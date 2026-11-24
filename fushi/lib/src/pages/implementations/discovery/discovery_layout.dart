@@ -23,6 +23,11 @@ import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/video_home_layout.dart'
     show VideoCardOrientation;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_media.dart';
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_shelf.dart'
+    show AppleShelfViewAllButton;
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_widgets.dart'
+    show appleDiscoveryPageInset;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
@@ -373,7 +378,15 @@ class DiscoveryCoverCard extends StatelessWidget {
     required double width,
     DiscoveryCoverShape shape = DiscoveryCoverShape.portrait,
     int titleMaxLines = kShelfCardMetaTitleLines,
-  }) => discoveryTileHeight(context);
+  }) => isGlassDesign(context)
+      // Apple：海报卡（封面 + 标题 + 副行），高随卡宽与封面比例。
+      ? appleDiscoveryTileHeight(
+          context,
+          width: width,
+          shape: shape,
+          titleMaxLines: titleMaxLines,
+        )
+      : discoveryTileHeight(context);
   ImageProvider? get _resolvedTint {
     final ImageProvider? explicit = tintImage;
     if (explicit != null) return explicit;
@@ -490,6 +503,20 @@ class DiscoveryCoverCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Apple：Apple TV / Books 式海报卡，不画取色色块与斜放海报拼贴。
+    if (isGlassDesign(context)) {
+      return AppleDiscoveryPosterCard(
+        title: title,
+        cover: cover,
+        subtitle: subtitle,
+        leadingIcon: leadingIcon,
+        shape: shape,
+        titleMaxLines: titleMaxLines,
+        onTap: onTap,
+        onLongPress: onLongPress,
+        focusId: focusId,
+      );
+    }
     final bool interactive = onTap != null || onLongPress != null;
     final Future<ImageProvider?>? pending = logo == null ? logoFuture : null;
     final Widget block = pending == null
@@ -533,6 +560,11 @@ class DiscoverySkeletonCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      return ExcludeSemantics(
+        child: AppleDiscoveryPosterSkeleton(shape: shape),
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final _DiscoveryTileMetrics m = _DiscoveryTileMetrics.of(context);
     final Color block = isGlassDesign(context)
@@ -685,6 +717,7 @@ class DiscoveryHeroBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ImageProvider? posterImage = poster;
     final ImageProvider? coverImage = posterImage ?? _coverWidgetImage;
@@ -749,6 +782,31 @@ class DiscoveryHeroBanner extends StatelessWidget {
     );
   }
 
+  /// Apple：Apple TV「精选」式大图横幅（同槽高，轮播与骨架不用改）。
+  Widget _buildApple(BuildContext context) {
+    final double page = appleDiscoveryPageInset(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(page, 8, page, 0),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) =>
+            AppleDiscoveryHeroBanner(
+              title: title,
+              onOpen: onOpen,
+              height: heightFor(constraints.maxWidth + page * 2) - 8,
+              eyebrow: _chipLabel,
+              metaParts: metaParts,
+              backdrop: backdrop,
+              poster: poster ?? _coverWidgetImage,
+              coverWidget: coverWidget,
+              logo: logo,
+              actionLabel: actionLabel,
+              actionKey: actionKey,
+              focusId: focusId,
+            ),
+      ),
+    );
+  }
+
   ImageProvider? get _coverWidgetImage {
     final Widget? widget = coverWidget;
     return widget == null ? null : fushiCoverImageOf(widget);
@@ -762,6 +820,21 @@ class DiscoveryHeroSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      final double page = appleDiscoveryPageInset(context);
+      return LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) => Padding(
+          padding: EdgeInsets.fromLTRB(page, 8, page, 0),
+          child: ClipRRect(
+            borderRadius: discoveryHeroRadius(context),
+            child: SizedBox(
+              height: DiscoveryHeroBanner.heightFor(constraints.maxWidth) - 8,
+              child: const DiscoveryCoverPlaceholder(showIcon: false),
+            ),
+          ),
+        ),
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) => Padding(
@@ -829,6 +902,7 @@ class DiscoveryCoverGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double gap = tokens.spacing.card;
     return SliverPadding(
@@ -869,6 +943,52 @@ class DiscoveryCoverGrid extends StatelessWidget {
             // 包法；调用方已自行包 [FushiStaggeredEntrance] 的原样放行，不叠两层）。
             // 进场窗口 [FushiEntranceScope] 由调用方在结果到达处给，这里不内置——
             // 骨架网格与结果网格同位复用时，内置窗口会在骨架期就关掉。
+            delegate: SliverChildBuilderDelegate((
+              BuildContext context,
+              int index,
+            ) {
+              final Widget child = itemBuilder(context, index);
+              return child is FushiStaggeredEntrance
+                  ? child
+                  : FushiStaggeredEntrance(index: index, child: child);
+            }, childCount: itemCount),
+          );
+        },
+      ),
+    );
+  }
+}
+
+extension on DiscoveryCoverGrid {
+  /// Apple：海报网格（列宽约等于货架卡宽，手机至少 2 列；行距大于列距，给标题
+  /// 留气口）。
+  Widget _buildApple(BuildContext context) {
+    final double page = appleDiscoveryPageInset(context);
+    final bool mac = fushiAppleUsesMacMetrics(context);
+    final double gap = mac ? 16 : 12;
+    return SliverPadding(
+      padding: padding ?? EdgeInsets.fromLTRB(page, 8, page, 16),
+      sliver: FushiSliverWidthBuilder(
+        builder: (BuildContext context, double available) {
+          final double target =
+              appleDiscoveryArtworkWidth(context, shape) * 1.15;
+          final int desired = ((available + gap) / (target + gap)).floor();
+          final int columns = desired < 2
+              ? (shape == DiscoveryCoverShape.landscape ? 1 : 2)
+              : desired;
+          final double width = (available - gap * (columns - 1)) / columns;
+          return SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              mainAxisSpacing: gap + 8,
+              crossAxisSpacing: gap,
+              mainAxisExtent: appleDiscoveryTileHeight(
+                context,
+                width: width,
+                shape: shape,
+                titleMaxLines: titleMaxLines,
+              ),
+            ),
             delegate: SliverChildBuilderDelegate((
               BuildContext context,
               int index,
@@ -969,6 +1089,10 @@ class DiscoveryViewAllButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Apple：「查看全部 ›」强调色文字钮（与货架头同一个件）。
+    if (isGlassDesign(context)) {
+      return AppleShelfViewAllButton(onPressed: onPressed);
+    }
     return FushiTextButton.icon(
       onPressed: onPressed,
       iconAlignment: IconAlignment.end,

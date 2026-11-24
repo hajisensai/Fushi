@@ -816,6 +816,18 @@ class _FeedHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget? viewAll = _viewAllButton(feed);
+    // Apple：货架头字阶（标题 + 行尾转圈 /「查看全部 ›」）。
+    if (isGlassDesign(context)) {
+      final double page = appleDiscoveryPageInset(context);
+      return Padding(
+        padding: EdgeInsets.fromLTRB(page, 24, page, 4),
+        child: AppleDiscoveryShelfHeader(
+          title: t.manga_discovery_source_popular(source: feed.displayName),
+          loading: loading,
+          trailing: viewAll,
+        ),
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FushiSectionTitle(
       t.manga_discovery_source_popular(source: feed.displayName),

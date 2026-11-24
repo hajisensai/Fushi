@@ -262,12 +262,17 @@ class AppleDiscoveryPullDown<T> extends StatelessWidget {
     required this.keyPrefix,
     this.active = false,
     this.tooltip,
+    this.chipLabelOf,
     super.key,
   });
 
   final List<T> values;
   final T selected;
   final String Function(T value) labelOf;
+
+  /// 按钮上显示的文案（null = 同 [labelOf]）：「全部」项在按钮上显示维度名
+  /// （「年份 ⌄」）时用。
+  final String Function(T value)? chipLabelOf;
   final ValueChanged<T> onSelected;
 
   /// 菜单项 key 前缀（`<prefix>_<index>`），测试与焦点定位用。
@@ -293,7 +298,10 @@ class AppleDiscoveryPullDown<T> extends StatelessWidget {
             selected: values[i] == selected,
           ),
       ],
-      child: LibraryFilterChip(label: labelOf(selected), active: active),
+      child: LibraryFilterChip(
+        label: (chipLabelOf ?? labelOf)(selected),
+        active: active,
+      ),
     );
   }
 }

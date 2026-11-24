@@ -96,19 +96,25 @@ extension _AppleVideoDiscovery on _VideoDiscoveryPageState {
               children: <Widget>[
                 categoryMenu,
                 if (mac) ...<Widget>[
-                  _buildYearField(),
-                  _buildRegionMenu(),
-                  _buildGenreMenu(),
-                  _buildSortMenu(),
+                  _appleYearPullDown(_year, _applyYearFilter),
+                  _appleRegionPullDown(_region, (String value) {
+                    _updateState(() => _region = value);
+                    unawaited(_reload());
+                  }),
+                  _appleGenrePullDown(_genre, (String value) {
+                    _updateState(() => _genre = value);
+                    unawaited(_reload());
+                  }),
+                  _appleSortPullDown(),
                 ] else ...<Widget>[
                   FushiIconButton(
                     key: const ValueKey<String>('video-discovery-open-filters'),
                     icon: Icons.tune_rounded,
                     tooltip: t.game_filter,
                     badge: activeFilters > 0,
-                    onTap: _openFilterSheet,
+                    onTap: _openAppleFilterSheet,
                   ),
-                  _buildSortMenu(compact: true),
+                  _appleSortPullDown(),
                 ],
               ],
             ),
@@ -116,5 +122,176 @@ extension _AppleVideoDiscovery on _VideoDiscoveryPageState {
         ],
       ),
     );
+  }
+
+  /// 「全部作品 / 搜索结果」节头（Apple 货架头同一字阶，无「查看全部」）。
+  Widget _buildAppleSectionHeader(String title, {required double top}) {
+    final double page = appleDiscoveryPageInset(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(page, top, page, 4),
+      child: AppleDiscoveryShelfHeader(title: title),
+    );
+  }
+
+  /// 年份 pull-down（按钮上「全部」显示维度名「年份」）。
+  Widget _appleYearPullDown(int value, ValueChanged<int> onChanged) {
+    final int newestYear = DateTime.now().year + 2;
+    return KeyedSubtree(
+      key: const ValueKey<String>('video-discovery-filter-year'),
+      child: AppleDiscoveryPullDown<int>(
+        keyPrefix: 'video-discovery-year',
+        tooltip: t.video_filter_year,
+        values: <int>[0, for (int y = newestYear; y >= 1900; y--) y],
+        selected: value,
+        active: value != 0,
+        labelOf: (int y) => y == 0 ? t.home_filter_all : '$y',
+        chipLabelOf: (int y) => y == 0 ? t.video_filter_year : '$y',
+        onSelected: onChanged,
+      ),
+    );
+  }
+
+  Widget _appleRegionPullDown(String value, ValueChanged<String> onChanged) =>
+      KeyedSubtree(
+        key: const ValueKey<String>('video-discovery-filter-region'),
+        child: AppleDiscoveryPullDown<String>(
+          keyPrefix: 'video-discovery-region',
+          tooltip: t.video_work_countries,
+          values: const <String>['', 'CN', 'JP', 'KR', 'US', 'GB', 'FR'],
+          selected: value,
+          active: value.isNotEmpty,
+          labelOf: (String r) => r.isEmpty ? t.home_filter_all : r,
+          chipLabelOf: (String r) => r.isEmpty ? t.video_work_countries : r,
+          onSelected: onChanged,
+        ),
+      );
+
+  Widget _appleGenrePullDown(String value, ValueChanged<String> onChanged) =>
+      KeyedSubtree(
+        key: const ValueKey<String>('video-discovery-filter-genre'),
+        child: AppleDiscoveryPullDown<String>(
+          keyPrefix: 'video-discovery-genre',
+          tooltip: t.video_work_genres,
+          values: <String>['', ..._availableGenres],
+          selected: value,
+          active: value.isNotEmpty,
+          labelOf: (String g) => g.isEmpty ? t.home_filter_all : g,
+          chipLabelOf: (String g) => g.isEmpty ? t.video_work_genres : g,
+          onSelected: onChanged,
+        ),
+      );
+
+  Widget _appleSortPullDown() => KeyedSubtree(
+    key: const ValueKey<String>('video-discovery-filter-sort'),
+    child: AppleDiscoveryPullDown<discovery.VideoDiscoverySort>(
+      keyPrefix: 'video-discovery-sort',
+      tooltip: '${t.sort_by}: ${_sortLabel(_sort)}',
+      values: <discovery.VideoDiscoverySort>[
+        for (final discovery.VideoDiscoverySort sort
+            in discovery.VideoDiscoverySort.values)
+          if (sort != discovery.VideoDiscoverySort.relevance || _searching)
+            sort,
+      ],
+      selected: _sort,
+      active: _sort != _defaultSort,
+      labelOf: _sortLabel,
+      chipLabelOf: (discovery.VideoDiscoverySort sort) =>
+          sort == _defaultSort ? t.sort_by : _sortLabel(sort),
+      onSelected: (discovery.VideoDiscoverySort value) {
+        _updateState(() => _pickedSort = value);
+        unawaited(_reload());
+      },
+    ),
+  );
+
+  /// iOS 档「筛选」面板：一组 inset 表单行（年份 / 地区 / 类型 各一颗
+  /// pull-down）+ 重置 / 完成。确认才应用（与 M3E 面板同一语义）。
+  Future<void> _openAppleFilterSheet() async {
+    int year = _year;
+    String region = _region;
+    String genre = _genre;
+    final bool? apply = await adaptiveModalSheet<bool>(
+      context: context,
+      useSafeArea: true,
+      builder: (BuildContext sheetContext) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setSheetState) {
+          final double page = appleDiscoveryPageInset(context);
+          return SafeArea(
+            top: false,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(page, 0, page, page),
+              child: Column(
+                key: const ValueKey<String>('video-discovery-filter-sheet'),
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  AdaptiveSettingsSection(
+                    title: t.game_filter,
+                    children: <Widget>[
+                      AdaptiveSettingsRow(
+                        title: t.video_filter_year,
+                        trailing: _appleYearPullDown(
+                          year,
+                          (int value) => setSheetState(() => year = value),
+                        ),
+                      ),
+                      AdaptiveSettingsRow(
+                        title: t.video_work_countries,
+                        trailing: _appleRegionPullDown(
+                          region,
+                          (String value) => setSheetState(() => region = value),
+                        ),
+                      ),
+                      AdaptiveSettingsRow(
+                        title: t.video_work_genres,
+                        trailing: _appleGenrePullDown(
+                          genre,
+                          (String value) => setSheetState(() => genre = value),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: <Widget>[
+                      FushiTextButton(
+                        key: const ValueKey<String>(
+                          'video-discovery-reset-filters',
+                        ),
+                        onPressed: () => setSheetState(() {
+                          year = 0;
+                          region = '';
+                          genre = '';
+                        }),
+                        child: Text(t.reset),
+                      ),
+                      const Spacer(),
+                      FushiFilledButton(
+                        key: const ValueKey<String>(
+                          'video-discovery-apply-filters',
+                        ),
+                        onPressed: () => Navigator.pop(sheetContext, true),
+                        child: Text(t.dialog_done),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (!mounted ||
+        apply != true ||
+        (year == _year && region == _region && genre == _genre)) {
+      return;
+    }
+    _updateState(() {
+      _year = year;
+      _region = region;
+      _genre = genre;
+    });
+    unawaited(_reload());
   }
 }

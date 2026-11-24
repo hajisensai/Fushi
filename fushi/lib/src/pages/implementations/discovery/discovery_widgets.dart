@@ -31,8 +31,8 @@ import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
-import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_shelf.dart'
-    show AppleShelfHoverArrows;
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_media.dart'
+    show AppleDiscoveryPosterShelf;
 import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 
 export 'package:fushi/src/pages/implementations/discovery/discovery_hero_carousel.dart';
@@ -240,6 +240,20 @@ class DiscoveryShelf extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Apple：货架头 + 横滑海报条（桌面悬停两端出翻页箭头）。调用方给的
+    // [itemWidth] / [height] 是 M3E 色块档，Apple 按海报档自己定。
+    if (isGlassDesign(context)) {
+      return AppleDiscoveryPosterShelf(
+        title: title,
+        itemCount: itemCount,
+        itemBuilder: itemBuilder,
+        shape: shape,
+        titleMaxLines: titleMaxLines,
+        loading: loading,
+        trailing: trailing,
+        storageKey: storageKey,
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? storage = storageKey;
     final Widget? trailingWidget = trailing;
@@ -323,10 +337,7 @@ class DiscoveryShelf extends StatelessWidget {
         ),
         Padding(
           padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-          // Apple（宽屏货架）：悬停两端出翻页箭头。
-          child: isGlassDesign(context) && !loading
-              ? AppleShelfHoverArrows(child: strip)
-              : strip,
+          child: strip,
         ),
       ],
     );

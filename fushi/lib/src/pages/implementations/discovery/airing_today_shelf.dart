@@ -29,6 +29,16 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_media.dart'
+    show appleDiscoveryArtworkWidth;
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_shelf.dart'
+    show AppleDiscoveryShelfHeader, AppleShelfHoverArrows;
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_widgets.dart'
+    show appleDiscoveryPageInset;
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
+    show appleColorsOf;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleUsesMacMetrics;
 
 /// 发现页「今日放送」小模块（2026-10-20，用户：「放送日历藏太深了可以作为一个
 /// 小模块放在发现页里，然后可以点进去详情」）。
@@ -135,8 +145,10 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
   }
 
   /// 块宽：与库页拼贴横滑条同一规则（桌面 300，窄窗约七成行宽）。
-  double _itemWidth(double maxWidth) =>
-      FushiCoverBlockStrip.rowTileWidth(maxWidth);
+  double _itemWidth(double maxWidth) => isGlassDesign(context)
+      // Apple：海报货架档（与 [DiscoveryShelf] 的 Apple 分支同宽）。
+      ? appleDiscoveryArtworkWidth(context)
+      : FushiCoverBlockStrip.rowTileWidth(maxWidth);
 
   @override
   Widget build(BuildContext context) {
@@ -187,22 +199,40 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
           child: Semantics(
             button: true,
             label: t.download_airing_calendar_title,
-            child: FushiSectionTitle(
-              t.download_airing_calendar_today_title,
-              // 与 [DiscoveryShelf] 的行头同距（横滑件的悬停余量向外扩，不占行距）。
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                tokens.spacing.section,
-                tokens.spacing.page,
-                tokens.spacing.gap,
-              ),
-              trailing: DiscoveryViewAllButton(
-                key: const ValueKey<String>(
-                  'video-discovery-airing-today-view-all',
-                ),
-                onPressed: () => unawaited(_openCalendar()),
-              ),
-            ),
+            child: isGlassDesign(context)
+                ? Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      appleDiscoveryPageInset(context),
+                      24,
+                      appleDiscoveryPageInset(context),
+                      4,
+                    ),
+                    child: AppleDiscoveryShelfHeader(
+                      title: t.download_airing_calendar_today_title,
+                      trailing: DiscoveryViewAllButton(
+                        key: const ValueKey<String>(
+                          'video-discovery-airing-today-view-all',
+                        ),
+                        onPressed: () => unawaited(_openCalendar()),
+                      ),
+                    ),
+                  )
+                : FushiSectionTitle(
+                    t.download_airing_calendar_today_title,
+                    // 与 [DiscoveryShelf] 的行头同距（横滑件的悬停余量向外扩，不占行距）。
+                    padding: EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      tokens.spacing.section,
+                      tokens.spacing.page,
+                      tokens.spacing.gap,
+                    ),
+                    trailing: DiscoveryViewAllButton(
+                      key: const ValueKey<String>(
+                        'video-discovery-airing-today-view-all',
+                      ),
+                      onPressed: () => unawaited(_openCalendar()),
+                    ),
+                  ),
           ),
         ),
       ),
@@ -266,6 +296,15 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
       context,
       width: itemWidth,
     );
+    if (isGlassDesign(context)) {
+      return _buildAppleStrip(
+        itemWidth,
+        cardHeight,
+        itemCount: itemCount,
+        itemBuilder: itemBuilder,
+        scrollable: scrollable,
+      );
+    }
     final double spacing = tokens.spacing.card;
     final Widget strip = scrollable
         ? KeyedSubtree(
@@ -312,6 +351,38 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
     );
   }
 
+  /// Apple：横滑海报条（桌面悬停两端出翻页箭头）；骨架不可滚、不可聚焦。
+  Widget _buildAppleStrip(
+    double itemWidth,
+    double cardHeight, {
+    required int itemCount,
+    required IndexedWidgetBuilder itemBuilder,
+    required bool scrollable,
+  }) {
+    final double page = appleDiscoveryPageInset(context);
+    final double gap = fushiAppleUsesMacMetrics(context) ? 16 : 12;
+    final Widget strip = SizedBox(
+      height: cardHeight + 16,
+      child: ListView.separated(
+        key: scrollable
+            ? const PageStorageKey<String>('video-discovery-airing-today-strip')
+            : null,
+        scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        physics: scrollable ? null : const NeverScrollableScrollPhysics(),
+        padding: EdgeInsets.symmetric(horizontal: page, vertical: 8),
+        itemCount: itemCount,
+        separatorBuilder: (BuildContext context, int index) =>
+            SizedBox(width: gap),
+        itemBuilder: (BuildContext context, int index) =>
+            SizedBox(width: itemWidth, child: itemBuilder(context, index)),
+      ),
+    );
+    return scrollable
+        ? AppleShelfHoverArrows(child: strip)
+        : ExcludeFocus(child: strip);
+  }
+
   Widget _buildEpisodeCard(AniListAiringEpisode episode) {
     final String time = FushiTimeFormat.hourMinute(
       airingAtToLocal(episode.airingAtSeconds),
@@ -351,7 +422,9 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
     Widget? action,
   }) {
     final ThemeData theme = Theme.of(context);
-    final Color foreground = theme.colorScheme.onSurfaceVariant;
+    final Color foreground = isGlassDesign(context)
+        ? appleColorsOf(context).secondaryLabel
+        : theme.colorScheme.onSurfaceVariant;
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
       child: DecoratedBox(
