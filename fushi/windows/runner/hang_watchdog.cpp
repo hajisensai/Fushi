@@ -26,6 +26,8 @@ namespace fushi
     // 主线程应答：先写时刻、再 release 写序号；看门狗 acquire 读序号后再读时刻。
     std::atomic<uint32_t> g_acked_seq{0};
     std::atomic<ULONGLONG> g_ack_ms{0};
+    // Dart 侧最近一次心跳的时刻；0 = 还没收到过（未布防）。
+    std::atomic<ULONGLONG> g_dart_beat_ms{0};
 
     // 不含系统睡眠 / 休眠时间的单调时钟（毫秒）：合盖睡眠期间两条线程都停着，
     // 用 GetTickCount64 会在唤醒那一刻把睡眠时长误算成卡顿。
@@ -112,6 +114,8 @@ namespace fushi
       bool in_flight = false;
       bool dumped_this_stall = false;
       int dumps_taken = 0;
+      bool dart_dumped_this_silence = false;
+      int dart_dumps_taken = 0;
 
       for (;;) {
         if (WaitForSingleObject(g_stop_event, kPollIntervalMs) == WAIT_OBJECT_0) {
@@ -119,6 +123,38 @@ namespace fushi
         }
         if (!IsWindow(g_main_window)) {
           return 0;
+        }
+
+        // Dart 失联：主线程还在泵消息（心跳在途不足 1 s）而 Dart 心跳已静默
+        // 很久。主线程自己卡住的情形留给下面的停泵路径，避免同一次事故抓两份。
+        const ULONGLONG dart_beat_ms = g_dart_beat_ms.load(std::memory_order_relaxed);
+        if (dart_beat_ms != 0 && !IsDebuggerPresent()) {
+          const ULONGLONG now_ms = UnbiasedNowMs();
+          const ULONGLONG silent_ms =
+            now_ms > dart_beat_ms ? now_ms - dart_beat_ms : 0;
+          const bool pump_stalled =
+            in_flight && now_ms > posted_ms && now_ms - posted_ms >= 1000;
+          if (dart_dumped_this_silence && silent_ms < 2000) {
+            dart_dumped_this_silence = false;
+            NativeGlog("dart heartbeat resumed");
+            AppendHangLogLine(L"dart heartbeat resumed");
+          } else if (!pump_stalled && !dart_dumped_this_silence &&
+                     silent_ms >= kDartSilenceDumpThresholdMs &&
+                     dart_dumps_taken < kMaxDartSilenceDumpsPerProcess) {
+            dart_dumped_this_silence = true;
+            dart_dumps_taken += 1;
+            // 与停泵路径同一顺序：先落盘 dump 与 log，再做要分配堆的事。
+            wchar_t dump_path[MAX_PATH] = L"";
+            WriteProcessMinidump(L"hang", g_main_thread_id, nullptr, dump_path);
+            wchar_t text[MAX_PATH + 112];
+            swprintf_s(text,
+              L"dart heartbeat silent >=%llu ms while main thread pumps; hang dump=%s",
+              silent_ms, dump_path[0] ? dump_path : L"(write failed)");
+            AppendHangLogLine(text);
+            NativeGlog("dart-silence: ms=" + std::to_string(silent_ms) +
+              " dump=" + (dump_path[0] ? DumpFileName(dump_path) : "(write failed)"));
+            PruneOldHangDumps();
+          }
         }
 
         if (in_flight && g_acked_seq.load(std::memory_order_acquire) == posted_seq) {
@@ -185,6 +221,11 @@ namespace fushi
     g_ack_ms.store(UnbiasedNowMs(), std::memory_order_relaxed);
     g_acked_seq.store(static_cast<uint32_t>(wparam), std::memory_order_release);
     return true;
+  }
+
+  void NoteDartHeartbeat()
+  {
+    g_dart_beat_ms.store(UnbiasedNowMs(), std::memory_order_relaxed);
   }
 
   void StartHangWatchdog(HWND main_window)

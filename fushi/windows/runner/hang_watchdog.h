@@ -48,6 +48,19 @@ namespace fushi
   // 反复卡顿把磁盘塞满。崩溃 dump（hibiki-*.dmp）不受影响。
   constexpr int kMaxHangDumpsKept = 5;
 
+  // Dart 失联：Dart 侧每秒经 `app.fushi/window` 的 `dartHeartbeat` 报一次平安
+  // （[NoteDartHeartbeat]）。主线程仍在泵消息、心跳却连续静默这么久，就当场抓
+  // dump——「平台线程空闲但 Dart 不处理任何事件」（界面黑屏 / 冻结、本地端口不回
+  // 话）既不是主线程停泵，旧看门狗量不到。第一次收到心跳后才开始计时（启动期
+  // Dart 还没跑起来不算失联）。
+  constexpr ULONGLONG kDartSilenceDumpThresholdMs = 10000;
+
+  // 每进程最多因 Dart 失联抓几份 dump（与主线程停泵的份数分开计）。
+  constexpr int kMaxDartSilenceDumpsPerProcess = 2;
+
+  // Dart 侧心跳到达（平台线程的 channel 处理器调用）。
+  void NoteDartHeartbeat();
+
   // 启动看门狗线程。[main_window] 是 Flutter 主窗口（必须属于调用线程，看门狗
   // 用调用线程 id 标记 dump 的「出事线程」）。重复调用无效果；失败静默降级。
   void StartHangWatchdog(HWND main_window);

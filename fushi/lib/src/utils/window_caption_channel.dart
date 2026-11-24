@@ -227,6 +227,22 @@ class WindowCaptionChannel {
     }
   }
 
+  /// Dart 存活心跳：runner 的看门狗（`hang_watchdog.h`）据此判断「Dart 失联」——
+  /// 主线程还在泵消息、本心跳却连续静默 ≥10 s 时抓 hang dump。发送方是
+  /// `dart_heartbeat.dart`（每秒一次）。旧 runner / 非 window 宿主静默忽略。
+  static Future<void> dartHeartbeat() async {
+    if (!Platform.isWindows) {
+      return;
+    }
+    try {
+      await _channel.invokeMethod<void>('dartHeartbeat');
+    } on PlatformException {
+      // 旧 runner 不实现该方法。
+    } on MissingPluginException {
+      // 通道未注册（widget 测试 / 非 window runner 宿主）时静默忽略。
+    }
+  }
+
   /// BUG-1933：当前是否处于 runner 自有实现的全屏态。非 Windows / 通道不可用
   /// 恒 false（window_manager 在 Windows 上不再进入全屏，其 isFullScreen 也
   /// 恒 false，两边不会都为 true）。
