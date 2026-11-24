@@ -424,6 +424,12 @@ extension _VideoEpisode on _VideoFushiPageState {
   /// 封面来源判断**不在这里手写分支**——统一走 [resolveMediaCoverImage]：本地集给
   /// `coverPath`、互联远端集给 `coverUrl` + 稳定缓存键，解析器按固定优先级出图。
   ///
+  /// 取图顺序与合集选集页同一套（拍板 design-player-episode-rail-stills，复用
+  /// [videoPanelEpisodeThumbCandidates] → `videoEpisodeThumbCandidates`）：用户手动
+  /// 设置的封面 > 这一集的刮削剧照（[videoFileEpisodeStillImage]，本地文件优先、
+  /// 其次远程 URL）> 自动截图 > 合集段回落；首选图加载失败依次回落
+  /// （[VideoEpisodeEntry.coverFallbacks]）。远端集没有剧照，只有 host 封面。
+  ///
   /// v68 Jellyfin 对齐三件套：
   /// * 集名：集级刮削集名优先（[_PlaylistEpisodeRef.displayTitle]），回落文件名；
   /// * 封面回退链的合集段：本集无图 → 合集 titleCard → backdrop
@@ -441,7 +447,9 @@ extension _VideoEpisode on _VideoFushiPageState {
     if (memo != null &&
         identical(_episodePanelEntriesEpisodes, _episodes) &&
         identical(_episodePanelEntriesFetcher, fetcher) &&
-        identical(_episodePanelEntriesImages, _playlistCollectionImages)) {
+        identical(_episodePanelEntriesImages, _playlistCollectionImages) &&
+        identical(_episodePanelEntriesStills, _playlistFileEpisodes) &&
+        identical(_episodePanelEntriesCoverMeta, _playlistCoverMeta)) {
       return memo;
     }
     final ImageProvider? seriesFallback = _playlistSeriesFallbackCover();
@@ -456,39 +464,103 @@ extension _VideoEpisode on _VideoFushiPageState {
     final Map<String, int?> numberByKey = <String, int?>{
       for (int i = 0; i < numberKeys.length; i++) numberKeys[i]: numbers[i],
     };
-    final List<VideoEpisodeEntry> entries = <VideoEpisodeEntry>[
-      for (final _PlaylistEpisodeRef e in _episodes)
-        VideoEpisodeEntry(
-          title: e.displayTitle ?? e.title,
-          // 角标集号取**文件名解析值**而非列表下标（BUG-1544）：缺集时下标必然
-          // 说谎。远端集无路径 → 退回按标题解析；再解不出由卡片回落顺位号。
-          episodeNumber: numberByKey[e.path.isNotEmpty ? e.path : e.title],
-          // 季分组与合集详情页季 tab 同源（文件名纯函数，BUG-2520）：多季合集
-          // 在播放器内也能切季，而不是一条混着 S01/S02/PV 的长轨道。
-          // 本地集带着预先解析好的生效分栏（手动分栏 / 季集指定优先）。
-          groupKey:
-              e.sectionKey ??
-              collectionGroupKeyForFilename(
-                e.path.isNotEmpty ? e.path : e.title,
-              ),
-          cover:
-              resolveMediaCoverImage(
-                kind: MediaKind.video,
-                localPath: e.coverPath,
-                remoteUrl: e.coverUrl,
-                remoteFetcher: fetcher,
-                remoteCacheKey: e.coverCacheKey,
-              ) ??
-              seriesFallback,
-          completed: e.completed,
-          started: e.started,
-          progress: e.progress,
+    final Map<String, CoverMeta>? coverMeta = _playlistCoverMeta;
+    List<ImageProvider> thumbs(_PlaylistEpisodeRef e) {
+      final String? uid = e.bookUid;
+      return videoPanelEpisodeThumbCandidates(
+        cover: resolveMediaCoverImage(
+          kind: MediaKind.video,
+          localPath: e.coverPath,
+          remoteUrl: e.coverUrl,
+          remoteFetcher: fetcher,
+          remoteCacheKey: e.coverCacheKey,
         ),
+        // 远端集（无 bookUid）没有封面来源表，host 封面就是唯一一张。
+        coverIsUserChosen: uid == null
+            ? false
+            : switch (coverMeta) {
+                null => null,
+                final Map<String, CoverMeta> meta =>
+                  meta[uid]?.origin.isUserChosen ?? false,
+              },
+        still: uid == null
+            ? null
+            : videoFileEpisodeStillImage(
+                _playlistFileEpisodes[uid],
+                positionMs: e.positionMs,
+                localExists: _playlistStillExists.lookupOptional,
+              ),
+        seriesFallback: seriesFallback,
+      );
+    }
+
+    VideoEpisodeEntry entryOf(_PlaylistEpisodeRef e) {
+      final List<ImageProvider> images = thumbs(e);
+      return VideoEpisodeEntry(
+        title: e.displayTitle ?? e.title,
+        // 角标集号取**文件名解析值**而非列表下标（BUG-1544）：缺集时下标必然
+        // 说谎。远端集无路径 → 退回按标题解析；再解不出由卡片回落顺位号。
+        episodeNumber: numberByKey[e.path.isNotEmpty ? e.path : e.title],
+        // 季分组与合集详情页季 tab 同源（文件名纯函数，BUG-2520）：多季合集
+        // 在播放器内也能切季，而不是一条混着 S01/S02/PV 的长轨道。
+        // 本地集带着预先解析好的生效分栏（手动分栏 / 季集指定优先）。
+        groupKey:
+            e.sectionKey ??
+            collectionGroupKeyForFilename(e.path.isNotEmpty ? e.path : e.title),
+        cover: images.firstOrNull,
+        coverFallbacks: images.skip(1).toList(growable: false),
+        completed: e.completed,
+        started: e.started,
+        progress: e.progress,
+      );
+    }
+
+    final List<VideoEpisodeEntry> entries = <VideoEpisodeEntry>[
+      for (final _PlaylistEpisodeRef e in _episodes) entryOf(e),
     ];
     _episodePanelEntriesEpisodes = _episodes;
     _episodePanelEntriesFetcher = fetcher;
     _episodePanelEntriesImages = _playlistCollectionImages;
+    _episodePanelEntriesStills = _playlistFileEpisodes;
+    _episodePanelEntriesCoverMeta = _playlistCoverMeta;
     return _episodePanelEntriesMemo = entries;
+  }
+
+  /// 后台读选集面板取图链要的两份数据（拍板 design-player-episode-rail-stills）：
+  /// 各本地集的分集剧照（一次批量查库，[FushiDatabase.getVideoFileEpisodeRows]，
+  /// 与合集选集页同一份聚合 [videoFileEpisodeStillsByBook]）与封面来源表
+  /// （[loadVideoCoverMetaByUid]）。两者并行读，落定后整体替换并重建；期间成员
+  /// 列表已被换掉（[refs] 不再是 [_episodes]）则丢弃结果。
+  Future<void> _loadPlaylistEpisodeThumbSources(
+    List<_PlaylistEpisodeRef> refs,
+  ) async {
+    final List<String> uids = <String>[
+      for (final _PlaylistEpisodeRef e in refs) ?e.bookUid,
+    ];
+    if (uids.isEmpty) return;
+    final Future<Map<String, CoverMeta>> coverMeta = loadVideoCoverMetaByUid(
+      'VideoFushiPage._loadPlaylistEpisodeThumbSources',
+    );
+    // 本方法以 unawaited 起跑：查库失败只让剧照一环缺席（面板照旧按截图 / 合集段
+    // 取图），记诊断后继续，不让它变成未处理的异步异常。
+    Map<String, List<VideoFileEpisodeStills>> stills =
+        const <String, List<VideoFileEpisodeStills>>{};
+    try {
+      stills = videoFileEpisodeStillsByBook(
+        await appModel.database.getVideoFileEpisodeRows(uids),
+      );
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'VideoFushiPage._loadPlaylistEpisodeThumbSources',
+        error,
+      );
+    }
+    final Map<String, CoverMeta> meta = await coverMeta;
+    if (!mounted || !identical(_episodes, refs)) return;
+    _rebuild(() {
+      _playlistFileEpisodes = stills;
+      _playlistCoverMeta = meta;
+    });
   }
 
   /// 远端集封面（[_PlaylistEpisodeRef.coverUrl]）的取图器：网页档的剧集剧照来自
