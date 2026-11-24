@@ -188,6 +188,7 @@ class DiscLibraryImporter {
       await _unbindRevertedEpisodes(reverted, keepCollectionId: collection?.id);
       for (final BlurayDisc disc in set.discs) {
         await _reclaimStaleDiscRows(disc);
+        await _syncAutoDiscTitleNames(disc);
       }
       if (collection == null) continue;
       if (set.episodic) {
@@ -293,6 +294,25 @@ class DiscLibraryImporter {
       title == discName ||
       (title.startsWith('$discName - ') &&
           RegExp(r'^\d{2,5}$').hasMatch(title.substring(discName.length + 3)));
+
+  /// 把 [disc] 上标题 / 特典行的自动名对齐到本轮的选片结论：标题是 `<盘名> - NN`
+  /// （盘内标题序号），特典是 `<盘名> - <MPLS 号>`。选片判据变了的存量行（修前被
+  /// 选成第 3 个标题、这一轮降为特典的采访 `00005.mpls`）还顶着「- 03」，读起来就是
+  /// 第 3 集。用户改过的名字（不是 [_isAutoDiscTitle] 形状）不动。
+  Future<void> _syncAutoDiscTitleNames(BlurayDisc disc) async {
+    final Map<String, String> nameByPath = <String, String>{
+      for (final BlurayTitle extra in disc.extras)
+        normalizeVideoPath(extra.playlistPath): extra.name,
+      for (final BlurayTitle title in disc.titles)
+        normalizeVideoPath(title.playlistPath): title.name,
+    };
+    for (final VideoBookRow row in await _rowsOnDisc(disc.rootPath)) {
+      final String? expected = nameByPath[normalizeVideoPath(row.videoPath)];
+      if (expected == null || expected == row.title) continue;
+      if (!_isAutoDiscTitle(row.title, disc.name)) continue;
+      await _videoRepo.updateTitle(row.bookUid, expected);
+    }
+  }
 
   /// 存量迁移第一步：[disc] 上被切成集的整条播放列表若已有库行（修前「一卷一个
   /// 条目」），把它**就地改成第 1 集**——`videoPath` 换成第 1 集的分集路径，`bookUid`、

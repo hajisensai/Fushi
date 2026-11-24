@@ -9,6 +9,11 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart';
 import 'package:fushi_engine/media/video/disc/disc_library_import.dart';
 import 'package:fushi_engine/media/video/disc/disc_release_set.dart';
+import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_metadata_indexer.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart'
+    show discOrdinalEpisodeOverrides;
+import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -553,6 +558,114 @@ void main() {
       ))!;
       expect(resumed.lastPositionMs, 300 * 1000, reason: '断点随原行保留');
       expect(resumed.lastPlayedAt, 1794318869583);
+    });
+
+    test('BUG-5391：长特典不进合集、不占集号；存量「- 03」行改回特典名，残留的集号刮削行清掉', () async {
+      // 真实盘：每卷 `00001` 串着两集，另有一条 9～95 分钟的采访 / Live 整播放列表。
+      // 修前它被选成第 3 个标题：合集里每卷三项，刮削按合集顺序编号，第 3 集成了
+      // vol.1 的采访、vol.2 的第 1 集成了第 4 集。
+      writeFixturePlaylist(volume(1), '00005', const <(String, int)>[
+        ('00060', 1970),
+      ]);
+      writeFixturePlaylist(volume(2), '00003', const <(String, int)>[
+        ('00061', 270),
+        ('00062', 234),
+        ('00063', 269),
+        ('00064', 255),
+        ('00065', 370),
+        ('00066', 338),
+      ]);
+      final int sourceId = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'bd',
+          mediaKind: 'video',
+          rootPath: release,
+          createdAt: 1,
+        ),
+      );
+      final String interview = p.join(
+        volume(1),
+        'BDMV',
+        'PLAYLIST',
+        '00005.mpls',
+      );
+      final String live = p.join(volume(2), 'BDMV', 'PLAYLIST', '00003.mpls');
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value<String>('video/interview'),
+          title: const Value<String>('BOCCHI THE ROCK! 1 - 03'),
+          videoPath: Value<String>(interview),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value<String>('video/live'),
+          title: const Value<String>('用户改过的名字'),
+          videoPath: Value<String>(live),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
+      final int legacy = await db.createMediaCollection(
+        'BOCCHI THE ROCK!',
+        collectionType: 'playlist',
+      );
+      for (final String uid in <String>['video/interview', 'video/live']) {
+        await db.addToCollection(
+          legacy,
+          MediaKind.video,
+          uid,
+          userIntent: false,
+        );
+      }
+      await db.upsertVideoScrapeMeta(
+        VideoScrapeMetaCompanion.insert(
+          bookUid: 'video/interview',
+          source: 'anidb',
+          subjectId: '259958',
+          title: '馳せサンズ',
+          episodeNumber: const Value<int?>(3),
+          scrapedAt: DateTime(2026, 11, 20),
+        ),
+      );
+
+      final DiscLibraryImportReport report = await import(<String>[
+        volume(1),
+        volume(2),
+        volume(3),
+      ], sourceId: sourceId);
+      final int collectionId = report.discs.first.collectionId;
+      expect(collectionId, legacy);
+      expect(await memberPaths(collectionId), episodesOf(<int>[1, 2, 3]));
+      expect(
+        (await db.getVideoBookByBookUid('video/interview'))!.title,
+        'BOCCHI THE ROCK! 1 - 00005',
+        reason: '自动名改成特典的 MPLS 号形状，不再读成第 3 集',
+      );
+      expect((await db.getVideoBookByBookUid('video/live'))!.title, '用户改过的名字');
+
+      final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+      final VideoSourceScrapeWork work = (await VideoSourceWorkPlanner(
+        db,
+      ).plan(source)).single;
+      final Map<String, (int, int)> overrides = discOrdinalEpisodeOverrides(
+        work,
+      );
+      expect(
+        <(int, int)?>[
+          for (final VideoBookRow member in work.members)
+            overrides[member.bookUid],
+        ],
+        <(int, int)>[for (int i = 1; i <= 6; i++) (1, i)],
+        reason: '集号按卷序 × 盘内集序连续编，特典不占号',
+      );
+
+      await VideoSourceMetadataIndexer(db).index(source);
+      expect(
+        await db.getVideoScrapeMeta('video/interview'),
+        isNull,
+        reason: '特典身上修前刮来的「第 3 集」不再顶着正片集名',
+      );
     });
 
     test('切集判据改为不切（盘根外包 BD 目录）：其余分集行也从发布组合集解绑', () async {

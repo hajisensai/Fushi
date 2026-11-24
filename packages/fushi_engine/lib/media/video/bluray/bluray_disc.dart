@@ -23,7 +23,8 @@
 //      play-all 若当锚，7 集以上的剧集盘各集会被它整批砍掉。
 //   7. 按集展开——留下来的标题若是「一条播放列表串着几集」（只有全部播放、没有逐集
 //      播放列表的剧集盘），按 PlayItem 切成各集，每集一个标题、身份是虚拟的分集路径
-//      （`bluray_episode.dart`）。
+//      （`bluray_episode.dart`）。盘上一旦有被切成集的播放列表，没被它串进去的
+//      其余整条标题降为特典：剧集序列由那条「全部播放」声明，其余的不占集号。
 //
 // 另有一条前置判据：没有视频轨的播放列表（纯音轨）不是标题。
 //
@@ -572,17 +573,42 @@ List<BlurayTitle> selectBlurayTitles(
   if (kept.isEmpty) return const <BlurayTitle>[];
 
   // 7：按集展开。展开后的每一集与逐集播放列表的盘上的一条标题同形。
-  final List<({BlurayPlaylist playlist, String? source, bool main})> expanded =
-      <({BlurayPlaylist playlist, String? source, bool main})>[];
+  final Map<String, List<BlurayPlaylist>> episodesBySource =
+      <String, List<BlurayPlaylist>>{};
   for (final BlurayPlaylist playlist in kept) {
-    final bool main = playlist.durationTicks == longest;
     // 各集正片段另被别的播放列表引用（盘上另有逐集播放列表、或是同片段的诱饵）的
     // 不切；菜单循环引用什么都不算数。
     final List<BlurayPlaylist> episodes =
         splitEpisodes && !blurayPlaylistSharesAnchorClips(playlist, candidates)
         ? blurayEpisodePlaylists(playlist)
         : const <BlurayPlaylist>[];
-    if (episodes.isEmpty) {
+    if (episodes.isNotEmpty) episodesBySource[playlist.id] = episodes;
+  }
+  // 7b：盘上有被切成集的「全部播放」时，作者已经用它声明了这张盘的剧集序列——没被
+  // 它串进去的整条播放列表（采访、Live、映像特典……）不是这一序列里的一集。它们
+  // 时长常与正片同一量级（《ぼっち・ざ・ろっく！》BD 每卷一条 9～95 分钟的特典，
+  // vol.5 那条 23.6 分钟与单集只差几秒），过得了第 6 步的相对下限；留作标题就会
+  // 进盘合集、被刮削按合集顺序编进正片集号（第 3 集成了采访）。降为特典：入库、
+  // 挂到正片作品下，不进盘合集、不占集号（[selectBlurayExtras] 接住它们）。
+  final List<BlurayPlaylist> titled = episodesBySource.isEmpty
+      ? kept
+      : <BlurayPlaylist>[
+          for (final BlurayPlaylist playlist in kept)
+            if (episodesBySource.containsKey(playlist.id)) playlist,
+        ];
+  final int longestTitled = titled.fold<int>(
+    0,
+    (int longestSoFar, BlurayPlaylist playlist) =>
+        playlist.durationTicks > longestSoFar
+        ? playlist.durationTicks
+        : longestSoFar,
+  );
+  final List<({BlurayPlaylist playlist, String? source, bool main})> expanded =
+      <({BlurayPlaylist playlist, String? source, bool main})>[];
+  for (final BlurayPlaylist playlist in titled) {
+    final bool main = playlist.durationTicks == longestTitled;
+    final List<BlurayPlaylist>? episodes = episodesBySource[playlist.id];
+    if (episodes == null) {
       expanded.add((playlist: playlist, source: null, main: main));
       continue;
     }
