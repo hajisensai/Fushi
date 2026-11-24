@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T00:11:33Z",
+ "generatedAt": "2026-11-24T00:17:14Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "10d0d070185cdcef44775d3ad1e445a0218d6325",
-  "seq": 32145
+  "sha": "de89983a2e8ff573e550d9d814b6d9483d91a115",
+  "seq": 32147
  },
  "builds": [
   {
@@ -129,6 +129,35 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "de89983a2e8ff573e550d9d814b6d9483d91a115",
+  "headSeq": 32147,
+  "prs": [],
+  "direct": [
+   {
+    "sha": "de89983a2e8ff573e550d9d814b6d9483d91a115",
+    "subject": "Merge #4334 (claude/fix-disc-stream-path) into develop"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45295606450"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45295606609"
+   },
+   "macos": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45295606609"
+   },
+   "ios": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45295606609"
+   }
+  }
+ },
  "prs": {}
 }
