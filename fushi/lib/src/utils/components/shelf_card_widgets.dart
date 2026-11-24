@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -77,13 +78,18 @@ class ShelfCardFooter extends StatelessWidget {
           title: title,
           style: style,
           maxLines: 2,
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 2,
-            textAlign: TextAlign.center,
-            softWrap: true,
-            style: style,
+          // 自定义背景图上书名垫毛玻璃底（只画不占位，footer 高度不变）。
+          child: FushiBackdropFrost(
+            outset: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            borderRadius: const BorderRadius.all(Radius.circular(8)),
+            child: Text(
+              title,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              softWrap: true,
+              style: style,
+            ),
           ),
         ),
       ),

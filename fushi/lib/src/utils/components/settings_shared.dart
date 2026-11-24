@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -21,7 +22,6 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_pill_segmented_button.dart';
 import 'package:fushi/src/utils/components/settings_section_anchor.dart';
@@ -5024,8 +5024,8 @@ class _SettingsStepButton extends StatelessWidget {
 /// MD3 分段分组上方的分组标题（titleSmall、primary、w600）。
 ///
 /// 页底是用户的自定义图片时，标题直接压在图上、对比度随图片明暗忽高忽低
-/// （2026-11-20 用户截图：樱花壁纸上的橙色小标题发糊），这时给它垫一枚与分段卡
-/// 同色的半透明胶囊；胶囊的左内边距从行内边距里扣出来，文字左缘位置不变。
+/// （2026-11-20 用户截图：樱花壁纸上的橙色小标题发糊），这时给它垫一枚毛玻璃
+/// 胶囊（[FushiBackdropFrost]，全应用统一的那一层，只画不占位，文字左缘不变）。
 class _Md3SegmentedTitle extends StatelessWidget {
   const _Md3SegmentedTitle({
     required this.title,
@@ -5037,9 +5037,6 @@ class _Md3SegmentedTitle extends StatelessWidget {
   final FushiDesignTokens tokens;
   final ThemeData theme;
 
-  /// 胶囊的横向内边距（文字到胶囊边）。
-  static const double _pillHorizontal = 10;
-
   @override
   Widget build(BuildContext context) {
     final Widget text = Text(
@@ -5050,34 +5047,13 @@ class _Md3SegmentedTitle extends StatelessWidget {
       ),
     );
     final double inset = tokens.spacing.rowHorizontal;
-    if (!FushiPageBackdrop.imageOf(context)) {
-      return Padding(
-        padding: EdgeInsets.fromLTRB(inset, 0, inset, tokens.spacing.gap),
-        child: text,
-      );
-    }
     return Padding(
-      padding: EdgeInsetsDirectional.fromSTEB(
-        inset - _pillHorizontal,
-        0,
-        inset,
-        tokens.spacing.gap,
-      ),
+      padding: EdgeInsets.fromLTRB(inset, 0, inset, tokens.spacing.gap),
       child: Align(
         alignment: AlignmentDirectional.centerStart,
-        child: DecoratedBox(
-          decoration: ShapeDecoration(
-            color: tokens.surfaces.card.withValues(alpha: 0.9),
-            shape: const StadiumBorder(),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: _pillHorizontal,
-              vertical: 3,
-            ),
-            child: text,
-          ),
-        ),
+        widthFactor: 1,
+        heightFactor: 1,
+        child: FushiBackdropFrost(child: text),
       ),
     );
   }
