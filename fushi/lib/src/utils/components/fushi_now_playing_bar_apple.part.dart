@@ -21,8 +21,14 @@ part of 'fushi_now_playing_bar.dart';
 //   （[FushiNowPlayingBar.onMore]，没给菜单时额外动作照旧平铺）。宿主往下滚时缩成
 //   贴末端的「封面 + 播放键」，点一下先展开。
 // - macOS 档 [_AppleMacBar]：底部居中、按内容收宽的玻璃条，上一首 / 播放 / 下一首 +
-//   全部额外动作平铺，底边一条细进度线；宿主往下滚时缩成「封面 + 标题 + 播放键」，
+//   额外动作平铺，底边一条细进度线；宿主往下滚时缩成「封面 + 标题 + 播放键」，
 //   悬停 / 点一下展开（与 M3E 宽屏同一套 hover / pin / hold 规则）。
+//
+// 档位与按钮数都按**条实际拿到的宽度**定（[_AppleRowBudget]），不只看窗口：宿主
+// 可能只占窗口的一栏（分栏详情页等），窗口够宽（macOS 档度量）而条所在的栏很窄
+// 时，按 macOS 档平铺全部按钮会横向溢出。放不下时额外动作从末尾起依次收进长按 /
+// 右键菜单（只在调用方给了 [FushiNowPlayingBar.onMore] 时收；没菜单的动作不收，
+// 宽度不够就落到 iOS 档胶囊），标题弹性让位、单行省略。
 
 /// Apple 分支裸字形按钮的命中区（≥ 44，底部浮动条的触控下限）。额外动作里的
 /// Apple 按钮也传这个值，与传输键同一行高。
@@ -74,9 +80,86 @@ class _AppleNowPlayingBar extends StatelessWidget {
   final Color? tint;
 
   @override
-  Widget build(BuildContext context) => fushiAppleCompact(context)
-      ? _AppleMacBar(bar: bar, tint: tint)
-      : _AppleCapsuleBar(bar: bar, tint: tint);
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints c) {
+      final _AppleRowBudget budget = _AppleRowBudget(context, bar);
+      if (fushiAppleCompact(context) && budget.fitsMac(c.maxWidth)) {
+        return _AppleMacBar(
+          bar: bar,
+          tint: tint,
+          visibleActions: budget.visibleActions(c.maxWidth),
+        );
+      }
+      return _AppleCapsuleBar(bar: bar, tint: tint);
+    },
+  );
+}
+
+/// macOS 档条外边距（条与宿主边缘之间）。
+const EdgeInsets _kAppleMacOuter = EdgeInsets.fromLTRB(16, 4, 16, 14);
+
+/// macOS 档条内边距（展开态；收起态末端收到 [_kAppleMacPaddingCollapsedEnd]）。
+const EdgeInsetsDirectional _kAppleMacPadding = EdgeInsetsDirectional.fromSTEB(
+  6,
+  6,
+  8,
+  6,
+);
+const double _kAppleMacPaddingCollapsedEnd = 4;
+
+/// 封面与标题、标题与按钮组、按钮组与额外动作之间的间距。
+const double _kAppleMacCoverGap = 10;
+const double _kAppleMacTitleGap = 8;
+const double _kAppleMacActionsGap = 6;
+
+/// 标题列宽：理想 [_kAppleTitleWidth]（× [fushiAppleMacScale]），栏窄时弹性让位；
+/// 至少保住 [_kAppleMinTitleWidth]（约 6–8 个字，再窄就只剩省略号），保不住就先
+/// 收额外动作、再不行换 iOS 档胶囊。
+const double _kAppleTitleWidth = 220;
+const double _kAppleMinTitleWidth = 120;
+
+/// 收起态标题封顶宽（× [fushiAppleMacScale]）。
+const double _kAppleCollapsedTitleMax = 200;
+
+/// macOS 档一行的横向预算：除标题外全是固定尺寸件（封面、间距、命中区
+/// [kFushiNowPlayingAppleGlyphExtent] 的裸字形键；额外动作按约定每个一枚同尺寸
+/// 字形键），只有标题弹性。
+class _AppleRowBudget {
+  _AppleRowBudget(BuildContext context, this.bar)
+    : scale = fushiAppleMacScale(context);
+
+  final FushiNowPlayingBar bar;
+  final double scale;
+
+  int get _transportCount =>
+      1 + (bar.previous == null ? 0 : 1) + (bar.next == null ? 0 : 1);
+
+  /// 平铺 [actions] 个额外动作时，除标题外占的宽度（含条外边距）。
+  double fixedWidth(int actions) =>
+      _kAppleMacOuter.horizontal +
+      _kAppleMacPadding.horizontal +
+      _kAppleCoverMac * scale +
+      _kAppleMacCoverGap +
+      _kAppleMacTitleGap +
+      (_transportCount + actions) * kFushiNowPlayingAppleGlyphExtent +
+      (actions > 0 ? _kAppleMacActionsGap : 0);
+
+  bool _fits(int actions, double maxWidth) =>
+      fixedWidth(actions) + _kAppleMinTitleWidth * scale <= maxWidth;
+
+  /// 不能收进菜单的额外动作个数（没有 [FushiNowPlayingBar.onMore] 时全部）。
+  int get _mandatory => bar.onMore == null ? bar.actions.length : 0;
+
+  /// 这个宽度下能不能走 macOS 档（传输键 + 必须平铺的动作 + 最窄标题放得下）。
+  bool fitsMac(double maxWidth) => _fits(_mandatory, maxWidth);
+
+  /// 这个宽度下平铺几个额外动作（其余从末尾起收进长按菜单）。
+  int visibleActions(double maxWidth) {
+    for (int n = bar.actions.length; n > _mandatory; n--) {
+      if (_fits(n, maxWidth)) return n;
+    }
+    return _mandatory;
+  }
 }
 
 /// 上一首 / 下一首（Apple Music 的 backward.fill / forward.fill 实心字形）。
@@ -373,10 +456,17 @@ class _AppleCapsuleBar extends StatelessWidget {
 
 /// macOS 档：底部居中的玻璃条（见文件头）。
 class _AppleMacBar extends StatefulWidget {
-  const _AppleMacBar({required this.bar, required this.tint});
+  const _AppleMacBar({
+    required this.bar,
+    required this.tint,
+    required this.visibleActions,
+  });
 
   final FushiNowPlayingBar bar;
   final Color? tint;
+
+  /// 平铺的额外动作个数（[_AppleRowBudget.visibleActions]）；其余在长按菜单。
+  final int visibleActions;
 
   @override
   State<_AppleMacBar> createState() => _AppleMacBarState();
@@ -405,17 +495,26 @@ class _AppleMacBarState extends State<_AppleMacBar> {
     final double cover = _kAppleCoverMac * s;
     final FushiNowPlayingSkip? prev = bar.previous;
     final FushiNowPlayingSkip? next = bar.next;
+    final List<Widget> actions = bar.actions
+        .take(widget.visibleActions)
+        .toList(growable: false);
+    // 有动作收进了菜单：长按 / 右键条身打开（与 iOS 档同一个菜单）。
+    final VoidCallback? more = actions.length < bar.actions.length
+        ? bar.onMore
+        : null;
     final Widget collapsedRow = Row(
       key: const ValueKey<String>('now-playing-docked-collapsed'),
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         _AppleCover(bar: bar, size: cover),
-        const SizedBox(width: 10),
-        ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 200 * s),
-          child: _AppleTitleBlock(bar: bar, showSubtitle: false),
+        const SizedBox(width: _kAppleMacCoverGap),
+        Flexible(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: _kAppleCollapsedTitleMax * s),
+            child: _AppleTitleBlock(bar: bar, showSubtitle: false),
+          ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: _kAppleMacActionsGap),
         _applePlay(bar),
       ],
     );
@@ -424,83 +523,86 @@ class _AppleMacBarState extends State<_AppleMacBar> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         _AppleCover(bar: bar, size: cover),
-        const SizedBox(width: 10),
-        // 窗口窄时标题让位，按钮不挤出界。
+        const SizedBox(width: _kAppleMacCoverGap),
+        // 栏窄时标题弹性让位（单行省略）；按钮数已按 [_AppleRowBudget] 收过。
         Flexible(
           child: SizedBox(
-            width: 220 * s,
+            width: _kAppleTitleWidth * s,
             child: _AppleTitleBlock(bar: bar),
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: _kAppleMacTitleGap),
         if (prev != null) _appleSkip(prev, forward: false),
         _applePlay(bar),
         if (next != null) _appleSkip(next, forward: true),
-        if (bar.actions.isNotEmpty) const SizedBox(width: 6),
-        ...bar.actions,
+        if (actions.isNotEmpty) const SizedBox(width: _kAppleMacActionsGap),
+        ...actions,
       ],
     );
     final double radius = _kAppleMacRadius * s;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+      padding: _kAppleMacOuter,
       child: AnimatedAlign(
         duration: motion,
         curve: FushiSpringCurve.effects,
         heightFactor: 1,
         alignment: Alignment.center,
-        child: MouseRegion(
-          onEnter: (_) => setState(() => _hovered = true),
-          onExit: (_) => setState(() {
-            _hovered = false;
-            _pinned = false;
-          }),
-          child: TapRegion(
-            onTapOutside: (_) {
-              if (_pinned) setState(() => _pinned = false);
-            },
-            child: _HoldScope(
-              onHold: _hold,
-              child: _AppleBarSurface(
-                bar: bar,
-                tint: widget.tint,
-                shape: RoundedSuperellipseBorder(
-                  borderRadius: BorderRadius.circular(radius),
-                ),
-                padding: EdgeInsetsDirectional.fromSTEB(
-                  6,
-                  6,
-                  expanded ? 8 : 4,
-                  6,
-                ),
-                // 收起时第一下只展开（触屏没有悬停）；展开后点条身才是条身动作。
-                onTap: expanded
-                    ? bar.onTap
-                    : () => setState(() => _pinned = true),
-                overlay: bar.clock == null
-                    ? null
-                    : PositionedDirectional(
-                        start: radius,
-                        end: radius,
-                        bottom: 2,
-                        height: 2,
-                        child: _AppleProgressLine(bar: bar),
-                      ),
-                child: FushiAnimatedSize(
-                  duration: motion,
-                  curve: FushiSpringCurve.spatial,
-                  child: AnimatedSwitcher(
-                    duration: fushiMotionDuration(context, FushiMotion.short),
-                    layoutBuilder: (Widget? current, List<Widget> previous) =>
-                        Stack(
-                          alignment: Alignment.center,
-                          clipBehavior: Clip.none,
-                          children: <Widget>[
-                            for (final Widget w in previous)
-                              Positioned(child: w),
-                            ?current,
-                          ],
+        child: ContextMenuTrigger(
+          onInvoke: contextMenuInvoker(expanded ? more : null),
+          child: MouseRegion(
+            onEnter: (_) => setState(() => _hovered = true),
+            onExit: (_) => setState(() {
+              _hovered = false;
+              _pinned = false;
+            }),
+            child: TapRegion(
+              onTapOutside: (_) {
+                if (_pinned) setState(() => _pinned = false);
+              },
+              child: _HoldScope(
+                onHold: _hold,
+                child: _AppleBarSurface(
+                  bar: bar,
+                  tint: widget.tint,
+                  shape: RoundedSuperellipseBorder(
+                    borderRadius: BorderRadius.circular(radius),
+                  ),
+                  padding: expanded
+                      ? _kAppleMacPadding
+                      : _kAppleMacPadding.copyWith(
+                          end: _kAppleMacPaddingCollapsedEnd,
                         ),
-                    child: expanded ? openRow : collapsedRow,
+                  // 收起时第一下只展开（触屏没有悬停）；展开后点条身才是条身动作。
+                  onTap: expanded
+                      ? bar.onTap
+                      : () => setState(() => _pinned = true),
+                  onLongPress: expanded ? more : null,
+                  overlay: bar.clock == null
+                      ? null
+                      : PositionedDirectional(
+                          start: radius,
+                          end: radius,
+                          bottom: 2,
+                          height: 2,
+                          child: _AppleProgressLine(bar: bar),
+                        ),
+                  child: FushiAnimatedSize(
+                    duration: motion,
+                    curve: FushiSpringCurve.spatial,
+                    child: AnimatedSwitcher(
+                      duration: fushiMotionDuration(context, FushiMotion.short),
+                      layoutBuilder: (Widget? current, List<Widget> previous) =>
+                          Stack(
+                            alignment: Alignment.center,
+                            clipBehavior: Clip.none,
+                            children: <Widget>[
+                              for (final Widget w in previous)
+                                Positioned(child: w),
+                              ?current,
+                            ],
+                          ),
+                      child: expanded ? openRow : collapsedRow,
+                    ),
                   ),
                 ),
               ),

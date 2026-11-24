@@ -127,24 +127,33 @@ void main() {
     bool glass = true,
     bool solid = false,
     bool? collapsed,
+    double textScale = 1,
+    double? paneWidth,
   }) async {
     tester.view.physicalSize = Size(width, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
+    final Widget hosted = collapsed == null
+        ? child
+        : FushiNowPlayingCollapse(collapsed: collapsed, child: child);
     await tester.pumpWidget(
       MaterialApp(
         theme: theme(glass: glass, platform: platform, solid: solid),
         builder: (BuildContext context, Widget? child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(disableAnimations: true),
+          data: MediaQuery.of(context).copyWith(
+            disableAnimations: true,
+            textScaler: TextScaler.linear(textScale),
+          ),
           child: child!,
         ),
         home: FushiGlassScope(
           child: Scaffold(
             body: Align(
               alignment: Alignment.bottomCenter,
-              child: collapsed == null
-                  ? child
-                  : FushiNowPlayingCollapse(collapsed: collapsed, child: child),
+              // 宿主只占窗口一栏（分栏详情页等）：窗口宽 = macOS 档度量，条宽却窄。
+              child: paneWidth == null
+                  ? hosted
+                  : SizedBox(width: paneWidth, child: hosted),
             ),
           ),
         ),
@@ -456,6 +465,162 @@ void main() {
       findsNothing,
     );
     expect(find.byTooltip('Previous'), findsOneWidget);
+  });
+
+  group('no horizontal overflow', () {
+    const String longTitle =
+        'とても長いタイトルの曲名がここに入ってバーの幅を超えるかどうかを確かめる '
+        'A Very Long Song Title That Keeps Going';
+    Widget glyph(String name) => FushiAppleGlyphButton(
+      key: ValueKey<String>(name),
+      icon: FushiIcons.playlist,
+      tooltip: name,
+      extent: kFushiNowPlayingAppleGlyphExtent,
+      onPressed: () {},
+    );
+
+    /// 音乐条形状：上 / 下一首 + 4 个额外动作 + 长按菜单 + 标题小件。
+    Widget music() => FushiNowPlayingBar(
+      barKey: barKey,
+      playButtonKey: playKey,
+      title: longTitle,
+      subtitle: '$longTitle · $longTitle',
+      titleTrailing: const SizedBox(width: 40, height: 16),
+      coverBuilder: (BuildContext context, double size) =>
+          const ColoredBox(color: Colors.orange),
+      isPlaying: true,
+      onPlayPause: () => plays++,
+      onTap: () => taps++,
+      previous: const FushiNowPlayingSkip(
+        icon: FushiIcons.skipPrevious,
+        tooltip: 'Previous',
+      ),
+      next: const FushiNowPlayingSkip(
+        icon: FushiIcons.skipNext,
+        tooltip: 'Next',
+      ),
+      actions: <Widget>[
+        glyph('queue'),
+        glyph('repeat'),
+        glyph('volume'),
+        glyph('close'),
+      ],
+      onMore: () => mores++,
+    );
+
+    /// 「正在听书」条形状：没有上 / 下一首、没有菜单，2 个额外动作必须平铺。
+    Widget audiobook() => FushiNowPlayingBar(
+      barKey: barKey,
+      playButtonKey: playKey,
+      title: longTitle,
+      subtitle: longTitle,
+      coverBuilder: (BuildContext context, double size) =>
+          const ColoredBox(color: Colors.orange),
+      isPlaying: false,
+      onPlayPause: () => plays++,
+      onTap: () => taps++,
+      actions: <Widget>[glyph('subtitles'), glyph('stop')],
+    );
+
+    for (final TargetPlatform platform in <TargetPlatform>[
+      TargetPlatform.macOS,
+      TargetPlatform.windows, // macOS 档 × 1.15
+      TargetPlatform.iOS,
+    ]) {
+      testWidgets('${platform.name}: widths × panes × text scale × collapse', (
+        WidgetTester tester,
+      ) async {
+        final List<String> failures = <String>[];
+        for (final (double window, double? pane) in <(double, double?)>[
+          for (double w = 600; w <= 1000; w += 50) (w, null),
+          (1200, 320),
+          (1200, 360),
+          (1200, 400),
+          (1200, 440),
+          (1200, 480),
+          (1200, 540),
+        ]) {
+          for (final double textScale in <double>[1.0, 1.3]) {
+            for (final bool? collapsed in <bool?>[null, true]) {
+              for (final (String name, Widget Function() make)
+                  in <(String, Widget Function())>[
+                    ('music', music),
+                    ('audiobook', audiobook),
+                  ]) {
+                await pump(
+                  tester,
+                  width: window,
+                  paneWidth: pane,
+                  platform: platform,
+                  textScale: textScale,
+                  collapsed: collapsed,
+                  child: make(),
+                );
+                final Object? error = tester.takeException();
+                if (error != null) {
+                  failures.add(
+                    '$name window=$window pane=$pane scale=$textScale '
+                    'collapsed=$collapsed: $error',
+                  );
+                }
+              }
+            }
+          }
+        }
+        expect(failures, isEmpty);
+      });
+    }
+
+    testWidgets('macOS tier in a narrow pane moves trailing actions to the '
+        'long-press menu, in order', (WidgetTester tester) async {
+      // 420 宽的栏：传输键 + 1 个动作 + 最窄标题刚好放得下。
+      await pump(
+        tester,
+        width: 1200,
+        paneWidth: 420,
+        platform: TargetPlatform.macOS,
+        child: music(),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.byTooltip('Previous'), findsOneWidget, reason: '仍是 macOS 档');
+      expect(find.byKey(const ValueKey<String>('queue')), findsOneWidget);
+      for (final String hidden in <String>['repeat', 'volume', 'close']) {
+        expect(find.byKey(ValueKey<String>(hidden)), findsNothing);
+      }
+      await tester.longPress(find.text(longTitle));
+      await tester.pump();
+      expect(mores, 1, reason: '收起的动作在长按菜单里');
+
+      // 全宽：全部平铺。
+      await pump(
+        tester,
+        width: 1200,
+        platform: TargetPlatform.macOS,
+        child: music(),
+      );
+      for (final String shown in <String>[
+        'queue',
+        'repeat',
+        'volume',
+        'close',
+      ]) {
+        expect(find.byKey(ValueKey<String>(shown)), findsOneWidget);
+      }
+    });
+
+    testWidgets('a pane too narrow for the macOS tier falls back to the '
+        'capsule', (WidgetTester tester) async {
+      await pump(
+        tester,
+        width: 1200,
+        paneWidth: 320,
+        platform: TargetPlatform.macOS,
+        child: music(),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.byTooltip('Previous'), findsNothing);
+      expect(find.byTooltip('Next'), findsOneWidget);
+    });
   });
 
   group('audiobook play button', () {
