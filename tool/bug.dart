@@ -416,7 +416,17 @@ void writeIndex(List<BugEntry> entries) {
   final before = content.substring(0, beginLineEnd + 1);
   final after = content.substring(endLineStart);
   final table = buildIndexTable(entries);
-  file.writeAsStringSync('$before\n$table\n\n$after');
+  writeFileAtomically(file, '$before\n$table\n\n$after');
+}
+
+/// 先写同目录临时文件再改名覆盖：读者只会看到完整的旧内容或完整的新内容。
+///
+/// 并行的 `bug.dart new` 各自重建同一份索引；`writeAsStringSync` 是「截断再写」，
+/// 另一个进程恰好在截断后读，就读到空文件、报「缺少索引 marker」。
+void writeFileAtomically(File file, String content) {
+  final File tmp = File('${file.path}.$pid.tmp');
+  tmp.writeAsStringSync(content, flush: true);
+  tmp.renameSync(file.path);
 }
 
 void cmdReindex() {
