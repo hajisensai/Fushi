@@ -194,18 +194,22 @@ extension _VideoControlsTheme on _VideoFushiPageState {
           : fork.seekBarBufferColor,
       seekBarThumbSize: apple ? 0 : fork.seekBarThumbSize,
       // 两套设计系统都内缩到浮动底栏里（Apple 玻璃胶囊 / M3E 轨道槽对齐胶囊外缘）。
-      seekBarMargin: EdgeInsets.symmetric(horizontal: _videoSeekBarSideInset),
+      // Apple 桌面行内进度条：道宽由底部条排版给定，不再内缩。
+      seekBarMargin: _appleInlineSeekLane
+          ? EdgeInsets.zero
+          : EdgeInsets.symmetric(horizontal: _videoSeekBarSideInset),
       // MD3 Expressive：进度条轨道交给宿主画（波浪已播段 / 竖条手柄 / 时间气泡 /
       // 字幕密度刻度，[VideoM3eSeekTrack]）；手势、seek 落点与上面的回调仍归 fork。
       seekBarTrackBuilder: apple
           ? null
           : (BuildContext _, VideoSeekBarVisual visual) =>
                 _m3eSeekTrack(controller, visual),
+      // Apple 桌面：单行玻璃条外缘离播放区左右 [kVideoAppleChromeEdgeInset]。
       bottomButtonBarMargin: apple
           ? EdgeInsets.fromLTRB(
-              _videoAppleButtonBarSideInset,
+              kVideoAppleChromeEdgeInset,
               0,
-              _videoAppleButtonBarSideInset,
+              kVideoAppleChromeEdgeInset,
               _floatingChromeBottomLift,
             )
           : EdgeInsets.fromLTRB(
@@ -232,7 +236,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 里一条可拖的 seek bar 既难命中又把画面压没了，进度改由视频最下方那条细线
       // 承担（[VideoSlimProgressBar]，要拖进度请退出小窗）。fork 早有这个旋钮
       // （`displaySeekBar`，默认 true），本仓此前从未设过。
-      displaySeekBar: _controlsDensity.showSeekBar,
+      // Apple 桌面：进度条在底部条行内（[_appleInlineSeekLaneContent] 自己挂
+      // [MaterialDesktopSeekBar]），fork 不再单独画一条。
+      displaySeekBar: _controlsDensity.showSeekBar && !_appleInlineSeekLane,
       // 方案 D（BUG-1864 同源缺口）：media_kit 这层**故意留空**，不再是视频快捷键的
       // 挂载点。它只包 `AdaptiveVideoControls` 子树，而字幕列表 / 剧集轨 / 侧栏是
       // `Video` 的**兄弟**——焦点一进面板（[PanelFocusScope] 会主动抢），整张表就够不
@@ -258,7 +264,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 永远拿不到自己需要的宽。
         // mini 档整条顶栏收起：那点宽度放不下标题 + 一排按钮，「退出小窗」另由自绘
         // mini chrome 提供（[_buildMiniWindowTopChrome]）。
-        if (_controlsDensity.showTopBar)
+        // Apple（Cupertino，判据唯一 `isGlassDesign`）：方案 C 分层顶栏
+        // （apple_chrome.part.dart）；M3E 原样走下面的槽位顶栏。
+        if (apple)
+          ..._appleTopButtonBar(controller, layout, desktop: true)
+        else if (_controlsDensity.showTopBar)
           Expanded(
             // MD3 Expressive：显隐时顶栏上滑（叠在 fork 的淡入淡出上）。
             child: VideoM3eChromeSlide(
@@ -308,14 +318,17 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // [_centeredBottomControlBar] 内保留。
         // mini 档整行让位给本仓自绘的居中大三键（[_buildMiniWindowCenterControls]，
         // 即系统画中画那种观感）；系统画中画下连三键也不画（系统自带控件）。
-        if (_controlsDensity.showBottomButtonBar)
+        // Apple：方案 C 底栏（桌面单行条、进度条行内 / 触屏两枚胶囊），播放 / ±10
+        // 在底栏首位，画面中央不放控件。M3E 原样。
+        if (apple)
+          ..._appleBottomButtonBar(controller, layout, desktop: true)
+        else if (_controlsDensity.showBottomButtonBar)
           Expanded(
             // MD3 Expressive：显隐时底栏小胶囊 spring 下滑。
             child: VideoM3eChromeSlide(
               enabled: !apple,
               visible: _mediaKitControlsVisible,
               hiddenOffset: Offset(0, 24 * _videoUiScale),
-              // 底栏控件不含玻璃（Apple 的胶囊玻璃在 [VideoAppleChromeBackdrop]）。
               child: FushiGlassPresenceFade(
                 child: _centeredBottomControlBar(controller, desktop: true),
               ),
@@ -561,7 +574,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // 与桌面同源：整条顶栏交给 [VideoTopBarSlots] 分宽（按钮按需优先、标题吃剩余），
         // 不再让三段各占 fork 顶栏 Row 的 1/3 flex 份额。
         // 同桌面：mini 档整条顶栏收起。
-        if (_controlsDensity.showTopBar)
+        // Apple（Cupertino，判据唯一 `isGlassDesign`）：方案 C 分层顶栏
+        // （apple_chrome.part.dart）；M3E 原样走下面的槽位顶栏。
+        if (apple)
+          ..._appleTopButtonBar(controller, layout, desktop: false)
+        else if (_controlsDensity.showTopBar)
           Expanded(
             // MD3 Expressive：显隐时顶栏上滑（叠在 fork 的淡入淡出上）。
             child: VideoM3eChromeSlide(
@@ -609,7 +626,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
         // Tooltip（BUG-247）、上/下一句走动态 cue 导航（无字幕段对称回退/前进，TODO-073/
         // TODO-119/BUG-198，动态 _asbConfig.seekSeconds 不写死）均在 helper 内保留。
         // 同桌面：mini 档整行让位给自绘居中三键。
-        if (_controlsDensity.showBottomButtonBar)
+        // Apple：方案 C 底栏（桌面单行条、进度条行内 / 触屏两枚胶囊），播放 / ±10
+        // 在底栏首位，画面中央不放控件。M3E 原样。
+        if (apple)
+          ..._appleBottomButtonBar(controller, layout, desktop: false)
+        else if (_controlsDensity.showBottomButtonBar)
           Expanded(
             // MD3 Expressive：显隐时底栏小胶囊 spring 下滑。
             child: VideoM3eChromeSlide(
