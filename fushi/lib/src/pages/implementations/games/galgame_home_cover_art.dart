@@ -1,9 +1,16 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi_core/fushi_core.dart' show MediaKind;
 
-import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/media/media_cover_standalone_source.dart';
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isEinkTheme;
+import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
+    show coverColorSchemeCache;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockColors;
+import 'package:fushi/src/utils/components/fushi_generated_cover.dart'
+    show fushiGeneratedCoverHue;
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -30,9 +37,8 @@ class GalgameCoverArt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ImageProvider? provider = resolveMediaCoverImage(
-      kind: MediaKind.game,
-      localPath: game.coverPath,
+    final ImageProvider? provider = galgameHomeCoverImage(
+      game,
       decodeWidth: decodeWidth,
     );
     if (provider == null) return GalgameCoverPlaceholder(game: game);
@@ -122,5 +128,82 @@ class GalgameCoverPlaceholder extends StatelessWidget {
         },
       ),
     );
+  }
+}
+
+/// 游戏封面图源（与游戏库同一条来源链：游戏只有本机路径）；没有封面为 null。
+ImageProvider? galgameHomeCoverImage(
+  GalgameEntry game, {
+  int decodeWidth = kLocalCoverDecodePixelWidth,
+}) => resolveStandaloneCoverImage(
+  localPath: game.coverPath,
+  decodeWidth: decodeWidth,
+);
+
+/// 块配色：封面取色（[coverColorSchemeCache]，与库页色块同一份缓存）派生
+/// [FushiCoverBlockColors]；没封面按标题哈希色相（与生成封面同色）；墨水屏中性色。
+class GalgameBlockPalette extends StatefulWidget {
+  const GalgameBlockPalette({
+    required this.title,
+    required this.image,
+    required this.builder,
+    super.key,
+  });
+
+  final String title;
+  final ImageProvider? image;
+  final Widget Function(BuildContext context, FushiCoverBlockColors colors)
+  builder;
+
+  @override
+  State<GalgameBlockPalette> createState() => _GalgameBlockPaletteState();
+}
+
+class _GalgameBlockPaletteState extends State<GalgameBlockPalette> {
+  ColorScheme? _scheme;
+  ImageProvider? _for;
+  Brightness? _brightness;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(GalgameBlockPalette oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _resolve();
+  }
+
+  void _resolve() {
+    final ImageProvider? image = isEinkTheme(context) ? null : widget.image;
+    final Brightness brightness = Theme.of(context).brightness;
+    if (image == _for && brightness == _brightness) return;
+    _for = image;
+    _brightness = brightness;
+    if (image == null) {
+      _scheme = null;
+      return;
+    }
+    _scheme = coverColorSchemeCache.peek(image, brightness);
+    if (_scheme != null) return;
+    coverColorSchemeCache.resolve(image, brightness).then((ColorScheme? s) {
+      if (!mounted || _for != image || _brightness != brightness) return;
+      setState(() => _scheme = s);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final FushiCoverBlockColors colors =
+        _scheme == null && widget.image == null && !isEinkTheme(context)
+        ? FushiCoverBlockColors.fromHue(
+            theme,
+            fushiGeneratedCoverHue(widget.title),
+          )
+        : FushiCoverBlockColors.resolve(theme, _scheme);
+    return widget.builder(context, colors);
   }
 }

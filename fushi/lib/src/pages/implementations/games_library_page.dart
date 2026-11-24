@@ -71,6 +71,11 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/pages/implementations/games/galgame_play_status_style.dart';
+// 游玩状态文案挪到叶子文件（首页 Apple 版面要用、本文件在大 import 环里），
+// 详情 / 条目菜单等既有调用点照旧从这里拿。
+export 'package:fushi/src/pages/implementations/games/galgame_play_status_style.dart'
+    show galgamePlayStatusLabel;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/mining/galgame_library_query.dart';
@@ -2934,16 +2939,6 @@ MediaNsfwTarget? gameCollectionMemberNsfw({
   return MediaNsfwTarget.game(entryKey, adult: false);
 }
 
-/// 游玩状态的用户可读标签（枚举 `.name` 直接上屏是 17 语言用户的灾难）。
-String galgamePlayStatusLabel(GalgamePlayStatus status) => switch (status) {
-  GalgamePlayStatus.unset => t.game_status_unset,
-  GalgamePlayStatus.wantToPlay => t.game_status_want_to_play,
-  GalgamePlayStatus.played => t.game_status_played,
-  GalgamePlayStatus.playing => t.game_status_playing,
-  GalgamePlayStatus.onHold => t.game_status_on_hold,
-  GalgamePlayStatus.dropped => t.game_status_dropped,
-};
-
 /// 排序维度的用户可读标签。
 String galgameSortFieldLabel(GalgameSortField field) => switch (field) {
   GalgameSortField.added => t.game_sort_added,
@@ -3719,30 +3714,6 @@ String galgameBlockSemanticLabel(GalgameEntry game) {
     if (!played || game.playStatus != GalgamePlayStatus.unset)
       galgamePlayStatusLabel(game.playStatus),
   ].join(' · ');
-}
-
-/// 游玩状态色点（设计稿「6 档游玩状态 chip」表）：深色 / 浅色两套，在各自的
-/// 色块底上与 chip 文字一起都 ≥4.5:1。没有「已通关」这一档——[GalgamePlayStatus]
-/// 只有 6 档，「玩过」就是它。
-Color galgamePlayStatusDotColor(
-  GalgamePlayStatus status,
-  Brightness brightness,
-) {
-  final bool dark = brightness == Brightness.dark;
-  return switch (status) {
-    GalgamePlayStatus.unset =>
-      dark ? const Color(0xFF8F8B96) : const Color(0xFF6B6E7B),
-    GalgamePlayStatus.wantToPlay =>
-      dark ? const Color(0xFFA9C8FF) : const Color(0xFF2F62C9),
-    GalgamePlayStatus.playing =>
-      dark ? const Color(0xFF9BE0AB) : const Color(0xFF1D8A45),
-    GalgamePlayStatus.played =>
-      dark ? const Color(0xFFE7CF6F) : const Color(0xFF8A6A00),
-    GalgamePlayStatus.onHold =>
-      dark ? const Color(0xFFC9C6CF) : const Color(0xFF5D5A66),
-    GalgamePlayStatus.dropped =>
-      dark ? const Color(0xFFFF9B9B) : const Color(0xFFB3261E),
-  };
 }
 
 /// 色块里的游玩状态 chip（设计稿 `.chip.stc`）：底 = 状态色点 24% 叠在色块底色

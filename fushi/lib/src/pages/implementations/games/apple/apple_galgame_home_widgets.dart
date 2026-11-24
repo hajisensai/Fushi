@@ -19,12 +19,9 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/pages/implementations/games/galgame_detail_route.dart'
     show galgameCoverHeroTag;
-import 'package:fushi/src/pages/implementations/games/galgame_home_blocks.dart'
-    show GalgameBlockPalette, galgameHomeCoverImage, galgamePlayStatusDotColor;
 import 'package:fushi/src/pages/implementations/games/galgame_home_cover_art.dart';
 import 'package:fushi/src/pages/implementations/games/galgame_home_model.dart';
-import 'package:fushi/src/pages/implementations/games_library_page.dart'
-    show galgamePlayStatusLabel;
+import 'package:fushi/src/pages/implementations/games/galgame_play_status_style.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:fushi/src/stats/stat_format.dart' show formatStatTime;

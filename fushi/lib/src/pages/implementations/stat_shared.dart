@@ -34,7 +34,7 @@ import 'package:fushi_engine/stats/study_goal_language.dart';
 
 // 时长 / 词数外显挪到统计层（统计层不 import 本 UI 文件），这里原样转出。
 export 'package:fushi/src/stats/stat_format.dart'
-    show formatStatTime, formatStatWords;
+    show formatStatHeatmapDay, formatStatTime, formatStatWords;
 export 'package:fushi/src/pages/implementations/activity_feed.dart'
     show formatActivityRelativeTime;
 
@@ -949,17 +949,6 @@ String? statBookCphOfTotals(
     ms += d.ms;
   }
   return formatStatCphOf(chars, ms);
-}
-
-/// 热力图气泡日期标签：`M-dd`；跨年补年份成 `Y-M-dd`。[dateKey] 形如 `2026-07-18`
-/// （[statDateKey] 格式）；无法解析时原样返回。
-String formatStatHeatmapDay(String dateKey) {
-  final DateTime? d = DateTime.tryParse(dateKey);
-  if (d == null) return dateKey;
-  final DateTime now = DateTime.now();
-  final String dd = d.day.toString().padLeft(2, '0');
-  if (d.year == now.year) return '${d.month}-$dd';
-  return '${d.year}-${d.month}-$dd';
 }
 
 /// 「今日按小时」单色柱状图区块（视频统计用：观看时长没有阅读面之分，只有一带）。

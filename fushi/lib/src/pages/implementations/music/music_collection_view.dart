@@ -23,9 +23,8 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/media/music/music_view_style.dart';
 import 'package:fushi/src/models/library_grid_columns.dart'
     show libraryGridColumnChoices;
+import 'package:fushi/src/pages/implementations/library_layout/library_grid_size_class.dart';
 import 'package:fushi/src/pages/implementations/library_layout/library_grid_zoom.dart';
-import 'package:fushi/src/pages/implementations/library_view_options.dart'
-    show libraryGridSizeClassOf;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
     show
         MusicCover,

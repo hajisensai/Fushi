@@ -17,8 +17,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/games/galgame_library_view_request.dart';
-import 'package:fushi/src/pages/implementations/stat_shared.dart'
-    show formatStatHeatmapDay;
+import 'package:fushi/src/stats/stat_format.dart' show formatStatHeatmapDay;
 
 /// 「游玩状态」各档的展示顺序（设计稿：在玩 → 玩过 → 想玩 → 搁置 → 弃坑 →
 /// 未设置）。
