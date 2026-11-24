@@ -1,12 +1,54 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T03:06:10Z",
+ "generatedAt": "2026-11-24T03:06:44Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "88038be0fae7e81865f877429bdf5158877504b7",
   "seq": 32189
  },
  "builds": [
+  {
+   "seq": 32168,
+   "version": "3.4.0",
+   "sha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
+   "unknown": false,
+   "publishedAt": "2026-11-24T03:06:35Z",
+   "testflight": false,
+   "baseSeq": 32155,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
+     "subject": "Merge #4196 (samutw/feat/tracking-series-links) into develop"
+    },
+    {
+     "sha": "04c7ec241876aab812fef4fb535095f479a72c65",
+     "subject": "Merge #4338 (claude/fix-lyric-style-desc-clip) into develop"
+    },
+    {
+     "sha": "729f7f9061c3554f076413a5e9270ab52352a46d",
+     "subject": "Merge #4337 (claude/fix-visualizer-tap-exit) into develop"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
+    },
+    "macos": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
+    },
+    "ios": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
+    }
+   }
+  },
   {
    "seq": 32155,
    "version": "3.4.0",
@@ -81,40 +123,13 @@
    "unknown": false,
    "publishedAt": "2026-11-24T00:11:19Z",
    "testflight": true,
-   "baseSeq": 32143,
+   "baseSeq": 32137,
    "prs": [],
    "direct": [
     {
      "sha": "10d0d070185cdcef44775d3ad1e445a0218d6325",
      "subject": "Merge #4333 (claude/fix-immersion-queue-order-flake) into develop"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
     },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32143,
-   "version": "3.4.0",
-   "sha": "ecd64aae2992f34686339675e991489d81ba74cc",
-   "unknown": false,
-   "publishedAt": "2026-11-23T22:19:22Z",
-   "testflight": false,
-   "baseSeq": 32137,
-   "prs": [],
-   "direct": [
     {
      "sha": "ecd64aae2992f34686339675e991489d81ba74cc",
      "subject": "Merge #4325 (claude/fix-develop-red2-collection) into develop"
@@ -134,16 +149,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
+     "state": "ok"
     },
     "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
+     "state": "ok"
     },
     "ios": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
+     "state": "ok"
     }
    }
   }
@@ -180,18 +192,6 @@
    {
     "sha": "d01929362d9286bce6b7d74a69c9fc1fbdeac5eb",
     "subject": "Merge #4341 (claude/lyrics-inline-ruby) into develop"
-   },
-   {
-    "sha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
-    "subject": "Merge #4196 (samutw/feat/tracking-series-links) into develop"
-   },
-   {
-    "sha": "04c7ec241876aab812fef4fb535095f479a72c65",
-    "subject": "Merge #4338 (claude/fix-lyric-style-desc-clip) into develop"
-   },
-   {
-    "sha": "729f7f9061c3554f076413a5e9270ab52352a46d",
-    "subject": "Merge #4337 (claude/fix-visualizer-tap-exit) into develop"
    }
   ],
   "truncated": false,
