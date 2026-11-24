@@ -63,6 +63,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
         fushiAppleInlineTitleStyle,
         kFushiAppleInlineTitleRadius;
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_presence.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart'
@@ -1820,9 +1821,11 @@ class _FushiFloatingTopBarState extends State<FushiFloatingTopBar> {
             child: body,
           );
     if (!widget.titleBacking) {
+      // 不垫底的内联标题不在玻璃里：chrome 显隐时它自己跟着玻璃的进度淡
+      // （[FushiGlassPresenceFade]，静止时原样）。
       return KeyedSubtree(
         key: const ValueKey<String>('fushi_floating_top_bar_title'),
-        child: tappable,
+        child: FushiGlassPresenceFade(child: tappable),
       );
     }
     return FushiFloatingPill(
@@ -2353,7 +2356,8 @@ class _FushiToolbarFabState extends State<FushiToolbarFab>
 }
 
 /// chrome 显隐动效：[visible] 翻转时按 M3E spatial 弹簧把 [child] 从 [from] 方向
-/// 滑入 / 滑出并淡入淡出。隐藏态 IgnorePointer + ExcludeSemantics，且在完全隐藏后
+/// 滑入 / 滑出并淡入淡出（Apple 玻璃下改为原地浮现：短位移 + 轻缩放，淡入淡出
+/// 走玻璃安全通道 [fushiChromeFade]）。隐藏态 IgnorePointer + ExcludeSemantics，且在完全隐藏后
 /// 不再绘制（Offstage 不画但保留状态，不重建子树）。墨水屏 / 减弱动态效果下瞬时。
 class FushiChromeReveal extends StatefulWidget {
   const FushiChromeReveal({
@@ -2455,7 +2459,28 @@ class _FushiChromeRevealState extends State<FushiChromeReveal>
         final double v = _t.value;
         final double opacity = _fade.value.clamp(0.0, 1.0);
         final bool hidden = !widget.visible && v <= 0.001 && opacity <= 0.001;
-        Widget moved = Transform.translate(offset: _offsetFor(v), child: child);
+        // 有液态玻璃时（Apple）：iOS 26 chrome 的显隐——同一条进度淡出 + 朝来向
+        // 退几 pt + 轻微缩小，玻璃底与内容是一个整体（[fushiChromeFade] 走玻璃
+        // 着色器的 visibility，不让 Opacity 压在玻璃上：那会让玻璃采不到背景、
+        // 淡出时剩一团灰色空胶囊，2026-11-24 录屏）。M3E 照旧 24 px 滑入 + 淡入。
+        final bool glass = fushiChromeHasGlass(context);
+        Widget moved = Transform.translate(
+          offset: _offsetFor(v) * (glass ? _kGlassRevealTravelRatio : 1),
+          child: child,
+        );
+        if (glass) {
+          final double scale =
+              _kGlassRevealScaleFrom + (1 - _kGlassRevealScaleFrom) * v;
+          moved = fushiGlassSelfScale(
+            context,
+            scaling: scale < 1,
+            child: Transform.scale(
+              scale: scale,
+              alignment: _scaleAnchorFor(widget.from),
+              child: moved,
+            ),
+          );
+        }
         // 顶 / 底栏登记成通知要让开的 chrome（制卡结果卡、底部 toast 抬到栏上方，
         // 用户 2026-11-22：卡片压在漫画有声播放条上）。包在位移外面：矩形取栏落定
         // 后的位置，显隐进度取透明度（不过冲），栏进退场时卡片跟着平滑移动。
@@ -2469,7 +2494,7 @@ class _FushiChromeRevealState extends State<FushiChromeReveal>
             ignoring: !widget.visible,
             child: ExcludeSemantics(
               excluding: !widget.visible,
-              child: Opacity(opacity: opacity, child: moved),
+              child: fushiChromeFade(context, opacity, moved),
             ),
           ),
         );
@@ -2477,6 +2502,21 @@ class _FushiChromeRevealState extends State<FushiChromeReveal>
     );
   }
 }
+
+/// 玻璃 chrome 显隐时的位移只取 M3E 的三分之一（24 → 8 pt）：Apple 的栏不
+/// 「滑」进来，只是原地浮现时带一点来向的漂移。
+const double _kGlassRevealTravelRatio = 1 / 3;
+
+/// 玻璃 chrome 完全隐藏时的缩放（显现时 0.96 → 1，与位移同一条弹簧进度）。
+const double _kGlassRevealScaleFrom = 0.96;
+
+/// 缩放的锚点：贴着来向那条边（顶栏贴上沿缩，底栏贴下沿缩）。
+Alignment _scaleAnchorFor(AxisDirection from) => switch (from) {
+  AxisDirection.up => Alignment.topCenter,
+  AxisDirection.down => Alignment.bottomCenter,
+  AxisDirection.left => Alignment.centerLeft,
+  AxisDirection.right => Alignment.centerRight,
+};
 
 /// 浮动胶囊（页头 / 库页顶栏 / 悬浮顶栏 / 底栏 / 阅读器工具栏 / FAB……）的整体
 /// 缩放（2026-10-30 用户「顶部浮动胶囊大小全部缩放当前的90%」，同日改 85%、

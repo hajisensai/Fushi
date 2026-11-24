@@ -61,6 +61,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // [_videoControlsTransitionDuration]，让三者同速淡入淡出（值等于 media_kit
       // 桌面默认 150ms，显式写出后改一处全部跟随）。
       controlsTransitionDuration: _videoControlsTransitionDuration,
+      // Apple：控制条里有液态玻璃（顶栏玻璃钮 / 胶囊），整层 Opacity 会让玻璃采不到
+      // 画面、淡出时剩灰色空胶囊（用户 2026-11-24「视频也是，会闪」）。显隐交给
+      // [fushiChromeFade]：玻璃走着色器 visibility，非玻璃控件各自
+      // [FushiGlassPresenceFade]。MD3 传 null = fork 原样的整层 Opacity。
+      controlsFadeBuilder: apple ? fushiChromeFade : null,
       // TODO-364：media_kit 控制条把它**真实**的 `visible` 推进这个 notifier，字幕避让
       // 唯一消费它（见 [_mediaKitControlsVisible] / [_applyControlsVisibilityFromMediaKit]），
       // 不再另建镜像 + 第二个 Timer（旧实现两套计时相位反 = 本 BUG 根因）。
@@ -310,7 +315,10 @@ extension _VideoControlsTheme on _VideoFushiPageState {
               enabled: !apple,
               visible: _mediaKitControlsVisible,
               hiddenOffset: Offset(0, 24 * _videoUiScale),
-              child: _centeredBottomControlBar(controller, desktop: true),
+              // 底栏控件不含玻璃（Apple 的胶囊玻璃在 [VideoAppleChromeBackdrop]）。
+              child: FushiGlassPresenceFade(
+                child: _centeredBottomControlBar(controller, desktop: true),
+              ),
             ),
           ),
       ],
@@ -388,6 +396,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // [_videoControlsTransitionDuration]，让三者同速淡入淡出（值等于 media_kit
       // 移动默认 300ms，显式写出后改一处全部跟随）。
       controlsTransitionDuration: _videoControlsTransitionDuration,
+      // Apple：控制条里有液态玻璃（顶栏玻璃钮 / 胶囊），整层 Opacity 会让玻璃采不到
+      // 画面、淡出时剩灰色空胶囊（用户 2026-11-24「视频也是，会闪」）。显隐交给
+      // [fushiChromeFade]：玻璃走着色器 visibility，非玻璃控件各自
+      // [FushiGlassPresenceFade]。MD3 传 null = fork 原样的整层 Opacity。
+      controlsFadeBuilder: apple ? fushiChromeFade : null,
       // TODO-364：移动控制条的真实 `visible`（含 onTap toggle）推进同一个 notifier，字幕避让
       // 唯一消费它，移动端不再用 Fushi 镜像独立 toggle（旧实现并发操作时方向反 = 本 BUG 根因）。
       visibilityNotifier: _mediaKitControlsVisible,
@@ -603,7 +616,9 @@ extension _VideoControlsTheme on _VideoFushiPageState {
               enabled: !apple,
               visible: _mediaKitControlsVisible,
               hiddenOffset: Offset(0, 24 * _videoUiScale),
-              child: _centeredBottomControlBar(controller, desktop: false),
+              child: FushiGlassPresenceFade(
+                child: _centeredBottomControlBar(controller, desktop: false),
+              ),
             ),
           ),
       ],

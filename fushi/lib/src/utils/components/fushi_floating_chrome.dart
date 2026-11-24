@@ -26,6 +26,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart'
 import 'package:fushi/src/utils/components/fushi_toolbar.dart'
     show FushiToolbar;
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_presence.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
     show
         FushiPageChromeTitle,
@@ -1112,9 +1113,12 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                     child: IgnorePointer(
                       // 收起途中就不再接指针（正在离开的工具栏不该还能被点到）。
                       ignoring: hidden || !controller.visible,
-                      child: Opacity(
-                        opacity: hidden ? 0 : opacity,
-                        child: Transform.translate(
+                      // 玻璃安全的淡出（[fushiChromeFade]）：Apple 的玻璃栏
+                      // 不能压在 Opacity 下，否则采不到背景、淡出时成灰团。
+                      child: fushiChromeFade(
+                        context,
+                        hidden ? 0 : opacity,
+                        Transform.translate(
                           // 用未截断的弹簧值：MD3 的轻微回弹体现在位置上
                           // （Apple 弹簧临界阻尼，本就不越界）。
                           // 页头大字随滚动收短了 [collapse]：嵌套层自己画的工具行
@@ -1425,12 +1429,11 @@ class _FushiSpringRevealState extends State<FushiSpringReveal>
                     ? Alignment.bottomCenter
                     : Alignment.topCenter,
                 heightFactor: extent,
-                child: Opacity(
-                  opacity: hidden ? 0 : opacity,
-                  child: Transform.translate(
-                    offset: Offset(0, slide),
-                    child: child,
-                  ),
+                // 玻璃安全的淡出（[fushiChromeFade]）。
+                child: fushiChromeFade(
+                  context,
+                  hidden ? 0 : opacity,
+                  Transform.translate(offset: Offset(0, slide), child: child),
                 ),
               ),
             ),
@@ -1599,6 +1602,10 @@ class FushiFloatingActionsPill extends StatelessWidget {
         reverseDuration: motion.effectsFast.duration,
         switchInCurve: motion.effectsSlow.curve,
         switchOutCurve: motion.effectsFast.curve,
+        // 默认的 FadeTransition 会把 Opacity 压在玻璃胶囊上（采不到背景、交叉
+        // 淡变时一团灰），换玻璃安全版。
+        transitionBuilder: (Widget child, Animation<double> animation) =>
+            FushiChromeFadeTransition(opacity: animation, child: child),
         layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
           alignment: AlignmentDirectional.centerEnd,
           clipBehavior: Clip.none,
@@ -2149,7 +2156,7 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
               switchInCurve: FushiMotion.standard,
               switchOutCurve: FushiMotion.standard,
               transitionBuilder: (Widget child, Animation<double> animation) =>
-                  FadeTransition(
+                  FushiChromeFadeTransition(
                     opacity: animation,
                     child: ScaleTransition(
                       scale: Tween<double>(

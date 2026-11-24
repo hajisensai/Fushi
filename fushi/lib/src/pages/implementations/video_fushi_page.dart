@@ -582,6 +582,7 @@ import 'package:fushi/src/media/video/online/anime_source_library.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_presence.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 part 'video_fushi/danmaku.part.dart';
@@ -10935,20 +10936,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   Widget _topBarTitleText({required AlignmentGeometry alignment}) {
     if (_m3eChrome) return _m3eTopBarTitle(alignment: alignment);
-    return Align(
-      alignment: alignment,
-      child: ValueListenableBuilder<String?>(
-        valueListenable: _titleNotifier,
-        builder: (BuildContext _, String? title, __) => Text(
-          title ?? '',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: alignment == AlignmentDirectional.centerEnd
-              ? TextAlign.end
-              : alignment == AlignmentDirectional.center
-              ? TextAlign.center
-              : TextAlign.start,
-          style: _videoControlTitleStyle(),
+    // 标题不在玻璃里：Apple 控制条显隐时跟玻璃同一条进度淡（[FushiGlassPresenceFade]）。
+    return FushiGlassPresenceFade(
+      child: Align(
+        alignment: alignment,
+        child: ValueListenableBuilder<String?>(
+          valueListenable: _titleNotifier,
+          builder: (BuildContext _, String? title, __) => Text(
+            title ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: alignment == AlignmentDirectional.centerEnd
+                ? TextAlign.end
+                : alignment == AlignmentDirectional.center
+                ? TextAlign.center
+                : TextAlign.start,
+            style: _videoControlTitleStyle(),
+          ),
         ),
       ),
     );

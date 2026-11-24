@@ -1069,3 +1069,25 @@ in-flight frame. Returning to the foreground clears the flag and enqueues one
 redraw.
 
 Guard: `fushi/test/pages/video_background_play_guard_test.dart`.
+
+## Glass chrome fade: host-owned controls show / hide fade
+
+`lib/media_kit_video_controls/src/controls/video_controls_fade.dart` (new,
+exported), `material.dart`, `material_desktop.dart`.
+
+Upstream fades the whole controls layer with one `AnimatedOpacity`. Fushi's
+Apple (Liquid Glass) controls hold backdrop-filter glass, and a backdrop filter
+under an `OpacityLayer` only samples that (empty) layer, not the video: while
+the icons fade the glass turns into a grey empty capsule and pops at the end
+(user recording 2026-11-24, "the video controls flash").
+
+Fork: both themes gain `controlsFadeBuilder` (`VideoControlsFadeBuilder`). The
+layer fade is now a `TweenAnimationBuilder` with the same curve, duration and
+`onEnd`; null builder = upstream `Opacity` over the layer (pixel-identical).
+With a builder the fork pushes no opacity over the layer; the host fades its
+glass through the glass shader's own visibility and its non-glass content leaf
+by leaf, and the fork fades its own leaves (scrims, seek bar) through
+`VideoControlsLeafFade`.
+
+Guard: `fushi/test/utils/components/glass/fushi_glass_presence_test.dart`
+(the Fushi-side fade); the fork default path is unchanged.
