@@ -251,11 +251,40 @@ void main() {
         ? null
         : ((image as ResizeImage).imageProvider as FileImage).file.path;
 
+    /// 刮削层变更后页面按成员重算横幅（成员 uid → bookKey 走 drift 查询）：
+    /// 交替推进假时钟与真实异步，直到背景带变成 [expected]。
+    Future<void> settleBackdrop(WidgetTester tester, String? expected) async {
+      for (int i = 0; i < 50; i++) {
+        if (backdropPath(heroBackdrop(tester)) == expected) return;
+        await tester.pump(const Duration(milliseconds: 20));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+      }
+    }
+
+    Future<void> seedBook(FushiDatabase db, String bookKey, String uid) =>
+        db.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: bookKey,
+            uid: Value<String>(uid),
+            title: bookKey,
+            epubPath: '/x/$bookKey.cbz',
+            extractDir: '/x/$bookKey',
+            chapterCount: 1,
+            chaptersJson: '[]',
+            importedAt: 1000,
+          ),
+        );
+
+    // 成员行存书 uid（v83），刮削层按 bookKey 记（BUG-5373：曾直接拿 uid 查刮削层）。
     testWidgets('取到横幅后 hero 背景带即时换成它；清除后退回无背景', (WidgetTester tester) async {
       final FushiDatabase db = FushiDatabase.forTesting(
         NativeDatabase.memory(),
       );
       addTearDown(db.close);
+      await seedBook(db, 'k1', 'u1');
+      await seedBook(db, 'k2', 'u2');
       final int cid = await db.createMediaCollection('Banner Series');
       await db.addToCollection(cid, MediaKind.epub, 'u1');
       await db.addToCollection(cid, MediaKind.epub, 'u2');
@@ -269,21 +298,19 @@ void main() {
       // 模拟一次刮削：先写横幅，再写两卷的记录（与刮削服务同一顺序）。
       await tester.runAsync(() async {
         await art.store.writeBanner('mangabaka_42', kTransparentImage);
-        await art.store.write(record: recordFor('u1', 'mangabaka_42'));
-        await art.store.write(record: recordFor('u2', 'mangabaka_42'));
+        await art.store.write(record: recordFor('k1', 'mangabaka_42'));
+        await art.store.write(record: recordFor('k2', 'mangabaka_42'));
       });
-      await tester.pump();
-      expect(
-        backdropPath(heroBackdrop(tester)),
-        art.store.bannerPathFor('mangabaka_42'),
-      );
+      final String bannerPath = art.store.bannerPathFor('mangabaka_42');
+      await settleBackdrop(tester, bannerPath);
+      expect(backdropPath(heroBackdrop(tester)), bannerPath);
 
       // 清除（逐本 remove，回收孤儿横幅）后不再指向已删的文件。
       await tester.runAsync(() async {
-        await art.store.remove('u1');
-        await art.store.remove('u2');
+        await art.store.remove('k1');
+        await art.store.remove('k2');
       });
-      await tester.pump();
+      await settleBackdrop(tester, null);
       expect(heroBackdrop(tester), isNull);
     });
 
@@ -292,6 +319,7 @@ void main() {
         NativeDatabase.memory(),
       );
       addTearDown(db.close);
+      await seedBook(db, 'k1', 'u1');
       final int cid = await db.createMediaCollection('Own Backdrop');
       await db.addToCollection(cid, MediaKind.epub, 'u1');
       final File own = File('${thumbs.path}/own.png')
@@ -306,7 +334,7 @@ void main() {
       final CollectionArtScrape art = artFor(db);
       await tester.runAsync(() async {
         await art.store.writeBanner('mangabaka_42', kTransparentImage);
-        await art.store.write(record: recordFor('u1', 'mangabaka_42'));
+        await art.store.write(record: recordFor('k1', 'mangabaka_42'));
       });
       final MediaCollectionRow collection = (await db.getMediaCollectionById(
         cid,

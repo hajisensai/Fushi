@@ -76,6 +76,13 @@
 |---|:--:|:--:|---|
 | [BUG-5372](bugs/BUG-5372-mangabaka-search-volume-suffix.md) | ✅ | ✅ | mangabaka-search-volume-suffix |
 | [BUG-5371](bugs/BUG-5371-mangabaka-volume-cover-pop-type.md) | ✅ | ✅ | mangabaka-volume-cover-pop-type |
+> 共 4669 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5375](bugs/BUG-5375-book-art-bangumi-bilingual-title.md) | ✅ | ✅ | 双语书名（罗马字 + 日文）的系列永远拿不到 Bangumi 候选 |
+| [BUG-5374](bugs/BUG-5374-book-art-banner-gc-locked-file.md) | ✅ | ✅ | 孤儿横幅删不掉时整个清除中断 |
+| [BUG-5373](bugs/BUG-5373-collection-art-scrape-uid-members.md) | ✅ | ✅ | 合集「获取各卷封面与横幅」对按 uid 存的成员一本都认不出 |
 | [BUG-5364](bugs/BUG-5364-manga-popup-forwarded-keys-block-scroll.md) | ✅ | ✅ | manga-popup-forwarded-keys-block-scroll |
 | [BUG-5363](bugs/BUG-5363-srs-visible-sounds-zero-opacity-animation.md) | ✅ | ✅ | 整面卡面：关键帧 opacity 始终为 0 的动画被当淡入，隐藏发音进自动播放 |
 | [BUG-5362](bugs/BUG-5362-overlay-handoff-reading-mismatch.md) | ✅ | ✅ | 覆盖窗转交高级制卡：同表记异读音时定位到错词条 |

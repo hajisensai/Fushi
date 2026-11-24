@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_cli/fushi_cli.dart';
-import 'package:fushi_core/fushi_core.dart' show MediaCollectionItemRow;
 import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
     show findIsbnIn;
@@ -315,11 +314,10 @@ List<CtlRoute> buildBookMetadataCtlRoutes(OpContext context) {
         throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
       }
       final int collectionId = _collectionId(call);
-      final List<String> keys = <String>[
-        for (final MediaCollectionItemRow r
-            in await app().database.getCollectionItems(collectionId))
-          if (r.mediaType == 'epub') r.entryKey,
-      ];
+      final List<String> keys = await collectionMemberBookKeys(
+        app().database,
+        collectionId,
+      );
       return _removeArt(app(), keys, invalidateBooks, reject: false);
     }),
     CtlRoute.delete('$kBookMetadataCtlItems/:key/scraped-art', (
