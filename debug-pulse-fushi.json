@@ -1,12 +1,44 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T04:37:26Z",
+ "generatedAt": "2026-11-24T04:57:25Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "d3f6e882208c1dcc10902c971fccecd78d028404",
   "seq": 32194
  },
  "builds": [
+  {
+   "seq": 32193,
+   "version": "3.4.0",
+   "sha": "fe7110dbb7f877160e412699165bf897fddf49a4",
+   "unknown": false,
+   "publishedAt": "2026-11-24T04:57:05Z",
+   "testflight": false,
+   "baseSeq": 32189,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "fe7110dbb7f877160e412699165bf897fddf49a4",
+     "subject": "Merge #4348 (claude/pr4196-followup) into develop"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45318894341"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 32189,
    "version": "3.4.0",
@@ -145,8 +177,8 @@
    "version": "3.4.0",
    "sha": "de89983a2e8ff573e550d9d814b6d9483d91a115",
    "unknown": false,
-   "publishedAt": "2026-11-24T01:13:32Z",
-   "testflight": true,
+   "publishedAt": "2026-11-24T01:03:42Z",
+   "testflight": false,
    "baseSeq": 32145,
    "prs": [],
    "direct": [
@@ -161,13 +193,16 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45295606609"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45295606609"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45295606609"
     }
    }
   }
@@ -180,29 +215,21 @@
    {
     "sha": "d3f6e882208c1dcc10902c971fccecd78d028404",
     "subject": "chore(bugs): settle BUG number collisions on fe7110dbb"
-   },
-   {
-    "sha": "fe7110dbb7f877160e412699165bf897fddf49a4",
-    "subject": "Merge #4348 (claude/pr4196-followup) into develop"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45318894341"
+    "state": "none"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45318894068"
+    "state": "none"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45318894068"
+    "state": "none"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45318894068"
+    "state": "none"
    }
   }
  },
