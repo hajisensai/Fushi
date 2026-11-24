@@ -63,13 +63,20 @@ class AppleCapsuleButton extends StatelessWidget {
                   FushiIcon(glyph, size: 13 * k, color: fg, fill: 1),
                   SizedBox(width: 5 * k),
                 ],
-                Text(
-                  label,
-                  style: appleTextStyle(
-                    context,
-                    size: 13.5 * k,
-                    weight: FontWeight.w600,
-                    color: fg,
+                // 放不下（大字号 / 窄卡）时文字截断，胶囊不越出父级给的宽度；
+                // 宽度无界（段头行尾等非弹性位）时 loose Flexible 按原宽排。
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.ellipsis,
+                    style: appleTextStyle(
+                      context,
+                      size: 13.5 * k,
+                      weight: FontWeight.w600,
+                      color: fg,
+                    ),
                   ),
                 ),
               ],

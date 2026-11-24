@@ -1694,14 +1694,16 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     return _localSection(context, _section, snap);
   }
 
-  /// 专辑 / 光盘网格当前尺寸档下的「每行数量」，null = 自动。
-  int? _gridFixedColumns(BuildContext context) =>
-      _app.prefsRepo.libraryGridColumns(
-        LibraryGridDomain.music,
-        libraryGridSizeClassOf(context),
-      );
+  /// 专辑 / 光盘网格当前尺寸档下的「每行数量」，null = 自动。偏好还没装好时
+  /// （与 [_reloadOnlineSources] 同一前提：本页允许先于偏好出现）按自动排。
+  int? _gridFixedColumns(BuildContext context) => _app.isPreferencesReady
+      ? _app.prefsRepo.libraryGridColumns(
+          LibraryGridDomain.music,
+          libraryGridSizeClassOf(context),
+        )
+      : null;
 
-  /// 写回「每行数量」（null = 自动）。
+  /// 写回「每行数量」（null = 自动）。偏好没装好时不给（[_gridColumnsWriter]）。
   void _setGridColumns(int? columns) {
     unawaited(
       _app.prefsRepo.setLibraryGridColumns(
@@ -1712,6 +1714,10 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     );
     setState(() {});
   }
+
+  /// 网格缩放口的写回：偏好没装好时无处可写，不登记缩放口。
+  ValueChanged<int?>? get _gridColumnsWriter =>
+      _app.isPreferencesReady ? _setGridColumns : null;
 
   /// 本地（含混排服务器专辑）分区内容。
   Widget _localSection(
@@ -1728,7 +1734,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         onOpen: _openAlbum,
         style: _libraryStyle(context, MusicLibrarySection.albums),
         fixedColumns: _gridFixedColumns(context),
-        onColumnsChanged: _setGridColumns,
+        onColumnsChanged: _gridColumnsWriter,
       ),
       MusicLibrarySection.discs => _discSection(context, snap),
       MusicLibrarySection.artists => _ArtistList(
@@ -1796,7 +1802,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
       onOpen: _openAlbum,
       style: _libraryStyle(context, MusicLibrarySection.discs),
       fixedColumns: _gridFixedColumns(context),
-      onColumnsChanged: _setGridColumns,
+      onColumnsChanged: _gridColumnsWriter,
     );
   }
 

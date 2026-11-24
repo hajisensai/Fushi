@@ -19,8 +19,16 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/music/apple/apple_music_recommend_widgets.dart';
+import 'package:fushi/src/pages/implementations/music/music_collection_view.dart'
+    show MusicCollectionBlock;
+import 'package:fushi/src/pages/implementations/music/music_cover.dart'
+    show MusicCoverTintSource;
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show ShortcutBindingScope;
+import 'package:fushi/src/shortcuts/shortcut_registry.dart'
+    show FushiShortcutRegistry;
 import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
     show FushiCoverTint;
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
@@ -451,10 +459,21 @@ void main() {
       expect(handle.available, isFalse);
     });
 
-    testWidgets('焦点在推荐页内：Enter 起播该行，Ctrl/⌘ + R 刷新全部来源', (
+    // 刷新键属 home 组：移动端默认表不给 home 组键盘绑定（外接键盘上不让首页
+    // 悄悄吃组合键，见 ShortcutDefaults._mobile）。这里按桌面（Windows）装载的
+    // 注册表断言 Ctrl + R——与 app 里 ShortcutBindingScope 下发已装载注册表同一条路径。
+    testWidgets('焦点在推荐页内（桌面键位）：Enter 起播该行，Ctrl + R 刷新全部来源', (
       WidgetTester tester,
     ) async {
-      await pump(tester, single(), glass: true, size: const Size(2400, 2400));
+      final FushiShortcutRegistry registry = FushiShortcutRegistry()
+        ..loadDefaults(TargetPlatform.windows);
+      addTearDown(registry.dispose);
+      await pump(
+        tester,
+        ShortcutBindingScope(registry: registry, child: single()),
+        glass: true,
+        size: const Size(2400, 2400),
+      );
       Focus.of(tester.element(find.text('Track s1'))).requestFocus();
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -469,7 +488,8 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await tester.pumpAndSettle();
       expect(app.manager.refreshes, before + 1);
-      await app.musicSession.engine.stop();
+      // 停播要等真实 I/O（播放后端），假时钟下 await 永不返回。
+      await tester.runAsync(app.musicSession.engine.stop);
       await tester.pumpWidget(const SizedBox.shrink());
     });
   });
@@ -501,16 +521,23 @@ void main() {
         find.descendant(of: tile, matching: find.byType(FushiCoverTint)),
         findsNothing,
       );
+      expect(
+        find.descendant(of: tile, matching: find.byType(MusicCoverTintSource)),
+        findsNothing,
+      );
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
-    testWidgets('M3E：快捷格仍按封面取色', (WidgetTester tester) async {
+    testWidgets('M3E：最近播放色块仍按封面取色', (WidgetTester tester) async {
       await seedRecent();
       await pump(tester, all(), glass: false, platform: TargetPlatform.android);
       final Finder tile = key(recentKey);
       expect(tile, findsOneWidget);
+      // 推荐页里的「最近播放」是色块（MusicCollectionBlock），底色经
+      // MusicCoverTintSource 从封面取。
+      expect(tester.widget(tile), isA<MusicCollectionBlock>());
       expect(
-        find.descendant(of: tile, matching: find.byType(FushiCoverTint)),
+        find.descendant(of: tile, matching: find.byType(MusicCoverTintSource)),
         findsOneWidget,
       );
       await tester.pumpWidget(const SizedBox.shrink());

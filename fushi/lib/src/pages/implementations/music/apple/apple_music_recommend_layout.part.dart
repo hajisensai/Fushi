@@ -760,7 +760,9 @@ class _AppleMusicChartCard extends ConsumerWidget {
             Container(
               height: _headExtent(context) + 8 * k,
               padding: EdgeInsets.only(bottom: 8 * k),
-              decoration: BoxDecoration(
+              // 分隔细线画在前景、落在底部 8 的留白里：放 decoration 的话
+              // Container 会把边框宽度并进 padding，卡头少 0.5 而溢出。
+              foregroundDecoration: BoxDecoration(
                 border: Border(
                   bottom: BorderSide(color: c.separator, width: 0.5),
                 ),

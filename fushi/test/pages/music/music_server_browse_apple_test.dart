@@ -240,7 +240,9 @@ void main() {
       expect(find.byType(AppleMusicSongRow), findsWidgets);
       expect(tester.takeException(), isNull);
 
-      // 流派：彩色渐变分类块（带副行计数）。
+      // 流派：彩色渐变分类块（带副行计数）。分区胶囊行窄屏横滑，先滚到可见再点。
+      await tester.ensureVisible(_key('music-server-section-genres'));
+      await tester.pumpAndSettle();
       await tester.tap(_key('music-server-section-genres'));
       await tester.pumpAndSettle();
       expect(_key('music-server-genre-g-rock'), findsOneWidget);
