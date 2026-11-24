@@ -38,6 +38,9 @@ import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart'
     show buildMusicServersDestination;
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_sources_layout.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -418,64 +421,112 @@ class _MusicOnlineSourcesViewState
     );
   }
 
+  /// Cupertino：Apple「设置」式 inset grouped（[AppleMusicSourcesLayout]）；状态、写回、
+  /// 添加菜单与 M3E 同一份。
+  Widget _buildApple(
+    BuildContext context,
+    List<MusicOrderedSource>? rows,
+    String storefront,
+  ) => AppleMusicSourcesLayout(
+    rows: rows == null
+        ? null
+        : <AppleMusicSourceRowData>[
+            for (final MusicOrderedSource r in rows)
+              (
+                key: r.source.key,
+                title: r.source.key == kAppleMusicSourceKey
+                    ? 'Apple Music'
+                    : r.source.name,
+                subtitle: _subtitleOf(r.source),
+                icon: _iconOf(r.source),
+                on: _isOn(r),
+                appleMusic: r.source.key == kAppleMusicSourceKey,
+              ),
+          ],
+    storefront: storefront,
+    storefronts: kAppleMusicStorefrontChoices,
+    onToggle: (int i, bool on) {
+      final List<MusicOrderedSource>? current = _rows;
+      if (current == null || i >= current.length) return;
+      unawaited(_toggle(current[i], on));
+    },
+    onReorder: _move,
+    onStorefront: (String v) => unawaited(_setStorefront(v)),
+    addKey: _addAnchor,
+    onAdd: () => unawaited(_openAddMenu()),
+    padding: musicBrowsePagePadding(context),
+    lyrics: isMusicPluginSourcesUsable
+        ? MusicLyricsProvidersBody(
+            appModel: _app,
+            canInstall: isMusicPluginSourcesAvailable,
+            sectionTitle: t.music_lyrics_providers_title,
+          )
+        : null,
+  );
+
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<MusicOrderedSource>? rows = _rows;
     final String storefront = _app.prefsRepo.musicAppleMusicStorefront;
-    final Widget body = SingleChildScrollView(
-      key: const ValueKey<String>('music-online-sources-view'),
-      padding: musicBrowsePagePadding(context),
-      child: FushiEntranceScope(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          spacing: tokens.spacing.gap,
-          children: <Widget>[
-            FushiStaggeredEntrance(
-              index: 0,
-              child: Text(
-                t.music_sources_online_hint,
-                style: context.fushiType.bodySmall,
-              ),
-            ),
-            if (rows == null)
-              const FushiLinearProgressIndicator()
-            else
-              FushiReorderableColumn(
-                itemCount: rows.length,
+    final Widget body = isGlassDesign(context)
+        ? _buildApple(context, rows, storefront)
+        : SingleChildScrollView(
+            key: const ValueKey<String>('music-online-sources-view'),
+            padding: musicBrowsePagePadding(context),
+            child: FushiEntranceScope(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 spacing: tokens.spacing.gap,
-                keyForIndex: (int i) =>
-                    ValueKey<String>('music-source-${rows[i].source.key}'),
-                onReorder: _move,
-                itemBuilder: (BuildContext context, int i) =>
-                    _sourceRow(context, rows, i, storefront),
-              ),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: FushiPressScale(
-                child: FushiOutlinedButton.icon(
-                  key: _addAnchor,
-                  onPressed: () => unawaited(_openAddMenu()),
-                  icon: const FushiIcon(FushiIcons.add),
-                  label: Text(t.music_sources_add),
-                ),
+                children: <Widget>[
+                  FushiStaggeredEntrance(
+                    index: 0,
+                    child: Text(
+                      t.music_sources_online_hint,
+                      style: context.fushiType.bodySmall,
+                    ),
+                  ),
+                  if (rows == null)
+                    const FushiLinearProgressIndicator()
+                  else
+                    FushiReorderableColumn(
+                      itemCount: rows.length,
+                      spacing: tokens.spacing.gap,
+                      keyForIndex: (int i) => ValueKey<String>(
+                        'music-source-${rows[i].source.key}',
+                      ),
+                      onReorder: _move,
+                      itemBuilder: (BuildContext context, int i) =>
+                          _sourceRow(context, rows, i, storefront),
+                    ),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: FushiPressScale(
+                      child: FushiOutlinedButton.icon(
+                        key: _addAnchor,
+                        onPressed: () => unawaited(_openAddMenu()),
+                        icon: const FushiIcon(FushiIcons.add),
+                        label: Text(t.music_sources_add),
+                      ),
+                    ),
+                  ),
+                  // 歌词来源是歌词插件（与 设置 › 音乐 › 歌词来源 同一份、同一道门）。
+                  if (isMusicPluginSourcesUsable) ...<Widget>[
+                    SettingsSectionHeader(
+                      t.music_lyrics_providers_title,
+                      key: const ValueKey<String>(
+                        'music-sources-lyrics-header',
+                      ),
+                    ),
+                    MusicLyricsProvidersBody(
+                      appModel: _app,
+                      canInstall: isMusicPluginSourcesAvailable,
+                    ),
+                  ],
+                ],
               ),
             ),
-            // 歌词来源是歌词插件（与 设置 › 音乐 › 歌词来源 同一份、同一道门）。
-            if (isMusicPluginSourcesUsable) ...<Widget>[
-              SettingsSectionHeader(
-                t.music_lyrics_providers_title,
-                key: const ValueKey<String>('music-sources-lyrics-header'),
-              ),
-              MusicLyricsProvidersBody(
-                appModel: _app,
-                canInstall: isMusicPluginSourcesAvailable,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
+          );
     if (!isMusicPluginSourcesAvailable) return body;
     return MusicPluginDropTarget(manager: _app.musicPluginManager, child: body);
   }
