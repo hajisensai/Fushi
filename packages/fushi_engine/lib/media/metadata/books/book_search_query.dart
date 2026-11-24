@@ -150,6 +150,35 @@ String? _longestLeadingTag(String title) {
 String _volumeText(num volume) =>
     volume == volume.truncate() ? '${volume.truncate()}' : '$volume';
 
+/// 已解析出的系列名 [seriesTitle]（[bookSearchSeriesTitle] 的结果，不再去卷号）在
+/// 系列级源上依次要试的搜索词：系列名 → 混写时中日韩部分、拉丁部分 → 主标题
+/// （[bookTitleMainPart]），去重、至多 [kBookSearchMaxQueries] 个。
+///
+/// 已经是系列名的输入不能再交给 [bookSearchQueries]：那会再解析一次卷号，把名字里
+/// 本来就带的数字当卷号去掉（书 `Steins;Gate 0 1` 的系列名 `Steins;Gate 0` 再解析
+/// 成 `Steins;Gate`）。
+List<String> bookSeriesSearchQueries(String seriesTitle) {
+  final String series = seriesTitle.trim();
+  if (series.isEmpty) return const <String>[];
+  final ({String cjk, String latin})? split = splitBookTitleScripts(series);
+  final List<String> out = <String>[];
+  void add(String q) {
+    final String t = q.trim();
+    if (t.isNotEmpty && !out.contains(t)) out.add(t);
+  }
+
+  add(series);
+  if (split != null) {
+    add(split.cjk);
+    add(split.latin);
+  }
+  final String? main = bookTitleMainPart(split?.cjk ?? series);
+  if (main != null) add(main);
+  return out.length > kBookSearchMaxQueries
+      ? out.sublist(0, kBookSearchMaxQueries)
+      : out;
+}
+
 /// [query] 在 [granularity] 源上依次要试的搜索词（去重，至多
 /// [kBookSearchMaxQueries] 个，第一个总是最可能命中的那个）。
 ///
@@ -174,13 +203,7 @@ List<String> bookSearchQueries(
 
   switch (granularity) {
     case BookSearchGranularity.series:
-      add(series);
-      if (split != null) {
-        add(split.cjk);
-        add(split.latin);
-      }
-      final String? main = bookTitleMainPart(split?.cjk ?? series);
-      if (main != null) add(main);
+      return bookSeriesSearchQueries(series);
     case BookSearchGranularity.volume:
       add(original);
       final String name = split?.cjk ?? series;

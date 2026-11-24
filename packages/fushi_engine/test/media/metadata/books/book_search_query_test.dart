@@ -120,6 +120,16 @@ void main() {
       ]);
     });
 
+    test('bookSeriesSearchQueries：输入已是系列名，不再去卷号', () {
+      expect(bookSeriesSearchQueries('Steins;Gate 0'), <String>[
+        'Steins;Gate 0',
+      ]);
+      expect(bookSeriesSearchQueries('Spider-Man 2099'), <String>[
+        'Spider-Man 2099',
+      ]);
+      expect(bookSeriesSearchQueries('テスト漫画：ブルー'), series('テスト漫画：ブルー 第2巻'));
+    });
+
     test('bookSearchSeriesTitle：去标签与卷号', () {
       expect(bookSearchSeriesTitle('[川原礫] ソードアート・オンライン 01'), 'ソードアート・オンライン');
       expect(bookSearchSeriesTitle('[Comic][进击的巨人][諫山創] Vol.01'), '进击的巨人');

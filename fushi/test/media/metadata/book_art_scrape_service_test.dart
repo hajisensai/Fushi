@@ -1086,6 +1086,27 @@ void main() {
     expect(result.count(BookArtBookOutcome.written), 2);
   });
 
+  // 系列名本身以数字结尾（`Steins;Gate 0`）：组名已去过一次卷号，搜索 / 判档用的
+  // 系列名不能拿组名再解析一次，否则 `0` 又被当成卷号去掉、搜成别的系列。
+  test('系列名以数字结尾：只去一次卷号，搜的仍是完整系列名', () async {
+    await seed('k1', 'Steins;Gate 0 1');
+    await seed('k2', 'Steins;Gate 0 2');
+    final List<String> queries = <String>[];
+    final BookArtScrapeService svc = service((http.Request req) async {
+      if (req.url.path == '/v1/series/search') {
+        queries.add(req.url.queryParameters['q'] ?? '');
+      }
+      return mangaBakaOk(req);
+    });
+    await svc.run(<String>['k1', 'k2']);
+    svc.close();
+
+    expect(queries, <String>['Steins;Gate 0']);
+    expect(BookArtScrapeService.queriesFor('Steins;Gate 0 1'), <String>[
+      'Steins;Gate 0',
+    ]);
+  });
+
   // Bangumi 是关键词精确搜索：「Horimiya ホリミヤ」零结果，只有「ホリミヤ」搜得到。
   // 曾只用全名搜一次，双语书名的系列从来拿不到 Bangumi 候选。
   test('Bangumi 全名零结果：改用日文段再搜，拿到候选', () async {

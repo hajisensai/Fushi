@@ -31,7 +31,7 @@ import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart';
 import 'package:fushi_engine/media/metadata/books/book_search_query.dart'
-    show BookSearchGranularity, bookSearchQueries, bookSearchSeriesTitle;
+    show bookSearchSeriesTitle, bookSeriesSearchQueries;
 import 'package:fushi_engine/media/metadata/image_download.dart'
     show looksLikeImageBytes;
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_client.dart';
@@ -501,9 +501,11 @@ class BookArtScrapeService {
             r.bookKey: parseBookSeriesKey(r.title)?.volume,
         });
     final BookArtLocalSeries local = BookArtLocalSeries(
-      // 判档与搜索用去掉打头标签 / 卷号的系列名（`[川原礫] ソードアート・オンライン`
+      // 判档与搜索用去掉打头标签 / 卷号的系列名（`[川原礫] ソードアート・オンライン 1`
       // → `ソードアート・オンライン`），与手动搜索弹窗同一份规则；结果里仍显示原名。
-      seriesTitle: bookSearchSeriesTitle(seriesTitle),
+      // 从书名解析一次，不拿已去过卷号的组名再解析（`Steins;Gate 0` 不能再去成
+      // `Steins;Gate`）；同组的书只差卷号，取哪本都一样。
+      seriesTitle: bookSearchSeriesTitle(rows.first.title),
       kind: _localKind(rows),
       volumes: resolved.volumes.values.toList(),
       author: rows
@@ -1163,15 +1165,17 @@ class BookArtScrapeService {
   }
 
   @visibleForTesting
-  static List<String> queriesFor(String seriesTitle) =>
-      _queries(bookSearchSeriesTitle(seriesTitle));
+  static List<String> queriesFor(String bookTitle) =>
+      _queries(bookSearchSeriesTitle(bookTitle));
 
-  /// 搜索用的查询序列：与手动搜索弹窗同一份 [bookSearchQueries]（去打头标签 / 卷号 →
-  /// 混写书名拆中日韩 / 拉丁部分 → 主标题，至多 4 个）。两个源在这里都按**系列**
+  /// 搜索用的查询序列：与手动搜索弹窗同一份规则（`bookSearchQueries` 的系列级序列
+  /// [bookSeriesSearchQueries]：混写书名拆中日韩 / 拉丁部分 → 主标题，至多 4 个；
+  /// [seriesTitle] 已是 [bookSearchSeriesTitle] 去过标签 / 卷号的名字，不再解析卷号）。
+  /// 两个源在这里都按**系列**
   /// 粒度搜：MangaBaka 条目本就是系列，Bangumi 这里只认系列条目、各卷封面走它的
   /// 单行本关联（手动弹窗里 Bangumi 是按单卷搜的，粒度不同）。
   static List<String> _queries(String seriesTitle) =>
-      bookSearchQueries(seriesTitle, granularity: BookSearchGranularity.series);
+      bookSeriesSearchQueries(seriesTitle);
 
   /// Bangumi 匹配。[assistKind] 非 null = MangaBaka 已认定系列（种类为它），这里只补
   /// 缺的卷：候选种类必须与它**一致**（轻小说不补漫画版单行本封面）。
