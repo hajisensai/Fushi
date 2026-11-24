@@ -628,6 +628,47 @@ void main() {
         expect(await service.seriesMergeCandidates(), isEmpty);
       });
 
+      test("a volume finished while its link's row still waited is sent "
+          'through the series link after the merge', () async {
+        // Ajin 02 was finished offline: its link has not sent it yet and its
+        // row waits in the outbox. The merge removes that row with the link.
+        await db.customStatement(
+          'UPDATE media_tracking_mappings SET sent_progress = NULL, '
+          "sent_completed = 0 WHERE media_key = 'Ajin 02'",
+        );
+        expect(
+          await repository.enqueueProgress(
+            mediaType: TrackingMediaType.book,
+            mediaKey: 'Ajin 02',
+            localProgress: 0,
+            completed: true,
+            provider: _defaultId,
+          ),
+          isTrue,
+        );
+        final TrackingSeriesMergeCandidate candidate =
+            (await service.seriesMergeCandidates()).single;
+
+        expect(await service.mergeSeriesLinks(candidate), isTrue);
+        await service.syncNow();
+
+        final MediaTrackingMappingRow series = (await seriesLink(
+          _defaultId,
+          card,
+        ))!;
+        expect(primary.pushed, isNotEmpty);
+        expect(primary.pushed.last.mapping.id, series.id);
+        expect(primary.pushed.last.outbox.progress, 2);
+        expect(primary.pushed.last.outbox.completed, isTrue);
+        expect(
+          primary.pushed.where(
+            (PendingTrackingUpdate u) => u.outbox.progress < 2,
+          ),
+          isEmpty,
+          reason: 'volume 1 was sent already',
+        );
+      });
+
       test('the merge is one transaction: a failure part way leaves every '
           'link as it was', () async {
         final TrackingSeriesMergeCandidate candidate =

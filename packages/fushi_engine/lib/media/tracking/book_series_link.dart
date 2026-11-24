@@ -1,7 +1,7 @@
 /// Series-level book links: one link on a series card (`book_collection`)
 /// covers every volume of the card, the ones added later too.
 ///
-/// Rules (user decision 2026-11-11, design notes section E):
+/// Rules (maintainer decision board item pr4196, option c):
 /// - a volume's number comes from the book (OPF series index, then the number
 ///   in its title); the card position is used only when no volume of the card
 ///   has a number at all;

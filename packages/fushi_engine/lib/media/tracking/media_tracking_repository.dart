@@ -2830,8 +2830,6 @@ class MediaTrackingRepository {
             ),
           );
 
-  /// Takes [progress] / [completed] as already sent for link [mappingId]
-  /// (a link made before v152 whose progress the old catch-up had covered).
   /// Replaces the volume links [volumeLinkIds] of series card
   /// [collectionId] with its series link on [provider], in one transaction:
   /// makes the series link when missing, removes the volume links and lets
@@ -2893,6 +2891,8 @@ class MediaTrackingRepository {
     return true;
   });
 
+  /// Takes [progress] / [completed] as already sent for link [mappingId]
+  /// (a link made before v152 whose progress the old catch-up had covered).
   Future<void> adoptSentProgress(
     int mappingId, {
     required int progress,

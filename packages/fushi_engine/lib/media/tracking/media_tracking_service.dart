@@ -2866,8 +2866,10 @@ class MediaTrackingService {
   }
 
   /// Replaces the volume links of [candidate] with its card's series link
-  /// (made when missing), in one transaction. Nothing is sent: the series
-  /// link starts as having sent what those links had. The candidate is
+  /// (made when missing), in one transaction. Nothing already sent goes
+  /// again: the series link starts as having sent what those links had;
+  /// only progress past that (a volume finished while its link's row still
+  /// waited in the outbox) is queued. The candidate is
   /// planned again first, so a link changed since it was shown is not
   /// touched. Returns whether anything was merged.
   Future<bool> mergeSeriesLinks(TrackingSeriesMergeCandidate candidate) async {
@@ -2907,8 +2909,26 @@ class MediaTrackingService {
       sentProgress: sent,
       sentCompleted: sentCompleted,
     );
-    if (merged) _statusRevision.value++;
-    return merged;
+    if (!merged) return false;
+    // The volume links' queued rows went with them (outbox FK cascade): a
+    // volume finished offline must still reach the site. Queues the card's
+    // current progress; what the adopted sent value covers is not queued.
+    final MediaTrackingMappingRow? series = await _repository.findMapping(
+      mediaType: TrackingMediaType.bookCollection,
+      mediaKey: fresh.collectionId.toString(),
+      provider: fresh.providerId,
+    );
+    if (series != null) {
+      await _enqueueCurrentProgress(series);
+      // Only a row past the adopted value is worth a sync now.
+      if ((await _repository.queuedByMapping(
+        provider: fresh.providerId,
+      )).containsKey(series.id)) {
+        _requestSync();
+      }
+    }
+    _statusRevision.value++;
+    return true;
   }
 
   /// "Don't merge": the card's volume links stay as they are and are not
