@@ -118,12 +118,24 @@ void main() {
 
   testWidgets('iOS 档：主操作不可用时导航栏按钮禁用并褪灰', (WidgetTester tester) async {
     await _pump(tester, glass: true, child: _frame(onCancel: () {}));
+    // 导航栏两端是平填充胶囊（不是玻璃）：禁用 = 无回调、底退成中性洗色。
     final Finder importButton = find.ancestor(
       of: _inHeader('Import'),
-      matching: find.byType(GlassButton),
+      matching: find.byType(FushiPlainButton),
     );
     expect(importButton, findsOneWidget);
-    expect(tester.widget<GlassButton>(importButton).enabled, isFalse);
+    final FushiPlainButton button = tester.widget<FushiPlainButton>(
+      importButton,
+    );
+    expect(button.onPressed, isNull);
+    expect(button.fill, fushiAppleActionWash(tester.element(importButton)));
+    expect(
+      find.ancestor(
+        of: _inHeader('Import'),
+        matching: find.byType(GlassButton),
+      ),
+      findsNothing,
+    );
     final FushiAppleColors apple = appleColorsOf(
       tester.element(find.text('Import')),
     );

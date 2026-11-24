@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/home_widget_grid.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:material_ui/material_ui.dart';
 
 const List<HomeWidgetItem> _items = <HomeWidgetItem>[

@@ -77,11 +77,14 @@ void main() {
         page,
         contains("part 'browse/apple/apple_browse_layout.part.dart';"),
       );
-      // M3E 的一级胶囊页签与 Scaffold 接线仍在主文件、在分派之后。
+      // M3E 的一级胶囊页签仍在主文件（页头 helper _buildHeader 里），
+      // 且只在分派之后的 M3E 外壳里接线。
+      expect(page, contains('LibrarySectionTabs<BrowseTab>.controlled'));
       expect(
-        page.indexOf('LibrarySectionTabs<BrowseTab>.controlled'),
+        page.indexOf('chrome: _buildHeader(controller, tabs)'),
         greaterThan(dispatch),
       );
+      expect(apple, isNot(contains('_buildHeader(')));
       expect(page, contains('resizeToAvoidBottomInset: !onDownloads'));
     });
 

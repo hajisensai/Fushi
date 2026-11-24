@@ -1599,6 +1599,7 @@ class FushiAppleSectionSegments<T extends Object> extends StatelessWidget {
     required this.onChanged,
     required this.fill,
     required this.selectedIsCurrent,
+    super.key,
   });
 
   final List<LibrarySectionTab<T>> tabs;
