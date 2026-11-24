@@ -1234,6 +1234,7 @@ void main() {
       final _FakeHost host = _FakeHost()
         ..snap = withLines(<TexthookerLineEntry>[_line('l1', 'a')])
         ..mineResult = const GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.lineUnavailable,
           failureReason: 'captured line is no longer available',
         );
       final Map<String, Object?> out =
@@ -1246,6 +1247,7 @@ void main() {
               as Map<String, Object?>;
       expect(out['ok'], isFalse);
       expect(out['result'], 'aborted');
+      expect(out['failureStage'], 'lineUnavailable');
       expect(out['failureReason'], contains('no longer'));
     });
   });

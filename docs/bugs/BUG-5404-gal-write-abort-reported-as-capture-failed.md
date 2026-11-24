@@ -1,0 +1,6 @@
+## BUG-5404 · gal 写卡阶段被引擎中止时提示说成窗口截图失败
+- **报告**：2026-11-24（#4362 合并审查遗留，拍板台 review-merge-1124-leftovers 第 3 条）
+- **真实性**：✅ 真 bug。`GalHookMiningResult` 只有 `outcome == null` 的 aborted 一种形态，不说停在哪一步；`gal_hook_text_overlay_controller.dart` `_reportLookupMine` 与 `texthooker_page.dart` 对除音频门禁外的所有 abort 一律拼 `external_window_capture_failed`。写卡阶段 `ImmersionMiningEngine.mine` 中止（`gal_hook_mining_coordinator.dart` writeCard 里 `mined.aborted`，如 required audio missing）、台词已失效、窗口没绑都被报成「窗口截图失败」；手机串流 `game_stream_mining.dart` 也把所有 abort 映射成 `capture_failed`。
+- **[x] ① 已修复** — 新增 `GalHookMiningFailureStage`（lineUnavailable / windowUnbound / capture / audioGate / write / internal），协调器每个 abort 出口都标明阶段（构造断言 aborted ⇔ 有阶段），`audioFallbackDisabled` 改由阶段派生；文案集中在 `gal_hook_mining_failure_text.dart` `galHookMiningAbortMessage`，浮窗与 texthooker 页共用；新增 i18n `game_card_write_aborted` / `game_card_line_unavailable` / `game_card_window_unbound` / `game_card_mining_failed`。串流按阶段映射（write / internal → host_error，lineUnavailable → line_expired），ctl `game.mine` 回包加 `failureStage`。
+- **[x] ② 已加自动化测试** — `gal_hook_mining_coordinator_test.dart` 写卡阶段被引擎中止 → `failureStage == write` 且可重试，既有截图 / 行失效 / 音频门禁用例补阶段断言；`gal_hook_mining_failure_text_test.dart` 各阶段文案；`game_stream_mining_test.dart` 各阶段 → detail 映射；`ctl_game_routes_test.dart` 回包 `failureStage`。
+- **备注**：

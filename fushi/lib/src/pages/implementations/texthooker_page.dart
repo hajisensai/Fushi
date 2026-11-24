@@ -28,6 +28,7 @@ import 'package:fushi/src/lookup/overlay_stat_source.dart'
     show overlayMinedSentenceGameOrigin;
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi/src/mining/gal_hook_mining_failure_text.dart';
 import 'package:fushi/src/mining/gal_hook_failure_text.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
 import 'package:fushi/src/mining/magpie_upscaling_text.dart';
@@ -1002,11 +1003,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         );
     if (result.aborted) {
       FushiToast.showMine(
-        msg: result.audioFallbackDisabled
-            ? t.game_audio_fallback_disabled_missing
-            : result.failureReason != null
-            ? '${t.external_window_capture_failed}：${result.failureReason}'
-            : t.external_window_capture_failed,
+        msg: galHookMiningAbortMessage(result),
         status: MineToastStatus.failed,
         term: fields['expression'],
         reading: fields['reading'],
