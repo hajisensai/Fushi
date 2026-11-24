@@ -34,6 +34,7 @@ class BookSeriesKey {
     required this.seriesTitle,
     required this.volume,
     this.episode,
+    this.split = 0,
     this.bonus = false,
   });
 
@@ -55,6 +56,14 @@ class BookSeriesKey {
   /// 不是第 12 卷。话号只参与合集内排序（[compareBookSeriesPosition]）。
   final BookEpisodeNumber? episode;
 
+  /// 分册：书名结尾的「上 / 中 / 下」（`X 上`、`X (下)`、`X 上巻`、`X 下册`），1 = 上、
+  /// 2 = 中、3 = 下，没有为 0（BUG-5377）。
+  ///
+  /// 不折成卷号：只看一个书名不知道「下」是第 2 卷还是第 3 卷（上下两册 / 上中下
+  /// 三册）。排序排在卷号之后（`第2巻 上` < `第2巻 下`），续读卡的「第 N 卷」按同系列
+  /// 兄弟里的名次算（[collectionMemberVolumeNumber]）。
+  final int split;
+
   /// 特典册：书名是「『正篇书名』+ 店铺特典后缀」
   /// （`『週に一度クラスメイトを買う話２　～…～』BOOK☆WALKER限定書き下ろしショートストーリー`）。
   /// 系列键与卷号取引号里的正篇，所以它与正篇同组；合集内排在同卷正篇之后
@@ -65,23 +74,26 @@ class BookSeriesKey {
 /// 话号与同话分段：[part] 为 0（无分段）、1（前編）、2（中編）、3（後編）。
 typedef BookEpisodeNumber = ({num number, int part});
 
-/// 一卷在系列里的位置：卷号、话号、同话分段、是否特典册。
+/// 一卷在系列里的位置：卷号、分册、话号、同话分段、是否特典册。
 typedef BookSeriesPosition = ({
   num? volume,
+  int split,
   num? episode,
   int part,
   bool bonus,
 });
 
-/// 同系列两卷在合集里的先后：卷号（无卷号当第 0 卷）→ 话号（无话号当第 0 话）
-/// → 同话分段 → 正篇先于同卷的特典册。相等返回 0，调用方再按书名等兜底。
+/// 同系列两卷在合集里的先后：卷号（无卷号当第 0 卷）→ 分册（上 / 中 / 下）→ 话号
+/// （无话号当第 0 话）→ 同话分段 → 正篇先于同卷的特典册。相等返回 0，调用方再按书名等兜底。
 int compareBookSeriesPosition(BookSeriesKey a, BookSeriesKey b) =>
     compareBookSeriesPositionParts(
       volumeA: a.volume,
       episodeA: a.episode,
+      splitA: a.split,
       bonusA: a.bonus,
       volumeB: b.volume,
       episodeB: b.episode,
+      splitB: b.split,
       bonusB: b.bonus,
     );
 
@@ -92,11 +104,15 @@ int compareBookSeriesPositionParts({
   required BookEpisodeNumber? episodeA,
   required num? volumeB,
   required BookEpisodeNumber? episodeB,
+  int splitA = 0,
+  int splitB = 0,
   bool bonusA = false,
   bool bonusB = false,
 }) {
   final int v = (volumeA ?? 0).compareTo(volumeB ?? 0);
   if (v != 0) return v;
+  final int s = splitA.compareTo(splitB);
+  if (s != 0) return s;
   final int e = (episodeA?.number ?? 0).compareTo(episodeB?.number ?? 0);
   if (e != 0) return e;
   final int p = (episodeA?.part ?? 0).compareTo(episodeB?.part ?? 0);
@@ -129,9 +145,11 @@ int compareBookVolumeSortKeys(BookVolumeSortKey a, BookVolumeSortKey b) {
   final int p = compareBookSeriesPositionParts(
     volumeA: sa?.volume,
     episodeA: sa?.episode,
+    splitA: sa?.split ?? 0,
     bonusA: sa?.bonus ?? false,
     volumeB: sb?.volume,
     episodeB: sb?.episode,
+    splitB: sb?.split ?? 0,
     bonusB: sb?.bonus ?? false,
   );
   if (p != 0) return p;
@@ -144,6 +162,7 @@ BookSeriesPosition? bookSeriesPosition(BookSeriesKey key) =>
     bookSeriesPositionOf(
       volume: key.volume,
       episode: key.episode,
+      split: key.split,
       bonus: key.bonus,
     );
 
@@ -151,11 +170,13 @@ BookSeriesPosition? bookSeriesPosition(BookSeriesKey key) =>
 BookSeriesPosition? bookSeriesPositionOf({
   required num? volume,
   required BookEpisodeNumber? episode,
+  int split = 0,
   bool bonus = false,
 }) {
-  if (volume == null && episode == null && !bonus) return null;
+  if (volume == null && episode == null && split == 0 && !bonus) return null;
   return (
     volume: volume,
+    split: split,
     episode: episode?.number,
     part: episode?.part ?? 0,
     bonus: bonus,
@@ -167,8 +188,8 @@ BookSeriesPosition? bookSeriesPositionOf({
 /// 圆括号、大小写都认、可连续多段；此前这里只认一段方括号）。
 final RegExp _hashSuffix = trailingCrcTagsPattern;
 
-/// 结尾卷号：`2` / `第2巻` / `2巻` / `Vol.2` / `Vol-2` / `Volume 2` / `v02` /
-/// `(2)` / `#2`、连字符 / 下划线卷号 `Karakai-Jouzu-Takagi-san-02` / `Series_02`，
+/// 结尾卷号：`2` / `第2巻` / `2巻` / `第2卷` / `第2冊` / `第2集`（台港单行本）/
+/// `2권`（韩文）/ `Vol.2` / `Vol-2` / `Volume 2` / `v02` / `(2)` / `#2`、连字符 / 下划线卷号 `Karakai-Jouzu-Takagi-san-02` / `Series_02`，
 /// 以及直接贴在汉字 / 假名后的 `安達としまむら10`。数字前必须有分隔或非 ASCII
 /// 字符，「86」这类纯数字书名、「Catch22」这类拉丁字母贴数字的书名尾数不会被吃掉
 /// （「Fahrenheit 451」「Spider-Man 2099」「Spider-Man-2099」会被读成卷号，但归组
@@ -181,7 +202,7 @@ final RegExp _volumeSuffix = RegExp(
   r'(?:\s+|[\s_\-:・]*(?:第|vol(?:ume)?[\s._\-]*|v(?=\d)|#)|\s*\(|'
   r'(?<=[A-Za-z)\]]|[^\x00-\x7F])[\-_]\s*|(?<=[^\x00-\x7F]))'
   r'(\d{1,4}(?:\.\d)?)'
-  r'\s*(?:巻|卷|册|冊)?\s*\)?\s*$',
+  r'\s*(?:巻|卷|册|冊|集|권)?\s*\)?\s*$',
   caseSensitive: false,
 );
 
@@ -206,6 +227,20 @@ int _episodePart(String? mark) => switch (mark) {
 /// 结尾的出版 / 版本标签：`(電撃文庫)`、`<上>`、`【特装版】`。
 final RegExp _trailingLabel = RegExp(r'\s*[(\[【<][^()\[\]【】<>]*[)\]】>]\s*$');
 
+/// 结尾分册：`X 上` / `X (中)` / `X <下>` / `X〈上〉` / `X 上巻` / `X下巻` / `X 上卷` /
+/// `X 下册` / `X 上集`。分册字前须有空白或左括号，或者后面紧跟巻 / 卷 / 册 / 冊 / 集
+/// ——「本好きの下剋上」这种以「上」结尾的书名不算。只在全角已折半角的串上匹配。
+final RegExp _splitSuffix = RegExp(
+  r'(?:(?:\s+|\s*[(\[<〈【]\s*)([上中下])(?:\s*[巻卷册冊集])?|\s*([上中下])[巻卷册冊集])'
+  r'\s*[)\]>〉】]?\s*$',
+);
+
+int _splitPart(String mark) => switch (mark) {
+  '上' => 1,
+  '中' => 2,
+  _ => 3,
+};
+
 final RegExp _trailingSeparators = RegExp(r'[\s_\-:・]+$');
 
 /// 全角 ASCII 折半角、全角空格折空格。逐码元 1:1 替换，下标与原串对齐。
@@ -218,12 +253,18 @@ String _foldWidth(String s) => String.fromCharCodes(<int>[
         : c,
 ]);
 
-/// 结尾成对的副标题：`～ふたりの時間、言い訳の五千円～`、`─エイティシックス─`、
-/// ` -虚実-`。只在全角已折半角的串上匹配（`～` 已折成 `~`）。ASCII 连字符必须前有
-/// 空白，免得把 slug（`a-b-`）当副标题；副标题里不含同种定界符。
+/// 结尾成对的副标题：`～ふたりの時間、言い訳の五千円～`、`─虚実─`、` -虚実-`。
+/// 前面只剩数字时不当副标题（`86─エイティシックス─` 整个是书名，见
+/// [_namesSeriesAlone]）。只在全角已折半角的串上匹配（`～` 已折成 `~`）。ASCII
+/// 连字符必须前有空白，免得把 slug（`a-b-`）当副标题；副标题里不含同种定界符。
 final RegExp _trailingSubtitle = RegExp(
   r'(?:\s+-[^\-]+-|\s*([~〜─―—])[^~〜─―—]+\1)\s*$',
 );
+
+/// 剥掉成对副标题后剩下的 [head] 能不能单独当系列名：至少要有一个不是数字的字。
+/// 只剩数字时成对的那段就是书名本身（「86―エイティシックス―」），剥了合集名只剩
+/// 「86」、拿去在线源搜也搜不到（BUG-5376）。
+bool _namesSeriesAlone(String head) => RegExp(r'[^\d\s.]').hasMatch(head);
 
 /// 卷号夹在系列名与自由副标题之间：`ソードアート・オンライン3 フェアリィ・ダンス`、
 /// `魔法科高校の劣等生(3) 九校戦編`、`Overlord 3 The Bloody Valkyrie`。只在结尾认不出
@@ -246,9 +287,13 @@ final RegExp _midVolume = RegExp(
 ///
 /// [deep] 为 false（目录语境，[parseBookVolumeFolderName]）时只做旧的两步：卷号前
 /// 那段要拿去和系列目录名**原样**比较，不能把目录名里的标签 / 副标题剥掉。
-({int end, num? volume}) _splitVolumeSuffix(String folded, {bool deep = true}) {
+({int end, num? volume, int split}) _splitVolumeSuffix(
+  String folded, {
+  bool deep = true,
+}) {
   int end = _hashSuffix.firstMatch(folded)?.start ?? folded.length;
   num? volume;
+  int split = 0;
   bool labelPeeled = false;
   while (true) {
     final String head = folded.substring(0, end);
@@ -258,6 +303,15 @@ final RegExp _midVolume = RegExp(
         volume = num.parse(m.group(1)!);
         end = m.start;
         if (!deep) break;
+        continue;
+      }
+      // 分册在卷号外侧（`第2巻 上`）：剥掉后继续找卷号。
+      final RegExpMatch? s = deep && split == 0
+          ? _splitSuffix.firstMatch(head)
+          : null;
+      if (s != null && head.substring(0, s.start).trim().isNotEmpty) {
+        split = _splitPart((s.group(1) ?? s.group(2))!);
+        end = s.start;
         continue;
       }
     }
@@ -272,7 +326,7 @@ final RegExp _midVolume = RegExp(
     if (!deep) break;
     final RegExpMatch? subtitle = _trailingSubtitle.firstMatch(head);
     if (subtitle != null &&
-        head.substring(0, subtitle.start).trim().isNotEmpty) {
+        _namesSeriesAlone(head.substring(0, subtitle.start))) {
       end = subtitle.start;
       continue;
     }
@@ -287,7 +341,7 @@ final RegExp _midVolume = RegExp(
     }
   }
   end = _trailingSeparators.firstMatch(folded.substring(0, end))?.start ?? end;
-  return (end: end, volume: volume);
+  return (end: end, volume: volume, split: split);
 }
 
 /// 比较用的归一化系列键：去首尾空白、空白折叠、ASCII 小写（[folded] 须已折半角）。
@@ -311,13 +365,14 @@ BookSeriesKey? parseBookSeriesKey(String title) {
   if (labelled != null) return labelled;
   final BookSeriesKey? episodic = _seriesFromEpisodeSuffix(title, folded);
   if (episodic != null) return episodic;
-  final ({int end, num? volume}) split = _splitVolumeSuffix(folded);
-  final String key = folded.substring(0, split.end).trim();
+  final ({int end, num? volume, int split}) cut = _splitVolumeSuffix(folded);
+  final String key = folded.substring(0, cut.end).trim();
   if (key.isEmpty) return null;
   return BookSeriesKey(
     key: _normalizeSeriesKey(key),
-    seriesTitle: title.substring(0, split.end).trim(),
-    volume: split.volume,
+    seriesTitle: title.substring(0, cut.end).trim(),
+    volume: cut.volume,
+    split: cut.split,
   );
 }
 
@@ -365,13 +420,14 @@ BookSeriesKey? _seriesFromQuotedTitle(String title) {
   // 引号后只剩卷号 / 标签（`『志乃と恋』 ２ (電撃文庫)`）不是特典后缀：前置空格让
   // 贴着引号的卷号也走正则的空白分支，剥完还有字才算后缀。
   final String tail = ' ${_foldWidth(t.substring(closeAt + 1))}';
-  final ({int end, num? volume}) split = _splitVolumeSuffix(tail);
+  final ({int end, num? volume, int split}) split = _splitVolumeSuffix(tail);
   final bool hasSuffix = tail.substring(0, split.end).trim().isNotEmpty;
   return BookSeriesKey(
     key: inner.key,
     seriesTitle: inner.seriesTitle,
     volume: inner.volume ?? (hasSuffix ? null : split.volume),
     episode: inner.episode,
+    split: inner.split,
     bonus: inner.bonus || hasSuffix,
   );
 }
@@ -391,7 +447,7 @@ BookSeriesKey? _seriesFromEpisodeSuffix(String title, String folded) {
     m = _episodeSuffix.firstMatch(folded.substring(0, end));
   }
   if (m == null) return null;
-  final ({int end, num? volume}) split = _splitVolumeSuffix(
+  final ({int end, num? volume, int split}) split = _splitVolumeSuffix(
     folded.substring(0, m.start),
   );
   final String key = folded.substring(0, split.end).trim();
@@ -503,7 +559,7 @@ String? _readableWholeSlug(String t) {
   // 前置一个空格，让纯数字名也能走正则的空白分支；下标整体右移一位，这里只取
   // 卷号前缀做比较，不受影响。
   final String folded = ' ${_foldWidth(name)}';
-  final ({int end, num? volume}) split = _splitVolumeSuffix(
+  final ({int end, num? volume, int split}) split = _splitVolumeSuffix(
     folded,
     deep: false,
   );
@@ -568,16 +624,28 @@ num collectionMemberVolumeNumber({
 }) {
   final BookSeriesKey? own = parseBookSeriesKey(title);
   if (own == null) return memberOrdinal;
-  // 同系列成员（含本卷）的卷号；本卷在 [memberTitles] 里出现一次即计一次。
-  final List<num?> siblingVolumes = <num?>[
+  // 同系列成员（含本卷）；本卷在 [memberTitles] 里出现一次即计一次。
+  final List<BookSeriesKey> siblings = <BookSeriesKey>[
     for (final String member in memberTitles)
       if (parseBookSeriesKey(member) case final BookSeriesKey k
           when k.key == own.key)
-        k.volume,
+        k,
+  ];
+  final List<num?> siblingVolumes = <num?>[
+    for (final BookSeriesKey k in siblings) k.volume,
   ];
   if (siblingVolumes.length < 2) return memberOrdinal;
   final num? volume = own.volume;
   if (volume != null) return volume;
+  // 无卷号的分册（上 / 中 / 下）：按同系列分册里的名次算，上下两册的「下」是第 2 卷、
+  // 上中下三册的「下」是第 3 卷（BUG-5377）。
+  if (own.split > 0) {
+    final Set<int> splits = <int>{
+      for (final BookSeriesKey k in siblings)
+        if (k.volume == null && k.split > 0) k.split,
+    };
+    return splits.where((int s) => s < own.split).length + 1;
+  }
   // 无卷号的卷：同系列里恰好只有它没卷号、且没有别的卷自称第 1 卷，才是第 1 卷。
   final bool onlyUnnumbered =
       siblingVolumes.where((num? v) => v == null).length == 1;

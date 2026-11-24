@@ -499,6 +499,162 @@ void main() {
     expect(selection!.candidate.subjectId, '100');
     expect(selection.candidate.coverUrl, 'https://images.mangabaka.dev/c');
   });
+  testWidgets('BUG-5372 分卷混写书名切到 MangaBaka：原词零结果自动换系列名，提示实际搜的词，卷号预选', (
+    WidgetTester tester,
+  ) async {
+    final List<String> searches = <String>[];
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: 'Test テスト漫画 第02巻',
+          scraperOverride: mangaBakaScraper(
+            searches: searches,
+            matches: (String q) => q == 'テスト漫画',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await openMangaBakaVolumes(tester);
+
+    // 系列名 → 中日韩部分命中即停，不再试拉丁部分。
+    expect(searches, <String>['Test テスト漫画', 'テスト漫画']);
+    // 搜索框保留用户的词，结果上方说明实际用的词。
+    expect(find.widgetWithText(TextField, 'Test テスト漫画 第02巻'), findsOneWidget);
+    final Finder v1 = find.byKey(
+      const ValueKey<String>('book_scrape_volume_1'),
+    );
+    final Finder v2 = find.byKey(
+      const ValueKey<String>('book_scrape_volume_2'),
+    );
+    // 没传 volume：从「第02巻」读出 2，预选的第 2 卷排在最前。
+    expect(tester.getTopLeft(v2).dx, lessThan(tester.getTopLeft(v1).dx));
+  });
+
+  testWidgets('BUG-5372 改写词命中时显示「显示的是 X 的结果」', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: 'Test テスト漫画 第02巻',
+          scraperOverride: mangaBakaScraper(
+            matches: (String q) => q == 'テスト漫画',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_source_picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('MangaBaka').last);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.book_scrape_matched_query(query: 'テスト漫画')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('中文书：只有日文版卷封面时回落并提示；有中文版时不提示', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: 'テスト漫画',
+          language: 'zh-CN',
+          scraperOverride: mangaBakaScraper(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await openMangaBakaVolumes(tester);
+    expect(
+      find.byKey(const ValueKey<String>('book_scrape_volume_fallback')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('book_scrape_volume_1')),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: 'テスト漫画',
+          language: 'zh-TW',
+          scraperOverride: mangaBakaScraper(imageLanguage: 'zh-tw'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await openMangaBakaVolumes(tester);
+    expect(
+      find.byKey(const ValueKey<String>('book_scrape_volume_fallback')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('book_scrape_volume_2')),
+      findsOneWidget,
+    );
+  });
+
+  // BUG-5378：AniList 源不再只搜轻小说；候选写明形态，同名的轻小说与漫画分得清。
+  testWidgets('AniList：漫画与轻小说都搜出来，候选写明形态', (WidgetTester tester) async {
+    final List<String> queries = <String>[];
+    Map<String, Object?> media(int id, String format, String title) =>
+        <String, Object?>{
+          'id': id,
+          'format': format,
+          'countryOfOrigin': 'JP',
+          'title': <String, Object?>{'native': title},
+          'coverImage': <String, Object?>{'large': 'https://c/$id.jpg'},
+        };
+    final MockClient client = MockClient((http.Request req) async {
+      if (req.url.host == 'graphql.anilist.co') {
+        queries.add(
+          '${(jsonDecode(req.body) as Map<String, Object?>)['query']}',
+        );
+        return http.Response.bytes(
+          utf8.encode(
+            jsonEncode(<String, Object?>{
+              'data': <String, Object?>{
+                'Page': <String, Object?>{
+                  'media': <Object?>[
+                    media(1, 'MANGA', 'ホリミヤ'),
+                    media(2, 'NOVEL', 'ホリミヤ 小説'),
+                  ],
+                },
+              },
+            }),
+          ),
+          200,
+        );
+      }
+      return http.Response.bytes(utf8.encode('{"data":[]}'), 200);
+    });
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: 'ホリミヤ',
+          scraperOverride: BookMetadataScraper(
+            client: client,
+            catalogHttp: BookCatalogHttp(client: client, throttle: false),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_source_picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('AniList').last);
+    await tester.pumpAndSettle();
+
+    expect(queries.single, isNot(contains('format:')));
+    expect(find.textContaining(t.book_scrape_format_manga), findsOneWidget);
+    expect(find.textContaining(t.book_scrape_format_novel), findsOneWidget);
+  });
 }
 
 /// 源下拉切到 MangaBaka，点首个候选的「使用」进卷封面网格。
@@ -516,27 +672,38 @@ Future<void> openMangaBakaVolumes(WidgetTester tester) async {
 }
 
 /// MangaBaka 桩：一个系列（id 100，封面 /c）+ 两卷日文卷封面（/v1、/v2）。
-BookMetadataScraper mangaBakaScraper() => BookMetadataScraper(
+/// [searches] 非 null 时记下每次系列搜索的 `q`；[matches] 给了时只有它认的词有
+/// 结果；[imageLanguage] 是卷封面的版本语言。
+BookMetadataScraper mangaBakaScraper({
+  List<String>? searches,
+  bool Function(String q)? matches,
+  String imageLanguage = 'ja',
+}) => BookMetadataScraper(
   client: MockClient((http.Request req) async {
     final String body;
     if (req.url.host == 'api.mangabaka.org' &&
         req.url.path == '/v1/series/search') {
-      body =
-          '{"data":[{"id":100,"state":"active","title":"Test Manga",'
-          '"native_title":"テスト漫画","authors":["Taro"],"type":"manga",'
-          '"content_rating":"safe","cover":{"raw":{"url":'
-          '"https://images.mangabaka.dev/c","width":1200,"height":1800}}}],'
-          '"pagination":{"next":null}}';
+      final String q = req.url.queryParameters['q'] ?? '';
+      searches?.add(q);
+      body = matches != null && !matches(q)
+          ? '{"data":[],"pagination":{"next":null}}'
+          : '{"data":[{"id":100,"state":"active","title":"Test Manga",'
+                '"native_title":"テスト漫画","authors":["Taro"],"type":"manga",'
+                '"content_rating":"safe","cover":{"raw":{"url":'
+                '"https://images.mangabaka.dev/c","width":1200,"height":1800}}}],'
+                '"pagination":{"next":null}}';
     } else if (req.url.path == '/v1/series/100/images') {
+      final String? filter = req.url.queryParameters['language'];
       String image(String index) =>
           '{"id":$index,"index":"$index","index_numeric":$index,'
-          '"type":"volume","language":"ja","note":null,'
+          '"type":"volume","language":"$imageLanguage","note":null,'
           '"content_rating":"safe","image":{"raw":{"url":'
           '"https://images.mangabaka.dev/v$index","width":1200,'
           '"height":1800}}}';
-      body =
-          '{"data":[${image('1')},${image('2')}],'
-          '"pagination":{"next":null}}';
+      body = filter != null && filter != imageLanguage
+          ? '{"data":[],"pagination":{"next":null}}'
+          : '{"data":[${image('1')},${image('2')}],'
+                '"pagination":{"next":null}}';
     } else {
       body = '{"data":[]}';
     }
