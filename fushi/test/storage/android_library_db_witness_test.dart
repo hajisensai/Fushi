@@ -307,6 +307,81 @@ void main() {
       );
     });
 
+    test('合并：长度相同、内容不同也算冲突（逐字节比），整次放弃', () async {
+      writeBook(externalRoot, 'A', body: 'aaaa');
+      writeBook(internalRoot, 'A', body: 'aaab');
+      writeBook(internalRoot, 'New', body: 'stray');
+      await seed(<String, Directory>{'A': externalRoot, 'New': internalRoot});
+
+      final FushiDatabase db = FushiDatabase(support.path);
+      final AndroidStrayMergeOutcome outcome;
+      try {
+        outcome = await AndroidStrayLibraryMerge.run(
+          db: db,
+          libraryRoot: externalRoot,
+          strayRoot: internalRoot,
+          supportRoot: support.path,
+        );
+      } finally {
+        await db.close();
+      }
+      expect(outcome.status, AndroidStrayMergeStatus.conflicted);
+      expect(bookFile(internalRoot, 'A').readAsStringSync(), 'aaab');
+      expect(bookFile(externalRoot, 'New').existsSync(), isFalse);
+      expect(
+        (await extractDirs())['New'],
+        p.join(internalRoot.path, 'fushi_books', 'New'),
+      );
+    });
+
+    test('合并：复制到书库根失败（空间不够等）→ 撤掉暂存件，主库与落选根原样', () async {
+      writeBook(externalRoot, 'A');
+      writeBook(internalRoot, 'New1', body: 'one');
+      writeBook(internalRoot, 'New2', body: 'two');
+      await seed(<String, Directory>{
+        'A': externalRoot,
+        'New1': internalRoot,
+        'New2': internalRoot,
+      });
+      // 让其中一本的暂存件写不进去：暂存件路径上已有同名目录，复制必然失败。
+      Directory(
+        p.join(externalRoot.path, 'fushi_books', 'New2', 'a.html.fushi-part'),
+      ).createSync(recursive: true);
+
+      final FushiDatabase db = FushiDatabase(support.path);
+      final AndroidStrayMergeOutcome outcome;
+      try {
+        outcome = await AndroidStrayLibraryMerge.run(
+          db: db,
+          libraryRoot: externalRoot,
+          strayRoot: internalRoot,
+          supportRoot: support.path,
+        );
+      } finally {
+        await db.close();
+      }
+      expect(outcome.status, AndroidStrayMergeStatus.failed);
+      expect(
+        bookFile(internalRoot, 'New1').readAsStringSync(),
+        'one',
+        reason: '源一个都不能删',
+      );
+      expect(bookFile(internalRoot, 'New2').readAsStringSync(), 'two');
+      expect(bookFile(externalRoot, 'New1').existsSync(), isFalse);
+      expect(
+        File('${bookFile(externalRoot, 'New1').path}.fushi-part').existsSync(),
+        isFalse,
+        reason: '已写好的暂存件要撤掉',
+      );
+      final Map<String, String> dirs = await extractDirs();
+      expect(
+        dirs['New1'],
+        p.join(internalRoot.path, 'fushi_books', 'New1'),
+        reason: '主库不能先于文件改写：改了就指向书库根里不存在的书',
+      );
+      expect(dirs['New2'], p.join(internalRoot.path, 'fushi_books', 'New2'));
+    });
+
     test('合并后再作证结论不变（尾段计票与路径前缀无关，不会来回翻）', () async {
       writeBook(externalRoot, 'A');
       writeBook(externalRoot, 'B');
