@@ -161,9 +161,16 @@ Future<void> _pump(
           body: Center(
             child: RepaintBoundary(
               key: _boundary,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: SizedBox(width: 420, child: c.build(controller)),
+              // 截图只含边界内的层：垫上页面底色，半透明的框底（Apple 搜索框
+              // tertiaryFill）才按真机那样合成在页面上，而不是合成在透明上。
+              child: Builder(
+                builder: (BuildContext context) => ColoredBox(
+                  color: Theme.of(context).scaffoldBackgroundColor,
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: SizedBox(width: 420, child: c.build(controller)),
+                  ),
+                ),
               ),
             ),
           ),
@@ -243,20 +250,13 @@ Future<({double top, double bottom})> _ink(
   // 避开上下沿的描边 / 活动指示线 / 圆角外的页面底色。
   final int y0 = ((shell.top - origin.dy + 4) * _pr).round();
   final int y1 = ((shell.bottom - origin.dy - 4) * _pr).round();
-  // 框的底色 = 扫描区里出现最多的像素值（文字只占一小部分）。
-  final Map<int, int> counts = <int, int>{};
-  for (int y = y0; y < y1; y++) {
-    for (int x = x0; x < x1; x++) {
-      counts.update(pixel(x, y), (int n) => n + 1, ifAbsent: () => 1);
-    }
-  }
+  // 框的底色：取框内左缘竖直中点（行首图标 / 文字之前的内边距）。不能取扫描区
+  // 里最多的像素——测试字体的字形是整块 em 方块，拉丁字会占满扫描区的大半。
   final int background = channelSum(
-    counts.entries
-        .reduce(
-          (MapEntry<int, int> a, MapEntry<int, int> b) =>
-              a.value >= b.value ? a : b,
-        )
-        .key,
+    pixel(
+      ((shell.left - origin.dx + 3) * _pr).round(),
+      ((shell.center.dy - origin.dy) * _pr).round(),
+    ),
   );
   int? top;
   int? bottom;

@@ -40,11 +40,6 @@ const Map<String, Map<String, int>> _legacy = <String, Map<String, int>>{
   'lib/src/pages/implementations/ai_video_acquisition_page.dart': <String, int>{
     'GlassTextField': 1,
   },
-  // 设置页重设计把同一 Apple 玻璃搜索胶囊抽到共享 SettingsSearchBar；
-  // 仅搬迁原有一处预算，不豁免整个 settings_kit，也不增加裸控件总数。
-  'lib/src/settings/settings_kit_core.dart': <String, int>{
-    'CupertinoSearchTextField': 1,
-  },
 };
 
 Map<String, Map<String, int>> _scan() {

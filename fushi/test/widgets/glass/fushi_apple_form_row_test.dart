@@ -14,6 +14,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -193,6 +194,10 @@ void main() {
   });
 
   testWidgets('键盘辅助钮只在聚焦时出现；表单行编辑中出现清除钮', (WidgetTester tester) async {
+    // Apple 下 FushiIcon 把语义图标画成 SF 替身字形，按语义图标找，不按 Icon 码点。
+    final Finder keyboardAssist = find.byWidgetPredicate(
+      (Widget w) => w is FushiIcon && w.icon == FushiIcons.keyboard,
+    );
     final TextEditingController c = TextEditingController(text: 'abc');
     final FocusNode node = FocusNode();
     addTearDown(c.dispose);
@@ -207,11 +212,11 @@ void main() {
       platform: TargetPlatform.windows,
       size: const Size(420, 900),
     );
-    expect(find.byIcon(FushiIcons.keyboard), findsNothing);
+    expect(keyboardAssist, findsNothing);
     expect(find.byIcon(CupertinoIcons.clear_circled_solid), findsNothing);
     node.requestFocus();
     await tester.pump();
-    expect(find.byIcon(FushiIcons.keyboard), findsOneWidget);
+    expect(keyboardAssist, findsOneWidget);
     expect(find.byIcon(CupertinoIcons.clear_circled_solid), findsOneWidget);
     await tester.tap(find.byIcon(CupertinoIcons.clear_circled_solid));
     await tester.pump();
@@ -219,7 +224,7 @@ void main() {
     expect(find.byIcon(CupertinoIcons.clear_circled_solid), findsNothing);
     node.unfocus();
     await tester.pump();
-    expect(find.byIcon(FushiIcons.keyboard), findsNothing);
+    expect(keyboardAssist, findsNothing);
   });
 
   testWidgets('M3E 不变：Material TextField + 浮动标签，键盘钮常驻', (

@@ -1466,7 +1466,11 @@ void main() {
       final List<FocusNode> order = await driver.reachAll(maxSteps: 40);
       List<String> keysOf(FocusNode node) {
         final List<String> keys = <String>[];
-        node.context?.visitAncestorElements((Element el) {
+        // 走查过程中出现又收起的焦点停靠点（Apple 输入框的辅助钮只在字段聚焦时
+        // 出现）事后已不在树上，跳过。
+        final BuildContext? context = node.context;
+        if (context == null || !(context as Element).debugIsActive) return keys;
+        context.visitAncestorElements((Element el) {
           final Key? key = el.widget.key;
           if (key is ValueKey<String>) keys.add(key.value);
           return true;

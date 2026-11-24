@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -77,7 +78,10 @@ void main() {
       ],
     );
 
-    testWidgets('glass alert: primary is a flat accent capsule, no rim', (
+    // iOS 27 UIAlertController 的 preferredAction：与其余按钮同一枚中性洗色
+    // 平填充胶囊，只把字加粗（label 色），不着强调色、无玻璃高光边
+    // （079ce4b49fd，用户 2026-11-24 选定）。
+    testWidgets('glass alert: primary is a flat wash capsule with bold label', (
       WidgetTester tester,
     ) async {
       await pumpOpener(
@@ -95,8 +99,13 @@ void main() {
       final BuildContext ctx = tester.element(okButton);
       expect(
         tester.widget<FushiPlainButton>(okButton).fill,
-        appleColorsOf(ctx).accent,
+        fushiAppleActionWash(ctx),
       );
+      final TextStyle ok = DefaultTextStyle.of(
+        tester.element(find.text('OK')),
+      ).style;
+      expect(ok.color, appleColorsOf(ctx).label);
+      expect(ok.fontWeight, FontWeight.w600);
       expect(find.byType(GlassButton), findsNothing);
     });
 
@@ -833,32 +842,40 @@ void main() {
       expect(find.byType(GlassContainer), findsNothing);
     });
 
-    testWidgets('glass: plain Cupertino back button pops, bar is transparent', (
+    // iOS 27 / macOS 27 导航栏（9b97d7975ba / 3ea6f9358b4）：Apple 下不是 Material
+    // AppBar，而是 [FushiAppleNavBar]（库 GlassAppBar）；隐含返回键是 SF
+    // chevron 的 bar button，落在独立的玻璃圆钮里。
+    testWidgets('glass: iOS 27 nav bar, chevron back in a glass circle pops', (
       WidgetTester tester,
     ) async {
       await pushSecond(tester, glass: true);
       expect(find.byType(BackButton), findsNothing);
       expect(find.byType(IconButton), findsNothing);
-      expect(find.byType(FushiIconButtonControl), findsOneWidget);
-      // 原生 Cupertino（2026-10-12）：顶栏透明、返回键无底，不再垫玻璃圆。
-      expect(
-        find.descendant(
-          of: find.byType(AppBar).last,
-          matching: find.byType(GlassContainer),
+      expect(find.byType(AppBar), findsNothing);
+      final Finder back = find.descendant(
+        of: find.byType(FushiAppleNavBar).last,
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is FushiIconButtonControl &&
+              w.tooltip ==
+                  const DefaultMaterialLocalizations().backButtonTooltip,
         ),
-        findsNothing,
       );
+      expect(back, findsOneWidget);
       expect(
-        tester.widget<AppBar>(find.byType(AppBar).last).backgroundColor,
-        Colors.transparent,
+        find.ancestor(
+          of: back,
+          matching: find.byType(FushiAppleGlassBarButton),
+        ),
+        findsOneWidget,
       );
-      await tester.tap(find.byType(FushiIconButtonControl));
+      await tester.tap(back);
       await settle(tester);
       expect(find.text('Second'), findsNothing);
       expect(find.text('Home'), findsOneWidget);
     });
 
-    testWidgets('glass: actions sit in one plain row and still fire', (
+    testWidgets('glass: actions sit in the nav bar and still fire', (
       WidgetTester tester,
     ) async {
       int a = 0;
@@ -884,17 +901,11 @@ void main() {
         ),
       );
       await settle(tester);
-      // 原生 Cupertino（2026-10-12）：动作是一排无底 bar button，不收进玻璃胶囊。
+      expect(find.byType(AppBar), findsNothing);
+      // 宽度够：两枚动作都平铺在导航栏里（放不下才收进「⋯」）。
       expect(
         find.descendant(
-          of: find.byType(AppBar),
-          matching: find.byType(GlassContainer),
-        ),
-        findsNothing,
-      );
-      expect(
-        find.descendant(
-          of: find.byType(AppBar),
+          of: find.byType(FushiAppleNavBar),
           matching: find.byType(FushiIconButtonControl),
         ),
         findsNWidgets(2),
