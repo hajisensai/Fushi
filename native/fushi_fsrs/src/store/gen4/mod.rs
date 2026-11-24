@@ -28,6 +28,7 @@
 //! - `compare`：协议 3 的投影与新代派生层逐类对拍（干跑与测试装置共用）。
 //! - [cmd]：读写命令的新代实现（`read` / `read_lib` 的各个查询、`entity_views`、修改历史、写命令）。
 //! - [kernel]：命令层的库句柄（C ABI 句柄表里放的就是它）：连接、常驻会话、写入代数；迁移的全局命令（S1）。
+//! - [cancel]：库句柄上在途命令的协作式取消（关库时置位；语句进度回调 + 批次边界 + 提交前检查）。
 //! - [dispatch]：新代分发器——`ffsrs_store_sync2` 的每条命令接到 [cmd]，未接线 / 已删的给明确的错误（S1）。
 //! - [local]：新代库里的本机状态行（修订号、纪元、校时状态；`srs_meta` 键，S1）。
 //! - [carry]：迁移时带过去的本机状态（公钥与名字、暂扣、检查点、本机媒体、`media_at`、加密位置记忆、绑定状态、切点），
@@ -38,6 +39,9 @@
 
 pub mod alias;
 pub mod cache;
+pub mod cancel;
+#[cfg(test)]
+mod cancel_tests;
 pub mod carry;
 pub mod class;
 pub mod cmd;
