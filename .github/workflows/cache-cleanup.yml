@@ -16,8 +16,9 @@ name: Cleanup PR caches
 # pull_request, same-repo PRs only (2026-09-30). #1829 moved this to
 # pull_request_target so fork PRs (79%; their pull_request token is read-only) get
 # the base repo's token -- but pull_request_target takes the workflow definition
-# from the DEFAULT branch, main, which lags develop and is not synced by agents, and
-# main's copy only knew `pull_request`: from then on the job never ran for anyone.
+# from the DEFAULT branch -- main at the time (develop since 2026-11-25), which lagged
+# develop and was not synced by agents, and main's copy only knew `pull_request`:
+# from then on the job never ran for anyone.
 # Merged PRs of any origin are now cleaned on the develop push instead
 # (merged-pr-cleanup.yml; merging IS a push, which runs develop's own file with a
 # writable token). This workflow keeps same-repo PRs closed without merging.

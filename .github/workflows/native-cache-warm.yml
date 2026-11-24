@@ -25,9 +25,8 @@
 # * develop push 且改到了这些件的输入（下面 paths）；再由 changes job 按实际改动的文件
 #   决定开哪几个平台的 job —— macOS 槽只有 5 个，只改 torrent / p2p 时不起 macOS runner。
 # * 每日 schedule：名字带 runner ImageVersion，镜像换代（约每周）与任何 push 无关，靠它
-#   一天内补齐。注意定时任务只读**默认分支 main** 上的 workflow 文件并在 main 上跑（main
-#   同样是可信 ref）；main 只在正式发布时同步，在那之前镜像换代可手动 workflow_dispatch
-#   （选 develop）补救。命中时每个 job 只是一次 restore（几十秒）。
+#   一天内补齐。定时任务读默认分支（2026-11-25 起是 develop）上的 workflow 文件并在该分支
+#   上跑，与 develop push 存的件是同一份源码。命中时每个 job 只是一次 restore（几十秒）。
 #
 # 本 workflow 不发布任何东西：只构建、只写持久库（workflow artifact）与 vcpkg 缓存。
 name: native-cache-warm
