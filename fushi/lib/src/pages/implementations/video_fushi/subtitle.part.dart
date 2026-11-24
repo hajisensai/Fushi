@@ -4403,52 +4403,23 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 整集音频副本（[key] / [title] 见 `videoStreamSubtitleAudioFileIn`）：已拉好直接用；
   /// 否则 [start] 开拉（同一集已在拉就接上那一次），在进度对话框里等（可取消）。取消
-  /// 返回 null；失败按 [logTag] 记日志、提示原因后返回 null。在线流与网页档共用。
+  /// 返回 null；失败按 [logTag] 记日志、OSD 提示原因后返回 null。在线流与网页档共用
+  /// （对话框本体 [stageVideoStreamSubtitleAudioWithDialog] 与内置网页播放器页共用）。
   Future<File?> _stageWholeAudioWithDialog({
     required String key,
     required String title,
     required VideoStreamSubtitleAudioStaging? Function() start,
     required String logTag,
-  }) async {
-    final File? existing = await appVideoStreamSubtitleAudioStager.existing(
-      key: key,
-      title: title,
-    );
-    if (existing != null) return existing;
-    if (!context.mounted) return null;
-    final VideoStreamSubtitleAudioStaging? staging = start();
-    if (staging == null) return null;
-    final FushiProgressDialogHandle dialog = showFushiProgressDialog(
-      context: context,
-      title: t.video_subtitle_stream_audio_title,
-      message: t.video_subtitle_stream_audio_hint,
-      initialProgress: staging.progress.value,
-      onCancel: staging.cancel,
-    );
-    void sync() => dialog.progress.value = staging.progress.value;
-    staging.progress.addListener(sync);
-    try {
-      final File audio = await staging.done;
-      dialog.close();
-      // 等进度对话框真正出栈再推面板，免得面板被压在正在退场的对话框下面。
-      await dialog.done;
-      return audio;
-    } on VideoStreamSubtitleAudioCancelled {
-      return null;
-    } on VideoStreamSubtitleAudioUnavailable catch (error, stack) {
-      ErrorLogService.instance.log(logTag, error, stack);
-      if (mounted) {
-        _showOsd(
-          t.video_subtitle_stream_audio_failed(reason: error.message),
-          severity: ToastSeverity.error,
-        );
-      }
-      return null;
-    } finally {
-      staging.progress.removeListener(sync);
-      dialog.close();
-    }
-  }
+  }) => stageVideoStreamSubtitleAudioWithDialog(
+    context,
+    key: key,
+    title: title,
+    start: start,
+    logTag: logTag,
+    onUnavailable: (String message) {
+      if (mounted) _showOsd(message, severity: ToastSeverity.error);
+    },
+  );
 
   /// 在线流这一集的管线目标：[audio] 是整集音频副本；作品身份按来源给的作品名
   /// （[remoteVideoWorkTitle]：在线源的合集名），产物落 app 字幕目录，结束后记成这一集

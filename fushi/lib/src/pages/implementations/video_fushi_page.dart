@@ -164,7 +164,6 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_pipeline_gate.dart
     show canRunLocalVideoSubtitlePipeline, localVideoSubtitlePipelineMediaPath;
 import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio.dart'
     show
-        VideoStreamSubtitleAudioCancelled,
         VideoStreamSubtitleAudioInput,
         VideoStreamSubtitleAudioStaging,
         VideoStreamSubtitleAudioUnavailable,
@@ -287,14 +286,20 @@ import 'package:fushi/src/media/video/web_video_track_selection.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
 import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
     show
-        WebVideoSubtitleMediaBlock,
-        WebVideoSubtitleMediaBlocked,
         kWebVideoGeneratedTrackLang,
-        prepareWebVideoSubtitleAudio,
         webVideoGeneratedSubtitleLanguage,
         webVideoGeneratedTrackKey,
         webVideoSubtitleFrameInput,
         webVideoSubtitlePipelineAvailable;
+import 'package:fushi/src/media/video/web_video_subtitle_generation.dart'
+    show
+        WebVideoSubtitleEpisode,
+        startWebVideoSubtitleAudio,
+        webVideoSubtitleJobEpisode,
+        webVideoSubtitlePageUrl,
+        webVideoSubtitleTarget;
+import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio_dialog.dart'
+    show stageVideoStreamSubtitleAudioWithDialog;
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
@@ -562,12 +567,7 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
         fushiFloatingToolbarPalette,
         kFushiFloatingToolbarEdgeMargin;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
-    show
-        FushiChoiceOption,
-        FushiProgressDialogHandle,
-        showFushiChoiceDialog,
-        showFushiProgressDialog,
-        showFushiTextInputDialog;
+    show FushiChoiceOption, showFushiChoiceDialog, showFushiTextInputDialog;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/platform/screen_brightness_controller.dart';

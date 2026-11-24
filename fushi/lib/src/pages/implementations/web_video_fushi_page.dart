@@ -40,6 +40,38 @@ import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_hosting_default.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
 import 'package:fushi/src/media/video/web_video_track_selection.dart';
+import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
+    show
+        AppVideoSubtitleJob,
+        AppVideoSubtitleJobStatus,
+        AppVideoSubtitleService,
+        AppVideoSubtitleTarget,
+        appVideoSubtitleService;
+import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio_dialog.dart'
+    show stageVideoStreamSubtitleAudioWithDialog;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
+    show
+        PrefsRepoVideoSubtitleGeneratePrefs,
+        showVideoSubtitleGenerateSheet,
+        videoSubtitleEpisodeStatusLabel;
+import 'package:fushi/src/media/video/subtitle/video_subtitle_studio_page.dart'
+    show videoSubtitleStudioEvidenceTrack;
+import 'package:fushi/src/media/video/web_video_subtitle_generation.dart';
+import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
+    show
+        WebVideoSubtitleMediaBlock,
+        kWebVideoGeneratedTrackLang,
+        webVideoGeneratedSubtitleLanguage,
+        webVideoGeneratedTrackKey;
+import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
+    show pushAiSettingsPage;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart'
+    show SubtitleEvidenceTrack;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show VideoSubtitleEpisodeResult;
+import 'package:fushi_engine/media/video/video_subtitle_source.dart'
+    show isExternalSubtitleFilePathForMenu;
 import 'package:fushi/src/web_adblock/web_adblock_service.dart'
     show WebAdblockService, webAdblockServiceProvider;
 import 'package:fushi/src/media/video/underlay_composition.dart'
@@ -395,6 +427,16 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// 站点当前视频身份、它名下的字幕轨与当前选择（与原生播放器页的网页档同一份
   /// [WebVideoTrackSelection]）。
   final WebVideoTrackSelection _trackSel = WebVideoTrackSelection();
+
+  /// 用户（或手机遥控）这次会话里亲手选过轨：读回的生成字幕不再抢着选中。
+  bool _trackUserChosen = false;
+
+  /// 这本书登记的生成字幕（「生成字幕」管线产物，`video_books.subtitleSource`）：生成完 / 重进
+  /// 读回后挂到这一集的视频 key 下（[_installGeneratedTrack]）；站点换视频 key 时重挂。
+  ({String path, List<AudioCue> cues})? _generatedSubtitle;
+
+  /// 「生成字幕」正在拉音频 / 开面板（防连点）。
+  bool _subtitleGenerationBusy = false;
 
   /// 手机遥控绑定（[_registerRemote]）；null = 没登记（制卡交接页 / 已离页）。
   VideoRemotePlaybackBinding? _remoteBinding;
@@ -906,6 +948,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     });
     if (Platform.isWindows) _startIdleScheduler();
     _registerRemote();
+    unawaited(_restoreGeneratedSubtitle(row));
     // 被制卡交接换回来的这一页：画面就绪后把重放前的集 / 轨 / 位置还原。
     if (widget.returnHostingAfterMining == null) {
       _beginRestore(widget.mineReturnState);
@@ -1016,6 +1059,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _dropSeekTarget(); // 上一个视频的跳转目标对这一个没有意义
       _trackSel.beginVideo(state.videoKey);
       _reselectTrack();
+      _installGeneratedTrack(
+        select: !_trackUserChosen && !_trackSel.subtitlesOff,
+      );
     }
     final int? pos = state.positionMs;
     final int? previewEnd = _remotePreviewEndMs;
@@ -2732,8 +2778,236 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   }
 
   void _selectTrack(String? key) {
+    _trackUserChosen = true;
     _trackSel.choose(key);
     _reselectTrack();
+  }
+
+  /// 字幕轨在菜单 / 手机里的名字：live 轨与生成字幕用固定文案，其余是站点给的语言。
+  String _trackLabel(WebVideoTrack track) {
+    if (track.isLive) return t.web_video_track_live;
+    if (track.lang == kWebVideoGeneratedTrackLang) {
+      return t.web_video_track_generated;
+    }
+    return track.lang;
+  }
+
+  // ── 生成字幕 ───────────────────────────────────────────────────────────
+  //
+  // 与原生播放器页网页档同一条路（web_video_subtitle_generation.dart）：从页面取媒体地址
+  // （YouTube 现取 audio-only 流）把整集音频拉到本机，跑本机字幕管线（ASR + 可选 AI 校对），
+  // 产物登记在本页这本书上，作为「生成的字幕」轨挂进站点轨并选中。Windows 上 YouTube 等非
+  // DRM 站点默认就是本页（「Fushi 播放」）——这里没有入口时在线视频就转录不了（反馈
+  // lXyoHX1wtr）。
+  //
+  // 窗口宿主档不给：那一档的字幕层是页面 DOM，只认站点 store 里的轨，Dart 侧装上的生成轨
+  // 画不出来；制卡宿主页是机器驱动的重放，也不给。
+
+  /// 顶栏「生成字幕」钮出不出现：本机能跑 ASR、内置档、不是制卡宿主页。能不能真跑（有视频、
+  /// 不加密、还在这本书那一集上）点了再判、说明原因——这几样随播放态变，不随顶栏重建。
+  bool get _subtitleGenerationOffered => webVideoSubtitleGenerationOffered(
+    asrSupported: isAsrSupported,
+    windowed: _windowed,
+    miningHost: _isMiningHost,
+  );
+
+  /// 页面此刻所在的这一集（[webVideoBookSubtitleEpisode]）；站内点去了别的视频时 null。
+  WebVideoSubtitleEpisode? get _subtitleEpisode {
+    final VideoBookRow? row = _row;
+    final WebVideoPlaybackState? state = _state;
+    if (row == null || state == null) return null;
+    return webVideoBookSubtitleEpisode(
+      bookUid: widget.bookUid,
+      bookVideoPath: row.videoPath,
+      title: row.title,
+      href: state.href,
+      audioTrack: state.siteAudioTrackCurrent,
+    );
+  }
+
+  String _subtitlePageUrl(WebVideoSession session) => webVideoSubtitlePageUrl(
+    session,
+    fallback: _subtitleEpisode?.episodeUrl ?? session.pageUrl,
+  );
+
+  /// 点「生成字幕」：先说明拿不到的原因；能跑就把整集音频拉到本机（进度对话框，可取消），
+  /// 再打开与本机视频同一个管线面板，任务结束后把产物作为一条轨选中。
+  Future<void> _generateSubtitle() async {
+    final WebVideoSession? session = _session;
+    if (session == null || _subtitleGenerationBusy) return;
+    final WebVideoSubtitleMediaBlock? blocked = webVideoSubtitleGenerationBlock(
+      _state,
+    );
+    if (blocked != null) {
+      FushiToast.show(
+        msg: webVideoSubtitleMediaBlockMessage(blocked),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final WebVideoSubtitleEpisode? episode = _subtitleEpisode;
+    if (episode == null) {
+      FushiToast.show(
+        msg: t.web_video_subtitle_generate_other_video,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    bool isCurrent() =>
+        mounted &&
+        identical(_session, session) &&
+        _subtitleEpisode?.key == episode.key;
+    _subtitleGenerationBusy = true;
+    try {
+      final File? audio = await stageVideoStreamSubtitleAudioWithDialog(
+        context,
+        key: episode.key,
+        title: episode.title,
+        start: () => isCurrent()
+            ? startWebVideoSubtitleAudio(
+                session: session,
+                episode: episode,
+                durationMs: _state?.durationMs ?? 0,
+                pageUrl: () => _subtitlePageUrl(session),
+              )
+            : null,
+        logTag: 'web_video.subtitleAudio',
+        onUnavailable: (String message) =>
+            FushiToast.show(msg: message, severity: ToastSeverity.error),
+      );
+      if (audio == null || !isCurrent()) return;
+      final AppVideoSubtitleService service = appVideoSubtitleService(
+        _appModel,
+      );
+      final AppVideoSubtitleTarget? target = await webVideoSubtitleTarget(
+        service: service,
+        repo: widget.repo,
+        session: session,
+        episode: episode,
+        pageUrl: _subtitlePageUrl(session),
+        audio: audio,
+        contentLanguage: _row?.language,
+      );
+      if (target == null || !isCurrent() || !context.mounted) return;
+      await showVideoSubtitleGenerateSheet(
+        context: context,
+        service: service,
+        target: target,
+        prefs: PrefsRepoVideoSubtitleGeneratePrefs(_appModel.prefsRepo),
+        openAiSettings: pushAiSettingsPage,
+        onJobStarted: (AppVideoSubtitleJob job) =>
+            unawaited(_applyGeneratedSubtitleWhenDone(job, audio.path)),
+        // 播放器里正显示的站点字幕交给 AI 校对当参考（按副本路径对上这一集）。
+        pinnedEvidence: _playerSubtitleEvidence(audio.path),
+      );
+    } finally {
+      _subtitleGenerationBusy = false;
+    }
+  }
+
+  /// 播放器里正显示的字幕（AI 校对的参考），按整集音频副本路径对上这一集。
+  Map<String, List<SubtitleEvidenceTrack>> _playerSubtitleEvidence(
+    String audioPath,
+  ) {
+    final SubtitleEvidenceTrack? primary = videoSubtitleStudioEvidenceTrack(
+      cues: _controller.cues,
+      delayMs: _controller.delayMs,
+      label: 'player-primary',
+    );
+    return primary == null
+        ? const <String, List<SubtitleEvidenceTrack>>{}
+        : <String, List<SubtitleEvidenceTrack>>{
+            audioPath: <SubtitleEvidenceTrack>[primary],
+          };
+  }
+
+  /// 管线结束后：页面还在就把产物作为生成字幕轨装上并选中（产物已由落点登记到书上，页面
+  /// 关了也照样在重进时读回）；没导出就说明原因。
+  Future<void> _applyGeneratedSubtitleWhenDone(
+    AppVideoSubtitleJob job,
+    String audioPath,
+  ) async {
+    await job.done;
+    if (!mounted || job.status != AppVideoSubtitleJobStatus.succeeded) return;
+    final VideoSubtitleEpisodeResult? result = webVideoSubtitleJobEpisode(
+      job,
+      audioPath,
+    );
+    if (result == null) return;
+    final String? output = result.outputPath;
+    if (!result.exported || output == null) {
+      FushiToast.show(
+        msg: videoSubtitleEpisodeStatusLabel(
+          result,
+          language: job.options.language,
+        ),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final List<AudioCue> cues = await loadVideoRemoteSubtitleFile(
+      output,
+      widget.bookUid,
+    );
+    if (!mounted) return;
+    if (cues.isEmpty) {
+      FushiToast.show(
+        msg: t.video_subtitle_load_failed(label: p.basename(output)),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    _generatedSubtitle = (path: output, cues: cues);
+    _installGeneratedTrack(select: true);
+    FushiToast.show(
+      msg: t.video_subtitle_switched(label: t.web_video_track_generated),
+    );
+  }
+
+  /// 重进时读回这本书登记的生成字幕（`subtitleSource`，由管线落点写）：文件还在就作为生成
+  /// 字幕轨装上（站点视频 key 还没到时，到了再挂）。
+  Future<void> _restoreGeneratedSubtitle(VideoBookRow row) async {
+    final String? source = row.subtitleSource;
+    if (source == null ||
+        !isExternalSubtitleFilePathForMenu(source) ||
+        !await File(source).exists()) {
+      return;
+    }
+    final List<AudioCue> cues = await loadVideoRemoteSubtitleFile(
+      source,
+      widget.bookUid,
+    );
+    if (!mounted || cues.isEmpty || _generatedSubtitle != null) return;
+    _generatedSubtitle = (path: source, cues: cues);
+    _installGeneratedTrack(
+      select: !_trackUserChosen && !_trackSel.subtitlesOff,
+    );
+  }
+
+  /// 把这本书的生成字幕挂到当前站点视频 key 下：只在页面还停在这本书那一集上时挂（站内点去
+  /// 别的视频不挂）；[select] 时钉住它（撤掉还在途的站点轨请求，免得后到的站点轨抢走）。
+  void _installGeneratedTrack({required bool select}) {
+    final ({String path, List<AudioCue> cues})? generated = _generatedSubtitle;
+    if (generated == null ||
+        _trackSel.videoKey.isEmpty ||
+        _subtitleEpisode == null) {
+      return;
+    }
+    final String key = webVideoGeneratedTrackKey(_trackSel.videoKey);
+    _trackSel.tracks[key] = WebVideoTrack(
+      key: key,
+      videoKey: _trackSel.videoKey,
+      lang: kWebVideoGeneratedTrackLang,
+      cues: generated.cues,
+      languageCode: webVideoGeneratedSubtitleLanguage(generated.path),
+    );
+    if (select) {
+      _trackSel.subtitlesOff = false;
+      _trackSel.pendingKey = null;
+      _trackSel.pinnedKey = key;
+    }
+    _reselectTrack();
+    if (mounted) setState(() {});
   }
 
   // ── 手机遥控 ───────────────────────────────────────────────────────────
@@ -2892,7 +3166,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         for (final WebVideoTrack track in _currentVideoTracks())
           VideoRemoteSubtitleOption(
             id: videoRemoteSubtitleOptionId(track.key),
-            label: track.isLive ? t.web_video_track_live : track.lang,
+            label: _trackLabel(track),
             kind: track.key.contains('|download:') ? 'external' : 'embedded',
             selected: track.key == _trackSel.activeKey,
             selectable: true,
@@ -3282,7 +3556,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         CheckedPopupMenuItem<String>(
           value: track.key,
           checked: track.key == _trackSel.activeKey,
-          child: Text(track.isLive ? t.web_video_track_live : track.lang),
+          child: Text(_trackLabel(track)),
         ),
     ];
   }
@@ -3647,6 +3921,17 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           _selectTrack,
         ),
       ),
+      if (_subtitleGenerationOffered)
+        FushiAdaptiveAction(
+          icon: FushiIcons.transcribe,
+          label: t.video_subtitle_ai_generate_title,
+          onPressed: () => unawaited(_generateSubtitle()),
+          inlineBuilder: (BuildContext _) => iconButton(
+            tooltip: t.video_subtitle_ai_generate_title,
+            icon: const FushiIcon(FushiIcons.transcribe),
+            onPressed: () => unawaited(_generateSubtitle()),
+          ),
+        ),
       FushiAdaptiveAction(
         icon: _hideNativeSubtitles
             ? FushiIcons.visibilityOff
