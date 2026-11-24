@@ -405,6 +405,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ImageActionsSheet), findsNothing);
 
+    // 非 Windows 不挂右键菜单（复制走 Windows 原生剪贴板通道，与阅读器看图一致）。
+    await tester.tap(
+      find.byKey(_cardKey),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.reader_copy_image), findsNothing);
+    expect(find.byType(ImageActionsSheet), findsNothing);
+
     // 测试里的内存图源（file == null）不挂长按。
     final LyricsIllustrationController noFile = _controller();
     _playPastTwo(noFile);
