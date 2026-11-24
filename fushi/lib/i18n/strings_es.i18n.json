@@ -12832,6 +12832,7 @@
   "sync_last_failed": "Última sincronización: falló",
   "sync_last_no_channels": "Última sincronización: nada sincronizado — sin canal de sincronización conectado",
   "sync_last_nothing": "Última sincronización: nada que sincronizar",
+  "sync_last_peer_offline": "Last sync: skipped Interconnect - the peer is offline",
   "sync_manga_content": "Upload manga files",
   "sync_manga_content_warning": "Manga volumes are large and use more storage and data",
   "sync_not_signed_in": "No conectado",

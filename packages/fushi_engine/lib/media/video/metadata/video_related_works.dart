@@ -11,6 +11,7 @@ library;
 
 import 'package:fushi_compute/fushi_compute.dart'
     show FfcXmlElement, parseAniDbAnimeXml;
+import 'package:fushi_engine/media/video/metadata/anidb_text.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
 
 /// `collection_relations.relation_type` 的落库值（与 app 侧
@@ -192,7 +193,7 @@ List<VideoRelatedWork> aniDbRelatedWorksFromRoot(FfcXmlElement root) {
         provider: 'anidb',
         externalId: '$id',
         relationType: aniDbRelationWire(related.getAttribute('type') ?? ''),
-        title: related.innerText.trim(),
+        title: aniDbDisplayText(related.innerText.trim()),
       ),
     );
   }
