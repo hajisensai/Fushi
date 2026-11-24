@@ -2,7 +2,8 @@
 // of the card, also ones added later (design notes section E).
 import 'dart:async';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart'
+    show ApplyInterceptor, QueryExecutor, QueryInterceptor, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -101,6 +102,22 @@ final class _FakeBookSite implements TrackingProvider, TrackingBookLinker {
       if (subject.linkedIds[providerId] == subjectId) return subject;
     }
     return null;
+  }
+}
+
+/// Counts the SELECTs the database runs (BUG-5372: the tracking page's
+/// series planning must not grow with the number of links).
+final class _SelectCounter extends QueryInterceptor {
+  int selects = 0;
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    selects++;
+    return executor.runSelect(statement, args);
   }
 }
 
@@ -270,9 +287,13 @@ void main() {
     late _FakeBookSite primary;
     late _FakeBookSite other;
     late MediaTrackingService service;
+    late _SelectCounter queries;
 
     setUp(() async {
-      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      queries = _SelectCounter();
+      db = FushiDatabase.forTesting(
+        NativeDatabase.memory().interceptWith(queries),
+      );
       preferences = PreferencesRepository(db);
       await preferences.loadFromDb();
       repository = MediaTrackingRepository(db);
@@ -539,6 +560,70 @@ void main() {
 
       expect(await seriesLink(_defaultId, card), isNull);
       expect(await bookLink(_defaultId, 'Ajin 02'), isNull);
+    });
+
+    test('the page\'s series planning takes the same number of queries '
+        'however many links (BUG-5372)', () async {
+      int next = 0;
+
+      /// One card whose two volume links one series link could replace, and
+      /// one series-linked card with a volume that has no number.
+      Future<void> addCards() async {
+        final int n = next++;
+        final List<String> merge = <String>['M$n 01', 'M$n 02'];
+        final List<String> linked = <String>['L$n 01', 'L$n 02', 'L$n'];
+        for (final String t in <String>[...merge, ...linked]) {
+          await insertBook(t);
+        }
+        await seriesCard('M$n', merge);
+        for (int v = 1; v <= merge.length; v++) {
+          await repository.saveMapping(
+            mediaType: TrackingMediaType.book,
+            mediaKey: merge[v - 1],
+            mediaTitle: merge[v - 1],
+            kind: TrackingKind.manga,
+            subjectId: 800 + n,
+            subjectName: 'M$n',
+            progressMode: TrackingProgressMode.volume,
+            progressOffset: v,
+            provider: _defaultId,
+            linkSource: TrackingLinkSource.auto,
+          );
+        }
+        final int card = await seriesCard('L$n', linked);
+        await repository.saveMapping(
+          mediaType: TrackingMediaType.bookCollection,
+          mediaKey: '$card',
+          mediaTitle: 'L$n',
+          kind: TrackingKind.manga,
+          subjectId: 900 + n,
+          subjectName: 'L$n',
+          progressMode: TrackingProgressMode.volume,
+          progressOffset: 0,
+          provider: _defaultId,
+        );
+      }
+
+      Future<(int, int)> planAndCount() async {
+        queries.selects = 0;
+        final int candidates = (await service.seriesMergeCandidates()).length;
+        final int waiting =
+            (await service.seriesVolumesNeedingAttention()).length;
+        expect(candidates, next);
+        expect(waiting, next);
+        return (queries.selects, candidates);
+      }
+
+      for (int i = 0; i < 2; i++) {
+        await addCards();
+      }
+      final (int few, _) = await planAndCount();
+      for (int i = 0; i < 8; i++) {
+        await addCards();
+      }
+      final (int many, _) = await planAndCount();
+
+      expect(many, few, reason: '10 cards cost what 2 cards cost');
     });
 
     group('merging per-volume links into a series link', () {
