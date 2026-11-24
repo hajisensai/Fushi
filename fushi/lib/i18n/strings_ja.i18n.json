@@ -11040,6 +11040,7 @@
   "srs_deck_delete_with_cards": "Delete cards too",
   "srs_deck_delete_with_cards_hint": "Notes whose cards are all in these decks are deleted; notes that also have cards elsewhere keep them and their cards here move to the parent deck",
   "srs_deck_deleting": "Deleting…",
+  "srs_deck_details": "Deck details",
   "srs_deck_expand": "Expand subdecks",
   "srs_deck_export": "このデッキをエクスポート（.apkg）",
   "srs_deck_menu": "More actions",
