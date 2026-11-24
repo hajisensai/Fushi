@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 927 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 928 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -55,7 +55,7 @@ How to read this:
 | `appearance.eink_mode` | E-ink mode | 墨水屏模式 | Theme | bool |  | `false` | Pure black-and-white theme with no animations and line-style highlights, for e-ink displays |
 | `appearance.eink_full_refresh_interval` | E-ink full refresh | 墨水屏全刷 | Theme | choice | `0`, `1`, `2`, `3`, `5`, `10`, `20` | `0` | While reading novels or manga, do a full e-ink refresh every few page turns to clear ghosting |
 | `appearance.eink_full_refresh_method` | Full refresh method | 全刷方式 | Theme | choice | `auto`, `flash` | `auto` | Auto uses the e-reader's own full refresh when supported (Onyx BOOX, Rockchip-based readers, Nook / Tolino) and briefly flashes the screen black otherwise. Choose Black flash if Auto has no effect on your device. |
-| `appearance.glass_material` | Glass material | 玻璃材质 | Theme | choice | `frosted`, `liquid` | `off` | Frosted blurs whatever is behind a surface; liquid glass adds refraction and highlights where the graphics engine supports it (otherwise it shows as frosted). On Windows 11 and macOS the window background shows the desktop through. Falls back to solid surfaces in e-ink mode and with increased contrast. |
+| `appearance.glass_material` | Glass quality | 玻璃画质 | Theme | choice | `off`, `minimal`, `standard`, `premium` | `minimal` | Only affects floating controls such as buttons, bars and menus; text and video stay the same. Higher levels look closer to the system effect and use more power. Solid is used automatically in e-ink mode and when the system's Reduce Transparency is on. |
 | `appearance.shell_content_layout` | Library layout | 库页布局 | Theme | text | `collage`, `grid` | `collage` |  |
 | `appearance.shell_block_arrangement` | Block arrangement | 色块摆放 | Theme | text | `aligned`, `staggered`, `scattered` | `aligned` | How color blocks sit on library pages. Does not apply to the cover grid. |
 | `appearance.shell_rail_style` | Sidebar style | 侧栏样式 | Theme | text | `notch`, `spine` | `notch` |  |
@@ -77,6 +77,7 @@ How to read this:
 | `appearance.page_backdrop.module.browse.preset` | Style | 样式 | Background and scaling › Page background › Per-module backdrops › Browse › Style | custom |  |  | *only on android, windows, macos* |
 | `appearance.page_backdrop.module.dictionaries.preset` | Style | 样式 | Background and scaling › Page background › Per-module backdrops › Lookup › Style | custom |  |  |  |
 | `appearance.page_backdrop.module.srs.preset` | Style | 样式 | Background and scaling › Page background › Per-module backdrops › Review › Style | custom |  |  |  |
+| `appearance.page_backdrop.page.srs_review.preset` | Style | 样式 | Background and scaling › Page background › Per-module backdrops › Review › Per-page backdrops › Review screen › Style | custom |  |  |  |
 | `appearance.page_backdrop.module.games.preset` | Style | 样式 | Background and scaling › Page background › Per-module backdrops › Game › Style | custom |  |  |  |
 | `appearance.page_backdrop.module.web.preset` | Style | 样式 | Background and scaling › Page background › Per-module backdrops › Browser › Style | custom |  |  |  |
 | `appearance.page_backdrop.module.settings.preset` | Style | 样式 | Background and scaling › Page background › Per-module backdrops › Settings › Style | custom |  |  |  |
@@ -986,7 +987,7 @@ How to read this:
 | `system.tmdb_attribution` | TMDB | TMDB | About | custom |  |  | This application uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB. |
 | `system.mangabaka_attribution` | MangaBaka | MangaBaka | About | action |  |  | Manga and light novel series data and covers come from MangaBaka, used under CC BY-NC-SA 4.0. |
 | `system.update.download` | Download | 下载 | App updates | action |  |  |  |
-| `system.update.cancel` | CANCEL | 取消 | App updates | action |  |  |  |
+| `system.update.cancel` | Cancel | 取消 | App updates | action |  |  |  |
 | `system.update.install` | Installing… | 正在安装… | App updates | action |  |  | *destructive* |
 
 ## Jellyfin · Emby

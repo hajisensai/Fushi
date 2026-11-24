@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 927,
+ "count": 928,
  "settings": [
   {
    "key": "appearance.language",
@@ -1110,34 +1110,48 @@
    "kind": "value",
    "type": "choice",
    "title": {
-    "en": "Glass material",
-    "zh-CN": "玻璃材质"
+    "en": "Glass quality",
+    "zh-CN": "玻璃画质"
    },
    "path": {
     "en": "Appearance › Theme",
     "zh-CN": "外观 › 主题"
    },
    "description": {
-    "en": "Frosted blurs whatever is behind a surface; liquid glass adds refraction and highlights where the graphics engine supports it (otherwise it shows as frosted). On Windows 11 and macOS the window background shows the desktop through. Falls back to solid surfaces in e-ink mode and with increased contrast.",
-    "zh-CN": "毛玻璃模糊表面背后的内容；液态玻璃在图形引擎支持时额外加折射与高光，不支持时按毛玻璃显示。Windows 11 与 macOS 上窗口背景会透出桌面。墨水屏模式与系统增强对比度下回退为实心表面。"
+    "en": "Only affects floating controls such as buttons, bars and menus; text and video stay the same. Higher levels look closer to the system effect and use more power. Solid is used automatically in e-ink mode and when the system's Reduce Transparency is on.",
+    "zh-CN": "只影响按钮、栏和菜单这类悬浮控件，正文和视频画面不变。档位越高越接近系统效果，也越耗电；墨水屏和系统「降低透明度」下自动用实色。"
    },
    "options": [
     {
-     "value": "frosted",
+     "value": "off",
      "label": {
-      "en": "Frosted",
-      "zh-CN": "毛玻璃"
+      "en": "Solid",
+      "zh-CN": "实色"
      }
     },
     {
-     "value": "liquid",
+     "value": "minimal",
      "label": {
-      "en": "Liquid",
-      "zh-CN": "液态玻璃"
+      "en": "Minimal",
+      "zh-CN": "精简"
+     }
+    },
+    {
+     "value": "standard",
+     "label": {
+      "en": "Standard",
+      "zh-CN": "标准"
+     }
+    },
+    {
+     "value": "premium",
+     "label": {
+      "en": "Premium",
+      "zh-CN": "高级"
      }
     }
    ],
-   "default": "off"
+   "default": "minimal"
   },
   {
    "key": "appearance.shell_content_layout",
@@ -1579,6 +1593,19 @@
    "path": {
     "en": "Appearance › Background and scaling › Page background › Per-module backdrops › Review › Style",
     "zh-CN": "外观 › 背景与缩放 › 页面背景 › 按模块设置 › 复习 › 样式"
+   }
+  },
+  {
+   "key": "appearance.page_backdrop.page.srs_review.preset",
+   "kind": "custom",
+   "type": "custom",
+   "title": {
+    "en": "Style",
+    "zh-CN": "样式"
+   },
+   "path": {
+    "en": "Appearance › Background and scaling › Page background › Per-module backdrops › Review › Per-page backdrops › Review screen › Style",
+    "zh-CN": "外观 › 背景与缩放 › 页面背景 › 按模块设置 › 复习 › 按页面设置 › 复习答题页 › 样式"
    }
   },
   {
@@ -17599,7 +17626,7 @@
    "kind": "action",
    "type": "action",
    "title": {
-    "en": "CANCEL",
+    "en": "Cancel",
     "zh-CN": "取消"
    },
    "path": {
