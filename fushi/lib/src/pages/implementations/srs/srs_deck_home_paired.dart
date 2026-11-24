@@ -743,6 +743,30 @@ String _srsPairedUpdatedText(BuildContext context, DateTime at) {
   return t.srs_home_paired_updated(time: when);
 }
 
+/// 组头副标题：没有缓存时「连接中 / 错误」；有缓存时「N 张 · 更新于 … · 刷新中 / 错误」。
+/// M3E 组头与 Apple 组头（srs/apple/）共用这一份口径。
+String _srsPairedStatus(
+  BuildContext context,
+  _PairedHost host,
+  _SrsPairedHosts paired,
+  _PairedDeckTotals? totals,
+  String? error,
+) {
+  final String? upgrade = host.upgradeNotice;
+  if (upgrade != null) return upgrade;
+  final DateTime? at = host.updatedAt;
+  final bool loading = host.loading || paired.reconciling;
+  if (totals == null || at == null) {
+    return loading ? t.srs_home_paired_connecting : error ?? '';
+  }
+  return <String>[
+    t.srs_home_deck_cards(n: totals.cards),
+    _srsPairedUpdatedText(context, at),
+    if (loading) t.srs_home_paired_refreshing,
+    ?error,
+  ].join(' · ');
+}
+
 /// 组头：设备图标、名字、状态（连接中 / 出错 / N 张）、三色计数、菜单与展开箭头。点组头展开 / 收起；出错时
 /// 点组头重试。
 class _SrsPairedDeviceHeader extends StatelessWidget {
@@ -762,26 +786,11 @@ class _SrsPairedDeviceHeader extends StatelessWidget {
 
   void _retry() => srsRunLogged('SrsPairedHosts.load', () => paired.load(host));
 
-  /// 副标题：没有缓存时「连接中 / 错误」；有缓存时「N 张 · 更新于 … · 刷新中 / 错误」。
   String _status(
     BuildContext context,
     _PairedDeckTotals? totals,
     String? error,
-  ) {
-    final String? upgrade = host.upgradeNotice;
-    if (upgrade != null) return upgrade;
-    final DateTime? at = host.updatedAt;
-    final bool loading = host.loading || paired.reconciling;
-    if (totals == null || at == null) {
-      return loading ? t.srs_home_paired_connecting : error ?? '';
-    }
-    return <String>[
-      t.srs_home_deck_cards(n: totals.cards),
-      _srsPairedUpdatedText(context, at),
-      if (loading) t.srs_home_paired_refreshing,
-      ?error,
-    ].join(' · ');
-  }
+  ) => _srsPairedStatus(context, host, paired, totals, error);
 
   @override
   Widget build(BuildContext context) {

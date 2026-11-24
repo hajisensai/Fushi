@@ -19,6 +19,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
+import 'package:fushi/src/pages/implementations/srs/apple/apple_srs_charts.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
@@ -44,6 +45,12 @@ import 'package:fushi/src/srs/srs_home_stats.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleRow;
+import 'package:fushi/src/utils/components/fushi_icon_button.dart'
+    show FushiIconButton;
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
+    show appleColorsOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
@@ -325,6 +332,8 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
+
+  _appleHomeTests();
 
   for (final bool apple in <bool>[false, true]) {
     final String ds = apple ? 'Apple' : 'MD3';
@@ -710,6 +719,11 @@ void main() {
         find.byKey(const ValueKey<String>('srs_history_import')),
         findsNothing,
       );
+      // Apple：「导入」在页头分节「⋯」的「牌组」节里（方案 A），先开菜单。
+      if (apple) {
+        await tester.tap(find.byKey(const ValueKey<String>('srs_home_more')));
+        await _settle(tester);
+      }
       await tester.tap(find.byKey(const ValueKey<String>('srs_import')).first);
       await _settle(tester);
       expect(find.text(t.srs_anki_migrate), findsOneWidget);
@@ -746,7 +760,7 @@ void main() {
         reason: '方案 D：行尾只有三色计数与播放按钮，菜单走右键 / 菜单键 / 右栏「选项」',
       );
       expect(
-        find.byType(SrsDeckCountChips),
+        find.byType(apple ? SrsAppleCountTriple : SrsDeckCountChips),
         findsNWidgets(3),
         reason: '三行各一组计数（空着又没有子牌组的 Default 不显示，见 srsVisibleDecks）',
       );
@@ -916,6 +930,24 @@ void main() {
         expect(deckList.rwkvPending, isFalse);
         final int queued = deckList.todayReview;
         expect(queued, isNot(2));
+        if (apple) {
+          // Apple（方案 A 拍板点 4）：队列说明收在 ⓘ 后面，点开才出现。
+          expect(
+            find.text(
+              t.srs_home_rwkv_queue_note(n: queued),
+              skipOffstage: false,
+            ),
+            findsNothing,
+          );
+          final Finder info = find.byKey(
+            const ValueKey<String>('srs-home-rwkv-queue-info'),
+            skipOffstage: false,
+          );
+          await tester.ensureVisible(info);
+          await _settle(tester);
+          await tester.tap(info);
+          await _settle(tester);
+        }
         expect(
           find.text(t.srs_home_rwkv_queue_note(n: queued), skipOffstage: false),
           findsOneWidget,
@@ -1020,9 +1052,10 @@ void main() {
         await tapRow(spark, 'Spark');
         expect(find.byType(SrsReviewPage), findsNothing, reason: '点行不开复习');
         expect(detail(spark), findsOneWidget);
+        // Apple 用页头返回键逐层回退，不画面包屑（方案 A）。
         expect(
           find.byKey(const ValueKey<String>('srs-home-breadcrumb')),
-          findsOneWidget,
+          apple ? findsNothing : findsOneWidget,
         );
         expect(row(jp), findsOneWidget, reason: '详情页下面是它的子牌组');
         expect(row(spark), findsNothing);
@@ -1071,8 +1104,11 @@ void main() {
         await _settle(tester);
 
         // 页头「开始复习」：从第一个还有活的顶层牌组开始（这里是有一张新卡的默认牌组）。
+        // Apple 窄屏的主按钮在今日卡底部（方案 A 拍板点 11）。
         await tester.tap(
-          find.byKey(const ValueKey<String>('srs-masthead-start')),
+          find.byKey(
+            ValueKey<String>(apple ? 'srs-home-start' : 'srs-masthead-start'),
+          ),
         );
         await _settle(tester);
         await expectReviewOf(def);
@@ -1122,36 +1158,66 @@ void main() {
         find.byKey(const ValueKey<String>('srs-home-heatmap')),
         findsOneWidget,
       );
-      // 未来 7 天到期在宽屏只出现一次：并进选中牌组的色块，不再单独一张卡。
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey<String>('srs-home-deck-poster')),
-          matching: find.text(t.srs_home_forecast_title),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('srs-home-forecast')),
-        findsNothing,
-      );
-      // 「今日」色块被同一行的牌组色块拉高时，近 7 天贴块底（不在大数字下留一截空）；
-      // 「连续天数」色块底部是累计统计。
-      final Rect todayBlock = tester.getRect(
-        find.byKey(const ValueKey<String>('srs-home-today-poster')),
-      );
-      final Rect deckBlock = tester.getRect(
-        find.byKey(const ValueKey<String>('srs-home-deck-poster')),
-      );
-      final Rect recent = tester.getRect(
-        find.byKey(const ValueKey<String>('srs-home-today-recent')),
-      );
-      expect(todayBlock.top, moreOrLessEquals(deckBlock.top), reason: '同一行');
-      expect(todayBlock.height, moreOrLessEquals(deckBlock.height));
-      expect(recent.bottom, moreOrLessEquals(todayBlock.bottom - 22));
-      expect(
-        find.byKey(const ValueKey<String>('srs-home-heatmap-totals')),
-        findsOneWidget,
-      );
+      if (apple) {
+        // Apple（方案 A）：三张摘要卡（今日 · 选中牌组 · 连续天数）同一行、等高；
+        // 未来 7 天只在牌组卡里出现一次；连续天数卡底部是累计统计。
+        expect(
+          find.descendant(
+            of: detail(def),
+            matching: find.text(t.srs_home_forecast_title),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-forecast')),
+          findsNothing,
+        );
+        final Rect today = tester.getRect(
+          find.byKey(const ValueKey<String>('srs-home-today')),
+        );
+        final Rect deckCard = tester.getRect(detail(def));
+        expect(today.top, moreOrLessEquals(deckCard.top), reason: '同一行');
+        expect(today.height, moreOrLessEquals(deckCard.height));
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-today-recent')),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-heatmap-totals')),
+          findsOneWidget,
+        );
+      } else {
+        // 未来 7 天到期在宽屏只出现一次：并进选中牌组的色块，不再单独一张卡。
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('srs-home-deck-poster')),
+            matching: find.text(t.srs_home_forecast_title),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-forecast')),
+          findsNothing,
+        );
+        // 「今日」色块被同一行的牌组色块拉高时，近 7 天贴块底（不在大数字下留一截空）；
+        // 「连续天数」色块底部是累计统计。
+        final Rect todayBlock = tester.getRect(
+          find.byKey(const ValueKey<String>('srs-home-today-poster')),
+        );
+        final Rect deckBlock = tester.getRect(
+          find.byKey(const ValueKey<String>('srs-home-deck-poster')),
+        );
+        final Rect recent = tester.getRect(
+          find.byKey(const ValueKey<String>('srs-home-today-recent')),
+        );
+        expect(todayBlock.top, moreOrLessEquals(deckBlock.top), reason: '同一行');
+        expect(todayBlock.height, moreOrLessEquals(deckBlock.height));
+        expect(recent.bottom, moreOrLessEquals(todayBlock.bottom - 22));
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-heatmap-totals')),
+          findsOneWidget,
+        );
+      }
 
       await tester.tap(
         find.descendant(of: row(spark), matching: find.text('Spark')),
@@ -1314,7 +1380,14 @@ void main() {
 
       // 键盘：焦点在父牌组行内（这里取行首箭头按钮；真 app 里整行卡片的焦点目标同在行内）
       // ← 收起、→ 展开。测试没挂 FushiFocusRoot，Apple 卡片不挂焦点目标，所以不用标题找焦点。
-      final Element toggleElement = tester.element(toggle);
+      // Apple 的焦点目标是整行（FushiAppleRow，Enter = 点行），三角在行内：取行里的焦点节点。
+      final Element toggleElement = apple
+          ? tester.element(
+              find
+                  .ancestor(of: toggle, matching: find.byType(FushiAppleRow))
+                  .first,
+            )
+          : tester.element(toggle);
       final FocusNode rowFocus = FocusManager.instance.rootScope.descendants
           .firstWhere((FocusNode n) {
             bool inside = false;
@@ -4074,4 +4147,323 @@ class _RecordingAudio implements SrsCardAudioOutput {
       if (!c.isCompleted) c.complete(false);
     }
   }
+}
+
+/// 复习首页 Apple 布局（2026-11-24 用户拍板 Cupertino 方案 A）：按设计系统分派、页头平铺 +
+/// 分节「⋯」、冲突提升、TipKit 提示、单环 / 柱图 / 热力图、分组牌组行（无彩色底、▶、
+/// Apple 右键菜单 11 项）、焦点 + Enter。
+void _appleHomeTests() {
+  group('复习首页 Apple（方案 A）', () {
+    Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
+    Finder detail(String id) =>
+        find.byKey(ValueKey<String>('srs-home-detail-$id'));
+
+    testWidgets('按设计系统分派：Apple 走 apple 布局（圆体三色计数 / 单环 / 柱图），M3E 不变', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: true,
+        page: const SrsDeckListPage(),
+        size: const Size(1100, 1600),
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SrsAppleCountTriple), findsWidgets);
+      expect(find.byType(SrsDeckCountChips), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-home-today')),
+          matching: find.byType(AppleSrsRing),
+        ),
+        findsOneWidget,
+        reason: '今日卡是单环（拍板点 9）',
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-home-today-recent')),
+          matching: find.byType(AppleSrsBarChart),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-home-deck-poster')),
+        findsNothing,
+        reason: 'Apple 不再借 M3E 色块',
+      );
+      await _unmount(tester);
+
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: const SrsDeckListPage(),
+        size: const Size(1100, 1600),
+      );
+      expect(find.byType(SrsAppleCountTriple), findsNothing);
+      expect(find.byType(SrsDeckCountChips), findsWidgets);
+      expect(find.byType(AppleSrsRing), findsNothing);
+      await _unmount(tester);
+    });
+
+    testWidgets('页头：平铺 ＋ / 🔍 / ⋯，⋯ 分「牌组 / 同步 / 数据」三节且项齐全；有冲突时冲突带红点提到栏上', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: true,
+        page: const SrsDeckListPage(),
+        overrides: <Override>[
+          srsConflictCountProvider.overrideWith((Ref ref) async => 0),
+        ],
+      );
+      for (final String key in <String>[
+        'srs_add_note',
+        'srs_browse',
+        'srs_home_more',
+      ]) {
+        expect(find.byKey(ValueKey<String>(key)), findsWidgets, reason: key);
+      }
+      expect(
+        find.byKey(const ValueKey<String>('srs_conflicts')),
+        findsNothing,
+        reason: '没有冲突时冲突入口只在 ⋯「同步」节里',
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs_new_deck')),
+        findsNothing,
+        reason: '分节菜单不平铺',
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('srs_home_more')));
+      await _settle(tester);
+      for (final String key in <String>[
+        'srs_new_deck',
+        'srs_import',
+        'srs_sync_now',
+        'srs_conflicts_menu',
+        'srs_timeline',
+        'srs_export_apkg',
+        'srs_note_types',
+      ]) {
+        expect(find.byKey(ValueKey<String>(key)), findsOneWidget, reason: key);
+      }
+      expect(find.text(t.srs_home_menu_sync), findsOneWidget);
+      expect(find.text(t.srs_home_menu_data), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+      await _unmount(tester);
+
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: true,
+        page: const SrsDeckListPage(),
+        overrides: <Override>[
+          srsConflictCountProvider.overrideWith((Ref ref) async => 2),
+        ],
+      );
+      final Finder conflicts = find.byKey(
+        const ValueKey<String>('srs_conflicts'),
+      );
+      expect(conflicts, findsWidgets, reason: '有冲突时提到栏上');
+      expect(tester.widget<FushiIconButton>(conflicts.first).badge, isTrue);
+      await _unmount(tester);
+    });
+
+    testWidgets('「每日上限」提示是 TipKit 式：没有关闭钮，只有两个选项', (WidgetTester tester) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: true,
+        page: const SrsDeckListPage(),
+        overrides: <Override>[
+          srsLimitUnitLegacyCountProvider.overrideWith((Ref ref) async => 1),
+        ],
+      );
+      final Finder notice = find.byKey(
+        const ValueKey<String>('srs-limit-unit-notice'),
+      );
+      expect(notice, findsOneWidget);
+      expect(
+        find.descendant(of: notice, matching: find.byIcon(FushiIcons.close)),
+        findsNothing,
+        reason: '必须选一个选项才算处理完',
+      );
+      for (final String key in <String>[
+        'srs-limit-unit-keep-cards',
+        'srs-limit-unit-accept',
+      ]) {
+        expect(
+          find.descendant(
+            of: notice,
+            matching: find.byKey(ValueKey<String>(key)),
+          ),
+          findsOneWidget,
+        );
+      }
+      await _unmount(tester);
+    });
+
+    testWidgets('牌组行：背景中性、行尾 ▶、右键出 Apple 菜单（11 项同序，删除在最后）；焦点 + Enter 选中', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final (String a, String b) = (await tester.runAsync(() async {
+        final String a = await store.createDeck('Alpha');
+        final String b = await store.createDeck('Beta');
+        await store.createDeck('Gamma');
+        return (a, b);
+      }))!;
+      await _addLapis(tester, store, '食べる');
+      final String def = store.defaultDeckId;
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: true,
+        page: const SrsDeckListPage(),
+        size: const Size(1100, 1600),
+      );
+      expect(tester.takeException(), isNull);
+      final Color neutral = appleColorsOf(
+        tester.element(find.byType(SrsDeckListPage)),
+      ).secondaryGroupedBackground;
+      expect(
+        find.descendant(
+          of: row(b),
+          matching: find.byWidgetPredicate(
+            (Widget w) =>
+                w is DecoratedBox &&
+                w.decoration is BoxDecoration &&
+                (w.decoration as BoxDecoration).color == neutral,
+          ),
+        ),
+        findsOneWidget,
+        reason: '行底是分组面中性色，牌组色只在小图标上',
+      );
+      expect(
+        find.descendant(
+          of: row(def),
+          matching: find.byKey(ValueKey<String>('srs-deck-review-$def')),
+        ),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.descendant(of: row(b), matching: find.text('Beta')),
+        buttons: kSecondaryButton,
+      );
+      await _settle(tester);
+      final List<String> labels = <String>[
+        t.srs_custom_study_title,
+        t.srs_deck_browse_cards,
+        t.srs_deck_new_child,
+        t.srs_deck_rename,
+        t.srs_deck_move,
+        t.srs_deck_move_up,
+        t.srs_deck_move_down,
+        t.srs_deck_settings,
+        t.srs_word_audio_backfill_title,
+        t.srs_deck_export,
+        t.srs_deck_delete,
+      ];
+      double? lastTop;
+      for (final String label in labels) {
+        final Finder item = find.text(label).last;
+        expect(item, findsOneWidget, reason: label);
+        final double top = tester.getTopLeft(item).dy;
+        if (lastTop != null) {
+          expect(top, greaterThan(lastTop), reason: '$label 排在上一项之后');
+        }
+        lastTop = top;
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await _settle(tester);
+
+      // 焦点驱动：行的焦点目标（FushiAppleRow）+ Enter = 点行（宽屏 = 选中）。
+      final Element rowEl = tester.element(
+        find
+            .ancestor(
+              of: find.descendant(of: row(a), matching: find.text('Alpha')),
+              matching: find.byType(FushiAppleRow),
+            )
+            .first,
+      );
+      final FocusNode node = FocusManager.instance.rootScope.descendants
+          .lastWhere((FocusNode n) {
+            bool inside = false;
+            n.context?.visitAncestorElements((Element e) {
+              if (identical(e, rowEl)) {
+                inside = true;
+                return false;
+              }
+              return true;
+            });
+            return inside && n.canRequestFocus;
+          });
+      node.requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await _settle(tester);
+      expect(detail(a), findsOneWidget, reason: 'Enter 选中 Alpha');
+      expect(find.byType(SrsReviewPage), findsNothing);
+      await _unmount(tester);
+    });
+
+    testWidgets('热力图：点一格写出「日期 · N 次」', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(400, 400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      const int today = 20000;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            textTheme: Typography.material2021().black,
+            designSystem: FushiDesignSystem.cupertino,
+            glass: FushiGlassMaterial.off,
+            glassDesign: true,
+          ),
+          home: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 200,
+              child: AppleSrsHeatmap(
+                countsByDay: const <int, int>{today: 5},
+                today: today,
+                weeks: 4,
+                dateOf: srsDayToDate,
+                dayLabel: (int day) => 'D$day',
+                monthLabel: (int day) => 'M',
+                countLabel: (int n) => '$n reviews',
+                lessLabel: 'Less',
+                moreLabel: 'More',
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final Finder callout = find.byKey(
+        const ValueKey<String>('apple-srs-heatmap-callout'),
+      );
+      expect(callout, findsNothing);
+      // 宽 200、4 周：格 14、间距 4；月份行 16 高。今天在最后一列、按星期几排行。
+      final int todayRow = srsDayToDate(today).weekday % 7;
+      final Offset origin = tester.getTopLeft(find.byType(AppleSrsHeatmap));
+      await tester.tapAt(origin + Offset(3 * 18 + 7, 16 + todayRow * 18 + 7));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(callout).data, 'D$today · 5 reviews');
+    });
+
+    test('牌组图标色按 id 稳定映射到 8 色板', () {
+      final int i = appleSrsDeckColorIndex('deck-abc', 8);
+      expect(appleSrsDeckColorIndex('deck-abc', 8), i);
+      expect(i, inInclusiveRange(0, 7));
+    });
+  });
 }

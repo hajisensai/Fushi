@@ -2675,6 +2675,8 @@ class _FushiMenuBodyState<T> extends State<_FushiMenuBody<T>> {
       );
     }
     return Padding(
+      // 保留调用方给菜单项的 key（与 M3E PopupMenuItem 同：焦点驱动 / 测试按 key 找项）。
+      key: item.key,
       padding: EdgeInsets.symmetric(horizontal: _menuRowInset(context)),
       child: _AppleMenuRow(
         onTap: () {

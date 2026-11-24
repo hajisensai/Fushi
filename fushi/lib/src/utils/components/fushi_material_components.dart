@@ -4775,9 +4775,12 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
       flat.add(actions[i]);
       continue;
     }
-    for (final FushiHeaderMoreEntry entry in pageMore!.entries) {
-      entryAt[flat.length] = entry;
-      flat.add(_headerActionOfMoreEntry(entry));
+    // keepEntriesInMenu：页面的分节菜单不平铺，「⋯」恒在、项恒在菜单里。
+    if (!pageMore!.keepEntriesInMenu) {
+      for (final FushiHeaderMoreEntry entry in pageMore.entries) {
+        entryAt[flat.length] = entry;
+        flat.add(_headerActionOfMoreEntry(entry));
+      }
     }
     moreSlot = flat.length;
   }
@@ -4801,17 +4804,22 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
       ];
     }
     final bool showMore =
-        hidden.isNotEmpty || pageMore.leadingEntries.isNotEmpty;
+        hidden.isNotEmpty ||
+        pageMore.leadingEntries.isNotEmpty ||
+        pageMore.keepEntriesInMenu;
     for (int i = 0; i <= flat.length; i++) {
       if (i == moreSlot && showMore) {
         visible.add(
           FushiHeaderMoreButton(
             key: pageMore.key,
             buttonKey: pageMore.buttonKey,
-            entries: <FushiHeaderMoreEntry>[
-              for (int j = 0; j < flat.length; j++)
-                if (hidden.contains(j) && entryAt[j] != null) entryAt[j]!,
-            ],
+            keepEntriesInMenu: pageMore.keepEntriesInMenu,
+            entries: pageMore.keepEntriesInMenu
+                ? pageMore.entries
+                : <FushiHeaderMoreEntry>[
+                    for (int j = 0; j < flat.length; j++)
+                      if (hidden.contains(j) && entryAt[j] != null) entryAt[j]!,
+                  ],
             leadingEntries: <FushiHeaderMoreEntry>[
               for (int j = 0; j < flat.length; j++)
                 if (hidden.contains(j) && entryAt[j] == null)
@@ -4860,7 +4868,8 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
     final Set<int> hidden = order.take(collapsed).toSet();
     final bool showMore =
         hidden.isNotEmpty ||
-        (pageMore != null && pageMore.leadingEntries.isNotEmpty);
+        (pageMore != null &&
+            (pageMore.leadingEntries.isNotEmpty || pageMore.keepEntriesInMenu));
     return _estimateHeaderActionsWidth(tokens, <Widget>[
       for (int i = 0; i < flat.length; i++)
         if (!hidden.contains(i)) flat[i],

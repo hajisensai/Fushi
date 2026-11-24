@@ -40,6 +40,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart'
     show HomeTab, homeShellTabNotifier;
+import 'package:fushi/src/pages/implementations/srs/apple/apple_srs_charts.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_history_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
@@ -60,7 +61,7 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
-    show activeContextMenuAnchor;
+    show ContextMenuTrigger, activeContextMenuAnchor, contextMenuInvoker;
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
@@ -83,6 +84,7 @@ import 'package:fushi/src/srs/srs_starter_packs_dialog.dart';
 import 'package:fushi/src/srs/srs_word_audio_backfill_dialog.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_tree.dart';
@@ -127,6 +129,10 @@ part 'srs_deck_home.dart';
 part 'srs_deck_home_paired.dart';
 part 'srs_deck_home_rwkv.dart';
 part 'srs_deck_tree_band.dart';
+part 'apple/apple_srs_home.part.dart';
+part 'apple/apple_srs_cards.part.dart';
+part 'apple/apple_srs_deck_tree.part.dart';
+part 'apple/apple_srs_tips.part.dart';
 
 /// 行内菜单动作。
 enum _DeckAction {
@@ -742,6 +748,9 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     final AsyncValue<SrsDeckListData?> data = ref.watch(srsDeckListProvider);
     final int conflicts = ref.watch(srsConflictCountProvider).valueOrNull ?? 0;
     final bool apple = isGlassDesign(context);
+    // 设计系统先分派（2026-11-24 用户拍板 Cupertino 方案 A）：Apple 走 srs/apple/ 的独立
+    // 布局，业务动作仍是本 State 这一份（[_AppleSrsHome] 直接调）；M3E 往下原样不动。
+    if (apple) return _buildAppleHome(context, data, conflicts);
     final SrsDeckListData? list = data.valueOrNull;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1123,9 +1132,14 @@ class _DeckList extends StatefulWidget {
     required this.onPlace,
     this.rootId,
     this.selectedId,
+    this.apple = false,
   });
 
   final SrsDeckListData data;
+
+  /// Cupertino 外壳（srs/apple/）：行画成 inset grouped 分组行（[_DeckRow.apple]），
+  /// 块间距取 Apple 分组间距；树的状态、拖放、折叠与 M3E 是同一份。
+  final bool apple;
 
   /// 只画这个牌组的子孙；null = 整棵树。
   final String? rootId;
@@ -1314,7 +1328,7 @@ class _DeckListState extends State<_DeckList> {
     }
     // 拼贴版式：每个顶层牌组连同子孙是一块按牌组取色的色块（见 srs_deck_tree_band.dart）；
     // 墨水屏仍是一组分段卡。
-    final bool bands = shellRedesignActive(context);
+    final bool bands = !widget.apple && shellRedesignActive(context);
     Widget rowAt(int i, {required int index, _DeckBand? band}) {
       final SrsDeckSummary d = decks[i];
       final int? rootAt = rootIndex[d.deck.id];
@@ -1350,6 +1364,7 @@ class _DeckListState extends State<_DeckList> {
             canMoveUp: hasPrev.contains(d.deck.id),
             canMoveDown: next.containsKey(d.deck.id),
             band: band,
+            apple: widget.apple,
           ),
         ),
       );
@@ -1392,6 +1407,8 @@ class _DeckListState extends State<_DeckList> {
               height:
                   joined.contains(index) || items[index] is SrsScrubErrorNotice
                   ? 0
+                  : widget.apple
+                  ? _appleSrsBlockGap(context)
                   : index >= firstDeckItem && index < lastDeckItem - 1
                   ? kFushiCoverBlockSpacing
                   : tokens.spacing.gap * 1.5,
@@ -1412,6 +1429,11 @@ class _DeckListState extends State<_DeckList> {
             switchOutCurve: FushiMotion.exit,
             child: _dragging?.parentId == null
                 ? const SizedBox.shrink()
+                : widget.apple
+                ? _AppleTopLevelDropZone(
+                    key: const ValueKey<String>('srs-drop-top-level'),
+                    onPlace: widget.onPlace,
+                  )
                 : _TopLevelDropZone(
                     key: const ValueKey<String>('srs-drop-top-level'),
                     onPlace: widget.onPlace,
@@ -1453,9 +1475,14 @@ class _DeckRow extends StatelessWidget {
     required this.canMoveDown,
     this.remote = false,
     this.band,
+    this.apple = false,
   });
 
   final SrsDeckSummary deck;
+
+  /// Cupertino 外壳的分组行（srs/apple/apple_srs_deck_tree.part.dart 的 [_AppleDeckRowTile]）：
+  /// 按键 / 手柄 / 点按命中区 / 菜单与 M3E 同一份，只换外观。
+  final bool apple;
 
   /// 所在的牌组色块（拼贴版式）；null = 分段卡行。
   final _DeckBand? band;
@@ -1836,7 +1863,18 @@ class _DeckRow extends StatelessWidget {
           builder: (BuildContext rowContext) => Listener(
             behavior: HitTestBehavior.translucent,
             onPointerDown: (PointerDownEvent e) => probe.down = e.position,
-            child: band != null
+            child: apple
+                ? _appleTile(
+                    context,
+                    compact: compact,
+                    bar: bar,
+                    note: note,
+                    work: work,
+                    probe: probe,
+                    onTap: onRowTap,
+                    onMenu: () => unawaited(_showMenuFor(rowContext)),
+                  )
+                : band != null
                 ? _bandTile(
                     context,
                     band: band,

@@ -2286,12 +2286,21 @@ Future<void> _showDeckMenu(
     context: anchorContext,
     position: RelativeRect.fromRect(anchorRect, Offset.zero & overlay.size),
     semanticLabel: t.srs_deck_menu,
-    items: _deckMenuItems(
-      isDefault: isDefault,
-      canMoveUp: canMoveUp,
-      canMoveDown: canMoveDown,
-      remote: remote,
-    ),
+    // Apple：带图标、删除单独一节红字的系统菜单（srs/apple/，同项同序）。
+    items: isGlassDesign(anchorContext)
+        ? _appleDeckMenuItems(
+            anchorContext,
+            isDefault: isDefault,
+            canMoveUp: canMoveUp,
+            canMoveDown: canMoveDown,
+            remote: remote,
+          )
+        : _deckMenuItems(
+            isDefault: isDefault,
+            canMoveUp: canMoveUp,
+            canMoveDown: canMoveDown,
+            remote: remote,
+          ),
   );
   if (picked != null) onAction(deck, picked);
 }
