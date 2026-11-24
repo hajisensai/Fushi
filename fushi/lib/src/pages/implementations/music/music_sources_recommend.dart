@@ -18,6 +18,18 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/music/music_online_sources.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart'
+    show isMusicPluginRelayClient;
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_recommend_widgets.dart';
+import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
+    show musicWithContextMenu;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
+    show adaptivePageRoute;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics;
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
@@ -77,7 +89,7 @@ Widget musicRecommendSourceTabs({
   required ValueChanged<String?> onSelect,
 }) {
   final String? effective = musicRecommendEffectiveSource(sources, selected);
-  return LibrarySectionTabs<String>(
+  final Widget material = LibrarySectionTabs<String>(
     tabs: <LibrarySectionTab<String>>[
       LibrarySectionTab<String>(
         value: kMusicRecommendAllSources,
@@ -97,7 +109,47 @@ Widget musicRecommendSourceTabs({
     focusIdPrefix: 'music-recommend-source',
     secondary: true,
   );
+  // Cupertino（方案 A）：大标题下的 Apple 来源胶囊行。
+  return Builder(
+    builder: (BuildContext context) => isGlassDesign(context)
+        ? musicRecommendAppleSourcePills(
+            sources: sources,
+            selected: effective,
+            onSelect: onSelect,
+          )
+        : material,
+  );
 }
+
+/// Apple 版来源胶囊行（[AppleMusicSourcePills]）：全部 + 每个来源，胶囊 key 与
+/// M3E 页签同一套（`music-recommend-source-<key | all>`）；本机不跑插件、经互联
+/// 中继用别的设备的插件时，插件胶囊带「电脑」小标。
+Widget musicRecommendAppleSourcePills({
+  required List<MusicOnlineSource> sources,
+  required String? selected,
+  required ValueChanged<String?> onSelect,
+}) => AppleMusicSourcePills(
+  pills: <AppleMusicSourcePill>[
+    (
+      value: kMusicRecommendAllSources,
+      label: t.music_search_source_all,
+      labelKey: const ValueKey<String>('music-recommend-source-all'),
+      relayed: false,
+    ),
+    for (final MusicOnlineSource s in sources)
+      (
+        value: s.key,
+        label: s.name,
+        labelKey: ValueKey<String>('music-recommend-source-${s.key}'),
+        relayed: s is MusicPluginOnlineSource && isMusicPluginRelayClient,
+      ),
+  ],
+  selected:
+      musicRecommendEffectiveSource(sources, selected) ??
+      kMusicRecommendAllSources,
+  onSelect: (String v) => onSelect(v == kMusicRecommendAllSources ? null : v),
+  focusIdPrefix: 'music-recommend-source',
+);
 
 class MusicSourcesRecommendView extends ConsumerStatefulWidget {
   const MusicSourcesRecommendView({
@@ -107,7 +159,11 @@ class MusicSourcesRecommendView extends ConsumerStatefulWidget {
     this.selectedSource,
     this.onSelectSource,
     this.leading,
+    this.refreshHandle,
   });
+
+  /// 外部「刷新全部来源」入口（macOS 档工具栏刷新键），交给插件推荐列表登记。
+  final MusicRecommendRefreshHandle? refreshHandle;
 
   /// 已排序、显示中的来源（调用方已按 [musicSourceHasRecommend] 过滤）。
   final List<MusicOnlineSource> sources;
@@ -171,6 +227,21 @@ class _MusicSourcesRecommendViewState
 
   Widget _chips(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    if (isGlassDesign(context)) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          tokens.spacing.gap / 2,
+          tokens.spacing.page,
+          0,
+        ),
+        child: musicRecommendAppleSourcePills(
+          sources: widget.sources,
+          selected: _selectedSource?.key,
+          onSelect: _select,
+        ),
+      );
+    }
     // chip 选中与面板内容同一个有效值：选中的来源没了（被关掉 / 停用 / 删除）两者一起回到「全部」。
     final String? effective = _selectedSource?.key;
     Widget chip(String? key, String label) => Padding(
@@ -239,6 +310,7 @@ class _MusicSourcesRecommendViewState
           sources: <MusicPluginManifest>[manifest],
           showPersonal: false,
           leading: widget.leading,
+          refreshHandle: widget.refreshHandle,
         ),
       MusicServerOnlineSource(:final MusicServerBrowser browser) =>
         _pinnedBelowChrome(
@@ -263,6 +335,7 @@ class _MusicSourcesRecommendViewState
         key: const ValueKey<String>('music-recommend-all'),
         sources: _plugins,
         leading: widget.leading,
+        refreshHandle: widget.refreshHandle,
         trailing: (bool sliver) => <Widget>[
           for (final MusicOnlineSource o in widget.sources)
             if (o is MusicServerOnlineSource)
@@ -407,8 +480,107 @@ class _ServerShelfState extends State<_ServerShelf> {
     );
   }
 
+  /// Cupertino（方案 A）：「<服务器名> ›」段头（点标题切到该来源胶囊）+ 平封面
+  /// 货架；加载 / 出错占一排的高。
+  Widget _buildApple(BuildContext context) {
+    final double k = FushiAppleMetrics.of(context).scale;
+    final double w = 150 * k;
+    final double height = AppleMusicCoverTile.heightFor(context, w);
+    return SliverToBoxAdapter(
+      child: FushiStaggeredEntrance(
+        index: 0,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            AppleMusicSectionHeader(
+              title: widget.browser.displayName,
+              onOpen: widget.onViewAll,
+              openKey: ValueKey<String>(
+                'music-recommend-view-all-${widget.browser.serverId}',
+              ),
+            ),
+            FutureBuilder<MusicServerPage<MusicServerAlbum>>(
+              future: _page,
+              builder:
+                  (
+                    BuildContext context,
+                    AsyncSnapshot<MusicServerPage<MusicServerAlbum>> snap,
+                  ) {
+                    if (snap.hasError) {
+                      return SizedBox(
+                        height: height,
+                        child: musicBrowseErrorView(
+                          context,
+                          snap.error!,
+                          _retry,
+                        ),
+                      );
+                    }
+                    final List<MusicServerAlbum>? albums = snap.data?.items
+                        .take(_limit)
+                        .toList();
+                    if (albums == null) {
+                      return SizedBox(
+                        height: height,
+                        child: const FushiLoadingView(),
+                      );
+                    }
+                    final MusicServerBrowser browser = widget.browser;
+                    return AppleMusicShelf(
+                      itemCount: albums.length,
+                      itemExtent: w,
+                      height: height,
+                      arrowCenter: w / 2,
+                      itemBuilder: (BuildContext context, int i) {
+                        final MusicServerAlbum album = albums[i];
+                        return musicWithContextMenu(
+                          musicServerAlbumMenu(
+                            context,
+                            musicServerDatabaseOf(context),
+                            browser,
+                            album,
+                          ),
+                          AppleMusicCoverTile(
+                            key: ValueKey<String>(
+                              'music-recommend-album-${album.id}',
+                            ),
+                            title: album.title,
+                            subtitle: <String>[
+                              album.artist ?? t.music_artist_unknown,
+                              if (album.year != null) '${album.year}',
+                            ].join(' · '),
+                            subtitleTrailing: musicServerPreviewOnly(browser)
+                                ? const MusicPreviewBadge()
+                                : null,
+                            cover: browser.coverUri(album.coverRef)?.toString(),
+                            width: w,
+                            onTap: () => unawaited(
+                              Navigator.of(context).push<void>(
+                                adaptivePageRoute<void>(
+                                  context: context,
+                                  builder: (_) => MusicServerAlbumPage(
+                                    browser: browser,
+                                    album: album,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    );
+                  },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     if (widget.sliver) return _buildSliver(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double height =

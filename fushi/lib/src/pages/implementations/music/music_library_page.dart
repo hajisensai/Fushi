@@ -28,6 +28,8 @@ import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart'
     show MusicPlayItem;
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/media/music/music_format_badge.dart';
@@ -387,6 +389,11 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   /// 选中值由本页持有（[musicRecommendSourceTabs]）。
   String? _recommendSource;
 
+  /// 推荐页「刷新全部来源」的外部入口：Apple macOS 档工具栏的刷新键经它调推荐
+  /// 列表的刷新（与 iOS 下拉刷新、⌘R 同一个动作）。
+  final MusicRecommendRefreshHandle _recommendRefresh =
+      MusicRecommendRefreshHandle();
+
   /// 当前分区的内容是否滚到页头大字底下（大字随滚动收缩、底板模糊渐入）：重设计
   /// 外壳下的推荐页。只看外壳、不看库页布局——拼贴与封面网格共用同一套页头 / 页签
   /// （来源页签都在大字行里），布局只换卡片（2026-11-12 用户：「这两套布局顶部栏
@@ -560,6 +567,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     MusicViewStyleStore.instance.removeListener(_onViewStyleChanged);
     MusicDiscArtIndex.instance.albums.removeListener(_onDiscArtChanged);
     _companion.dispose();
+    _recommendRefresh.dispose();
     unawaited(_dbSub?.cancel());
     MediaLockSession.instance.unlocked.removeListener(_onLockSessionChanged);
     unawaited(_pluginSub?.cancel());
@@ -918,6 +926,25 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
       visible: true,
       actions: FushiShellHeaderActions(
         actions: <Widget>[
+          // Apple macOS 档（方案 A 拍板 Q7）：推荐页的刷新在工具栏（iOS 是下拉
+          // 刷新，M3E 在各来源段头）。刷新中 / 没有插件推荐列表（单个服务器来源）
+          // 时禁用。
+          if (!_importOpen &&
+              _section == MusicLibrarySection.recommend &&
+              isGlassDesign(context) &&
+              fushiAppleUsesMacMetrics(context))
+            ListenableBuilder(
+              listenable: _recommendRefresh,
+              builder: (BuildContext context, Widget? _) => FushiIconButton(
+                key: const ValueKey<String>('music-recommend-refresh'),
+                icon: FushiIcons.refresh,
+                tooltip: t.music_plugin_home_refresh,
+                onTap:
+                    _recommendRefresh.available && !_recommendRefresh.refreshing
+                    ? () => unawaited(_recommendRefresh.refresh())
+                    : null,
+              ),
+            ),
           FushiIconButton(
             key: const ValueKey<String>('music_open_search'),
             icon: FushiIcons.search,
@@ -1604,6 +1631,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         selectedSource: hosted ? _recommendSource : null,
         onSelectSource: hosted ? _selectRecommendSource : null,
         leading: recommendLeading,
+        refreshHandle: _recommendRefresh,
       );
     }
     if (_section == MusicLibrarySection.sources) {

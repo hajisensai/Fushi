@@ -166,6 +166,10 @@ class ShortcutDefaults {
       _key(LogicalKeyboardKey.minus, {ModifierKey.ctrl}),
       _key(LogicalKeyboardKey.numpadSubtract, {ModifierKey.ctrl}),
     ]),
+    // 音乐推荐页（Apple 外壳）重载全部来源：Ctrl + R（macOS ⌘R）。
+    ShortcutAction.musicRecommendRefresh: _kb([
+      _key(LogicalKeyboardKey.keyR, {ModifierKey.ctrl}),
+    ]),
     // 全 app 唯一的「返回上一级 / 退出当前界面」（universal scope）。
     //
     // 键盘 **Esc**（用户拍板：关词典 / 退书 / 退漫画 / 退视频 / 退设置页都是 Esc，

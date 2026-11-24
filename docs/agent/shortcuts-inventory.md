@@ -1,5 +1,10 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-24 增补（音乐推荐页刷新）：** home scope 新增 `musicRecommendRefresh`（`music_recommend_refresh`），
+> 默认 Ctrl + R（macOS ⌘R），移动端无键盘绑定。执行体是音乐「推荐」（在线）Apple 布局的键事件节点
+> （`music/apple/apple_music_recommend_layout.part.dart`，只在 Apple 外壳生效；焦点在推荐页内时命中即重载全部来源，
+> 与下拉刷新 / macOS 工具栏刷新键同一件事）。M3E 推荐页不接（刷新在各来源段头）。
+
 > **2026-11-24 增补（库页网格缩放）：** home scope 新增 `libraryGridZoomIn` / `libraryGridZoomOut`
 > （`library_grid_zoom_in` / `_out`），默认 Ctrl + = / 小键盘 +、Ctrl + − / 小键盘 −（macOS ⌘），移动端无键盘绑定。
 > 执行体是库页网格外的 `LibraryGridZoom`（`library_layout/library_grid_zoom.dart`，只在 Apple 外壳生效，与双指 /

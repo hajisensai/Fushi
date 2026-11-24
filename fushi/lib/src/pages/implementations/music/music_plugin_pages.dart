@@ -6,6 +6,8 @@ library;
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
+import 'package:flutter/services.dart' show HardwareKeyboard, KeyDownEvent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
@@ -104,7 +106,23 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show showFushiConfirmDialog;
 import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
+import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart'
+    show isMusicPluginRelayClient, isMusicPluginSourcesAvailable;
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_recommend_widgets.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show ShortcutBindingScope;
+import 'package:fushi/src/shortcuts/input_binding.dart' show InputBinding;
+import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutAction;
+import 'package:fushi/src/shortcuts/shortcut_defaults.dart'
+    show ShortcutDefaults;
+import 'package:fushi/src/shortcuts/shortcut_registry.dart'
+    show FushiShortcutRegistry;
+import 'package:fushi/src/utils/components/fushi_focusable.dart';
+import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart'
+    show FushiRefreshIndicator;
 
+part 'apple/apple_music_recommend_layout.part.dart';
 part 'music_plugin_actions.dart';
 part 'music_plugin_browse_pages.dart';
 part 'music_plugin_detail_pages.dart';
@@ -1609,9 +1627,13 @@ class MusicPluginRecommendView extends ConsumerStatefulWidget {
     this.trailing,
     this.showPersonal = true,
     this.leading,
+    this.refreshHandle,
   });
 
   final List<MusicPluginManifest> sources;
+
+  /// 外部的「刷新全部来源」入口（macOS 档工具栏刷新键）：本列表挂上时登记。
+  final MusicRecommendRefreshHandle? refreshHandle;
 
   /// 列表最前面跟着滚动的一块（音乐页把曲库「继续收听」交进来，见
   /// `MusicSourcesRecommendView.leading`）；null 不画。
@@ -1622,7 +1644,9 @@ class MusicPluginRecommendView extends ConsumerStatefulWidget {
   /// [CustomScrollView]，返回的必须是 sliver；false 时是原 [ListView] 的盒子。
   final List<Widget> Function(bool sliver)? trailing;
 
-  /// 是否显示「我喜欢 / 最近播放」两行（只看单个来源时不显示）。
+  /// 是否显示「我喜欢 / 最近播放」两行（只看单个来源时不显示）。Apple 版
+  /// （拍板 Q13）只用它决定跨来源的「最近播放」，单插件视图仍给该插件自己的
+  /// 「我喜欢 / 私人电台」。
   final bool showPersonal;
 
   @override
@@ -1676,9 +1700,51 @@ class _MusicPluginRecommendViewState
     ]);
   }
 
+  /// 经互联中继的插件 → 代跑它的设备名（Apple 版组头的「经 <设备>」）。只有本机
+  /// 不跑插件、经中继用别的设备的插件时才有。
+  Map<String, String> _relayVia = const <String, String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    widget.refreshHandle?._attach(this, _refreshAll);
+    if (isMusicPluginRelayClient) unawaited(_loadRelayVia());
+  }
+
+  Future<void> _loadRelayVia() async {
+    final List<InstalledMusicPlugin> plugins = await ref
+        .read(appProvider)
+        .musicPluginManager
+        .list();
+    if (!mounted) return;
+    setState(() {
+      _relayVia = <String, String>{
+        for (final InstalledMusicPlugin p in plugins)
+          if (p.relayedVia case final String via) p.id: via,
+      };
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.refreshHandle?._detach(this);
+    super.dispose();
+  }
+
+  /// 刷新全部来源（下拉刷新 / 工具栏刷新键 / ⌘R / 组头 ⋯）：同 [_reload]，
+  /// 返回这一轮加载的完成。
+  Future<void> _refreshAll() {
+    _reload(refresh: true);
+    return _data.then((_) {});
+  }
+
   @override
   void didUpdateWidget(MusicPluginRecommendView old) {
     super.didUpdateWidget(old);
+    if (!identical(old.refreshHandle, widget.refreshHandle)) {
+      old.refreshHandle?._detach(this);
+      widget.refreshHandle?._attach(this, _refreshAll);
+    }
     final Set<String> a = <String>{
       for (final MusicPluginManifest m in old.sources) m.id,
     };
@@ -1698,10 +1764,12 @@ class _MusicPluginRecommendViewState
       _refreshing = _shown != null;
       _generation++;
     });
+    widget.refreshHandle?._setRefreshing(this, true);
     unawaited(
       next.whenComplete(() {
         if (mounted && identical(_data, next)) {
           setState(() => _refreshing = false);
+          widget.refreshHandle?._setRefreshing(this, false);
         }
       }),
     );
@@ -2015,6 +2083,20 @@ class _MusicPluginRecommendViewState
       builder: (BuildContext context, AsyncSnapshot<List<_HomeResult>> snap) {
         if (snap.hasData) _shown = snap.data;
         final List<_HomeResult>? data = snap.data ?? _shown;
+        // Cupertino：Apple Music「主页」式独立布局（方案 A），数据与动作同一份。
+        if (isGlassDesign(context)) {
+          return _AppleMusicRecommendLayout(
+            data: data,
+            generation: _generation,
+            sources: widget.sources,
+            onRefresh: _refreshAll,
+            showRecent: widget.showPersonal,
+            showGroups: widget.sources.length > 1 || widget.trailing != null,
+            relayVia: _relayVia,
+            leading: widget.leading,
+            trailing: widget.trailing,
+          );
+        }
         if (data == null) return const FushiLoadingView();
         if (musicRecommendPosterMode(context)) {
           return _buildPoster(context, data);
@@ -2319,11 +2401,7 @@ class _MorphCard extends StatelessWidget {
   Widget build(BuildContext context) => FushiHoverLift(
     scale: kMusicHoverLiftScale,
     builder: (BuildContext context, bool hovering) {
-      // Apple：圆角恒为分组卡圆角（悬停收紧圆角是 M3E 的形变语言，Apple 下只留
-      // 悬停抬升）。
-      final BorderRadius r = isGlassDesign(context)
-          ? FushiAppleMetrics.of(context).groupBorderRadius
-          : (hovering ? hoverRadius : radius);
+      final BorderRadius r = hovering ? hoverRadius : radius;
       final Widget content = Material(
         type: MaterialType.transparency,
         child: InkWell(onTap: onTap, child: child),
@@ -2457,16 +2535,7 @@ class _RecommendHero extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Apple：大卡底色是 secondaryGroupedBackground 分组色、文字 label /
-    // secondaryLabel，不铺 M3E 的 primaryContainer tonal 大色块。
-    final bool apple = isGlassDesign(context);
-    final FushiAppleColors? appleColors = apple ? appleColorsOf(context) : null;
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final Color cardColor =
-        appleColors?.secondaryGroupedBackground ?? cs.primaryContainer;
-    final Color onCard = appleColors?.label ?? cs.onPrimaryContainer;
-    final Color onCardMuted =
-        appleColors?.secondaryLabel ?? cs.onPrimaryContainer;
     final MusicPluginHomeSection? sec = section;
     final MusicPluginPlaylist? first = playlistMode
         ? sec?.items.whereType<MusicPluginPlaylist>().firstOrNull
@@ -2483,7 +2552,7 @@ class _RecommendHero extends ConsumerWidget {
     final TextStyle titleStyle = context.fushiType.displaySmall.copyWith(
       fontWeight: FontWeight.w900,
       height: 1.05,
-      color: onCard,
+      color: cs.onPrimaryContainer,
     );
     // 封面墙（用户 2026-10-29：「纯色块有点无聊，用封面覆盖点」）：这一段的
     // 封面斜铺在卡片右侧，往左渐隐进 primaryContainer，标题区保持可读。
@@ -2500,7 +2569,7 @@ class _RecommendHero extends ConsumerWidget {
     }.toList();
     final Widget? background = wall.isEmpty
         ? null
-        : _CoverWall(covers: wall, tint: cardColor);
+        : _CoverWall(covers: wall, tint: cs.primaryContainer);
     final Widget buttons = playlistMode
         ? FushiFilledButton.icon(
             onPressed: first == null
@@ -2543,7 +2612,7 @@ class _RecommendHero extends ConsumerWidget {
       );
     }
     return _MorphCard(
-      color: cardColor,
+      color: cs.primaryContainer,
       radius: const BorderRadius.only(
         topLeft: Radius.circular(40),
         topRight: Radius.circular(40),
@@ -2577,8 +2646,8 @@ class _RecommendHero extends ConsumerWidget {
                   Text(
                     eyebrow,
                     style: context.fushiType.labelLarge.copyWith(
-                      color: onCardMuted.withValues(alpha: apple ? 1 : 0.8),
-                      letterSpacing: apple ? 0 : 0.8,
+                      color: cs.onPrimaryContainer.withValues(alpha: 0.8),
+                      letterSpacing: 0.8,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -2588,7 +2657,7 @@ class _RecommendHero extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                     style: titleStyle.copyWith(
                       shadows: <Shadow>[
-                        Shadow(color: cardColor, blurRadius: 16),
+                        Shadow(color: cs.primaryContainer, blurRadius: 16),
                       ],
                     ),
                   ),
@@ -2599,7 +2668,7 @@ class _RecommendHero extends ConsumerWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: context.fushiType.bodyMedium.copyWith(
-                        color: onCardMuted.withValues(alpha: apple ? 1 : 0.85),
+                        color: cs.onPrimaryContainer.withValues(alpha: 0.85),
                       ),
                     ),
                   ],
@@ -2840,27 +2909,6 @@ class _RankBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool top = rank == 1;
-    if (isGlassDesign(context)) {
-      // Apple：名次是圆形数字徽（第一名强调色实底，其余 tertiaryFill），不用
-      // M3E 的饼干多边形 / tertiary 容器色。
-      final FushiAppleColors apple = appleColorsOf(context);
-      return Container(
-        width: 22,
-        height: 22,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: top ? apple.accent : apple.tertiaryFill,
-          shape: BoxShape.circle,
-        ),
-        child: Text(
-          '$rank',
-          style: context.fushiType.labelSmall.copyWith(
-            fontWeight: FontWeight.w700,
-            color: top ? apple.onAccent : apple.label,
-          ),
-        ),
-      );
-    }
     return Container(
       width: 22,
       height: 22,
@@ -3207,6 +3255,77 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
     );
   }
 
+  /// Apple 版（Cupertino，sliver）：推荐页里是「最近播放 ›」+ 平封面货架（中性
+  /// 底，不铺取色——拍板 Q11 取色只给「为你精选」大卡）；二级页是平封面网格。
+  Widget _buildApple(BuildContext context, List<_RecentEntry> entries) {
+    final double k = FushiAppleMetrics.of(context).scale;
+    final double w = 150 * k;
+    if (widget.full) {
+      return SliverGrid(
+        gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: w + 20 * k,
+          mainAxisSpacing: 16 * k,
+          crossAxisSpacing: 12 * k,
+          childAspectRatio: w / AppleMusicCoverTile.heightFor(context, w),
+        ),
+        delegate: SliverChildBuilderDelegate(
+          fushiStaggeredItemBuilder(
+            (BuildContext context, int i) => LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints c) =>
+                  AppleMusicCoverTile(
+                    key: entries[i].key,
+                    title: entries[i].title,
+                    subtitle: entries[i].subtitle,
+                    cover: entries[i].cover,
+                    width: c.maxWidth,
+                    onTap: entries[i].onTap,
+                  ),
+            ),
+          ),
+          childCount: entries.length,
+        ),
+      );
+    }
+    return SliverToBoxAdapter(
+      child: FushiStaggeredEntrance(
+        index: 1,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            AppleMusicSectionHeader(
+              title: t.music_recent_plays_title,
+              openKey: const ValueKey<String>('music-recent-view-all'),
+              onOpen: () => unawaited(
+                _push(
+                  context,
+                  _RecentPlaysPage(
+                    generation: widget.generation,
+                    sources: widget.sources,
+                  ),
+                ),
+              ),
+            ),
+            AppleMusicShelf(
+              itemCount: entries.length,
+              itemExtent: w,
+              height: AppleMusicCoverTile.heightFor(context, w),
+              arrowCenter: w / 2,
+              itemBuilder: (BuildContext context, int i) => AppleMusicCoverTile(
+                key: entries[i].key,
+                title: entries[i].title,
+                subtitle: entries[i].subtitle,
+                cover: entries[i].cover,
+                width: w,
+                onTap: entries[i].onTap,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) =>
       ValueListenableBuilder<Map<String, String>>(
@@ -3222,11 +3341,12 @@ class _RecentPlaysState extends ConsumerState<_RecentPlays> {
           if (snap.hasData) _shown = snap.data;
           final _Recent? r = snap.data ?? _shown;
           if (r == null || (r.sources.isEmpty && r.tracks.isEmpty)) {
-            return widget.sliver
+            return widget.sliver || isGlassDesign(context)
                 ? const SliverToBoxAdapter(child: SizedBox.shrink())
                 : const SizedBox.shrink();
           }
           final List<_RecentEntry> entries = _entries(r, discArt);
+          if (isGlassDesign(context)) return _buildApple(context, entries);
           if (widget.sliver) return _buildSliver(context, entries);
           final List<Widget> tiles = <Widget>[
             for (final _RecentEntry e in entries)
@@ -3280,8 +3400,9 @@ class _RecentPlaysPage extends StatelessWidget {
   Widget build(BuildContext context) => musicBrowseScaffold(
     context,
     title: t.music_recent_plays_title,
-    body: (BuildContext context) => musicRecommendPosterMode(context)
-        // 色块版式：与推荐页同一套封面色块，按库页布局排全部。
+    body: (BuildContext context) =>
+        musicRecommendPosterMode(context) || isGlassDesign(context)
+        // 色块版式：与推荐页同一套封面色块，按库页布局排全部（Apple：平封面网格）。
         ? FushiEntranceScope(
             child: CustomScrollView(
               slivers: <Widget>[
@@ -3329,24 +3450,7 @@ class _LikedMusic extends ConsumerWidget {
     BuildContext context,
     AppModel app,
     MusicPluginLikeState s,
-  ) async {
-    if (!s.loggedIn) {
-      await openMusicPluginLogin(context, appModel: app, manifest: s.manifest);
-      return;
-    }
-    final MusicPluginPlaylist? playlist = s.playlist;
-    if (playlist == null) {
-      FushiToast.show(msg: t.music_liked_unavailable(name: s.manifest.name));
-      return;
-    }
-    await _push(
-      context,
-      MusicPluginCollectionPage.playlist(
-        manifest: s.manifest,
-        playlist: playlist,
-      ),
-    );
-  }
+  ) => _openPluginLiked(context, app, s);
 
   /// 色块版式：每个插件一块半高封面色块（拼贴首行旁叠的半高卡那一档），按音乐的
   /// 目标块宽定列——是页首的一条入口带，不抢下面「最近播放」拼贴首块的分量。

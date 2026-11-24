@@ -92,6 +92,10 @@ void main() {
       // 库页网格外的 LibraryGridZoom 读注册表里本动作的绑定、命中即调列数；与
       // librarySearch 同类，挂在首页键事件节点之下、先于 home 页派发。
       'lib/src/pages/implementations/library_layout/library_grid_zoom.dart',
+      // musicRecommendRefresh（音乐推荐页重载全部来源，2026-11-24 Apple 方案 A）
+      // 的执行体：推荐页 Apple 布局的键事件节点读注册表里本动作的绑定、命中即刷新；
+      // 与 libraryGridZoomIn 同类，挂在首页键事件节点之下、先于 home 页派发。
+      'lib/src/pages/implementations/music/apple/apple_music_recommend_layout.part.dart',
       // app 内浏览器（webBrowser scope）：页面键事件节点
       // `resolveKeyboard(event, scope: ShortcutScope.webBrowser)` 后按动作派发
       // （新建 / 关闭标签页、地址栏、页内查找、缩放…），未命中再兜底 universal。

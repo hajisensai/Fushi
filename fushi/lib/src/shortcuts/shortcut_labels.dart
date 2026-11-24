@@ -98,6 +98,8 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_library_grid_zoom_in;
       case ShortcutAction.libraryGridZoomOut:
         return t.shortcut_action_library_grid_zoom_out;
+      case ShortcutAction.musicRecommendRefresh:
+        return t.shortcut_action_music_recommend_refresh;
       case ShortcutAction.globalBack:
         return t.shortcut_action_global_back;
       case ShortcutAction.globalScrollPageDown:

@@ -117,20 +117,27 @@ Widget? _pluginRadioButton(
     child: FushiFilledButton.tonalIcon(
       key: ValueKey<String>('music-plugin-radio-${manifest.id}'),
       size: FushiButtonSize.s,
-      onPressed: () async {
-        try {
-          await playMusicPluginRadio(context, ref, manifest);
-        } on Object catch (e) {
-          FushiToast.show(
-            msg: _pluginActionError(manifest, e),
-            severity: ToastSeverity.error,
-          );
-        }
-      },
+      onPressed: () => _startPluginRadio(context, ref, manifest),
       icon: const FushiIcon(FushiIcons.cast),
       label: Text(t.music_plugin_radio_personal),
     ),
   );
+}
+
+/// 开插件的私人电台，失败 toast 插件错误（段头按钮与 Apple 版精选卡 / 组头 ⋯ 共用）。
+Future<void> _startPluginRadio(
+  BuildContext context,
+  WidgetRef ref,
+  MusicPluginManifest manifest,
+) async {
+  try {
+    await playMusicPluginRadio(context, ref, manifest);
+  } on Object catch (e) {
+    FushiToast.show(
+      msg: _pluginActionError(manifest, e),
+      severity: ToastSeverity.error,
+    );
+  }
 }
 
 // -------------------------------------------------------------------------
