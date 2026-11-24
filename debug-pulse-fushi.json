@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T09:49:00Z",
+ "generatedAt": "2026-11-24T09:50:13Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "07de68e36ad3f3c58bf39ec726a2b66a4ab11a0d",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "58b4601e536e05ee724872e8e37574956fa3af8c",
    "unknown": false,
-   "publishedAt": "2026-11-24T09:48:45Z",
-   "testflight": false,
+   "publishedAt": "2026-11-24T09:49:56Z",
+   "testflight": true,
    "baseSeq": 32203,
    "prs": [],
    "direct": [
@@ -52,16 +52,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
+     "state": "ok"
     }
    }
   },
@@ -131,74 +128,6 @@
    "platforms": {
     "android": {
      "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32189,
-   "version": "3.4.0",
-   "sha": "88038be0fae7e81865f877429bdf5158877504b7",
-   "unknown": false,
-   "publishedAt": "2026-11-24T03:57:38Z",
-   "testflight": true,
-   "baseSeq": 32155,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "88038be0fae7e81865f877429bdf5158877504b7",
-     "subject": "Merge #4346 (claude/sync-book-change-manifest) into develop"
-    },
-    {
-     "sha": "b73a6145b3e9ed4b0db310cb08691067c5d8f4cc",
-     "subject": "Merge #4343 (claude/fix-page-backdrop-sandbox-path) into develop"
-    },
-    {
-     "sha": "a490cfd833c953b237349314031ff0fb1ca01792",
-     "subject": "Merge #4347 (claude/fix-rolling-bump-push-paths) into develop"
-    },
-    {
-     "sha": "83d01d2a81df10a199fc8bde3384a6fee3c30873",
-     "subject": "Merge #4340 (claude/fix-sync-peer-offline-sweep) into develop"
-    },
-    {
-     "sha": "8d6c593231f7d94f2f4cd223fb5b684d77be41cc",
-     "subject": "Merge #4342 (claude/debug-rolling-recreate) into develop"
-    },
-    {
-     "sha": "7dd03eee404fe1b1384b2b86199a17d390f26337",
-     "subject": "Merge #4344 (claude/fix-anidb-tag-tree-backtick) into develop"
-    },
-    {
-     "sha": "d01929362d9286bce6b7d74a69c9fc1fbdeac5eb",
-     "subject": "Merge #4341 (claude/lyrics-inline-ruby) into develop"
-    },
-    {
-     "sha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
-     "subject": "Merge #4196 (samutw/feat/tracking-series-links) into develop"
-    },
-    {
-     "sha": "04c7ec241876aab812fef4fb535095f479a72c65",
-     "subject": "Merge #4338 (claude/fix-lyric-style-desc-clip) into develop"
-    },
-    {
-     "sha": "729f7f9061c3554f076413a5e9270ab52352a46d",
-     "subject": "Merge #4337 (claude/fix-visualizer-tap-exit) into develop"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45313353370"
     },
     "windows": {
      "state": "ok"
