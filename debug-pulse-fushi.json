@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T01:03:54Z",
+ "generatedAt": "2026-11-24T01:13:45Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "de89983a2e8ff573e550d9d814b6d9483d91a115",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "de89983a2e8ff573e550d9d814b6d9483d91a115",
    "unknown": false,
-   "publishedAt": "2026-11-24T01:03:42Z",
-   "testflight": false,
+   "publishedAt": "2026-11-24T01:13:32Z",
+   "testflight": true,
    "baseSeq": 32145,
    "prs": [],
    "direct": [
@@ -28,16 +28,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45295606609"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45295606609"
+     "state": "ok"
     },
     "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45295606609"
+     "state": "ok"
     }
    }
   },
@@ -99,58 +96,6 @@
    "platforms": {
     "android": {
      "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32137,
-   "version": "3.4.0",
-   "sha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
-   "unknown": false,
-   "publishedAt": "2026-11-23T21:32:27Z",
-   "testflight": true,
-   "baseSeq": 32125,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "bb449e3faccddc7e6835192b16c15b6dda1f9520",
-     "subject": "Merge #4322 (claude/fix-cover-guard-4312) into develop"
-    },
-    {
-     "sha": "6996c736bbdfc493cc728c80b8e0fb8ff758f520",
-     "subject": "Merge #4320 (claude/fix-develop-red-video-music) into develop"
-    },
-    {
-     "sha": "464e37d4c3977d1006f98bd24f3157e6144fcbf1",
-     "subject": "Merge #4319 (claude/fix-develop-red-popup) into develop"
-    },
-    {
-     "sha": "89fb2d8669b0c0a47672b513b83175568b218de7",
-     "subject": "Merge #4318 (claude/fix-develop-red-reader-srs) into develop"
-    },
-    {
-     "sha": "86ece60d21c37bf59847a9733f75169015557738",
-     "subject": "Merge #4317 (claude/fix-develop-red-manga-js) into develop"
-    },
-    {
-     "sha": "43fb12d5326a61cac60ab9522ad35f479d7a7c0c",
-     "subject": "Merge #4316 (claude/fix-develop-red-ops) into develop"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45260592808"
     },
     "windows": {
      "state": "ok"
