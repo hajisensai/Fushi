@@ -261,7 +261,8 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     );
     int done = 0;
     while (true) {
-      final int? focused = focus?.take();
+      // 改道请求带的是页身份，在本任务的页表里找下标（阅读器页号不是本任务页号）。
+      final int? focused = mangaOcrFocusIndex(pages, focus?.take());
       if (focused != null) scheduler.focus(focused);
       final int? pageIndex = scheduler.next();
       if (pageIndex == null) break;
