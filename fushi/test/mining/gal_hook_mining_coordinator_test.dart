@@ -1397,6 +1397,9 @@ void main() {
       int audioCalls = 0;
       final _ScriptedRepo repo = _ScriptedRepo(<MineOutcome>[
         MineOutcome.failure('AnkiConnect unreachable'),
+      ]);
+      // 用户看到失败后去改了设置（换了制卡目标）：重试写进点重试那一刻的仓库。
+      final _ScriptedRepo retryRepo = _ScriptedRepo(<MineOutcome>[
         const MineOutcome.success(noteId: 7),
       ]);
       final GalHookMiningCoordinator subject = coordinator(
@@ -1435,10 +1438,13 @@ void main() {
 
       // 重试时这一行已经不在会话里了（台词早翻过去）：重写的是冻结的材料，照样能写。
       service.appendLine('次の台詞');
-      final GalHookMiningResult retried = await failed.retryWrite!();
+      final GalHookMiningResult retried = await failed.retryWrite!(
+        repo: retryRepo,
+      );
       expect(retried.success, isTrue);
       expect(retried.outcome!.noteId, 7);
-      expect(repo.writes, 2);
+      expect(repo.writes, 1, reason: '重试不能写回失败那一刻的旧仓库');
+      expect(retryRepo.writes, 1);
       expect(gifCalls, 1, reason: '重试不能重抓窗口画面');
       expect(audioCalls, 1, reason: '重试不能重抓句子音频');
     });

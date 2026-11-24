@@ -107,7 +107,10 @@ class GalHookMiningResult {
   /// 反馈 y90oiVojic：写卡这一步失败（Anki 没开 / 没配置 / 引擎中止）时非空。用**这一次
   /// 已经做好的**画面与句音重新写卡，不重新抓窗口——后台落地时那句台词早已不在屏上，
   /// 重抓只会抓到别的画面。重复卡片、音频门禁、画面失败不给重试（重来结果不会变）。
-  final Future<GalHookMiningResult> Function()? retryWrite;
+  ///
+  /// [repo] 是**点重试这一刻**的制卡仓库：失败多半是「没配置 / 后端没开」，用户改完
+  /// 设置（可能换了制卡目标）再点重试，要写进现在的目标，而不是失败那一刻的旧仓库。
+  final GalHookRetryWrite? retryWrite;
 
   bool get aborted => outcome == null;
   bool get success => outcome?.result == MineResult.success;
@@ -147,6 +150,10 @@ class GalHookMiningResult {
     'queued': true,
   };
 }
+
+/// 写卡失败后的重写入口（见 [GalHookMiningResult.retryWrite]）。
+typedef GalHookRetryWrite =
+    Future<GalHookMiningResult> Function({required BaseAnkiRepository repo});
 
 /// [GalHookMiningCoordinator.startMineLine] 的回执：采样阶段已经结束。
 ///
@@ -872,8 +879,11 @@ class GalHookMiningCoordinator {
     // 反馈 y90oiVojic：写卡失败的「重试」只重跑下面这一步，用的是这一次已经做好的
     // 画面与句音（[coverBytes] / [audioBytes] 已在内存里）。重试仍进 [_finishQueue]，
     // 与正常收尾同一条串行车道。
-    late final Future<GalHookMiningResult> Function() retryWrite;
-    Future<GalHookMiningResult> writeCard({required bool retrying}) async {
+    late final GalHookRetryWrite retryWrite;
+    Future<GalHookMiningResult> writeCard({
+      required bool retrying,
+      required BaseAnkiRepository repo,
+    }) async {
       final Directory jobDirectory = await _createTempDirectory();
       try {
         // 行身份只在首次写卡时校验：重试写的是那一刻已经冻结的材料，与此刻会话里
@@ -914,7 +924,7 @@ class GalHookMiningCoordinator {
           ),
           compression: job.compression,
           tempDir: jobDirectory.path,
-          repo: job.repo,
+          repo: repo,
         );
         if (mined.aborted || mined.outcome is! MineOutcome) {
           return GalHookMiningResult(
@@ -946,7 +956,7 @@ class GalHookMiningCoordinator {
           degradedToAnimated: degradedToAnimated,
           staleScene: job.staleScene,
           unmappedTokens: await _unmappedTokens(
-            job.repo,
+            repo,
             hasSentenceAudio: hasSentenceAudio,
           ),
           retryWrite: _writeIsRetryable(outcome.result) ? retryWrite : null,
@@ -958,17 +968,15 @@ class GalHookMiningCoordinator {
       }
     }
 
-    retryWrite = () => _finishQueue.enqueue<GalHookMiningResult>(
-      () => writeCard(retrying: true),
-      buildFailure: (Object error, StackTrace stack) =>
-          GalHookMiningResult(failureReason: error.toString()),
-      onError: (Object error, StackTrace stack) => ErrorLogService.instance.log(
-        'GalHookMiningCoordinator.retryWrite',
-        error,
-        stack,
-      ),
-    );
-    return writeCard(retrying: false);
+    retryWrite = ({required BaseAnkiRepository repo}) =>
+        _finishQueue.enqueue<GalHookMiningResult>(
+          () => writeCard(retrying: true, repo: repo),
+          buildFailure: (Object error, StackTrace stack) =>
+              GalHookMiningResult(failureReason: error.toString()),
+          onError: (Object error, StackTrace stack) => ErrorLogService.instance
+              .log('GalHookMiningCoordinator.retryWrite', error, stack),
+        );
+    return writeCard(retrying: false, repo: job.repo);
   }
 
   /// 写卡结果值不值得原样重写一次：后端没开 / 没配置 / 出错会随用户处理而变；成功、

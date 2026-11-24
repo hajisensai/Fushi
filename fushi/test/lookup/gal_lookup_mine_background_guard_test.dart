@@ -56,6 +56,10 @@ void main() {
     );
     expect(body.contains('recordOverlayMinedStats('), isTrue);
     expect(body.contains('MinedStateSignal.instance.notifyWord('), isTrue);
-    expect(body.contains('retryWrite()'), isTrue);
+    expect(
+      body.contains('retryWrite(repo:model.miningAnkiRepository)'),
+      isTrue,
+      reason: '重试要写进点重试那一刻的制卡仓库（用户可能刚改了设置）',
+    );
   });
 }

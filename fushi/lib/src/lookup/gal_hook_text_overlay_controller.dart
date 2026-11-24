@@ -3020,8 +3020,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
       );
       result = GalHookMiningResult(failureReason: '$error');
     }
-    final Future<GalHookMiningResult> Function()? retryWrite =
-        result.retryWrite;
+    final GalHookRetryWrite? retryWrite = result.retryWrite;
     _reportLookupMine(
       result,
       repo: model.miningAnkiRepository,
@@ -3038,7 +3037,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
               );
               unawaited(
                 _landLookupMineInBackground(
-                  retryWrite(),
+                  retryWrite(repo: model.miningAnkiRepository),
                   model: model,
                   fields: fields,
                   sentence: sentence,
