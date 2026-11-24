@@ -59,6 +59,7 @@ import 'package:fushi/src/media/music/analysis/music_audio_analysis_service.dart
         MusicAudioAnalysisTarget;
 import 'package:fushi/src/media/music/music_remote_media.dart'
     show musicItemResolvesStream;
+import 'package:fushi/src/models/app_model.dart' show AppModel;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyric_visualizer_view.dart';
@@ -148,6 +149,10 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiAppleMenuDivider, FushiAppleMenuSectionHeader, FushiMenuAnchor;
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
+    show adaptiveSlider;
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -160,6 +165,7 @@ import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
 
 part 'music_lyrics_controller_lookup.part.dart';
+part 'music_lyrics_page_apple.part.dart';
 
 /// 一次 ± 按钮调整的偏移步长。
 const int kMusicLyricsOffsetStepMs = 100;
@@ -1781,6 +1787,13 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                             context,
                             item,
                           ),
+                          // Apple：分栏 / 舞台合成 Apple Music 全屏歌词布局（宽窗两列、
+                          // 窄窗 iPhone 式封面 / 歌词两态）；唱片布局两套共用。
+                          (final MusicLyricsLayout l, final bool w)
+                              when apple && l != MusicLyricsLayout.disc =>
+                            w
+                                ? _buildAppleWide(context, item)
+                                : _buildAppleNarrow(context, item),
                           (MusicLyricsLayout.split, true) => _buildSplit(
                             context,
                             item,
@@ -2216,8 +2229,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         <FushiToolbarItem>[
           // 窄屏下「分栏」「舞台」都落成同一个竖排版面，只留一个（选中时记为分栏），
           // 不然两个按钮看着重复（用户 2026-10-29）。
+          // Apple 下分栏 / 舞台本就是同一个 Apple Music 布局，也只留分栏 + 唱片。
           for (final MusicLyricsLayout l
-              in lyricsPlayerIsWide(MediaQuery.sizeOf(context))
+              in lyricsPlayerIsWide(MediaQuery.sizeOf(context)) && !apple
                   ? MusicLyricsLayout.values
                   : const <MusicLyricsLayout>[
                       MusicLyricsLayout.split,
@@ -2289,7 +2303,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   /// （选中时记为分栏）。
   bool _layoutSelected(BuildContext context, MusicLyricsLayout l) =>
       l == MusicLyricsLayout.split &&
-          !lyricsPlayerIsWide(MediaQuery.sizeOf(context))
+          (!lyricsPlayerIsWide(MediaQuery.sizeOf(context)) ||
+              isGlassDesign(context))
       ? _layout != MusicLyricsLayout.disc
       : _layout == l;
 
@@ -2368,6 +2383,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     MusicPlayItem? item,
     TextStyle style, {
     TextAlign align = TextAlign.start,
+    String separator = ' · ',
   }) {
     if (item == null) return const SizedBox.shrink();
     final String? artist = item.artist?.isEmpty ?? true ? null : item.artist;
@@ -2382,7 +2398,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               ? () => unawaited(openMusicArtistOf(context, appModel, item))
               : null,
         ),
-      if (artist != null && album != null) Text(' · ', style: style),
+      if (artist != null && album != null) Text(separator, style: style),
       if (album != null)
         _LinkText(
           key: const ValueKey<String>('music_lyrics_album_link'),
@@ -3133,9 +3149,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       isSeekPointer: (int buttons) =>
           isMusicLyricsSeekPointer(appModel.shortcutRegistry, buttons),
       cursor: _lookupCursor,
-      appearance: KaraokeLyricsAppearance(
-        blurInactive: appModel.musicLyricsBlurInactive,
-      ),
+      appearance: isGlassDesign(context)
+          ? musicAppleLyricsAppearance(
+              appleColorsOf(context),
+              blur: appModel.musicLyricsBlurInactive,
+            )
+          : KaraokeLyricsAppearance(
+              blurInactive: appModel.musicLyricsBlurInactive,
+            ),
     );
     // 字幕组特效 ASS：结构化会丢特效，提示去卡拉 OK 字幕页原样渲染（§6.3）。
     // 来源自带的注音轨对不上：整首不挂（宁缺不错位），但说一句，免得用户以为这首歌本来就
