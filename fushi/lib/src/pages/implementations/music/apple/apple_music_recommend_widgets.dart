@@ -8,7 +8,6 @@
 /// [appleColorsOf] 的系统色令牌；封面一律连续曲率圆角（[ClipRSuperellipse]）。
 library;
 
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
@@ -17,6 +16,10 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/pages/implementations/music/apple/apple_music_browse_widgets.dart'
     show appleMusicCategoryGradient;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/utils/components/apple/apple_capsule_button.dart';
+import 'package:fushi/src/utils/components/apple/apple_section_header.dart';
+import 'package:fushi/src/utils/components/apple/apple_shelf.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_focusable.dart';
 import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
@@ -24,8 +27,6 @@ import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show FushiIconButtonControl;
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart'
     show fushiAppleChip;
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
@@ -34,8 +35,6 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
     show FushiAdjustableSegmented;
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/misc/platform_utils.dart'
-    show HorizontalDragScrollable;
 
 /// 推荐页 Apple 版的页边距（左右）：货架贴着这条线起排、横滑时滑出到屏幕边。
 /// 在 [AppleMusicContained] 里为 0（外层列表已经留了页边）。
@@ -79,28 +78,27 @@ Widget appleMusicInset(BuildContext context, Widget child) => Padding(
   child: child,
 );
 
-/// 一段文字的 Apple 字样：去掉 MD3 字距，字号 / 字重 / 颜色由调用方给。
+/// 一段文字的 Apple 字样：共享 [appleTextStyle]。
 TextStyle appleMusicText(
   BuildContext context, {
   required double size,
   FontWeight weight = FontWeight.w400,
   Color? color,
   double height = 1.25,
-}) => (Theme.of(context).textTheme.bodyMedium ?? const TextStyle()).copyWith(
-  fontSize: size,
-  fontWeight: weight,
-  letterSpacing: 0,
+}) => appleTextStyle(
+  context,
+  size: size,
+  weight: weight,
+  color: color,
   height: height,
-  color: color ?? appleColorsOf(context).label,
 );
 
-/// 一行 [size] 号字（已乘 macOS 档缩放）在当前 textScaler 下占的高（行高倍数
-/// [height] 与 [appleMusicText] 默认值一致）。定高的行 / 货架按它推导，不写死像素。
+/// 一行 [size] 号字在当前 textScaler 下占的高：共享 [appleLineExtent]。
 double appleMusicLineExtent(
   BuildContext context,
   double size, {
   double height = 1.25,
-}) => (MediaQuery.textScalerOf(context).scale(size) * height).ceilToDouble();
+}) => appleLineExtent(context, size, height: height);
 
 /// 连续曲率圆角裁切（iOS / macOS 的 squircle 圆角）。
 Widget appleMusicSquircle({
@@ -135,9 +133,8 @@ Widget appleMusicCover({
   ),
 );
 
-/// 段标题（Apple Music「主页」的 title2 粗体段名）：可选副标题；[onOpen] 非 null
-/// 时标题后带一枚 tertiaryLabel 的 ›，整个标题是去「查看全部」的按钮。[trailing]
-/// 是段头右侧的动作（如「播放」胶囊）。
+/// 段标题（Apple Music「主页」的 title2 粗体段名）：共享 [AppleSectionHeader]，
+/// 页边取 [appleMusicPagePadding]（在 [AppleMusicContained] 里为 0）。
 class AppleMusicSectionHeader extends StatelessWidget {
   const AppleMusicSectionHeader({
     super.key,
@@ -157,149 +154,22 @@ class AppleMusicSectionHeader extends StatelessWidget {
   final Widget? trailing;
 
   @override
-  Widget build(BuildContext context) {
-    final FushiAppleMetrics m = FushiAppleMetrics.of(context);
-    final FushiAppleColors c = appleColorsOf(context);
-    final double k = m.scale;
-    final double pad = appleMusicPagePadding(context);
-    final TextStyle titleStyle = appleMusicText(
-      context,
-      size: (m.desktop ? 18 : 21) * k,
-      weight: FontWeight.w700,
-    );
-    Widget titleRow = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        Flexible(
-          child: Text(
-            title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: titleStyle,
-          ),
-        ),
-        if (onOpen != null)
-          FushiIcon(
-            FushiIcons.chevronRight,
-            size: (m.desktop ? 15 : 18) * k,
-            color: c.tertiaryLabel,
-          ),
-      ],
-    );
-    if (onOpen case final VoidCallback open) {
-      titleRow = FushiPressScale(
-        child: FushiFocusable(
-          key: openKey,
-          onTap: open,
-          borderRadius: BorderRadius.circular(8),
-          child: titleRow,
-        ),
-      );
-    }
-    return Padding(
-      padding: EdgeInsets.fromLTRB(pad, 24 * k, pad, 8 * k),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: <Widget>[
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                titleRow,
-                if (subtitle case final String s when s.isNotEmpty)
-                  Padding(
-                    padding: EdgeInsets.only(top: 2 * k),
-                    child: Text(
-                      s,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: appleMusicText(
-                        context,
-                        size: (m.desktop ? 12 : 13.5) * k,
-                        color: c.secondaryLabel,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (trailing case final Widget t) ...<Widget>[
-            SizedBox(width: 8 * k),
-            t,
-          ],
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => AppleSectionHeader(
+    title: title,
+    subtitle: subtitle,
+    onOpen: onOpen,
+    openKey: openKey,
+    trailing: trailing,
+    horizontalPadding: appleMusicPagePadding(context),
+  );
 }
 
-/// 胶囊按钮：默认 fill 底、强调色字（段头「播放」）；压在取色大卡上时由调用方
-/// 给 [background] / [foreground]（大卡的主操作反白、次要操作半透明）。
-class AppleMusicCapsuleButton extends StatelessWidget {
-  const AppleMusicCapsuleButton({
-    super.key,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.background,
-    this.foreground,
-  });
+/// 胶囊按钮：共享 [AppleCapsuleButton]（音乐的段头「播放」、取色大卡的主 / 次操作）。
+typedef AppleMusicCapsuleButton = AppleCapsuleButton;
 
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final Color? background;
-  final Color? foreground;
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiAppleColors c = appleColorsOf(context);
-    final double k = FushiAppleMetrics.of(context).scale;
-    final Color bg = background ?? c.fill;
-    final Color fg = foreground ?? c.accent;
-    final BorderRadius radius = BorderRadius.circular(15 * k);
-    return FushiPressScale(
-      child: FushiFocusable(
-        onTap: onTap,
-        borderRadius: radius,
-        ringPosition: DecorationPosition.foreground,
-        child: Semantics(
-          button: true,
-          label: label,
-          excludeSemantics: true,
-          child: Container(
-            height: 30 * k,
-            padding: EdgeInsets.symmetric(horizontal: 12 * k),
-            decoration: BoxDecoration(color: bg, borderRadius: radius),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                FushiIcon(icon, size: 13 * k, color: fg, fill: 1),
-                SizedBox(width: 5 * k),
-                Text(
-                  label,
-                  style: appleMusicText(
-                    context,
-                    size: 13.5 * k,
-                    weight: FontWeight.w600,
-                    color: fg,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 横滑货架：懒构建（[ListView.builder] + 定宽 [itemExtent]），左右贴页边起排、
-/// 滑出到屏幕边。iOS 档弹性滚动 + 按条吸附（[stride] = 单条宽 + 间距，歌曲分页列
-/// 按整列）；macOS 档触控板横扫走原生惯性，鼠标悬停时两端淡入玻璃圆形箭头，点一下
-/// 滚一屏、到头淡出。整排随段进场，内部不逐张错峰（Apple Music 不做）。
-class AppleMusicCarousel extends StatefulWidget {
+/// 推荐页的横滑货架：共享 [AppleShelf]，页边取 [appleMusicPagePadding]（在
+/// [AppleMusicContained] 里为 0），箭头 key 前缀 `apple-music-shelf`。
+class AppleMusicCarousel extends StatelessWidget {
   const AppleMusicCarousel({
     super.key,
     required this.itemCount,
@@ -311,184 +181,23 @@ class AppleMusicCarousel extends StatefulWidget {
   });
 
   final int itemCount;
-
-  /// 单条的宽（不含间距）。
   final double itemExtent;
-
-  /// 货架高（条目的高）。
   final double height;
   final IndexedWidgetBuilder itemBuilder;
   final double spacing;
-
-  /// macOS 箭头的竖直中心（默认货架正中；封面卡给封面中心）。
   final double? arrowCenter;
 
   @override
-  State<AppleMusicCarousel> createState() => _AppleMusicCarouselState();
-}
-
-class _AppleMusicCarouselState extends State<AppleMusicCarousel> {
-  final ScrollController _controller = ScrollController();
-  bool _hovering = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _page(int direction) {
-    if (!_controller.hasClients) return;
-    final ScrollPosition p = _controller.position;
-    final double stride = widget.itemExtent + widget.spacing;
-    final double screen = math.max(
-      stride,
-      (p.viewportDimension / stride).floor() * stride,
-    );
-    final double target =
-        (((p.pixels + direction * screen) / stride).roundToDouble() * stride)
-            .clamp(p.minScrollExtent, p.maxScrollExtent);
-    final Duration d = fushiMotionDuration(context, FushiMotion.medium);
-    if (d == Duration.zero) {
-      _controller.jumpTo(target);
-    } else {
-      unawaited(
-        _controller.animateTo(target, duration: d, curve: FushiMotion.standard),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiAppleMetrics m = FushiAppleMetrics.of(context);
-    final double pad = appleMusicPagePadding(context);
-    final double stride = widget.itemExtent + widget.spacing;
-    final Widget list = HorizontalDragScrollable(
-      child: ListView.builder(
-        controller: _controller,
-        scrollDirection: Axis.horizontal,
-        clipBehavior: Clip.none,
-        padding: EdgeInsets.symmetric(horizontal: pad),
-        physics: m.desktop
-            ? null
-            : _AppleShelfSnapPhysics(
-                stride: stride,
-                parent: const BouncingScrollPhysics(),
-              ),
-        itemExtent: stride,
-        itemCount: widget.itemCount,
-        itemBuilder: (BuildContext context, int i) => Padding(
-          padding: EdgeInsetsDirectional.only(end: widget.spacing),
-          child: widget.itemBuilder(context, i),
-        ),
-      ),
-    );
-    Widget shelf = SizedBox(height: widget.height, child: list);
-    if (!m.desktop) return shelf;
-    final double center = widget.arrowCenter ?? widget.height / 2;
-    final double size = 32 * m.scale;
-    Widget arrow(int direction) => ListenableBuilder(
-      listenable: _controller,
-      builder: (BuildContext context, Widget? _) {
-        final bool can =
-            _controller.hasClients &&
-            _controller.position.hasContentDimensions &&
-            (direction < 0
-                ? _controller.position.pixels >
-                      _controller.position.minScrollExtent + 1
-                : _controller.position.pixels <
-                      _controller.position.maxScrollExtent - 1);
-        final bool shown = _hovering && can;
-        return IgnorePointer(
-          ignoring: !shown,
-          child: AnimatedOpacity(
-            opacity: shown ? 1 : 0,
-            duration: fushiMotionDuration(context, FushiMotion.short),
-            curve: FushiMotion.standard,
-            child: SizedBox.square(
-              dimension: size,
-              child: FushiIconButtonControl.filledTonal(
-                key: ValueKey<String>(
-                  'apple-music-shelf-${direction < 0 ? 'prev' : 'next'}',
-                ),
-                padding: EdgeInsets.zero,
-                iconSize: 16 * m.scale,
-                onPressed: () => _page(direction),
-                icon: FushiIcon(
-                  direction < 0
-                      ? FushiIcons.chevronLeft
-                      : FushiIcons.chevronRight,
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-    shelf = MouseRegion(
-      onEnter: (_) => setState(() => _hovering = true),
-      onExit: (_) => setState(() => _hovering = false),
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          shelf,
-          // 箭头只给鼠标用：键盘 / 手柄在条目间移焦时列表自己滚到焦点处。
-          PositionedDirectional(
-            start: pad / 2,
-            top: center - size / 2,
-            child: ExcludeFocus(child: ExcludeSemantics(child: arrow(-1))),
-          ),
-          PositionedDirectional(
-            end: pad / 2,
-            top: center - size / 2,
-            child: ExcludeFocus(child: ExcludeSemantics(child: arrow(1))),
-          ),
-        ],
-      ),
-    );
-    return shelf;
-  }
-}
-
-/// iOS 档货架的按条吸附：松手后按速度外推一段，再落到最近的整条边界
-/// （[stride]）。到两端交给父物理（弹性回弹）。
-class _AppleShelfSnapPhysics extends ScrollPhysics {
-  const _AppleShelfSnapPhysics({required this.stride, super.parent});
-
-  final double stride;
-
-  @override
-  _AppleShelfSnapPhysics applyTo(ScrollPhysics? ancestor) =>
-      _AppleShelfSnapPhysics(stride: stride, parent: buildParent(ancestor));
-
-  @override
-  Simulation? createBallisticSimulation(
-    ScrollMetrics position,
-    double velocity,
-  ) {
-    if ((velocity <= 0 && position.pixels <= position.minScrollExtent) ||
-        (velocity >= 0 && position.pixels >= position.maxScrollExtent)) {
-      return super.createBallisticSimulation(position, velocity);
-    }
-    final Tolerance tolerance = toleranceFor(position);
-    // 惯性外推约 0.3 秒的位移（与系统减速的手感相近），再取最近的整条。
-    final double projected = position.pixels + velocity * 0.3;
-    final double target = ((projected / stride).roundToDouble() * stride).clamp(
-      position.minScrollExtent,
-      position.maxScrollExtent,
-    );
-    if ((target - position.pixels).abs() < tolerance.distance) return null;
-    return ScrollSpringSimulation(
-      spring,
-      position.pixels,
-      target,
-      velocity,
-      tolerance: tolerance,
-    );
-  }
-
-  @override
-  bool get allowImplicitScrolling => false;
+  Widget build(BuildContext context) => AppleShelf(
+    itemCount: itemCount,
+    itemExtent: itemExtent,
+    height: height,
+    itemBuilder: itemBuilder,
+    spacing: spacing,
+    arrowCenter: arrowCenter,
+    horizontalPadding: appleMusicPagePadding(context),
+    arrowKeyPrefix: 'apple-music-shelf',
+  );
 }
 
 /// 货架里的一张平封面卡：封面 + 标题 + 副行（Apple Music「最近播放 / 推荐歌单」）。

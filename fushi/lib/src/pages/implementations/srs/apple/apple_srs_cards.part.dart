@@ -3,7 +3,7 @@ part of '../srs_deck_list_page.dart';
 // Apple（Cupertino）复习首页的摘要卡（方案 A：今日 / 选中牌组 / 连续天数三张卡 +
 // 全库预测 / RWKV 此刻）。卡面一律 inset grouped 的 secondaryGroupedBackground 实色面，
 // 背景中性（牌组色只在小图标上，拍板点 8）；数字 SF Rounded（[appleSrsRounded]）；
-// 图表是 Swift Charts 式（[AppleSrsBarChart] / [AppleSrsRing] / [AppleSrsHeatmap]）。
+// 图表是 Swift Charts 式（[AppleBarChart] / [AppleSrsRing] / [AppleSrsHeatmap]）。
 // key 与 M3E 同名（srs-home-today / srs-home-detail-<id> / srs-home-heatmap …），测试与
 // 焦点驱动两套共用。
 
@@ -310,7 +310,7 @@ class _AppleSrsTodayCard extends StatelessWidget {
           '${t.srs_stats_period_week} · ${t.srs_stats_reviews_count(n: sum)}',
           style: m.footnoteStyle(context),
         ),
-        AppleSrsBarChart(
+        AppleBarChart(
           height: 84 * m.scale,
           color: AppleSrsSystemColors.of(context).blue,
           highlightLast: true,
@@ -318,9 +318,9 @@ class _AppleSrsTodayCard extends StatelessWidget {
           averageLabel: '${t.srs_stats_avg_per_day} ${average.round()}',
           semanticLabel:
               '${t.srs_stats_period_week} ${t.srs_stats_reviews_count(n: sum)}',
-          bars: <AppleSrsBar>[
+          bars: <AppleChartBar>[
             for (int i = 0; i < days.length; i++)
-              AppleSrsBar(
+              AppleChartBar(
                 value: days[i],
                 label: i == last
                     ? t.stat_today
@@ -556,13 +556,13 @@ class _AppleSrsForecastChart extends StatelessWidget {
               ),
           ],
         ),
-        AppleSrsBarChart(
+        AppleBarChart(
           height: 84 * m.scale,
           color: AppleSrsSystemColors.of(context).green,
           semanticLabel: t.srs_home_forecast_title,
-          bars: <AppleSrsBar>[
+          bars: <AppleChartBar>[
             for (int i = 0; i < forecast.length; i++)
-              AppleSrsBar(
+              AppleChartBar(
                 value: forecast[i],
                 label: _srsForecastLabel(today, i),
                 title:
@@ -697,7 +697,7 @@ class _AppleSrsRwkvViewState extends State<_AppleSrsRwkvView> {
           ),
         if (bars.isNotEmpty) ...<Widget>[
           Text(t.srs_home_rwkv_recall_chart, style: m.footnoteStyle(context)),
-          AppleSrsBarChart(
+          AppleBarChart(
             key: const ValueKey<String>('srs-home-rwkv-recall-chart'),
             height: 96 * s,
             color: system.green,
@@ -710,9 +710,9 @@ class _AppleSrsRwkvViewState extends State<_AppleSrsRwkvView> {
             ruleLabel: goal == null
                 ? null
                 : t.srs_home_rwkv_target(p: _srsPercent(goal)),
-            bars: <AppleSrsBar>[
+            bars: <AppleChartBar>[
               for (int i = 0; i < bars.length; i++)
-                AppleSrsBar(
+                AppleChartBar(
                   value: bars[i].values.fold<int>(0, (int a, int b) => a + b),
                   color:
                       zones[math.max(

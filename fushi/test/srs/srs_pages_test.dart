@@ -20,6 +20,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/apple/apple_srs_charts.dart';
+import 'package:fushi/src/utils/components/apple/apple_bar_chart.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
@@ -4184,7 +4185,7 @@ void _appleHomeTests() {
       expect(
         find.descendant(
           of: find.byKey(const ValueKey<String>('srs-home-today-recent')),
-          matching: find.byType(AppleSrsBarChart),
+          matching: find.byType(AppleBarChart),
         ),
         findsOneWidget,
       );

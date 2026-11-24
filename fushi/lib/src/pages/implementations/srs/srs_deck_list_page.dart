@@ -41,6 +41,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/home_tab.dart'
     show HomeTab, homeShellTabNotifier;
 import 'package:fushi/src/pages/implementations/srs/apple/apple_srs_charts.dart';
+import 'package:fushi/src/utils/components/apple/apple_bar_chart.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_history_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
