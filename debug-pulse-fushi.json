@@ -1,12 +1,48 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T02:21:47Z",
+ "generatedAt": "2026-11-24T03:01:30Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
-  "seq": 32168
+  "sha": "88038be0fae7e81865f877429bdf5158877504b7",
+  "seq": 32189
  },
  "builds": [
+  {
+   "seq": 32155,
+   "version": "3.4.0",
+   "sha": "c273a64817e19f62ed2a678f98306fe65c0b2f70",
+   "unknown": false,
+   "publishedAt": "2026-11-24T03:01:12Z",
+   "testflight": true,
+   "baseSeq": 32147,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "c273a64817e19f62ed2a678f98306fe65c0b2f70",
+     "subject": "Merge #4339 (claude/ai-assistant-investigation-657808) into develop"
+    },
+    {
+     "sha": "d73eeaeef70c25278bb561f9407216be8488ef8f",
+     "subject": "Merge #4307 (claude/update-announcement-283910) into develop"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "superseded",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45309258863"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 32147,
    "version": "3.4.0",
@@ -74,8 +110,8 @@
    "version": "3.4.0",
    "sha": "ecd64aae2992f34686339675e991489d81ba74cc",
    "unknown": false,
-   "publishedAt": "2026-11-23T22:44:11Z",
-   "testflight": true,
+   "publishedAt": "2026-11-23T22:19:22Z",
+   "testflight": false,
    "baseSeq": 32137,
    "prs": [],
    "direct": [
@@ -98,22 +134,53 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
     },
     "macos": {
-     "state": "ok"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
     },
     "ios": {
-     "state": "ok"
+     "state": "failed",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45262154043"
     }
    }
   }
  ],
  "pending": {
-  "headSha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
-  "headSeq": 32168,
+  "headSha": "88038be0fae7e81865f877429bdf5158877504b7",
+  "headSeq": 32189,
   "prs": [],
   "direct": [
+   {
+    "sha": "88038be0fae7e81865f877429bdf5158877504b7",
+    "subject": "Merge #4346 (claude/sync-book-change-manifest) into develop"
+   },
+   {
+    "sha": "b73a6145b3e9ed4b0db310cb08691067c5d8f4cc",
+    "subject": "Merge #4343 (claude/fix-page-backdrop-sandbox-path) into develop"
+   },
+   {
+    "sha": "a490cfd833c953b237349314031ff0fb1ca01792",
+    "subject": "Merge #4347 (claude/fix-rolling-bump-push-paths) into develop"
+   },
+   {
+    "sha": "83d01d2a81df10a199fc8bde3384a6fee3c30873",
+    "subject": "Merge #4340 (claude/fix-sync-peer-offline-sweep) into develop"
+   },
+   {
+    "sha": "8d6c593231f7d94f2f4cd223fb5b684d77be41cc",
+    "subject": "Merge #4342 (claude/debug-rolling-recreate) into develop"
+   },
+   {
+    "sha": "7dd03eee404fe1b1384b2b86199a17d390f26337",
+    "subject": "Merge #4344 (claude/fix-anidb-tag-tree-backtick) into develop"
+   },
+   {
+    "sha": "d01929362d9286bce6b7d74a69c9fc1fbdeac5eb",
+    "subject": "Merge #4341 (claude/lyrics-inline-ruby) into develop"
+   },
    {
     "sha": "ec4b8dd51f488e96e1c32e18345e32f5f5bf9633",
     "subject": "Merge #4196 (samutw/feat/tracking-series-links) into develop"
@@ -125,33 +192,25 @@
    {
     "sha": "729f7f9061c3554f076413a5e9270ab52352a46d",
     "subject": "Merge #4337 (claude/fix-visualizer-tap-exit) into develop"
-   },
-   {
-    "sha": "c273a64817e19f62ed2a678f98306fe65c0b2f70",
-    "subject": "Merge #4339 (claude/ai-assistant-investigation-657808) into develop"
-   },
-   {
-    "sha": "d73eeaeef70c25278bb561f9407216be8488ef8f",
-    "subject": "Merge #4307 (claude/update-announcement-283910) into develop"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920704"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45313353370"
    },
    "windows": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45313353420"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45313353420"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45310920634"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45313353420"
    }
   }
  },
