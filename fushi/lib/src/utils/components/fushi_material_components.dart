@@ -4584,22 +4584,27 @@ double _estimateHeaderActionsWidth(
   return total;
 }
 
-/// 页头动作行里一颗动作能否收进「⋯」：有点击回调的 [FushiIconButton]，且没标
-/// [FushiIconButton.alwaysVisible]、不在选中态（激活中的切换按钮收进菜单就看不出
-/// 它开着）。其它组件（文字按钮、自带菜单的按钮、装饰图标）恒外露——它们派生
-/// 不出菜单项。
+/// 页头动作行里一颗动作能否收进「⋯」：是动作的 [FushiIconButton]
+/// （[_isHeaderActionButton]），且没标 [FushiIconButton.alwaysVisible]、不在选中态
+/// （激活中的切换按钮收进菜单就看不出它开着）。其它组件（文字按钮、自带菜单的
+/// 按钮、装饰图标）恒外露——它们派生不出菜单项。
 bool fushiIsCollapsibleHeaderAction(Widget item) =>
-    item is FushiIconButton &&
-    item.onTap != null &&
-    !item.alwaysVisible &&
+    _isHeaderActionButton(item) &&
+    !(item as FushiIconButton).alwaysVisible &&
     item.selected != true;
 
-/// 标了 [FushiIconButton.alwaysVisible]、但派生得出菜单项的动作（有点击回调、
+/// 是不是一颗「动作」按钮：有点击回调，或显式禁用（`enabled: false`，回调常随
+/// 禁用一起置空）。禁用的动作照样参与收纳、在「⋯」里置灰——收不收只看宽度与
+/// 优先级，不看此刻能不能点；否则一颗按钮会随启用 / 禁用在动作行与「⋯」之间来回
+/// 跳（复习浏览页「撤销」写入完成一启用就被收走）。既没回调也没禁用的是装饰图标。
+bool _isHeaderActionButton(Widget item) =>
+    item is FushiIconButton && (item.onTap != null || !item.enabled);
+
+/// 标了 [FushiIconButton.alwaysVisible]、但派生得出菜单项的动作（是动作按钮、
 /// 不在选中态）：平时恒外露，只有 `collapsePinned` 的窄位才在最后收。
 bool _isPinnedHeaderAction(Widget item) =>
-    item is FushiIconButton &&
-    item.onTap != null &&
-    item.alwaysVisible &&
+    _isHeaderActionButton(item) &&
+    (item as FushiIconButton).alwaysVisible &&
     item.selected != true;
 
 /// [actions] 里可收纳动作的收纳顺序（最先收的在前）：

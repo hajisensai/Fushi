@@ -18,6 +18,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show kFushiHeaderOverflowMenuKey;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
     show FushiCheckbox, FushiFilledButton;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -294,27 +296,43 @@ void main() {
       await _settle(tester, rounds: 3);
       expect(find.text(t.srs_browse_selected_count(n: 2)), findsWidgets);
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs_browse_batch')).first,
-      );
+      // 窄窗下「撤销」可能收在页头「⋯」里（Apple iOS 档顶栏最多平铺 3 颗）。它
+      // 在哪由宽度与优先级定，不随启用 / 禁用变：写入前（禁用）与写入后（启用）
+      // 必须在同一处，不能一启用就跳进「⋯」。
+      const ValueKey<String> undoKey = ValueKey<String>('srs_browse_undo');
+      const ValueKey<String> batchKey = ValueKey<String>('srs_browse_batch');
+      final bool undoInlineBefore = find.byKey(undoKey).evaluate().isNotEmpty;
+
+      await tester.tap(find.byKey(batchKey).first);
       await _settle(tester, rounds: 4);
       await srsUntilWritten(
         tester,
         () => tester.tap(find.text(t.srs_browse_toggle_suspend).last),
+        // 写入流程走完（不再置忙）：撤销平铺时等它可按；收在「⋯」里时看不到它，
+        // 等同一忙态门控的「批量操作」（选中态恒外露）重新可按。
         until: () => srsToolbarItemEnabled(
           tester,
-          const ValueKey<String>('srs_browse_undo'),
+          find.byKey(undoKey).evaluate().isNotEmpty ? undoKey : batchKey,
         ),
+      );
+      expect(
+        find.byKey(undoKey).evaluate().isNotEmpty,
+        undoInlineBefore,
+        reason: '撤销的摆放不随启用态变',
       );
       final List<SrsCardCacheRow> after = await _cards(tester, store);
       expect(after.where((SrsCardCacheRow c) => c.suspended), hasLength(2));
 
-      await srsUntilWritten(
-        tester,
-        () => tester.tap(
-          find.byKey(const ValueKey<String>('srs_browse_undo')).first,
-        ),
-      );
+      await srsUntilWritten(tester, () async {
+        if (undoInlineBefore) {
+          await tester.tap(find.byKey(undoKey).first);
+          return;
+        }
+        await tester.tap(find.byKey(kFushiHeaderOverflowMenuKey).first);
+        await _settle(tester, rounds: 4);
+        // 收进「⋯」的动作按 label ?? tooltip 出菜单项（Apple 菜单不保留 key）。
+        await tester.tap(find.text('${t.undo} (Ctrl+Z)').last);
+      });
       final List<SrsCardCacheRow> undone = await _cards(tester, store);
       expect(undone.where((SrsCardCacheRow c) => c.suspended), isEmpty);
       await _unmount(tester);

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -77,8 +78,10 @@ void main() {
   late Directory storeDir;
   late VideoSourceScrapeTaskController scrapeController;
   late ChangeNotifier refreshSignal;
+  bool dbClosed = false;
 
   setUp(() async {
+    dbClosed = false;
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
@@ -104,7 +107,7 @@ void main() {
   tearDown(() async {
     scrapeController.dispose();
     refreshSignal.dispose();
-    await db.close();
+    if (!dbClosed) await db.close();
     try {
       storeDir.deleteSync(recursive: true);
     } catch (_) {}
@@ -135,6 +138,27 @@ void main() {
       ),
     ),
   );
+
+  // 视频库页挂载即起后台封面回填（`database.runBackgroundWork`），关库要等它
+  // 退出（BUG-5387）。回填里的真实文件 I/O 回调落在测试的假时间 zone：用例体
+  // 结束后没人再 pump，回填就停在半路，tearDown 的 `db.close()` 永远等不到——
+  // 所以在用例体内卸掉页面、边推进真实时间边 pump，直到关库完成。
+  Future<void> unmountAndCloseDb(WidgetTester tester) async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    bool closed = false;
+    unawaited(db.close().then((_) => closed = true));
+    final Stopwatch waited = Stopwatch()..start();
+    while (!closed) {
+      if (waited.elapsed > const Duration(minutes: 1)) {
+        fail('一分钟内没等到关库（后台工作没退出）');
+      }
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      );
+      await tester.pump();
+    }
+    dbClosed = true;
+  }
 
   Finder inPill(Finder matching) => find.descendant(
     of: find.byType(FushiFloatingActionsPill),
@@ -210,6 +234,7 @@ void main() {
       inPill(find.byKey(const ValueKey<String>('library_select_toggle'))),
       findsOneWidget,
     );
+    await unmountAndCloseDb(tester);
     debugDefaultTargetPlatformOverride = null; // 须在用例体内复位：不变量先于 tearDown 校验
   });
 
@@ -244,6 +269,7 @@ void main() {
       findsNothing,
       reason: '触屏下拉即刷新入口，「⋯」项里也不重复',
     );
+    await unmountAndCloseDb(tester);
     debugDefaultTargetPlatformOverride = null;
   });
 }
