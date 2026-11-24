@@ -176,10 +176,10 @@ void main() {
       ),
       contains('t.card_export_failed_detail('),
     );
-    // 内置档页：本页弹窗与顶层查词窗口都经 _mineLocalCue，遥控经同一 helper。
+    // 制卡重放宿主页：本页弹窗制卡经 _mineLocalCue（窗口档的顶层查词窗口已随窗口档移出本页）。
     expect(
       RegExp(r'await_mineLocalCue\(').allMatches(page).length,
-      greaterThanOrEqualTo(2),
+      greaterThanOrEqualTo(1),
     );
   });
 

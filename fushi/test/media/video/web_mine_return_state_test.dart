@@ -211,22 +211,14 @@ void main() {
       expect(fin, contains('_beginRestore(_replayOrigin)'));
     });
 
-    test('both handoff paths come back to the original hosting', () {
-      final String manualWindowed = body(
-        page,
-        'void _openBuiltinForMining()',
-        ');',
-      );
-      expect(manualWindowed, contains('returnHostingAfterMining'));
+    test('mining handoff comes back to the original hosting', () {
+      // 原生播放器页两档（制卡优先 / 画质优先）都交接到重放宿主，跑完换回交接前那一档。
       final String nativeHandoff = body(
         webSource,
         'Future<void> _runWebMineQueue(',
         'void _applyWebPendingRestore(',
       );
-      expect(
-        nativeHandoff,
-        contains('returnHostingAfterMining: WebVideoHosting.windowed'),
-      );
+      expect(nativeHandoff, contains('returnHostingAfterMining: _webHosting'));
       expect(nativeHandoff, contains('mineReturnState:'));
       final String finish = body(
         page,
@@ -243,6 +235,14 @@ void main() {
         finish,
         contains('mineReturnState: auto ? origin?.paused() : origin'),
       );
+      expect(finish, contains('_returnToPlayer('));
+      final String back = body(
+        page,
+        'Future<void> _returnToPlayer(',
+        '// ── 超分档',
+      );
+      expect(back, contains('VideoFushiPage.neutralized('));
+      expect(back, contains('webHosting: hosting'));
     });
 
     // 拍板 design-nmv-webmine-rebuild-paused：空闲自动制卡途中 WebView 进程死掉，重建出的
@@ -308,7 +308,7 @@ void main() {
         'void _onSurfaceCreated(InAppWebViewController _) {',
         'unawaited(_applyShaderTier());',
       );
-      expect(created, contains('if (_isMiningHost && !_windowed'));
+      expect(created, contains('if (_isMiningHost && Platform.isWindows)'));
       expect(created, contains('_preStartSilentAudio()'));
       // 「会话音量残留还原」只给用户自己的页：后台制卡页开播时做它会把刚压低的会话放出声。
       final String onState = body(page, 'void _onState(', 'void _onKeyToken(');

@@ -1,9 +1,10 @@
-// 内置网页播放器真机验证（Windows WebView2 + 真 Netflix）。
+// 制卡重放宿主（内置网页播放器页 [WebVideoFushiPage]，可捕获档）真机验证（Windows WebView2 +
+// 真 Netflix）。用户看的网页视频播放器是原生播放器页（两档同一套控件，拍板 cbKi3PN0G7-r2）；
+// 本页只当制卡重放的后台宿主，这里按生产里打开它的方式（制卡交接）直接压它。
 //
-// 跑完整用户路径：书架里一本 videoPath=Netflix 播放页 URL 的流媒体书 → 焦点驱动打开 →
-// `VideoFushiPage._init` 分流 pushReplacement 到 [WebVideoFushiPage] → 站点自己的播放器起播
-// （PlayReady，正常观看模式）→ 主世界注入的 netflix-bridge 抓到整集明文字幕轨 → 字幕列表面板
-// 出现 cue → 经 bridge seek 后播放头跟到目标。截 Flutter 帧留证（WebView2 纹理抓不到，只证外壳）。
+// 路径：一本 videoPath=Netflix 播放页 URL 的流媒体书 → 压 [WebVideoFushiPage] → 站点自己的播放器
+// 起播 → 主世界注入的 netflix-bridge 抓到整集明文字幕轨 → 字幕列表面板出现 cue → 经 bridge seek
+// 后播放头跟到目标 → 入队 / 重放落卡。截 Flutter 帧留证（WebView2 纹理抓不到，只证外壳）。
 //
 // 依赖真实网络 + 已登录的 Netflix 会话（网页播放器用独立 WebView2 环境，profile 预置进 runner 的
 // `isolated-root\webview2-profile-webvideo\EBWebView`），故**默认 skip**，仅在
@@ -14,10 +15,7 @@
 // DRM（MF CDM）要真实的 LOCALAPPDATA / USERPROFILE / TEMP，任一被 runner 重定向都报
 // Netflix D7702/D7703（0x80070003），实测二分定位。可用 FUSHI_WEB_VIDEO_URL 换片。
 //
-// 4K 窗口宿主档：FUSHI_WEB_VIDEO_HOSTING=windowed，且必须
-// FUSHI_WEB_VIDEO_4K_USER_DATA_FOLDER=%LOCALAPPDATA%\Fushi\WebVideoWebView2-4k-itest——硬件
-// PlayReady 的 profile 放在仓库目录（隔离根）下报 D7702-1003，放 LOCALAPPDATA 下才起播（2026-08-30 实测）。
-// 内置档超分（P2）：FUSHI_WEB_VIDEO_SHADER_TIER=medium|high|ultra（Anime4K 文件缺则经镜像下载）。
+// 超分（P2）：FUSHI_WEB_VIDEO_SHADER_TIER=medium|high|ultra（Anime4K 文件缺则经镜像下载）。
 import 'dart:async';
 import 'dart:io';
 
@@ -33,30 +31,21 @@ import 'package:fushi/src/media/video/url_stream_video.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart'
     show kWebVideoPlayerEnabled;
-import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_shaders.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
-import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/src/mining/web_mine_replay.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/pages/implementations/home_page.dart'
-    show HomePage, HomeTab;
-import 'package:fushi/src/pages/implementations/home_video_page.dart'
-    show HomeVideoPage, openLocalVideoBook;
+import 'package:fushi/src/pages/implementations/home_page.dart' show HomePage;
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
     show filteredVideoBookUidsProvider;
 import 'package:fushi/src/pages/implementations/web_video_fushi_page.dart';
 
-import 'helpers/focus_driver.dart';
 import 'helpers/observe_capture.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
 bool get _live => Platform.environment['FUSHI_WEB_VIDEO_LIVE_ITEST'] == '1';
-
-bool get _windowed =>
-    Platform.environment['FUSHI_WEB_VIDEO_HOSTING'] == 'windowed';
 
 String get _url =>
     Platform.environment['FUSHI_WEB_VIDEO_URL'] ??
@@ -108,8 +97,6 @@ void main() {
       await launchFushiTestApp();
       expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
       await tester.pump(const Duration(seconds: 2));
-      await enableFocusNavigation(tester);
-      final FocusDriver driver = FocusDriver(tester);
 
       // ── 播种一本网页站流媒体书（与「粘贴 URL 导入」入库同形）──
       final ProviderContainer container = ProviderScope.containerOf(
@@ -129,18 +116,6 @@ void main() {
       // 视频页按 tag 筛选 provider 的缓存 uid 集过滤；seed 晚于首次求值必须失效重算，
       // 否则新种的卡永远不上屏（与 helpers/library_fixture.dart seedVideo 同步骤）。
       container.invalidate(filteredVideoBookUidsProvider);
-      // FUSHI_WEB_VIDEO_HOSTING=windowed → 4K 窗口宿主档（硬件 PlayReady、DOM 字幕层、顶层查词窗）。
-      // runner 的隔离 DB 跨次运行保留：两种模式都显式写偏好，不然上一次 windowed 运行留下的
-      // 偏好会让「builtin」运行实际开成窗口档（profile 在仓库目录 → D7702，见文件头）。
-      final bool windowedMode = _windowed;
-      await appModel.prefsRepo.setPref(
-        kWebVideoHostingPrefKey,
-        (windowedMode ? WebVideoHosting.windowed : WebVideoHosting.builtin)
-            .name,
-      );
-      debugPrint(
-        '[web-video-itest] hosting=${windowedMode ? 'windowed' : 'builtin'}',
-      );
       // 内置档超分（P2）：按环境变量预置档位偏好，页面创建 WebView 后自动喂给 fork。
       final String? shaderTierEnv =
           Platform.environment['FUSHI_WEB_VIDEO_SHADER_TIER'];
@@ -151,26 +126,6 @@ void main() {
         );
       }
 
-      expect(HomePage.debugSelectTab, isNotNull);
-      HomePage.debugSelectTab!(HomeTab.video);
-      await tester.pump(const Duration(seconds: 1));
-      HomeVideoPage.debugRefreshVideos?.call();
-      await tester.pump(const Duration(seconds: 2));
-      final Finder card = find.byKey(ValueKey<String>('home_video_$uid'));
-      for (int i = 0; i < 30 && card.evaluate().isEmpty; i++) {
-        await tester.pump(const Duration(milliseconds: 500));
-        if (i == 2) HomeVideoPage.debugRefreshVideos?.call();
-      }
-      final int shelfRows = (await repo.listForShelf()).length;
-      final int anyStage = find
-          .byKey(ValueKey<String>('home_video_$uid'), skipOffstage: false)
-          .evaluate()
-          .length;
-      debugPrint(
-        '[web-video-itest] shelfRows=$shelfRows card(onstage='
-        '${card.evaluate().isNotEmpty} anyStage=$anyStage)',
-      );
-
       // 页面默认 = 软件 DRM 档 + 可捕获环境（独立 profile：登录态需预置到
       // <FUSHI_WEBVIEW2_USER_DATA_FOLDER>-webvideo\EBWebView，见文件头）。
       debugPrint(
@@ -178,22 +133,18 @@ void main() {
         '${WebVideoFushiPage.capturableUserDataFolder()}',
       );
 
-      // ── 打开 → 分流到网页播放器 ──
-      // 优先焦点驱动（禁坐标点击）；卡未上屏时走书架卡片同一条生产路由
-      // [openLocalVideoBook]（首页 dashboard / 书架 hero 共用），分流逻辑在
-      // VideoFushiPage._init 里，两条入口覆盖面相同。
-      if (card.evaluate().isNotEmpty) {
-        expect(await driver.focusWidget(card), isTrue, reason: '视频卡应可被焦点到达');
-        await driver.activate();
-      } else {
-        debugPrint(
-          '[web-video-itest] card not onstage; opening via '
-          'openLocalVideoBook (shared shelf route)',
-        );
-        final BuildContext ctx = tester.element(find.byType(HomePage));
-        // ignore: use_build_context_synchronously — 测试里刚从树上取的 element，同帧使用。
-        unawaited(openLocalVideoBook(context: ctx, repo: repo, bookUid: uid));
-      }
+      // ── 打开：与生产里的制卡交接同一个入口（[WebVideoFushiPage.neutralized]）──
+      final NavigatorState nav = Navigator.of(
+        tester.element(find.byType(HomePage)),
+      );
+      unawaited(
+        nav.push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                WebVideoFushiPage.neutralized(bookUid: uid, repo: repo),
+          ),
+        ),
+      );
       bool pageUp = false;
       for (int i = 0; i < 40; i++) {
         await tester.pump(const Duration(milliseconds: 500));
@@ -206,11 +157,7 @@ void main() {
         tester,
         'observe-web-video-after-open',
       );
-      expect(
-        pageUp,
-        isTrue,
-        reason: '网页站流媒体书应分流到 WebVideoFushiPage（截图 ${afterOpen.path}）',
-      );
+      expect(pageUp, isTrue, reason: '制卡重放宿主页应打开（截图 ${afterOpen.path}）');
 
       // ── Netflix「谁在观看」头像门：真实用户在 WebView 里点自己的头像；这里替用户点第一个 ──
       for (int i = 0; i < 20; i++) {
@@ -323,54 +270,6 @@ void main() {
       await tester.pump(const Duration(seconds: 3));
       final WebVideoDebugSnapshot after = WebVideoFushiPage.debugSnapshot!();
       debugPrint('[web-video-itest] after seek: $after');
-
-      if (windowedMode) {
-        // ── 4K 窗口宿主档：画面归站点（硬件 DRM，期望 ≥1080p 阶梯）；字幕层在页面 DOM；
-        // 点词 → callHandler → GlobalLookupController → 顶层 WS_POPUP 查词窗口。──
-        final String? dims = await WebVideoFushiPage.debugEvalJs?.call(
-          "(() => { const v = document.querySelector('video'); return JSON.stringify("
-          '{vw: v && v.videoWidth, vh: v && v.videoHeight, '
-          "dom: !!document.getElementById('fushi-dom-subtitle'), "
-          "spans: document.querySelectorAll('#fushi-dom-subtitle [data-fushi-g]').length,"
-          'cur: window.__fushiDomSubs && window.__fushiDomSubs.current()}); })()',
-        );
-        debugPrint('[web-video-itest] windowed page: $dims');
-        // 等 DOM 字幕层渲染出当前 cue（字幕间隙时元素被摘掉，最多等 30 s）。
-        int spans = 0;
-        for (int i = 0; i < 60 && spans == 0; i++) {
-          await tester.pump(const Duration(milliseconds: 500));
-          final String? n = await WebVideoFushiPage.debugEvalJs?.call(
-            "String(document.querySelectorAll('#fushi-dom-subtitle [data-fushi-g]').length)",
-          );
-          spans = int.tryParse(n ?? '') ?? 0;
-        }
-        expect(spans, greaterThan(0), reason: 'DOM 字幕层应渲染出逐字形 span');
-        // 模拟点第一个字形（真实用户就是点它）。
-        final String? clicked = await WebVideoFushiPage.debugEvalJs?.call(
-          "(() => { const s = document.querySelector('#fushi-dom-subtitle [data-fushi-g]');"
-          ' if (!s) return "none"; const r = s.getBoundingClientRect();'
-          " s.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: r.left + 2, clientY: r.top + 2}));"
-          " return 'clicked:' + s.textContent; })()",
-        );
-        debugPrint('[web-video-itest] dom click: $clicked');
-        bool showing = false;
-        for (int i = 0; i < 30 && !showing; i++) {
-          await tester.pump(const Duration(milliseconds: 500));
-          showing = await GlobalLookupChannel.isShowing();
-        }
-        expect(showing, isTrue, reason: 'DOM 字幕点词后顶层查词窗口应显示');
-        final int? queuedId = await WebVideoFushiPage.debugEnqueueCurrentCue!(
-          <String, String>{'term': 'itest', 'sentence': 'itest sentence'},
-        );
-        expect(queuedId, isNotNull, reason: '窗口宿主档制卡只入队');
-        final WebVideoDebugSnapshot afterWin =
-            WebVideoFushiPage.debugSnapshot!();
-        debugPrint(
-          '[web-video-itest] windowed end: $afterWin queued=$queuedId',
-        );
-        assertStrictErrors(errors);
-        return;
-      }
 
       // ── P2 超分：档位偏好预置后，fork 的 libplacebo 通道必须确认已启用，且 Flutter 帧仍在出
       //（着色器链把 WGC 帧渲染进共享纹理；任何失败 fail-open 回原帧，但那样 active 会是 false）。

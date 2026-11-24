@@ -208,9 +208,15 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
             if (inFlight == 0 && staged == 0) return const SizedBox.shrink();
             final ColorScheme cs = _videoChromeColorScheme(context);
             final Color textColor = _osdTextColor(cs);
-            final String label = staged > 0
+            // 网页档的角标是重放队列：点一下逐句重放落卡。「画质优先」档的帧截不到，重放要换到
+            // 可截图的「制卡优先」——就是这里的提示（拍板 cbKi3PN0G7-r2）。
+            final String label = staged == 0
+                ? t.video_mine_in_progress(count: inFlight)
+                : !_webMode
                 ? t.video_mine_queue_badge(count: staged)
-                : t.video_mine_in_progress(count: inFlight);
+                : _webHosting == WebVideoHosting.windowed
+                ? t.web_video_mode_mine_queued_switch(count: staged)
+                : t.web_video_mode_mine_queued(count: staged);
             return _followTopChrome(
               (BuildContext context, double top) => Align(
                 alignment: Alignment.topRight,

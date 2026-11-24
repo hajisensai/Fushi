@@ -598,8 +598,12 @@ extension _VideoClipExport on _VideoFushiPageState {
   /// 说明，不静默吞掉按键（BUG-5417）。
   Future<void> _saveScreenshot({bool withSubtitles = false}) async {
     final VideoPlayerController? controller = _controller;
+    // 网页档截不到帧（「画质优先」档 / 加密站 / 画面还没出来）：说清楚为什么、给出能截的那一档，
+    // 不报一条「截图失败」，也不静默吞键（BUG-5417）。libmpv 恒可截。
     if (controller != null && !controller.canCaptureFrame) {
-      _showOsd(t.video_screenshot_web_unsupported);
+      _showOsd(
+        _webFrameCaptureUnavailableMessage(t.video_screenshot_web_unsupported),
+      );
       return;
     }
     final Uint8List? raw = await controller?.screenshot();

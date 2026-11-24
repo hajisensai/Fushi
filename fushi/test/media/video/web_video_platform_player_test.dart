@@ -331,6 +331,37 @@ void main() {
       await p.dispose();
     });
 
+    test('「制卡优先」档（给了表面截图）：Netflix 也截得到帧；canvas 截得到时仍先用 canvas', () async {
+      final List<String> calls = <String>[];
+      final List<String> surface = <String>[];
+      final Uint8List surfaceBytes = Uint8List.fromList(<int>[1, 2, 3]);
+      final WebVideoPlatformPlayer p = WebVideoPlatformPlayer(
+        evaluate: (String s) async {
+          calls.add(s);
+          return 'tainted';
+        },
+        surfaceCapture: (String format) async {
+          surface.add(format);
+          return surfaceBytes;
+        },
+      );
+      expect(p.frameCaptureSupported, isFalse, reason: '还没有视频');
+      p.applySnapshot(_state());
+      expect(p.frameCaptureSupported, isTrue);
+      expect(await p.screenshot(), surfaceBytes);
+      expect(calls, isEmpty, reason: 'Netflix 不试页面 canvas');
+      expect(surface, <String>['image/jpeg']);
+
+      // 非 DRM 站：先试 canvas，canvas 给不出（tainted）才退到表面截图。
+      p.applySnapshot(_state(href: 'https://www.youtube.com/watch?v=abc'));
+      expect(await p.screenshot(format: 'image/png'), surfaceBytes);
+      expect(calls, <String>[
+        "window.__fushiWebVideo.captureFrame('image/png')",
+      ]);
+      expect(surface, <String>['image/jpeg', 'image/png']);
+      await p.dispose();
+    });
+
     test('截帧结果码 / 坏 data URL 解成 null', () {
       for (final Object? r in <Object?>[
         null,
