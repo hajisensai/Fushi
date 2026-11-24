@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4668 条。点号进各自文件。
+> 共 4669 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5367](bugs/BUG-5367-music-visualizer-tap-exits.md) | ✅ | ✅ | 全屏歌词动画单击任意位置就退出 |
 | [BUG-5366](bugs/BUG-5366-curator-book-scrape-ignores-series-playlists.md) | ✅ | ✅ | 库管家补刮只认 collection 型合集、系列（playlist）各卷按卷名查而认不出 |
 | [BUG-5365](bugs/BUG-5365-library-agent-review-full-loop.md) | ✅ | ✅ | AI 助手自动全库复查把整库灌进一场对话爆上下文、失败不记进度无限重跑 |
 | [BUG-5364](bugs/BUG-5364-manga-popup-forwarded-keys-block-scroll.md) | ✅ | ✅ | manga-popup-forwarded-keys-block-scroll |

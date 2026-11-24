@@ -310,10 +310,13 @@ class _MusicLyricVisualizerViewState extends State<MusicLyricVisualizerView> {
       onKeyEvent: _onKey,
       child: MouseRegion(
         onHover: (_) => _pokeHover(),
+        // 单击画面只唤出悬停控制条（触屏没有悬停，这是它唤出控制条的途径），不退出：
+        // 在 MV 背景上随手一点就退回原布局太容易误触（反馈 0i-FWiMxFO）。退出只走
+        // Esc（_onKey）、返回键（歌词页的 PopScope）和控制条上的退出按钮。
         child: GestureDetector(
-          key: const ValueKey<String>('music_visualizer_tap_exit'),
+          key: const ValueKey<String>('music_visualizer_tap_reveal'),
           behavior: HitTestBehavior.opaque,
-          onTap: widget.onExit,
+          onTap: _pokeHover,
           child: Stack(
             fit: StackFit.expand,
             children: <Widget>[
