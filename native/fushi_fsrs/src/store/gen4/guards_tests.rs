@@ -620,10 +620,11 @@ const FROZEN_SIDE: &[(&str, &str, &[&str])] = &[
     ),
     (
         "legacy.rs",
-        "冻结的旧代读入器",
+        "冻结的旧代读入器；盐集合读笔记缓存认跨 profile 挂的内置笔记类型（BUG-5269）",
         &[
             "srs_entities",
             "srs_field_edits",
+            "srs_notes_cache",
             "srs_review_logs",
             "srs_unknown_events",
             "sync2_boot",
