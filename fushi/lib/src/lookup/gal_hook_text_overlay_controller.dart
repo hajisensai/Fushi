@@ -3036,6 +3036,19 @@ class GalHookTextOverlayController extends ChangeNotifier {
       result = GalHookMiningResult(failureReason: '$error');
     }
     final QueuedMineSettlements settlements = QueuedMineSettlements.instance;
+    if (result.queued) {
+      // 后端暂不可达（如 Anki 没开）时卡冻结进了本机待发队列：卡没丢，不是失败。主窗
+      // toast 带「查看队列」，查词卡保持「已加入」✓（不说失败、不翻回 +）。统计照旧等
+      // 写进 Anki 时记（与本方法以前只在 success 记账同口径）。
+      _toastLookupMine(
+        result,
+        repo: model.miningAnkiRepository,
+        fields: fields,
+        updateNoteId: null,
+      );
+      settlements.land(settleToken, offlineQueued: true);
+      return;
+    }
     if (result.success) {
       _toastLookupMine(
         result,

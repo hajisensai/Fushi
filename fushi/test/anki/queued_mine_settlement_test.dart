@@ -193,4 +193,43 @@ void main() {
     expect(unseen, 1, reason: 'b 被逐出时它压着的失败必须说出来');
     expect(small.debugTicketCount, 2);
   });
+
+  test('进了本机待发队列（后端暂不可达）：结局是 queued，不是失败，也不翻成已在 Anki', () async {
+    final int token = settlements.open();
+    settlements.bindOrigin(token, () => true);
+    final Future<Map<String, Object?>> settled = settlements.wait(
+      token,
+      origin: () => true,
+    );
+    settlements.land(token, noteId: 9, offlineQueued: true);
+    expect(await settled, <String, Object?>{'settled': 'queued'});
+    expect(unseen, 0);
+    expect(await settlements.wait(token, origin: () => true), <String, Object?>{
+      'settled': 'queued',
+    }, reason: '晚到的等待者拿到同一个结局');
+  });
+
+  test('失败重写后进了待发队列：另一条入口的重试回 queued，让弹窗接着等到 queued', () async {
+    final int token = settlements.open();
+    settlements.bindOrigin(token, () => false);
+    int reruns = 0;
+    settlements.fail(
+      token,
+      failure: _failure,
+      onUnseen: onUnseen,
+      retry: () => reruns++,
+    );
+    expect(unseen, 1);
+    expect(settlements.retry(token), 'queued');
+    settlements.land(token, offlineQueued: true);
+    expect(
+      settlements.retry(token),
+      'queued',
+      reason: '不能回 landed（卡还不在 Anki 里）',
+    );
+    expect(reruns, 1);
+    expect(await settlements.wait(token, origin: () => true), <String, Object?>{
+      'settled': 'queued',
+    });
+  });
 }

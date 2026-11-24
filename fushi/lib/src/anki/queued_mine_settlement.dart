@@ -69,6 +69,7 @@ class QueuedMineSettlements {
   /// popup.js `awaitMineSettled` 桥：等 [token] 的结局。[origin] 是这次桥调用所在查词
   /// 卡的探针。回包形状：
   /// * `{settled: 'landed', noteId}`；
+  /// * `{settled: 'queued'}`：卡进了本机待发制卡队列（后端暂不可达），保持「已加入」；
   /// * `{settled: 'failed', message?, duplicate?, retryable, hostReported?}`；
   /// * `{settled: 'unknown'}`：没有这张单（被逐出 / 不是本宿主开的）。
   Future<Map<String, Object?>> wait(
@@ -104,14 +105,18 @@ class QueuedMineSettlements {
     }
   }
 
-  /// 卡落地了。
-  void land(int token, {int? noteId}) {
+  /// 卡被收下了：进了 Anki（`{settled: 'landed', noteId}`），或 [offlineQueued] 为真时
+  /// 后端暂不可达、卡冻结进了本机待发制卡队列（`{settled: 'queued'}`）。
+  ///
+  /// 待发队列与 `MinePopupResult.queued` 同一判据：卡没丢、此刻还不在 Anki 里——查词卡
+  /// 保持「已加入」✓，不说失败、不翻回「+」（翻回会诱导用户再制一张重复卡），也不能
+  /// 画成已在 Anki 的 ✓。
+  void land(int token, {int? noteId, bool offlineQueued = false}) {
     final _Ticket? ticket = _tickets[token];
     if (ticket == null) return;
-    final Map<String, Object?> outcome = <String, Object?>{
-      'settled': 'landed',
-      'noteId': noteId,
-    };
+    final Map<String, Object?> outcome = offlineQueued
+        ? const <String, Object?>{'settled': 'queued'}
+        : <String, Object?>{'settled': 'landed', 'noteId': noteId};
     ticket
       ..state = _TicketState.landed
       ..outcome = outcome
@@ -185,7 +190,8 @@ class QueuedMineSettlements {
 
   /// popup.js `retryQueuedMine` 桥 / 主窗 toast 的「重试」：两条入口经这里收口，
   /// 同一次失败只重写一次。返回：
-  /// * `'queued'`：重写已开始（或另一条入口已经开始了）——继续 [wait] 同一个令牌；
+  /// * `'queued'`：重写已开始（或另一条入口已经开始了 / 卡已进待发队列）——继续 [wait]
+  ///   同一个令牌；
   /// * `'landed'`：这张卡其实已经落地；
   /// * `'unavailable'`：没有这张单，或这次失败不能重写（如重复卡）。
   String retry(int token) {
@@ -195,7 +201,9 @@ class QueuedMineSettlements {
       case _TicketState.pending:
         return 'queued';
       case _TicketState.landed:
-        return 'landed';
+        // 进了待发队列的卡不在 Anki 里：让弹窗接着等，拿到同一个 `queued` 结局保持
+        // 「已加入」，而不是按 'landed' 画成已在 Anki 的 ✓。
+        return ticket.outcome?['settled'] == 'queued' ? 'queued' : 'landed';
       case _TicketState.failed:
         final VoidCallback? rerun = ticket.retry;
         if (rerun == null) return 'unavailable';

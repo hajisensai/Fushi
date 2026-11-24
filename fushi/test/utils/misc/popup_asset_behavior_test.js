@@ -5614,6 +5614,23 @@ async function testQueuedSettlementRetryUnavailableFallsBackToMine() {
   assert.equal(state.mines, 2, '宿主已不记得这张单：落到普通制卡');
 }
 
+async function testQueuedSettlementOfflineQueueKeepsAdded() {
+  // 后端暂不可达（Anki 没开）时卡进了本机待发队列：没丢、还不在 Anki 里。不能说失败、
+  // 不能翻回「+」（会诱导再制一张重复卡），也不能画成已在 Anki 的 ✓。
+  const context = loadPopup();
+  const state = settlementHarness(context);
+  const { mineButton } = mountedMineButton(context);
+  await flush();
+  await mineButton.onclick();
+  await flush();
+  state.settle({ settled: 'queued' });
+  await flush();
+  assert.equal(mineButton.dataset.queued, '1', '待发队列：「已加入」原样留着');
+  assert.notEqual(mineButton.dataset.mined, '1', '不是已在 Anki 的 ✓');
+  assert.equal(inlineHintText(context), null, '不说失败');
+  assert.equal(state.unseen, 0);
+}
+
 async function testQueuedWithoutTokenDoesNotWait() {
   const context = loadPopup();
   const state = settlementHarness(context);
@@ -5635,6 +5652,7 @@ Promise.all([
   testQueuedSettlementHostReportedStaysSilent(),
   testQueuedSettlementDuplicatePaintsCheck(),
   testQueuedSettlementRetryUnavailableFallsBackToMine(),
+  testQueuedSettlementOfflineQueueKeepsAdded(),
   testQueuedWithoutTokenDoesNotWait(),
 ]).then(() => console.log('queued mine settlement tests passed'))
   .catch((error) => { console.error(error); process.exitCode = 1; });

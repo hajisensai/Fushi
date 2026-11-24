@@ -6431,13 +6431,17 @@ function createEntryHeader(entry, idx) {
         // 已制卡的 ✓ 提示「管理」手势（右键 / 长按）在哪——单击在「允许重复」开着时会直接新增。
         // BUG-842 / 反馈 3UHYaFPP8g：走 DOM 自绘提示，不用原生 title——离屏 WebView2 上
         // 原生提示按未拉伸坐标定位，会飘到上一个词条上方。
-        setInlineButtonTip(mineButton, queued
-            ? (window.i18nMineQueued || '已加入制卡队列')
-            : (isMined
-                ? (window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片')
-                : (retryToken !== null
-                    ? (window.i18nMineRetryWrite || '点 + 用原画面和语音重新写入')
-                    : fushiMineShortcutHint())));
+        let tip;
+        if (queued) {
+            tip = window.i18nMineQueued || '已加入制卡队列';
+        } else if (isMined) {
+            tip = window.i18nMinedManageHint || '右键或长按：覆写 / 查看已有卡片';
+        } else if (retryToken !== null) {
+            tip = window.i18nMineRetryWrite || '点 + 用原画面和语音重新写入';
+        } else {
+            tip = fushiMineShortcutHint();
+        }
+        setInlineButtonTip(mineButton, tip);
         mineButton.classList.toggle('queued', queued);
         // Single source of truth for the button's lookup-time-detected state.
         // The optional second flag is the "latest editable" sub-state; it is only
@@ -6469,6 +6473,8 @@ function createEntryHeader(entry, idx) {
     // 反馈 Va3bdT-X0r：跟住一张后台写卡单直到它有结局。宿主（app 外覆盖窗）不能主动往
     // 页面里推，awaitMineSettled 是一颗长挂的桥 promise，写卡落地 / 失败时才兑现：
     //   landed → 撤「已加入」、按 Anki 真值画 ✓（带 note id 的成为最新可改）；
+    //   queued → 后端暂不可达，卡进了本机待发制卡队列（没丢、还不在 Anki 里）：保持
+    //            「已加入」，不说失败、不翻回「+」（那会诱导再制一张重复卡）；
     //   failed → 撤「已加入」、就地说原因（游戏全屏时主窗 toast 看不见，这里是唯一说法），
     //            能重写的按钮进「重试」态，单击用原画面 / 原句音重写；
     //   unknown（宿主已不记得这张单）→ 不动，点击时照旧回问 Anki。
@@ -6490,6 +6496,7 @@ function createEntryHeader(entry, idx) {
             setMineState(true);
             return;
         }
+        // queued / unknown：「已加入」原样留着。
         if (settled.settled !== 'failed') return;
         queuedLocally = false;
         retryToken = settled.retryable === true ? token : null;
@@ -6572,7 +6579,8 @@ function createEntryHeader(entry, idx) {
                     if (status === 'queued') {
                         queuedLocally = true;
                         setMineState(false);
-                        followQueuedSettlement(token);
+                        // 长挂到写卡有结局；它自己吞掉桥异常，不在这里等。
+                        void followQueuedSettlement(token);
                         return;
                     }
                     if (status === 'landed') {
@@ -6740,7 +6748,7 @@ function createEntryHeader(entry, idx) {
                 if (result.queued) {
                     queuedLocally = true;
                     setMineState(false);
-                    if (result.settleToken !== null) followQueuedSettlement(result.settleToken);
+                    if (result.settleToken !== null) void followQueuedSettlement(result.settleToken);
                 } else if (result.cancelled) {
                     // 拍板 EuOLprw_dV：用户自己在框选页放弃了这次制卡——不是失败，不说
                     // 「制卡失败」，也不回查 Anki（TODO-448），按钮放回可点的 '+'。

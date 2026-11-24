@@ -65,6 +65,21 @@ void main() {
       isTrue,
       reason: '反馈 Va3bdT-X0r：失败先交给查词卡就地说，主窗 toast 只在 onUnseen 里',
     );
+    // 进了本机待发队列（Anki 没开时 PendingMiningAnkiRepository 的结局）不是失败：
+    // result.success 为假，若落到 fail 分支，查词卡会说「制卡失败」并翻回 +，诱导再制
+    // 一张重复卡。queued 必须在 fail 之前分流成 offlineQueued 落地。
+    final int queuedLand = body.indexOf(
+      'settlements.land(settleToken,offlineQueued:true)',
+    );
+    expect(queuedLand, greaterThanOrEqualTo(0));
+    final int queuedBranch = body.indexOf('if(result.queued)');
+    expect(queuedBranch, greaterThanOrEqualTo(0));
+    expect(queuedBranch, lessThan(queuedLand));
+    expect(
+      queuedLand,
+      lessThan(body.indexOf('settlements.fail(settleToken')),
+      reason: '待发队列的结局要在失败分支之前分流',
+    );
     expect(
       body.contains('()=>settlements.retry(settleToken)'),
       isTrue,
