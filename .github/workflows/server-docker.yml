@@ -3,8 +3,9 @@ name: fushi_server Docker image
 # Builds the fushi_server Docker image (packages/fushi_server/docker/Dockerfile,
 # from the newest published Linux release bundle) and smoke-tests it
 # (smoke_test.sh: first-start init as a non-root user, health check, WebUI /
-# admin API). Build only, never pushes to a registry. Dockerfile.source (an hour
-# or more cold) is built by the manual server-docker-publish.yml instead.
+# admin API). Build only, never pushes to a registry: the published images come
+# from release-server.yml's docker job, one per fushi-server release.
+# Dockerfile.source (an hour or more cold) is only built locally.
 
 on:
   workflow_dispatch:

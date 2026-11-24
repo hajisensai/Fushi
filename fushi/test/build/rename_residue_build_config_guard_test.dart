@@ -181,6 +181,18 @@ final List<_Exemption> _repoSlugExemptions = <_Exemption>[
         '落那边）。守卫脚本里提到它是为了说明「本仓自己禁发服务端包」的规则来源。'
         '行级 context 只放行含 fushi-server 的行，其它失效 slug 照样报。',
   ),
+  _Exemption(
+    pathSuffix: 'tool/server_release_plan.py',
+    context: RegExp('fushi-server'),
+    reason:
+        '同上：服务端自动发布的轮询规划脚本由 hajisensai/fushi-server 的定时 '
+        'release.yml 调用，查的就是那边已有哪些 release。',
+  ),
+  _Exemption(
+    pathSuffix: 'tool/server_release_plan_test.py',
+    context: RegExp('fushi-server'),
+    reason: '同上：规划脚本测试里的发布仓夹具。',
+  ),
 ];
 
 /// C：构建/打包配置里的旧代号词根。
