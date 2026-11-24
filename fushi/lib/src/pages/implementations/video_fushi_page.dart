@@ -132,7 +132,13 @@ import 'package:fushi/src/media/video/remote_client_teardown.dart';
 import 'package:fushi/src/media/video/source_review_remote_report_gate.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
-import 'package:fushi_engine/media/video/strm_file.dart' show isStrmPath;
+import 'package:fushi/src/media/video/stream_book_episodes.dart';
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkStreamUrl, isStrmPath;
+import 'package:fushi_engine/media/video/youtube_playlist.dart'
+    show YoutubePlaylistEntry;
+import 'package:fushi/src/web_browser/features/play_in_fushi/youtube_watch_page.dart'
+    show youtubeWatchPlaylistIdOf;
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
     show MangaAiOcrContext, MangaAiOcrRefiner, MangaAiOcrSource;
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
@@ -955,6 +961,7 @@ class _PlaylistEpisodeRef {
     this.progress,
     this.sectionKey,
     this.positionMs = 0,
+    this.episodeNumber,
   });
   final String? bookUid;
   final String title;
@@ -994,6 +1001,10 @@ class _PlaylistEpisodeRef {
   /// 本地集的续播点（`video_books.lastPositionMs`；远端集恒 0）。一文件多集时据此
   /// 挑「续播点所在那一集」的剧照（`videoFileEpisodeStillImage`，与合集选集页同口径）。
   final int positionMs;
+
+  /// 卡片角标集号的显式值：播放列表是列表顺位（标题里的数字不是集号）。null = 按
+  /// [path] / [title] 解析（BUG-1544）。
+  final int? episodeNumber;
 }
 
 class VideoFushiPage extends ConsumerStatefulWidget {
@@ -1001,6 +1012,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required this.bookUid,
     required this.repo,
     this.playlistCollectionId,
+    this.youtubePlaylistId,
     this.initialCueStartMs,
     this.initialRemoteFavorite,
     this.sourceReview,
@@ -1047,7 +1059,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        webBackToBrowser = false,
        webReturnState = null,
        remoteDisc = null,
-       playlistCollectionId = null;
+       playlistCollectionId = null,
+       youtubePlaylistId = null;
 
   final String bookUid;
   final VideoBookRepository repo;
@@ -1070,6 +1083,11 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// player 据此建兄弟集列表 + 剧集面板 + 上下集 + 自动连播；null = 独立单视频打开）。
   /// 本地专用；远端播放列表走 host 驱动的 episodeIndex，不用此字段。
   final int? playlistCollectionId;
+
+  /// 本集是从这份 YouTube 播放列表里打开的（浏览器 `watch?v=…&list=…` 交接过来，拍板台
+  /// zGXhhMAglH）：选集面板列出整份播放列表，每一集是一本独立的流媒体书，换集 = 换到那
+  /// 一本的播放页（与 [playlistCollectionId] 同一套换页语义，见 `stream_book_episodes.dart`）。
+  final String? youtubePlaylistId;
   final int? initialCueStartMs;
 
   /// Remote favorite keeps its subtitle identity until both tracks are loaded.
@@ -1132,6 +1150,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required String bookUid,
     required VideoBookRepository repo,
     int? playlistCollectionId,
+    String? youtubePlaylistId,
     int? initialCueStartMs,
     FavoriteSentence? initialRemoteFavorite,
     CardSourceLink? sourceReview,
@@ -1151,6 +1170,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       bookUid: bookUid,
       repo: repo,
       playlistCollectionId: playlistCollectionId,
+      youtubePlaylistId: youtubePlaylistId,
       initialCueStartMs: initialCueStartMs,
       initialRemoteFavorite: initialRemoteFavorite,
       sourceReview: sourceReview,
@@ -3773,6 +3793,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 单视频（本地 pushReplacement 换集，_activeBookUid 恒为当前集）。
   List<_PlaylistEpisodeRef> _episodes = const <_PlaylistEpisodeRef>[];
 
+  /// [_episodes] 的每一集都是一本独立的流媒体书（合集里的流媒体书 / 从 YouTube 播放列表
+  /// 打开，拍板台 zGXhhMAglH）：换集 = 换到那一本的播放页（与本地合集同一条换页路径，
+  /// 见 [_VideoEpisode._switchEpisode]），不是在本页向同一个远端换流。本页只播它自己那本书，
+  /// [_currentEpisode] 只是它在列表里的位置，远端键不随它变（[_remotePositionKeyForIndex]）。
+  bool _streamBookEpisodes = false;
+
+  /// 正在播的这一集在**它所属的书 / 流**里的集下标：单视频 / 本地合集 / 远端合集 / host
+  /// 播放列表就是 [_currentEpisode]；每集一本书的列表里恒 0——那里 [_currentEpisode]
+  /// 只是选集列表里的位置，列表晚到（长播放列表的后几批）、刷新重排、站内点出列表收起
+  /// 都会动它，播的却还是同一集。
+  int get _playingEpisodeIndex => _streamBookEpisodes ? 0 : _currentEpisode;
+
+  /// 「还是不是同一集」的判据（书 + 集下标）：制卡排队 / 重试、跳转记录据此判换没换集。
+  /// 网页档站内原地换集只换书（[_activeBookUid]）不换播放器，光比集下标看不出来。
+  String get _playingEpisodeScope => '$_activeBookUid#$_playingEpisodeIndex';
+
+  /// 流媒体书合集的合集名（制卡「系列名 - 剧集名」，见 [_initRemote]）。
+  String? _streamBookSeriesTitle;
+
+  /// 本页跟着的 YouTube 播放列表（条目按页增量到达，[_onYoutubePlaylistChanged]）。
+  YoutubePlaylistEpisodes? _youtubePlaylist;
+
+  /// 换页 / 换宿主档时交给下一页的播放列表（网页档里站内点进的列表优先于入参）。
+  String? get _streamBookYoutubePlaylistId =>
+      _youtubePlaylist?.playlistId ?? widget.youtubePlaylistId;
+
   /// 播放中合集的附加图组（v68）：剧集面板封面回退链的合集段（本集无封面 →
   /// titleCard → backdrop）。仅本地合集连播路径填充；单视频/远端恒空。
   List<MediaImageRow> _playlistCollectionImages = const <MediaImageRow>[];
@@ -4227,7 +4273,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 收藏/制卡是否按集区分：本地每集是独立 VideoBooks 行（bookKey 已唯一定位集，单视频
   /// 语义）→ false；远端多集是 host 单 id → 需按 episodeIndex 区分 → true（统一合集 Phase 3）。
-  bool get _favoriteIsPlaylist => _isRemote && _episodes.length > 1;
+  /// 每集一本书的列表（[_streamBookEpisodes]）同本地：书已唯一定位集。
+  bool get _favoriteIsPlaylist =>
+      _isRemote && !_streamBookEpisodes && _episodes.length > 1;
 
   /// 收藏/制卡的集下标锚点：[_favoriteIsPlaylist] 时为当前集，否则 null（单视频语义）。
   int? get _favoriteSectionIndex =>
@@ -4328,7 +4376,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// id，键 = `(成员 id, 0)`，天然按成员隔离，且与 host 按成员带回的 positionMs 对齐；
   /// **host-playlist / 单视频模式**：`(_activeBookUid, index)`（旧行为，index==0 时兼容旧单
   /// 视频 prefs）。[index] 是目标集下标（读某集断点时传目标；写当前集传 [_currentEpisode]）。
+  ///
+  /// **每集一本流媒体书的列表**（[_streamBookEpisodes]）：本页只播它自己那本书（换集是
+  /// 换页），[_currentEpisode] 只是它在选集列表里的位置——键恒为 `(_activeBookUid, 0)`，
+  /// 与这本书单独打开时逐字相同，断点 / 字幕 / 调轴不因列表到没到、排第几而换键。
   (String uid, int episodeIndex) _remotePositionKeyForIndex(int index) {
+    if (_streamBookEpisodes) return (_activeBookUid, 0);
     if (_isRemoteCollection) {
       final int i = index.clamp(0, _remoteMembers.length - 1);
       return (_remoteMembers[i].id, 0);
@@ -5119,6 +5172,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         await _initRemote();
         return;
       }
+      // 有列表上下文的流媒体书（合集里的流媒体书 / 从 YouTube 播放列表打开）：选集面板
+      // 列出整份列表，每集一本书、换集换页（拍板台 zGXhhMAglH）。网页档 / 内置网页播放器 /
+      // 内核播放三条路都用这同一份列表，所以在分流之前建。
+      await _loadStreamBookEpisodes();
+      if (!mounted) return;
       // 网页视频站（Netflix / YouTube 页 / TVer……）在 Windows 上由站点自己的播放器播：
       // 引擎能做底层合成时**就在本页**播（站点画面垫在原生控件下面，控件 / 字幕 / 查词
       // 与本地视频同一套），否则交给内置网页播放器页。在这里分流而非各 push 点：书架 /
@@ -5265,33 +5323,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 角标。作品名作集名判据（集名缺失时集级刮削会把作品名回填进 title，那不是
       // 集名——与合集详情页 `_scrapedEpisodeTitle` 同判据）。
       _playlistCollectionImages = snapshot.images;
-      final String? workTitle = snapshot.collectionMeta?.title.trim();
-      final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
-      // 季分栏与合集详情页同一个入口（手动分栏 / 手动季集指定优先，拍板台
-      // iR6ccUys9H）：一次批量查齐。
-      final Map<String, String> sectionKeys = snapshot.sectionKeys;
-      // 非视频成员与孤儿成员（集行已删）已在快照里按读取期过滤掉。
-      for (final VideoBookRow er in snapshot.episodes) {
-        String? scrapedName;
-        final VideoScrapeMetaRow? em = snapshot.episodeMeta[er.bookUid];
-        if (em != null && em.episodeNumber != null) {
-          final String t = em.title.trim();
-          if (t.isNotEmpty && t != workTitle) scrapedName = t;
-        }
-        refs.add(
-          _PlaylistEpisodeRef(
-            bookUid: er.bookUid,
-            title: er.title,
-            displayTitle: scrapedName,
-            path: er.videoPath,
-            coverPath: er.coverPath,
-            completed: er.completedAt != null,
-            started: er.lastPositionMs > 0,
-            sectionKey: sectionKeys[er.bookUid],
-            positionMs: er.lastPositionMs,
-          ),
-        );
-      }
+      final List<_PlaylistEpisodeRef> refs = _collectionEpisodeRefs(snapshot);
       _episodes = refs;
       // 选集面板的剧照与封面来源后台读，不挡首帧（拍板
       // design-player-episode-rail-stills）。
@@ -5393,8 +5425,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final RemoteVideoInfo info = _effectiveRemoteInfo!;
     // BUG-3332：远端 / 在线视频的作品名（合集名）进同一个槽位，制卡的作品名标签与
     // 「系列名 - 剧集名」documentTitle 才有作品名；此前远端恒 null，扩展在线看的卡只剩
-    // 「Episode 2」这种几乎无用的标签。
-    _playlistTitle = remoteVideoWorkTitle(info);
+    // 「Episode 2」这种几乎无用的标签。流媒体书合集没有远端作品名，用合集名。
+    _playlistTitle = remoteVideoWorkTitle(info) ?? _streamBookSeriesTitle;
     _currentSubtitleSource = null;
     _currentSecondarySubtitleSource = null;
     // 远端音轨恢复（BUG-1636 → 播放偏好同步泛化批）：本地带戳选择与 host 下发值
@@ -5899,7 +5931,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         }
       }
       if (seq != _episodeLoadSeq || !mounted) return;
-      _currentEpisode = index;
+      // 每集一本书的列表：[_currentEpisode] 是本书在选集列表里的位置，由列表维护（列表
+      // 可能在取流途中才到），取流的集下标恒 0，不能拿它覆盖。
+      if (!_streamBookEpisodes) _currentEpisode = index;
       _separatedAudioFallbackUrl = separatedAudioFallbackStreamUrl(urls);
       await _separatedAudio.runLoad<void>(
         () => _applyLoad(
@@ -6483,7 +6517,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }) {
     final RemoteVideoInfo? info = _effectiveRemoteInfo;
     final RemoteVideoClient? client = _effectiveRemoteClient;
-    final int episode = _currentEpisode < 0 ? 0 : _currentEpisode;
+    final int episode = _playingEpisodeIndex < 0 ? 0 : _playingEpisodeIndex;
     return reloadRemoteEpisodeInSession(
       generation: generation,
       currentGeneration: () => _remotePlaybackGeneration,
@@ -7993,7 +8027,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final int? next = _autoAdvanceTargetEpisode();
     if (next == null) return;
     final String path = _episodes[next].path;
-    if (path.isEmpty || path == _lastPrewarmedEpisodePath) return;
+    // 只有本机文件有内嵌字幕可预热：流媒体书（直链 / 网页站地址）、网页档剧集都没有。
+    if (_webMode ||
+        path.isEmpty ||
+        path == _lastPrewarmedEpisodePath ||
+        isNetworkStreamUrl(path)) {
+      return;
+    }
     _lastPrewarmedEpisodePath = path;
     // 下一集的预热排在同一块盘上当前集的读盘之后（background）：两个整片顺序读同时压
     // 一块慢盘，当前集的字幕更晚出来、播放也跟着卡。换集时还没开始的预热随取消信号撤掉。
@@ -8194,6 +8234,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   @override
   void dispose() {
     _playlistStillExists.dispose();
+    // 播放列表是进程内共享的（换页后的新页接着用），只摘本页的监听。
+    _youtubePlaylist?.removeListener(_onYoutubePlaylistChanged);
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();

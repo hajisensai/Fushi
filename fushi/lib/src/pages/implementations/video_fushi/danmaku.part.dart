@@ -28,7 +28,9 @@ extension _VideoDanmaku on _VideoFushiPageState {
     // 同一 id 换集下标（与 [_loadRemoteEpisode] 的取流口径一致）。
     return (
       id: info.id,
-      episodeIndex: _isRemoteCollection ? 0 : _currentEpisode,
+      episodeIndex: _isRemoteCollection || _streamBookEpisodes
+          ? 0
+          : _currentEpisode,
     );
   }
 

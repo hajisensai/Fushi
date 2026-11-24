@@ -20,6 +20,12 @@ import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show fushiTopBarActionsBudget;
 import 'package:fushi/src/focus/panel_focus_scope.dart';
+import 'package:fushi/src/media/video/netflix_metadata.dart'
+    show WebVideoCoverFetcher;
+import 'package:fushi/src/media/video/stream_book_episodes.dart';
+import 'package:fushi_engine/media/video/youtube_playlist.dart'
+    show YoutubePlaylistEntry;
+import 'package:fushi/src/media/video/video_episode_panel.dart';
 import 'package:fushi/src/media/playback_route_marks.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -149,8 +155,15 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     this.mineReturnState,
     this.closeAfterMining = false,
     this.returnToBrowser = false,
+    this.playlistCollectionId,
+    this.youtubePlaylistId,
     super.key,
   });
+
+  /// 选集面板的列表上下文（拍板台 zGXhhMAglH，与 `VideoFushiPage` 同名入参同义）：本集所在的
+  /// 合集 / 打开它的 YouTube 播放列表。每集一本流媒体书，换集 = 换到那一本的播放页。
+  final int? playlistCollectionId;
+  final String? youtubePlaylistId;
 
   /// 交接来源是浏览器交接过来的播放器层（`VideoFushiPage.webBackToBrowser`）：换回原生播放器页
   /// 时原样带回，那边离开观看页才知道该回到下面那个浏览器标签页、而不是再压一个浏览器。
@@ -211,6 +224,8 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     WebMineReturnState? mineReturnState,
     bool closeAfterMining = false,
     bool returnToBrowser = false,
+    int? playlistCollectionId,
+    String? youtubePlaylistId,
   }) => FushiAppUiScaleNeutralizer(
     child: WebVideoFushiPage(
       bookUid: bookUid,
@@ -222,6 +237,8 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
       mineReturnState: mineReturnState,
       closeAfterMining: closeAfterMining,
       returnToBrowser: returnToBrowser,
+      playlistCollectionId: playlistCollectionId,
+      youtubePlaylistId: youtubePlaylistId,
     ),
   );
 
@@ -438,6 +455,20 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       GlobalKey<PopupMenuButtonState<String>>();
 
   bool _listVisible = false;
+
+  /// 选集（每集一本流媒体书，[_loadEpisodes]）；不足两集 / 本集不在列表里时为空。
+  List<StreamBookEpisode> _episodes = const <StreamBookEpisode>[];
+
+  /// [_episodes] 的面板卡片（列表换了才重算）。
+  List<VideoEpisodeEntry> _episodeEntries = const <VideoEpisodeEntry>[];
+  int _currentEpisode = -1;
+  bool _episodesVisible = false;
+
+  /// 跟着的 YouTube 播放列表（条目按页增量到达）。
+  YoutubePlaylistEpisodes? _youtubePlaylist;
+
+  /// 换集在途（落书 → 换页）：连点只算第一下。
+  bool _episodeSwitching = false;
   bool _hideNativeSubtitles = true;
   bool _overlayHidden = false;
   bool _fullscreen = false;
@@ -766,6 +797,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   @override
   void dispose() {
     _overlayInert = true;
+    _youtubePlaylist?.removeListener(_onYoutubePlaylistChanged);
     _playbackRouteMark.dispose();
     _studyLifecycle?.dispose();
     _studyLifecycle = null;
@@ -913,6 +945,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     });
     if (Platform.isWindows) _startIdleScheduler();
     _registerRemote();
+    unawaited(_loadEpisodes());
     // 被制卡交接换回来的这一页：画面就绪后把重放前的集 / 轨 / 位置还原。
     if (widget.returnHostingAfterMining == null) {
       _beginRestore(widget.mineReturnState);
@@ -2385,6 +2418,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                 repo: widget.repo,
                 webReturnState: mineReturnState,
                 webBackToBrowser: widget.returnToBrowser,
+                playlistCollectionId: widget.playlistCollectionId,
+                youtubePlaylistId: widget.youtubePlaylistId,
               )
             : WebVideoFushiPage.neutralized(
                 bookUid: widget.bookUid,
@@ -2395,6 +2430,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                 idleAutoMining: idleAutoMining,
                 mineReturnState: mineReturnState,
                 returnToBrowser: widget.returnToBrowser,
+                playlistCollectionId: widget.playlistCollectionId,
+                youtubePlaylistId: widget.youtubePlaylistId,
               ),
       ),
     );
@@ -2689,11 +2726,158 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       _popNestedPopupAt(_popup.lastVisibleIndex);
     } else if (_fullscreen) {
       unawaited(_toggleFullscreen());
+    } else if (_episodesVisible) {
+      _toggleEpisodes();
     } else if (_listVisible) {
       _toggleList();
     } else {
       Navigator.of(context).maybePop();
     }
+  }
+
+  // ── 选集（拍板台 zGXhhMAglH）─────────────────────────────────────────────
+
+  /// 列表上下文：从 YouTube 播放列表打开的跟那份列表（进程内共享，换页后直接可用），
+  /// 合集里打开的读合集快照。
+  Future<void> _loadEpisodes() async {
+    final String? playlistId = widget.youtubePlaylistId;
+    if (playlistId != null) {
+      final YoutubePlaylistEpisodes list = YoutubePlaylistEpisodes.forPlaylist(
+        playlistId,
+      );
+      _youtubePlaylist = list;
+      list.addListener(_onYoutubePlaylistChanged);
+      _onYoutubePlaylistChanged();
+      return;
+    }
+    final int? collectionId = widget.playlistCollectionId;
+    if (collectionId == null) return;
+    try {
+      _setEpisodes(
+        await loadCollectionStreamBookEpisodes(widget.repo, collectionId),
+      );
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('web_video.episodes', e, st);
+    }
+  }
+
+  void _onYoutubePlaylistChanged() {
+    final YoutubePlaylistEpisodes? list = _youtubePlaylist;
+    if (!mounted || list == null || list.entries.length < 2) return;
+    final List<YoutubePlaylistEntry> entries = list.entries;
+    unawaited(
+      loadYoutubePlaylistBookEpisodes(widget.repo, entries).then((
+        List<StreamBookEpisode> episodes,
+      ) {
+        // 期间又到了新一批：以最新那次为准。
+        if (identical(list.entries, entries)) _setEpisodes(episodes);
+      }),
+    );
+  }
+
+  /// 换上一份选集；本集不在里面（长列表还没拉到这一条）/ 不足两集时不动。
+  void _setEpisodes(List<StreamBookEpisode> episodes) {
+    if (!mounted || episodes.length < 2) return;
+    final int current = episodes.indexWhere(
+      (StreamBookEpisode e) => e.bookUid == widget.bookUid,
+    );
+    if (current < 0) return;
+    setState(() {
+      _episodes = episodes;
+      _currentEpisode = current;
+      // 站点公开 CDN 上的缩略图（YouTube）与网页档剧照同一个取图器。
+      _episodeEntries = streamBookEpisodePanelEntries(
+        episodes,
+        coverFetcher: const WebVideoCoverFetcher(),
+      );
+    });
+  }
+
+  void _toggleEpisodes() =>
+      setState(() => _episodesVisible = !_episodesVisible);
+
+  /// 换到第 [index] 集：先落书（已有就原样用），本集断点落库后换页。那一集是网页站地址就
+  /// 原样在本页这一档打开，否则交给原生播放器页（它按地址自己分流）。
+  Future<void> _switchEpisode(int index) async {
+    if (_episodeSwitching ||
+        index == _currentEpisode ||
+        index < 0 ||
+        index >= _episodes.length) {
+      return;
+    }
+    _episodeSwitching = true;
+    try {
+      final StreamBookEpisode target = _episodes[index];
+      final String? uid = await ensureStreamBookEpisode(widget.repo, target);
+      if (uid == null || !context.mounted) return;
+      await _flushPosition();
+      if (!context.mounted) return;
+      final bool web = shouldOpenInWebVideoPlayer(target.url);
+      await Navigator.of(context).pushReplacement(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (_) => web
+              ? WebVideoFushiPage.neutralized(
+                  bookUid: uid,
+                  repo: widget.repo,
+                  hosting: _hosting,
+                  returnToBrowser: widget.returnToBrowser,
+                  playlistCollectionId: widget.playlistCollectionId,
+                  youtubePlaylistId: widget.youtubePlaylistId,
+                )
+              : VideoFushiPage.neutralized(
+                  bookUid: uid,
+                  repo: widget.repo,
+                  webBackToBrowser: widget.returnToBrowser,
+                  playlistCollectionId: widget.playlistCollectionId,
+                  youtubePlaylistId: widget.youtubePlaylistId,
+                ),
+        ),
+      );
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('web_video.switchEpisode', e, st);
+    } finally {
+      _episodeSwitching = false;
+    }
+  }
+
+  /// 选集面板：画面下方的横向轨道（与原生播放器同一个 [VideoEpisodePanel]）。排在画面
+  /// **下面**而不是浮在画面上：窗口宿主档的 WebView2 自己绘制，Flutter 叠层画不到它上面。
+  /// 进场从下方弹入（spatial 弹簧；墨水屏 / 减弱动态效果下时长归零直接到位）。
+  Widget _buildEpisodePanel(ColorScheme pageCs) {
+    final ColorScheme cs = videoM3ePanelNeutral(context)
+        ? videoM3ePanelScheme(pageCs)
+        : pageCs;
+    final FushiSpringSpec spring = context.fushiMotion.spatialDefault;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: spring.duration,
+      curve: spring.curve,
+      builder: (BuildContext context, double v, Widget? child) => Opacity(
+        opacity: v.clamp(0.0, 1.0),
+        child: Transform.translate(
+          offset: Offset(0, (1 - v) * 24),
+          child: child,
+        ),
+      ),
+      child: PanelFocusScope(
+        visible: true,
+        restoreFocus: () =>
+            _focusOwnership.reclaim(FocusReclaimCause.overlayClosed),
+        child: VideoM3ePanelTheme(
+          child: VideoEpisodePanel(
+            key: const ValueKey<String>('web-video-episode-panel'),
+            episodes: _episodeEntries,
+            currentIndex: _currentEpisode,
+            onTapEpisode: (int index) => unawaited(_switchEpisode(index)),
+            onClose: _toggleEpisodes,
+            colorScheme: cs,
+            title: t.video_episode_list,
+            emptyHint: t.video_episode_list_empty,
+          ),
+        ),
+      ),
+    );
   }
 
   void _toggleList() {
@@ -3160,47 +3344,58 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           body: Row(
             children: <Widget>[
               Expanded(
-                child: ColoredBox(
-                  color: Colors.black,
-                  child: Stack(
-                    children: <Widget>[
-                      Positioned.fill(child: WebVideoSurface(session: session)),
-                      if (!_overlayHidden && !_windowed)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            ignoring: _controller.currentCue == null,
-                            child: VideoSubtitleOverlay(
-                              controller: _controller,
-                              onCharTap: _handleSubtitleLookupTap,
-                              hoverAutoLookupEnabled:
-                                  ReaderFushiSource.instance.hoverAutoLookup,
-                              hoverLookupModifier: ReaderFushiSource
-                                  .instance
-                                  .hoverLookupModifier,
-                              hitTester: _subtitleHitTester,
-                              isCueFavorited: _isCueFavorited,
-                              fontFamily: _appModel.subtitleFontFamily,
+                child: Column(
+                  children: <Widget>[
+                    Expanded(
+                      child: ColoredBox(
+                        color: Colors.black,
+                        child: Stack(
+                          children: <Widget>[
+                            Positioned.fill(
+                              child: WebVideoSurface(session: session),
                             ),
-                          ),
+                            if (!_overlayHidden && !_windowed)
+                              Positioned.fill(
+                                child: IgnorePointer(
+                                  ignoring: _controller.currentCue == null,
+                                  child: VideoSubtitleOverlay(
+                                    controller: _controller,
+                                    onCharTap: _handleSubtitleLookupTap,
+                                    hoverAutoLookupEnabled: ReaderFushiSource
+                                        .instance
+                                        .hoverAutoLookup,
+                                    hoverLookupModifier: ReaderFushiSource
+                                        .instance
+                                        .hoverLookupModifier,
+                                    hitTester: _subtitleHitTester,
+                                    isCueFavorited: _isCueFavorited,
+                                    fontFamily: _appModel.subtitleFontFamily,
+                                  ),
+                                ),
+                              ),
+                            // 空闲自动制卡状态（窗口宿主档不画：WebView2 自绘盖在 Flutter 叠层上，
+                            // 那一档的自动制卡也是换到内置档跑的）。截帧走 WebView 自己的
+                            // CapturePreview，不含 Flutter 叠层，胶囊不会进封面。
+                            if (!_windowed)
+                              PositionedDirectional(
+                                top: 12,
+                                start: 16,
+                                end: 16,
+                                child: Center(
+                                  child: WebMineAutoStatusChip(
+                                    status: _autoStatus,
+                                    onDismiss: () =>
+                                        setState(() => _autoStatus = null),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
-                      // 空闲自动制卡状态（窗口宿主档不画：WebView2 自绘盖在 Flutter 叠层上，
-                      // 那一档的自动制卡也是换到内置档跑的）。截帧走 WebView 自己的
-                      // CapturePreview，不含 Flutter 叠层，胶囊不会进封面。
-                      if (!_windowed)
-                        PositionedDirectional(
-                          top: 12,
-                          start: 16,
-                          end: 16,
-                          child: Center(
-                            child: WebMineAutoStatusChip(
-                              status: _autoStatus,
-                              onDismiss: () =>
-                                  setState(() => _autoStatus = null),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                      ),
+                    ),
+                    if (_episodesVisible && _episodes.isNotEmpty)
+                      _buildEpisodePanel(cs),
+                  ],
                 ),
               ),
               if (_listVisible) _listPanelEntrance(_buildListPanel(cs)),
@@ -3700,6 +3895,21 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           onPressed: _toggleNativeSubtitlesHidden,
         ),
       ),
+      if (_episodes.length > 1)
+        FushiAdaptiveAction(
+          icon: FushiIcons.playlist,
+          label: t.video_control_episode_list,
+          onPressed: _toggleEpisodes,
+          selected: _episodesVisible,
+          inlineBuilder: (BuildContext _) => iconButton(
+            tooltip: t.video_control_episode_list,
+            icon: FushiIcon(
+              FushiIcons.resolve(FushiIcons.playlist, filled: _episodesVisible),
+            ),
+            selected: _episodesVisible,
+            onPressed: _toggleEpisodes,
+          ),
+        ),
       FushiAdaptiveAction(
         icon: FushiIcons.listView,
         label: t.video_subtitle_list,

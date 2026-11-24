@@ -142,6 +142,10 @@ extension _VideoWebSource on _VideoFushiPageState {
             bookUid: _activeBookUid,
             repo: widget.repo,
             hosting: hosting,
+            // 选集面板的列表上下文（拍板台 zGXhhMAglH）与浏览器回程随页交接。
+            playlistCollectionId: widget.playlistCollectionId,
+            youtubePlaylistId: _streamBookYoutubePlaylistId,
+            returnToBrowser: widget.webBackToBrowser,
           ),
         ),
       ),
@@ -378,6 +382,8 @@ extension _VideoWebSource on _VideoFushiPageState {
     final WebVideoSession? session = _webSession;
     final String? url = webVideoEpisodeUrl(state.href);
     if (controller == null || session == null || url == null) return;
+    // 站内点进了 YouTube 播放列表里的视频：选集面板跟上那份列表（拍板台 zGXhhMAglH）。
+    _adoptWebHrefPlaylist(state.href);
     if (url == _webBoundEpisodeUrl) {
       controller.rebindWebBook(_activeBookUid);
       unawaited(_refreshWebEpisodeBook(state, url));
@@ -429,6 +435,8 @@ extension _VideoWebSource on _VideoFushiPageState {
       _webTrackSel.clearTracks();
     });
     session.bookUid = bound.bookUid;
+    // 每集一本书的列表里原地换了集：面板当前集跟上（列表外的视频收掉列表）。
+    _syncStreamBookCurrentEpisode();
     controller.setDelayMs(_delayMs);
     controller.setSecondaryDelayMs(_secondaryDelayMs);
     controller.setCues(const <AudioCue>[]);
@@ -878,6 +886,8 @@ extension _VideoWebSource on _VideoFushiPageState {
     final int index = meta.indexOfEpisode(watchId);
     if (!listEquals(urls, _webEpisodeUrls) || index != _currentEpisode) {
       _rebuild(() {
+        // 站点自己的剧集（Netflix）就是这一集的列表上下文，不再是每集一本书的列表。
+        _streamBookEpisodes = false;
         _webEpisodeUrls = urls;
         _episodes = <_PlaylistEpisodeRef>[
           for (final NetflixEpisode e in meta.episodes)
@@ -1745,6 +1755,8 @@ extension _VideoWebSource on _VideoFushiPageState {
           hosting: WebVideoHosting.builtin,
           mineReturnState: state == null ? null : WebMineReturnState.of(state),
           returnToBrowser: widget.webBackToBrowser,
+          playlistCollectionId: widget.playlistCollectionId,
+          youtubePlaylistId: _streamBookYoutubePlaylistId,
         ),
       ),
     );
@@ -1770,6 +1782,8 @@ extension _VideoWebSource on _VideoFushiPageState {
           idleAutoMining: idle,
           mineReturnState: state == null ? null : WebMineReturnState.of(state),
           returnToBrowser: widget.webBackToBrowser,
+          playlistCollectionId: widget.playlistCollectionId,
+          youtubePlaylistId: _streamBookYoutubePlaylistId,
         ),
       ),
     );

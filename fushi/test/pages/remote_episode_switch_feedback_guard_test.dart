@@ -22,7 +22,10 @@ void main() {
     final String src = read(
       'lib/src/pages/implementations/video_fushi/episode.part.dart',
     );
-    final int remoteBranch = src.indexOf('if (_isRemote) {');
+    // 每集一本流媒体书的列表（拍板台 zGXhhMAglH）换页、不进远端分支。
+    final int remoteBranch = src.indexOf(
+      'if (_isRemote && !_streamBookEpisodes) {',
+    );
     final int pause = src.indexOf('await _controller?.pause();', remoteBranch);
     final int load = src.indexOf(
       'await _loadRemoteEpisode(index, startIntent: intent);',
