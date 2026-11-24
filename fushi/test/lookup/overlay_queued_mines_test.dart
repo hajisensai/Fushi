@@ -122,8 +122,34 @@ void main() {
           'expression': '猫',
           'reading': 'ねこ',
           'outcome': 'failed',
+          'token': ticket.token,
           'message': 'Anki 没开',
         });
+      },
+    );
+
+    test(
+      'the queued popup reply carries the same token the settlement will '
+      '(popup.js claims by token, even when the settlement arrives first)',
+      () {
+        final QueuedMineTicket first = OverlayQueuedMines.begin(
+          expression: '猫',
+          reading: '',
+          route: galRoute,
+        );
+        final QueuedMineTicket second = OverlayQueuedMines.begin(
+          expression: '猫',
+          reading: '',
+          route: galRoute,
+        );
+        expect(second.token, isNot(first.token));
+        expect(
+          first.queuedPopupReply(const <String, Object?>{'queued': true}),
+          <String, Object?>{
+            'queued': true,
+            OverlayQueuedMines.queuedTokenKey: first.token,
+          },
+        );
       },
     );
 

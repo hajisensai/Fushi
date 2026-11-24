@@ -44,6 +44,7 @@ class QueuedMineSettlement {
     required this.expression,
     required this.reading,
     required this.outcome,
+    this.token,
     this.noteId,
     this.message,
   });
@@ -58,6 +59,7 @@ class QueuedMineSettlement {
     Map<String, Object?> reply, {
     required String expression,
     required String reading,
+    int? token,
   }) {
     if (reply['queued'] == true) return null;
     if (reply['ankiConnect'] == true) {
@@ -66,6 +68,7 @@ class QueuedMineSettlement {
         expression: expression,
         reading: reading,
         outcome: QueuedMineOutcome.landed,
+        token: token,
         noteId: noteId is num ? noteId.toInt() : null,
       );
     }
@@ -82,6 +85,7 @@ class QueuedMineSettlement {
       outcome: duplicate
           ? QueuedMineOutcome.duplicate
           : QueuedMineOutcome.failed,
+      token: token,
       message: muted ? null : message,
     );
   }
@@ -89,6 +93,11 @@ class QueuedMineSettlement {
   final String expression;
   final String reading;
   final QueuedMineOutcome outcome;
+
+  /// 那次后台写卡的凭据（[QueuedMineTicket.token]，随 queued 回包的
+  /// [OverlayQueuedMines.queuedTokenKey] 交给过弹窗）：popup.js 凭它对号认领，
+  /// 而不是凭「同词」猜。
+  final int? token;
   final int? noteId;
   final String? message;
 
@@ -96,6 +105,7 @@ class QueuedMineSettlement {
     'expression': expression,
     'reading': reading,
     'outcome': outcome.name,
+    if (token != null) 'token': token,
     if (noteId != null) 'noteId': noteId,
     if (message != null) 'message': message,
   };
@@ -121,6 +131,15 @@ class QueuedMineTicket {
   final GlobalLookupRoute route;
   final String expression;
   final String reading;
+
+  /// 给弹窗的 queued 回包带上本次凭据（[OverlayQueuedMines.queuedTokenKey]）。结局推送
+  /// 与这份回包是两条各自异步的出口，写卡失败得够快时结局可能先到；popup.js 凭 token
+  /// 把先到的结局暂存、回包一到当场兑现，不靠两条出口的先后。
+  Map<String, Object?> queuedPopupReply(Map<String, Object?> queuedReply) =>
+      <String, Object?>{
+        ...queuedReply,
+        OverlayQueuedMines.queuedTokenKey: token,
+      };
 }
 
 /// 台账里一个词的最近一次后台写卡：[settlement] 为 null = 还在写。
@@ -133,6 +152,10 @@ class _QueuedMineEntry {
 
 /// app 外查词卡后台写卡的台账（按词 = expression + reading 记最近一次）。
 abstract final class OverlayQueuedMines {
+  /// queued 回包里携带 [QueuedMineTicket.token] 的键（popup.js `parseMineResult`
+  /// 读同名字段）。
+  static const String queuedTokenKey = 'queuedToken';
+
   /// 同时记着的词数上限：每次 [begin] 只新增一条，结局记下后还要留着给晚到的
   /// `queueOverwrite` 回问用，超过就丢最早的一条（那个弹窗早就不在了）。
   static const int _capacity = 64;
@@ -201,6 +224,7 @@ abstract final class OverlayQueuedMines {
           reply,
           expression: ticket.expression,
           reading: ticket.reading,
+          token: ticket.token,
         );
     if (settlement == null) return;
     final _QueuedMineEntry? entry =

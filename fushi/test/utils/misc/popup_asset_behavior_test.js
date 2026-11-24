@@ -4105,11 +4105,78 @@ async function testHostSettledFailureIgnoresButtonsThatDidNotQueue() {
   assert.equal(await context.window.fushiSettleQueuedMine({ outcome: 'failed' }), 0);
 }
 
+// 结局推送与 queued 回包是宿主两条各自异步的出口：写卡失败得够快时结局先到，那一刻
+// 还没有按钮排过队。凭 token 暂存、回包一到当场兑现，按钮不得挂着「已加入」。
+async function testHostSettlementArrivingBeforeQueuedReplyIsHonoured() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = async (name, payload) => {
+    if (name !== 'mineEntry') return base(name, payload);
+    state.mines++;
+    const early = await context.window.fushiSettleQueuedMine({
+      expression: '離島',
+      reading: '',
+      outcome: 'failed',
+      message: 'EARLY_FAIL',
+      token: 7,
+    });
+    assert.equal(early, 0, '回包未到：没有按钮能认领，只暂存');
+    return { queued: true, ankiConnect: false, queuedToken: 7 };
+  };
+  const button = mountMineHeaderFor(context, '離島');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '', '先到的失败结局当场兑现，不挂「已加入」');
+  assert.equal(button.textContent, '+');
+  assert.equal(mountedHintText(context), 'EARLY_FAIL', '失败原因照样就地说');
+}
+
+// 同一个词排过两次队：旧那次的结局（token 不同）不得撤掉新那次的「已加入」。
+async function testHostSettlementWithOtherTokenDoesNotClaim() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name !== 'mineEntry') return base(name, payload);
+    state.mines++;
+    return Promise.resolve({ queued: true, ankiConnect: false, queuedToken: 2 });
+  };
+  const button = mountMineHeaderFor(context, '離脚');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1');
+  const stale = await context.window.fushiSettleQueuedMine({
+    expression: '離脚',
+    outcome: 'failed',
+    message: 'OLD_FAIL',
+    token: 1,
+  });
+  await flush();
+  assert.equal(stale, 0, '别的那次排队的结局不认领');
+  assert.equal(button.dataset.queued, '1', '本次「已加入」依然属实');
+  assert.equal(mountedHintText(context), null);
+  const own = await context.window.fushiSettleQueuedMine({
+    expression: '離脚',
+    outcome: 'failed',
+    message: 'OWN_FAIL',
+    token: 2,
+  });
+  await flush();
+  assert.equal(own, 1);
+  assert.equal(button.dataset.queued, '');
+  assert.equal(mountedHintText(context), 'OWN_FAIL');
+}
+
 Promise.all([
   testHostSettledFailureClearsQueuedMarkInPlace(),
   testHostSettledLandingPaintsLatestEditableCheck(),
   testHostSettledDuplicatePaintsCheckWithoutProbe(),
   testHostSettledFailureIgnoresButtonsThatDidNotQueue(),
+  testHostSettlementArrivingBeforeQueuedReplyIsHonoured(),
+  testHostSettlementWithOtherTokenDoesNotClaim(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
 // 宿主主动刷新已渲染的「已制卡 ✓ / 可制卡 +」（window.fushiRefreshMineStates）。

@@ -2999,7 +2999,8 @@ class GalHookTextOverlayController extends ChangeNotifier {
           sentence: mineSentence,
         ),
       );
-      return GalHookMiningResult.queuedPopupReply;
+      // 回包带上本次凭据：落地推来的结局凭它认领发起的那颗按钮（结局先到也不丢）。
+      return queued.queuedPopupReply(GalHookMiningResult.queuedPopupReply);
     }
     return _reportLookupMine(
       await ticket.result,
