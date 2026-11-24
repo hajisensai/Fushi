@@ -108,7 +108,9 @@ pub(crate) fn core_of(core: *const SrsCoreHandle) -> Option<Arc<G4Core>> {
     resolve(core)
 }
 
-/// 跑一段带库句柄的操作：调用期间手上握着一份 `Arc`，关库不会把结构体从脚下释放掉。
+/// 跑一段带库句柄的操作：调用期间手上握着一份 `Arc`，关库不会把结构体从脚下释放掉。关库开始之后（取消令牌置位，
+/// `gen4/cancel.rs`）这段操作报出的错误——被打断的语句、批次边界的检查、借不到的连接——一律换成 `CLOSED`：与关库之后
+/// 才到达的调用同一个结果（Dart 按原文认「已关闭」，`kSrsCoreClosed`）。
 fn run_core(
     core: *const SrsCoreHandle,
     error_out: *mut *mut c_char,
@@ -122,7 +124,15 @@ fn run_core(
         set_error(error_out, CLOSED);
         return STORE_ERROR;
     };
-    run(Arc::as_ptr(&c), error_out, body)
+    run(Arc::as_ptr(&c), error_out, |g| {
+        body(g).map_err(|e| {
+            if g.is_cancelled() {
+                CLOSED.to_owned()
+            } else {
+                e
+            }
+        })
+    })
 }
 
 /// 跑一段带句柄（[G4Core]）的操作，统一处理空指针、错误与 panic。
@@ -244,11 +254,12 @@ fn open_error(dir: &Path, e: OpenError) -> (i32, String) {
     }
 }
 
-/// 开始关闭（NULL / 已关 / 已开始关的无操作）：只把句柄从句柄表里摘下来，**不等任何东西**（句柄表的锁只在增删查
-/// 的一瞬间持有，命令不在锁里跑），可以在 UI 线程上调。返回之后经这个编号的新调用（任何线程、任何 isolate）一律报
-/// 「已关闭」；已经在途的照常跑完。连接要等 [ffsrs_store_close] 才关——它会等在途命令，**必须在后台线程调**（Android /
-/// iOS 上 UI isolate 就是平台主线程，在那里等在途的长命令就是 ANR，反馈 3he3GEoqcU）。开始了就必须收尾，否则连接
-/// 一直开着。
+/// 开始关闭（NULL / 已关 / 已开始关的无操作）：把句柄从句柄表里摘下来、置取消令牌（`gen4/cancel.rs`），**不等任何
+/// 东西**（句柄表的锁只在增删查的一瞬间持有，命令不在锁里跑；置令牌是一次原子写），可以在 UI 线程上调。返回之后经这个
+/// 编号的新调用（任何线程、任何 isolate）一律报「已关闭」；已经在途的在下一个批次边界 / 语句进度回调里退出、写事务整笔
+/// 回滚、报「已关闭」（拍板台 review-merge-1124-leftovers 第 5 条：导入 / 恢复关库不再等几十秒的整层重建跑完）。连接要等
+/// [ffsrs_store_close] 才关——它要等在途命令退出，**仍在后台线程调**（Android / iOS 上 UI isolate 就是平台主线程，反馈
+/// 3he3GEoqcU）。开始了就必须收尾，否则连接一直开着。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_close_begin(core: *mut SrsCoreHandle) {
     if core.is_null() {
@@ -258,15 +269,17 @@ pub extern "C" fn ffsrs_store_close_begin(core: *mut SrsCoreHandle) {
         let id = core as usize;
         let mut table = handles();
         if let Some(c) = table.remove(&id) {
+            c.cancel();
             detached().insert(id, c);
         }
     }));
 }
 
-/// 关闭（NULL 无操作，重复关闭无操作）：句柄还在表里的先摘掉（同 [ffsrs_store_close_begin]），再等在途命令跑完、
-/// 关两条连接；之后经这个句柄的命令一律报「已关闭」。结构体在最后一个在途调用放掉引用时释放（通常就在这里）。
-/// 会等在途命令（可能是几十秒的整层重建），**不要在 UI 线程上调**：UI 线程先调 [ffsrs_store_close_begin]，
-/// 再把这一步交给后台线程（Dart 的 `SrsCore.close`）。
+/// 关闭（NULL 无操作，重复关闭无操作）：句柄还在表里的先摘掉（同 [ffsrs_store_close_begin]），取消在途命令、等它们
+/// 退出（[G4Core::close]），关两条连接；之后经这个句柄的命令一律报「已关闭」。结构体在最后一个在途调用放掉引用时释放
+/// （通常就在这里）。会等在途命令退出（取消在下一个批次边界生效，通常毫秒级；对方卡在别的进程的写锁上时最长是
+/// `busy_timeout`），**不要在 UI 线程上调**：UI 线程先调 [ffsrs_store_close_begin]，再把这一步交给后台线程（Dart 的
+/// `SrsCore.close`）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_close(core: *mut SrsCoreHandle) {
     if core.is_null() {
@@ -1252,9 +1265,9 @@ mod tests {
         std::fs::remove_dir_all(&p).unwrap();
     }
 
-    /// 反馈 3he3GEoqcU（Android 主线程 ANR，栈在 `ffsrs_store_close`）：UI 线程上的「开始关闭」只摘句柄、不等在途
-    /// 命令——在途的照常跑完（连接还没关），经编号的新调用立刻报「已关闭」；后台的 `ffsrs_store_close` 收尾后结构体
-    /// 释放、摘下表里不留东西。重复开始 / 收尾都无操作。
+    /// 反馈 3he3GEoqcU（Android 主线程 ANR，栈在 `ffsrs_store_close`）：UI 线程上的「开始关闭」只摘句柄、置取消令牌，
+    /// 不等在途命令——在途的在下一个批次边界退出、报「已关闭」（拍板台 review-merge-1124-leftovers 第 5 条），经编号的
+    /// 新调用立刻报「已关闭」；后台的 `ffsrs_store_close` 收尾后结构体释放、摘下表里不留东西。重复开始 / 收尾都无操作。
     #[test]
     fn close_begin_detaches_without_waiting_for_an_in_flight_command() {
         let p = temp("begin");
@@ -1270,10 +1283,10 @@ mod tests {
                 let rc = run_core(id as *const SrsCoreHandle, &mut err, |c| {
                     entered.wait();
                     begun.wait();
-                    // 已经开始关：在途命令手上的库连接还在，照常跑完。
+                    // 已经开始关：在途命令在批次边界（借连接）就停，报「已关闭」。
                     c.debug_query("SELECT 1", &[]).map(|_| ())
                 });
-                (rc, err.is_null())
+                (rc, take(err))
             })
         };
         entered.wait();
@@ -1292,11 +1305,62 @@ mod tests {
             "detached, not freed, before the close finishes"
         );
         begun.wait();
-        assert_eq!(worker.join().unwrap(), (STORE_OK, true));
+        let (rc, msg) = worker.join().unwrap();
+        assert_eq!((rc, msg.as_str()), (STORE_ERROR, CLOSED));
         ffsrs_store_close(h);
         assert!(!alive(&weak), "finishing the close must free the core");
         assert!(!detached().contains_key(&id));
         ffsrs_store_close(h);
+        std::fs::remove_dir_all(&p).unwrap();
+    }
+
+    /// 拍板台 review-merge-1124-leftovers 第 5 条：在途的是一条长语句（这里是要跑好几分钟的递归查询）时，「开始关闭」
+    /// 让它在语句进度回调里被打断，经 C 入口交出去的是原文「已关闭」（不是 SQLite 的 interrupted），收尾关库不必等它
+    /// 跑完。语句确实在跑时才开始关：等它第一次算到 `probe()` 再关（确定性，不靠睡）。
+    #[test]
+    fn close_begin_interrupts_a_long_in_flight_statement_and_reports_closed() {
+        use rusqlite::functions::FunctionFlags;
+        let p = temp("interrupt");
+        let h = open(&p);
+        let id = h as usize;
+        let weak = Arc::downgrade(&resolve(h).unwrap());
+        let running = Arc::new(Barrier::new(2));
+        let worker = {
+            let running = Arc::clone(&running);
+            std::thread::spawn(move || {
+                let mut err: *mut c_char = null_mut();
+                let started = std::time::Instant::now();
+                let rc = run_core(id as *const SrsCoreHandle, &mut err, |c| {
+                    let r = c.reader()?;
+                    let once = std::sync::Once::new();
+                    r.create_scalar_function("probe", 1, FunctionFlags::SQLITE_UTF8, move |ctx| {
+                        once.call_once(|| {
+                            running.wait();
+                        });
+                        ctx.get::<i64>(0)
+                    })
+                    .map_err(|e| e.to_string())?;
+                    r.query_row(
+                        "WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n                          WHERE x < 100000000000) SELECT count(*) FROM n WHERE probe(x) > 0",
+                        [],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+                });
+                (rc, take(err), started.elapsed())
+            })
+        };
+        running.wait();
+        ffsrs_store_close_begin(h);
+        let (rc, msg, took) = worker.join().unwrap();
+        assert_eq!((rc, msg.as_str()), (STORE_ERROR, CLOSED));
+        assert!(
+            took < std::time::Duration::from_secs(30),
+            "the statement must stop at the cancel, not run to the end: {took:?}"
+        );
+        ffsrs_store_close(h);
+        assert!(!alive(&weak), "finishing the close must free the core");
         std::fs::remove_dir_all(&p).unwrap();
     }
 

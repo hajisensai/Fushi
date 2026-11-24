@@ -487,6 +487,9 @@ pub struct Truth<'c> {
     voided: Cell<bool>,
     /// 库句柄的缓存配置记忆（`cache.rs` [super::cache::CfgMemo]，`kernel.rs` `G4Core::truth` 给）。没有 = 每次现算。
     cfg_memo: Option<Arc<super::cache::CfgMemo>>,
+    /// 库句柄的取消令牌（`cancel.rs`，`kernel.rs` `G4Core::truth` 给）：每一次写入的守卫先看它。没有 = 不可取消
+    /// （迁移、测试装置）。
+    cancel: Option<super::cancel::Cancel>,
 }
 
 struct N<'a, 'c>(&'a Truth<'c>);
@@ -659,6 +662,23 @@ impl<'c> Truth<'c> {
             no_deps: Arc::new(Vv::new()),
             voided: Cell::new(false),
             cfg_memo: None,
+            cancel: None,
+        }
+    }
+
+    /// 带上库句柄的取消令牌（`cancel.rs`）：[Truth::write] 与 [Truth::check_cancelled] 看它。
+    pub fn with_cancel(self, cancel: super::cancel::Cancel) -> Truth<'c> {
+        Truth {
+            cancel: Some(cancel),
+            ..self
+        }
+    }
+
+    /// 批次边界（`cancel.rs`）：库句柄开始关了就报 `CLOSED`，调用方照常把错误往上交、事务整笔回滚。
+    pub(super) fn check_cancelled(&self) -> Result<(), String> {
+        match &self.cancel {
+            Some(c) => c.check(),
+            None => Ok(()),
         }
     }
 
@@ -751,8 +771,13 @@ impl<'c> Truth<'c> {
     }
 
     /// 一次写入的守卫：会话没被毒化、在事务里、缓存与库同一个版本；[f] 报错就毒化会话。新代的其余本机状态表
-    /// （`sync_state.rs`）、收段（`receive.rs`）写库也经这里，口径与真相层相同。
+    /// （`sync_state.rs`）、收段（`receive.rs`）写库也经这里，口径与真相层相同。库句柄开始关了（取消令牌，`cancel.rs`
+    /// 「批次边界」）就报 `CLOSED`、毒化会话，调用方的事务整笔回滚。
     pub(super) fn write<T>(&self, f: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+        if let Err(e) = self.check_cancelled() {
+            self.st.borrow_mut().poisoned = true;
+            return Err(e);
+        }
         if self.st.borrow().poisoned {
             return Err(
                 "gen4 store: an earlier write failed; roll back and reset first".to_owned(),

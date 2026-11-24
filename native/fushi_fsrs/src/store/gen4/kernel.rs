@@ -18,8 +18,9 @@
 //! - **批量写入深度**（`bulk_cache`）：最外层调高写连接的 `wal_autocheckpoint`、结束时另开连接并回 WAL（协议 3
 //!   `SrsCore::bulk_begin` 同一个口径）。
 //!
-//! 关库（[G4Core::close]）：先关读连接池（等借出的放回），再关写连接（最后关的连接把 WAL 并回主文件）。之后经它的命令
-//! 一律报 `CLOSED`（与协议 3 同文，Dart 按它认「已关闭」）。
+//! 关库（[G4Core::close]）：先置取消令牌（[G4Core::cancel]，`cancel.rs`：在途命令在下一个批次边界 / 几十微秒内的语句
+//! 进度回调里退出、事务整笔回滚），再关读连接池（等借出的放回），再关写连接（最后关的连接把 WAL 并回主文件）。之后经它
+//! 的命令一律报 `CLOSED`（与协议 3 同文，Dart 按它认「已关闭」）。
 //!
 //! `ffsrs_store_snapshot` 已接（G11-4，[G4Core::snapshot_into]）。逐卡重放与训练集的 C 入口已接（S1b，`dispatch.rs` 末尾
 //! 「C 直出入口」一节）。
@@ -38,6 +39,7 @@ use rusqlite::types::Value as Sv;
 use rusqlite::{Connection, OpenFlags};
 use serde_json::{Value, json};
 
+use super::cancel::Cancel;
 use super::cmd::browse::Browse;
 use super::dryrun::Stop;
 use super::files::{self, OpenError, OpenMode};
@@ -95,6 +97,8 @@ impl Drop for Live {
 struct Readers {
     path: PathBuf,
     cap: usize,
+    /// 库句柄的取消令牌（[G4Core] `cancel`）：每条读连接装它的进度回调，置位之后借不出。
+    cancel: Cancel,
     st: Mutex<Pool>,
     returned: Condvar,
 }
@@ -119,10 +123,12 @@ impl Readers {
         crate::store::tune_for_daily_use(&c, MmapRole::Secondary)?;
         #[cfg(feature = "id_audit")]
         super::id_audit::install(&mut c);
+        self.cancel.watch(&c);
         Ok(c)
     }
 
     fn borrow(&self) -> Result<Reader<'_>, String> {
+        self.cancel.check()?;
         let idle = {
             let mut st = self.lock();
             if st.closed {
@@ -278,6 +284,8 @@ pub struct G4Core {
     bulk_holds_cache: AtomicBool,
     /// 各集合解析好的缓存配置（`cache.rs` [super::cache::CfgMemo]），经 [G4Core::truth] 交给每条命令的 [Truth]。
     cfg_memo: Arc<super::cache::CfgMemo>,
+    /// 在途命令的取消令牌（`cancel.rs`）：关库时置位（[G4Core::cancel]），与读连接池共用同一个开关。
+    cancel: Cancel,
     _live: Live,
 }
 
@@ -320,9 +328,11 @@ impl G4Core {
         #[cfg(feature = "id_audit")]
         super::id_audit::install(&mut opened.conn);
         let path = dir.join(files::GEN4_FILE);
+        let cancel = Cancel::new();
         let readers = Readers {
             path: path.clone(),
             cap: crate::store::read_pool::read_concurrency().max(1),
+            cancel: cancel.clone(),
             st: Mutex::new(Pool::default()),
             returned: Condvar::new(),
         };
@@ -375,6 +385,7 @@ impl G4Core {
                         .map_err(sql)?,
                 };
                 super::cmd::study::install_touch(&study, &opened.conn)?;
+                cancel.watch(&opened.conn);
                 Some(opened.conn)
             }
             // Secondary 不写（辅助进程可能在只读沙箱里）：缺检查点的闭包行照旧从头并，等 Primary 打开或写命令收尾补建。
@@ -384,6 +395,7 @@ impl G4Core {
                     .busy_timeout(schema::BUSY_TIMEOUT)
                     .map_err(sql)?;
                 crate::store::tune_for_daily_use(&opened.conn, MmapRole::Secondary)?;
+                cancel.watch(&opened.conn);
                 readers.lock().idle.push(opened.conn);
                 None
             }
@@ -404,6 +416,7 @@ impl G4Core {
             writer_cache: Mutex::new(crate::store::mem_budget::WriterCache::new()),
             bulk_holds_cache: AtomicBool::new(false),
             cfg_memo,
+            cancel,
             _live: Live::new(),
         })
     }
@@ -419,6 +432,7 @@ impl G4Core {
     /// 写连接（拿写锁）。一次命令持着写锁 panic 之后（锁被毒化），连接上可能还挂着它开的事务：整笔回滚再交出（协议 3
     /// `SrsCore::writer` 的恢复口径，BUG-4297）——下一条命令的写入不能落进那笔半截事务。
     pub fn writer(&self) -> Result<Writer<'_>, String> {
+        self.cancel.check()?;
         let guard = crate::store::lock_recovering(&self.writer, |w| {
             if let Some(c) = w.as_ref() {
                 if !c.is_autocommit() {
@@ -446,7 +460,7 @@ impl G4Core {
 
     /// [conn] 上一条命令的 [Truth]：带上本库的缓存配置记忆（[G4Core] `cfg_memo`）。命令层开 [Truth] 一律经它。
     pub(super) fn truth<'c>(&self, conn: &'c Connection) -> Truth<'c> {
-        Truth::with_cfg_memo(conn, self.cfg_memo.clone())
+        Truth::with_cfg_memo(conn, self.cfg_memo.clone()).with_cancel(self.cancel.clone())
     }
 
     /// 借一条读连接。
@@ -493,6 +507,8 @@ impl G4Core {
         let t = self.truth(&w);
         let v = t.tx_immediate(|t| {
             let v = f(t)?;
+            // 提交之前再看一次取消令牌（`cancel.rs`「提交之前」）：关库开始之后不提交半截命令，整笔回滚、报 `CLOSED`。
+            self.cancel.check()?;
             // 测试注入：提交之前 panic（panic_recovery_tests.rs，同协议 3 `in_savepoint` 的注入点）。
             #[cfg(test)]
             crate::store::sync2::test_panic::hit(crate::store::sync2::test_panic::BEFORE_RELEASE);
@@ -515,11 +531,25 @@ impl G4Core {
         Ok(v)
     }
 
-    /// 关闭（幂等）：读连接池（等借出的放回）→ 写连接。之后的命令报 `CLOSED`。
+    /// 关闭（幂等）：先取消在途命令（[G4Core::cancel]），再关读连接池（等借出的放回）→ 写连接。之后的命令报 `CLOSED`。
+    /// 等的只是在途命令退出（下一个批次边界 / 语句进度回调，`cancel.rs`），不是等它们跑完。
     pub fn close(&self) {
+        self.cancel();
         self.readers.close();
         let w = self.writer.lock().unwrap_or_else(|e| e.into_inner()).take();
         drop(w);
+    }
+
+    /// 取消在途命令（幂等，任意线程，不等任何东西；`cancel.rs`）：之后借不到连接、真相层写不进、写命令不提交，正在跑
+    /// 的语句在下一次进度回调里以 `SQLITE_INTERRUPT` 退出，写事务整笔回滚。只在关库时调（`ffi.rs`
+    /// `ffsrs_store_close_begin` / [G4Core::close]）：令牌不复位。
+    pub fn cancel(&self) {
+        self.cancel.cancel();
+    }
+
+    /// 已经取消（关库开始了）：在途命令此后报出的错误一律按 `CLOSED` 交出去（`ffi.rs` `run_core`）。
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel.is_cancelled()
     }
 
     /// 查询道的并发上限（Dart 查询道的 worker 数取它）。
@@ -611,6 +641,7 @@ impl G4Core {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| format!("gen4 store: open checkpoint connection: {e}"))?;
+        self.cancel.watch(&conn);
         conn.busy_timeout(schema::BUSY_TIMEOUT).map_err(sql)?;
         let (busy, log, checkpointed): (i64, i64, i64) = conn
             .query_row("PRAGMA wal_checkpoint(PASSIVE)", [], |r| {
@@ -712,6 +743,8 @@ impl G4Core {
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(|e| format!("gen4 snapshot: open a snapshot connection: {e}"))?;
+        // 整库 `VACUUM INTO` 可能很久：关库时被打断（`cancel.rs`），半截目标照下面的出错路径删掉。
+        self.cancel.watch(&conn);
         conn.busy_timeout(schema::BUSY_TIMEOUT).map_err(sql)?;
         let pragma = |name: &str| -> Result<u64, String> {
             conn.query_row(&format!("PRAGMA {name}"), [], |row| row.get::<_, i64>(0))

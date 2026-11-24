@@ -79,8 +79,9 @@ class SrsStorage {
     }
   }
 
-  /// 关 Rust 连接（幂等）。调用那一刻起之后到达的命令（含已经排队的 worker 命令）报「已关闭」；等在途命令、
-  /// 关连接在后台 isolate 里做（[SrsCore.close]），Future 完成时连接已关。
+  /// 关 Rust 连接（幂等）。调用那一刻起之后到达的命令（含已经排队的 worker 命令）报「已关闭」，在途命令被取消
+  /// （批次边界退出、整笔回滚、报「已关闭」）；等它们退出、关连接在后台 isolate 里做（[SrsCore.close]），Future
+  /// 完成时连接已关。
   Future<void> close() => _closing ??= _closeCore(core);
 
   /// 关 Rust 连接，并让内核命令 worker 丢掉为这个句柄包的 [SrsCore]（srs_core_workers.dart：换 profile / 覆盖恢复
