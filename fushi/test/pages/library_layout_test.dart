@@ -255,10 +255,10 @@ void main() {
         find.byType(AppleLibraryScopeBar<MediaLibraryViewKind>),
         findsNothing,
       );
-      // 侧栏行：书架 / 媒体服务器 / 在线（折叠成一行）。
+      // 侧栏行：书架 / 媒体服务器 / 在线（折叠成一行），末尾「导入」（导入页拍板第 2 条）。
       expect(
         host.rows.map((AppleSidebarLibraryRow r) => r.label).toList(),
-        <String>['Shelf', 'Servers', 'Online'],
+        <String>['Shelf', 'Servers', 'Online', 'Import'],
       );
       expect(host.rows.first.selected, isTrue);
       host.rows[1].onTap();
