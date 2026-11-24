@@ -150,11 +150,11 @@ docker compose logs fushi-server # 首次启动打印 admin_token；配对时 PI
   默认取 `FUSHI_SERVER_REPO` 最新一个带 linux-x64 包的 release，`FUSHI_SERVER_TAG` 钉版本，核对 GitHub
   给的 SHA-256；`docker/dist/` 里放 `fushi_server-*-linux-x64.tar.gz` 则用本地包（`build-multiplatform.yml`
   的 `linux-server` 工件可能要比 trixie 新的 glibc，`check_bundle_libs.sh` 在构建时就报错）。
-- **预构建镜像**：`server-docker-publish.yml` 只能手动触发：打包一个 fushi-server release（默认）或源码，
-  冒烟后**勾选 push 才**推到 `ghcr.io/<owner>/fushi-server`；在 hajisensai 以外的仓库推送必须显式填
-  `registry_owner`。发布后在 `.env` 设 `FUSHI_IMAGE=ghcr.io/hajisensai/fushi-server:latest`，
-  `docker compose up -d`（不加 `--build`）。发布节奏：每次 fushi-server 发版后手动跑一次
-  （release 模式、留空 `release_tag` 即取最新带 linux-x64 包的版本，勾 `latest`）。
+- **预构建镜像**：每次 fushi-server 发版，`release-server.yml` 的 docker job 都用同一份 Linux 包
+  打镜像、冒烟后推到 `ghcr.io/hajisensai/fushi-server`。通道与版本号与 app 一致：正式版
+  `latest` / `<x.y.z>` / `<x.y>` / `<x>`，测试版 `beta` / `<x.y.z>-beta.<seq>`，调试版 `debug` /
+  `debug-<seq>`。在 `.env` 设 `FUSHI_IMAGE=ghcr.io/hajisensai/fushi-server:latest`（或 `:beta` / `:debug`），
+  `docker compose up -d`（不加 `--build`）。
 - **架构**：只有 linux/amd64。发布包和全部原生库（libtorrent、Rust 内核、fushidicts、onnxruntime）
   目前只出 x64，arm64（树莓派、部分 ARM NAS）暂不提供。
 - **语言**：`.env` 的 `FUSHI_LANGUAGE`（`en` / `zh`）只在首次启动时写进配置（`init --language`；打包的

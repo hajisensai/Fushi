@@ -538,61 +538,94 @@ class _MusicPluginBrowseListPageState
       );
     } else {
       final bool covers = _kind != MusicPluginHomeKind.tracks;
+      final Widget? footer = _browseFooter(
+        context,
+        loading: _loading,
+        pager: _pager,
+        error: _error,
+        onRetry: () => unawaited(_loadMore()),
+        onLoadMore: () => unawaited(_loadMore(resume: true)),
+        keyPrefix: 'music-plugin-browse',
+      );
       results = NotificationListener<Notification>(
         onNotification: (Notification n) {
           _maybeLoadMore(n);
           return false;
         },
-        child: MusicStyledCollection(
-          scrollKey: ValueKey<String>(
-            'music-plugin-browse-${widget.manifest.id}-$_queryRevision',
-          ),
-          style: style,
-          itemCount: _items.length,
-          padding: withBottomSafeInset(
-            context,
-            EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              tokens.spacing.gap,
-              tokens.spacing.page,
-              tokens.spacing.section,
-            ),
-          ),
-          gridMaterial: covers ? ShelfCoverMaterial.glossyAlbum : null,
-          gridDelegate: covers ? musicAlbumGridDelegate : null,
-          gridCardBuilder: covers
-              ? (BuildContext context, int i) =>
-                    _PluginGridCard(manifest: widget.manifest, item: _items[i])
-              : null,
-          rowBuilder: (BuildContext context, int i) =>
-              musicPluginItemTile(context, ref, widget.manifest, _items, i),
-          blockBuilder:
-              (BuildContext context, int i, FushiCoverBlockSize size) =>
-                  musicPluginItemBlock(
-                    context,
-                    ref,
-                    widget.manifest,
-                    _items,
-                    i,
-                    size,
+        child: isGlassDesign(context)
+            // Cupertino：作品 / 专辑 / 歌单是平封面网格，曲目是 Apple 曲目行。
+            ? AppleMusicCollectionView(
+                scrollKey: ValueKey<String>(
+                  'music-plugin-browse-${widget.manifest.id}-$_queryRevision',
+                ),
+                topInset: false,
+                itemCount: _items.length,
+                tileBuilder: covers
+                    ? (BuildContext context, int i) => _PluginGridCard(
+                        manifest: widget.manifest,
+                        item: _items[i],
+                      )
+                    : null,
+                rowBuilder: (BuildContext context, int i) =>
+                    musicPluginItemTile(
+                      context,
+                      ref,
+                      widget.manifest,
+                      _items,
+                      i,
+                    ),
+                footer: footer,
+              )
+            : MusicStyledCollection(
+                scrollKey: ValueKey<String>(
+                  'music-plugin-browse-${widget.manifest.id}-$_queryRevision',
+                ),
+                style: style,
+                itemCount: _items.length,
+                padding: withBottomSafeInset(
+                  context,
+                  EdgeInsets.fromLTRB(
+                    tokens.spacing.page,
+                    tokens.spacing.gap,
+                    tokens.spacing.page,
+                    tokens.spacing.section,
                   ),
-          footer: _browseFooter(
-            context,
-            loading: _loading,
-            pager: _pager,
-            error: _error,
-            onRetry: () => unawaited(_loadMore()),
-            onLoadMore: () => unawaited(_loadMore(resume: true)),
-            keyPrefix: 'music-plugin-browse',
-          ),
-        ),
+                ),
+                gridMaterial: covers ? ShelfCoverMaterial.glossyAlbum : null,
+                gridDelegate: covers ? musicAlbumGridDelegate : null,
+                gridCardBuilder: covers
+                    ? (BuildContext context, int i) => _PluginGridCard(
+                        manifest: widget.manifest,
+                        item: _items[i],
+                      )
+                    : null,
+                rowBuilder: (BuildContext context, int i) =>
+                    musicPluginItemTile(
+                      context,
+                      ref,
+                      widget.manifest,
+                      _items,
+                      i,
+                    ),
+                blockBuilder:
+                    (BuildContext context, int i, FushiCoverBlockSize size) =>
+                        musicPluginItemBlock(
+                          context,
+                          ref,
+                          widget.manifest,
+                          _items,
+                          i,
+                          size,
+                        ),
+                footer: footer,
+              ),
       );
     }
     return musicBrowseScaffold(
       context,
       title: _title,
       actions: <FushiToolbarItem>[
-        if (musicViewStyleSwitchable(context))
+        if (musicViewStyleSwitchable(context) && !isGlassDesign(context))
           musicViewStyleToggle(viewKind, style),
       ],
       mastheadBottom: masthead ? header : null,
@@ -782,58 +815,86 @@ class _MusicPluginCatalogPageState
           }
           return false;
         },
-        child: FushiEntranceScope(
-          child: ListView.builder(
-            key: ValueKey<String>(
-              'music-plugin-catalog-${widget.facet.id}-$_filter',
-            ),
-            padding: withBottomSafeInset(
-              context,
-              EdgeInsets.fromLTRB(
-                tokens.spacing.page,
-                tokens.spacing.gap,
-                tokens.spacing.page,
-                tokens.spacing.section,
-              ),
-            ),
-            itemCount: _items.length + (footer == null ? 0 : 1),
-            itemBuilder: fushiStaggeredItemBuilder((
-              BuildContext context,
-              int i,
-            ) {
-              if (i >= _items.length) return footer!;
-              final MusicPluginCatalogEntry e = _items[i];
-              return FushiPressScale(
-                child: FushiGroupedListItem(
-                  key: ValueKey<String>(
-                    'music-plugin-catalog-entry-${e.tag.id}',
-                  ),
-                  index: i,
-                  count: _items.length,
-                  onTap: () => _open(e.tag),
-                  child: FushiListItem(
-                    leading: const FushiIcon(FushiIcons.tag),
-                    title: Text(
-                      e.tag.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+        child: isGlassDesign(context)
+            // Cupertino：彩色渐变分类块网格（Apple Music「按类别浏览」）；挑条件
+            // 时点块即交回，角上是「添加」。
+            ? AppleMusicCategoryGrid(
+                key: ValueKey<String>(
+                  'music-plugin-catalog-${widget.facet.id}-$_filter',
+                ),
+                topInset: false,
+                itemCount: _items.length,
+                footer: footer,
+                itemBuilder: (BuildContext context, int i) {
+                  final MusicPluginCatalogEntry e = _items[i];
+                  return AppleMusicCategoryTile(
+                    key: ValueKey<String>(
+                      'music-plugin-catalog-entry-${e.tag.id}',
                     ),
+                    label: e.tag.name,
+                    seed: e.tag.id,
                     subtitle: e.count == null
                         ? null
-                        : Text(
-                            t.music_plugin_browse_catalog_count(
-                              count: e.count!,
-                            ),
-                          ),
-                    trailing: FushiIcon(
-                      widget.pick ? FushiIcons.add : FushiIcons.chevronRight,
+                        : t.music_plugin_browse_catalog_count(count: e.count!),
+                    icon: widget.pick ? FushiIcons.add : FushiIcons.tag,
+                    onTap: () => _open(e.tag),
+                  );
+                },
+              )
+            : FushiEntranceScope(
+                child: ListView.builder(
+                  key: ValueKey<String>(
+                    'music-plugin-catalog-${widget.facet.id}-$_filter',
+                  ),
+                  padding: withBottomSafeInset(
+                    context,
+                    EdgeInsets.fromLTRB(
+                      tokens.spacing.page,
+                      tokens.spacing.gap,
+                      tokens.spacing.page,
+                      tokens.spacing.section,
                     ),
                   ),
+                  itemCount: _items.length + (footer == null ? 0 : 1),
+                  itemBuilder: fushiStaggeredItemBuilder((
+                    BuildContext context,
+                    int i,
+                  ) {
+                    if (i >= _items.length) return footer!;
+                    final MusicPluginCatalogEntry e = _items[i];
+                    return FushiPressScale(
+                      child: FushiGroupedListItem(
+                        key: ValueKey<String>(
+                          'music-plugin-catalog-entry-${e.tag.id}',
+                        ),
+                        index: i,
+                        count: _items.length,
+                        onTap: () => _open(e.tag),
+                        child: FushiListItem(
+                          leading: const FushiIcon(FushiIcons.tag),
+                          title: Text(
+                            e.tag.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: e.count == null
+                              ? null
+                              : Text(
+                                  t.music_plugin_browse_catalog_count(
+                                    count: e.count!,
+                                  ),
+                                ),
+                          trailing: FushiIcon(
+                            widget.pick
+                                ? FushiIcons.add
+                                : FushiIcons.chevronRight,
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
                 ),
-              );
-            }),
-          ),
-        ),
+              ),
       );
     }
     return musicBrowseScaffold(

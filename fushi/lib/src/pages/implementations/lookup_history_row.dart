@@ -1,7 +1,8 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockColors;
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
@@ -9,15 +10,56 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_poster_block.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
-import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+
+/// 一条查词历史行要显示的内容与动作（业务只在查词页算一次，M3E 色条行
+/// [LookupHistoryCollageRow]、M3E 分段行与 Apple 行
+/// `AppleLookupHistoryRow` 都只消费它）。
+@immutable
+class LookupHistoryRowData {
+  const LookupHistoryRowData({
+    required this.term,
+    required this.subtitleParts,
+    required this.dictionaryCount,
+    required this.selected,
+    required this.onOpen,
+    required this.onFavorite,
+    required this.onRemove,
+  });
+
+  /// 查过的词（换行已压成空格）。
+  final String term;
+
+  /// 历史结果首条的写法 / 读音（与 [term] 不同才有）；空 = 不画第二行。
+  final List<String> subtitleParts;
+
+  /// 这条结果命中的词典数。
+  final int dictionaryCount;
+
+  /// 是否是宽屏右栏当前显示的那条。
+  final bool selected;
+
+  /// 回看这条（把词填回搜索框并显示缓存结果）。
+  final VoidCallback onOpen;
+  final VoidCallback onFavorite;
+  final VoidCallback onRemove;
+
+  /// 第二行文字：[subtitleParts] 用 [separator] 连起来；没有则 null。
+  String? subtitle(String separator) =>
+      subtitleParts.isEmpty ? null : subtitleParts.join(separator);
+
+  /// 颜色标签的色相：与 M3E 色条 / 拼贴色块同一套 [fushiPosterHue]，两套设计
+  /// 系统下同一个词是同一种颜色。
+  double get hue => fushiPosterHue(term);
+}
 
 /// 色条尺寸（设计稿查词页 `.hrow .dot`：8×28、圆角 4）。
 const double _kStripWidth = 8;
 const double _kStripHeight = 28;
 
-/// 重设计外壳（MD3 / Apple，墨水屏除外）的查词历史行（设计稿 #lookup L1）。
+/// M3E 重设计外壳（墨水屏除外）的查词历史行（设计稿 #lookup L1）。Apple 设计系统
+/// 不用它，走 `AppleLookupHistoryRow`（查词页在根上按设计系统分派）。
 ///
 /// 旧版窄栏里放 2 列大色块，词形被截成「やめ…」，读音大字水印压在底边，信息
 /// 几乎读不出来。改成列表行：
@@ -87,28 +129,25 @@ class _LookupHistoryCollageRowState extends State<LookupHistoryCollageRow> {
     final ColorScheme cs = theme.colorScheme;
     final TextTheme tt = theme.textTheme;
     final bool dark = theme.brightness == Brightness.dark;
-    final FushiAppleColors? apple = isGlassDesign(context)
-        ? appleColorsOf(context)
-        : null;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
     final FushiCoverBlockColors strip = fushiPosterColors(
       context,
       fushiPosterHue(widget.term),
     );
-    final BorderRadius radius = BorderRadius.circular(apple != null ? 10 : 12);
+    const BorderRadius radius = FushiM3eShape.smallRadius;
     final bool reveal = hovering || _focused || _menuFocused;
 
     final Color background = widget.selected
-        ? (apple?.fill ?? cs.secondaryContainer)
+        ? cs.secondaryContainer
         : hovering
-        ? (apple?.tertiaryFill ?? cs.surfaceContainerHigh)
+        ? cs.surfaceContainerHigh
         : Colors.transparent;
-    final Color termColor = widget.selected && apple == null
+    final Color termColor = widget.selected
         ? cs.onSecondaryContainer
-        : (apple?.label ?? cs.onSurface);
-    final Color metaColor = widget.selected && apple == null
+        : cs.onSurface;
+    final Color metaColor = widget.selected
         ? cs.onSecondaryContainer.withValues(alpha: 0.8)
-        : (apple?.secondaryLabel ?? cs.onSurfaceVariant);
+        : cs.onSurfaceVariant;
 
     final String? subtitle = widget.subtitle;
     final Widget content = Row(
@@ -151,7 +190,7 @@ class _LookupHistoryCollageRowState extends State<LookupHistoryCollageRow> {
           ),
         ),
         const SizedBox(width: 8),
-        _buildCountPill(context, cs, tt, apple),
+        _buildCountPill(context, cs, tt),
         _buildMenu(duration, reveal),
       ],
     );
@@ -166,17 +205,15 @@ class _LookupHistoryCollageRowState extends State<LookupHistoryCollageRow> {
             onTap: widget.onOpen,
             onFocusChange: _setFocused,
             borderRadius: radius,
-            // 悬停 / 选中底色由下面的 AnimatedContainer 画（两套设计系统同一条
-            // 路径），水波只留给 MD3 的按下态。
+            // 悬停 / 选中底色由下面的 AnimatedContainer 画，水波只留给按下态。
             overlayColor: WidgetStateProperty.resolveWith<Color?>((
               Set<WidgetState> states,
             ) {
-              if (apple == null && states.contains(WidgetState.pressed)) {
+              if (states.contains(WidgetState.pressed)) {
                 return cs.onSurface.withValues(alpha: 0.1);
               }
               return Colors.transparent;
             }),
-            splashFactory: apple != null ? NoSplash.splashFactory : null,
             child: AnimatedContainer(
               duration: duration,
               curve: FushiMotion.standard,
@@ -188,9 +225,7 @@ class _LookupHistoryCollageRowState extends State<LookupHistoryCollageRow> {
               foregroundDecoration: BoxDecoration(
                 borderRadius: radius,
                 border: Border.all(
-                  color: _focused
-                      ? (apple?.accent ?? cs.primary)
-                      : Colors.transparent,
+                  color: _focused ? cs.primary : Colors.transparent,
                   width: 2,
                 ),
               ),
@@ -202,15 +237,9 @@ class _LookupHistoryCollageRowState extends State<LookupHistoryCollageRow> {
     );
   }
 
-  Widget _buildCountPill(
-    BuildContext context,
-    ColorScheme cs,
-    TextTheme tt,
-    FushiAppleColors? apple,
-  ) {
-    final Color fill =
-        apple?.fill ?? (widget.selected ? cs.surface : cs.surfaceContainerHigh);
-    final Color fg = apple?.secondaryLabel ?? cs.onSurfaceVariant;
+  Widget _buildCountPill(BuildContext context, ColorScheme cs, TextTheme tt) {
+    final Color fill = widget.selected ? cs.surface : cs.surfaceContainerHigh;
+    final Color fg = cs.onSurfaceVariant;
     // 读屏只念一个光秃秃的数字听不出含义：整枚胶囊换成一句「命中 N 本词典」。
     return Semantics(
       label: t.lookup_history_dictionary_count(count: widget.dictionaryCount),

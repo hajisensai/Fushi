@@ -377,7 +377,7 @@ class _Look {
 const List<_Look> _looks = <_Look>[
   _Look('material'),
   _Look('apple', design: 'glass'),
-  _Look('glass', design: 'glass', glass: FushiGlassMaterial.liquid),
+  _Look('glass', design: 'glass', glass: FushiGlassMaterial.premium),
   _Look('eink', eink: true),
   _Look('dark', brightness: 'dark'),
 ];

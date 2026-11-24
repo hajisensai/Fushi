@@ -7,6 +7,11 @@
 // the process-exit quiesce entry point and its isolate is then torn down
 // without disposing the player, as an engine shutdown during process
 // termination does. libmpv must no longer reach the deleted callback.
+//
+// Mode `port` (BUG-5413, feedback Wgbo462Sfc) installs the port wakeup the app
+// uses (fushi_compute's `ffc_port_wakeup`) and then lets the owner die without
+// quiescing or disposing, as an Android FlutterEngine.destroy with the process
+// left cached does. libmpv's wakeups must post to the closed port harmlessly.
 // ignore_for_file: implementation_imports
 
 import 'dart:async';
@@ -17,7 +22,9 @@ import 'dart:isolate';
 
 import 'package:media_kit/ffi/ffi.dart';
 import 'package:media_kit/generated/libmpv/bindings.dart' as generated;
+import 'package:fushi_compute/fushi_compute.dart' show fushiComputePortWakeup;
 import 'package:media_kit/native_exit.dart';
+import 'package:media_kit/native_wakeup.dart';
 import 'package:media_kit/src/player/native/core/initializer.dart';
 import 'package:media_kit/src/player/native/core/initializer_native_callable.dart';
 import 'package:media_kit/src/player/native/core/native_library.dart';
@@ -122,7 +129,12 @@ Future<void> _owner(List<Object> arguments) async {
     'config': 'no',
   };
   Future<void> ignoreEvent(Pointer<generated.mpv_event> event) async {}
-  final Pointer<generated.mpv_handle> handle = mode == 'quiesce'
+  if (mode == 'port') {
+    useNativePortWakeup(fushiComputePortWakeup());
+    await _checkpoint('PORT WAKEUP INSTALLED');
+  }
+  final Pointer<generated.mpv_handle> handle =
+      mode == 'quiesce' || mode == 'port'
       ? await InitializerNativeCallable(
           mpv,
         ).create(ignoreEvent, options: options)
@@ -141,8 +153,8 @@ Future<void> _owner(List<Object> arguments) async {
 
 Future<void> main(List<String> arguments) async {
   if (arguments.length != 2 ||
-      !<String>{'kill', 'dispose', 'quiesce'}.contains(arguments[1])) {
-    throw ArgumentError('Expected <libmpv path> <kill|dispose|quiesce>');
+      !<String>{'kill', 'dispose', 'quiesce', 'port'}.contains(arguments[1])) {
+    throw ArgumentError('Expected <libmpv path> <kill|dispose|quiesce|port>');
   }
   final String mode = arguments[1];
   await _checkpoint('PROBE START $mode debug=$kDebugMode');

@@ -13,12 +13,15 @@ import 'dart:async';
 import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiMenuAnchor;
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
@@ -32,6 +35,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -117,14 +121,19 @@ Widget _musicBar(
     ),
     actions: <Widget>[
       musicQueueButton(context, engine),
-      musicPlayModeButton(context, engine),
+      musicPlayModeButton(
+        context,
+        engine,
+        appleExtent: kFushiNowPlayingAppleGlyphExtent,
+      ),
       // 音量滑杆浮在条外：开着时让宽屏色块保持展开。
       Builder(
         builder: (BuildContext context) => MusicVolumeButton(
           onOpenChanged: FushiNowPlayingBar.holdExpandedOf(context),
+          appleExtent: kFushiNowPlayingAppleGlyphExtent,
         ),
       ),
-      _musicBarCloseButton(session),
+      _musicBarCloseButton(context, session),
     ],
     onMore: () => unawaited(_musicBarMoreMenu(context, appModel, session)),
     onTap: () => openMusicPlayerPage(context),
@@ -370,6 +379,7 @@ Widget musicPlayModeButton(
   BuildContext context,
   MusicPlayerEngine engine, {
   double? iconSize,
+  double? appleExtent,
 }) {
   final MusicRepeatMode repeat = engine.repeatMode;
   final bool shuffled = engine.shuffled;
@@ -409,6 +419,19 @@ Widget musicPlayModeButton(
     }
   }
 
+  // Apple：Apple Music 式裸字形，开着时实心 + label 色，关着 secondaryLabel 描边，
+  // 不再画玻璃选中圆钮（[appleExtent] = 命中区直径，null 取 bar button 口径）。
+  if (isGlassDesign(context)) {
+    return FushiAppleGlyphButton(
+      key: const ValueKey<String>('music_lyrics_play_mode'),
+      icon: glyph,
+      tooltip: tip,
+      selected: on,
+      glyphSize: iconSize,
+      extent: appleExtent,
+      onPressed: engine.canShuffleOrRepeat ? () => unawaited(cycle()) : null,
+    );
+  }
   return FushiIconButtonControl(
     key: const ValueKey<String>('music_lyrics_play_mode'),
     iconSize: iconSize,
@@ -424,30 +447,60 @@ Widget musicPlayModeButton(
 }
 
 /// 播放队列按钮（迷你条 / 停靠条，纯图标）：窄屏弹底部弹层、宽屏从右侧滑出侧栏
-/// （[showMusicQueue]）。
+/// （[showMusicQueue]）。Apple 下是 label 色裸字形（Apple Music 迷你播放器）。
 Widget musicQueueButton(BuildContext context, MusicPlayerEngine engine) =>
-    FushiPressScale(
-      child: FushiIconButtonControl(
+    isGlassDesign(context)
+    ? FushiAppleGlyphButton(
         key: const ValueKey<String>('music_bar_queue'),
+        icon: FushiIcons.playlist,
         tooltip: t.music_queue_title,
+        secondary: false,
+        extent: kFushiNowPlayingAppleGlyphExtent,
         onPressed: () => unawaited(showMusicQueue(context, engine)),
-        icon: const FushiIcon(FushiIcons.playlist),
-      ),
-    );
+      )
+    : FushiPressScale(
+        child: FushiIconButtonControl(
+          key: const ValueKey<String>('music_bar_queue'),
+          tooltip: t.music_queue_title,
+          onPressed: () => unawaited(showMusicQueue(context, engine)),
+          icon: const FushiIcon(FushiIcons.playlist),
+        ),
+      );
 
 /// 音量：点开一条横向滑杆（0–100，写偏好并即时下发给后端）。
 /// 关闭迷你条：停止音乐并释放媒体会话（条随之消失）。用户 2026-10-30「底部栏
 /// 提供个按钮关闭」——原来只藏在长按菜单的「停止音乐」里。
-Widget _musicBarCloseButton(MusicSession session) => FushiIconButtonControl(
-  key: const ValueKey<String>('music_bar_close'),
-  tooltip: t.music_stop,
-  onPressed: () => unawaited(session.stop()),
-  icon: const FushiIcon(FushiIcons.close),
-);
+Widget _musicBarCloseButton(BuildContext context, MusicSession session) =>
+    isGlassDesign(context)
+    ? FushiAppleGlyphButton(
+        key: const ValueKey<String>('music_bar_close'),
+        icon: FushiIcons.close,
+        tooltip: t.music_stop,
+        extent: kFushiNowPlayingAppleGlyphExtent,
+        onPressed: () => unawaited(session.stop()),
+      )
+    : FushiIconButtonControl(
+        key: const ValueKey<String>('music_bar_close'),
+        tooltip: t.music_stop,
+        onPressed: () => unawaited(session.stop()),
+        icon: const FushiIcon(FushiIcons.close),
+      );
 
 /// 音量按钮：点开弹出音量滑杆（迷你条与播放页共用，读写 [AppModel.musicVolume]）。
 class MusicVolumeButton extends StatefulWidget {
-  const MusicVolumeButton({super.key, this.onOpenChanged, this.iconSize});
+  const MusicVolumeButton({
+    super.key,
+    this.onOpenChanged,
+    this.iconSize,
+    this.appleExtent,
+    this.appleSecondary = false,
+  });
+
+  /// Apple 下的命中区直径；null = bar button 口径。
+  final double? appleExtent;
+
+  /// Apple 下静止时取 secondaryLabel（播放页底部工具排）；false = label（迷你条）。
+  final bool appleSecondary;
 
   /// 图标尺寸；null = 按钮默认（迷你条）。播放页按钮行传自己的统一尺寸。
   final double? iconSize;
@@ -469,7 +522,7 @@ class _MusicVolumeButtonState extends State<MusicVolumeButton> {
       context,
     ).read(appProvider);
     final double volume = _dragging ?? appModel.musicVolume;
-    return MenuAnchor(
+    return FushiMenuAnchor(
       controller: _menu,
       alignmentOffset: const Offset(-96, 8),
       onOpen: () => widget.onOpenChanged?.call(true),
@@ -507,16 +560,28 @@ class _MusicVolumeButtonState extends State<MusicVolumeButton> {
         ),
       ],
       builder: (BuildContext context, MenuController menu, Widget? _) =>
-          FushiIconButtonControl(
-            key: const ValueKey<String>('music_bar_volume'),
-            tooltip: t.music_volume_title,
-            isSelected: menu.isOpen,
-            iconSize: widget.iconSize,
-            onPressed: () => menu.isOpen ? menu.close() : menu.open(),
-            icon: FushiIcon(
-              volume <= 0 ? FushiIcons.volumeOff : FushiIcons.volumeUp,
+          isGlassDesign(context)
+          // Apple：裸字形，滑杆展开时实心 + label 色，不画玻璃选中圆钮。
+          ? FushiAppleGlyphButton(
+              key: const ValueKey<String>('music_bar_volume'),
+              icon: volume <= 0 ? FushiIcons.volumeOff : FushiIcons.volumeUp,
+              tooltip: t.music_volume_title,
+              selected: menu.isOpen ? true : null,
+              secondary: widget.appleSecondary,
+              glyphSize: widget.iconSize,
+              extent: widget.appleExtent,
+              onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+            )
+          : FushiIconButtonControl(
+              key: const ValueKey<String>('music_bar_volume'),
+              tooltip: t.music_volume_title,
+              isSelected: menu.isOpen,
+              iconSize: widget.iconSize,
+              onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+              icon: FushiIcon(
+                volume <= 0 ? FushiIcons.volumeOff : FushiIcons.volumeUp,
+              ),
             ),
-          ),
     );
   }
 }

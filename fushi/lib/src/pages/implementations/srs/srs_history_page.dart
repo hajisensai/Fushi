@@ -21,6 +21,7 @@ import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_date_time_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -310,14 +311,14 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
 
   Future<void> _pickMoment() async {
     final DateTime now = DateTime.now();
-    final DateTime? day = await showDatePicker(
+    final DateTime? day = await showFushiDatePicker(
       context: context,
       initialDate: now,
       firstDate: DateTime(now.year - 20),
       lastDate: now,
     );
     if (day == null || !mounted) return;
-    final TimeOfDay? time = await showTimePicker(
+    final TimeOfDay? time = await showFushiTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(now),
     );

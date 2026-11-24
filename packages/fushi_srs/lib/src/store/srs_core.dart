@@ -583,10 +583,10 @@ final class SrsCoreBindings {
   final _OpenDart open;
   final _SetTempDirDart setTempDir;
 
-  /// 收尾关闭：等在途命令、关连接。会阻塞，只在后台 isolate 调（[SrsCore.close]）。
+  /// 收尾关闭：等在途命令退出（已被 [closeBegin] 取消）、关连接。会阻塞，只在后台 isolate 调（[SrsCore.close]）。
   final _CloseDart close;
 
-  /// 开始关闭：只摘句柄、不等任何东西（任意线程可调）。
+  /// 开始关闭：摘句柄、取消在途命令，不等任何东西（任意线程可调）。
   final _CloseDart closeBegin;
   final _SnapshotDart snapshot;
   final _QueryDart debugQuery;
@@ -862,10 +862,12 @@ final class SrsCore {
 
   /// 关库（幂等；借来的句柄 [owned] 为假，只丢掉自己这份、不关库）。
   ///
-  /// 同步部分只摘句柄（`ffsrs_store_close_begin`，不等任何东西）：返回时这个包装与经句柄号的任何调用（别的
-  /// isolate、已经排着队的 worker 命令）都报「已关闭」。等在途命令跑完、关连接的那一步（`ffsrs_store_close`）
-  /// 在后台 isolate 里做——在途的可能是开库时几十秒的整层重建，Android / iOS 上 UI isolate 就是平台主线程，在那里
-  /// 等就是 ANR（反馈 3he3GEoqcU）。Future 完成时连接已关、库文件可以换 / 删（覆盖恢复）。
+  /// 同步部分摘句柄并取消在途命令（`ffsrs_store_close_begin`，不等任何东西）：返回时这个包装与经句柄号的任何调用
+  /// （别的 isolate、已经排着队的 worker 命令）都报「已关闭」；已经在途的命令（可能是开库时几十秒的整层重建）在
+  /// Rust 的下一个批次边界 / 语句进度回调里退出、写事务整笔回滚、同样报「已关闭」（native/fushi_fsrs
+  /// `store/gen4/cancel.rs`，拍板台 review-merge-1124-leftovers 第 5 条）。等它们退出、关连接的那一步
+  /// （`ffsrs_store_close`）仍在后台 isolate 里做：Android / iOS 上 UI isolate 就是平台主线程（反馈 3he3GEoqcU）。
+  /// Future 完成时连接已关、库文件可以换 / 删（覆盖恢复）。
   Future<void> close() {
     final Future<void>? closing = _closing;
     if (closing != null) return closing;

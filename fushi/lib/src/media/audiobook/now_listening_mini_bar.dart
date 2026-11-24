@@ -11,6 +11,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_controller.dart' show MediaSessionOwner;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
 import 'package:fushi/src/utils/components/fushi_now_playing_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/cover_image.dart';
@@ -118,7 +120,16 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
         // 只有有 native 悬浮窗后端的平台（FloatingLyricChannel.supported：Android /
         // Windows / macOS / Linux）显示开关，其余（iOS）隐藏（优雅降级）。开着态用实心
         // 选中态图标提示当前已开。
-        if (FloatingLyricChannel.supported)
+        if (FloatingLyricChannel.supported && isGlassDesign(context))
+          // Apple：裸字形开关，开着实心 + label 色，关着 secondaryLabel。
+          FushiAppleGlyphButton(
+            icon: FushiIcons.subtitles,
+            tooltip: t.floating_lyric_toggle_action,
+            selected: appModel.showFloatingLyric,
+            extent: kFushiNowPlayingAppleGlyphExtent,
+            onPressed: () => _toggleFloatingLyric(appModel),
+          )
+        else if (FloatingLyricChannel.supported)
           FushiIconButtonControl(
             isSelected: appModel.showFloatingLyric,
             icon: FushiIcon(
@@ -129,11 +140,20 @@ class _NowListeningMiniBarState extends ConsumerState<NowListeningMiniBar> {
             tooltip: t.floating_lyric_toggle_action,
             onPressed: () => _toggleFloatingLyric(appModel),
           ),
-        FushiIconButtonControl(
-          icon: const FushiIcon(FushiIcons.stop),
-          tooltip: t.stop,
-          onPressed: () => appModel.stopBackgroundListening(),
-        ),
+        if (isGlassDesign(context))
+          FushiAppleGlyphButton(
+            icon: FushiIcons.stop,
+            tooltip: t.stop,
+            secondary: false,
+            extent: kFushiNowPlayingAppleGlyphExtent,
+            onPressed: () => appModel.stopBackgroundListening(),
+          )
+        else
+          FushiIconButtonControl(
+            icon: const FushiIcon(FushiIcons.stop),
+            tooltip: t.stop,
+            onPressed: () => appModel.stopBackgroundListening(),
+          ),
       ],
       onTap: () => appModel.openBackgroundListeningBook(ref),
     );

@@ -22,6 +22,8 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
@@ -504,7 +506,7 @@ class _HeroNavButton extends StatelessWidget {
       button: true,
       label: label,
       excludeSemantics: true,
-      child: Tooltip(
+      child: FushiTooltip(
         message: label,
         waitDuration: kIconButtonTooltipHoverDelay,
         child: MouseRegion(

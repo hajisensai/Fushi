@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +9,7 @@ import 'package:fushi/src/media/audiobook/audiobook_controller.dart'
     show AudiobookPlayerController;
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:image/image.dart' as img;
 
 /// 歌词模式插图（2026-10-07）：小图屏蔽判据、播放位置 → 插图映射、换图 / 回封面 /
 /// 前后切换状态机。
@@ -65,14 +68,14 @@ void main() {
       );
     });
 
-    test('尺寸读不出（SVG）时只看排版', () {
+    test('文件头认不出位图格式（SVG / 残缺 / 加扰）一律不当插图（BUG-5408）', () {
       expect(
         classifyLyricsIllustration(size: null, sharesLineWithText: false),
-        LyricsIllustrationVerdict.illustration,
+        LyricsIllustrationVerdict.undecodable,
       );
       expect(
         classifyLyricsIllustration(size: null, sharesLineWithText: true),
-        LyricsIllustrationVerdict.inlineGlyph,
+        LyricsIllustrationVerdict.undecodable,
       );
     });
 
@@ -639,5 +642,115 @@ void main() {
     );
     expect(selection.verdicts['rule.png'], LyricsIllustrationVerdict.tooSmall);
     expect(selection.verdicts.containsKey('missing.jpg'), isFalse);
+  });
+
+  test('BUG-5408：EPUB 里加扰过的 PNG（文件头不是位图）经真实文件探测后不进插图列表', () {
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'lyrics_undecodable_',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    // 合法 PNG 头：签名 + IHDR（1072×1528）。
+    Uint8List pngHead(int width, int height) {
+      final ByteData d = ByteData(33);
+      const List<int> sig = <int>[
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+      ];
+      for (int i = 0; i < sig.length; i++) {
+        d.setUint8(i, sig[i]);
+      }
+      d.setUint32(8, 13);
+      const List<int> ihdr = <int>[0x49, 0x48, 0x44, 0x52];
+      for (int i = 0; i < ihdr.length; i++) {
+        d.setUint8(12 + i, ihdr[i]);
+      }
+      d.setUint32(16, width);
+      d.setUint32(20, height);
+      d.setUint8(24, 8);
+      d.setUint8(25, 3);
+      return d.buffer.asUint8List();
+    }
+
+    final Uint8List plate = pngHead(1072, 1528);
+    // 反馈 U5nBMFFVwO 那本书的 `bookwalker.png`：扩展名与 manifest 都说 PNG，
+    // 字节却整段加扰（开头 b8 d2 1a c1 …），任何解码器都认不出。
+    final Uint8List scrambled = Uint8List.fromList(
+      List<int>.generate(plate.length, (int i) => plate[i] ^ 0x31),
+    );
+    final String platePath = '${dir.path}${Platform.pathSeparator}k001.png';
+    final String scrambledPath =
+        '${dir.path}${Platform.pathSeparator}bookwalker.png';
+    File(platePath).writeAsBytesSync(plate);
+    File(scrambledPath).writeAsBytesSync(scrambled);
+
+    final Map<String, LyricsIllustrationFileProbe> probes =
+        probeLyricsIllustrationFiles(<String>[platePath, scrambledPath]);
+    EpubImageRef ref(String key, int chapter) => EpubImageRef(
+      chapterIndex: chapter,
+      orderInBook: 0,
+      src: key,
+      revealKey: key,
+      charOffset: 0,
+      sharesLineWithText: false,
+    );
+    final LyricsIllustrationSelection selection = selectLyricsIllustrations(
+      refs: <EpubImageRef>[ref('k001.png', 1), ref('bookwalker.png', 34)],
+      pathByKey: <String, String>{
+        'k001.png': platePath,
+        'bookwalker.png': scrambledPath,
+      },
+      probes: probes,
+    );
+    expect(
+      selection.items.map((LyricsIllustration i) => i.key).toList(),
+      <String>['k001.png'],
+    );
+    expect(
+      selection.verdicts['bookwalker.png'],
+      LyricsIllustrationVerdict.undecodable,
+    );
+  });
+
+  testWidgets('BUG-5408：探针不比解码器挑剔——段间夹杂字节的 JPEG 解码器能解，探针也要认出尺寸', (
+    WidgetTester tester,
+  ) async {
+    final Uint8List clean = img.encodeJpg(img.Image(width: 320, height: 480));
+    // SOI 之后第一个段（APP0 / JFIF）结束处插入杂字节：段长写错的文件就是这个形状。
+    final int app0End = 4 + ((clean[4] << 8) | clean[5]);
+    final Uint8List junk = Uint8List.fromList(<int>[
+      ...clean.sublist(0, app0End),
+      0x00, 0x12, 0x34, 0x56, //
+      ...clean.sublist(app0End),
+    ]);
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'lyrics_jpeg_junk_',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final String path = '${dir.path}${Platform.pathSeparator}k002.jpg';
+    File(path).writeAsBytesSync(junk);
+
+    final ({int width, int height})? decoded = await tester.runAsync(() async {
+      final ui.Codec codec = await ui.instantiateImageCodec(junk);
+      final ui.FrameInfo frame = await codec.getNextFrame();
+      final ({int width, int height}) size = (
+        width: frame.image.width,
+        height: frame.image.height,
+      );
+      frame.image.dispose();
+      codec.dispose();
+      return size;
+    });
+    expect(decoded, (width: 320, height: 480));
+
+    final Map<String, LyricsIllustrationFileProbe> probes =
+        probeLyricsIllustrationFiles(<String>[path]);
+    expect(probes[path]?.width, 320);
+    expect(probes[path]?.height, 480);
   });
 }

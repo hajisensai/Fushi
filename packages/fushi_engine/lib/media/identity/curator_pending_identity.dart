@@ -54,6 +54,8 @@ PendingIdentityCause? pendingIdentityCauseOfCuratorReason(String? reason) =>
       'no_candidates' => PendingIdentityCause.notFound,
       'ambiguous' ||
       'low_confidence' => PendingIdentityCause.awaitingConfirmation,
+      // 认出了作品，但资料源没给这本缺的字段（作者 / 封面 / 书名）。
+      'no_fields' => PendingIdentityCause.noUsableCandidate,
       _ => null,
     };
 

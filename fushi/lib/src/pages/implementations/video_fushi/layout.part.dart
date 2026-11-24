@@ -551,7 +551,9 @@ extension _VideoLayout on _VideoFushiPageState {
                               enabled: _appleChrome,
                               visible: _videoControlsVisible,
                               duration: _videoControlsTransitionDuration,
-                              capsule: _appleCapsuleGeometry(),
+                              // 方案 C：底部玻璃挂在控制条子树里（与按钮同一条
+                              // 淡入淡出进度），这一层只剩很淡的顶 / 底暗化。
+                              capsule: null,
                               showTopScrim: _controlsDensity.showTopBar,
                               showBottomScrim:
                                   _controlsDensity.showBottomButtonBar,
@@ -1125,7 +1127,16 @@ extension _VideoLayout on _VideoFushiPageState {
     // keys. Rails are pure custom overlays with no media_kit chrome, so adding
     // transport keys here never collides / doubles with the bottom bar.
     // 沉浸锁定态由调用方传入沉浸布局的按钮（[items]），不读普通布局。
-    final List<VideoControlItem> railItems = items ?? _slotChipItems(slot);
+    // Apple（方案 C）：被挪进底部条 / 右上胶囊的出厂项（字幕列表）不在侧栏重复画。
+    final Set<VideoControlItem> appleMoved = _appleChrome && items == null
+        ? _appleChromePlan(_controlLayout).railsExclude
+        : const <VideoControlItem>{};
+    final List<VideoControlItem> railItems =
+        items ??
+        <VideoControlItem>[
+          for (final VideoControlItem item in _slotChipItems(slot))
+            if (!appleMoved.contains(item)) item,
+        ];
     if (railItems.isEmpty) return const SizedBox.shrink();
 
     Widget buttonFor(VideoControlItem item) {

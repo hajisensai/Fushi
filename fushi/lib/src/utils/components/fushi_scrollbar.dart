@@ -1,7 +1,11 @@
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
+    show appleColorsOf;
 
 /// 鼠标在拇指周围多远之内按下仍算抓住拇指（逻辑像素）。
 ///
@@ -11,8 +15,21 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 /// 外观不变。
 const double kFushiScrollbarGrabSlack = 6.0;
 
+/// Apple（Cupertino）叠加式滚动条（macOS「滚动时显示」）静息时的拇指粗细。
+const double kFushiAppleScrollbarThickness = 7.0;
+
+/// Apple 滚动条在指针悬停 / 拖动时加粗到的粗细（macOS 悬停拇指变粗）。
+const double kFushiAppleScrollbarActiveThickness = 9.0;
+
 /// 全应用的滚动行为：桌面端给每个纵向 Scrollable 自动包的滚动条换成
 /// [_FushiRawScrollbar]（外观仍走全局 `ScrollbarThemeData`，只改鼠标命中）。
+///
+/// @design dual
+/// M3E：常驻细条（`fushiM3eScrollbarTheme`）。Apple（[isGlassDesign]）：macOS
+/// 叠加式滚动条——不滚动时自动隐藏、滚动 / 指针靠近时淡入，圆头细条
+/// （[kFushiAppleScrollbarThickness]，悬停 / 拖动加粗到
+/// [kFushiAppleScrollbarActiveThickness]），拇指 label 色低不透明度。拖拇指、
+/// 键盘滚动与无障碍滚动动作两套一致（都由 Scrollable 本身提供）。
 class FushiScrollBehavior extends MaterialScrollBehavior {
   const FushiScrollBehavior();
 
@@ -37,21 +54,36 @@ class FushiScrollBehavior extends MaterialScrollBehavior {
 /// `RawScrollbar(thickness: 3)`：不吃主题，而且桌面端 ScrollBehavior 还会在
 /// 内层再自动包一条，两条叠画在同一位置。这里显式关掉子树的自动滚动条，只留
 /// 这一条。
+///
+/// @design dual
+/// Apple 下与 [FushiScrollBehavior] 同一套 macOS 叠加式滚动条（自动隐藏，
+/// [thumbVisibility] 不生效）；拖拇指照常可用。
 class FushiScrollbar extends StatelessWidget {
   const FushiScrollbar({
     required this.controller,
     required this.child,
+    this.thumbVisibility = true,
+    this.notificationPredicate,
     super.key,
   });
 
   final ScrollController controller;
   final Widget child;
 
+  /// M3E 下拇指是否常驻（false = 滚动时出现、停下后淡出；null = 跟全局
+  /// `ScrollbarThemeData`，即裸 Material `Scrollbar` 不传时的行为）。Apple 下
+  /// 恒为自动隐藏。
+  final bool? thumbVisibility;
+
+  /// 只跟哪些滚动通知（嵌套 / 两向滚动时区分轴或深度）；null = 默认（深度 0）。
+  final ScrollNotificationPredicate? notificationPredicate;
+
   @override
   Widget build(BuildContext context) {
     return _FushiRawScrollbar(
       controller: controller,
-      thumbVisibility: true,
+      thumbVisibility: thumbVisibility,
+      notificationPredicate: notificationPredicate,
       // 移动端也能拖拇指（书架长列表靠它快速定位），与原 RawScrollbar 一致。
       interactive: true,
       child: ScrollConfiguration(
@@ -70,7 +102,11 @@ class _FushiRawScrollbar extends RawScrollbar {
     super.controller,
     super.thumbVisibility,
     super.interactive,
-  });
+    ScrollNotificationPredicate? notificationPredicate,
+  }) : super(
+         notificationPredicate:
+             notificationPredicate ?? defaultScrollNotificationPredicate,
+       );
 
   @override
   RawScrollbarState<_FushiRawScrollbar> createState() =>
@@ -81,6 +117,10 @@ class _FushiRawScrollbarState extends RawScrollbarState<_FushiRawScrollbar> {
   late final _FushiScrollbarPainter _painter;
   late ScrollbarThemeData _scrollbarTheme;
   late ColorScheme _colorScheme;
+
+  /// Apple（Cupertino）设计系统：macOS 叠加式滚动条（见 [FushiScrollBehavior]）。
+  bool _apple = false;
+  late Color _appleLabel;
   bool _hovered = false;
   bool _dragged = false;
 
@@ -96,9 +136,10 @@ class _FushiRawScrollbarState extends RawScrollbarState<_FushiRawScrollbar> {
 
   @override
   bool get showScrollbar =>
-      widget.thumbVisibility ??
-      _scrollbarTheme.thumbVisibility?.resolve(_states) ??
-      false;
+      !_apple &&
+      (widget.thumbVisibility ??
+          _scrollbarTheme.thumbVisibility?.resolve(_states) ??
+          false);
 
   @override
   bool get enableGestures =>
@@ -118,6 +159,8 @@ class _FushiRawScrollbarState extends RawScrollbarState<_FushiRawScrollbar> {
     final ThemeData theme = Theme.of(context);
     _colorScheme = theme.colorScheme;
     _scrollbarTheme = ScrollbarTheme.of(context);
+    _apple = isGlassDesign(context);
+    if (_apple) _appleLabel = appleColorsOf(context).label;
     super.didChangeDependencies();
   }
 
@@ -134,9 +177,54 @@ class _FushiRawScrollbarState extends RawScrollbarState<_FushiRawScrollbar> {
     return onSurface.withValues(alpha: dark ? 0.3 : 0.1);
   }
 
+  /// Apple 拇指色：label 色低不透明度，悬停 / 拖动逐级加深（macOS 叠加式
+  /// 滚动条的灰拇指，深浅色都跟 label 走）。
+  Color _appleThumbColor(Set<WidgetState> states) {
+    if (states.contains(WidgetState.dragged)) {
+      return _appleLabel.withValues(alpha: 0.55);
+    }
+    if (states.contains(WidgetState.hovered)) {
+      return _appleLabel.withValues(alpha: 0.45);
+    }
+    return _appleLabel.withValues(alpha: 0.32);
+  }
+
+  /// Apple 叠加式滚动条：没有轨道（悬停时只铺一层极淡的 label 色衬底，
+  /// 对应 macOS 悬停时出现的滚动槽），圆头，悬停 / 拖动加粗。
+  void _updateApplePainter(Set<WidgetState> states) {
+    final TextDirection textDirection = Directionality.of(context);
+    final bool active =
+        states.contains(WidgetState.hovered) ||
+        states.contains(WidgetState.dragged);
+    final double thickness = active
+        ? kFushiAppleScrollbarActiveThickness
+        : kFushiAppleScrollbarThickness;
+    const Color transparent = Color(0x00000000);
+    scrollbarPainter
+      ..color = _appleThumbColor(states)
+      ..trackColor = active ? _appleLabel.withValues(alpha: 0.05) : transparent
+      ..trackBorderColor = transparent
+      ..textDirection = textDirection
+      ..thickness = thickness
+      ..radius = Radius.circular(thickness / 2)
+      ..trackRadius = Radius.circular(thickness / 2 + 2)
+      ..padding = MediaQuery.paddingOf(context).resolve(textDirection)
+      ..scrollbarOrientation = widget.scrollbarOrientation
+      ..mainAxisMargin = 3
+      ..shape = null
+      ..crossAxisMargin = 2
+      ..minLength = 36
+      ..minOverscrollLength = 36
+      ..ignorePointer = !enableGestures;
+  }
+
   @override
   void updateScrollbarPainter() {
     final Set<WidgetState> states = _states;
+    if (_apple) {
+      _updateApplePainter(states);
+      return;
+    }
     final TextDirection textDirection = Directionality.of(context);
     final bool showTrack =
         showScrollbar &&

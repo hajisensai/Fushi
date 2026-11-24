@@ -490,12 +490,13 @@ void main() {
   group('SrsAppRuntime', () {
     test('装上：AnkiConnect 根路径可用、自环 id、同步后置步骤、SrsAppHost；卸下后全部清空', () async {
       final _RuntimeAppModel app = _RuntimeAppModel(db);
+      int bumps = 0;
       final SrsAppRuntime runtime = SrsAppRuntime(
         app: app,
         readStore: () async => store,
         readMedia: () async => null,
         engine: () => const SrsTestEngine(),
-        bumpRevision: () {},
+        bumpRevision: () => bumps++,
         bumpPulledRevision: () {},
       );
       expect(app.srsAnkiConnectEndpoint, isNull);
@@ -505,6 +506,10 @@ void main() {
       expect(fushiAnkiConnectCompatInstanceId, runtime.instanceId);
       expect(syncChannelPostRunHook, isNotNull);
       expect(SrsAppHost.current, isNotNull);
+      // 图外后台任务（存量出处坐标迁移）改了库：经宿主通知走本机写入那条通路（界面重读 + 推送）。
+      final int bumpsBefore = bumps;
+      SrsAppHost.current!.notifyLocalWrite!();
+      expect(bumps, bumpsBefore + 1);
 
       final FushiApiServer server = FushiApiServer(
         port: 0,

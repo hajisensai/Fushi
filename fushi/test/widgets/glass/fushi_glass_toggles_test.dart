@@ -28,7 +28,7 @@ void main() {
         textTheme: Typography.material2021().black,
         glass:
             material ??
-            (glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off),
+            (glass ? FushiGlassMaterial.premium : FushiGlassMaterial.off),
         glassDesign: glass,
       );
 
@@ -263,13 +263,16 @@ void main() {
       );
       expect(find.byType(RangeSlider), findsNothing);
       expect(find.byType(GlassContainer), findsNothing);
-      final Finder thumbs = find.byWidgetPredicate(
-        (Widget w) =>
-            w is Container &&
-            w.decoration is BoxDecoration &&
-            (w.decoration as BoxDecoration).shape == BoxShape.circle &&
-            (w.decoration as BoxDecoration).color == Colors.white,
-      );
+      // iOS 27 滑块圆钮是 37×24 的白色胶囊（9c99cffa484），不再是正圆：
+      // 认白色实底 + 胶囊圆角（半高）或正圆。
+      final Finder thumbs = find.byWidgetPredicate((Widget w) {
+        if (w is! Container || w.decoration is! BoxDecoration) return false;
+        final BoxDecoration d = w.decoration! as BoxDecoration;
+        if (d.color != Colors.white) return false;
+        if (d.shape == BoxShape.circle) return true;
+        final double? h = w.constraints?.maxHeight;
+        return h != null && d.borderRadius == BorderRadius.circular(h / 2);
+      });
       expect(thumbs, findsNWidgets(2));
 
       // Tab 进第一个拇指（起点），→ 加一格。
@@ -756,7 +759,7 @@ void main() {
   // 玻璃设计系统与表面材质正交：毛玻璃档与「降低透明度」（材质 off，玻璃变
   // 实心）下组件族不变，仍是玻璃组件。
   for (final FushiGlassMaterial material in <FushiGlassMaterial>[
-    FushiGlassMaterial.frosted,
+    FushiGlassMaterial.minimal,
     FushiGlassMaterial.off,
   ]) {
     testWidgets('glass design under ${material.name} surfaces stays glass', (

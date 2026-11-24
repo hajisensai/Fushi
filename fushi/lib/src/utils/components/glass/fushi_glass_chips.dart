@@ -60,6 +60,7 @@ Widget _glassChip(
       fushiAppleCompact(context) ||
       visualDensity == VisualDensity.compact ||
       (visualDensity?.vertical ?? 0) < 0;
+  final double macScale = fushiAppleMacScale(context);
   final Set<WidgetState> states = <WidgetState>{
     if (selected) WidgetState.selected,
     if (!enabled) WidgetState.disabled,
@@ -79,14 +80,14 @@ Widget _glassChip(
             ? Colors.black
             : Colors.white)
       : apple.label;
-  final double iconSize = iconTheme?.size ?? (compact ? 14 : 16);
+  final double iconSize = iconTheme?.size ?? (compact ? 14 * macScale : 16);
   final Color iconColor = selected
       ? fg
       : (iconTheme?.color ?? apple.secondaryLabel);
 
-  final double height = compact ? 28 : 32;
+  final double height = compact ? 28 * macScale : 32;
   final EdgeInsetsGeometry effectivePadding =
-      padding ?? EdgeInsets.symmetric(horizontal: compact ? 10 : 12);
+      padding ?? EdgeInsets.symmetric(horizontal: compact ? 10 * macScale : 12);
 
   // iOS 胶囊靠强调色实底表达选中，不画 M3 的前导对勾（showCheckmark 只影响
   // MD3）。
@@ -96,7 +97,7 @@ Widget _glassChip(
 
   TextStyle textStyle = (theme.textTheme.labelLarge ?? const TextStyle())
       .copyWith(
-        fontSize: compact ? 13 : 15,
+        fontSize: compact ? 13 * macScale : 15,
         fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
       )
       .merge(labelStyle)

@@ -22,12 +22,16 @@
 ///   （< [kFushiNowPlayingRoomyWidth]）且调用方给了 [FushiNowPlayingBar.onMore] 时，
 ///   额外动作收进长按 / 右键菜单。
 ///
-/// Apple 设计系统同一块取色色块，外框换 Apple 实色浮层的发丝描边 + 投影
-/// （[fushiAppleSolidFloatingDecoration]），按钮 / 播放键由各自的设计系统分派件
-/// 画；墨水屏不压大字、不取色、不投影，改描一圈 outline。
+/// 以上是 M3E 分支。Apple 设计系统（`isGlassDesign`）在根部分派到
+/// `fushi_now_playing_bar_apple.part.dart`（Apple Music iOS 27 / macOS 27 迷你
+/// 播放器：同一份封面取色只作低饱和玻璃着色、方形小圆角封面、裸字形按钮，
+/// 不压大字）。墨水屏下
+/// `isGlassDesign` 恒 false，走 M3E 分支：不压大字、不取色、不投影，改描一圈
+/// outline。
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:material_ui/material_ui.dart';
@@ -53,8 +57,24 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart'
     show FushiButtonGroup;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
-    show fushiAppleSolidFloatingDecoration;
+    show
+        FushiAppleFloatingSurface,
+        fushiAppleSolidFloatingDecoration,
+        fushiGlassOverPlatformView,
+        fushiGlassPlatformViewFallback,
+        fushiGlassQuality,
+        fushiLiquidShapeOf;
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_presence.dart'
+    show fushiChromeFade;
+import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassContainer, LiquidGlassSettings;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
+
+part 'fushi_now_playing_bar_apple.part.dart';
 
 /// 可用宽到这个值就用宽屏浮动色块（M3 expanded 档下限之上）。
 const double kFushiNowPlayingDockedMinWidth = 900;
@@ -233,6 +253,21 @@ class _FushiNowPlayingBarState extends State<FushiNowPlayingBar> {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      final FushiMotionScheme motion = context.fushiMotion;
+      // 玻璃不能被 Opacity 压着淡入：走 [fushiChromeFade]（玻璃与内容同一条进度）。
+      return TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0, end: 1),
+        duration: motion.spatialDefault.duration,
+        curve: motion.spatialDefault.curve,
+        builder: (BuildContext context, double v, Widget? child) =>
+            Transform.translate(
+              offset: Offset(0, (1 - v) * 24),
+              child: fushiChromeFade(context, v.clamp(0.0, 1.0), child!),
+            ),
+        child: _AppleNowPlayingBar(bar: widget, tint: _scheme?.primary),
+      );
+    }
     final ThemeData theme = Theme.of(context);
     final FushiCoverBlockColors colors = FushiCoverBlockColors.resolve(
       theme,
@@ -412,8 +447,14 @@ class _BarShellState extends State<_BarShell>
       Radius.circular(kFushiNowPlayingRadius),
     );
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    final ShapeDecoration decoration;
-    if (eink) {
+    // Apple 非实色档：底由 [FushiAppleFloatingSurface] 的玻璃画，
+    // AnimatedContainer 不再铺底。
+    final bool glassSurface =
+        glass && !eink && glassMaterialOf(context) != FushiGlassMaterial.off;
+    final ShapeDecoration? decoration;
+    if (glassSurface) {
+      decoration = null;
+    } else if (eink) {
       // 墨水屏：中性色底塌成页面底色，描一圈 outline 把条切出来（阴影 / 半透明在
       // 灰阶下都会糊成脏边）。
       decoration = ShapeDecoration(
@@ -445,7 +486,7 @@ class _BarShellState extends State<_BarShell>
       );
     }
     final TextDirection direction = Directionality.of(context);
-    final Widget surface = AnimatedContainer(
+    final Widget surfaceBody = AnimatedContainer(
       duration: duration,
       curve: FushiMotion.standard,
       decoration: decoration,
@@ -494,6 +535,13 @@ class _BarShellState extends State<_BarShell>
         ),
       ),
     );
+    final Widget surface = glassSurface
+        ? FushiAppleFloatingSurface(
+            shape: shellShape(context, radius),
+            tint: colors.container,
+            child: surfaceBody,
+          )
+        : surfaceBody;
     return MouseRegion(
       opaque: false,
       onEnter: _onHover,

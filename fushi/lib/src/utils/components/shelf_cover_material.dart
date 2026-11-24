@@ -72,7 +72,9 @@ ShelfCoverMaterial? shelfCoverMaterialOf(BuildContext context) {
   return scope.material;
 }
 
-/// 材质的外轮廓圆角：书 2/3（书脊侧更方）、海报 6、卡盒 10、专辑 8。
+/// 材质的**基础**外轮廓圆角（圆弧角）：书 2/3（书脊侧更方）、海报 6、卡盒 10、
+/// 专辑 8。不看设计系统；要画封面外形一律走 [ShelfCoverShape.of]——Cupertino 下的
+/// 专辑是按尺寸取半径的连续曲率圆角（[shelfAppleAlbumRadius]），不是这里的 8。
 BorderRadius shelfMaterialRadius(ShelfCoverMaterial material) {
   switch (material) {
     case ShelfCoverMaterial.glossyBook:
@@ -87,6 +89,161 @@ BorderRadius shelfMaterialRadius(ShelfCoverMaterial material) {
     case ShelfCoverMaterial.glossyAlbum:
       return const BorderRadius.all(Radius.circular(8));
   }
+}
+
+/// Cupertino 专辑封面满尺寸时的连续曲率圆角（用户 2026-11-24 拍板：专辑材质
+/// 在 Apple 设计系统下改 12 连续曲率，与 Apple Music 大封面一致）。
+const double kShelfAppleAlbumRadius = 12;
+
+/// 封面短边达到这个值（逻辑 px）起用满圆角 [kShelfAppleAlbumRadius]：专辑网格
+/// 卡、详情页 / 歌词页大封面都在这之上。更小的缩略图按短边等比缩小——Apple 自己
+/// 的专辑缩略图圆角也随尺寸缩，40px 的列表行封面若仍用 12 会接近圆形。
+const double kShelfAppleAlbumFullRadiusExtent = 160;
+
+/// 等比缩小的下限：再小的缩略图（40–48px 列表行）也保留可辨认的 4 圆角。
+const double kShelfAppleAlbumMinRadius = 4;
+
+/// 短边 [extent] 的 Cupertino 专辑封面该用的连续曲率半径：≥
+/// [kShelfAppleAlbumFullRadiusExtent] 取 [kShelfAppleAlbumRadius]，以下按
+/// 短边等比缩小、不低于 [kShelfAppleAlbumMinRadius]（64px → 4.8，40px → 4）。
+double shelfAppleAlbumRadius(double extent) {
+  if (!extent.isFinite || extent >= kShelfAppleAlbumFullRadiusExtent) {
+    return kShelfAppleAlbumRadius;
+  }
+  return math.max(
+    kShelfAppleAlbumMinRadius,
+    kShelfAppleAlbumRadius * extent / kShelfAppleAlbumFullRadiusExtent,
+  );
+}
+
+/// 一枚材质封面的外形：哪种材质、是否连续曲率（超椭圆）。由 [ShelfCoverShape.of]
+/// 在封面组件里**按当前设计系统解析一次**，再往下传给填充 / 裁切、投影、光泽、
+/// 内描边、悬停扫光、倾斜高光、选中罩，各层同一个形状，角上不露圆弧角。
+///
+/// 只有 Cupertino 下的专辑（[ShelfCoverMaterial.glossyAlbum]）是连续曲率，且半径
+/// 按实际绘制尺寸取（[shelfAppleAlbumRadius]），所以外形在绘制时才定半径
+/// （[ShelfCoverBorder] / [clip]），构建时不必知道尺寸。其余材质与 M3E 一律是
+/// [shelfMaterialRadius] 的固定圆弧角，与改动前逐像素一致。
+@immutable
+class ShelfCoverShape {
+  const ShelfCoverShape({required this.material, this.continuous = false});
+
+  /// 当前设计系统下 [material] 的外形。
+  factory ShelfCoverShape.of(
+    BuildContext context,
+    ShelfCoverMaterial material,
+  ) => ShelfCoverShape(
+    material: material,
+    continuous:
+        material == ShelfCoverMaterial.glossyAlbum &&
+        isGlassDesign(context) &&
+        !isEinkTheme(context),
+  );
+
+  final ShelfCoverMaterial material;
+
+  /// 连续曲率（超椭圆，半径随尺寸）；false = 固定圆弧角。
+  final bool continuous;
+
+  /// 绘制尺寸为 [size] 时的圆角。
+  BorderRadius radiusFor(Size size) => continuous
+      ? BorderRadius.circular(shelfAppleAlbumRadius(size.shortestSide))
+      : shelfMaterialRadius(material);
+
+  /// 不知道尺寸的消费方（焦点环、卡壳、骨架）用的满尺寸圆角。画封面本身的
+  /// 各层不要用它，用 [border] / [clip]。
+  BorderRadius get nominalRadius => continuous
+      ? const BorderRadius.all(Radius.circular(kShelfAppleAlbumRadius))
+      : shelfMaterialRadius(material);
+
+  /// 外形边框（填充 / 投影 / 描边用，配 [ShapeDecoration]）。
+  ShelfCoverBorder border({BorderSide side = BorderSide.none}) =>
+      ShelfCoverBorder(shape: this, side: side);
+
+  /// 按外形裁切 [child]：连续曲率走 [ClipRSuperellipse]（半径按裁切区尺寸取），
+  /// 否则就是原来的 [ClipRRect]。
+  Widget clip({required Widget child}) => continuous
+      ? ClipRSuperellipse(clipper: _ShelfCoverClipper(this), child: child)
+      : ClipRRect(borderRadius: shelfMaterialRadius(material), child: child);
+
+  @override
+  bool operator ==(Object other) =>
+      other is ShelfCoverShape &&
+      other.material == material &&
+      other.continuous == continuous;
+
+  @override
+  int get hashCode => Object.hash(material, continuous);
+}
+
+/// [ShelfCoverShape] 的边框：绘制时按矩形尺寸解析成 [RoundedSuperellipseBorder]
+/// （连续曲率）或 [RoundedRectangleBorder]（圆弧角）。
+@immutable
+class ShelfCoverBorder extends OutlinedBorder {
+  const ShelfCoverBorder({required this.shape, super.side});
+
+  final ShelfCoverShape shape;
+
+  OutlinedBorder _resolve(Rect rect) {
+    final BorderRadius radius = shape.radiusFor(rect.size);
+    return shape.continuous
+        ? RoundedSuperellipseBorder(borderRadius: radius, side: side)
+        : RoundedRectangleBorder(borderRadius: radius, side: side);
+  }
+
+  @override
+  ShelfCoverBorder copyWith({BorderSide? side}) =>
+      ShelfCoverBorder(shape: shape, side: side ?? this.side);
+
+  @override
+  ShapeBorder scale(double t) =>
+      ShelfCoverBorder(shape: shape, side: side.scale(t));
+
+  @override
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      _resolve(rect).getInnerPath(rect, textDirection: textDirection);
+
+  @override
+  Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
+      _resolve(rect).getOuterPath(rect, textDirection: textDirection);
+
+  @override
+  bool get preferPaintInterior => true;
+
+  @override
+  void paintInterior(
+    Canvas canvas,
+    Rect rect,
+    Paint paint, {
+    TextDirection? textDirection,
+  }) => _resolve(
+    rect,
+  ).paintInterior(canvas, rect, paint, textDirection: textDirection);
+
+  @override
+  void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) =>
+      _resolve(rect).paint(canvas, rect, textDirection: textDirection);
+
+  @override
+  bool operator ==(Object other) =>
+      other is ShelfCoverBorder && other.shape == shape && other.side == side;
+
+  @override
+  int get hashCode => Object.hash(shape, side);
+}
+
+/// 连续曲率外形的裁切：半径按裁切区实际尺寸取。
+class _ShelfCoverClipper extends CustomClipper<RSuperellipse> {
+  const _ShelfCoverClipper(this.shape);
+
+  final ShelfCoverShape shape;
+
+  @override
+  RSuperellipse getClip(Size size) =>
+      shape.radiusFor(size).toRSuperellipse(Offset.zero & size);
+
+  @override
+  bool shouldReclip(_ShelfCoverClipper oldClipper) => oldClipper.shape != shape;
 }
 
 /// 卡盒外圈宽度（封面内窗四周的塑料边）。
@@ -195,6 +352,9 @@ class ShelfMaterialSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool dark = cs.brightness == Brightness.dark;
+    // 外形按设计系统在这里解析一次，往下各层（裁切 / 投影 / 光泽 / 描边 / 扫光 /
+    // 倾斜高光）共用，Cupertino 专辑的连续曲率角上不露圆弧角。
+    final ShelfCoverShape shape = ShelfCoverShape.of(context, material);
     final BorderRadius radius = shelfMaterialRadius(material);
     final Color fill = backgroundColor ?? cs.surfaceContainerHigh;
     final Widget dimmer = dim <= 0
@@ -256,14 +416,13 @@ class ShelfMaterialSurface extends StatelessWidget {
         ),
       );
     } else {
-      body = ClipRRect(
-        borderRadius: radius,
+      body = shape.clip(
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
             ColoredBox(color: fill, child: child),
             dimmer,
-            IgnorePointer(child: _GlossLayer(material: material)),
+            IgnorePointer(child: _GlossLayer(shape: shape)),
             ...overlay,
           ],
         ),
@@ -275,21 +434,22 @@ class ShelfMaterialSurface extends StatelessWidget {
             fit: StackFit.expand,
             children: <Widget>[
               body,
-              IgnorePointer(child: _GlossLayer(material: material)),
+              IgnorePointer(child: _GlossLayer(shape: shape)),
             ],
           )
         : body;
     final bool raised = lifted && !compact;
     final bool shadowed = !compact && !flat;
+    final List<BoxShadow> shadows = shadowed
+        ? shelfMaterialShadows(dark: dark, lifted: raised)
+        : const <BoxShadow>[];
     final Widget shadowedBody = AnimatedContainer(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: FushiMotion.standard,
-      decoration: BoxDecoration(
-        borderRadius: radius,
-        boxShadow: shadowed
-            ? shelfMaterialShadows(dark: dark, lifted: raised)
-            : const <BoxShadow>[],
-      ),
+      // 连续曲率的投影按同一个超椭圆投（ShapeDecoration），圆弧角照旧 BoxDecoration。
+      decoration: shape.continuous
+          ? ShapeDecoration(shape: shape.border(), shadows: shadows)
+          : BoxDecoration(borderRadius: radius, boxShadow: shadows),
       child: staticBody,
     );
 
@@ -311,11 +471,16 @@ class ShelfMaterialSurface extends StatelessWidget {
             child: ShelfCoverSheen(
               active: raised,
               glint: pressGlint,
-              clipRadius: radius,
+              clipRadius: shape.continuous ? null : radius,
+              clipShape: shape.continuous ? shape.border() : null,
             ),
           ),
         // 3D 倾斜时跟着指针走的镜面高光（只画最前那本）。
-        if (!compact && pressGlint) FushiTiltGlare(clipRadius: radius),
+        if (!compact && pressGlint)
+          FushiTiltGlare(
+            clipRadius: shape.continuous ? null : radius,
+            clipShape: shape.continuous ? shape.border() : null,
+          ),
       ],
     );
   }
@@ -325,14 +490,14 @@ class ShelfMaterialSurface extends StatelessWidget {
 /// 1px 高光；专辑 = 同海报但光泽略亮；卡盒 = 左上盒面反光。都有 0.5px 内描边。
 /// 渐变全部按 [Alignment] / 比例取值，任意宽高比（含 16:9）都按实际尺寸铺满。
 class _GlossLayer extends StatelessWidget {
-  const _GlossLayer({required this.material});
+  const _GlossLayer({required this.shape});
 
-  final ShelfCoverMaterial material;
+  final ShelfCoverShape shape;
 
   @override
   Widget build(BuildContext context) {
-    final BorderRadius radius = shelfMaterialRadius(material);
-    switch (material) {
+    final BorderRadius radius = shelfMaterialRadius(shape.material);
+    switch (shape.material) {
       case ShelfCoverMaterial.glossyBook:
         return Stack(
           fit: StackFit.expand,
@@ -364,9 +529,9 @@ class _GlossLayer extends StatelessWidget {
           ],
         );
       case ShelfCoverMaterial.glossyPoster:
-        return _sheetGloss(radius, gloss: 0.08, topHighlight: 0.18);
+        return _sheetGloss(shape, gloss: 0.08, topHighlight: 0.18);
       case ShelfCoverMaterial.glossyAlbum:
-        return _sheetGloss(radius, gloss: 0.11, topHighlight: 0.22);
+        return _sheetGloss(shape, gloss: 0.11, topHighlight: 0.22);
       case ShelfCoverMaterial.gameCase:
         return DecoratedBox(
           decoration: BoxDecoration(
@@ -387,7 +552,36 @@ class _GlossLayer extends StatelessWidget {
   }
 
   /// 海报 / 专辑共用的「一张光面纸」：斜向淡光 + 顶边 1px 高光 + 0.5px 内描边。
+  /// 连续曲率外形下高光与描边都按同一个超椭圆画（[_ContinuousSheetEdges]）。
   static Widget _sheetGloss(
+    ShelfCoverShape shape, {
+    required double gloss,
+    required double topHighlight,
+  }) {
+    if (shape.continuous) {
+      return Stack(
+        fit: StackFit.expand,
+        children: <Widget>[
+          _diagonalGloss(gloss),
+          CustomPaint(
+            painter: _ContinuousSheetEdges(
+              shape: shape,
+              highlight: Colors.white.withValues(alpha: topHighlight),
+              outline: Colors.black.withValues(alpha: 0.14),
+            ),
+          ),
+        ],
+      );
+    }
+    return _arcSheetGloss(
+      shelfMaterialRadius(shape.material),
+      gloss: gloss,
+      topHighlight: topHighlight,
+    );
+  }
+
+  /// 圆弧角版光面纸（M3E 与非专辑材质；与改动前一致）。
+  static Widget _arcSheetGloss(
     BorderRadius radius, {
     required double gloss,
     required double topHighlight,
@@ -432,6 +626,41 @@ class _GlossLayer extends StatelessWidget {
   );
 }
 
+/// 连续曲率光面纸的边缘：顶边 1px 高光（外形减去下移 1px 的同一外形，与圆弧角
+/// 版 `Border(top:)` 一样沿两角收细）+ 0.5px 内描边，都是同一个超椭圆。
+class _ContinuousSheetEdges extends CustomPainter {
+  const _ContinuousSheetEdges({
+    required this.shape,
+    required this.highlight,
+    required this.outline,
+  });
+
+  final ShelfCoverShape shape;
+  final Color highlight;
+  final Color outline;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Rect rect = Offset.zero & size;
+    final ShelfCoverBorder border = shape.border();
+    final Path outer = border.getOuterPath(rect);
+    final Path lowered = border.getOuterPath(rect.shift(const Offset(0, 1)));
+    canvas.drawPath(
+      Path.combine(PathOperation.difference, outer, lowered),
+      Paint()..color = highlight,
+    );
+    shape
+        .border(side: BorderSide(color: outline, width: 0.5))
+        .paint(canvas, rect);
+  }
+
+  @override
+  bool shouldRepaint(_ContinuousSheetEdges oldDelegate) =>
+      oldDelegate.shape != shape ||
+      oldDelegate.highlight != highlight ||
+      oldDelegate.outline != outline;
+}
+
 /// 从右往左慢慢扫过的一道柔光（最亮约 16%，深色 11%）。两种触发：
 ///
 /// - **悬停**：[active] 由 false→true 时扫入、true→false 时扫回；
@@ -446,10 +675,17 @@ class ShelfCoverSheen extends StatefulWidget {
     required this.active,
     this.glint = true,
     this.clipRadius,
+    this.clipShape,
     super.key,
-  });
+  }) : assert(
+         clipRadius == null || clipShape == null,
+         'clipRadius 与 clipShape 只给一个',
+       );
 
   final bool active;
+
+  /// 非空 = 光带按这个外形裁切（连续曲率等非圆弧角），同样只在扫动中裁切。
+  final ShapeBorder? clipShape;
 
   /// 非空 = 光带按这个圆角裁切，且只在光带可见（扫动中）时裁切；null = 由
   /// 调用方负责裁切。
@@ -533,6 +769,13 @@ class _ShelfCoverSheenState extends State<ShelfCoverSheen>
           painter: _SheenPainter(progress: t, peak: dark ? 0.11 : 0.16),
           child: const SizedBox.expand(),
         );
+        final ShapeBorder? clipShape = widget.clipShape;
+        if (clipShape != null) {
+          return ClipPath(
+            clipper: ShapeBorderClipper(shape: clipShape),
+            child: band,
+          );
+        }
         final BorderRadius? radius = widget.clipRadius;
         return radius == null
             ? band
@@ -700,6 +943,16 @@ double shelfFanMaxDegrees({
 /// 海报 / 专辑碟盒式叠层（[ShelfCoverPile]）每往后一层往右上错开的步长。
 const double kShelfCoverPileStackStep = 4;
 
+/// Apple 叠层（[ShelfCoverPile] 的 Cupertino 画法）最多画最前那本后面的几本。
+const int kShelfAppleStackMaxBehind = 2;
+
+/// Apple 叠层每往后一层上移的距离（静止 / 悬停）。
+const double kShelfAppleStackStep = 5;
+const double kShelfAppleStackHoverStep = 8;
+
+/// Apple 叠层每往后一层缩小的比例。
+const double kShelfAppleStackShrink = 0.06;
+
 /// [material] 下 [ShelfCoverPile] 是碟盒式叠层（海报 / 专辑）而非扇形（书 / 卡盒）。
 bool shelfCoverPileStacks(ShelfCoverMaterial material) =>
     material == ShelfCoverMaterial.glossyPoster ||
@@ -762,9 +1015,14 @@ class ShelfCoverPile extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool lifted = FushiHoverLift.liftedOf(context);
     final Duration duration = fushiMotionDuration(context, FushiMotion.long);
-    final bool stack = shelfCoverPileStacks(material);
+    // Apple 设计系统一律画 Apple 叠层（见下方 `apple` 分支）；M3E 照旧扇形 /
+    // 碟盒叠层。
+    final bool apple = isGlassDesign(context);
+    final bool stack = !apple && shelfCoverPileStacks(material);
     final List<Widget> back = behind
-        .take(shelfCoverPileMaxBehind(material))
+        .take(
+          apple ? kShelfAppleStackMaxBehind : shelfCoverPileMaxBehind(material),
+        )
         .toList(growable: false);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
@@ -793,7 +1051,63 @@ class ShelfCoverPile extends StatelessWidget {
             );
 
         final List<Widget> layers = <Widget>[];
-        if (stack) {
+        if (apple) {
+          // Apple（Cupertino 方案 A，Apple Books「合集」叠层）：最前那本与单本
+          // 同大、铺满格子；后面每层以上缘中点缩 6%、上移 5px、压暗一档，
+          // 上缘从最前那本后面露出来（越往后越小越暗）。悬停时整摞再往上散开到
+          // 每层 8px。书 / 漫画 / 海报 / 卡盒 / 专辑一律同一种叠法，不画扇形。
+          final double frontW = w;
+          final double frontH = h;
+          for (int d = back.length; d >= 1; d--) {
+            final double rise =
+                (lifted ? kShelfAppleStackHoverStep : kShelfAppleStackStep) * d;
+            layers.add(
+              Positioned(
+                left: 0,
+                bottom: 0,
+                child: AnimatedSlide(
+                  offset: Offset(0, -rise / frontH),
+                  duration: duration,
+                  curve: FushiMotion.standard,
+                  child: Transform.scale(
+                    scale: 1 - kShelfAppleStackShrink * d,
+                    alignment: Alignment.topCenter,
+                    child: SizedBox(
+                      width: frontW,
+                      height: frontH,
+                      child: ShelfMaterialSurface(
+                        material: material,
+                        backgroundColor: backgroundColor,
+                        flat: flat,
+                        dim: d * 0.12,
+                        child: back[d - 1],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+          layers.add(
+            Positioned(
+              left: 0,
+              bottom: 0,
+              child: SizedBox(
+                width: frontW,
+                height: frontH,
+                child: ShelfMaterialSurface(
+                  material: material,
+                  backgroundColor: backgroundColor,
+                  flat: flat,
+                  lifted: lifted,
+                  pressGlint: true,
+                  overlay: frontOverlay,
+                  child: front,
+                ),
+              ),
+            ),
+          );
+        } else if (stack) {
           for (int d = back.length; d >= 1; d--) {
             final Offset rest = Offset(d * step, -d * step);
             final Offset spread = Offset(d * 7.0, -d * 6.0);

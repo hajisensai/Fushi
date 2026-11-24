@@ -273,6 +273,17 @@ abstract interface class RemoteVideoTrackingEpisodeFetch {
 /// `VideoBook.title` 本身就是番名，仍走标题路径。不实现本标记 = 合集名不参与选词。
 abstract interface class RemoteVideoCollectionIsWork {}
 
+/// 「只靠来源身份 + 条目 id 找不回这个条目」的来源的可选能力：给出重开它的规格，
+/// 收藏时记进 `FavoriteSentence.originLocator`（v180），收藏夹 / 手机遥控据此跳回。
+///
+/// 在线视频源（Aniyomi 扩展）的集 id 只含扩展、源与集 URL，不含是哪部作品，重建播放
+/// 客户端要作品 URL / 标题 / 封面，所以实现它；媒体服务器 / 互联对端 / 云盘按条目 id
+/// 就能找回，不实现。
+abstract interface class RemoteVideoReopenSpec {
+  /// [videoId]（本来源 [RemoteVideoInfo.id]）的重开规格；认不出这个 id 时返回 null。
+  String? reopenSpecFor(String videoId);
+}
+
 /// 「播放真正结束」的可选能力。
 ///
 /// 只有 Jellyfin/Emby 这类有会话生命周期端点的来源需要它；周期断点上报仍由

@@ -17,6 +17,7 @@ class SettingsSectionContainer extends StatefulWidget {
     this.presentation = SettingsSectionPresentation.alwaysExpanded,
     this.searchTargetIds = const <String>[],
     this.expansionState,
+    this.footer,
   });
 
   final String id;
@@ -26,6 +27,9 @@ class SettingsSectionContainer extends StatefulWidget {
   final SettingsSectionPresentation presentation;
   final List<String> searchTargetIds;
   final SettingsExpansionState? expansionState;
+
+  /// 贴在分组卡下方的说明（见 [AdaptiveSettingsSection.footer]）。
+  final Widget? footer;
 
   @override
   State<SettingsSectionContainer> createState() =>
@@ -132,6 +136,7 @@ class _SettingsSectionContainerState extends State<SettingsSectionContainer> {
                 widget.presentation != SettingsSectionPresentation.collapsed,
           ),
       onExpansionChanged: _toggle,
+      footer: widget.footer,
       children: widget.children,
     );
   }

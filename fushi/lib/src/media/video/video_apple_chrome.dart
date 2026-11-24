@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_presence.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -119,7 +120,14 @@ class VideoGlassSurface extends StatelessWidget {
               ? IgnorePointer(child: VideoChromeGlass(radius: radius))
               : const SizedBox.shrink(),
         ),
-        Padding(padding: enabled ? padding : EdgeInsets.zero, child: child),
+        // 控件是玻璃的兄弟层（不在玻璃里）：控制条显隐时跟玻璃同一条进度淡
+        // （[FushiGlassPresenceFade]；不在显隐动画里时原样）。
+        FushiGlassPresenceFade(
+          child: Padding(
+            padding: enabled ? padding : EdgeInsets.zero,
+            child: child,
+          ),
+        ),
       ],
     );
   }
@@ -148,7 +156,8 @@ class VideoAppleCapsuleGeometry {
 ///
 /// 挂在 media_kit 控制条**下面**（controls Stack 里排在 `AdaptiveVideoControls`
 /// 之前），于是按钮与进度条画在玻璃之上、玻璃采样的是画面。显隐跟随控制条真实
-/// 可见性 [visible]，与控制条同速淡入淡出；纯视觉，[IgnorePointer]。MD3 / 墨水屏
+/// 可见性 [visible]，与控制条同速淡入淡出（玻璃安全的 [fushiChromeFade]：胶囊玻璃
+/// 走着色器 visibility，暗化渐变各自淡，不让 Opacity 压在玻璃上）；纯视觉，[IgnorePointer]。MD3 / 墨水屏
 /// 下（[enabled] false）整层是一个零尺寸盒。
 class VideoAppleChromeBackdrop extends StatelessWidget {
   const VideoAppleChromeBackdrop({
@@ -186,10 +195,12 @@ class VideoAppleChromeBackdrop extends StatelessWidget {
       child: ValueListenableBuilder<bool>(
         valueListenable: visible,
         builder: (BuildContext context, bool shown, Widget? child) {
-          return AnimatedOpacity(
-            opacity: shown ? 1.0 : 0.0,
+          return TweenAnimationBuilder<double>(
+            tween: Tween<double>(end: shown ? 1.0 : 0.0),
             duration: einkSafeDuration(context, duration),
             curve: Curves.easeInOut,
+            builder: (BuildContext context, double opacity, Widget? child) =>
+                fushiChromeFade(context, opacity, child!),
             child: child,
           );
         },
@@ -199,34 +210,38 @@ class VideoAppleChromeBackdrop extends StatelessWidget {
             // AVKit 的顶 / 底暗化：只有一层很淡的黑，压住高亮画面让白字不发虚，
             // 不是 MD3 那种 38% 的重渐变。
             if (showTopScrim)
-              const Align(
-                alignment: Alignment.topCenter,
-                child: SizedBox(
-                  height: 120,
-                  width: double.infinity,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: <Color>[Color(0x33000000), Color(0x00000000)],
+              const FushiGlassPresenceFade(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    height: 120,
+                    width: double.infinity,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: <Color>[Color(0x33000000), Color(0x00000000)],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             if (showBottomScrim)
-              const Align(
-                alignment: Alignment.bottomCenter,
-                child: SizedBox(
-                  height: 160,
-                  width: double.infinity,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: <Color>[Color(0x00000000), Color(0x3D000000)],
+              const FushiGlassPresenceFade(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: SizedBox(
+                    height: 160,
+                    width: double.infinity,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: <Color>[Color(0x00000000), Color(0x3D000000)],
+                        ),
                       ),
                     ),
                   ),

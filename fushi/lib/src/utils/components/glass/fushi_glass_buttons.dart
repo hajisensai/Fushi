@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_fill_slot.dart';
@@ -7,6 +8,10 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics, fushiAppleMacScale, fushiAppleUsesMacMetrics;
+export 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleMacScale;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -20,10 +25,11 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 enum _FushiButtonKind { text, filled, tonal, outlined }
 
-/// 标记「iOS 26 alert 的动作区」：其中的按钮一律画成撑满宽度的 44 高胶囊——
-/// 主操作（FilledButton）强调色玻璃，其余（TextButton / Outlined / Tonal）
-/// 中性玻璃；前景色给成 error / destructive 的就是红字破坏性操作。由
-/// [FushiAlertDialog] 的玻璃形态在动作区外包一层。
+/// 标记「iOS 26 alert 的动作区」：其中的按钮一律画成撑满宽度的平填充胶囊
+/// （iOS 48 / macOS 36，不是玻璃、静止无高光边）——主操作（FilledButton）
+/// 强调色实底，其余（TextButton / Outlined / Tonal）中性洗色底
+/// （[fushiAppleActionWash]）；前景色给成 error / destructive 的就是红字破坏性
+/// 操作。由 [FushiAlertDialog] 的玻璃形态在动作区外包一层。
 class FushiAlertActionScope extends InheritedWidget {
   const FushiAlertActionScope({super.key, required super.child});
 
@@ -50,7 +56,7 @@ class FushiDialogScope extends InheritedWidget {
 }
 
 /// 标记「macOS 26 sheet 的底部动作区」：其中的文字按钮（取消 / 关闭类）画成
-/// 透明液态玻璃胶囊（`.glass`）+ label 色字，而不是无底的强调色文字——
+/// 中性洗色底的平填充胶囊 + label 色字，而不是无底的强调色文字——
 /// sheet 底部右对齐的一排按钮要有同一个高度、同一种胶囊形，主操作才是
 /// 唯一的强调色块。只在 Apple 设计系统下生效；尺寸与内容区按钮相同
 /// （桌面 34 / 移动 44），不像 [FushiAlertActionScope] 那样撑满宽度。
@@ -63,6 +69,24 @@ class FushiDialogActionScope extends InheritedWidget {
 
   @override
   bool updateShouldNotify(FushiDialogActionScope oldWidget) => false;
+}
+
+/// 标记「iOS 27 sheet 导航栏」（[FushiAppleSheetHeader] 的左右两端）：其中的
+/// 按钮画成导航栏玻璃胶囊——主操作（FilledButton）= `.confirmationAction`
+/// 的 `.glassProminent` 强调色玻璃胶囊（semibold 字），其余（取消 / 关闭类
+/// TextButton / tonal / outlined）= 无色透明玻璃胶囊 + label 色字；禁用态
+/// 一律褪成无色玻璃 + tertiaryLabel 字。尺寸取 iOS 档按钮高（44）。只在 Apple
+/// 设计系统下生效。
+class FushiSheetHeaderActionScope extends InheritedWidget {
+  const FushiSheetHeaderActionScope({super.key, required super.child});
+
+  static bool of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<FushiSheetHeaderActionScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(FushiSheetHeaderActionScope oldWidget) => false;
 }
 
 /// 无色透明液态玻璃（iOS / macOS 26 的 `.glass` 控件：Niratan 参考图里的
@@ -103,7 +127,7 @@ LiquidGlassSettings fushiClearGlassSettings(
       glassColor: lighter
           ? Colors.white.withValues(alpha: 0.09)
           : Colors.black.withValues(alpha: 0.14),
-      blur: material == FushiGlassMaterial.frosted ? 10 : 2,
+      blur: material == FushiGlassMaterial.minimal ? 10 : 2,
       thickness: 12,
       lightIntensity: 0.3,
       ambientStrength: 0,
@@ -120,7 +144,7 @@ LiquidGlassSettings fushiClearGlassSettings(
   // 白 20% 的旧值压在 #F2F2F7 分组底上几乎看不见轮廓。
   return LiquidGlassSettings(
     glassColor: Colors.white.withValues(alpha: lighter ? 0.92 : 0.62),
-    blur: material == FushiGlassMaterial.frosted ? 10 : 6,
+    blur: material == FushiGlassMaterial.minimal ? 10 : 6,
     thickness: 16,
     lightIntensity: 0.5,
     ambientStrength: 0,
@@ -171,13 +195,41 @@ Widget fushiClearGlassBezel(
   );
 }
 
+/// 玻璃按钮的静止态：iOS 26 / 27 的 `.glass` / `.glassProminent` 按钮静止时
+/// 是平滑的半透明填充，镜面高光只在按压时由 [GlassButton] 的 GlassGlow /
+/// ambientBaseLight 短暂画出——不是一圈常驻的亮边。把 [settings] 里画高光边
+/// 的几项（方向光 lightIntensity、环境 ambientRim、菲涅尔 fresnelStrength、
+/// 内侧镜面 rimLight、外圈暗边 rimShade）按 [rim] 缩放（0 = 全去），填充、
+/// 模糊、折射、frost、边缘吸收与投影不动。四个玻璃画质档位同一处理（off /
+/// minimal 档的实色 / 磨砂 settings 同样带这些项）。只用于按钮，面板 / 栏 /
+/// 分段轨等不经这里。
+LiquidGlassSettings fushiGlassButtonRestSettings(
+  LiquidGlassSettings settings, {
+  double rim = 0,
+}) {
+  return settings.copyWith(
+    lightIntensity: settings.lightIntensity * rim,
+    ambientRim: settings.ambientRim * rim,
+    fresnelStrength: settings.fresnelStrength * rim,
+    rimLight: settings.rimLight * rim,
+    rimShade: settings.rimShade * rim,
+  );
+}
+
+/// alert / sheet 动作区非主按钮的中性洗色底（UIAlertController 实测：深色
+/// 白 ≈11.5%、浅色黑 ≈15%，压在对话框面板上是一枚平的灰胶囊）。
+Color fushiAppleActionWash(BuildContext context) =>
+    Theme.of(context).colorScheme.brightness == Brightness.dark
+    ? Colors.white.withValues(alpha: 0.115)
+    : Colors.black.withValues(alpha: 0.15);
+
 /// [fushiClearGlassSettings] 的 `bar` 档（见那里的说明）。[material] 只会是
-/// liquid（Impeller，premium 路径）或 frosted（Skia 回退）。
+/// 着色器档（standard / premium）或 minimal（零着色器，普通模糊兜可读性）。
 LiquidGlassSettings _clearBarGlassSettings(
   FushiGlassMaterial material, {
   required bool dark,
 }) {
-  if (material != FushiGlassMaterial.liquid) {
+  if (!material.usesShader) {
     return LiquidGlassSettings(
       glassColor: Colors.white.withValues(alpha: dark ? 0.08 : 0.3),
       blur: dark ? 10 : 12,
@@ -251,31 +303,95 @@ LiquidGlassSettings _clearBarGlassSettings(
   );
 }
 
-/// 桌面（Windows / macOS / Linux）用 macOS 26 的紧凑控件尺寸；移动端用
-/// iOS 26 的 44pt 触控尺寸。按 [ThemeData.platform] 判（测试可覆盖）。
-bool fushiAppleCompact(BuildContext context) {
-  switch (Theme.of(context).platform) {
-    case TargetPlatform.windows:
-    case TargetPlatform.macOS:
-    case TargetPlatform.linux:
-      return true;
-    case TargetPlatform.android:
-    case TargetPlatform.iOS:
-    case TargetPlatform.fuchsia:
-      return false;
+/// true = **macOS 档**（紧凑控件：行高 24 / 13 号字等），false = iOS 档
+/// （44pt 触控尺寸）。名字里的 compact 指 macOS 的紧凑度量，不是「窄屏」。
+/// 判据委托 [fushiAppleUsesMacMetrics]（桌面平台且窗口宽 ≥ 600）：桌面窄窗
+/// 与触屏一样是 iOS 档。
+bool fushiAppleCompact(BuildContext context) =>
+    fushiAppleUsesMacMetrics(context);
+
+/// Apple 按钮（iOS 27 UIButton / macOS 27 NSButton）的尺寸档。
+///
+/// @design dual —— 只服务 Apple 分支；MD3 的尺寸档见 [FushiButtonMetrics]。
+/// 档位按 [FushiAppleMetrics.desktop]：桌面宽窗 = macOS，触屏 / 桌面窄窗 = iOS。
+///
+/// | 档 | iOS 高 / 字号 | macOS 高 / 字号 |
+/// |---|---|---|
+/// | [FushiButtonSize.xs] | 28 / 15 | 22 / 13（small） |
+/// | [FushiButtonSize.s] | 34 / 15（regular） | 24 / 13（regular） |
+/// | null / m / l / xl | 44 / 17（large） | 28 / 13（large） |
+@immutable
+class FushiAppleButtonMetrics {
+  const FushiAppleButtonMetrics._({
+    required this.height,
+    required this.fontSize,
+    required this.iconSize,
+    required this.horizontalPadding,
+    required this.plainHorizontalPadding,
+    required this.iconGap,
+  });
+
+  /// 按当前档位与 [size] 取度量。
+  factory FushiAppleButtonMetrics.of(
+    BuildContext context, [
+    FushiButtonSize? size,
+  ]) {
+    final FushiAppleMetrics apple = FushiAppleMetrics.of(context);
+    if (apple.desktop) {
+      // macOS 档：Windows / Linux 上整体乘 [fushiAppleMacScale]，Mac 上 1.0。
+      final double k = apple.scale;
+      return FushiAppleButtonMetrics._(
+        height:
+            switch (size) {
+              FushiButtonSize.xs => 22,
+              FushiButtonSize.s => 24,
+              _ => 28,
+            } *
+            k,
+        fontSize: (context.fushiType.bodySmall.fontSize ?? 13) * k,
+        iconSize: 14 * k,
+        horizontalPadding: (size == FushiButtonSize.xs ? 8 : 10) * k,
+        plainHorizontalPadding: 6 * k,
+        iconGap: 4 * k,
+      );
+    }
+    final bool small = size == FushiButtonSize.xs || size == FushiButtonSize.s;
+    return FushiAppleButtonMetrics._(
+      height: switch (size) {
+        FushiButtonSize.xs => 28,
+        FushiButtonSize.s => 34,
+        _ => 44,
+      },
+      fontSize: small ? 15 : 17,
+      iconSize: small ? 16 : 19,
+      horizontalPadding: small ? 14 : 20,
+      plainHorizontalPadding: 10,
+      iconGap: 6,
+    );
   }
+
+  /// 胶囊高度（`.bordered` / `.borderedProminent` / 玻璃按钮；plain 的最小高）。
+  final double height;
+  final double fontSize;
+  final double iconSize;
+  final double horizontalPadding;
+  final double plainHorizontalPadding;
+  final double iconGap;
 }
 
-/// Apple 按钮的共用渲染，形态对齐 iOS 26 / macOS 26 的 UIButton 配置：
+/// Apple 按钮的共用渲染，形态对齐 iOS 27 / macOS 27 的 UIButton 配置：
 /// - filled = `.glassProminent`：强调色着色的玻璃胶囊，onAccent 字 semibold；
 /// - tonal / outlined = `.bordered`：tertiaryFill 灰底胶囊 + 强调色字（内容
 ///   层控件，不是玻璃）；
 /// - text = `.plain`：无底强调色文字，按下变淡（见 [FushiPlainButton]）；
 /// - alert / sheet 动作区（[FushiAlertActionScope] / [FushiDialogActionScope]）
-///   里的非主操作保持透明玻璃胶囊 + label 色字；调用方给了实底背景色时按
-///   着色玻璃画。
+///   = UIAlertController 的平填充胶囊：主操作强调色实底，其余中性洗色底 +
+///   label 色字（破坏性 systemRed 字），调用方给了实底背景色时按该色填；
+/// - 其余玻璃胶囊（内容区主按钮、调用方着色按钮）静止态经
+///   [fushiGlassButtonRestSettings] 去掉高光边，高光只在按压时出现。
 ///
-/// 高度：移动端 44、桌面 34（plain 桌面 28）；圆角恒为全胶囊。
+/// 高度与字号见 [FushiAppleButtonMetrics]（iOS 44 / 34、macOS 28 / 24 / 22）；
+/// alert 动作区仍按平台 36 / 48。圆角恒为全胶囊。
 /// [style] 里能映射的字段（前景 / 背景色、内边距、最小 / 固定尺寸、字体）照用，
 /// 其余忽略。
 Widget _glassButton(
@@ -291,12 +407,18 @@ Widget _glassButton(
   required Widget? icon,
   required Widget? label,
   required IconAlignment? iconAlignment,
+  FushiButtonSize? size,
   bool destructive = false,
   bool overImage = false,
 }) {
   final ThemeData theme = Theme.of(context);
   final FushiAppleColors apple = appleColorsOf(context);
   final bool compact = fushiAppleCompact(context);
+  final double macScale = fushiAppleMacScale(context);
+  final FushiAppleButtonMetrics metrics = FushiAppleButtonMetrics.of(
+    context,
+    size,
+  );
   final bool enabled = onPressed != null || onLongPress != null;
   final Set<WidgetState> resolveStates = enabled
       ? const <WidgetState>{}
@@ -307,10 +429,12 @@ Widget _glassButton(
   final bool customBg = styleBg != null && styleBg.a > 0;
   final bool alertAction = FushiAlertActionScope.of(context);
   final bool sheetAction = FushiDialogActionScope.of(context);
+  final bool headerAction = FushiSheetHeaderActionScope.of(context);
   // 用户 2026-10-12：「所有组件都要遵循原有的 Cupertino」——内容区文字按钮
   // = `.plain`（无底强调色字），tonal / outlined = `.bordered`（灰底强调色
   // 字）。alert / sheet 动作区与调用方着色的按钮仍走玻璃胶囊。
-  final bool contentArea = !customBg && !alertAction && !sheetAction;
+  final bool contentArea =
+      !customBg && !alertAction && !sheetAction && !headerAction;
   final bool plain = kind == _FushiButtonKind.text && contentArea;
   final bool bordered =
       (kind == _FushiButtonKind.tonal || kind == _FushiButtonKind.outlined) &&
@@ -345,6 +469,16 @@ Widget _glassButton(
     tint = Colors.white;
     fg = Colors.black;
   }
+  // alert / sheet 动作区的主操作 = UIAlertController 的 preferredAction：
+  // 与其余按钮同一枚中性洗色底，只把字加粗（label 色），不着强调色
+  // （库 GlassAlertPlatter 在 iOS 27 模拟器上实测；用户 2026-11-24 选定）。
+  if ((alertAction || sheetAction) &&
+      kind == _FushiButtonKind.filled &&
+      !customBg &&
+      !overImage) {
+    tint = null;
+    fg = destructive ? apple.destructive : apple.label;
+  }
   if (styleFg != null) fg = styleFg;
   if (!enabled) {
     // iOS 禁用态：主按钮褪成中性灰玻璃，文字一律 tertiaryLabel。
@@ -355,25 +489,30 @@ Widget _glassButton(
     }
   }
 
-  final double height = alertAction ? (compact ? 36 : 48) : (compact ? 34 : 44);
+  final double height = alertAction
+      ? (compact ? 36 * macScale : 48)
+      : metrics.height;
   final EdgeInsetsGeometry padding =
       style?.padding?.resolve(resolveStates) ??
       EdgeInsets.symmetric(
-        horizontal: plain ? (compact ? 8 : 10) : (compact ? 14 : 20),
+        horizontal: plain
+            ? metrics.plainHorizontalPadding
+            : metrics.horizontalPadding,
       );
   final Size? minimumSize = style?.minimumSize?.resolve(resolveStates);
   final Size? fixedSize = style?.fixedSize?.resolve(resolveStates);
 
-  final TextStyle textStyle = fushiAppleButtonTextStyle(
-    context,
-    prominent: weight == FontWeight.w600,
-  ).merge(style?.textStyle?.resolve(resolveStates)).copyWith(color: fg);
+  final TextStyle textStyle =
+      fushiAppleButtonTextStyle(context, prominent: weight == FontWeight.w600)
+          .copyWith(fontSize: metrics.fontSize)
+          .merge(style?.textStyle?.resolve(resolveStates))
+          .copyWith(color: fg);
   Widget content;
   if (icon != null && label != null) {
     final bool trailing = iconAlignment == IconAlignment.end;
     final List<Widget> parts = <Widget>[
       icon,
-      SizedBox(width: compact ? 5 : 6),
+      SizedBox(width: metrics.iconGap),
       Flexible(child: label),
     ];
     content = Row(
@@ -384,7 +523,7 @@ Widget _glassButton(
     content = label ?? icon ?? const SizedBox.shrink();
   }
   content = IconTheme.merge(
-    data: IconThemeData(color: fg, size: compact ? 16 : 19),
+    data: IconThemeData(color: fg, size: metrics.iconSize),
     child: DefaultTextStyle.merge(
       style: textStyle,
       maxLines: 1,
@@ -396,7 +535,7 @@ Widget _glassButton(
       fixedSize?.height ??
       (minimumSize != null && minimumSize.height > 0
           ? minimumSize.height
-          : (plain ? (compact ? 28 : 44) : height));
+          : (plain ? (metrics.height < 44 ? metrics.height : 44) : height));
   content = ConstrainedBox(
     constraints: BoxConstraints(
       minWidth: fixedSize?.width ?? minimumSize?.width ?? (plain ? 0 : height),
@@ -417,7 +556,33 @@ Widget _glassButton(
       child: content,
     );
   }
-  if (bordered) {
+  if (alertAction || sheetAction || headerAction) {
+    // sheet 导航栏两端（取消 / 主操作）同样是平填充胶囊：压在 sheet 面板上
+    // 的玻璃胶囊会画出一圈折射 / 吸收描边，看着像包了一道边（用户
+    // 2026-11-24「这包边有点怪」）。主操作强调色实底，取消中性洗色底。
+    // alert / sheet 动作区 = UIAlertController 的平填充胶囊
+    // （`_UIAlertControllerFilledBackgroundView`，库 GlassAlertPlatter 在
+    // iOS 26 / 27 模拟器上实测）：不是玻璃，静止时没有任何高光边 / 折射。
+    // 主操作强调色实底 + onAccent 字，调用方着色的按调用方底色，其余（取消 /
+    // 破坏性）中性洗色底 + label / systemRed 字；禁用态底保留、字褪色。
+    final Color fill = enabled && tint != null
+        ? tint
+        : fushiAppleActionWash(context);
+    return FushiPlainButton(
+      onPressed: onPressed,
+      onLongPress: onLongPress,
+      onHover: onHover,
+      onFocusChange: onFocusChange,
+      focusNode: focusNode,
+      autofocus: autofocus,
+      borderRadius: BorderRadius.circular((fixedSize?.height ?? minHeight) / 2),
+      fill: fill,
+      child: content,
+    );
+  }
+  if (bordered || (tint == null && !customBg)) {
+    // 只剩禁用的主按钮会走到这里（tint 在禁用时被清空）：iOS
+    // `.borderedProminent` 禁用态是灰底 + tertiaryLabel 字，不是一枚透明玻璃。
     // `.bordered`：灰底实色胶囊（禁用态底保留、字褪成 tertiaryLabel）；
     // 悬停 / 按下由 [FushiPlainButton] 在底色上叠一层前景色。
     return FushiPlainButton(
@@ -433,8 +598,9 @@ Widget _glassButton(
     );
   }
 
-  // 液态玻璃胶囊：filled = `.glassProminent` 强调色着色玻璃，alert / sheet
-  // 动作区里的取消类与调用方着色按钮 = `.glass` / 着色玻璃。按压 / 拉伸 / 高光由库的 GlassButton 自己做；焦点环 + Enter →
+  // 液态玻璃胶囊：filled = `.glassProminent` 强调色着色玻璃，调用方着色按钮
+  // = 着色玻璃；静止态无高光边（[fushiGlassButtonRestSettings]），按压 /
+  // 拉伸 / 高光由库的 GlassButton 自己做；焦点环 + Enter →
   // ActivateIntent 由它内置的 GlassFocusRegion 接上。内容区多是平底，按钮
   // 各自 useOwnLayer 取背景折射。
   // 已经浮在另一枚玻璃面（批量操作栏、迷你条、悬浮工具条）里时不再另起
@@ -451,9 +617,9 @@ Widget _glassButton(
     enabled: enabled,
     style: glassStyle,
     // 只有主按钮（及调用方着色）是有色玻璃；其余一律无色透明玻璃。
-    settings: enabled && tint != null
-        ? fushiGlassSettings(context, tint: tint)
-        : fushiClearGlassSettings(context),
+    settings: fushiGlassButtonRestSettings(
+      fushiGlassSettings(context, tint: tint),
+    ),
     quality: fushiGlassQuality(context),
     useOwnLayer: !nested,
     // Messages「Edit」胶囊同参：按下拖出按钮外仍保持按压态，浅色按压有
@@ -495,15 +661,17 @@ TextStyle fushiAppleButtonTextStyle(
   bool prominent = false,
 }) {
   final bool compact = fushiAppleCompact(context);
+  final double macScale = fushiAppleMacScale(context);
   return (Theme.of(context).textTheme.labelLarge ?? const TextStyle()).copyWith(
-    fontSize: compact ? 15 : 17,
+    fontSize: compact ? 15 * macScale : 17,
     fontWeight: prominent ? FontWeight.w600 : FontWeight.w500,
   );
 }
 
 /// iOS `.bordered` / `.borderedProminent` 胶囊按钮（内容层实色，不是玻璃）：
 /// [prominent] = 强调色底 + onAccent 字 semibold，否则 tertiaryFill 灰底 +
-/// 强调色字；禁用态底保留、字褪成 tertiaryLabel。高度桌面 34 / 移动 44，
+/// 强调色字；禁用态底保留、字褪成 tertiaryLabel。高度见
+/// [FushiAppleButtonMetrics]（[size] 档；iOS 44 / 34、macOS 28 / 24），
 /// 按下变淡、悬停叠前景色（[FushiPlainButton]），焦点环 + Enter →
 /// ActivateIntent 同 plain 按钮。[trailing] 画在标签之后（如 pull-down 的
 /// chevron）。
@@ -517,27 +685,31 @@ Widget fushiAppleBorderedButton(
   FocusNode? focusNode,
   bool autofocus = false,
   String? semanticLabel,
+  FushiButtonSize? size,
 }) {
   final FushiAppleColors apple = appleColorsOf(context);
-  final bool compact = fushiAppleCompact(context);
+  final FushiAppleButtonMetrics metrics = FushiAppleButtonMetrics.of(
+    context,
+    size,
+  );
   final bool enabled = onPressed != null;
   final Color fg = !enabled
       ? apple.tertiaryLabel
       : (prominent ? apple.onAccent : apple.accent);
-  final double height = compact ? 34 : 44;
-  final double gap = compact ? 5 : 6;
+  final double height = metrics.height;
+  final double gap = metrics.iconGap;
   final TextStyle textStyle = fushiAppleButtonTextStyle(
     context,
     prominent: prominent,
-  ).copyWith(color: fg);
+  ).copyWith(fontSize: metrics.fontSize, color: fg);
   final Widget content = IconTheme.merge(
-    data: IconThemeData(color: fg, size: compact ? 16 : 19),
+    data: IconThemeData(color: fg, size: metrics.iconSize),
     child: DefaultTextStyle.merge(
       style: textStyle,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: compact ? 14 : 20),
+        padding: EdgeInsets.symmetric(horizontal: metrics.horizontalPadding),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -849,6 +1021,7 @@ class FushiTextButton extends StatelessWidget {
       return _glassButton(
         context,
         kind: _FushiButtonKind.text,
+        size: size,
         onPressed: onPressed,
         onLongPress: onLongPress,
         onHover: onHover,
@@ -1035,6 +1208,7 @@ class FushiFilledButton extends StatelessWidget {
       return _glassButton(
         context,
         kind: tonal ? _FushiButtonKind.tonal : _FushiButtonKind.filled,
+        size: size,
         onPressed: onPressed,
         onLongPress: onLongPress,
         onHover: onHover,
@@ -1229,6 +1403,7 @@ class FushiOutlinedButton extends StatelessWidget
       return _glassButton(
         context,
         kind: _FushiButtonKind.outlined,
+        size: size,
         onPressed: onPressed,
         onLongPress: onLongPress,
         onHover: onHover,
@@ -1656,6 +1831,7 @@ class FushiIconButtonControl extends StatelessWidget {
   Widget _buildGlass(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final bool selected = isSelected ?? false;
     final bool enabled = onPressed != null || onLongPress != null;
     final Set<WidgetState> states = <WidgetState>{
@@ -1693,8 +1869,10 @@ class FushiIconButtonControl extends StatelessWidget {
         ? styleBg
         : (prominent && enabled ? apple.accent : null);
     final double effectiveIconSize =
-        iconSize ?? style?.iconSize?.resolve(states) ?? (compact ? 18 : 20);
-    final double defaultExtent = compact ? 36 : 44;
+        iconSize ??
+        style?.iconSize?.resolve(states) ??
+        (compact ? 18 * macScale : 20);
+    final double defaultExtent = compact ? 36 * macScale : 44;
     final double extent =
         constraints?.minWidth != null && constraints!.minWidth > 0
         ? constraints!.minWidth
@@ -1733,9 +1911,16 @@ class FushiIconButtonControl extends StatelessWidget {
         style: tint != null
             ? GlassButtonStyle.prominent
             : GlassButtonStyle.filled,
+        // 静止态去掉 / 压低高光边：强调色圆钮全去，透明圆钮留一半作轮廓
+        // （深色下它的填充几乎是透明的，全去就看不出是一枚按钮）。
         settings: tint != null
-            ? fushiGlassSettings(context, tint: tint)
-            : fushiClearGlassSettings(context, lighter: selected),
+            ? fushiGlassButtonRestSettings(
+                fushiGlassSettings(context, tint: tint),
+              )
+            : fushiGlassButtonRestSettings(
+                fushiClearGlassSettings(context, lighter: selected),
+                rim: 0.5,
+              ),
         quality: fushiGlassQuality(context),
         // 浮在别的玻璃面里时走库的嵌套 vibrancy（见 [_glassButton]）。
         useOwnLayer:

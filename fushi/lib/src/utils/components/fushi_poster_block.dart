@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/rendering.dart' show BoxParentData, RenderShiftedBox;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 import 'package:fushi/src/utils/adaptive/shell_style.dart' show shellShape;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart'
     show FushiCoverBlockColors, FushiCoverBlockSize, fushiCoverBlockShape;
@@ -12,6 +14,14 @@ import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show FushiMastheadPalette, FushiMastheadPrimaryButton, fushiMastheadCompact;
+import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
+    show fushiAppleBarCapsuleExtent;
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
+    show appleColorsOf;
+import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart'
+    show fushiAppleProminentGlassButton;
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show fushiAppleButtonTextStyle;
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -472,6 +482,11 @@ class FushiPosterFigure extends StatelessWidget {
 /// 页头大字顶栏右端带字的主按钮（设计稿 `.cta`：图标 + 文字）；窄窗只留图标
 /// （文字进 tooltip 与语义）。形状 / 配色 / 悬停弹角由 [FushiMastheadPrimaryButton]
 /// 给。
+///
+/// @design dual
+/// Apple（[isGlassDesign]）：iOS 27 prominent bar button——强调色玻璃按钮
+/// （[fushiAppleProminentGlassButton]，库 `GlassButton` prominent，随玻璃画质
+/// 档位）：窄窗 44 见方圆钮只留图标，宽窗 36 高胶囊图标 + 文字。
 class FushiMastheadCtaButton extends StatelessWidget {
   const FushiMastheadCtaButton({
     required this.icon,
@@ -486,9 +501,54 @@ class FushiMastheadCtaButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final Key? buttonKey;
 
+  Widget _buildApple(BuildContext context, {required bool compact}) {
+    final Color fg = appleColorsOf(context).onAccent;
+    final double extent = fushiAppleBarCapsuleExtent(context, compact: compact);
+    final Widget icon = FushiIcon(
+      this.icon,
+      size: compact ? 22 : 17,
+      color: fg,
+    );
+    return FushiTooltip(
+      message: label,
+      excludeFromSemantics: true,
+      child: KeyedSubtree(
+        key: buttonKey,
+        child: fushiAppleProminentGlassButton(
+          context,
+          onPressed: onPressed,
+          extent: extent,
+          capsule: !compact,
+          semanticLabel: label,
+          child: compact
+              ? icon
+              : Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    spacing: 6,
+                    children: <Widget>[
+                      icon,
+                      Text(
+                        label,
+                        maxLines: 1,
+                        style: fushiAppleButtonTextStyle(
+                          context,
+                          prominent: true,
+                        ).copyWith(color: fg),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool compact = fushiMastheadCompact(context);
+    if (isGlassDesign(context)) return _buildApple(context, compact: compact);
     final TextStyle base =
         Theme.of(context).textTheme.labelLarge ?? const TextStyle();
     return FushiMastheadPrimaryButton(

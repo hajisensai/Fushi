@@ -568,18 +568,17 @@ class _DictionaryDialogPageState extends BasePageState {
     await _loadProfileName();
   }
 
-  /// 顶栏标题：「词典」+ 激活配置名副标题（可聚焦、Enter 打开配置管理）。本页的开关 /
-  /// 顺序都属于激活配置，不写明是哪一份配置，用户分不清改的是谁。
-  Widget _buildTitle() {
+  /// 页名下的激活配置名副标题（可聚焦、Enter 打开配置管理）。本页的开关 / 顺序都
+  /// 属于激活配置，不写明是哪一份配置，用户分不清改的是谁。名字异步读到前为 null。
+  ///
+  /// 走脚手架的独立 subtitle 通道，页名仍是纯文字：以前把两者拼成一个 Column 当
+  /// 标题，通用顶栏拿不到纯文字页名，读到配置名后整页从页头大字退回旧胶囊
+  /// （BUG-5410）。
+  Widget? _buildProfileSubtitle() {
     final String? profile = _profileName;
-    final Widget title = Text(
-      t.dictionaries,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-    );
-    if (profile == null) return title;
+    if (profile == null) return null;
     final String label = t.dictionary_manager_profile_subtitle(name: profile);
-    final Widget subtitle = FushiTooltip(
+    return FushiTooltip(
       message: t.dictionary_manager_profile_tooltip,
       child: FushiTextButton(
         key: const ValueKey<String>('dict-profile-subtitle'),
@@ -591,15 +590,6 @@ class _DictionaryDialogPageState extends BasePageState {
           textStyle: textTheme.labelSmall,
         ),
         child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      ),
-    );
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: AlignmentDirectional.centerStart,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[title, subtitle],
       ),
     );
   }
@@ -1006,13 +996,15 @@ class _DictionaryDialogPageState extends BasePageState {
       debugLabel: 'dictionary-dialog',
       onDrop: _handleDictionaryDrop,
       child: split
-          ? FushiToolScaffold.customTitle(
-              title: _buildTitle(),
+          ? FushiToolScaffold(
+              title: t.dictionaries,
+              subtitle: _buildProfileSubtitle(),
               actions: actions,
               body: _buildSplitBody(listChildren),
             )
           : AdaptiveSettingsScaffold(
-              title: _buildTitle(),
+              title: Text(t.dictionaries),
+              subtitle: _buildProfileSubtitle(),
               // Cupertino (iOS/macOS) keeps its native nav-bar icon actions.
               // Material (Android/Windows/Linux) empties the app bar and
               // surfaces the same actions as labeled buttons in an in-page

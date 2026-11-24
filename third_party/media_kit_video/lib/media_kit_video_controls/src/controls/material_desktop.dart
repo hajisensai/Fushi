@@ -338,6 +338,11 @@ class MaterialDesktopVideoControlsThemeData {
   /// PATCHES.md.
   final VideoSeekBarTrackBuilder? seekBarTrackBuilder;
 
+  /// Fushi patch (glass chrome fade): replaces the controls' show / hide
+  /// fade. Null (upstream default) = one `Opacity` over the whole layer. See
+  /// [VideoControlsFadeBuilder] and PATCHES.md.
+  final VideoControlsFadeBuilder? controlsFadeBuilder;
+
   /// {@macro material_desktop_video_controls_theme_data}
   const MaterialDesktopVideoControlsThemeData({
     this.displaySeekBar = true,
@@ -412,6 +417,7 @@ class MaterialDesktopVideoControlsThemeData {
     this.seekOnDrag = true,
     this.onHoverPosition,
     this.seekBarTrackBuilder,
+    this.controlsFadeBuilder,
   });
 
   /// Creates a copy of this [MaterialDesktopVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -477,6 +483,7 @@ class MaterialDesktopVideoControlsThemeData {
     bool? seekOnDrag,
     void Function(double? fraction)? onHoverPosition,
     VideoSeekBarTrackBuilder? seekBarTrackBuilder,
+    VideoControlsFadeBuilder? controlsFadeBuilder,
   }) {
     return MaterialDesktopVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -561,6 +568,7 @@ class MaterialDesktopVideoControlsThemeData {
       seekOnDrag: seekOnDrag ?? this.seekOnDrag,
       onHoverPosition: onHoverPosition ?? this.onHoverPosition,
       seekBarTrackBuilder: seekBarTrackBuilder ?? this.seekBarTrackBuilder,
+      controlsFadeBuilder: controlsFadeBuilder ?? this.controlsFadeBuilder,
     );
   }
 }
@@ -1061,9 +1069,14 @@ class _MaterialDesktopVideoControlsState
                             bottom: 16.0 + subtitleVerticalShiftOffset,
                             child: _buildTouchSwipeLayer(context),
                           ),
-                        AnimatedOpacity(
+                        // Fushi patch (glass chrome fade): same curve /
+                        // duration / onEnd as the upstream AnimatedOpacity,
+                        // but the host may take the fade over
+                        // ([controlsFadeBuilder]) so no OpacityLayer sits
+                        // over its backdrop-filter glass. See PATCHES.md.
+                        TweenAnimationBuilder<double>(
                           curve: Curves.easeInOut,
-                          opacity: visible ? 1.0 : 0.0,
+                          tween: Tween<double>(end: visible ? 1.0 : 0.0),
                           duration: _theme(context).controlsTransitionDuration,
                           onEnd: () {
                             if (!visible) {
@@ -1072,6 +1085,12 @@ class _MaterialDesktopVideoControlsState
                               });
                             }
                           },
+                          builder: (context, opacity, child) =>
+                              VideoControlsFade(
+                            opacity: opacity,
+                            builder: _theme(context).controlsFadeBuilder,
+                            child: child!,
+                          ),
                           child: Stack(
                             clipBehavior: Clip.none,
                             alignment: Alignment.bottomCenter,
@@ -1084,8 +1103,9 @@ class _MaterialDesktopVideoControlsState
                               // true). Ancestors (tap router / MouseRegion) are
                               // unaffected.
                               if (_theme(context).topButtonBar.isNotEmpty)
-                                IgnorePointer(
-                                    child: Container(
+                                VideoControlsLeafFade(
+                                    child: IgnorePointer(
+                                        child: Container(
                                   // Fushi patch (glass design system): scrim
                                   // colour from the theme (default 0x61000000).
                                   decoration: BoxDecoration(
@@ -1102,11 +1122,12 @@ class _MaterialDesktopVideoControlsState
                                       ],
                                     ),
                                   ),
-                                )),
+                                ))),
                               // Bottom gradient.
                               if (_theme(context).bottomButtonBar.isNotEmpty)
-                                IgnorePointer(
-                                    child: Container(
+                                VideoControlsLeafFade(
+                                    child: IgnorePointer(
+                                        child: Container(
                                   decoration: BoxDecoration(
                                     gradient: LinearGradient(
                                       begin: Alignment.topCenter,
@@ -1121,7 +1142,7 @@ class _MaterialDesktopVideoControlsState
                                       ],
                                     ),
                                   ),
-                                )),
+                                ))),
                               if (mount)
                                 Padding(
                                   padding: _theme(context).padding ??
@@ -1194,7 +1215,8 @@ class _MaterialDesktopVideoControlsState
                                                 )
                                               : Offset.zero,
                                           child: VideoControlsChromeRegion(
-                                              child: MaterialDesktopSeekBar(
+                                              child: VideoControlsLeafFade(
+                                                  child: MaterialDesktopSeekBar(
                                             // Fushi patch (TODO-669): forward
                                             // the host hover-position callback so
                                             // the seek bar can drive the
@@ -1230,7 +1252,7 @@ class _MaterialDesktopVideoControlsState
                                                 },
                                               );
                                             },
-                                          )),
+                                          ))),
                                         ),
                                       if (_theme(context)
                                           .bottomButtonBar

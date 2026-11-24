@@ -1127,10 +1127,15 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
     final double rowInset = tokens.spacing.rowHorizontal;
     final List<String> problems =
         descriptor?.validate(_preset) ?? const <String>[];
-    Widget field(Widget child) => Padding(
-      padding: EdgeInsets.fromLTRB(rowInset, 12, rowInset, 10),
-      child: child,
-    );
+    // Apple：直接是输入框的行交给分组排成表单行（[FushiAppleFormRowScope]），
+    // 不再自带内边距；其余组合行照旧按行内边距排。
+    final bool glass = isGlassDesign(context);
+    Widget field(Widget child) => glass && child is FushiAppleFormRowField
+        ? child
+        : Padding(
+            padding: EdgeInsets.fromLTRB(rowInset, 12, rowInset, 10),
+            child: child,
+          );
 
     List<Widget> children(BuildContext context) => <Widget>[
       if (descriptor != null && descriptor.capabilities.online)

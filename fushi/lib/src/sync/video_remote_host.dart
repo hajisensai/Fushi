@@ -277,6 +277,7 @@ final class VideoRemotePlaybackBinding {
     this.favoritesChanged,
     this.libraryAnchor,
     this.originSourceId,
+    this.originLocator,
     this.previewAudio,
     this.stopAudio,
     this.setVolume,
@@ -321,6 +322,12 @@ final class VideoRemotePlaybackBinding {
   /// `RemoteLibrarySource.remoteLibrarySourceId` when it streams an item that
   /// is not in the local library. Null (or returning null) = a library row.
   final String? Function()? originSourceId;
+
+  /// The reopen locator favorites written through this binding record for the
+  /// row [bookUid] ([FavoriteSentence.originLocator], v180): only sources whose
+  /// item id alone cannot find the item again (an online video source episode
+  /// needs its work). Null (or returning null) = none.
+  final String? Function(String bookUid)? originLocator;
 
   /// [libraryAnchor] with its default applied.
   ({String bookUid, int ms}) anchorOf(int startMs) =>
@@ -437,6 +444,9 @@ final class VideoRemoteHost implements VideoRemoteService {
   int _subtitleVersion = 0;
   int _favoriteVersion = 0;
   String? _playbackError;
+
+  /// [_playbackError] 的细分原因（[reportError] 的 `reason`），随它一起清。
+  String? _playbackErrorReason;
   List<VideoRemoteCue> _cues = const <VideoRemoteCue>[];
   Map<String, VideoRemoteCue> _cueMap = <String, VideoRemoteCue>{};
   Map<String, Object?> _lastState = <String, Object?>{};
@@ -476,6 +486,7 @@ final class VideoRemoteHost implements VideoRemoteService {
     _binding = binding;
     _identity = null;
     _playbackError = null;
+    _playbackErrorReason = null;
     _lookup = null;
     binding.addListener(_changed);
     _syncControlled();
@@ -509,9 +520,12 @@ final class VideoRemoteHost implements VideoRemoteService {
   ///
   /// The code rides on the `state` snapshot until the controller's next
   /// successful operation, a session (video identity) change or a new player
-  /// registration; it never outlives the attempt it describes.
-  void reportError(String code) {
+  /// registration; it never outlives the attempt it describes. [reason]
+  /// refines [code] (snapshot `errorReason`, see [VideoRemoteException.reason]);
+  /// phones that predate it read the bare code.
+  void reportError(String code, {String? reason}) {
     _playbackError = code;
+    _playbackErrorReason = reason;
     _publish();
   }
 
@@ -528,6 +542,7 @@ final class VideoRemoteHost implements VideoRemoteService {
       _lookup = null;
       // A reported failure belongs to the session it was raised in.
       _playbackError = null;
+      _playbackErrorReason = null;
       _subtitleVersion++;
       _cues = next;
       _cueMap = <String, VideoRemoteCue>{
@@ -577,6 +592,8 @@ final class VideoRemoteHost implements VideoRemoteService {
     'sessionId': _sessionId, 'subtitleVersion': _subtitleVersion,
     'favoriteVersion': _favoriteVersion, 'title': _binding?.title() ?? '',
     if (_playbackError != null) 'error': _playbackError,
+    if (_playbackError != null && _playbackErrorReason != null)
+      'errorReason': _playbackErrorReason,
     // Public library identity only, never local paths or signed media URLs.
     'identity': _binding?.bookUid() ?? '', 'cueCount': _cues.length,
     'sectionIndex': _binding?.sectionIndex(),
@@ -734,6 +751,7 @@ final class VideoRemoteHost implements VideoRemoteService {
       // A successful controller operation supersedes an earlier failure.
       if (_playbackError != null) {
         _playbackError = null;
+        _playbackErrorReason = null;
         _publish();
       }
       return result;
@@ -1143,6 +1161,7 @@ final class VideoRemoteHost implements VideoRemoteService {
             // (`statTodayKey()`), honouring the configurable day reset.
             dateKey: FushiDatabase.statDateKeyOf(_now()),
             originSourceId: binding.originSourceId?.call(),
+            originLocator: binding.originLocator?.call(anchor.bookUid),
           ),
         );
       } else if (body['favorited'] == false) {

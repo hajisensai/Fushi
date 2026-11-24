@@ -49,6 +49,24 @@ void main() {
       expect(list.first.coverUrl, 'https://lain.bgm.tv/pic/cover/l/a/b/c.jpg');
     });
 
+    // BUG-5390：搜索结果带 infobox，作者要取出来（库管家只补缺作者的书全靠它）。
+    test('作者取 infobox 的 作者 / 作画 / 原作，去重，没有时为 null', () {
+      const String body = '''
+{"data":[
+  {"id":279871,"name":"魔法少女にあこがれて",
+   "images":{"large":"https://img/l.jpg"},
+   "infobox":[
+     {"key":"中文名","value":"梦想成为魔法少女"},
+     {"key":"作者","value":"小野中彰大"},
+     {"key":"作画","value":[{"v":"小野中彰大"},{"v":"助手"}]}
+   ]},
+  {"id":2,"name":"B","images":{"large":"https://img/b.jpg"},"infobox":[]}
+]}''';
+      final List<BookScrapeCandidate> list = parseBookSearchResponse(body);
+      expect(list.first.author, '小野中彰大, 助手');
+      expect(list.last.author, isNull);
+    });
+
     test('data 缺失/非数组 → 空列表（不抛）；非法 JSON → 抛', () {
       expect(parseBookSearchResponse('{}'), isEmpty);
       expect(parseBookSearchResponse('{"data":null}'), isEmpty);

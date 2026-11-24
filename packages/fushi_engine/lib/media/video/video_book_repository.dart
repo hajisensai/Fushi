@@ -284,12 +284,17 @@ class VideoBookRepository {
   /// 封面不在此处理（ffmpeg 属 app 层，且需先知集 uid 命名封面文件）——调用方在拿到
   /// [episodeUids] 后自行抽封面并 [updateCover] 到首集。
   ///
+  /// [origin] / [organizeKey]：新建合集带的整理身份（原盘入库传 `rule` + 确定性分组键，
+  /// 之后改名 / 被整理合并都按键认回；默认 `user`、无键，与既有导入一致）。
+  ///
   /// 返回 [SplitPlaylistImportResult]：合集 id + 各集 uid（有序）+ 本次真新建的集。
   Future<SplitPlaylistImportResult> importSplitPlaylist({
     required String collectionName,
     required List<PlaylistEntry> entries,
     int? sourceId,
     bool reuseExistingPaths = false,
+    CollectionOrigin origin = CollectionOrigin.user,
+    String? organizeKey,
   }) async {
     final List<String> epUids = <String>[];
     final List<String> createdUids = <String>[];
@@ -356,6 +361,8 @@ class VideoBookRepository {
       collectionId = await _db.createMediaCollection(
         collectionName,
         collectionType: 'playlist',
+        origin: origin,
+        organizeKey: organizeKey,
       );
       for (final String uid in epUids) {
         await _db.addToCollection(

@@ -14,6 +14,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_runtime.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_theme.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_catalog.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_glyph_atlas.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_line_art.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_math.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_profile.dart';
@@ -141,7 +142,11 @@ class LumiereFrame {
     this.power = 0,
     this.cameraMotion = 1,
     this.keywords,
+    this.devicePixelRatio = 1,
   });
+
+  /// 物理像素 / 逻辑像素：字形图集按物理字号选档。
+  final double devicePixelRatio;
 
   /// 歌曲时间（秒）。
   final double time;
@@ -223,81 +228,6 @@ List<Rgb?> lumiereGlyphKeywordColors(
     offset = end;
   }
   return out;
-}
-
-// ---------------------------------------------------------------------------
-// 字形图集
-// ---------------------------------------------------------------------------
-
-const double _em = 64;
-const double _pad = 10;
-const double _cell = _em + _pad * 2;
-const int _columns = 24;
-
-/// 整首歌用到的字拼成一张白色图集；每帧按字的颜色 / 透明度 modulate 出来。
-class LumiereGlyphAtlas {
-  LumiereGlyphAtlas._(this.image, this._slots, this._advances);
-
-  factory LumiereGlyphAtlas.build(
-    Iterable<String> chars, {
-    String? fontFamily,
-    List<String>? fontFamilyFallback,
-    FontWeight fontWeight = FontWeight.w500,
-  }) {
-    final List<String> unique = chars
-        .where((String c) => c.trim().isNotEmpty)
-        .toSet()
-        .toList();
-    final Map<String, int> slots = <String, int>{};
-    final Map<String, double> advances = <String, double>{};
-    final ui.PictureRecorder recorder = ui.PictureRecorder();
-    final Canvas canvas = Canvas(recorder);
-    for (int i = 0; i < unique.length; i++) {
-      final TextPainter p = TextPainter(
-        text: TextSpan(
-          text: unique[i],
-          style: TextStyle(
-            fontSize: _em,
-            height: 1,
-            color: const Color(0xFFFFFFFF),
-            fontWeight: fontWeight,
-            fontFamily: fontFamily,
-            fontFamilyFallback: fontFamilyFallback,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      slots[unique[i]] = i;
-      advances[unique[i]] = math.max(0.25, p.width / _em);
-      final double left = (i % _columns) * _cell;
-      final double top = (i ~/ _columns) * _cell;
-      p.paint(
-        canvas,
-        Offset(left + (_cell - p.width) / 2, top + (_cell - p.height) / 2),
-      );
-      p.dispose();
-    }
-    final ui.Picture picture = recorder.endRecording();
-    final int columns = math.max(1, math.min(unique.length, _columns));
-    final int rows = math.max(1, (unique.length / _columns).ceil());
-    final ui.Image image = picture.toImageSync(
-      (columns * _cell).ceil(),
-      (rows * _cell).ceil(),
-    );
-    picture.dispose();
-    return LumiereGlyphAtlas._(image, slots, advances);
-  }
-
-  final ui.Image image;
-  final Map<String, int> _slots;
-  final Map<String, double> _advances;
-
-  double advance(String char) =>
-      char.trim().isEmpty ? 0.3 : (_advances[char] ?? 0.6);
-
-  int? slotOf(String char) => _slots[char];
-
-  void dispose() => image.dispose();
 }
 
 // ---------------------------------------------------------------------------
@@ -482,9 +412,7 @@ class LumiereScene {
     this.title,
     this.artist,
     this.album,
-    String? fontFamily,
-    List<String>? fontFamilyFallback,
-    FontWeight fontWeight = FontWeight.w500,
+    LumiereGlyphStyle glyphStyle = const LumiereGlyphStyle(),
   }) : lines = <LumiereLine>[
          for (int i = 0; i < runtime.lines.length; i++)
            LumiereLine.of(
@@ -494,18 +422,13 @@ class LumiereScene {
            ),
        ] {
     program = compileLumiereProgram(lines, seed, seamless: seamless);
-    atlas = LumiereGlyphAtlas.build(
-      <String>[
-        for (final LyricVisualizerLine l in runtime.lines)
-          for (final LyricVisualizerGlyph g in l.glyphs) g.text,
-        ...?title?.characters,
-        ...?artist?.characters,
-        ...?album?.characters,
-      ],
-      fontFamily: fontFamily,
-      fontFamilyFallback: fontFamilyFallback,
-      fontWeight: fontWeight,
-    );
+    glyphs = LumiereGlyphs(<String>[
+      for (final LyricVisualizerLine l in runtime.lines)
+        for (final LyricVisualizerGlyph g in l.glyphs) g.text,
+      ...?title?.characters,
+      ...?artist?.characters,
+      ...?album?.characters,
+    ], glyphStyle);
     _sprites = _buildSprites();
     _echoWords = _fragmentsOf(runtime.lines);
   }
@@ -517,7 +440,12 @@ class LumiereScene {
   final String? album;
   final List<LumiereLine> lines;
   late final LumiereProgram program;
-  late final LumiereGlyphAtlas atlas;
+
+  /// 字形图集（按物理字号分档；补档 / 换字体都在后台，见 [LumiereGlyphs]）。
+  late final LumiereGlyphs glyphs;
+
+  /// 当前这套图集。
+  LumiereGlyphAtlases get atlas => glyphs.current;
   late final ui.Image _sprites;
   late final List<(LyricVisualizerLine, int, List<String>)> _echoWords;
 
@@ -597,6 +525,11 @@ class LumiereScene {
   }
 
   final _Batch _batch = _Batch();
+  final LumiereGlyphBatch _glyphBatch = LumiereGlyphBatch();
+  double _devicePixelRatio = 1;
+
+  /// 词形缓存按哪套图集的步进算的；图集换了（换字体）就作废。
+  LumiereGlyphAtlases? _shapesAtlas;
   Float32List? _gridPositions;
   Uint16List? _gridIndices;
   String _gridKey = '';
@@ -605,7 +538,7 @@ class LumiereScene {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
-    atlas.dispose();
+    glyphs.dispose();
     _sprites.dispose();
   }
 
@@ -674,6 +607,17 @@ class LumiereScene {
 
   void paint(Canvas canvas, Size size, LumiereFrame f) {
     if (_disposed || size.isEmpty || program.paragraphs.isEmpty) return;
+    _devicePixelRatio = f.devicePixelRatio;
+    if (!identical(_shapesAtlas, atlas)) {
+      _shapesAtlas = atlas;
+      _shapes.clear();
+    }
+    _paintFrame(canvas, size, f);
+    // 这一帧出现了比已有各档都大的字：后台补那一档。
+    glyphs.afterFrame();
+  }
+
+  void _paintFrame(Canvas canvas, Size size, LumiereFrame f) {
     final double w = size.width;
     final double h = size.height;
     final double aspect = w / h;
@@ -1633,11 +1577,11 @@ class LumiereScene {
         if (slot != null) {
           final double sx = (r() - 0.5) * split * px * 2;
           final double sy = (r() - 0.5) * split * px * 2;
-          _batch.add(
-            _glyphRect(slot),
+          _glyph(
+            slot,
             cx + adv / 2 + sx,
             y * h + sy,
-            px * _cell / _em,
+            px,
             (r() - 0.5) * split,
             _tint(
               color,
@@ -1649,18 +1593,26 @@ class LumiereScene {
         cx += adv;
       }
     }
-    _batch.flush(
-      canvas,
-      atlas.image,
-      Paint()..filterQuality = FilterQuality.medium,
-    );
+    _glyphBatch.flush(canvas);
   }
 
-  Rect _glyphRect(int slot) => Rect.fromLTWH(
-    (slot % _columns) * _cell,
-    (slot ~/ _columns) * _cell,
-    _cell,
-    _cell,
+  /// 字 [slot] 加进字形批（按物理字号选档）。
+  void _glyph(
+    int slot,
+    double cx,
+    double cy,
+    double px,
+    double rotation,
+    int argb,
+  ) => _glyphBatch.add(
+    atlas,
+    slot,
+    cx,
+    cy,
+    px,
+    rotation,
+    argb,
+    devicePixelRatio: _devicePixelRatio,
   );
 
   // -------------------------------------------------------------------------
@@ -1857,20 +1809,9 @@ class LumiereScene {
         LumiereKeywordMix.glyph,
       );
       final Rgb color = pal.unlit.mix(lit, g.lit).mix(kWhite, 0.3 * heat);
-      _batch.add(
-        _glyphRect(slot),
-        g.x,
-        g.y,
-        g.size * _cell / _em,
-        g.rotation,
-        color.argb(clamp01(alpha)),
-      );
+      _glyph(slot, g.x, g.y, g.size, g.rotation, color.argb(clamp01(alpha)));
     }
-    _batch.flush(
-      canvas,
-      atlas.image,
-      Paint()..filterQuality = FilterQuality.medium,
-    );
+    _glyphBatch.flush(canvas);
     // 十字爆闪
     final BurstSpec? burst = a.burst;
     if (burst != null && f.motion && !s.textOnly) {
@@ -1995,14 +1936,7 @@ class LumiereScene {
       final int? slot = atlas.slotOf(chars[i]);
       final double a = smooth((e - 1.5 - i * step) / 0.4);
       if (slot != null && a > 0) {
-        _batch.add(
-          _glyphRect(slot),
-          x + adv / 2,
-          y + (1 - a) * px * 0.3,
-          px * _cell / _em,
-          0,
-          color.argb(a),
-        );
+        _glyph(slot, x + adv / 2, y + (1 - a) * px * 0.3, px, 0, color.argb(a));
       }
       x += adv;
     }
@@ -2027,11 +1961,11 @@ class LumiereScene {
         final double adv = atlas.advance(c) * sp;
         final int? slot = atlas.slotOf(c);
         if (slot != null) {
-          _batch.add(
-            _glyphRect(slot),
+          _glyph(
+            slot,
             cx + adv / 2,
             y + px * dy,
-            sp * _cell / _em,
+            sp,
             0,
             f.palette.unlit.argb(a),
           );
@@ -2039,11 +1973,7 @@ class LumiereScene {
         cx += adv;
       }
     }
-    _batch.flush(
-      canvas,
-      atlas.image,
-      Paint()..filterQuality = FilterQuality.medium,
-    );
+    _glyphBatch.flush(canvas);
     // 量角器光环 + 取景框
     final double aspect = w / h;
     final LineArtSpec art = mergeArt(<LineArtSpec>[

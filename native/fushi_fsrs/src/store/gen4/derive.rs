@@ -1459,6 +1459,8 @@ impl<'t, 'c> Index<'t, 'c> {
         stages.lap("clear");
         for d in t.devices(self.col)? {
             t.for_each(self.col, &d.id, 1, |e| {
+                // 批次边界（`cancel.rs`）：整层重建可能几十秒，关库时逐实体就停、整笔回滚。
+                t.check_cancelled()?;
                 out.scanned += 1;
                 self.touch(&e, true)
             })?;

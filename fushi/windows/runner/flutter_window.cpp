@@ -3716,6 +3716,12 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
                 Int64FromValue(args, "geometryEpoch", 0));
           }
           result->Success();
+        } else if (method == "settleQueuedMine") {
+          // review-gal-overlay-mine-fail: background card write settled ->
+          // card frames drop "queued" and say the reason in place. "json" is a
+          // JS string literal (double-encoded in Dart).
+          win->SettleQueuedMine(StringFromValue(args, "json", ""));
+          result->Success();
         } else if (method == "resolveBridge") {
           // Dart's real reply for a deferred audio handler. "value" is a JSON
           // literal string (jsonEncode'd in Dart): pass it straight through.

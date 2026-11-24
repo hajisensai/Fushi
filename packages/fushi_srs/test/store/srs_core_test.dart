@@ -306,6 +306,48 @@ void main() {
     File(gen4File()).deleteSync();
   });
 
+  // 拍板台 review-merge-1124-leftovers 第 5 条：导入 / 覆盖恢复关库时，在途的长命令（开库时的整层重建）不再跑完才放手。
+  // close 取消在途命令（native/fushi_fsrs store/gen4/cancel.rs）：一条要跑好几分钟的查询在途时关库，查询报「已关闭」，
+  // close 的 Future 在它退出后就完成，库文件随即可删。
+  test(
+    'close cancels a long command in flight instead of waiting it out',
+    () async {
+      final SrsCore core = SrsCore.open(dir.path);
+      final int address = core.address;
+      final String? libraryPath = core.libraryPath;
+      final ReceivePort started = ReceivePort();
+      final SendPort startedPort = started.sendPort;
+      final Future<Object?> worker = Isolate.run(() {
+        final SrsCore borrowed = SrsCore.fromAddress(
+          address,
+          libraryPath: libraryPath,
+        );
+        startedPort.send(null);
+        try {
+          return borrowed
+              .debugQuery(
+                'WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n '
+                'WHERE x < 100000000000) SELECT count(*) AS c FROM n',
+              )
+              .single['c'];
+        } on SrsCoreException catch (e) {
+          return e.message;
+        }
+      });
+      await started.first;
+      final Stopwatch sinceClose = Stopwatch()..start();
+      await core.close();
+      final Object? outcome = await worker;
+      expect(outcome, kSrsCoreClosed);
+      expect(
+        sinceClose.elapsed,
+        lessThan(const Duration(seconds: 30)),
+        reason: 'close() waited for the in-flight query to run to the end',
+      );
+      File(gen4File()).deleteSync();
+    },
+  );
+
   group('typed errors (contract with store/ffi.rs and gen4/kernel.rs)', () {
     test('status codes and prefixes match the native constants', () {
       final String ffi = File(

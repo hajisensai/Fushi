@@ -8,6 +8,8 @@
 library;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiDividerControl;
 
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
@@ -68,7 +70,10 @@ class TtsTwoPaneLayout extends StatelessWidget {
                 children: <Widget>[
                   Expanded(child: FocusTraversalGroup(child: sidebar)),
                   if (sidebarFooter != null) ...<Widget>[
-                    Divider(height: 1, color: tokens.surfaces.outline),
+                    FushiDividerControl(
+                      height: 1,
+                      color: tokens.surfaces.outline,
+                    ),
                     Padding(
                       padding: EdgeInsets.all(tokens.spacing.card),
                       child: FocusTraversalGroup(child: sidebarFooter!),

@@ -27,13 +27,22 @@ import 'package:fushi/src/utils/adaptive/shell_style.dart'
 import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart'
+    show AppleEdgeSidebarSurface;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
-import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
     show FushiSidePaneScrollScope;
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show
+        FushiAppleLargeTitle,
+        FushiAppleNavBar,
+        FushiAppleSoftScrollEdge,
+        fushiAppleInlineTitleOpacity,
+        fushiAppleLargeTitleBand,
+        fushiAppleLargeTitleOpacity;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
@@ -154,6 +163,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     _searchFocusNode.dispose();
     _narrowScrollController.removeListener(_onNarrowScroll);
     _narrowScrollController.dispose();
+    _glassScrollController.dispose();
     _narrowScrolledUnder.dispose();
     _narrowHeaderHeight.dispose();
     super.dispose();
@@ -257,7 +267,8 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         );
       },
     );
-    if (!_mastheadHeader) return content;
+    // Apple（玻璃）窄屏自己画 iOS 导航栏 + 大标题，不再叠页头大字。
+    if (!_mastheadHeader || glass) return content;
     // 重设计外壳：窄屏单列顶部一行页头大字（与库页同一套），下面是原版面；各
     // 版式自己的「设置」标题（MD3 窄屏浮动页头、玻璃窄屏 iOS 大标题）在
     // [_mastheadHeader] 下都不再画。
@@ -513,11 +524,9 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     );
   }
 
-  /// 玻璃窄屏是否自己画 iOS 大标题「设置」：只在没有任何别的页头时画
-  /// （自绘桌面顶栏已经显示标题、
-  /// 非嵌入用法由 FushiPageScaffold 出标题）。
-  bool get _glassShowsLargeTitle =>
-      widget.embedded && !FushiDesktopTitleBar.isEnabled && !_mastheadHeader;
+  /// 玻璃窄屏的滚动位置：驱动大标题 / 小标题交叉淡变与栏下沿 scroll edge。
+  /// `late`：热重载时已存在的 State 也能建出来。
+  late final ScrollController _glassScrollController = ScrollController();
 
   /// 设置搜索栏（M3E 胶囊 / Apple 液态玻璃胶囊，见 [SettingsSearchBar]）。回车
   /// 打开第一条结果，↓ 把焦点交给结果列表。
@@ -596,33 +605,44 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
           GlassSettingsRenderer.sidebarWidth +
           _wideNavPanelExtraWidth(FushiDesignTokens.of(context)),
       showDivider: false,
+      // macOS 27 系统设置：设置的二级侧栏与主侧栏同一侧栏材质（玻璃随画质档位、
+      // 实色档是实色侧栏底，右缘 0.5 px separator），详情窗格是窗口底。背景图
+      // 在画时侧栏改成浮在图上的分组卡（[_wideNavPanel]），不再垫侧栏底。
       supporting: FushiSidePaneScrollScope(
-        child: Padding(
-          padding: EdgeInsets.only(bottom: mediaPadding.bottom),
-          child: _wideNavPanel(
-            FushiDesignTokens.of(context),
-            glass: true,
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-                  child: _buildKitSearchBar(wide: true),
-                ),
-                // 搜索时侧栏保持分类列表（不再把结果塞进 240 宽的侧栏），结果
-                // 占满右侧详情窗格。
-                Expanded(
-                  child: _navListEdgeFade(
-                    renderer.buildDestinationList(
-                      settingsContext: settingsContext,
-                      destinations: destinations,
-                      selectedDestinationId: selectedDestinationId,
-                      onDestinationSelected: _selectDestination,
-                      pushRoutes: false,
+        child: _glassSidebarBackdrop(
+          Padding(
+            // 侧栏底从窗口顶画起（[_glassSidebarBackdrop]，Apple 宽窗外壳把设置
+            // tab 铺到窗口顶、顶部让位以 MediaQuery padding 交下来，见 home_page
+            // `_appleSidebarTopInsetFor`），搜索框与分类排在让位（窗口按钮行）下面。
+            padding: EdgeInsets.only(
+              top: mediaPadding.top,
+              bottom: mediaPadding.bottom,
+            ),
+            child: _wideNavPanel(
+              FushiDesignTokens.of(context),
+              glass: true,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                    child: _buildKitSearchBar(wide: true),
+                  ),
+                  // 搜索时侧栏保持分类列表（不再把结果塞进 240 宽的侧栏），结果
+                  // 占满右侧详情窗格。
+                  Expanded(
+                    child: _navListEdgeFade(
+                      renderer.buildDestinationList(
+                        settingsContext: settingsContext,
+                        destinations: destinations,
+                        selectedDestinationId: selectedDestinationId,
+                        onDestinationSelected: _selectDestination,
+                        pushRoutes: false,
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),
@@ -635,7 +655,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
               wide: true,
               padding: EdgeInsets.fromLTRB(
                 GlassSettingsRenderer.detailHorizontalInset(context),
-                16,
+                16 + mediaPadding.top,
                 GlassSettingsRenderer.detailHorizontalInset(context),
                 24 + mediaPadding.bottom,
               ),
@@ -657,12 +677,17 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
     required List<SettingsDestination> destinations,
   }) {
     const GlassSettingsRenderer renderer = GlassSettingsRenderer();
-    final FushiAppleColors apple = appleColorsOf(context);
     final double inset = GlassSettingsRenderer.detailHorizontalInset(context);
+    final double band = fushiAppleLargeTitleBand(context);
+    final ScrollController controller = _glassScrollController;
+    double progress() => controller.hasClients
+        ? (controller.positions.first.pixels / band).clamp(0.0, 1.0)
+        : 0;
     final Widget body = SingleChildScrollView(
+      controller: controller,
       padding: EdgeInsets.fromLTRB(
         inset,
-        _glassShowsLargeTitle ? 4 : 12,
+        0,
         inset,
         24 + MediaQuery.of(context).padding.bottom,
       ),
@@ -670,22 +695,23 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (_glassShowsLargeTitle)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 0, 0, 10),
-              child: Text(
-                t.settings,
-                style: TextStyle(
-                  fontSize: 34,
-                  fontWeight: FontWeight.w700,
-                  height: 1.2,
-                  letterSpacing: 0.4,
-                  color: apple.label,
+          // iOS 大标题：随内容滚走、交叉淡变成导航栏里的居中小标题。
+          SizedBox(
+            height: band,
+            child: Padding(
+              padding: const EdgeInsetsDirectional.only(start: 4),
+              child: ListenableBuilder(
+                listenable: controller,
+                builder: (BuildContext context, Widget? title) => Opacity(
+                  opacity: fushiAppleLargeTitleOpacity(progress()),
+                  child: title,
                 ),
+                child: FushiAppleLargeTitle(title: t.settings),
               ),
             ),
+          ),
           Padding(
-            padding: const EdgeInsets.only(bottom: 18),
+            padding: const EdgeInsets.only(top: 4, bottom: 18),
             child: _buildKitSearchBar(wide: false),
           ),
           if (_searchQuery.trim().isEmpty)
@@ -704,8 +730,55 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         ],
       ),
     );
-    if (widget.embedded) return body;
-    return FushiPageScaffold(title: t.settings, body: body);
+    // iOS 27「设置」：透明导航栏（非嵌入时带玻璃返回钮）+ 大标题在内容里；
+    // 内容滚到栏下面时栏下沿是库的 soft scroll edge。
+    final Widget page = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        FushiAppleNavBar(
+          automaticallyImplyLeading: !widget.embedded,
+          title: ListenableBuilder(
+            listenable: controller,
+            builder: (BuildContext context, Widget? child) {
+              final double o = fushiAppleInlineTitleOpacity(progress());
+              return ExcludeSemantics(
+                excluding: o == 0,
+                child: Opacity(opacity: o, child: child),
+              );
+            },
+            child: Text(t.settings),
+          ),
+        ),
+        Expanded(
+          child: Stack(
+            children: <Widget>[
+              Positioned.fill(
+                child: PrimaryScrollController(
+                  controller: controller,
+                  child: body,
+                ),
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: ListenableBuilder(
+                  listenable: controller,
+                  builder: (BuildContext context, Widget? _) =>
+                      FushiAppleSoftScrollEdge(
+                        visible:
+                            controller.hasClients &&
+                            controller.positions.first.pixels > 0,
+                      ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (widget.embedded) return page;
+    return Scaffold(body: page);
   }
 
   /// 宽屏左栏（搜索框 + 分类列表）的底：平时直接坐在页面底上；页底是用户的
@@ -737,6 +810,19 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
               color: tokens.surfaces.card.withValues(alpha: 0.9),
               child: child,
             ),
+    );
+  }
+
+  /// 玻璃宽屏二级侧栏的侧栏底（[AppleEdgeSidebarSurface]，与主侧栏同一块）；
+  /// 背景图在画时原样返回 [child]（侧栏是浮在图上的分组卡）。
+  Widget _glassSidebarBackdrop(Widget child) {
+    if (FushiPageBackdrop.imageOf(context)) return child;
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        const Positioned.fill(child: AppleEdgeSidebarSurface()),
+        child,
+      ],
     );
   }
 
@@ -780,6 +866,7 @@ class _SettingsHomePageState extends BasePageState<SettingsHomePage>
         child: SafeArea(
           bottom: false,
           child: Padding(
+            // 外层 SafeArea 已让开顶部，这里只让底部。
             padding: EdgeInsets.only(bottom: mediaPadding.bottom),
             child: _wideNavPanel(
               tokens,

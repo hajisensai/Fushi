@@ -423,7 +423,7 @@ class LibraryCurateState {
       seen: strings(data['seen']),
     );
     final int version = (data['v'] as num?)?.toInt() ?? 1;
-    if (version < 2) state._resetBookScrapeVerdicts();
+    if (version < 3) state._resetBookScrapeVerdicts();
     return state;
   }
 
@@ -431,13 +431,19 @@ class LibraryCurateState {
   /// 同名候选直接认、唯一不同名候选也交 AI），旧判据下「查过没认出来」的结论作废：
   /// 清掉该阶段的水位与进度、`seen` 里的 `scrape.books:<单元>`，以及运行记录里的
   /// `book_scrape_pending` 待确认项——下一趟自动路径按新判据把缺资料的书全量重看
-  /// 一遍。已经写回过的（`scrape.books.done:`）与撤销抑制（[suppressed]）保留：
-  /// 那是写入事实和用户意思，不是判据结论。
+  /// 一遍。撤销抑制（[suppressed]）保留：那是用户意思，不是判据结论。
+  ///
+  /// → v3（BUG-5390）：「认出了、但候选没带缺的字段所以什么都没写」的卷以前也记成
+  /// 做完（`scrape.books.done:`；Bangumi 搜索候选当时不带作者，v2 头一趟把一整批
+  /// 只缺作者的漫画这样标掉），这些书从待确认里消失、作者却还空着。做完记号一起
+  /// 清掉重看：真写过的书再查一次只会被 `onlyEmpty` 滤掉，不会改动。
   void _resetBookScrapeVerdicts() {
     final String stage = LibraryCurateStage.scrapeBooks.wire;
     watermarks.remove(stage);
     progress.remove(stage);
-    seen.removeWhere((String k) => k.startsWith('$stage:'));
+    seen.removeWhere(
+      (String k) => k.startsWith('$stage:') || k.startsWith('$stage.done:'),
+    );
     for (final LibraryCurateRun run in runs) {
       run.pendingItems.removeWhere(
         (LibraryCuratePendingItem p) => p.kind == 'book_scrape_pending',
@@ -448,7 +454,7 @@ class LibraryCurateState {
 
 /// [LibraryCurateState.encode] 写的格式版本。升版 = 某阶段换了判据、旧结论要作废，
 /// 迁移写在 [LibraryCurateState.decode] 里。
-const int kLibraryCurateStateVersion = 2;
+const int kLibraryCurateStateVersion = 3;
 
 /// 状态的读写（app：偏好；服务端：JSON 文件；测试：内存）。
 abstract interface class LibraryCurateStore {

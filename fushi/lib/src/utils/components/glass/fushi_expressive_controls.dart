@@ -665,6 +665,7 @@ class _FushiSplitButtonState extends State<FushiSplitButton>
       );
     }
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     return FushiMenuAnchor(
       controller: _menu,
       childFocusNode: widget.focusNode,
@@ -699,7 +700,7 @@ class _FushiSplitButtonState extends State<FushiSplitButton>
                   label: widget.menuTooltip,
                   child: FushiIcon(
                     CupertinoIcons.chevron_down,
-                    size: compact ? 11 : 13,
+                    size: compact ? 11 * macScale : 13,
                   ),
                 ),
               ),
@@ -1007,22 +1008,23 @@ class _FushiFabState extends State<FushiFab> with TickerProviderStateMixin {
   Widget _buildApple(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final bool enabled = widget.onPressed != null;
-    final double extent = compact ? 44 : 50;
+    final double extent = compact ? 44 * macScale : 50;
     final Color fg = enabled ? apple.onAccent : apple.tertiaryLabel;
     final Widget? label = widget.label;
     Widget content = IconTheme.merge(
-      data: IconThemeData(color: fg, size: compact ? 18 : 22),
+      data: IconThemeData(color: fg, size: compact ? 18 * macScale : 22),
       child: widget.icon,
     );
     if (label != null) {
       content = Padding(
-        padding: EdgeInsets.symmetric(horizontal: compact ? 16 : 20),
+        padding: EdgeInsets.symmetric(horizontal: compact ? 16 * macScale : 20),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             content,
-            SizedBox(width: compact ? 6 : 8),
+            SizedBox(width: compact ? 6 * macScale : 8),
             Flexible(
               child: DefaultTextStyle.merge(
                 style: fushiAppleButtonTextStyle(
@@ -1365,6 +1367,7 @@ class FushiFabMenuState extends State<FushiFabMenu>
   Widget _buildApple(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     return FushiMenuAnchor(
       controller: _menu,
       childFocusNode: _fabFocus,
@@ -1387,11 +1390,11 @@ class FushiFabMenuState extends State<FushiFabMenu>
             onPressed: () => _open ? _menu.close() : _menu.open(),
             focusNode: _fabFocus,
             semanticLabel: tip,
-            extent: compact ? 44 : 50,
+            extent: compact ? 44 * macScale : 50,
             child: IconTheme.merge(
               data: IconThemeData(
                 color: apple.onAccent,
-                size: compact ? 18 : 22,
+                size: compact ? 18 * macScale : 22,
               ),
               child: widget.icon,
             ),

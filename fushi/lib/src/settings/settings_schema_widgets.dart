@@ -55,11 +55,11 @@ class SettingsSchemaSection extends StatelessWidget {
     // SettingsSection.liveListenable）。
     final Listenable? live = section.liveListenable?.call(settingsContext);
     final Widget body = live == null
-        ? _buildSection(section)
+        ? _buildSection(context, section)
         : ListenableBuilder(
             listenable: live,
             builder: (BuildContext context, Widget? _) =>
-                _buildSection(section.visibleCopy(settingsContext)),
+                _buildSection(context, section.visibleCopy(settingsContext)),
           );
     // 着色面板：本分组的行首图标同一色调，相邻分组按 id 错开。
     if (SettingsTonalIconsScope.maybeOf(context) == null) return body;
@@ -71,8 +71,17 @@ class SettingsSchemaSection extends StatelessWidget {
     );
   }
 
-  Widget _buildSection(SettingsSection section) {
+  Widget _buildSection(BuildContext context, SettingsSection section) {
     if (section.items.isEmpty) return const SizedBox.shrink();
+    final String? footerText = section.footer;
+    final bool hasFooter = footerText != null && footerText.isNotEmpty;
+    // macOS 27 grouped form：组尾说明贴在卡下 6、再隔组间距到下一组（由分组
+    // 排间距）；其余形态仍排在整个分组之后。
+    final bool attachFooter =
+        hasFooter &&
+        isGlassDesign(context) &&
+        !isCupertinoPlatform(context) &&
+        FushiAppleMetrics.of(context).form;
     final List<Widget> rows = <Widget>[
       for (final SettingsItem item in section.items)
         if (item case SettingsCustomItem(
@@ -113,10 +122,17 @@ class SettingsSchemaSection extends StatelessWidget {
           searchTargetIds: section.items
               .map((SettingsItem item) => item.id)
               .toList(),
+          footer: attachFooter
+              ? SettingsSectionFooter(
+                  footerText,
+                  style: footerStyle,
+                  attached: true,
+                )
+              : null,
           children: rows,
         ),
-        if (section.footer != null && section.footer!.isNotEmpty)
-          SettingsSectionFooter(section.footer!, style: footerStyle),
+        if (hasFooter && !attachFooter)
+          SettingsSectionFooter(footerText, style: footerStyle),
       ],
     );
   }

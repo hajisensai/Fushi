@@ -13,6 +13,7 @@ export 'src/image/fushi_compute_bitmap_subtitle.dart';
 export 'src/image/fushi_compute_image.dart';
 export 'src/linked_crates.dart';
 export 'src/music_analysis/fushi_compute_music_analysis.dart';
+export 'src/native_events/native_event_port.dart';
 export 'src/ocr/fushi_compute_ocr.dart';
 export 'src/ocr/fushi_compute_ocr_line.dart';
 export 'src/pano/fushi_compute_pano.dart';

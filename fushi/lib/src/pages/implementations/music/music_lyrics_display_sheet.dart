@@ -5,13 +5,16 @@
 /// `musicLyricsShow*`），改了歌词页 / MV 页即时生效。面板只依赖偏好仓库（叶子模块），
 /// 不 import AppModel，免得把这个文件拖进 lib/ 的大 import 环。当前这首歌词没有某一类数据（例如
 /// LRC 没翻译、源没带注音轨）时那一项置灰并说明原因——注音只来自歌词源自带的 ruby
-/// （QRC 注音轨 / ASS / TTML），不在这里现算。
+/// （QRC 注音轨 / ASS / TTML），不在这里现算。「当前这首」是订阅来的
+/// （[ValueListenable]<[MusicLyricsExtras]>，歌词页持有）：面板开着时切歌，置灰状态跟着
+/// 新歌词刷新，不是打开那一刻的快照。
 library;
 
 import 'dart:async';
 
 import 'package:fushi_music/fushi_music.dart'
     show LyricLine, LyricSyllable, LyricTimeline;
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -56,16 +59,33 @@ class MusicLyricsExtras {
     );
   }
 
+  /// 还没有歌词（加载中 / 这首没歌词）：三项都不可用。
+  static const MusicLyricsExtras none = MusicLyricsExtras(
+    translation: false,
+    romanization: false,
+    ruby: false,
+  );
+
   final bool translation;
   final bool romanization;
   final bool ruby;
+
+  @override
+  bool operator ==(Object other) =>
+      other is MusicLyricsExtras &&
+      other.translation == translation &&
+      other.romanization == romanization &&
+      other.ruby == ruby;
+
+  @override
+  int get hashCode => Object.hash(translation, romanization, ruby);
 }
 
-/// 打开歌词显示快切。
+/// 打开歌词显示快切。[extras] 是歌词页持有的「当前这首有哪些副行」，切歌时会变。
 Future<void> showMusicLyricsDisplaySheet(
   BuildContext context, {
   required PreferencesRepository prefs,
-  required MusicLyricsExtras extras,
+  required ValueListenable<MusicLyricsExtras> extras,
 }) => showMusicFloatingPanel(
   context: context,
   maxWidth: 480,
@@ -73,8 +93,8 @@ Future<void> showMusicLyricsDisplaySheet(
       MusicLyricsDisplaySheet(prefs: prefs, extras: extras),
 );
 
-/// 面板本体：监听 [prefs]，开关值永远取偏好仓库的当前值（设置页同时改也会跟上），
-/// 不在 State 里另存一份。
+/// 面板本体：监听 [prefs] 与 [extras]，开关值永远取偏好仓库的当前值（设置页同时改也会
+/// 跟上）、可用性永远取当前这首歌词，都不在 State 里另存一份。
 class MusicLyricsDisplaySheet extends StatelessWidget {
   const MusicLyricsDisplaySheet({
     required this.prefs,
@@ -83,15 +103,16 @@ class MusicLyricsDisplaySheet extends StatelessWidget {
   });
 
   final PreferencesRepository prefs;
-  final MusicLyricsExtras extras;
+  final ValueListenable<MusicLyricsExtras> extras;
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: prefs,
-    builder: (BuildContext context, Widget? _) => _buildBody(context),
+    listenable: Listenable.merge(<Listenable>[prefs, extras]),
+    builder: (BuildContext context, Widget? _) =>
+        _buildBody(context, extras.value),
   );
 
-  Widget _buildBody(BuildContext context) {
+  Widget _buildBody(BuildContext context, MusicLyricsExtras extras) {
     final PreferencesRepository app = prefs;
     final List<Widget> blocks = <Widget>[
       Row(

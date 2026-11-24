@@ -18,6 +18,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
@@ -500,7 +501,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
             _buildAffixText(
               text: trace.input,
               affixes: affixes,
-              highlight: scheme.error,
+              highlight: fushiStatusColor(context, FushiStatusTone.error),
               base: tokens.type.listSubtitle,
               strikeMiddle: true,
             ),
@@ -508,7 +509,7 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
             _buildAffixText(
               text: trace.output,
               affixes: affixes,
-              highlight: scheme.primary,
+              highlight: glass ? appleColorsOf(context).accent : scheme.primary,
               base: tokens.type.listTitle,
             ),
           ],
@@ -865,14 +866,15 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
         step.isRegex &&
         step.pattern.isNotEmpty &&
         tryCompileGalTextPattern(step.pattern) == null;
-    final ColorScheme scheme = Theme.of(context).colorScheme;
     return <Widget>[
       FushiTextField(
         key: ValueKey<String>('gtp-step-pattern-${step.id}'),
         initialValue: step.pattern,
         labelText: t.game_text_process_param_pattern,
         style: invalidPattern
-            ? tokens.type.listTitle.copyWith(color: scheme.error)
+            ? tokens.type.listTitle.copyWith(
+                color: fushiStatusColor(context, FushiStatusTone.error),
+              )
             : null,
         onChanged: (String value) => _updateStep(
           step.id,
@@ -884,7 +886,9 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
         Text(
           t.game_text_process_param_pattern_invalid,
           key: ValueKey<String>('gtp-step-pattern-invalid-${step.id}'),
-          style: tokens.type.listSubtitle.copyWith(color: scheme.error),
+          style: tokens.type.listSubtitle.copyWith(
+            color: fushiStatusColor(context, FushiStatusTone.error),
+          ),
         ),
       ],
       SizedBox(height: tokens.spacing.gap),

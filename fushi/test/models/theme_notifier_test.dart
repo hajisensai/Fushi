@@ -549,8 +549,9 @@ void main() {
       test(
         'glass material is off unless the glass design system is chosen',
         () async {
-          await notifier.setGlassMaterial(FushiGlassMaterial.frosted);
+          await notifier.setGlassMaterial(FushiGlassMaterial.premium);
           await notifier.setDesignSystem('material');
+          expect(notifier.glassMaterialTier, FushiGlassMaterial.premium);
           expect(notifier.glassMaterial, FushiGlassMaterial.off);
           expect(
             notifier.theme.extension<FushiGlassTheme>()?.material,
@@ -558,39 +559,38 @@ void main() {
           );
 
           await notifier.setDesignSystem('glass');
-          expect(notifier.glassMaterial, FushiGlassMaterial.off);
+          expect(notifier.glassMaterial, FushiGlassMaterial.premium);
           expect(
             notifier.theme.extension<FushiGlassTheme>()?.material,
-            FushiGlassMaterial.off,
+            FushiGlassMaterial.premium,
           );
         },
       );
 
-      // 2026-10-12：Apple 设计系统去掉玻璃特效、直接原生 Cupertino 实色——
-      // 已存 frosted / liquid 的偏好读取时一律为 off，存储值不改写。
+      // 2026-11：玻璃画质四档（off / minimal / standard / premium）存在
+      // `glass_quality`，缺省精简；旧键 `glass_material`（frosted / liquid）冻结不读。
       test(
-        'glass tier is pinned to off, even with a stored liquid pref',
+        'glass tier defaults to minimal and ignores the frozen legacy key',
         () async {
+          await db.setPref('glass_material', PrefCodec.encode('liquid'));
+          await notifier.refreshFromDb();
           await notifier.setDesignSystem('glass');
-          expect(notifier.glassMaterialTier, FushiGlassMaterial.off);
-          expect(notifier.glassMaterial, FushiGlassMaterial.off);
+          expect(notifier.glassMaterialTier, FushiGlassMaterial.minimal);
+          expect(notifier.glassMaterial, FushiGlassMaterial.minimal);
 
-          await notifier.setGlassMaterial(FushiGlassMaterial.liquid);
-          expect(notifier.glassMaterialTier, FushiGlassMaterial.off);
-          expect(notifier.glassMaterial, FushiGlassMaterial.off);
-          expect(
-            notifier.theme.extension<FushiGlassTheme>()?.material,
-            FushiGlassMaterial.off,
-          );
-
-          await notifier.setGlassMaterial(FushiGlassMaterial.frosted);
-          expect(notifier.glassMaterialTier, FushiGlassMaterial.off);
+          for (final FushiGlassMaterial tier in FushiGlassMaterial.values) {
+            await notifier.setGlassMaterial(tier);
+            expect(notifier.glassMaterialTier, tier);
+            expect(notifier.glassMaterial, tier);
+            expect(notifier.theme.extension<FushiGlassTheme>()?.material, tier);
+          }
           expect(notifier.designSystem, 'glass');
         },
       );
 
       test('system reduce-transparency turns glass off and rebuilds', () async {
         await notifier.setDesignSystem('glass');
+        await notifier.setGlassMaterial(FushiGlassMaterial.standard);
         int notified = 0;
         notifier.addListener(() => notified++);
 
@@ -599,7 +599,8 @@ void main() {
         expect(notifier.glassMaterial, FushiGlassMaterial.off);
 
         SystemTransparency.reduceTransparency.value = false;
-        expect(notifier.glassMaterial, FushiGlassMaterial.off);
+        expect(notified, 2);
+        expect(notifier.glassMaterial, FushiGlassMaterial.standard);
       });
     });
   });

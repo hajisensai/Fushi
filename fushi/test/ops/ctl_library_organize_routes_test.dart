@@ -290,4 +290,64 @@ void main() {
       throwsA(isA<CtlFailure>()),
     );
   });
+
+  test('移出成员建议：列出带成员与原因码；defer / undo（取消暂缓）/ accept / undo', () async {
+    final int col = await db.createMediaCollection(
+      'Mine',
+      origin: CollectionOrigin.user,
+    );
+    for (final String k in <String>['x1', 'x2']) {
+      await db.addToCollectionRaw(col, 'epub', k, userIntent: false);
+    }
+    await recordMemberRemovalProposals(
+      db,
+      trigger: 'disc_import',
+      proposals: <MemberRemovalProposal>[
+        MemberRemovalProposal(
+          collectionId: col,
+          members: <CollectionMemberKey>[(mediaType: 'epub', entryKey: 'x2')],
+          reasonCode: kMemberRemovalReasonDiscExtra,
+        ),
+      ],
+    );
+    final Map<String, Object?> p =
+        (((await call('GET', '$kLibraryOrganizeCtlRoot/proposals'))!
+                        as Map<String, Object?>)['proposals']!
+                    as List<Object?>)
+                .single!
+            as Map<String, Object?>;
+    expect(p['kind'], 'removeMembers');
+    expect(p['reasonCode'], kMemberRemovalReasonDiscExtra);
+    expect((p['members']! as List<Object?>).single, <String, Object?>{
+      'mediaType': 'epub',
+      'entryKey': 'x2',
+      'title': 'x2',
+    });
+    final Object id = p['id']!;
+    expect(
+      await call('POST', '$kLibraryOrganizeCtlRoot/proposals/$id/defer'),
+      <String, Object?>{'id': id, 'state': 'deferred'},
+    );
+    expect(
+      await call('POST', '$kLibraryOrganizeCtlRoot/proposals/$id/undo'),
+      <String, Object?>{'id': id, 'state': 'pending'},
+    );
+    expect(
+      await call('POST', '$kLibraryOrganizeCtlRoot/proposals/$id/accept'),
+      <String, Object?>{'id': id, 'state': 'accepted'},
+    );
+    expect(await db.getCollectionItems(col), hasLength(1));
+    await call('POST', '$kLibraryOrganizeCtlRoot/proposals/$id/undo');
+    expect(
+      <String>[
+        for (final MediaCollectionItemRow i in await db.getCollectionItems(col))
+          i.entryKey,
+      ],
+      <String>['x1', 'x2'],
+    );
+    await expectLater(
+      call('POST', '$kLibraryOrganizeCtlRoot/proposals/$id/undo'),
+      throwsA(isA<CtlFailure>()),
+    );
+  });
 }

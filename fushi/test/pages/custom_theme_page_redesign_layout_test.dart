@@ -65,7 +65,7 @@ Future<void> _pumpPage(
   final ThemeData theme = buildFushiThemeData(
     scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
     textTheme: Typography.material2021().black,
-    glass: apple ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: apple ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
     glassDesign: apple,
   );
   await tester.pumpWidget(

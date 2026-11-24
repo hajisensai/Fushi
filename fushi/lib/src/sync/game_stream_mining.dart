@@ -283,11 +283,19 @@ class FushiGameStreamMiningAdapter {
           ? GameStreamMineDetail.sentenceAudioMissing
           : result.success
           ? null
-          : result.audioFallbackDisabled
-          ? GameStreamMineDetail.audioFallbackDisabled
-          : result.aborted
-          ? GameStreamMineDetail.captureFailed
-          : GameStreamMineDetail.hostError,
+          : switch (result.failureStage) {
+              GalHookMiningFailureStage.audioGate =>
+                GameStreamMineDetail.audioFallbackDisabled,
+              GalHookMiningFailureStage.lineUnavailable =>
+                GameStreamMineDetail.lineExpired,
+              GalHookMiningFailureStage.windowUnbound ||
+              GalHookMiningFailureStage.capture =>
+                GameStreamMineDetail.captureFailed,
+              // 写卡被引擎中止 / 编排异常 / 有结局的失败：都不是「没截到媒体」。
+              GalHookMiningFailureStage.write ||
+              GalHookMiningFailureStage.internal ||
+              null => GameStreamMineDetail.hostError,
+            },
     );
   }
 }

@@ -4,7 +4,24 @@ import 'dart:ui' show SemanticsRole;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show
+        FushiAppleCheckmark,
+        FushiAppleFormScope,
+        FushiAppleMetrics,
+        fushiAppleMacScale,
+        fushiAppleUsesMacMetrics;
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiAppleMenuSurface;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show
+        AdaptiveSettingsRow,
+        AdaptiveSettingsSection,
+        AdaptiveSettingsSegmentedRow,
+        GlassSettingsPopUpButton;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -28,8 +45,17 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 //   从按钮处弹簧展开；点外部 / Esc / 手柄 B 关闭，打开时焦点进面板首项，关闭后
 //   焦点回到筛选按钮。按钮被收进页头「⋯」时锚到「⋯」（页头右侧动作区下沿）。
 //   触发控件经 [FushiActionOrigin] 取得（页头按钮 / 「⋯」派发时同步登记）。
-// - 窄窗 / 手机、Apple 设计系统：全应用唯一的弹层入口 [adaptiveModalSheet]（底部
-//   弹层 / Apple sheet），与改造前一致。
+// - 窄窗 / 手机（M3E）：全应用唯一的弹层入口 [adaptiveModalSheet]（底部弹层），
+//   与改造前一致。
+// - Apple 设计系统（2026-11-24，用户截图「整体是 M3E 对话框观感」）：不画 chip，
+//   分组列表（inset grouped / macOS grouped form）——少选项（≤ 4）单选是分段
+//   控件行（[AdaptiveSettingsSegmentedRow]），多选项单选与排序是「标题 …… 当前
+//   值 ⌃⌄」弹出菜单行（[GlassSettingsPopUpButton]，Finder / 照片「排序方式」
+//   同款：菜单里当前项打勾），多选维度是对勾行。macOS 档锚在页头按钮下的玻璃
+//   popover（标题行右端「清除」）；iOS 档是 sheet，导航栏左「清除」、中标题、
+//   右「完成」（[FushiAppleSheetHeader]），没有底部按钮区。没有任何维度生效时
+//   「清除」禁用（[showLibraryFilterPanel] 的 `canClear`）。连续的单选行合成
+//   一组，[LibraryFilterGroupBreak] 另起一组，多选 / 自定义分组各占一组。
 //
 // - [showLibraryFilterPanel]：打开面板。[sections] 每次重建都重新求值，读的是
 //   页面自己的筛选状态；改状态一律经 `update` 包一层，面板跟着重画。
@@ -54,15 +80,52 @@ typedef LibraryFilterSectionsBuilder =
 ///
 /// 必须在筛选按钮 onTap 的**同步段**里调用（第一个 `await` 之前），宽窗才拿得到
 /// 锚点（[FushiActionOrigin.current]）；拿不到时退回 [adaptiveModalSheet]。
+///
+/// [canClear]：此刻有没有可清除的维度（每次重建都重新求值）；Apple 设计系统下
+/// 为 false 时「清除」禁用。null = 恒可用（M3E 行为不变，按钮恒可点）。
 Future<void> showLibraryFilterPanel({
   required BuildContext context,
   required String title,
   required LibraryFilterSectionsBuilder sections,
   required String clearLabel,
   required VoidCallback onClearAll,
+  ValueGetter<bool>? canClear,
   Key? clearKey,
 }) {
   final BuildContext? origin = FushiActionOrigin.current;
+  if (isGlassDesign(context)) {
+    if (origin != null && fushiAppleUsesMacMetrics(context)) {
+      return _showLibraryFilterPopover(
+        context: context,
+        origin: origin,
+        title: title,
+        sections: sections,
+        clearLabel: clearLabel,
+        onClearAll: onClearAll,
+        canClear: canClear,
+        clearKey: clearKey,
+      );
+    }
+    return adaptiveModalSheet<void>(
+      context: context,
+      builder: (BuildContext sheetContext) => StatefulBuilder(
+        builder: (BuildContext context, StateSetter setSheetState) {
+          void update(VoidCallback change) {
+            change();
+            setSheetState(() {});
+          }
+
+          return _AppleLibraryFilterSheet(
+            title: title,
+            sections: sections(context, update),
+            clearEnabled: canClear?.call() ?? true,
+            onClear: () => update(onClearAll),
+            clearKey: clearKey,
+          );
+        },
+      ),
+    );
+  }
   final bool popover =
       origin != null &&
       !isCupertinoPlatform(context) &&
@@ -76,6 +139,7 @@ Future<void> showLibraryFilterPanel({
       sections: sections,
       clearLabel: clearLabel,
       onClearAll: onClearAll,
+      canClear: canClear,
       clearKey: clearKey,
     );
   }
@@ -127,6 +191,10 @@ const double _kPopoverMargin = 16;
 /// 下拉面板宽：一行放得下四五枚 chip，又不像居中面板那样铺满半个窗口。
 const double _kPopoverWidth = 420;
 
+/// Apple macOS 档 popover 的宽（乘 [fushiAppleMacScale]）：分组表单一行放得下
+/// 「标题 + 四段分段控件」，不像居中 sheet 那样铺开。
+const double _kApplePopoverWidth = 380;
+
 /// 下拉面板至少给到的高度（锚点贴近窗口底时也不压成一条缝）。
 const double _kPopoverMinHeight = 240;
 
@@ -138,6 +206,7 @@ Future<void> _showLibraryFilterPopover({
   required LibraryFilterSectionsBuilder sections,
   required String clearLabel,
   required VoidCallback onClearAll,
+  ValueGetter<bool>? canClear,
   Key? clearKey,
 }) async {
   final NavigatorState navigator = Navigator.of(context);
@@ -177,6 +246,7 @@ Future<void> _showLibraryFilterPopover({
               sections: sections,
               clearLabel: clearLabel,
               onClearAll: onClearAll,
+              canClear: canClear,
               clearKey: clearKey,
             ),
           ),
@@ -215,6 +285,7 @@ class _LibraryFilterPopover extends StatefulWidget {
     required this.sections,
     required this.clearLabel,
     required this.onClearAll,
+    this.canClear,
     this.clearKey,
   });
 
@@ -227,6 +298,7 @@ class _LibraryFilterPopover extends StatefulWidget {
   final LibraryFilterSectionsBuilder sections;
   final String clearLabel;
   final VoidCallback onClearAll;
+  final ValueGetter<bool>? canClear;
   final Key? clearKey;
 
   @override
@@ -265,6 +337,71 @@ class _LibraryFilterPopoverState extends State<_LibraryFilterPopover> {
     setState(() {});
   }
 
+  /// Apple macOS 档：玻璃 popover（与菜单同一块 [FushiAppleMenuSurface]，圆角取
+  /// 菜单规格）——标题行（标题 + 行尾「清除」），下面是 macOS 27 grouped form
+  /// 的分组（[FushiAppleFormScope]：分组框底 + 发丝描边，圆角走
+  /// [FushiAppleMetrics.groupRadius]）。没有底部按钮区。
+  Widget _buildApplePanel(BuildContext context) {
+    final double k = fushiAppleMacScale(context);
+    // 标题 = 行标题字号（macOS 档 13 × 放大系数）加粗，取共享度量，不另写字号。
+    final TextStyle titleStyle = FushiAppleMetrics.of(
+      context,
+    ).titleStyle(context).copyWith(fontWeight: FontWeight.w600);
+    return FushiAppleMenuSurface(
+      child: FushiDialogScope(
+        child: FushiAppleFormScope(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: EdgeInsets.fromLTRB(16 * k, 10 * k, 10 * k, 4 * k),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Semantics(
+                        header: true,
+                        child: Text(
+                          widget.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: titleStyle,
+                        ),
+                      ),
+                    ),
+                    FushiTextButton(
+                      key: widget.clearKey,
+                      onPressed: (widget.canClear?.call() ?? true)
+                          ? () => _update(widget.onClearAll)
+                          : null,
+                      child: Text(widget.clearLabel),
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: Focus(
+                  focusNode: _contentNode,
+                  child: SingleChildScrollView(
+                    primary: false,
+                    padding: EdgeInsets.fromLTRB(12 * k, 6 * k, 12 * k, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: appleLibraryFilterGroups(
+                        widget.sections(context, _update),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final MediaQueryData media = MediaQuery.of(context);
@@ -273,8 +410,11 @@ class _LibraryFilterPopoverState extends State<_LibraryFilterPopover> {
     final bool eink = isEinkTheme(context);
     final Size screen = media.size;
 
+    final bool apple = isGlassDesign(context);
     final double width = math.min(
-      _kPopoverWidth,
+      apple
+          ? _kApplePopoverWidth * fushiAppleMacScale(context)
+          : _kPopoverWidth,
       screen.width - _kPopoverMargin * 2,
     );
     // 锚点在右半边（页头动作）时右缘对齐锚点右缘，在左半边（chip 行里的生效
@@ -297,72 +437,74 @@ class _LibraryFilterPopoverState extends State<_LibraryFilterPopover> {
     );
     const BorderRadius radius = BorderRadius.all(Radius.circular(24));
 
-    final Widget panel = Material(
-      color: cs.surfaceContainerHigh,
-      surfaceTintColor: Colors.transparent,
-      elevation: eink ? 0 : 6,
-      shadowColor: cs.shadow,
-      shape: RoundedRectangleBorder(
-        borderRadius: radius,
-        side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: FushiDialogScope(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Row(
+    final Widget panel = apple
+        ? _buildApplePanel(context)
+        : Material(
+            color: cs.surfaceContainerHigh,
+            surfaceTintColor: Colors.transparent,
+            elevation: eink ? 0 : 6,
+            shadowColor: cs.shadow,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: FushiDialogScope(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  FushiIcon(
-                    FushiIcons.filter,
-                    color: cs.onSurfaceVariant,
-                    size: 20,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                    child: Row(
+                      children: <Widget>[
+                        FushiIcon(
+                          FushiIcons.filter,
+                          color: cs.onSurfaceVariant,
+                          size: 20,
+                        ),
+                        SizedBox(width: tokens.spacing.gap + 4),
+                        Expanded(
+                          child: Text(
+                            widget.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: tokens.type.listTitle.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  SizedBox(width: tokens.spacing.gap + 4),
-                  Expanded(
-                    child: Text(
-                      widget.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: tokens.type.listTitle.copyWith(
-                        fontWeight: FontWeight.w600,
+                  Flexible(
+                    child: Focus(
+                      focusNode: _contentNode,
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: widget.sections(context, _update),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: FushiTextButton(
+                        key: widget.clearKey,
+                        onPressed: () => _update(widget.onClearAll),
+                        child: Text(widget.clearLabel),
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-            Flexible(
-              child: Focus(
-                focusNode: _contentNode,
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: widget.sections(context, _update),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: FushiTextButton(
-                  key: widget.clearKey,
-                  onPressed: () => _update(widget.onClearAll),
-                  child: Text(widget.clearLabel),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+          );
 
     Widget body = Semantics(
       role: SemanticsRole.dialog,
@@ -414,7 +556,107 @@ class _LibraryFilterPopoverState extends State<_LibraryFilterPopover> {
   }
 }
 
-/// 筛选面板里的一个分组：分组标题 + 一组 chip（放不下换行）。
+/// Apple iOS 档的筛选 sheet：iOS 27 sheet 导航栏（左「清除」、中标题、右
+/// 「完成」）+ 可滚动的 inset grouped 分组，没有底部按钮区。「完成」只关闭——
+/// 改动本就即时生效、即时持久化。
+class _AppleLibraryFilterSheet extends StatelessWidget {
+  const _AppleLibraryFilterSheet({
+    required this.title,
+    required this.sections,
+    required this.clearEnabled,
+    required this.onClear,
+    this.clearKey,
+  });
+
+  final String title;
+  final List<Widget> sections;
+  final bool clearEnabled;
+  final VoidCallback onClear;
+  final Key? clearKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: FushiDialogScope(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            FushiAppleSheetHeader(
+              title: title,
+              leading: FushiTextButton(
+                key: clearKey,
+                onPressed: clearEnabled ? onClear : null,
+                child: Text(t.clear),
+              ),
+              trailing: FushiFilledButton(
+                key: const ValueKey<String>('library-filter-sheet-done'),
+                onPressed: () => Navigator.of(context).maybePop(),
+                child: Text(t.dialog_done),
+              ),
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                primary: false,
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: appleLibraryFilterGroups(sections),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Apple 下把面板的分组列表排成 inset grouped / grouped form 的组：连续的单选行
+/// （[LibraryFilterChoiceSection]、开关行等）合成一组，[LibraryFilterGroupBreak]
+/// 另起一组；[LibraryFilterSection] / [LibraryFilterMultiChoiceSection] 自带组
+/// 标题，各占一组；无子节点的 [SizedBox]（M3E 的间距）丢掉。
+List<Widget> appleLibraryFilterGroups(List<Widget> sections) {
+  final List<Widget> groups = <Widget>[];
+  final List<Widget> run = <Widget>[];
+  void flush() {
+    if (run.isEmpty) return;
+    groups.add(AdaptiveSettingsSection(children: List<Widget>.of(run)));
+    run.clear();
+  }
+
+  for (final Widget section in sections) {
+    if (section is LibraryFilterGroupBreak) {
+      flush();
+    } else if (section is SizedBox && section.child == null) {
+      continue;
+    } else if (section is LibraryFilterSection ||
+        section is LibraryFilterMultiChoiceSection) {
+      flush();
+      groups.add(section);
+    } else {
+      run.add(section);
+    }
+  }
+  flush();
+  return groups;
+}
+
+/// Apple 下的分组断点（上一组到此为止，后面的单选行另起一组，如「排序 / 每行
+/// 数量」与筛选维度分开）。M3E 下是零尺寸占位，不改变 chip 面板的排版。
+class LibraryFilterGroupBreak extends StatelessWidget {
+  const LibraryFilterGroupBreak({super.key});
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
+}
+
+/// 筛选面板里的一个分组：分组标题 + 一组 chip（放不下换行）。Apple 下是带组
+/// 标题的分组卡，[children] 原样排在卡内（自定义内容的兜底；常规维度用
+/// [LibraryFilterChoiceSection] / [LibraryFilterMultiChoiceSection]，Apple 下
+/// 是分段 / 菜单 / 对勾行而不是 chip）。
 class LibraryFilterSection extends StatelessWidget {
   const LibraryFilterSection({
     required this.title,
@@ -428,6 +670,21 @@ class LibraryFilterSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    if (isGlassDesign(context)) {
+      return AdaptiveSettingsSection(
+        title: title,
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsets.all(tokens.spacing.gap * 1.5),
+            child: Wrap(
+              spacing: tokens.spacing.gap,
+              runSpacing: tokens.spacing.gap,
+              children: children,
+            ),
+          ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -461,6 +718,7 @@ class LibraryFilterChoiceSection<T> extends StatelessWidget {
     required this.labelOf,
     required this.onSelected,
     this.avatarOf,
+    this.appleMenu = false,
     super.key,
   });
 
@@ -475,8 +733,19 @@ class LibraryFilterChoiceSection<T> extends StatelessWidget {
   /// 档位前的图标（可选）。
   final IconData? Function(T value)? avatarOf;
 
+  /// Apple 下恒用弹出菜单行（排序方式这类「选一种排列」的维度，Finder / 照片
+  /// 「排序方式」同款：菜单里当前项打勾），档位再少也不画成分段控件。M3E 不受
+  /// 影响。
+  final bool appleMenu;
+
+  /// Apple 下档位不超过这个数（且没要求 [appleMenu]）用分段控件，否则弹出菜单。
+  static const int appleSegmentLimit = 4;
+
+  String _label(T value) => value == allValue ? allLabel : labelOf(value);
+
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     return LibraryFilterSection(
       title: title,
       children: <Widget>[
@@ -486,7 +755,7 @@ class LibraryFilterChoiceSection<T> extends StatelessWidget {
               final IconData icon => FushiIcon(icon, size: 18),
               null => null,
             },
-            label: Text(value == allValue ? allLabel : labelOf(value)),
+            label: Text(_label(value)),
             selected: value == selected,
             onSelected: (_) {
               if (value != selected) onSelected(value);
@@ -495,10 +764,55 @@ class LibraryFilterChoiceSection<T> extends StatelessWidget {
       ],
     );
   }
+
+  /// Apple：少档位 = 「标题 + 分段控件」行（放不下时分段换到标题下方或退成
+  /// 菜单，判据在 [AdaptiveSettingsSegmentedRow]）；多档位 / [appleMenu] =
+  /// 「标题 …… 当前值 ⌃⌄」弹出菜单行（[GlassSettingsPopUpButton]），菜单里
+  /// 当前项打勾。两种都是一个焦点停靠点：左右键逐档切换，菜单行 Enter 打开
+  /// 菜单。
+  Widget _buildApple(BuildContext context) {
+    final int index = values.indexOf(selected);
+    void pick(int i) {
+      final T value = values[i];
+      if (value != selected) onSelected(value);
+    }
+
+    if (!appleMenu && values.length <= appleSegmentLimit) {
+      return AdaptiveSettingsSegmentedRow<int>(
+        title: title,
+        segments: <ButtonSegment<int>>[
+          for (int i = 0; i < values.length; i++)
+            ButtonSegment<int>(value: i, label: Text(_label(values[i]))),
+        ],
+        selected: index < 0 ? 0 : index,
+        onChanged: pick,
+      );
+    }
+    const double maxLabelWidth = 160;
+    final IconData? Function(T value)? iconOf = avatarOf;
+    return AdaptiveSettingsRow(
+      title: title,
+      trailingWidth: GlassSettingsPopUpButton.maxFaceWidth(
+        context,
+        maxLabelWidth: maxLabelWidth,
+      ),
+      trailing: GlassSettingsPopUpButton(
+        semanticLabel: title,
+        labels: <String>[for (final T value in values) _label(value)],
+        icons: iconOf == null
+            ? null
+            : <IconData?>[for (final T value in values) iconOf(value)],
+        selectedIndex: index < 0 ? null : index,
+        maxLabelWidth: maxLabelWidth,
+        onChanged: pick,
+      ),
+    );
+  }
 }
 
 /// 多选维度：每个档位一枚 filter chip，可同时勾多个；一个都不勾 = 不按这一维筛
-/// （所以不需要单独的「全部」档）。点已勾的档位取消勾选。
+/// （所以不需要单独的「全部」档）。点已勾的档位取消勾选。Apple 下是带组标题
+/// 的对勾行分组（iOS / macOS 设置里的多选列表）。
 class LibraryFilterMultiChoiceSection<T> extends StatelessWidget {
   const LibraryFilterMultiChoiceSection({
     required this.title,
@@ -506,6 +820,7 @@ class LibraryFilterMultiChoiceSection<T> extends StatelessWidget {
     required this.selected,
     required this.labelOf,
     required this.onChanged,
+    this.itemKeyOf,
     super.key,
   });
 
@@ -517,27 +832,79 @@ class LibraryFilterMultiChoiceSection<T> extends StatelessWidget {
   /// 勾选集变化后的新集合（不可变副本）。
   final ValueChanged<Set<T>> onChanged;
 
+  /// 每一档的 key（测试 / 焦点定位用）；null = `library-filter-multi-<值>`。
+  final Key Function(T value)? itemKeyOf;
+
+  Key _keyOf(T value) =>
+      itemKeyOf?.call(value) ?? ValueKey<String>('library-filter-multi-$value');
+
+  void _toggle(T value, bool on) {
+    final Set<T> next = <T>{...selected};
+    if (on) {
+      next.add(value);
+    } else {
+      next.remove(value);
+    }
+    onChanged(Set<T>.unmodifiable(next));
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      return AdaptiveSettingsSection(
+        title: title,
+        children: <Widget>[
+          for (final T value in values)
+            _AppleCheckRow(
+              key: _keyOf(value),
+              label: labelOf(value),
+              checked: selected.contains(value),
+              onChanged: (bool on) => _toggle(value, on),
+            ),
+        ],
+      );
+    }
     return LibraryFilterSection(
       title: title,
       children: <Widget>[
         for (final T value in values)
           FushiFilterChip(
-            key: ValueKey<String>('library-filter-multi-$value'),
+            key: _keyOf(value),
             label: Text(labelOf(value)),
             selected: selected.contains(value),
-            onSelected: (bool on) {
-              final Set<T> next = <T>{...selected};
-              if (on) {
-                next.add(value);
-              } else {
-                next.remove(value);
-              }
-              onChanged(Set<T>.unmodifiable(next));
-            },
+            onSelected: (bool on) => _toggle(value, on),
           ),
       ],
+    );
+  }
+}
+
+/// Apple 多选对勾行：标题 + 勾上时行尾强调色对勾（不勾时留同宽空位，行宽
+/// 不跳）；整行点按 / Enter 切换。语义上是一个可勾选项。
+class _AppleCheckRow extends StatelessWidget {
+  const _AppleCheckRow({
+    required this.label,
+    required this.checked,
+    required this.onChanged,
+    super.key,
+  });
+
+  final String label;
+  final bool checked;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      checked: checked,
+      child: AdaptiveSettingsRow(
+        title: label,
+        trailing: Opacity(
+          opacity: checked ? 1 : 0,
+          child: const FushiAppleCheckmark(),
+        ),
+        onTap: () => onChanged(!checked),
+      ),
     );
   }
 }

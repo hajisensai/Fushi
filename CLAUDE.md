@@ -19,6 +19,7 @@
 
 - **新模块 / 重设计页面必须带动效**，MD3 与 Apple 两套都接：列表错峰 `FushiEntranceScope` + `fushiStaggeredItemBuilder` / `FushiStaggeredEntrance`，按压 / 悬停 `FushiPressScale` / `FushiHoverLift`，时长只取 `fushiMotionDuration` / `FushiMotion`，不另立常量。
 - 工具栏 / 顶栏动作默认平铺，放不下才用 `FushiFloatingTopBar` 的 `adaptiveOverflow` 收进「⋯」；底部浮动工具栏 / 主导航底栏纯图标（文字只进 tooltip 与 Semantics，命中区 ≥48dp）；主导航选中高亮用 `navShapeOf` 的 M3E 多边形，不画药丸。（[细则](docs/agent/rules-detail.md#工具栏默认展开)）
+- **公共组件必须分两套设计系统**（用户 2026-11-24）：`utils/components/**`、`utils/adaptive/**` 里会渲染系统控件外观的组件，M3E 分支与 Cupertino 分支都要有；Cupertino 以 `liquid_glass_widgets`（iOS 27 / macOS 27 风格）为准、其次 `cupertino_ui`，跟随「玻璃画质」档位（唯一判据 `glassMaterialOf`）。纯布局 / 动效 / 内容层可不分，但要在类注释里写明与设计系统无关。页面代码不直接用裸 Material 控件（`IconButton` / `AlertDialog` / `ListTile` / `PopupMenuButton` 等），走公共组件。
 - 分段选择禁止裸 `SegmentedButton`：单选 `adaptiveSegmentedButton(...)` / `AdaptiveSettingsSegmentedRow`，多选 / 竖排 / 允许空选 `FushiSegmentedButton`。（[细则](docs/agent/rules-detail.md#分段选择用设计系统组件)）
 - 一律 `import 'package:material_ui/material_ui.dart'` / `'package:cupertino_ui/cupertino_ui.dart'`，**禁止新写 `package:flutter/material.dart` / `cupertino.dart`**。升级这两个包前必读 [material-ui-upgrade.md](docs/agent/material-ui-upgrade.md)，M3E 规范特性一个不许丢。（[细则](docs/agent/rules-detail.md#material_ui-迁移)）
 - 渲染五端全线 Impeller，禁止新增关 Impeller 的开关 / manifest / plist 键 / 启动参数，渲染问题在 Impeller 上按根因修。（[细则](docs/agent/rules-detail.md#impeller)）

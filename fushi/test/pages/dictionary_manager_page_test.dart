@@ -451,7 +451,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('dict-batch-delete')));
     await _settle(tester);
     expect(find.text('Delete 1 dictionaries?'), findsOneWidget);
-    await tester.tap(find.text('DELETE').last);
+    await tester.tap(find.text('Delete').last);
     await _settle(tester);
     await _settle(tester);
     expect(model.deleted, <String>['大辞林']);
@@ -648,7 +648,7 @@ void main() {
     );
     await openMoveTo(tester, 'Dict 1');
     await tester.enterText(positionField(), '4');
-    await tester.tap(find.text('CANCEL'));
+    await tester.tap(find.text('Cancel'));
     await _settle(tester);
     expect(find.byType(DictionaryPositionDialog), findsNothing);
     expect(model.orderWrites, 0);

@@ -1624,6 +1624,9 @@ void main() {
       apple: true,
       page: const SrsDeckListPage(),
     );
+    // 方案 A：「笔记类型」在页头分节「⋯」的「数据」节里。
+    await tester.tap(find.byKey(const ValueKey<String>('srs_home_more')));
+    await _settle(tester);
     await tester.tap(find.byKey(const ValueKey<String>('srs_note_types')));
     await _settle(tester);
     expect(find.byType(SrsNoteTypesPage), findsOneWidget);

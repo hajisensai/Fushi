@@ -9,8 +9,9 @@
 # `toolchain` named context, the image tool/linux/Dockerfile builds:
 #   - docker-compose.yml provides it from its `toolchain` service, so
 #     `docker compose up -d --build` does everything;
-#   - build_source_image.sh passes --build-context toolchain=docker-image://...;
-#   - the manual publish workflow (server-docker-publish.yml) does the same.
+#   - build_source_image.sh passes --build-context toolchain=docker-image://... .
+# Published images are not built from here: release-server.yml packages the
+# release bundle with Dockerfile.
 #
 # The runtime stage (from `FROM debian:trixie-slim AS runtime` on) must stay
 # identical in both Dockerfiles apart from the COPY source paths;

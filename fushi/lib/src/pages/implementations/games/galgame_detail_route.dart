@@ -2,6 +2,10 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
+    show adaptivePageRoute;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
 /// 首页首块封面 → 详情封面的共享元素 tag（设计稿 GA24：「详情」放大时封面从
@@ -16,6 +20,8 @@ const double kGalgameCoverRestDegrees = -7;
 /// 封面共享元素的飞行替身：画详情一侧的封面，角度随路由动画从首块的
 /// [kGalgameCoverRestDegrees] 插值到 0°（返回时反向）。[animation] 是路由动画
 /// （push 0 → 1、pop 1 → 0），所以同一个式子两个方向都对。
+///
+/// Apple（Cupertino）首页的封面是平放的（拍板点 4），替身不转角，只随 Hero 飞。
 Widget galgameCoverFlightShuttle(
   BuildContext flightContext,
   Animation<double> animation,
@@ -28,6 +34,7 @@ Widget galgameCoverFlightShuttle(
               ? toHeroContext.widget
               : fromHeroContext.widget)
           as Hero;
+  if (isGlassDesign(flightContext)) return detailHero.child;
   final double dir = Directionality.of(flightContext) == TextDirection.rtl
       ? -1
       : 1;
@@ -45,6 +52,17 @@ Widget galgameCoverFlightShuttle(
     ),
   );
 }
+
+/// 游戏详情的普通推入（按设计系统分派的同一个入口，[adaptivePageRoute]）：
+/// Apple（Cupertino）走主题层的 iOS 推入转场（iOS 右滑返回、减弱动效时淡入），
+/// 发起处封面挂着 [galgameCoverHeroTag] 的 Hero 时由详情页的同 tag 封面接住、
+/// 作为共享元素飞过去（拍板点 8）；M3E 是 MaterialPageRoute（时间线行、经典版）。
+Future<T?> pushGalgameDetail<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+}) => Navigator.of(
+  context,
+).push<T>(adaptivePageRoute<T>(context: context, builder: builder));
 
 /// 游戏详情「从原位放大」的推入路由（设计稿 GA24「详情」入口 → 容器变换）。
 ///

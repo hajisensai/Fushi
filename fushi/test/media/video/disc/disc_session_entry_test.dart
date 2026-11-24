@@ -48,6 +48,47 @@ void main() {
     });
   });
 
+  group('disc labels', () {
+    test('a generic BD wrapper folder is skipped for the folder above', () {
+      String bd(int n) => p.join(
+        '/anime',
+        'Bocchi [BDMV]',
+        'Bocchi vol.$n',
+        'BD',
+        'BDMV',
+        'PLAYLIST',
+        '00001.mpls',
+      );
+      final List<DiscRef> discs = collectDiscRefs(<VideoBookRow>[
+        for (int n = 6; n >= 1; n--) _book('v$n', bd(n)),
+      ]);
+      expect(discs.map((DiscRef d) => d.label).toList(), <String>[
+        for (int n = 1; n <= 6; n++) 'Bocchi vol.$n',
+      ]);
+    });
+
+    test('same disc names in different seasons get the differing path', () {
+      expect(
+        discLabelsForRoots(<String>[
+          '/box/Season 1/Disc 1',
+          '/box/Season 2/Disc 1',
+          '/box/Season 2/Disc 2',
+        ]),
+        <String>['Season 1 / Disc 1', 'Season 2 / Disc 1', 'Season 2 / Disc 2'],
+      );
+    });
+
+    test('Windows paths and distinct names stay as they are', () {
+      expect(
+        discLabelsForRoots(<String>[
+          r'D:\video\Show\Disc 1',
+          r'D:\video\Show\Disc 2',
+        ]),
+        <String>['Disc 1', 'Disc 2'],
+      );
+    });
+  });
+
   group('preferredDisc', () {
     test('picks the most recently watched disc, else the first', () {
       final List<DiscRef> discs = collectDiscRefs(<VideoBookRow>[

@@ -307,6 +307,8 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'queueOverwrite',
   'reportJsError',
   'resolveWordAudio',
+  // review-gal-overlay-mine-fail：app 外查词卡上后台写卡失败后的重写；预览不制卡。
+  'retryQueuedMine',
   'setSentenceContext',
   // 复习词状态标记：预览不显示复习状态（回 null = 不渲染标记）、不打开卡片。
   'srsOpenCard',

@@ -7,6 +7,9 @@
 //    Finalizable：从 owner 取出的裸地址交给原生侧时，owner（经 this）在方法执行期间保活。
 // 3. 不许用 `asTypedList(..., finalizer: ...)` 把释放挂在一个视图上、再单独把裸指针交给
 //    原生侧（FfcEnergyEnvelope 原先的写法：视图不在保活域里，FFI 期间可能被提前释放）。
+// 4. 原生线程回 Dart 的事件只走 NativeEventPort，不许用 NativeCallable.listener（BUG-5413）：
+//    本库的引擎是进程级的，活得比登记回调的 isolate 久；callable 随 isolate 删掉后再被调，VM 会
+//    abort 整个进程，端口则只是丢消息。
 @TestOn('vm')
 library;
 
@@ -193,6 +196,19 @@ void main() {
         r'asTypedList\([^)]*finalizer\s*:',
       ).allMatches(code)) {
         offenders.add('${f.path}: ${m.group(0)}');
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+
+  test('native threads reach Dart through NativeEventPort only', () {
+    final List<String> offenders = <String>[];
+    for (final File f in _sources()) {
+      final List<String> lines = f.readAsLinesSync();
+      for (int i = 0; i < lines.length; i++) {
+        if (_code(lines[i]).contains('NativeCallable')) {
+          offenders.add('${f.path}:${i + 1}: ${lines[i].trim()}');
+        }
       }
     }
     expect(offenders, isEmpty);

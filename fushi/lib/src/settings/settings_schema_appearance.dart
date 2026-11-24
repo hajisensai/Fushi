@@ -536,31 +536,36 @@ SettingsDestination buildAppearanceDestination() {
                 },
             defaultValue: EinkFullRefreshMethod.auto,
           ),
-          // 玻璃材质档位：只在设计系统选「玻璃」时出现（设计系统行负责开关玻璃，
-          // 这里只在毛玻璃 / 液态之间选）。正文、视频画面不变；墨水屏、系统增强
-          // 对比度 / 降低透明度下自动回退实心，liquid 在引擎不支持着色器
-          // ImageFilter 时降级为 frosted。随 Profile 走。
-          //
-          // 2026-10-06 用户拍板：Apple 设计系统固定毛玻璃，液态玻璃入口先关掉
-          // ——本行恒不可见（设置页与设置搜索都走 visible 谓词，一并消失），
-          // 生效值由 ThemeNotifier.glassMaterialTier 钉死（2026-10-12 起为 off：
-          // 原生 Cupertino 实色，无玻璃特效）。schema 项、
-          // 偏好键 `glass_material` 与液态渲染代码都保留，恢复时把 visible 改回
-          // `designSystem == 'glass'` 并撤掉 glassMaterialTier 的钉死即可。
+          // 玻璃画质（2026-11 用户拍板）：只在 Apple（Cupertino）设计系统下出现，
+          // M3E 不显示。四档 实色 / 精简 / 标准 / 高级，默认精简；只影响悬浮控件层，
+          // 正文、视频画面不变。墨水屏、系统增强对比度 / 降低透明度下自动实色，
+          // 高级档在引擎不支持着色器 ImageFilter 时降为标准——这些回退都在
+          // glassMaterialOf 里判，这里只存用户的选择（偏好 `glass_quality`，随
+          // Profile 走）。schema id 沿用 `appearance.glass_material`（设置搜索 /
+          // 深链只认 id，不是存储名）。
           SettingsSegmentedItem<FushiGlassMaterial>(
             id: 'appearance.glass_material',
-            title: t.glass_material,
-            subtitle: t.glass_material_hint,
+            title: t.glass_quality,
+            subtitle: t.glass_quality_hint,
             icon: Icons.blur_on_outlined,
-            visible: (SettingsContext settingsContext) => false,
+            visible: (SettingsContext settingsContext) =>
+                glassQualitySettingVisible(settingsContext.context),
             options: <SettingsSegmentOption<FushiGlassMaterial>>[
               SettingsSegmentOption<FushiGlassMaterial>(
-                value: FushiGlassMaterial.frosted,
-                label: t.glass_material_frosted,
+                value: FushiGlassMaterial.off,
+                label: t.glass_quality_solid,
               ),
               SettingsSegmentOption<FushiGlassMaterial>(
-                value: FushiGlassMaterial.liquid,
-                label: t.glass_material_liquid,
+                value: FushiGlassMaterial.minimal,
+                label: t.glass_quality_minimal,
+              ),
+              SettingsSegmentOption<FushiGlassMaterial>(
+                value: FushiGlassMaterial.standard,
+                label: t.glass_quality_standard,
+              ),
+              SettingsSegmentOption<FushiGlassMaterial>(
+                value: FushiGlassMaterial.premium,
+                label: t.glass_quality_premium,
               ),
             ],
             selected: (SettingsContext settingsContext) =>
@@ -568,7 +573,7 @@ SettingsDestination buildAppearanceDestination() {
             onChanged:
                 (SettingsContext settingsContext, FushiGlassMaterial value) =>
                     settingsContext.appModel.setGlassMaterial(value),
-            defaultValue: FushiGlassMaterial.frosted,
+            defaultValue: FushiGlassMaterial.defaultTier,
           ),
           // 外壳重设计的几项（设计稿 S1）：生效范围同 `shellRedesignActive`——非墨水屏
           // 一律生效（MD3 与 Apple 都是），墨水屏保持原外壳（库页恒为封面网格），所以
@@ -1191,3 +1196,7 @@ String einkFullRefreshIntervalLabel(int interval) => switch (interval) {
   1 => t.eink_full_refresh_interval_every_page,
   _ => t.eink_full_refresh_interval_every_n_pages(n: interval),
 };
+
+/// 「玻璃画质」设置行是否显示：只在 Apple（Cupertino）设计系统下（[isGlassDesign]
+/// 已排除墨水屏），M3E 不显示。
+bool glassQualitySettingVisible(BuildContext context) => isGlassDesign(context);

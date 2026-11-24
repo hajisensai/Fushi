@@ -241,32 +241,207 @@ SettingsNavigationItem _moduleEntry(HomeTab tab) {
   );
 }
 
-String _moduleSummary(HomeTab tab) {
-  final PageBackdropModuleOverride? override =
-      pageBackdropModuleOverrides.value[tab];
-  if (override == null) return t.page_backdrop_module_follow_global;
-  return _presetLabel(override.preset);
+String _moduleSummary(HomeTab tab) => PageBackdropModuleTier(tab).summary();
+
+/// 能单独设背景的一层（反馈 DYI1IOZxSM 的模块层、拍板台 xxbbL0j15l 的页面层）：
+/// 子页、预设选择器与选图链路按它统一处理。
+sealed class PageBackdropTier {
+  const PageBackdropTier();
+
+  /// 偏好里这一层的 wire，也是设置项 id 的一段。
+  String get wire;
+
+  /// 设置项 id 前缀（模块与页面不同命名空间，id 全局唯一）。
+  String get idPrefix;
+
+  String get title;
+  IconData get icon;
+
+  /// 本层没单独设时的那一格：模块是「跟随全局」，页面是「跟随模块」。
+  String get followLabel;
+
+  /// 子页页脚的说明。
+  String get hint;
+
+  /// 本层单独的设置；null = 继承上一层。
+  PageBackdropModuleOverride? get own;
+
+  /// 本层单独的设置变了时通知（[own] 的来源）。
+  Listenable get overrides;
+
+  /// 本层不单独设时实际生效的设置：模块继承全局，页面继承所属模块。
+  PageBackdropSettings get inherited;
+
+  /// 写本层的预设；null = 恢复继承（连同本层的图片一起删）。
+  Future<void> setPreset(ThemeNotifier theme, PageBackdropPreset? preset);
+
+  Future<void> clearPortraitImage(ThemeNotifier theme);
+
+  /// 入口行的副标题：继承时写继承谁，否则是本层的预设名。
+  String summary() => switch (own) {
+    null => followLabel,
+    final PageBackdropModuleOverride o => _presetLabel(o.preset),
+  };
 }
 
-/// 一个模块自己的背景子页：预设（多一个「跟随全局」）+ 选了自定义图片时的图片行。
+/// 主导航模块这一层：没设就跟随全局。
+final class PageBackdropModuleTier extends PageBackdropTier {
+  const PageBackdropModuleTier(this.module);
+
+  final HomeTab module;
+
+  @override
+  String get wire => pageBackdropModuleWire(module);
+
+  @override
+  String get idPrefix => 'appearance.page_backdrop.module.$wire';
+
+  @override
+  String get title => homeNavItemFor(module).label;
+
+  @override
+  IconData get icon => homeNavItemFor(module).icon;
+
+  @override
+  String get followLabel => t.page_backdrop_module_follow_global;
+
+  @override
+  String get hint => t.page_backdrop_module_hint;
+
+  @override
+  PageBackdropModuleOverride? get own =>
+      pageBackdropModuleOverrides.value[module];
+
+  @override
+  Listenable get overrides => pageBackdropModuleOverrides;
+
+  @override
+  PageBackdropSettings get inherited => pageBackdropSettings.value;
+
+  @override
+  Future<void> setPreset(ThemeNotifier theme, PageBackdropPreset? preset) =>
+      theme.setPageBackdropModulePreset(module, preset);
+
+  @override
+  Future<void> clearPortraitImage(ThemeNotifier theme) =>
+      theme.clearPageBackdropModulePortraitImage(module);
+}
+
+/// 模块里单独可设的页面这一层：没设就继承所属模块（模块也没设就是全局）。
+final class PageBackdropPageTier extends PageBackdropTier {
+  const PageBackdropPageTier(this.page);
+
+  final PageBackdropPage page;
+
+  @override
+  String get wire => page.wire;
+
+  @override
+  String get idPrefix => 'appearance.page_backdrop.page.$wire';
+
+  @override
+  String get title => pageBackdropPageLabel(page);
+
+  @override
+  IconData get icon => switch (page) {
+    PageBackdropPage.srsReview => FushiIcons.ankiCard,
+  };
+
+  @override
+  String get followLabel => t.page_backdrop_page_follow_module;
+
+  @override
+  String get hint => t.page_backdrop_page_hint;
+
+  @override
+  PageBackdropModuleOverride? get own => pageBackdropPageOverrides.value[page];
+
+  @override
+  Listenable get overrides => pageBackdropPageOverrides;
+
+  @override
+  PageBackdropSettings get inherited => pageBackdropSettingsFor(page.module);
+
+  @override
+  Future<void> setPreset(ThemeNotifier theme, PageBackdropPreset? preset) =>
+      theme.setPageBackdropPagePreset(page, preset);
+
+  @override
+  Future<void> clearPortraitImage(ThemeNotifier theme) =>
+      theme.clearPageBackdropPagePortraitImage(page);
+}
+
+/// 页面的显示名。
+String pageBackdropPageLabel(PageBackdropPage page) => switch (page) {
+  PageBackdropPage.srsReview => t.page_backdrop_page_srs_review,
+};
+
+/// 一个模块自己的背景子页：预设（多一个「跟随全局」）+ 选了自定义图片时的图片行；
+/// 模块里有单独可设的页面时再多一组页面入口（拍板台 xxbbL0j15l）。
 /// 强度 / 模糊 / 遮罩 / 动效与配色沿用全局，不在这里重复。
 SettingsDestination buildPageBackdropModuleDestination(HomeTab tab) {
-  final String wire = pageBackdropModuleWire(tab);
-  final String prefix = 'appearance.page_backdrop.module.$wire';
-  PageBackdropModuleOverride? override() =>
-      pageBackdropModuleOverrides.value[tab];
+  final List<PageBackdropPage> pages = <PageBackdropPage>[
+    for (final PageBackdropPage page in PageBackdropPage.values)
+      if (page.module == tab) page,
+  ];
+  final PageBackdropModuleTier layer = PageBackdropModuleTier(tab);
+  return _layerDestination(
+    layer,
+    extra: <SettingsSection>[
+      if (pages.isNotEmpty)
+        SettingsSection(
+          id: '${layer.idPrefix}.section.pages',
+          presentation: SettingsSectionPresentation.alwaysExpanded,
+          // 模块改了也要刷新：页面继承时预览的是模块的背景。
+          liveListenable: (_) => Listenable.merge(<Listenable>[
+            pageBackdropModuleOverrides,
+            pageBackdropPageOverrides,
+          ]),
+          title: t.page_backdrop_page_section,
+          footer: t.page_backdrop_page_hint,
+          items: <SettingsItem>[
+            for (final PageBackdropPage page in pages) _pageEntry(page),
+          ],
+        ),
+    ],
+  );
+}
+
+/// 「按页面设置」里一个页面的入口行。
+SettingsNavigationItem _pageEntry(PageBackdropPage page) {
+  final PageBackdropPageTier layer = PageBackdropPageTier(page);
+  return SettingsNavigationItem(
+    id: layer.idPrefix,
+    title: layer.title,
+    icon: layer.icon,
+    subtitleBuilder: (SettingsContext c) => layer.summary(),
+    child: () => buildPageBackdropPageDestination(page),
+  );
+}
+
+/// 一个页面自己的背景子页：预设（多一个「跟随模块」，选「纯色」= 这一页不画背景）+
+/// 选了自定义图片时的图片行。
+SettingsDestination buildPageBackdropPageDestination(PageBackdropPage page) =>
+    _layerDestination(PageBackdropPageTier(page));
+
+SettingsDestination _layerDestination(
+  PageBackdropTier layer, {
+  List<SettingsSection> extra = const <SettingsSection>[],
+}) {
+  final String prefix = layer.idPrefix;
+  PageBackdropModuleOverride? override() => layer.own;
   return SettingsDestination(
     id: SettingsDestinationId.appearance,
-    title: homeNavItemFor(tab).label,
-    summary: t.page_backdrop_module_hint,
-    icon: homeNavItemFor(tab).icon,
+    title: layer.title,
+    summary: layer.hint,
+    icon: layer.icon,
     sections: <SettingsSection>[
       SettingsSection(
         id: '$prefix.section.style',
         presentation: SettingsSectionPresentation.alwaysExpanded,
-        liveListenable: (_) => pageBackdropModuleOverrides,
+        liveListenable: (_) => layer.overrides,
         title: t.page_backdrop_style,
-        footer: t.page_backdrop_module_hint,
+        footer: layer.hint,
         items: <SettingsItem>[
           SettingsCustomItem(
             id: '$prefix.preset',
@@ -275,7 +450,7 @@ SettingsDestination buildPageBackdropModuleDestination(HomeTab tab) {
             builder: (SettingsContext settingsContext) =>
                 _PageBackdropPresetPicker(
                   settingsContext: settingsContext,
-                  module: tab,
+                  layer: layer,
                 ),
           ),
         ],
@@ -283,7 +458,7 @@ SettingsDestination buildPageBackdropModuleDestination(HomeTab tab) {
       SettingsSection(
         id: '$prefix.section.image',
         presentation: SettingsSectionPresentation.alwaysExpanded,
-        liveListenable: (_) => pageBackdropModuleOverrides,
+        liveListenable: (_) => layer.overrides,
         title: t.page_backdrop_preset_custom,
         visible: (_) => override()?.preset == PageBackdropPreset.custom,
         items: <SettingsItem>[
@@ -296,7 +471,7 @@ SettingsDestination buildPageBackdropModuleDestination(HomeTab tab) {
                 : t.page_backdrop_image_set,
             icon: FushiIcons.image,
             onTap: (SettingsContext c) =>
-                pickPageBackdropImage(c, portrait: false, module: tab),
+                pickPageBackdropImage(c, portrait: false, layer: layer),
           ),
           SettingsNavigationItem(
             id: '$prefix.portrait_image',
@@ -308,7 +483,7 @@ SettingsDestination buildPageBackdropModuleDestination(HomeTab tab) {
             icon: FushiIcons.portraitImage,
             visible: (_) => override()?.landscapeImagePath != null,
             onTap: (SettingsContext c) =>
-                pickPageBackdropImage(c, portrait: true, module: tab),
+                pickPageBackdropImage(c, portrait: true, layer: layer),
           ),
           SettingsNavigationItem(
             id: '$prefix.portrait_image_clear',
@@ -318,12 +493,13 @@ SettingsDestination buildPageBackdropModuleDestination(HomeTab tab) {
                 override()?.landscapeImagePath != null &&
                 override()?.portraitImagePath != null,
             onTap: (SettingsContext c) async {
-              await _theme(c).clearPageBackdropModulePortraitImage(tab);
+              await layer.clearPortraitImage(_theme(c));
               c.refresh();
             },
           ),
         ],
       ),
+      ...extra,
     ],
   );
 }
@@ -335,7 +511,7 @@ bool _isShapePreset(ThemeNotifier theme) => switch (theme.pageBackdropPreset) {
   _ => true,
 };
 
-/// 选一张图当背景（[portrait] = 竖屏单独的那张；[module] 非空 = 只给这个模块）。
+/// 选一张图当背景（[portrait] = 竖屏单独的那张；[layer] 非空 = 只给这个模块 / 页面）。
 /// 选完先弹裁剪框（反馈 nYjjaLYlfn），裁剪框锁成这块槽位在本机屏幕上的宽高比
 /// （见 [pageBackdropCropAspectRatio]）；取消选图或取消裁剪都什么都不做。
 ///
@@ -345,7 +521,7 @@ bool _isShapePreset(ThemeNotifier theme) => switch (theme.pageBackdropPreset) {
 Future<void> pickPageBackdropImage(
   SettingsContext settingsContext, {
   required bool portrait,
-  HomeTab? module,
+  PageBackdropTier? layer,
 }) async {
   try {
     final File? picked = await pickGalleryImageFile();
@@ -355,9 +531,9 @@ Future<void> pickPageBackdropImage(
     final Size display = pageBackdropDisplaySize(pickContext);
     // 主图在没单独设竖屏图时横竖屏共用（`PageBackdropSettings.imagePathFor`），
     // 这时它没有确定的显示朝向，不能锁成横屏比例。
-    final String? portraitImagePath = module == null
+    final String? portraitImagePath = layer == null
         ? pageBackdropSettings.value.portraitImagePath
-        : pageBackdropModuleOverrides.value[module]?.portraitImagePath;
+        : layer.own?.portraitImagePath;
     final File? cropped = await showCropImageDialog(
       pickContext,
       picked,
@@ -370,14 +546,21 @@ Future<void> pickPageBackdropImage(
     );
     if (cropped == null) return;
     final ThemeNotifier theme = _theme(settingsContext);
-    if (module == null) {
-      await theme.importPageBackdropImage(cropped, portrait: portrait);
-    } else {
-      await theme.importPageBackdropModuleImage(
-        module,
-        cropped,
-        portrait: portrait,
-      );
+    switch (layer) {
+      case null:
+        await theme.importPageBackdropImage(cropped, portrait: portrait);
+      case PageBackdropModuleTier(:final HomeTab module):
+        await theme.importPageBackdropModuleImage(
+          module,
+          cropped,
+          portrait: portrait,
+        );
+      case PageBackdropPageTier(:final PageBackdropPage page):
+        await theme.importPageBackdropPageImage(
+          page,
+          cropped,
+          portrait: portrait,
+        );
     }
   } catch (error, stack) {
     ErrorLogService.instance.log('page_backdrop.import_image', error, stack);
@@ -453,13 +636,13 @@ double _presetRowHeight(BuildContext context, ThemeData theme) {
 /// 横向预设缩略图：每张都是真实的背景层按当前配色缩小画出来；选中项圆角变大 +
 /// 描边 + 勾（M3E 形变）。选「自定义图片」还没有图时直接弹选图。
 ///
-/// [module] 非空时是某个模块自己的选择器：最前面多一张「跟随全局」（画的是全局
-/// 背景），自定义图片用这个模块自己的图。
+/// [layer] 非空时是某个模块 / 页面自己的选择器：最前面多一张「跟随全局 / 跟随模块」
+/// （画的是继承来的背景），自定义图片用这一层自己的图。
 class _PageBackdropPresetPicker extends StatelessWidget {
-  const _PageBackdropPresetPicker({required this.settingsContext, this.module});
+  const _PageBackdropPresetPicker({required this.settingsContext, this.layer});
 
   final SettingsContext settingsContext;
-  final HomeTab? module;
+  final PageBackdropTier? layer;
 
   @override
   Widget build(BuildContext context) {
@@ -467,6 +650,7 @@ class _PageBackdropPresetPicker extends StatelessWidget {
       listenable: Listenable.merge(<Listenable>[
         pageBackdropSettings,
         pageBackdropModuleOverrides,
+        pageBackdropPageOverrides,
       ]),
       builder: (BuildContext context, Widget? _) {
         final ThemeData theme = Theme.of(context);
@@ -518,11 +702,12 @@ class _PageBackdropPresetPicker extends StatelessWidget {
     );
   }
 
-  /// 本选择器的格子：全局选择器是全部预设；模块选择器先是「跟随全局」再是全部预设。
+  /// 本选择器的格子：全局选择器是全部预设；模块 / 页面选择器先是「跟随全局 / 跟随模块」
+  /// 再是全部预设。
   List<_PresetChoice> _choices() {
     final PageBackdropSettings global = pageBackdropSettings.value;
-    final HomeTab? tab = module;
-    if (tab == null) {
+    final PageBackdropTier? layer = this.layer;
+    if (layer == null) {
       return <_PresetChoice>[
         for (final PageBackdropPreset preset in PageBackdropPreset.values)
           _PresetChoice(
@@ -536,13 +721,13 @@ class _PageBackdropPresetPicker extends StatelessWidget {
           ),
       ];
     }
-    final PageBackdropModuleOverride? override =
-        pageBackdropModuleOverrides.value[tab];
+    final PageBackdropModuleOverride? override = layer.own;
+    final PageBackdropSettings inherited = layer.inherited;
     return <_PresetChoice>[
       _PresetChoice(
         preset: null,
-        label: t.page_backdrop_module_follow_global,
-        preview: global,
+        label: layer.followLabel,
+        preview: inherited,
         needsImage: false,
         selected: override == null,
       ),
@@ -551,7 +736,7 @@ class _PageBackdropPresetPicker extends StatelessWidget {
           preset: preset,
           label: _presetLabel(preset),
           preview: resolvePageBackdropSettings(
-            global,
+            inherited,
             PageBackdropModuleOverride(
               preset: preset,
               landscapeImagePath: override?.landscapeImagePath,
@@ -568,17 +753,17 @@ class _PageBackdropPresetPicker extends StatelessWidget {
 
   Future<void> _select(_PresetChoice choice) async {
     final ThemeNotifier theme = settingsContext.appModel.themeNotifier;
-    final HomeTab? tab = module;
+    final PageBackdropTier? layer = this.layer;
     if (choice.needsImage) {
       await pickPageBackdropImage(
         settingsContext,
         portrait: false,
-        module: tab,
+        layer: layer,
       );
       return;
     }
-    if (tab != null) {
-      await theme.setPageBackdropModulePreset(tab, choice.preset);
+    if (layer != null) {
+      await layer.setPreset(theme, choice.preset);
     } else if (choice.preset case final PageBackdropPreset preset) {
       await theme.setPageBackdropPreset(preset);
     }
@@ -586,7 +771,7 @@ class _PageBackdropPresetPicker extends StatelessWidget {
   }
 }
 
-/// 选择器里的一格。[preset] 为 null = 模块的「跟随全局」。
+/// 选择器里的一格。[preset] 为 null = 模块 / 页面的「跟随全局 / 跟随模块」。
 class _PresetChoice {
   const _PresetChoice({
     required this.preset,

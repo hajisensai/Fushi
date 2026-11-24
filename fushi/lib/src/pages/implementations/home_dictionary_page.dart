@@ -36,6 +36,7 @@ import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/lookup/apple/apple_lookup_history_row.dart';
 import 'package:fushi/src/pages/implementations/lookup_history_row.dart';
 import 'package:fushi/src/pages/implementations/shared_lookup_popup_host.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
@@ -59,7 +60,6 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
-import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
     show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_static_masthead.dart';
@@ -1208,8 +1208,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                 onChanged: _onQueryChanged,
                 onClear: _clearSearch,
                 onSubmitted: _search,
-                // 页面顶部的独立搜索栏：MD3 是 56 高的 M3 SearchBar；Apple 仍是
-                // 36 的 iOS 搜索胶囊（large 在 Apple 下不拉伸）。
+                // 页面顶部的独立搜索栏：MD3 是 56 高的 M3 SearchBar；Apple iOS
+                // 档是 44 高的大标题下搜索栏（kFushiAppleSearchBarHeight）。
                 size: FushiSearchFieldSize.large,
                 // MD3：SearchBar 尾部一枚 tonal 圆钮直达词典管理（导入 / 排序 /
                 // 启用），收进搜索栏的 trailing 槽（48 触控区，按钮本体 40）。
@@ -1615,19 +1615,25 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   Widget _buildDictionaryHistory() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // 空结果条目本来就画成 SizedBox.shrink，这里直接滤掉：Apple 分组要按可见
-    // 行判首尾（圆角 / 分隔线），不能被看不见的空行打断。
-    final historyResults = appModel.dictionaryHistory.reversed
-        .where((r) => r.entries.isNotEmpty)
+    // 空结果条目本来就画成 SizedBox.shrink，这里直接滤掉：分组要按可见行判首尾
+    // （圆角 / 分隔线），不能被看不见的空行打断。
+    final List<DictionarySearchResult> historyResults = appModel
+        .dictionaryHistory
+        .reversed
+        .where((DictionarySearchResult r) => r.entries.isNotEmpty)
         .toList();
     if (historyResults.isEmpty) {
       return _buildPlaceholder();
     }
-    final bool glass = isGlassDesign(context);
+    // 设计系统在根上分派：Apple 一套（inset grouped + 色点 + Apple 菜单），M3E
+    // 重设计外壳是色条行，旧外壳 / 墨水屏是分段分组行。三者的数据与动作都来自
+    // [_historyRowData]。
+    final bool glass = isGlassDesign(context) && !isEinkTheme(context);
+    final bool collage = !glass && shellRedesignActive(context);
     final int count = historyResults.length;
-    if (shellRedesignActive(context)) {
-      return _buildDictionaryHistoryCollageRows(historyResults);
-    }
+    final EdgeInsets margin = EdgeInsets.symmetric(
+      horizontal: tokens.spacing.page,
+    );
     // 进场窗口：历史屏每次挂载（首开 / 清空查询退回 / 宽窄切换）首屏行错峰淡入，
     // 滚动带出来的行瞬间出现。
     return FushiEntranceScope(
@@ -1647,101 +1653,59 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         ) {
           if (index == 0) return _buildSectionTitle(t.lookup_history_title);
           final int row = index - 1;
-          final result = historyResults[row];
-          final searchTerm = result.searchTerm.trim();
-          final first = result.entries.first;
-          final word = first.word;
-          final reading = first.reading;
-          final hasWordInfo = word.isNotEmpty && word != searchTerm;
-          final hasReading =
-              reading.isNotEmpty && reading != word && reading != searchTerm;
-          final dictCount = result.entries
-              .map((e) => e.dictionaryName)
-              .toSet()
-              .length;
-          final bool rowSelected = _hasActiveQuery && _lastQuery == searchTerm;
-          void openRow() {
-            _controller.text = searchTerm;
-            _controller.selection = TextSelection.collapsed(
-              offset: searchTerm.length,
-            );
-            _showCachedResult(result);
-          }
-
-          if (!glass) {
-            // M3E：titleMedium 词 + bodySmall 读音，行尾 tonal 计数
-            // 胶囊；没有箭头（整行可点，状态层 / 选中 secondaryContainer + 形变由
-            // 分段外壳负责）；悬停 / 聚焦时行尾露出「⋯」（收藏 / 移出历史）。
-            return FushiGroupedListItem(
+          final DictionarySearchResult result = historyResults[row];
+          final LookupHistoryRowData data = _historyRowData(result);
+          if (glass) {
+            return AppleLookupHistoryRow(
+              key: ValueKey<String>(
+                'home_dictionary_history_${row}_${data.term}',
+              ),
+              data: data,
               index: row,
               count: count,
-              margin: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-              selected: rowSelected,
-              onTap: openRow,
-              child: _LookupHistoryRow(
-                term: searchTerm.replaceAll('\n', ' '),
-                subtitle: hasWordInfo || hasReading
-                    ? <String>[
-                        if (hasWordInfo) word,
-                        if (hasReading) reading,
-                      ].join('  ')
-                    : null,
-                dictionaryCount: dictCount,
-                selected: rowSelected,
-                onFavorite: () => unawaited(
-                  onFavoriteEntry(<String, String>{
-                    'expression': word.isNotEmpty ? word : searchTerm,
-                    'reading': reading,
-                    'glossary': first.plainMeaning,
-                  }),
+              margin: margin,
+            );
+          }
+          if (collage) {
+            // 重设计外壳的查词历史（设计稿 #lookup L1）：左侧按词取色的色条、完整
+            // 词形（不截断）、写法 / 读音、行尾命中词典数，悬停 / 聚焦露出「⋯」。
+            return Padding(
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.page,
+                0,
+                tokens.spacing.page,
+                2,
+              ),
+              child: LookupHistoryCollageRow(
+                key: ValueKey<String>(
+                  'home_dictionary_history_${row}_${data.term}',
                 ),
-                onRemove: () => appModel.removeFromDictionaryHistory(
-                  searchTerm: result.searchTerm,
-                ),
+                term: data.term,
+                subtitle: data.subtitle('・'),
+                dictionaryCount: data.dictionaryCount,
+                selected: data.selected,
+                onOpen: data.onOpen,
+                onFavorite: data.onFavorite,
+                onRemove: data.onRemove,
               ),
             );
           }
-          // 整段历史读作一个分组，而不是一摞各自独立的圆角卡（与词典管理页的
-          // 词典列表同口径）：MD3 分段分组 / Apple inset grouped，见共享外壳
-          // [FushiGroupedListItem]。宽屏主从下当前右栏显示的那条标为选中。
+          // M3E 分段分组：titleMedium 词 + bodySmall 读音，行尾 tonal 计数胶囊；
+          // 没有箭头（整行可点，状态层 / 选中 secondaryContainer + 形变由分段外壳
+          // 负责）；悬停 / 聚焦时行尾露出「⋯」（收藏 / 移出历史）。
           return FushiGroupedListItem(
             index: row,
             count: count,
-            margin: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-            selected: _hasActiveQuery && _lastQuery == searchTerm,
-            onTap: () {
-              _controller.text = searchTerm;
-              _controller.selection = TextSelection.collapsed(
-                offset: searchTerm.length,
-              );
-              _showCachedResult(result);
-            },
-            child: FushiListItem(
-              title: Text(searchTerm.replaceAll('\n', ' ')),
-              subtitle: hasWordInfo || hasReading
-                  ? Text(
-                      [
-                        if (hasWordInfo) word,
-                        if (hasReading) reading,
-                      ].join('  '),
-                    )
-                  : null,
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 命中词典数：中性小徽标（MD3 tonal / Apple 灰阶填充），不再是
-                  // 裸数字贴着箭头。
-                  FushiTag(
-                    text: '$dictCount',
-                    tone: FushiTagTone.neutral,
-                    dense: true,
-                  ),
-                  SizedBox(width: tokens.spacing.gap / 2),
-                  glass
-                      ? const FushiAppleChevron()
-                      : const FushiIcon(FushiIcons.chevronRight, size: 20),
-                ],
-              ),
+            margin: margin,
+            selected: data.selected,
+            onTap: data.onOpen,
+            child: _LookupHistoryRow(
+              term: data.term,
+              subtitle: data.subtitle('  '),
+              dictionaryCount: data.dictionaryCount,
+              selected: data.selected,
+              onFavorite: data.onFavorite,
+              onRemove: data.onRemove,
             ),
           );
         }),
@@ -1749,85 +1713,40 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     );
   }
 
-  /// 重设计外壳的查词历史（设计稿 #lookup L1）：一条历史一行
-  /// [LookupHistoryCollageRow]——左侧按词取色的色条、完整词形（不截断）、历史
-  /// 结果里本来就存的写法 / 读音、行尾命中词典数，无水印。旧版窄栏里 2 列大色块
-  /// 把词截成「やめ…」，读不出内容。点按 = 回看这条（与墨水屏列表同一路径），
-  /// 悬停 / 聚焦露出「⋯」（收藏 / 移出历史），当前右栏那条标为选中。宽屏左栏与
-  /// 窄屏单栏共用这一份；数据、滚动控制器、下拉同步不变。
-  Widget _buildDictionaryHistoryCollageRows(
-    List<DictionarySearchResult> results,
-  ) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return FushiEntranceScope(
-      child: ListView.builder(
-        padding: EdgeInsets.only(
-          top: tokens.spacing.gap / 2,
-          bottom: tokens.spacing.page,
-        ),
-        // 历史只有一两条、撑不满一屏时，默认 physics 不可滚 → 下拉同步吃不到手势。
-        physics: const AlwaysScrollableScrollPhysics(),
-        controller: DictionaryMediaType.instance.scrollController,
-        // 第 0 项是分组标题「查词历史」，其后才是历史行。
-        itemCount: results.length + 1,
-        itemBuilder: fushiStaggeredItemBuilder((
-          BuildContext context,
-          int index,
-        ) {
-          if (index == 0) return _buildSectionTitle(t.lookup_history_title);
-          final int row = index - 1;
-          final DictionarySearchResult result = results[row];
-          final String searchTerm = result.searchTerm.trim();
-          final DictionaryEntry first = result.entries.first;
-          final String word = first.word;
-          final String reading = first.reading;
-          final bool hasWordInfo = word.isNotEmpty && word != searchTerm;
-          final bool hasReading =
-              reading.isNotEmpty && reading != word && reading != searchTerm;
-          return Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.page,
-              0,
-              tokens.spacing.page,
-              2,
-            ),
-            child: LookupHistoryCollageRow(
-              key: ValueKey<String>(
-                'home_dictionary_history_${row}_$searchTerm',
-              ),
-              term: searchTerm.replaceAll('\n', ' '),
-              subtitle: hasWordInfo || hasReading
-                  ? <String>[
-                      if (hasWordInfo) word,
-                      if (hasReading) reading,
-                    ].join('・')
-                  : null,
-              dictionaryCount: result.entries
-                  .map((DictionaryEntry e) => e.dictionaryName)
-                  .toSet()
-                  .length,
-              selected: _hasActiveQuery && _lastQuery == searchTerm,
-              onOpen: () {
-                _controller.text = searchTerm;
-                _controller.selection = TextSelection.collapsed(
-                  offset: searchTerm.length,
-                );
-                _showCachedResult(result);
-              },
-              onFavorite: () => unawaited(
-                onFavoriteEntry(<String, String>{
-                  'expression': word.isNotEmpty ? word : searchTerm,
-                  'reading': reading,
-                  'glossary': first.plainMeaning,
-                }),
-              ),
-              onRemove: () => appModel.removeFromDictionaryHistory(
-                searchTerm: result.searchTerm,
-              ),
-            ),
-          );
+  /// 一条查词历史的显示内容与动作——三套行（Apple / M3E 色条 / M3E 分段）共用的
+  /// 唯一一份业务：写法 / 读音取舍、命中词典数、选中判据、回看 / 收藏 / 移出。
+  LookupHistoryRowData _historyRowData(DictionarySearchResult result) {
+    final String searchTerm = result.searchTerm.trim();
+    final DictionaryEntry first = result.entries.first;
+    final String word = first.word;
+    final String reading = first.reading;
+    final bool hasWordInfo = word.isNotEmpty && word != searchTerm;
+    final bool hasReading =
+        reading.isNotEmpty && reading != word && reading != searchTerm;
+    return LookupHistoryRowData(
+      term: searchTerm.replaceAll('\n', ' '),
+      subtitleParts: <String>[if (hasWordInfo) word, if (hasReading) reading],
+      dictionaryCount: result.entries
+          .map((DictionaryEntry e) => e.dictionaryName)
+          .toSet()
+          .length,
+      selected: _hasActiveQuery && _lastQuery == searchTerm,
+      onOpen: () {
+        _controller.text = searchTerm;
+        _controller.selection = TextSelection.collapsed(
+          offset: searchTerm.length,
+        );
+        _showCachedResult(result);
+      },
+      onFavorite: () => unawaited(
+        onFavoriteEntry(<String, String>{
+          'expression': word.isNotEmpty ? word : searchTerm,
+          'reading': reading,
+          'glossary': first.plainMeaning,
         }),
       ),
+      onRemove: () =>
+          appModel.removeFromDictionaryHistory(searchTerm: result.searchTerm),
     );
   }
 
@@ -2338,6 +2257,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
 
   /// 结果卡（及宽屏右栏空态卡）的圆角：MD3 Expressive 大面板 28；Apple 走 inset
   /// grouped 分组圆角（iOS ≈ 24 / 桌面 12），与同屏历史分组同形。
+  // Apple：与全 app 分组容器同一圆角 token（FushiAppleMetrics.groupRadius，经
+  // fushiCardBorderRadius）；FushiCard 的 Apple 面是 FushiAppleGroupSurface 的
+  // RoundedSuperellipseBorder（连续曲率）。
   BorderRadius _resultCardRadius() => isGlassDesign(context)
       ? fushiCardBorderRadius(context)
       : const BorderRadius.all(Radius.circular(_kResultCardRadiusMd3));
@@ -2758,12 +2680,7 @@ class _LookupHistoryRowState extends State<_LookupHistoryRow> {
     final TextTheme tt = Theme.of(context).textTheme;
     final bool reveal = _hovered || _focused;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    // Apple：数量角标是系统 fill 底的灰胶囊（iOS 列表计数样式，如「邮件」未读
-    // 数），不借 MD3 secondaryContainer 色；墨水屏走 MD3 分支不变。
-    final FushiAppleColors? apple =
-        isGlassDesign(context) && !isEinkTheme(context)
-        ? appleColorsOf(context)
-        : null;
+    // 只服务 M3E / 墨水屏：Apple 设计系统走 AppleLookupHistoryRow（根上分派）。
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -2782,16 +2699,12 @@ class _LookupHistoryRowState extends State<_LookupHistoryRow> {
               alignment: Alignment.center,
               decoration: ShapeDecoration(
                 shape: const StadiumBorder(),
-                color:
-                    apple?.fill ??
-                    (widget.selected ? cs.surface : cs.secondaryContainer),
+                color: widget.selected ? cs.surface : cs.secondaryContainer,
               ),
               child: Text(
                 '${widget.dictionaryCount}',
                 style: tt.labelSmall?.copyWith(
-                  color: apple != null
-                      ? (widget.selected ? apple.label : apple.secondaryLabel)
-                      : widget.selected
+                  color: widget.selected
                       ? cs.onSurface
                       : cs.onSecondaryContainer,
                   fontWeight: FontWeight.w600,

@@ -104,7 +104,7 @@ void main() {
     });
 
     test('游戏保留单件入口（无扫描根概念，无文件夹管线）', () {
-      // 导入稿 v2：主方式块「添加游戏」（ImportCollagePage 的方式块）。
+      // 导入稿 v2：主方式块「添加游戏」（ImportPageLayout 的方式块 / 方式行）。
       expect(game, contains('label: t.game_add'));
       expect(game, contains('addGameViaFilePicker'));
     });
@@ -138,7 +138,7 @@ void main() {
     test('导入页只有导入方式 + 常驻来源，不再挂分段选择器', () {
       for (final String source in <String>[book, manga, video]) {
         expect(source, isNot(contains('ImportPageSegmentBar(')));
-        expect(source, contains('ImportCollagePage('));
+        expect(source, contains('ImportPageLayout('));
         expect(source, contains('MediaSourcesView('));
         expect(source, contains('MediaSourcesPresentation.blocks'));
         expect(source, isNot(contains('QuickImportSection(')));
@@ -150,7 +150,7 @@ void main() {
         expect(
           File(path).existsSync(),
           isFalse,
-          reason: '旧导入页 / 快速导入区已并进 ImportCollagePage（IM1 / IM9），再长出来就是又分叉了',
+          reason: '旧导入页 / 快速导入区已并进 ImportPageLayout（IM1 / IM9），再长出来就是又分叉了',
         );
       }
     });

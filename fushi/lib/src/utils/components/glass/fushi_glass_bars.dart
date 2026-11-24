@@ -1,9 +1,10 @@
 import 'dart:math' as math;
-import 'dart:ui' show lerpDouble;
+import 'dart:ui' show ImageFilter, lerpDouble;
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -23,14 +24,22 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         fushiMastheadTitleStyle,
         kFushiMastheadActionExtent;
 import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
+    show FushiAppleGlassBarButton, fushiAppleBarCapsuleExtent;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
+    show FushiAppleFloatingSurface;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleUsesMacMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassAppBar;
 
 // 顶栏族（AppBar / SliverAppBar / TabBar）的「设计系统分派」包装：构造参数与
 // Material 原控件逐个同名同型，调用点只改类名。MD3 下原样构造原控件；玻璃下
@@ -44,26 +53,17 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 //   浅灰）玻璃滑块，与 TabController 双向同步，Enter / 手柄 A 选中，方向键在
 //   页签间移动焦点。
 
-/// 圆形玻璃钮的直径（iOS 26 导航栏 bar button 实测 44）。
-const double _kGlassBarControlExtent = 44;
-
 /// 栏上玻璃控件里的图标字号（SF Symbols 在 44 圆钮 / 胶囊里实测 ≈ 19–20）。
 const double _kGlassBarIconSize = 20;
 
-/// 玻璃顶栏 leading 槽的宽：44 圆钮 + 离屏幕边 16（iOS 26 导航栏边距）。
-const double _kGlassLeadingWidth = _kGlassBarControlExtent + 16;
+/// 玻璃顶栏 leading 槽的宽：玻璃圆钮 + 离屏幕边距（iOS 16 / macOS 12）。
+double _glassLeadingWidth(BuildContext context) =>
+    fushiAppleBarButtonExtent(context) + _appleBarSideInset(context);
 
-/// 顶栏 scroll edge 带的高度（顶栏下沿往内容里延伸的那段渐隐）。
-const double _kGlassTopEdgeExtent = 20;
-
-/// SliverAppBar 在栏内下沿留出的 scroll edge 段：钉住后内容就在栏下面滚，
-/// 这一段从实色渐隐成透明。
-const double _kGlassSliverEdgeExtent = 16;
-
-/// 玻璃顶栏上的一枚圆形玻璃底（返回键 / 单个导航钮）：里面的
-/// [FushiIconButtonControl] 是透明玻璃按钮，焦点 / Enter / 语义都在它身上。
-/// [alignment] 让 leading 槽里的圆钮贴着离屏幕边 16 的位置（槽宽
-/// [_kGlassLeadingWidth]），而不是在 56 宽的槽里居中。
+/// 玻璃顶栏上的一枚圆形玻璃钮（返回键 / 单个导航钮）：库的独立 bar button
+/// （[FushiAppleBarCircle]）。里面的 [FushiIconButtonControl] 自己处理点击、
+/// 焦点、Enter 与语义，玻璃只画底。[alignment] 让 leading 槽里的圆钮贴着离屏幕
+/// 边的位置，而不是在槽里居中。
 Widget _glassCircle(
   BuildContext context,
   Widget child, {
@@ -76,80 +76,114 @@ Widget _glassCircle(
     alignment: alignment,
     widthFactor: 1,
     heightFactor: 1,
-    // 原生 Cupertino 导航栏控件无底（用户 2026-10-12「特效都去掉，直接原生
-    // Cupertino」）：不再垫玻璃圆，只保留 44 的点按区。
-    child: SizedBox.square(
-      dimension: _kGlassBarControlExtent,
+    child: FushiAppleBarCircle(child: child),
+  );
+}
+
+/// Apple 导航栏 bar button 的直径 / 胶囊高：窄窗（手机）44、宽窗（桌面工具栏）
+/// 36，与库页动作胶囊（[fushiAppleBarCapsuleExtent]）同一判据。
+double fushiAppleBarButtonExtent(BuildContext context) =>
+    fushiAppleBarCapsuleExtent(context, compact: fushiMastheadCompact(context));
+
+/// 导航栏两端离屏幕边的距离（iOS 导航栏 16、macOS 工具栏 12）。
+double _appleBarSideInset(BuildContext context) =>
+    fushiMastheadCompact(context) ? 16 : 12 * fushiAppleMacScale(context);
+
+/// iOS 27 / macOS 27 的独立 bar button：一枚自己的玻璃圆
+/// （liquid_glass_widgets 的 separate 玻璃钮，经 [FushiAppleGlassBarButton]
+/// 渲染，与 `GlassAppBar.pinned` 的返回键同一形态）。玻璃随画质档位；实色档
+/// （[glassMaterialOf] == off：系统降低透明度 / 增强对比度 / 墨水屏 / 用户选
+/// 实色）退回同形状的系统材质实色圆（[FushiAppleFloatingSurface]），无模糊无
+/// 着色器。[child] 自己处理点击 / 焦点 / 语义。
+class FushiAppleBarCircle extends StatelessWidget {
+  const FushiAppleBarCircle({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final double extent = fushiAppleBarButtonExtent(context);
+    final Widget content = SizedBox.square(
+      dimension: extent,
       child: IconTheme.merge(
         data: IconThemeData(
-          size: _kGlassBarIconSize,
+          size: extent >= 44 ? _kGlassBarIconSize : 17,
           color: appleColorsOf(context).label,
         ),
         child: Center(child: child),
       ),
-    ),
-  );
-}
-
-/// 把整组 actions 收进一枚玻璃胶囊（多个图标钮 = 一枚胶囊里并排，单个 =
-/// 胶囊收成圆）。子组件原样挂在 Row 里，GlobalKey / 焦点 / 菜单锚点都不变；
-/// 只是高度从 AppBar 的 stretch 改成胶囊内的 44 松约束。
-Widget _glassActionsCapsule(BuildContext context, List<Widget> actions) {
-  // 胶囊离屏幕边与 leading 圆钮对称：移动 16（iOS 导航栏边距）、桌面 12；
-  // 胶囊里的图标统一 20 号 label 色（SF Symbols 在 bar button 里的字号），
-  // 钮与钮之间不再另加缝——每枚钮自带 40–44 的点按区，排在一起就是 iOS
-  // UIBarButtonItemGroup 的间距。
-  return Center(
-    child: Padding(
-      padding: EdgeInsetsDirectional.only(
-        end: _isDesktopBar(context) ? 12 : 16,
-      ),
-      // 原生 Cupertino：一排无底 bar button，不再收进玻璃胶囊。
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(
-          minWidth: _kGlassBarControlExtent,
-          minHeight: _kGlassBarControlExtent,
-          maxHeight: _kGlassBarControlExtent,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 2),
-          child: IconTheme.merge(
-            data: IconThemeData(
-              size: _kGlassBarIconSize,
-              color: appleColorsOf(context).label,
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: actions),
-          ),
-        ),
-      ),
-    ),
-  );
-}
-
-/// 桌面（Windows / macOS / Linux）用 macOS 26 的窗口标题字阶，移动用 iOS 的
-/// 内联导航栏标题。
-bool _isDesktopBar(BuildContext context) {
-  switch (Theme.of(context).platform) {
-    case TargetPlatform.windows:
-    case TargetPlatform.macOS:
-    case TargetPlatform.linux:
-      return true;
-    case TargetPlatform.android:
-    case TargetPlatform.iOS:
-    case TargetPlatform.fuchsia:
-      return false;
+    );
+    if (glassMaterialOf(context) == FushiGlassMaterial.off) {
+      return FushiAppleFloatingSurface(
+        shape: const CircleBorder(),
+        child: content,
+      );
+    }
+    return FushiAppleGlassBarButton(extent: extent, child: content);
   }
 }
 
-/// 玻璃顶栏的默认标题字阶：桌面 20 bold、移动 17 semibold（label 色）。
-TextStyle _glassTitleStyle(BuildContext context) {
-  final bool desktop = _isDesktopBar(context);
-  return (Theme.of(context).textTheme.titleLarge ?? const TextStyle()).copyWith(
-    fontSize: desktop ? 20 : 17,
-    fontWeight: desktop ? FontWeight.w700 : FontWeight.w600,
-    color: appleColorsOf(context).label,
-  );
+/// Apple 导航栏的动作组：相邻动作平铺进一枚库的共享玻璃胶囊
+/// （[FushiShellHeaderActions] 在页头大字主位下走 `FushiAppleBarCluster`：
+/// [GlassBarItemBackground.shared]），放不下按优先级收进横向「⋯」——与库页导航栏
+/// 同一套判据与渲染。[budget] 是这组动作最多能占的宽。
+class _AppleBarActions extends StatelessWidget {
+  const _AppleBarActions({required this.actions, required this.budget});
+
+  final List<Widget> actions;
+  final double budget;
+
+  @override
+  Widget build(BuildContext context) {
+    // 调用方为旧行手写的间隔（无子 SizedBox）去掉：胶囊里每颗钮自带点按区。
+    final List<Widget> items = <Widget>[
+      for (final Widget action in actions)
+        if (!(action is SizedBox && action.child == null)) action,
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: math.max(0, budget)),
+      child: FushiMastheadScope(
+        role: FushiMastheadRole.primary,
+        child: FushiShellHeaderActions(actions: items),
+      ),
+    );
+  }
 }
+
+/// Apple 导航栏动作组的宽度预算：[barWidth] 是整条栏的宽。标题居中时两侧等宽
+/// 让位（[GlassAppBar] 的居中标题按两侧较宽者对称收窄），留出标题保底宽
+/// （[fushiHeaderTitleFloor]）；靠前标题时扣掉 leading 与标题保底宽。
+double _appleActionsBudget(
+  BuildContext context, {
+  required double barWidth,
+  required bool hasLeading,
+  required bool hasTitle,
+  required bool centerTitle,
+}) {
+  final double width = barWidth.isFinite
+      ? barWidth
+      : MediaQuery.sizeOf(context).width;
+  final double available = width - _appleBarSideInset(context) * 2;
+  final double floor = hasTitle ? fushiHeaderTitleFloor(context, width) : 0;
+  if (hasTitle && centerTitle) {
+    return math.max(0, (available - floor) / 2 - 8);
+  }
+  final double leading = hasLeading ? fushiAppleBarButtonExtent(context) : 0;
+  return math.max(0, available - leading - floor - 16);
+}
+
+/// macOS 档用 macOS 26 的窗口标题字阶，iOS 档用 iOS 的内联导航栏标题 / 大标题。
+/// 判据是 Apple 设计系统的唯一档位判据 [fushiAppleUsesMacMetrics]（桌面平台
+/// 且窗宽 ≥ 600）。原来只看主题平台：Windows / Linux 窄窗明明是 iOS 档（栏钮
+/// 44、搜索胶囊、iOS 列表），大标题却按 macOS 排成 26 号 / 行高 44，比参照
+/// iPhone 的 34 号大标题小一大截（用户 2026-11-24「标题栏是不是可以做大」）。
+bool _isDesktopBar(BuildContext context) => fushiAppleUsesMacMetrics(context);
+
+/// 玻璃顶栏的默认标题字阶：iOS 导航栏 17 / macOS 工具栏 15 semibold（label
+/// 色），与 [fushiAppleInlineTitleStyle] 同一字阶。
+TextStyle _glassTitleStyle(BuildContext context) =>
+    fushiAppleInlineTitleStyle(context);
 
 /// Apple 悬浮栏的内联标题（iOS 26 / macOS 26 导航栏不把标题装进玻璃）：
 /// 移动 17 / 桌面 15 semibold、label 色。悬浮顶栏与库页浮动行共用。
@@ -157,7 +191,9 @@ TextStyle fushiAppleInlineTitleStyle(BuildContext context) {
   return (Theme.of(context).textTheme.titleMedium ?? const TextStyle())
       .copyWith(
         color: appleColorsOf(context).label,
-        fontSize: fushiAppleCompact(context) ? 15 : 17,
+        fontSize: fushiAppleCompact(context)
+            ? 15 * fushiAppleMacScale(context)
+            : 17,
         fontWeight: FontWeight.w600,
       );
 }
@@ -166,7 +202,9 @@ TextStyle fushiAppleInlineTitleStyle(BuildContext context) {
 TextStyle fushiAppleInlineSubtitleStyle(BuildContext context) {
   return (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
     color: appleColorsOf(context).secondaryLabel,
-    fontSize: fushiAppleCompact(context) ? 11 : 12,
+    fontSize: fushiAppleCompact(context)
+        ? 11 * fushiAppleMacScale(context)
+        : 12,
   );
 }
 
@@ -240,7 +278,8 @@ Widget? _glassLeading(
   return _impliedGlassLeading(context);
 }
 
-List<Widget>? _glassActions(
+/// 调用方的 actions（空时按 endDrawer 推出侧栏键），未包装。
+List<Widget> _resolveGlassActions(
   BuildContext context, {
   required List<Widget>? actions,
   required bool automaticallyImplyActions,
@@ -257,8 +296,31 @@ List<Widget>? _glassActions(
       ),
     ];
   }
-  if (resolved == null || resolved.isEmpty) return resolved;
-  return <Widget>[_glassActionsCapsule(context, resolved)];
+  return resolved ?? const <Widget>[];
+}
+
+/// AppBar / SliverAppBar actions 槽里的 Apple 动作组（单个子组件：一枚共享
+/// 玻璃胶囊，放不下收「⋯」），离屏幕边 [_appleBarSideInset]。
+List<Widget>? _glassActions(
+  BuildContext context, {
+  required List<Widget>? actions,
+  required bool automaticallyImplyActions,
+  required double budget,
+}) {
+  final List<Widget> resolved = _resolveGlassActions(
+    context,
+    actions: actions,
+    automaticallyImplyActions: automaticallyImplyActions,
+  );
+  if (resolved.isEmpty) return null;
+  return <Widget>[
+    Center(
+      child: Padding(
+        padding: EdgeInsetsDirectional.only(end: _appleBarSideInset(context)),
+        child: _AppleBarActions(actions: resolved, budget: budget),
+      ),
+    ),
+  ];
 }
 
 /// 返回键图标统一：MD3 一律 Material 的 `arrow_back`（框架在 iOS / macOS 上
@@ -354,21 +416,16 @@ class _AppleBarScrollEdgeState extends State<_AppleBarScrollEdge> {
       clipBehavior: Clip.none,
       fit: StackFit.passthrough,
       children: <Widget>[
-        // 画在顶栏**之下**、盖住整段栏区再往下延伸一条渐隐带：页面把正文铺到
-        // 透明顶栏下面（extendBodyBehindAppBar，如作品详情 hero）时，只在栏
-        // 下沿画「上实下透」的带，带的实色上沿与栏区里透出来的内容之间是一条
-        // 硬线（2026-10-09 用户 iOS 截图）。栏区实色与带最靠边处同色，正文
-        // 排在栏下的普通页面观感不变（栏区本来就是页面底色）。
+        // 画在顶栏**之下**：iOS 27 的 scroll edge 底（[FushiAppleScrollEdgeBackdrop]：
+        // 模糊 + 压暗 / 提亮，下沿一条发丝线）从窗口顶一直铺到栏下沿。正文铺
+        // 到透明顶栏下面（extendBodyBehindAppBar，如作品详情 hero）时盖住滚进
+        // 栏区的内容；正文排在栏下面的页面栏区本来就是页面底色，只多出下沿
+        // 发丝线。内容没滚到栏下时不画。
         if (widget.enabled)
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            bottom: -_kGlassTopEdgeExtent,
-            child: FushiAppleScrollEdge(
-              side: FushiScrollEdgeSide.top,
+          Positioned.fill(
+            child: FushiAppleSoftScrollEdge(
               visible: _scrolledUnder,
-              bandExtent: _kGlassTopEdgeExtent,
+              fill: true,
             ),
           ),
         widget.child,
@@ -376,6 +433,308 @@ class _AppleBarScrollEdgeState extends State<_AppleBarScrollEdge> {
     );
   }
 }
+
+/// iOS 27 / macOS 27 导航栏的 scroll edge 底（所有者 2026-11-24 对照 iOS 27
+/// 图书深色截图定版）：内容滚到栏下面时，从窗口顶（含状态栏 / 桌面窗口按钮
+/// 行）到栏下沿是**一整块**模糊 + 压暗（浅色下提亮）的底，下沿较利落、带一条
+/// 极淡的发丝线，再往下只有一小段渐隐。
+///
+/// 画质档位（只认 [glassMaterialOf]）：
+/// - 实色档（[FushiGlassMaterial.off]，含降低透明度 / 增强对比度 / 墨水屏）：
+///   不模糊，不透明的页面底色（systemBackground）+ 发丝线；
+/// - minimal → standard → premium：模糊逐档加重、底色逐档更透。
+///
+/// [height] 是底的高（从调用方坐标的 0 到发丝线；发丝线画在盒内最下一个物理
+/// 像素），[progress] 0…1 是淡入进度（0 不画）。不接指针、不参与语义。
+class FushiAppleScrollEdgeBackdrop extends StatelessWidget {
+  const FushiAppleScrollEdgeBackdrop({
+    required this.height,
+    required this.progress,
+    this.color,
+    super.key,
+  });
+
+  final double height;
+  final double progress;
+
+  /// 底色；默认页面底色（[fushiAppleScrollEdgeColor]）。
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final double p = progress.clamp(0.0, 1.0);
+    if (p <= 0) return SizedBox(height: height);
+    final Color base = (color ?? fushiAppleScrollEdgeColor(context)).withValues(
+      alpha: 1,
+    );
+    final FushiAppleColors apple = appleColorsOf(context);
+    final (double sigma, double alpha) = switch (glassMaterialOf(context)) {
+      FushiGlassMaterial.off => (0.0, 1.0),
+      FushiGlassMaterial.minimal => (12.0, 0.9),
+      FushiGlassMaterial.standard => (20.0, 0.8),
+      FushiGlassMaterial.premium => (30.0, 0.7),
+    };
+    final double hairline = 1 / MediaQuery.devicePixelRatioOf(context);
+    Widget fill = ColoredBox(color: base.withValues(alpha: alpha * p));
+    if (sigma > 0) {
+      fill = ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma * p, sigmaY: sigma * p),
+          child: fill,
+        ),
+      );
+    }
+    return IgnorePointer(
+      child: SizedBox(
+        height: height,
+        child: Stack(
+          clipBehavior: Clip.none,
+          fit: StackFit.expand,
+          children: <Widget>[
+            if (height > 0) fill,
+            Positioned(
+              left: 0,
+              right: 0,
+              top: math.max(0, height - hairline),
+              height: hairline,
+              child: ColoredBox(
+                color: apple.separator.withValues(alpha: apple.separator.a * p),
+              ),
+            ),
+            // 下沿外一小段渐隐（实色档同样有：内容不在发丝线处被一刀切）。
+            Positioned(
+              left: 0,
+              right: 0,
+              top: height,
+              height: kFushiAppleScrollEdgeTail,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: <Color>[
+                      base.withValues(alpha: 0.35 * alpha * p),
+                      base.withValues(alpha: 0),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// [FushiAppleScrollEdgeBackdrop] 发丝线下面那一小段渐隐的高。
+const double kFushiAppleScrollEdgeTail = 8;
+
+/// [FushiAppleScrollEdgeBackdrop] 的开关形态：[visible] 切换时按
+/// [FushiMotion.short] 淡入淡出。底高 [solidExtent]（0 = 只有发丝线与下沿渐隐，
+/// 用于栏本身就是实底、内容在栏下沿被裁的页面）；[fill] 为 true 时铺满父级给的
+/// 高（栏背后整块）。
+class FushiAppleSoftScrollEdge extends StatelessWidget {
+  const FushiAppleSoftScrollEdge({
+    required this.visible,
+    this.solidExtent = 0,
+    this.fill = false,
+    this.color,
+    super.key,
+  });
+
+  final bool visible;
+  final double solidExtent;
+  final bool fill;
+
+  /// 底色；默认页面底色（[fushiAppleScrollEdgeColor]）。
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: visible ? 1 : 0),
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      builder: (BuildContext context, double p, Widget? _) => fill
+          ? LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) =>
+                  FushiAppleScrollEdgeBackdrop(
+                    height: constraints.maxHeight,
+                    progress: p,
+                    color: color,
+                  ),
+            )
+          : Align(
+              alignment: Alignment.topCenter,
+              heightFactor: 1,
+              child: FushiAppleScrollEdgeBackdrop(
+                height: solidExtent,
+                progress: p,
+                color: color,
+              ),
+            ),
+    );
+  }
+}
+
+/// iOS 27 / macOS 27 导航栏（Apple 设计系统的二级页顶栏）：直接用库的
+/// [GlassAppBar]——栏本身透明、不画底色，标题是不进玻璃的纯文字（手机 17 /
+/// 桌面 15 semibold，手机居中、桌面靠前），返回 / 关闭 / 抽屉键是一枚独立玻璃
+/// 圆钮（[FushiAppleBarCircle]，`separate`），动作平铺进一枚共享玻璃胶囊
+/// （`shared`），放不下按优先级收进横向「⋯」。玻璃随画质档位，实色档是实色面。
+///
+/// 桌面的窗口标题栏（红绿灯 / 窗口按钮）单独占最上面一行，经 MediaQuery 顶部
+/// padding 让位；本栏的 SafeArea 把工具栏排在它下面，不与窗口按钮同一行。
+///
+/// 大标题收起时的居中小标题：调用方把淡入包在 [title] 外面传进来即可，本组件
+/// 只负责字阶。
+class FushiAppleNavBar extends StatelessWidget implements PreferredSizeWidget {
+  const FushiAppleNavBar({
+    super.key,
+    this.leading,
+    this.automaticallyImplyLeading = true,
+    this.title,
+    this.actions,
+    this.automaticallyImplyActions = true,
+    this.centerTitle,
+    this.titleTextStyle,
+    this.bottom,
+    this.toolbarHeight,
+    this.primary = true,
+  });
+
+  final Widget? leading;
+  final bool automaticallyImplyLeading;
+  final Widget? title;
+  final List<Widget>? actions;
+  final bool automaticallyImplyActions;
+
+  /// null = 手机居中、桌面靠前。
+  final bool? centerTitle;
+  final TextStyle? titleTextStyle;
+  final PreferredSizeWidget? bottom;
+
+  /// 工具栏行高；null 取 [kToolbarHeight]（与 Material AppBar 同高，Scaffold
+  /// 的让位、调用方读的 [preferredSize] 都不变；玻璃钮在行里垂直居中）。
+  final double? toolbarHeight;
+
+  /// false = 不让位状态栏 / 窗口标题栏（不在页面顶端的栏）。
+  final bool primary;
+
+  @override
+  Size get preferredSize => Size.fromHeight(
+    (toolbarHeight ?? kToolbarHeight) + (bottom?.preferredSize.height ?? 0),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final bool center = centerTitle ?? !_isDesktopBar(context);
+    final Widget? resolvedLeading = _glassLeading(
+      context,
+      leading: leading,
+      automaticallyImplyLeading: automaticallyImplyLeading,
+    );
+    final List<Widget> resolvedActions = _resolveGlassActions(
+      context,
+      actions: actions,
+      automaticallyImplyActions: automaticallyImplyActions,
+    );
+    final Widget? currentTitle = title;
+    final Widget? styledTitle = currentTitle == null
+        ? null
+        : DefaultTextStyle.merge(
+            style: titleTextStyle ?? _glassTitleStyle(context),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            child: currentTitle,
+          );
+    Widget bar = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) =>
+          GlassAppBar(
+            leading: resolvedLeading,
+            title: styledTitle,
+            actions: resolvedActions.isEmpty
+                ? null
+                : <Widget>[
+                    _AppleBarActions(
+                      actions: resolvedActions,
+                      budget: _appleActionsBudget(
+                        context,
+                        barWidth: constraints.maxWidth,
+                        hasLeading: resolvedLeading != null,
+                        hasTitle: styledTitle != null,
+                        centerTitle: center,
+                      ),
+                    ),
+                  ],
+            centerTitle: center,
+            toolbarHeight: toolbarHeight ?? kToolbarHeight,
+            padding: EdgeInsets.symmetric(
+              horizontal: _appleBarSideInset(context),
+            ),
+            bottom: bottom,
+          ),
+    );
+    if (!primary) {
+      bar = MediaQuery.removePadding(
+        context: context,
+        removeTop: true,
+        child: bar,
+      );
+    }
+    // 栏上的 Material 按钮（IconButton / InkWell）要有 Material 祖先；栏本身
+    // 透明，不画任何底。
+    return Material(type: MaterialType.transparency, child: bar);
+  }
+}
+
+/// iOS 大标题（[FushiAppleLargeTitle]）占的那一行高：iOS 52（UINavigationBar
+/// 大标题模式 96 − 内联 44）、桌面 44。
+double fushiAppleLargeTitleBand(BuildContext context) => _isDesktopBar(context)
+    ? _kAppleLargeTitleBandDesktop * fushiAppleMacScale(context)
+    : _kAppleLargeTitleBand;
+
+/// iOS 大标题行（`prefersLargeTitles`，与库 `GlassLargeTitle` 同字阶：iOS 34 /
+/// 桌面 26 bold，靠前）：滚动时随内容上移收进导航栏、换成居中 17pt 小标题。
+/// [badge] 是标题前的形状图标（设置分类图标等）。
+class FushiAppleLargeTitle extends StatelessWidget {
+  const FushiAppleLargeTitle({required this.title, this.badge, super.key});
+
+  final String title;
+  final Widget? badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget? lead = badge;
+    return Semantics(
+      header: true,
+      child: Row(
+        children: <Widget>[
+          if (lead != null) ...<Widget>[lead, const SizedBox(width: 10)],
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: _glassLargeTitleStyle(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 大标题收起进度（0 = 大标题完全露出，1 = 已收进导航栏）对应的两段淡变：
+/// 大标题在前六成淡出，栏里的小标题在后半段淡入（UIKit 的两段式交叉淡变，
+/// 与库 `GlassAppBar` 的 largeTitleController 同一曲线）。
+double fushiAppleLargeTitleOpacity(double progress) =>
+    (1 - progress / 0.6).clamp(0.0, 1.0);
+
+/// 见 [fushiAppleLargeTitleOpacity]：栏里的居中小标题。
+double fushiAppleInlineTitleOpacity(double progress) =>
+    FushiMotion.enter.transform(((progress - 0.5) / 0.5).clamp(0.0, 1.0));
 
 /// [AppBar] 的设计系统分派版。[preferredSize] 与 AppBar 同一对象形态
 /// （Scaffold 经 `AppBar.preferredHeightFor` 读主题 toolbarHeight 依赖它）。
@@ -499,53 +858,35 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
     if (floating != null) {
       return _buildFloating(context, scrolledUnder);
     }
+    if (glass) return _buildApple(context);
     return AppBar(
-      leading: glass
-          ? _glassLeading(
-              context,
-              leading: leading,
-              automaticallyImplyLeading: automaticallyImplyLeading,
-            )
-          : leading,
+      leading: leading,
       automaticallyImplyLeading: automaticallyImplyLeading,
       title: title,
-      actions: glass
-          ? _glassActions(
-              context,
-              actions: actions,
-              automaticallyImplyActions: automaticallyImplyActions,
-            )
-          : actions,
+      actions: actions,
       automaticallyImplyActions: automaticallyImplyActions,
       flexibleSpace: flexibleSpace,
       bottom: bottom,
-      elevation: glass ? 0 : elevation,
-      scrolledUnderElevation: glass ? 0 : scrolledUnderElevation,
+      elevation: elevation,
+      scrolledUnderElevation: scrolledUnderElevation,
       notificationPredicate: notificationPredicate,
-      shadowColor: glass ? Colors.transparent : shadowColor,
-      surfaceTintColor: glass ? Colors.transparent : surfaceTintColor,
+      shadowColor: shadowColor,
+      surfaceTintColor: surfaceTintColor,
       shape: shape,
-      // 透明：页面的实色分组底直接透上来，顶栏本身不是玻璃。
-      backgroundColor: glass ? Colors.transparent : backgroundColor,
+      backgroundColor: backgroundColor,
       foregroundColor: foregroundColor,
       iconTheme: iconTheme,
       actionsIconTheme: actionsIconTheme,
       primary: primary,
-      centerTitle: glass
-          ? (centerTitle ?? !_isDesktopBar(context))
-          : centerTitle,
+      centerTitle: centerTitle,
       excludeHeaderSemantics: excludeHeaderSemantics,
       titleSpacing: titleSpacing,
       toolbarOpacity: toolbarOpacity,
       bottomOpacity: bottomOpacity,
       toolbarHeight: toolbarHeight,
-      leadingWidth: glass
-          ? (leadingWidth ?? _kGlassLeadingWidth)
-          : leadingWidth,
+      leadingWidth: leadingWidth,
       toolbarTextStyle: toolbarTextStyle,
-      titleTextStyle: glass
-          ? (titleTextStyle ?? _glassTitleStyle(context))
-          : titleTextStyle,
+      titleTextStyle: titleTextStyle,
       systemOverlayStyle: systemOverlayStyle,
       forceMaterialTransparency: forceMaterialTransparency,
       useDefaultSemanticsOrder: useDefaultSemanticsOrder,
@@ -553,6 +894,54 @@ class FushiAppBar extends StatelessWidget implements PreferredSizeWidget {
       actionsPadding: actionsPadding,
       animateColor: animateColor,
     );
+  }
+
+  /// Apple（Cupertino）= iOS 27 / macOS 27 导航栏（[FushiAppleNavBar]，库的
+  /// [GlassAppBar] + 玻璃 bar button）。栏透明；自带 [flexibleSpace]（hero 背景
+  /// 等）的调用方把它垫在栏下面。状态栏图标按主题明暗（与 M3 AppBar 透明底时
+  /// 同一判据），调用方给了 [systemOverlayStyle] 用调用方的。
+  Widget _buildApple(BuildContext context) {
+    Widget bar = FushiAppleNavBar(
+      leading: leading,
+      automaticallyImplyLeading: automaticallyImplyLeading,
+      title: title,
+      actions: actions,
+      automaticallyImplyActions: automaticallyImplyActions,
+      centerTitle: centerTitle,
+      titleTextStyle: titleTextStyle,
+      bottom: bottom,
+      toolbarHeight: toolbarHeight,
+      primary: primary,
+    );
+    final IconThemeData? icons = iconTheme;
+    final Color? fg = foregroundColor;
+    if (icons != null || fg != null) {
+      bar = IconTheme.merge(
+        data: (icons ?? const IconThemeData()).copyWith(
+          color: icons?.color ?? fg,
+        ),
+        child: bar,
+      );
+    }
+    if (toolbarOpacity < 1) bar = Opacity(opacity: toolbarOpacity, child: bar);
+    final Widget? space = flexibleSpace;
+    if (space != null) {
+      bar = Stack(
+        fit: StackFit.passthrough,
+        children: <Widget>[
+          Positioned.fill(child: space),
+          bar,
+        ],
+      );
+    }
+    final SystemUiOverlayStyle overlay =
+        systemOverlayStyle ??
+        AppBarTheme.of(context).systemOverlayStyle ??
+        (Theme.of(context).brightness == Brightness.dark
+                ? SystemUiOverlayStyle.light
+                : SystemUiOverlayStyle.dark)
+            .copyWith(statusBarColor: Colors.transparent);
+    return AnnotatedRegion<SystemUiOverlayStyle>(value: overlay, child: bar);
   }
 
   /// M3E 悬浮顶栏 = 二级页的现行页头（2026-11-15 所有者「二级页还是胶囊」）：
@@ -1189,10 +1578,19 @@ class FushiSliverAppBar extends StatelessWidget {
     }
   }
 
+  /// 自带 flexibleSpace（封面头图之类）的调用方有自己的设计，只换控件皮肤、
+  /// 不接大标题与渐隐底。
   Widget _glass(BuildContext context) {
+    // 动作组的宽度预算要整条栏的宽：AppBar 的 actions 行给子组件的是无界宽，
+    // 从 sliver 的横轴宽算。
+    return SliverLayoutBuilder(
+      builder: (BuildContext context, SliverConstraints constraints) =>
+          _glassBar(context, constraints.crossAxisExtent),
+    );
+  }
+
+  Widget _glassBar(BuildContext context, double barWidth) {
     final bool desktop = _isDesktopBar(context);
-    // 自带 flexibleSpace（封面头图之类）的调用方有自己的设计，只换控件皮肤、
-    // 不接大标题与渐隐底。
     final bool ownBackdrop = flexibleSpace == null;
     final Widget? resolvedTitle = title;
     final bool largeTitle =
@@ -1200,16 +1598,16 @@ class FushiSliverAppBar extends StatelessWidget {
         resolvedTitle != null &&
         (_variant != _FushiSliverAppBarVariant.small || expandedHeight == null);
     final double bottomHeight = bottom?.preferredSize.height ?? 0;
-    final double band = desktop
-        ? _kAppleLargeTitleBandDesktop
-        : _kAppleLargeTitleBand;
+    final double band = fushiAppleLargeTitleBand(context);
     final Color pageColor = Theme.of(context).scaffoldBackgroundColor;
+    final Widget? glassLeading = _glassLeading(
+      context,
+      leading: leading,
+      automaticallyImplyLeading: automaticallyImplyLeading,
+    );
+    final bool center = largeTitle ? true : (centerTitle ?? !desktop);
     return SliverAppBar(
-      leading: _glassLeading(
-        context,
-        leading: leading,
-        automaticallyImplyLeading: automaticallyImplyLeading,
-      ),
+      leading: glassLeading,
       automaticallyImplyLeading: automaticallyImplyLeading,
       title: largeTitle
           ? _AppleCollapsedTitle(band: band, child: resolvedTitle)
@@ -1218,6 +1616,13 @@ class FushiSliverAppBar extends StatelessWidget {
         context,
         actions: actions,
         automaticallyImplyActions: automaticallyImplyActions,
+        budget: _appleActionsBudget(
+          context,
+          barWidth: barWidth,
+          hasLeading: glassLeading != null,
+          hasTitle: resolvedTitle != null,
+          centerTitle: center,
+        ),
       ),
       automaticallyImplyActions: automaticallyImplyActions,
       flexibleSpace: ownBackdrop
@@ -1227,7 +1632,9 @@ class FushiSliverAppBar extends StatelessWidget {
               largeTitleStyle: _glassLargeTitleStyle(context),
               band: band,
               bottomHeight: bottomHeight,
-              horizontalPadding: desktop ? 20 : 16,
+              horizontalPadding: desktop
+                  ? 20 * fushiAppleMacScale(context)
+                  : 16,
             )
           : flexibleSpace,
       bottom: bottom,
@@ -1244,7 +1651,7 @@ class FushiSliverAppBar extends StatelessWidget {
       iconTheme: iconTheme,
       actionsIconTheme: actionsIconTheme,
       primary: primary,
-      centerTitle: largeTitle ? true : (centerTitle ?? !desktop),
+      centerTitle: center,
       excludeHeaderSemantics: excludeHeaderSemantics,
       titleSpacing: titleSpacing,
       collapsedHeight: collapsedHeight,
@@ -1260,7 +1667,7 @@ class FushiSliverAppBar extends StatelessWidget {
       onStretchTrigger: onStretchTrigger,
       shape: shape,
       toolbarHeight: toolbarHeight,
-      leadingWidth: leadingWidth ?? _kGlassLeadingWidth,
+      leadingWidth: leadingWidth ?? _glassLeadingWidth(context),
       toolbarTextStyle: toolbarTextStyle,
       titleTextStyle:
           titleTextStyle ??
@@ -1286,7 +1693,7 @@ TextStyle _glassLargeTitleStyle(BuildContext context) {
   final bool desktop = _isDesktopBar(context);
   return (Theme.of(context).textTheme.headlineMedium ?? const TextStyle())
       .copyWith(
-        fontSize: desktop ? 26 : 34,
+        fontSize: desktop ? 26 * fushiAppleMacScale(context) : 34,
         fontWeight: FontWeight.w700,
         height: 1.2,
         letterSpacing: desktop ? 0 : 0.37,
@@ -1366,31 +1773,15 @@ class _AppleSliverBackdrop extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: <Widget>[
-        Column(
-          children: <Widget>[
-            Expanded(child: ColoredBox(color: color)),
-            SizedBox(
-              height: _kGlassSliverEdgeExtent,
-              child: Stack(
-                fit: StackFit.expand,
-                children: <Widget>[
-                  AnimatedOpacity(
-                    opacity: under ? 0 : 1,
-                    duration: fushiMotionDuration(context, FushiMotion.short),
-                    curve: FushiMotion.standard,
-                    child: ColoredBox(color: color),
-                  ),
-                  FushiAppleScrollEdge(
-                    side: FushiScrollEdgeSide.top,
-                    visible: under,
-                    color: color,
-                    maxSigma: 6,
-                  ),
-                ],
-              ),
-            ),
-          ],
+        // 停在顶部：栏区是页面实底；钉住后内容在栏下面滚：实底淡出，换成
+        // iOS 27 scroll edge 底（模糊 + 压暗、下沿发丝线）。
+        AnimatedOpacity(
+          opacity: under ? 0 : 1,
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
+          child: ColoredBox(color: color),
         ),
+        FushiAppleSoftScrollEdge(visible: under, color: color, fill: true),
         if (title != null && settings != null)
           Positioned(
             left: horizontalPadding,
@@ -1636,7 +2027,7 @@ class FushiShellLargeTitleBar extends StatelessWidget {
     // 收起后贴着窗口控制条只留一条 32 的内联标题行。MD3：标题行 + large app
     // bar 的下边距（移动 64 / 桌面 56），收起成紧凑的 titleLarge 行。
     final double baseExpandedHeight = apple
-        ? (desktop ? 46 : 52)
+        ? (desktop ? 46 * fushiAppleMacScale(context) : 52)
         : (desktop ? 56 : 64);
     // 标题行右侧挂着动作时，收起后也要容得下一排 44 的按钮（桌面 Apple 的
     // 32 内联行放不下）。
@@ -1645,7 +2036,9 @@ class FushiShellLargeTitleBar extends StatelessWidget {
     // 就会把胶囊下半截裁平）。
     const double md3CollapsedHeight = kFushiPageChromeExtent + 8;
     final double collapsedHeight = math.max(
-      apple ? (desktop ? 32 : 44) : md3CollapsedHeight,
+      apple
+          ? (desktop ? 32 * fushiAppleMacScale(context) : 44)
+          : md3CollapsedHeight,
       trailing == null ? 0.0 : (apple ? 44.0 : md3CollapsedHeight),
     );
     // 展开态不得比收起态矮（桌面 MD3 展开 56 < 胶囊行 64），否则「收起」反而

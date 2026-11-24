@@ -432,6 +432,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（默认 'grid'）：游戏库主体布局，'grid' 海报网格 / 'list' 分段卡列表。
   // 页头切换钮写入，跨会话记住。
   'games_library_layout',
+  // String（默认 'minimal'）：Apple（Cupertino）设计系统的玻璃画质档位
+  // `off`（实色）/ `minimal` / `standard` / `premium`，见 FushiGlassMaterial。
+  // 随 Profile 走（ThemeNotifier._profileThemePrefKeys）；旧键 `glass_material` 冻结不读。
+  'glass_quality',
   'global_dict_css',
   'harmonic_frequency',
   // String（JSON 数组，默认空）：书架上「仅从本机移除」的远端书（反馈 nvlhtczbro），

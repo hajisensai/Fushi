@@ -205,7 +205,7 @@ void main() {
 
     // 玻璃设计系统深 / 浅。
     await appModel.themeNotifier.setDesignSystem('glass');
-    await appModel.themeNotifier.setGlassMaterial(FushiGlassMaterial.frosted);
+    await appModel.themeNotifier.setGlassMaterial(FushiGlassMaterial.minimal);
     await tester.pump(const Duration(seconds: 1));
     await capture('glass-light');
     await appModel.themeNotifier.setBrightnessMode('dark');

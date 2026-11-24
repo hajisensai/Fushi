@@ -51,6 +51,34 @@ const List<ShortcutScope> kDefaultContextMenuLadder = <ShortcutScope>[
   ShortcutScope.global,
 ];
 
+/// 阅读器鼠标通道的解析阶梯：reader → audiobook → universal → global。
+///
+/// 阅读器页与它推出的路由（歌词模式插图大图浏览等）共用，故住在这里而不是阅读器
+/// 页的 part 文件里（BUG-5424：插图大图在 media 层，够不着 part 里的私有常量）。
+///
+/// **Flutter 腿与 WebView(JS) 腿共用同一条**，且与 `_handleKeyEvent` 的键盘阶梯
+/// 同序（页面专属优先）。
+///
+/// BUG-2031 修正：第一版给两条腿各写了一条阶梯——Flutter 侧刻意砍掉 universal /
+/// global，理由是「那两段留给 app 根兜底，页面再解析一遍就会双派发」。两处都错：
+///
+/// 1. 防双派发的机制是 [MouseBindingDispatch] 的认领，不是「把阶梯修窄」。修窄
+///    换来的是**动作降级**：`globalBack` 在页内解析不到，只能落到 app 根那份平铺的
+///    `Navigator.maybePop()`，而键盘 / 手柄的 `globalBack` 走的是本页**逐级退出**
+///    （先关光标 / 关弹窗，最后才退书）。同一动作两条通道两种行为。
+/// 2. 两条腿阶梯不等，等于同一个绑定在「指针归宿主」与「指针归 WebView」的平台上
+///    行为不同（见 [hostOwnsWebViewPointerInput]）。合成一条后，两条腿只剩「谁拿到
+///    事件」的区别，覆盖面逐字相同。
+///
+/// 页面解析到但执行体没接（返回 ignored）时**不认领**，app 根照常兜底——这正是
+/// 键盘「返回 ignored 就冒泡」的等价物。
+const List<ShortcutScope> kReaderMouseLadder = <ShortcutScope>[
+  ShortcutScope.reader,
+  ShortcutScope.audiobook,
+  ShortcutScope.universal,
+  ShortcutScope.global,
+];
+
 /// 把当前的快捷键注册表递给子树里的 [ContextMenuTrigger]。
 ///
 /// 用 `getInheritedWidgetOfExactType` 读取（见 [maybeOf]）：**不建立依赖**，注册表

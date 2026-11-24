@@ -313,10 +313,12 @@ class _RailNotchPainter extends CustomPainter {
 /// 镂空脊下包在内容区外：在内容区起始边的上下两角补上侧栏色，让内容区读成
 /// 一块左侧大圆角的「舞台」。其它侧栏样式 / Apple 设计系统 / 墨水屏原样返回
 /// [child]。
-/// 侧栏色块是否一直铺到窗口上沿（镂空脊）：是的话首页外壳不在外层吃掉顶部
-/// 安全区，改由侧栏内容与内容区各自让开。
+/// 侧栏底是否一直铺到窗口上沿：是的话首页外壳不在外层吃掉顶部安全区，改由
+/// 侧栏内容与内容区各自让开。成立的有 MD3 镂空脊，以及 Apple 设计系统的
+/// macOS 27 贴边侧栏 / 窄条（[AppleEdgeSidebarSurface]，侧栏顶部伸到标题行
+/// 底下，macOS 红绿灯落在侧栏顶上）。
 bool navRailBleedsToTop(BuildContext context) =>
-    !isGlassDesign(context) && (_RailLook.resolve(context)?.notch ?? false);
+    isGlassDesign(context) || (_RailLook.resolve(context)?.notch ?? false);
 
 class NavRailStage extends StatelessWidget {
   const NavRailStage({required this.child, super.key});

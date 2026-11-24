@@ -48,7 +48,9 @@ import 'package:meta/meta.dart';
 /// [HttpClient]。生产不传；测试经它读回 `connectionTimeout`，钉住「生产出站真的用了
 /// [kYoutubeConnectTimeout]」——改回应用默认的 20 s 后提前停对黑洞出口整体失效，而
 /// 注入 `MockClient` 的用例看不出来。
-@visibleForTesting
+///
+/// 本文件之外的 YouTube 出站（播放列表枚举 `youtube_playlist.dart`）也经它建 client，
+/// 代理出口与连接超时一处定。
 YoutubeProbingHttpClient createYoutubeHttpClient({
   void Function(HttpClient client)? configure,
 }) => YoutubeProbingHttpClient(

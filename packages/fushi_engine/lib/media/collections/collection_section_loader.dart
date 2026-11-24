@@ -33,15 +33,19 @@ Future<Map<String, CollectionSectionResolution>> loadCollectionSections(
 }
 
 /// [loadCollectionSections] 的只要键版本：`book_uid → 生效分栏键`，派生键按
-/// `videoPath`（[collectionGroupKeyForFilename]）。
+/// `videoPath` 整批派生（[collectionGroupKeysForPaths]：切了集的原盘上分集进第 1 季、
+/// 整条标题进 PV·特典）。
 Future<Map<String, String>> loadCollectionGroupKeysForVideos(
   FushiDatabase db,
   Iterable<VideoBookRow> videos,
 ) async {
+  final List<VideoBookRow> rows = videos.toList(growable: false);
+  final List<String> derived = collectionGroupKeysForPaths(<String>[
+    for (final VideoBookRow video in rows) video.videoPath,
+  ]);
   final Map<String, CollectionSectionResolution> resolved =
       await loadCollectionSections(db, <String, String>{
-        for (final VideoBookRow video in videos)
-          video.bookUid: collectionGroupKeyForFilename(video.videoPath),
+        for (int i = 0; i < rows.length; i++) rows[i].bookUid: derived[i],
       });
   return <String, String>{
     for (final MapEntry<String, CollectionSectionResolution> entry

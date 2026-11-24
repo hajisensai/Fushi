@@ -6,6 +6,7 @@ import 'package:ffi/ffi.dart';
 import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 import '../fushi_compute_library.dart';
+import '../native_events/native_event_port.dart';
 
 /// 分析引擎事件种类（与 native/fushi_compute/src/music_analysis.rs 的 `EVENT_*` 一致）。
 enum FfcManaEventKind {
@@ -132,11 +133,12 @@ class FfcManaEvent {
   String toString() => 'FfcManaEvent($kind, $token, $value)';
 }
 
-typedef _Callback = Void Function(Int32, Uint64, Uint32);
 typedef _VersionC = Uint32 Function();
 typedef _VersionDart = int Function();
-typedef _StartC = Int32 Function(Pointer<NativeFunction<_Callback>>);
-typedef _StartDart = int Function(Pointer<NativeFunction<_Callback>>);
+typedef _StartC =
+    Int32 Function(Pointer<NativeFunction<PostCObjectNative>>, Int64);
+typedef _StartDart =
+    int Function(Pointer<NativeFunction<PostCObjectNative>>, int);
 typedef _ConfigureC =
     Int32 Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>, Uint32, Uint32);
 typedef _ConfigureDart =
@@ -153,7 +155,7 @@ typedef _LastErrorDart = int Function(Pointer<Pointer<Uint8>>, Pointer<Size>);
 /// 整首离线音频分析引擎的 Dart 绑定（native `ffc_mana_*`）。
 ///
 /// 引擎在 Rust 里是进程级单例（工作线程 + 队列 + 可选 ONNX 模型）；这里只发粗粒度命令，事件经一个
-/// `NativeCallable.listener` 回到本 isolate 的 [events]。结果是文件（`.fma`），由调用方整份读进来解析，
+/// [NativeEventPort] 回到本 isolate 的 [events]。结果是文件（`.fma`），由调用方整份读进来解析，
 /// 逐帧取值不跨 FFI。只应在一个 isolate（UI isolate）里用。
 class FushiComputeMusicAnalysis {
   FushiComputeMusicAnalysis._(FushiCompute lib)
@@ -210,15 +212,17 @@ class FushiComputeMusicAnalysis {
   final StreamController<FfcManaEvent> _events =
       StreamController<FfcManaEvent>.broadcast();
 
-  // 进程级引擎的回调：建一次、永不关闭（Rust 工作线程随时可能调它）。
-  NativeCallable<_Callback>? _callback;
+  // 进程级引擎的事件端口：建一次、永不关闭（Rust 工作线程随时可能发事件）。本 isolate 没了时
+  // 发过来的事件只是丢掉，不会像 NativeCallable 那样让进程 abort（BUG-5413）。
+  NativeEventPort? _port;
 
   /// 引擎事件（广播）。
   Stream<FfcManaEvent> get events => _events.stream;
 
-  void _onEvent(int kind, int token, int value) {
-    final FfcManaEventKind? k = FfcManaEventKind.fromCode(kind);
-    if (k != null) _events.add(FfcManaEvent(k, token, value));
+  void _onEvent(List<int> message) {
+    if (message.length != 3) return;
+    final FfcManaEventKind? k = FfcManaEventKind.fromCode(message[0]);
+    if (k != null) _events.add(FfcManaEvent(k, message[1], message[2]));
   }
 
   /// 结果文件布局版本（Dart 解析器据此拒读不认识的文件）。
@@ -227,11 +231,10 @@ class FushiComputeMusicAnalysis {
   /// 分析算法版本（缓存失效判据）。
   int get pipelineVersion => _pipelineVersion();
 
-  /// 启动引擎（幂等）。返回原生状态码。
+  /// 启动引擎（幂等；事件改发到本 isolate）。返回原生状态码。
   int start() {
-    final NativeCallable<_Callback> callback = _callback ??=
-        NativeCallable<_Callback>.listener(_onEvent);
-    return _start(callback.nativeFunction);
+    final NativeEventPort port = _port ??= NativeEventPort(_onEvent);
+    return _start(port.post, port.nativePort);
   }
 
   /// 配置可选模型（null = 不用）。有模型时接上 [ortPath] 那份 onnxruntime（null = 从本进程符号找，Apple）；

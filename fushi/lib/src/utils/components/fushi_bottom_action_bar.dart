@@ -74,7 +74,8 @@ class FushiBottomActionBar extends StatelessWidget {
     if (apple) {
       final FushiAppleColors colors = appleColorsOf(context);
       final bool compact = fushiAppleCompact(context);
-      final double minHeight = compact ? 44 : 52;
+      final double macScale = fushiAppleMacScale(context);
+      final double minHeight = compact ? 44 * macScale : 52;
       final double radius = note == null ? minHeight / 2 : 24;
       content = DefaultTextStyle.merge(
         style: TextStyle(color: colors.label),

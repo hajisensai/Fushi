@@ -28,7 +28,7 @@ Future<void> _pump(
       brightness: Brightness.dark,
     ),
     textTheme: Typography.material2021().white,
-    glass: apple ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: apple ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
     glassDesign: apple,
   );
   await tester.pumpWidget(
@@ -206,7 +206,7 @@ ThemeData _theme({required bool apple, required Brightness brightness}) {
     textTheme: brightness == Brightness.dark
         ? Typography.material2021().white
         : Typography.material2021().black,
-    glass: apple ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: apple ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
     glassDesign: apple,
   );
 }

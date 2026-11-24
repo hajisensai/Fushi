@@ -71,7 +71,7 @@ void main() {
         brightness: t.brightness,
       ),
       textTheme: Typography.material2021().black,
-      glass: t.apple ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+      glass: t.apple ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
       glassDesign: t.apple,
     );
     await tester.pumpWidget(

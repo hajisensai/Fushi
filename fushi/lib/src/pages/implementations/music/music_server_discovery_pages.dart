@@ -45,7 +45,30 @@ List<Widget> _itemsSections(
           ),
       ],
     ),
-  if (items.artists.isNotEmpty) ...<Widget>[
+  if (items.artists.isNotEmpty && isGlassDesign(context))
+    // Cupertino：圆形头像货架（设计稿③「艺人」）。
+    appleMusicFitShelf(
+      context,
+      AppleMusicCoverShelfSection(
+        key: ValueKey<String>('$keyPrefix-artists'),
+        title: t.music_section_artists,
+        circular: true,
+        children: <Widget>[
+          for (final MusicServerArtist a in items.artists)
+            AppleMusicAutoCoverTile(
+              key: ValueKey<String>('$keyPrefix-artist-${a.id}'),
+              title: a.name,
+              cover: browser.coverUri(a.coverRef)?.toString(),
+              circular: true,
+              onTap: () => _push(
+                context,
+                MusicServerArtistPage(browser: browser, artist: a),
+              ),
+            ),
+        ],
+      ),
+    )
+  else if (items.artists.isNotEmpty) ...<Widget>[
     FushiSectionTitle(t.music_section_artists),
     for (final MusicServerArtist a in items.artists)
       MusicCollectionRow(
@@ -72,6 +95,20 @@ Widget _sectionList(
     );
   }
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  if (isGlassDesign(context)) {
+    // Cupertino：段头 / 货架自带页边与段距，列表左右不留页边。
+    return AppleMusicFullBleed(
+      child: FushiEntranceScope(
+        child: ListView.builder(
+          padding: musicBrowsePagePadding(context).copyWith(left: 0, right: 0),
+          itemCount: sections.length,
+          itemBuilder: fushiStaggeredItemBuilder(
+            (BuildContext context, int i) => sections[i],
+          ),
+        ),
+      ),
+    );
+  }
   return FushiEntranceScope(
     child: ListView.separated(
       padding: musicBrowsePagePadding(context),
@@ -233,6 +270,20 @@ class _MusicServerGenresViewState extends State<MusicServerGenresView> {
     ].join(' · ').nullIfEmpty;
     String? coverOf(MusicServerGenre g) =>
         widget.browser.coverUri(g.coverRef)?.toString();
+    if (isGlassDesign(context)) {
+      // Cupertino：彩色渐变流派块网格（Apple Music「按类别浏览」）。
+      return AppleMusicCategoryGrid(
+        itemCount: genres.length,
+        itemBuilder: (BuildContext context, int i) => AppleMusicCategoryTile(
+          key: keyOf(genres[i]),
+          label: genres[i].name,
+          seed: genres[i].id,
+          subtitle: subtitleOf(genres[i]),
+          icon: FushiIcons.tag,
+          onTap: () => _open(context, genres[i]),
+        ),
+      );
+    }
     if (musicTrackRowSurfaceActive(context)) {
       return MusicStyledCollection(
         style: MusicViewStyle.blocks,
@@ -337,7 +388,40 @@ class _MusicServerGenrePageState extends State<MusicServerGenrePage> {
         return _sectionList(
           context,
           <Widget>[
-            if (tracks.isNotEmpty)
+            if (tracks.isNotEmpty && isGlassDesign(context))
+              appleMusicInset(
+                context,
+                Padding(
+                  padding: EdgeInsets.only(top: tokens.spacing.gap),
+                  child: Wrap(
+                    spacing: tokens.spacing.gap,
+                    runSpacing: tokens.spacing.gap,
+                    children: <Widget>[
+                      AppleMusicCapsuleButton(
+                        key: const ValueKey<String>('music-server-genre-play'),
+                        icon: FushiIcons.play,
+                        label: t.music_play_all,
+                        onTap: () => playMusicServerTracks(
+                          context,
+                          widget.browser,
+                          tracks,
+                        ),
+                      ),
+                      AppleMusicCapsuleButton(
+                        icon: FushiIcons.shuffle,
+                        label: t.music_shuffle_play,
+                        onTap: () => playMusicServerTracks(
+                          context,
+                          widget.browser,
+                          tracks,
+                          shuffle: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else if (tracks.isNotEmpty)
               Wrap(
                 spacing: tokens.spacing.gap,
                 runSpacing: tokens.spacing.gap,
