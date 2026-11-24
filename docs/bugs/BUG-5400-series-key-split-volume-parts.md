@@ -1,0 +1,15 @@
+## BUG-5400 · series-key-split-volume-parts
+- **报告**：2026-11-23（BUG-5395 排查时发现：结尾「上 / 中 / 下」的分册不认）
+- **真实性**：✅ 真 bug。`packages/fushi_engine/lib/media/collections/book_series_key.dart` `_splitVolumeSuffix` 只认数字卷号，「化物語 上」「化物語 下」整个书名当系列名，上下两册散成两张卡、不进同一合集；「化物語（上）」这类括号形态被当成出版标签剥掉，两册同键却分不出先后。
+- **[x] ① 已修复**
+  - 新增 `_splitSuffix`：认结尾 `上 / 中 / 下`，带空白、括号（`()`、`<>`、`〈〉`、`【】`）或巻 / 卷 / 册 / 冊 / 集（`X下巻` 可不带空白）。「本好きの下剋上」这种以「上」结尾的书名不算。
+  - 读成 `BookSeriesKey.split`（1 上、2 中、3 下），不折成卷号：只看一个书名不知道「下」是第 2 卷还是第 3 卷。
+  - 排序（`compareBookSeriesPositionParts`）排在卷号之后，位置（`BookSeriesPosition`）带上分册；`第2巻 上` 卷号照读。
+  - 续读卡「第 N 卷」（`collectionMemberVolumeNumber`）按同系列分册名次算：上下两册的「下」是 2，上中下三册的「下」是 3。
+  - AI 合集排序：只有分册时规则排得出、不问 AI；分册与带卷号的卷混在一起时仍交给 AI（`fushi_engine/lib/ai/ai_collection_order_assistant.dart`）。
+  - 系列合集自愈（`book_series_grouper.dart`）同一口径：无卷号的分册与带卷号的卷混在一起时不自愈（原有用例「主系列卷号重复时不自愈」的 `XYZ (上)` 据此保持不动）。
+- **[x] ② 已加自动化测试**
+  - `fushi/test/media/collections/book_series_grouper_test.dart`「分册：上 / 中 / 下…」：各种写法、卷号 + 分册、排序、反例。
+  - `fushi/test/pages/home_dashboard_continue_book_test.dart`「分册：上下两册的「下」是第 2 卷…」。
+  - `fushi/test/ai/ai_collection_order_assistant_test.dart`「书：只有结尾上 / 中 / 下分册时规则排得出」。
+- **备注**：书名中间的上 / 中 / 下（`X 上 外伝`）仍不认，AI 合集排序照旧把它当认不出的卷位标记。

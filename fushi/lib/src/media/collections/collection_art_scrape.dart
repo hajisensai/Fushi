@@ -58,11 +58,9 @@ class CollectionArtScrape {
 
   /// [rows] 里书成员的合集横幅（[BookArtStore.backdropForCollection]，成员多数票
   /// 那张）；没下到为 null。只读刮削层，不受「在线服务」门约束：图已在本地。
-  File? bannerFor(Iterable<MediaCollectionItemRow> rows) =>
-      store.backdropForCollection(<String>[
-        for (final MediaCollectionItemRow r in rows)
-          if (r.mediaType == 'epub') r.entryKey,
-      ]);
+  /// 成员行键是书 uid，刮削层按 bookKey 记，先换算（[epubMemberBookKeys]）。
+  Future<File?> bannerFor(Iterable<MediaCollectionItemRow> rows) async =>
+      store.backdropForCollection(await epubMemberBookKeys(database, rows));
 
   BookArtScrapeService _service() =>
       serviceFactory?.call() ??
@@ -132,12 +130,10 @@ class CollectionArtScrape {
       destructive: true,
     );
     if (!confirmed) return;
-    final List<String> keys = <String>[
-      for (final MediaCollectionItemRow r in await database.getCollectionItems(
-        collectionId,
-      ))
-        if (r.mediaType == 'epub') r.entryKey,
-    ];
+    final List<String> keys = await collectionMemberBookKeys(
+      database,
+      collectionId,
+    );
     int removed = 0;
     for (final String key in keys) {
       if (!store.hasCover(key) && store.recordFor(key) == null) continue;

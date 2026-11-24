@@ -1,0 +1,11 @@
+## BUG-5394 · 关复习库在 UI 线程等在途命令，Android 主线程 ANR
+- **报告**：2026-11-24（用户：应用内反馈 3he3GEoqcU，vivo V1981A / Android 12，3.4.0-debug.32193）
+- **真实性**：✅ 真 bug。日志里同一天两次冷启动后约 30–40 秒各一次 ANR（`reason=ANR`，进程 28634 / 29493，`lastLifecycle=resumed`），两次主线程栈都是 `ffsrs_store_close+556` → futex 等锁。根因：
+  - `packages/fushi_srs/lib/src/store/srs_core.dart:853-856`（修前）`SrsCore.close()` 在调用方 isolate 同步调 `ffsrs_store_close`；`packages/fushi_engine/lib/srs/srs_storage.dart:91-95`（修前）`SrsStorage._closeCore` 由 `AppModel._closeSrsStorage`（`closeDatabase` / `closeForPopup` / `retryInitialise` / `SrsStorageHost.reopen`）在 UI isolate 调到它。
+  - `native/fushi_fsrs/src/store/ffi.rs:238-252`（修前）`ffsrs_store_close` 摘句柄后 `G4Core::close` 等借出的读连接放回、拿写连接锁（`gen4/kernel.rs` `close`），也就是等在途命令跑完。Android / iOS 上 UI isolate 跑在平台主线程，在途的是长命令（日志里两次启动后 5 秒的内存快照都记着 `busy=[core:cache_config_set 2.1s / 2.3s]`：开库时的缓存配置登记、配置变了就整层重建，几十秒级）时主线程一直卡住 → ANR。
+  - 「谁在 30–40 秒时关的库」：日志没有关库方的面包屑（ANR 被杀的进程没有留下任何 Dart 日志）。代码里会在前台关复习库的只有 `AppModel.closeDatabase` 的用户发起路径（备份导入 `sync_settings_schema/backup.part.dart`、恢复页快照恢复 `library_recovery_page.dart`、迁移导入 `migration_import_page.dart`）、`retryInitialise`（加载看门狗 / 初始化失败重试）、复习库迁移提交后的 `SrsStorageHost.reopen`；Android 的生命周期回调（`AndroidViewLifecycle`）只 flush 不关库。这些都是合法的关库时机，错的是关库在 UI 线程上等。同日 15:23 之后的 `srs store is closed`、drift `connection was closed` 说明那时也有一次 `closeDatabase`（两个库同时关只有它），具体是哪条入口日志判不出来（推测是用户发起的导入 / 恢复）。
+- **[x] ① 已修复** — 关库拆成两步：
+  - Rust `ffsrs_store_close_begin`（`native/fushi_fsrs/src/store/ffi.rs`）：只把句柄从句柄表摘到 `DETACHED`，不等任何东西，返回后经这个编号的新调用（任何线程、任何 isolate、已经排在 worker 队列里的命令）一律报「已关闭」；`ffsrs_store_close` 收尾（等在途命令、关连接、释放），摘过的从 `DETACHED` 取。
+  - Dart `SrsCore.close()` 改成 `Future<void>`：同步只调 `close_begin`、把包装置空，收尾放进后台 isolate（与 `openInBackground` 对称）；Future 完成时连接已关、库文件可换可删。重复调用返回同一个 Future。`SrsStorage.close` / 备份恢复两处 / 服务端离线快照都等这个 Future。没有同步关库的 API 了，UI 线程无从再等在途命令。
+- **[x] ② 已加自动化测试** — `native/fushi_fsrs/src/store/ffi.rs` `close_begin_detaches_without_waiting_for_an_in_flight_command`（屏障卡住在途命令时调 `close_begin`：要是等它就死锁；在途命令照常跑完、新调用立刻「已关闭」、收尾后结构体释放）；`packages/fushi_srs/test/store/srs_core_test.dart` `close detaches at once and finishes off the calling isolate`、`close returns without waiting for a command in flight on another isolate`。
+- **备注**：没在真机复现原始 ANR（需要让开库时的整层重建跑得足够久再触发关库）。关库仍会等在途命令跑完（覆盖恢复要换库文件，不能在连接还开着时动），只是不再在 UI 线程上等；遮罩期间等的时长取决于在途命令。

@@ -14,7 +14,7 @@
 //   explain 没看懂（代理留 claude 留言解释，之后回到待拍） / mockup 要设计图（代理画 html 设计图附上来并留言，之后回到待拍）
 //   / delegate 你定（代理按自己的判断做）
 
-import { HttpError } from './util.js';
+import { HttpError, b64urlEncode } from './util.js';
 import { esc } from './pages.js';
 
 export const DECISION_KINDS = { pr: 'PR', feedback: '反馈', issue: 'Issue', review: '审查', design: '设计', other: '其他' };
@@ -193,43 +193,188 @@ export async function decisionFileResponse(env, id, n) {
   const row = await env.DB.prepare('SELECT files FROM decisions WHERE id = ?1').bind(id).first();
   const f = row && parseDecisionFiles(row.files, id)[n];
   if (!f) throw new HttpError(404, 'not_found');
+  return fileResponse(env, f, { frameAncestors: "'self'", cache: 'private, max-age=300' });
+}
+
+/**
+ * 附件回包（处理台与公开分享共用）：Content-Type 只按扩展名表定，一律 CSP sandbox + nosniff。
+ * @param {object} env
+ * @param {{name: string, key: string}} f
+ * @param {{frameAncestors: string, cache: string, extra?: Record<string, string>}} opts
+ * @returns {Promise<Response>}
+ */
+async function fileResponse(env, f, { frameAncestors, cache, extra = {} }) {
   const obj = await env.MEDIA.get(f.key);
   if (!obj) throw new HttpError(404, 'not_found');
   return new Response(obj.body, {
     headers: {
       'Content-Type': decisionFileType(f.name).type,
-      'Content-Security-Policy': "sandbox allow-scripts allow-popups allow-forms allow-modals; frame-ancestors 'self'",
+      'Content-Security-Policy': `sandbox allow-scripts allow-popups allow-forms allow-modals; frame-ancestors ${frameAncestors}`,
       'X-Content-Type-Options': 'nosniff',
       'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(f.name)}`,
-      'Cache-Control': 'private, max-age=300',
+      'Cache-Control': cache,
       'Referrer-Policy': 'no-referrer',
+      ...extra,
     },
   });
 }
+
+// ---- 附件公开分享（迁移 0025） ----
+//
+// 开发者在处理台附件旁点「分享」→ 签发 token，GET /share/f/<token> 不登录可读这一个附件（只读，沿用 sandbox CSP）。
+// 按 (decision_id, file_key) 定位，不按序号：删掉前面的附件不会让链接错指到别的文件。
+// 失效条件（任一即 404）：撤销；附件已从事项里删掉；签发人已不是开发者。
+
+export const DECISION_SHARE_PATH = '/share/f/';
+export const DECISION_SHARE_TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
+
+/** 同一附件已有未撤销的分享就忽略（部分唯一索引），并发点两次也只留一条。 */
+const INSERT_SHARE_SQL = `INSERT OR IGNORE INTO decision_file_shares (token, decision_id, file_key, created_by, created_at)
+  VALUES (?1, ?2, ?3, ?4, ?5)`;
+const ACTIVE_SHARE_SQL = `SELECT token FROM decision_file_shares WHERE decision_id = ?1 AND file_key = ?2 AND revoked_at IS NULL`;
+/** 「有效」分享 = 未撤销且签发人仍是开发者（与公开路由同一口径）；处理台据此显示按钮。 */
+const LIVE_SHARES_SQL = `SELECT s.decision_id, s.file_key, s.token FROM decision_file_shares s
+  JOIN accounts a ON a.id = s.created_by AND a.role = 'dev' WHERE s.revoked_at IS NULL`;
+/**
+ * 签发前先撤掉该附件上签发人已不是开发者的那条：它对外已经 404，但还占着部分唯一索引，
+ * 不撤的话「分享」会把这条死链接原样回给新的签发人。
+ */
+const REVOKE_ORPHAN_SHARE_SQL = `UPDATE decision_file_shares SET revoked_at = ?3
+  WHERE decision_id = ?1 AND file_key = ?2 AND revoked_at IS NULL
+    AND NOT EXISTS (SELECT 1 FROM accounts a WHERE a.id = decision_file_shares.created_by AND a.role = 'dev')`;
+const REVOKE_SHARE_SQL = `UPDATE decision_file_shares SET revoked_at = ?3 WHERE decision_id = ?1 AND file_key = ?2 AND revoked_at IS NULL`;
+/** 分享 / 撤销也刷新 updated_at：卡片版本变了，别的开着的处理台页面会同步到按钮状态。 */
+const TOUCH_DECISION_SQL = 'UPDATE decisions SET updated_at = ?2 WHERE id = ?1';
+
+/**
+ * 某事项第 n 个附件（不存在 404）。
+ * @param {object} env
+ * @param {string} id
+ * @param {number} n
+ * @returns {Promise<{name: string, key: string}>}
+ */
+async function decisionFileAt(env, id, n) {
+  if (!DECISION_ID_RE.test(id)) throw new HttpError(404, 'not_found');
+  const row = await env.DB.prepare('SELECT files FROM decisions WHERE id = ?1').bind(id).first();
+  const f = row && Number.isInteger(n) ? parseDecisionFiles(row.files, id)[n] : null;
+  if (!f) throw new HttpError(404, 'not_found');
+  return f;
+}
+
+/**
+ * 给第 n 个附件签发公开链接；已有未撤销的就回那一条（幂等）。
+ * @param {object} env
+ * @param {{id: string}} dev 签发人（必须是开发者，由调用方鉴权）
+ * @param {string} id
+ * @param {number} n
+ * @param {number} now
+ * @returns {Promise<{token: string, path: string, name: string, created: boolean}>}
+ */
+export async function shareDecisionFile(env, dev, id, n, now) {
+  const f = await decisionFileAt(env, id, n);
+  const token = b64urlEncode(crypto.getRandomValues(new Uint8Array(24)));
+  await env.DB.prepare(REVOKE_ORPHAN_SHARE_SQL).bind(id, f.key, now).run();
+  const r = await env.DB.prepare(INSERT_SHARE_SQL).bind(token, id, f.key, dev.id, now).run();
+  const created = !!(r.meta && r.meta.changes === 1);
+  const cur = created ? { token } : await env.DB.prepare(ACTIVE_SHARE_SQL).bind(id, f.key).first();
+  if (!cur) throw new HttpError(409, 'share_conflict');
+  if (created) await env.DB.prepare(TOUCH_DECISION_SQL).bind(id, now).run();
+  return { token: cur.token, path: DECISION_SHARE_PATH + cur.token, name: f.name, created };
+}
+
+/**
+ * 撤销第 n 个附件的公开链接（没有分享也算成功）。
+ * @returns {Promise<{revoked: number, name: string}>} revoked = 撤掉的条数
+ */
+export async function revokeDecisionFileShare(env, id, n, now) {
+  const f = await decisionFileAt(env, id, n);
+  const r = await env.DB.prepare(REVOKE_SHARE_SQL).bind(id, f.key, now).run();
+  const revoked = (r.meta && r.meta.changes) || 0;
+  if (revoked) await env.DB.prepare(TOUCH_DECISION_SQL).bind(id, now).run();
+  return { revoked, name: f.name };
+}
+
+/**
+ * 公开路由 GET /share/f/<token>：不需要登录。撤销 / 附件已删 / 签发人不再是开发者 → 404（不区分原因，不泄露存在性）。
+ * 回包与处理台同一套 sandbox CSP，但不许任何页面嵌（frame-ancestors 'none'）、不缓存（撤销即时生效）、不进搜索引擎。
+ * @param {object} env
+ * @param {string} token
+ * @returns {Promise<Response>}
+ */
+export async function sharedFileResponse(env, token) {
+  if (!DECISION_SHARE_TOKEN_RE.test(token)) throw new HttpError(404, 'not_found');
+  const s = await env.DB.prepare(`SELECT s.decision_id, s.file_key, d.files FROM decision_file_shares s
+      JOIN decisions d ON d.id = s.decision_id
+      JOIN accounts a ON a.id = s.created_by AND a.role = 'dev'
+    WHERE s.token = ?1 AND s.revoked_at IS NULL`).bind(token).first();
+  const f = s && parseDecisionFiles(s.files, s.decision_id).find((x) => x.key === s.file_key);
+  if (!f) throw new HttpError(404, 'not_found');
+  return fileResponse(env, f, { frameAncestors: "'none'", cache: 'no-store', extra: { 'X-Robots-Tag': 'noindex, nofollow' } });
+}
+
+/**
+ * 这些事项里有效的分享（未撤销且签发人仍是开发者）：decision_id → (file_key → token)。
+ * @param {object} env
+ * @param {string|null} [id] 只取一条；省略取全部
+ * @returns {Promise<Map<string, Map<string, string>>>}
+ */
+export async function activeDecisionShares(env, id = null) {
+  const q = id
+    ? env.DB.prepare(`${LIVE_SHARES_SQL} AND s.decision_id = ?1`).bind(id)
+    : env.DB.prepare(LIVE_SHARES_SQL);
+  const out = new Map();
+  for (const r of (await q.all()).results || []) {
+    if (!out.has(r.decision_id)) out.set(r.decision_id, new Map());
+    out.get(r.decision_id).set(r.file_key, r.token);
+  }
+  return out;
+}
+
 
 function fmtSize(bytes) {
   const n = Number(bytes) || 0;
   return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 }
 
-/** 附件块：图片出缩略图，html 默认展开 iframe 预览（sandbox，懒加载），md / txt 给打开链接。 */
-function filesHtml(row) {
+/**
+ * 附件旁的分享控件：没分享 → 「分享」按钮；已分享 → 公开链接 +「复制链接」+「撤销分享」。
+ * 无脚本也能用（表单 303 回原栏，链接可右键复制）；有脚本时 decisions_client.js 拦截表单只换这张卡，并把链接写进剪贴板。
+ * @param {string} id
+ * @param {number} n
+ * @param {string|undefined} token 未撤销的分享 token
+ * @param {string} back
+ * @returns {string}
+ */
+function shareHtml(id, n, token, back) {
+  const action = `/dev/d/${esc(id)}/f/${n}/${token ? 'unshare' : 'share'}`;
+  const form = (label, cls) => `<form method="post" action="${action}" class="dshare"><input type="hidden" name="back" value="${
+    esc(back)}"><button class="vb ${cls}">${label}</button></form>`;
+  if (!token) return ` ${form('分享', 'v-share')}`;
+  const link = DECISION_SHARE_PATH + esc(token);
+  return ` <span class="dshared"><a href="${link}" class="dsharelink" target="_blank" rel="noopener noreferrer">公开链接</a>`
+    + ` <button type="button" class="vb v-copy" data-href="${link}">复制链接</button>${form('撤销分享', 'v-unshare')}</span>`;
+}
+
+/** 附件块：图片出缩略图，html 默认展开 iframe 预览（sandbox，懒加载），md / txt 给打开链接。每个附件旁有分享控件。 */
+function filesHtml(row, back) {
   const files = parseDecisionFiles(row.files, row.id);
   if (!files.length) return '';
+  const shares = row.shares instanceof Map ? row.shares : new Map();
   const items = files.map((f, n) => {
     const href = `/dev/d/${esc(row.id)}/f/${n}`;
     const view = decisionFileType(f.name).view;
     const open = `<a href="${href}" target="_blank" rel="noopener">${esc(f.name)}</a> <span class="muted">${esc(fmtSize(f.bytes))}${
-      f.by === 'dev' ? ' · 开发者上传' : ''}</span>`;
+      f.by === 'dev' ? ' · 开发者上传' : ''}</span>${shareHtml(row.id, n, shares.get(f.key), back)}`;
     if (view === 'image') {
-      return `<div class="dfile">${open}<a href="${href}" target="_blank" rel="noopener"><img src="${href}" alt="${
+      return `<div class="dfile"><div class="dfhead">${open}</div><a href="${href}" target="_blank" rel="noopener"><img src="${href}" alt="${
         esc(f.name)}" loading="lazy"></a></div>`;
     }
     if (view === 'html') {
-      return `<details class="dfile" open><summary>${open}</summary><iframe src="${href}" title="${
-        esc(f.name)}" loading="lazy" sandbox="allow-scripts allow-popups allow-forms allow-modals"></iframe></details>`;
+      // 分享按钮放在 summary 外面：summary 里的表单按钮会和展开 / 收起抢点击。
+      return `<div class="dfile"><div class="dfhead">${open}</div><details open><summary>预览</summary><iframe src="${href}" title="${
+        esc(f.name)}" loading="lazy" sandbox="allow-scripts allow-popups allow-forms allow-modals"></iframe></details></div>`;
     }
-    return `<div class="dfile">${open}</div>`;
+    return `<div class="dfile"><div class="dfhead">${open}</div></div>`;
   }).join('');
   return `<div class="dfiles"><b>附件</b>${items}</div>`;
 }
@@ -319,16 +464,17 @@ export function parseChoices(text) {
 // ---- Worker 端 ----
 
 export async function listDecisions(env) {
-  const [items, notes] = await Promise.all([
+  const [items, notes, shares] = await Promise.all([
     env.DB.prepare(LIST_DECISIONS_SQL).all(),
     env.DB.prepare(LIST_NOTES_SQL).all(),
+    activeDecisionShares(env),
   ]);
   const byId = new Map();
   for (const n of notes.results || []) {
     if (!byId.has(n.decision_id)) byId.set(n.decision_id, []);
     byId.get(n.decision_id).push(n);
   }
-  return (items.results || []).map((r) => ({ ...r, notes: byId.get(r.id) || [] }));
+  return (items.results || []).map((r) => ({ ...r, notes: byId.get(r.id) || [], shares: shares.get(r.id) || new Map() }));
 }
 
 /** 行的当前决定，写成表单 v 的形式（'' 表示未拍）。乐观锁拿它和提交方的 base 比。 */
@@ -572,7 +718,7 @@ function card(row, back, { hidden = false } = {}) {
 <h3>${esc(row.title)}</h3>
 <div class="body">${esc(row.ask)}</div>
 ${originalHtml(row)}
-${filesHtml(row)}
+${filesHtml(row, back)}
 ${row.pros || row.cons ? `<div class="pc">${row.pros ? `<div><b class="up">好处</b> ${esc(row.pros)}</div>` : ''}${
     row.cons ? `<div><b class="err">代价</b> ${esc(row.cons)}</div>` : ''}</div>` : ''}
 ${row.resolution ? `<div class="card ai"><b>处理结果（${esc(row.state === 'dropped' ? '撤回' : '已结')}）</b><div class="body">${esc(row.resolution)}</div></div>` : ''}
@@ -592,13 +738,14 @@ export function decisionItem(row) {
 
 /** 单条（含拍板人昵称、claude_at 与留言），拍板后回给客户端换卡用。 */
 export async function getDecision(env, id) {
-  const [r, notes] = await Promise.all([
+  const [r, notes, shares] = await Promise.all([
     env.DB.prepare(`${DECISION_COLUMNS_SQL} WHERE d.id = ?1`).bind(id).first(),
     env.DB.prepare(`SELECT n.*, a.nickname AS nick FROM decision_notes n LEFT JOIN accounts a ON a.id = n.account_id
       WHERE n.decision_id = ?1 ORDER BY n.created_at, n.id`).bind(id).all(),
+    activeDecisionShares(env, id),
   ]);
   if (!r) throw new HttpError(404, 'not_found');
-  return { ...r, notes: notes.results || [] };
+  return { ...r, notes: notes.results || [], shares: shares.get(id) || new Map() };
 }
 
 /**
@@ -664,7 +811,12 @@ kbd{display:inline-block;min-width:1.4em;padding:0 4px;margin-left:6px;border:1p
 .dorig-links{margin:6px 0 0;font-size:13px}
 .dfiles{margin-top:8px;font-size:14px}
 .dfile{margin-top:6px}
-.dfile summary{cursor:pointer}
+.dfile summary{cursor:pointer;font-size:13px;color:var(--muted)}
+.dfhead{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.dshare{display:inline;margin:0}
+.dshared{display:inline-flex;flex-wrap:wrap;gap:6px;align-items:center}
+.dshare .vb,.dshared .vb{padding:2px 10px;font-size:13px;margin:0}
+.dsharelink{color:var(--c2)}
 .dfile img{display:block;margin-top:4px;max-width:min(100%,480px);max-height:360px;border:1px solid var(--line);border-radius:8px}
 .dupload{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px;font-size:13px}
 .dpick{display:inline-block;padding:4px 10px;border:1px dashed var(--line);border-radius:8px;cursor:pointer}

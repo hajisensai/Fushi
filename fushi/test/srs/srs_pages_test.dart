@@ -942,7 +942,7 @@ void main() {
     );
 
     testWidgets(
-      '[$ds] 复习首页（手机）：点行进牌组详情、返回键逐层回退、播放 / 「开始复习」/ 详情「复习这个牌组」直接复习、长按出菜单',
+      '[$ds] 复习首页（手机）：没活的行点行进牌组详情、有活的行点行直接复习、返回键逐层回退、播放 / 「开始复习」/ 详情「复习这个牌组」直接复习、长按出菜单（「牌组详情」进详情页）',
       (WidgetTester tester) async {
         final SrsDbStore store = await _openStore(tester);
         final (String spark, String jp, String vocab) = (await tester.runAsync(
@@ -1016,9 +1016,9 @@ void main() {
           findsNothing,
         );
 
-        // 点行：进该牌组的详情页（面包屑 + 详情 + 子牌组清单），不开复习。
+        // 没活的行点行：进该牌组的详情页（面包屑 + 详情 + 子牌组清单），不开复习。
         await tapRow(spark, 'Spark');
-        expect(find.byType(SrsReviewPage), findsNothing, reason: '点行不开复习');
+        expect(find.byType(SrsReviewPage), findsNothing, reason: '没活的行点行不开复习');
         expect(detail(spark), findsOneWidget);
         expect(
           find.byKey(const ValueKey<String>('srs-home-breadcrumb')),
@@ -1061,12 +1061,19 @@ void main() {
           reason: '没活的行播放按钮只留位、不可点',
         );
 
-        // 长按行（窄屏）：弹出牌组菜单。
+        // 有活的行点行（拍板台 Zb_fKx6zWU 方案 a）：与播放钮同一入口，直接复习，不进详情页。
+        await tapRow(def, 'Default');
+        expect(detail(def), findsNothing, reason: '有活的行点行不进详情页');
+        await expectReviewOf(def);
+        expect(detail(def), findsNothing);
+
+        // 长按行（窄屏）：弹出牌组菜单，第一项「牌组详情」。
         await tester.longPress(
           find.descendant(of: row(spark), matching: find.text('Spark')),
         );
         await _settle(tester);
         expect(find.text(t.srs_deck_rename), findsOneWidget);
+        expect(find.text(t.srs_deck_details), findsOneWidget);
         await tester.sendKeyEvent(LogicalKeyboardKey.escape);
         await _settle(tester);
 
@@ -1077,8 +1084,25 @@ void main() {
         await _settle(tester);
         await expectReviewOf(def);
 
-        // 详情页「复习这个牌组」。
-        await tapRow(def, 'Default');
+        // 有活的行看详情：长按 → 菜单「牌组详情」进详情页（不开复习）；详情页「复习这个牌组」。
+        await tester.longPress(
+          find.descendant(of: row(def), matching: find.text('Default')),
+        );
+        await _settle(tester);
+        await tester.tap(find.text(t.srs_deck_details));
+        await _settle(tester);
+        expect(find.byType(SrsReviewPage), findsNothing);
+        expect(detail(def), findsOneWidget);
+        await tester.binding.handlePopRoute();
+        await _settle(tester);
+        expect(detail(def), findsNothing);
+
+        // 点有活的行的计数区：同样进详情页。
+        await tester.tap(
+          find.byKey(ValueKey<String>('srs-counts-details-$def')),
+        );
+        await _settle(tester);
+        expect(find.byType(SrsReviewPage), findsNothing, reason: '点计数区看详情');
         expect(detail(def), findsOneWidget);
         await tester.tap(
           find.byKey(const ValueKey<String>('srs-home-detail-review')),
@@ -1090,100 +1114,145 @@ void main() {
       },
     );
 
-    testWidgets('[$ds] 复习首页（宽屏）：双栏，点行 = 选中（右栏换详情、不开复习），播放 = 复习，详情「浏览卡片」带牌组查询', (
-      WidgetTester tester,
-    ) async {
-      final SrsDbStore store = await _openStore(tester);
-      final String jp = (await tester.runAsync(
-        () => store.ensureDeckPath('Spark::JP'),
-      ))!;
-      final String spark = (await tester.runAsync(
-        () async => (await store.deckTree()).parentOf(jp)!,
-      ))!;
-      await _addLapis(tester, store, '食べる');
-      final String def = store.defaultDeckId;
-      await _pumpPage(
-        tester,
-        store: store,
-        apple: apple,
-        page: const SrsDeckListPage(),
-        // 宽屏牌组树排在首行三块之下：高度放到树在首屏。
-        size: const Size(1100, 1600),
-      );
-      // 首页统计（热力图 / 预测）要读整库复习日志，多给几轮真异步。
-      await _settle(tester, rounds: 40);
-      expect(tester.takeException(), isNull);
-      Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
-      Finder detail(String id) =>
-          find.byKey(ValueKey<String>('srs-home-detail-$id'));
-      expect(find.byKey(const ValueKey<String>('srs_organize')), findsNothing);
-      expect(detail(def), findsOneWidget, reason: '默认选中第一个有活的顶层牌组');
-      expect(
-        find.byKey(const ValueKey<String>('srs-home-heatmap')),
-        findsOneWidget,
-      );
-      // 未来 7 天到期在宽屏只出现一次：并进选中牌组的色块，不再单独一张卡。
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey<String>('srs-home-deck-poster')),
-          matching: find.text(t.srs_home_forecast_title),
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey<String>('srs-home-forecast')),
-        findsNothing,
-      );
-      // 「今日」色块被同一行的牌组色块拉高时，近 7 天贴块底（不在大数字下留一截空）；
-      // 「连续天数」色块底部是累计统计。
-      final Rect todayBlock = tester.getRect(
-        find.byKey(const ValueKey<String>('srs-home-today-poster')),
-      );
-      final Rect deckBlock = tester.getRect(
-        find.byKey(const ValueKey<String>('srs-home-deck-poster')),
-      );
-      final Rect recent = tester.getRect(
-        find.byKey(const ValueKey<String>('srs-home-today-recent')),
-      );
-      expect(todayBlock.top, moreOrLessEquals(deckBlock.top), reason: '同一行');
-      expect(todayBlock.height, moreOrLessEquals(deckBlock.height));
-      expect(recent.bottom, moreOrLessEquals(todayBlock.bottom - 22));
-      expect(
-        find.byKey(const ValueKey<String>('srs-home-heatmap-totals')),
-        findsOneWidget,
-      );
+    testWidgets(
+      '[$ds] 复习首页（宽屏）：双栏，没活的行点行 = 选中（右栏换详情、不开复习），有活的行点行 / 播放 = 复习，右键菜单「牌组详情」/ 点计数区 = 选中，详情「浏览卡片」带牌组查询',
+      (WidgetTester tester) async {
+        final SrsDbStore store = await _openStore(tester);
+        final String jp = (await tester.runAsync(
+          () => store.ensureDeckPath('Spark::JP'),
+        ))!;
+        final String spark = (await tester.runAsync(
+          () async => (await store.deckTree()).parentOf(jp)!,
+        ))!;
+        await _addLapis(tester, store, '食べる');
+        final String def = store.defaultDeckId;
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: apple,
+          page: const SrsDeckListPage(),
+          // 宽屏牌组树排在首行三块之下：高度放到树在首屏。
+          size: const Size(1100, 1600),
+        );
+        // 首页统计（热力图 / 预测）要读整库复习日志，多给几轮真异步。
+        await _settle(tester, rounds: 40);
+        expect(tester.takeException(), isNull);
+        Finder row(String id) => find.byKey(ValueKey<String>('srs-deck-$id'));
+        Finder detail(String id) =>
+            find.byKey(ValueKey<String>('srs-home-detail-$id'));
+        expect(
+          find.byKey(const ValueKey<String>('srs_organize')),
+          findsNothing,
+        );
+        expect(detail(def), findsOneWidget, reason: '默认选中第一个有活的顶层牌组');
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-heatmap')),
+          findsOneWidget,
+        );
+        // 未来 7 天到期在宽屏只出现一次：并进选中牌组的色块，不再单独一张卡。
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('srs-home-deck-poster')),
+            matching: find.text(t.srs_home_forecast_title),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-forecast')),
+          findsNothing,
+        );
+        // 「今日」色块被同一行的牌组色块拉高时，近 7 天贴块底（不在大数字下留一截空）；
+        // 「连续天数」色块底部是累计统计。
+        final Rect todayBlock = tester.getRect(
+          find.byKey(const ValueKey<String>('srs-home-today-poster')),
+        );
+        final Rect deckBlock = tester.getRect(
+          find.byKey(const ValueKey<String>('srs-home-deck-poster')),
+        );
+        final Rect recent = tester.getRect(
+          find.byKey(const ValueKey<String>('srs-home-today-recent')),
+        );
+        expect(todayBlock.top, moreOrLessEquals(deckBlock.top), reason: '同一行');
+        expect(todayBlock.height, moreOrLessEquals(deckBlock.height));
+        expect(recent.bottom, moreOrLessEquals(todayBlock.bottom - 22));
+        expect(
+          find.byKey(const ValueKey<String>('srs-home-heatmap-totals')),
+          findsOneWidget,
+        );
 
-      await tester.tap(
-        find.descendant(of: row(spark), matching: find.text('Spark')),
-      );
-      await _settle(tester);
-      expect(find.byType(SrsReviewPage), findsNothing, reason: '宽屏点行 = 选中');
-      expect(detail(spark), findsOneWidget);
-      expect(detail(def), findsNothing);
-      expect(row(spark), findsOneWidget, reason: '树不随选中切换');
-      expect(row(jp), findsOneWidget);
+        await tester.tap(
+          find.descendant(of: row(spark), matching: find.text('Spark')),
+        );
+        await _settle(tester);
+        expect(
+          find.byType(SrsReviewPage),
+          findsNothing,
+          reason: '宽屏没活的行点行 = 选中',
+        );
+        expect(detail(spark), findsOneWidget);
+        expect(detail(def), findsNothing);
+        expect(row(spark), findsOneWidget, reason: '树不随选中切换');
+        expect(row(jp), findsOneWidget);
 
-      await tester.tap(find.byKey(ValueKey<String>('srs-deck-review-$def')));
-      await _settle(tester);
-      final Finder review = find.byType(SrsReviewPage);
-      expect(tester.widget<SrsReviewPage>(review).deckId, def);
-      Navigator.of(tester.element(review)).pop();
-      await _settle(tester);
+        await tester.tap(find.byKey(ValueKey<String>('srs-deck-review-$def')));
+        await _settle(tester);
+        final Finder review = find.byType(SrsReviewPage);
+        expect(tester.widget<SrsReviewPage>(review).deckId, def);
+        Navigator.of(tester.element(review)).pop();
+        await _settle(tester);
 
-      await tester.tap(
-        find.byKey(const ValueKey<String>('srs-home-detail-browse')),
-      );
-      await _settle(tester);
-      final Finder browse = find.byType(SrsBrowsePage);
-      expect(browse, findsOneWidget);
-      expect(
-        tester.widget<SrsBrowsePage>(browse).initialQuery,
-        srsDeckQuery('Spark'),
-      );
-      Navigator.of(tester.element(browse)).pop();
-      await _settle(tester);
-      await _unmount(tester);
-    });
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs-home-detail-browse')),
+        );
+        await _settle(tester);
+        final Finder browse = find.byType(SrsBrowsePage);
+        expect(browse, findsOneWidget);
+        expect(
+          tester.widget<SrsBrowsePage>(browse).initialQuery,
+          srsDeckQuery('Spark'),
+        );
+        Navigator.of(tester.element(browse)).pop();
+        await _settle(tester);
+
+        // 有活的行点行（拍板台 Zb_fKx6zWU 方案 a）：直接复习，选中不变。
+        await tester.tap(
+          find.descendant(of: row(def), matching: find.text('Default')),
+        );
+        await _settle(tester);
+        expect(tester.widget<SrsReviewPage>(review).deckId, def);
+        Navigator.of(tester.element(review)).pop();
+        await _settle(tester);
+        expect(detail(spark), findsOneWidget, reason: '有活的行点行不改选中');
+
+        // 右键有活的行：菜单第一项「牌组详情」= 选中它。
+        await tester.tap(
+          find.descendant(of: row(def), matching: find.text('Default')),
+          buttons: kSecondaryButton,
+          kind: PointerDeviceKind.mouse,
+        );
+        await _settle(tester);
+        await tester.tap(find.text(t.srs_deck_details));
+        await _settle(tester);
+        expect(find.byType(SrsReviewPage), findsNothing);
+        expect(detail(def), findsOneWidget);
+        expect(detail(spark), findsNothing);
+
+        // 点计数区：同样选中（触摸上看详情的入口，宽屏长按是拖动排序）。
+        await tester.tap(
+          find.descendant(of: row(spark), matching: find.text('Spark')),
+        );
+        await _settle(tester);
+        expect(detail(spark), findsOneWidget);
+        await tester.tap(
+          find.byKey(ValueKey<String>('srs-counts-details-$def')),
+        );
+        await _settle(tester);
+        expect(find.byType(SrsReviewPage), findsNothing);
+        expect(detail(def), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await _unmount(tester);
+      },
+    );
 
     testWidgets('[$ds] 复习首页：选中 / 进入的牌组被删后丢掉悬空 id，宽屏回落到仍存在的进入牌组', (
       WidgetTester tester,

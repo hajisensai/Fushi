@@ -1929,6 +1929,30 @@ mixin _FushiDbStatistics
     minedSentences,
   )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
 
+  /// 原句（去首尾空白）落在 [sentences] 里的制卡历史的「原句 + 出处」（原句已去首尾
+  /// 空白）。首页「收藏句子」小组件判几句收藏有没有制过卡用：只查这几句，不读整张
+  /// 制卡历史。[sentences] 为空直接返回空。
+  Future<List<({String sentence, String? bookKey})>> getMinedSentenceOrigins(
+    Iterable<String> sentences,
+  ) async {
+    final List<String> wanted = <String>{
+      for (final String s in sentences)
+        if (s.trim().isNotEmpty) s.trim(),
+    }.toList();
+    if (wanted.isEmpty) return const <({String sentence, String? bookKey})>[];
+    final $MinedSentencesTable t = minedSentences;
+    final Expression<String> trimmed = t.sentence.trim();
+    final List<TypedResult> rows =
+        await (selectOnly(t)
+              ..addColumns(<Expression<Object>>[trimmed, t.bookKey])
+              ..where(trimmed.isIn(wanted)))
+            .get();
+    return <({String sentence, String? bookKey})>[
+      for (final TypedResult r in rows)
+        (sentence: r.read(trimmed)!, bookKey: r.read(t.bookKey)),
+    ];
+  }
+
   /// 最近 [limit] 条制卡历史（createdAt 倒序）。桌面小组件用，见 [getRecentFavoriteWords]。
   Future<List<MinedSentenceRow>> getRecentMinedSentences(int limit) =>
       (select(minedSentences)

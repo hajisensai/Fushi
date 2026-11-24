@@ -875,10 +875,10 @@ Future<String> _protocol3LibraryFrom(
         nowMs: now,
       );
     } finally {
-      other.close();
+      await other.close();
     }
   } finally {
-    core.close();
+    await core.close();
   }
   return p.join(scratch.path, kSrsDatabaseFileName);
 }

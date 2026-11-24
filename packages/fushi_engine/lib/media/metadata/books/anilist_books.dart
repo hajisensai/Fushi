@@ -1,4 +1,8 @@
-/// AniList 轻小说（GraphQL `https://graphql.anilist.co`，`type: MANGA, format: NOVEL`）。
+/// AniList 书目（GraphQL `https://graphql.anilist.co`，`type: MANGA`：轻小说、漫画、
+/// 韩漫、国漫、短篇都在这个类型里）。
+///
+/// 以前搜索写死 `format: NOVEL`，漫画在这个源永远搜不到（BUG-5401）；现在不限形态，
+/// 每条带 [BookCatalogRecord.format]，弹窗写明是轻小说还是漫画。
 ///
 /// 免 key。限流见 [kBookCatalogMinIntervals]。映射：标题取日文原名（native），罗马字
 /// 作「原名」位；作者取 staff 里 role 为 `Story` / `Original Story` / `Story & Art`
@@ -13,7 +17,7 @@ import 'package:fushi_engine/media/metadata/books/book_catalog.dart';
 final Uri kAniListGraphQlEndpoint = Uri.parse('https://graphql.anilist.co');
 
 const String _mediaFields = '''
-id siteUrl isAdult bannerImage
+id siteUrl isAdult bannerImage format countryOfOrigin
 title { romaji english native }
 coverImage { extraLarge large }
 startDate { year }
@@ -21,12 +25,12 @@ description(asHtml: false)
 staff(perPage: 12) { edges { role node { name { full native } } } }
 ''';
 
-/// 搜轻小说（只要 NOVEL 形态）。[includeAdult] 为 false 时在服务端就排除
+/// 按名搜（不限形态，按匹配度排）。[includeAdult] 为 false 时在服务端就排除
 /// `isAdult` 条目（`isAdult: false`），一页结果不会被成人向条目占掉名额；为 true 时
 /// 不带这个过滤（AniList 默认两者都回）。
-String aniListNovelSearchQuery({required bool includeAdult}) =>
+String aniListBookSearchQuery({required bool includeAdult}) =>
     r'query ($search: String, $perPage: Int) { Page(perPage: $perPage) { '
-    r'media(search: $search, type: MANGA, format: NOVEL, sort: SEARCH_MATCH'
+    r'media(search: $search, type: MANGA, sort: SEARCH_MATCH'
     '${includeAdult ? '' : ', isAdult: false'}) { '
     '$_mediaFields} } }';
 
@@ -35,14 +39,14 @@ const String kAniListMediaByIdQuery =
     r'query ($id: Int) { Media(id: $id, type: MANGA) { '
     '$_mediaFields} }';
 
-/// AniList 轻小说客户端。
-class AniListNovelClient {
-  AniListNovelClient(this._http);
+/// AniList 书目客户端。
+class AniListBookClient {
+  AniListBookClient(this._http);
 
   final BookCatalogHttp _http;
 
   /// 按名搜。[includeAdult] 默认 false = 不要成人向条目（见
-  /// [aniListNovelSearchQuery]）。失败抛 [BookCatalogException]。
+  /// [aniListBookSearchQuery]）。失败抛 [BookCatalogException]。
   Future<List<BookCatalogRecord>> search(
     String query, {
     int limit = 10,
@@ -53,12 +57,12 @@ class AniListNovelClient {
     final BookCatalogResponse res = await _http.postJson(
       kAniListGraphQlEndpoint,
       <String, Object?>{
-        'query': aniListNovelSearchQuery(includeAdult: includeAdult),
+        'query': aniListBookSearchQuery(includeAdult: includeAdult),
         'variables': <String, Object?>{'search': term, 'perPage': limit},
       },
     );
     _throwIfError(res, 'search');
-    return parseAniListNovelSearchResponse(res.body);
+    return parseAniListSearchResponse(res.body);
   }
 
   /// 按 media id 直取；查无此条（AniList 回 404）/ 无封面返回 null。
@@ -96,7 +100,7 @@ String? parseAniListMediaUrl(String text) {
 
 /// 纯函数：解析 `Page.media` 搜索响应。结构不对当空结果；JSON 解码失败或 GraphQL
 /// 报错抛 [BookCatalogException]。
-List<BookCatalogRecord> parseAniListNovelSearchResponse(String body) {
+List<BookCatalogRecord> parseAniListSearchResponse(String body) {
   final Map<String, Object?> data = _decodeData(body);
   final Object? page = data['Page'];
   final Object? media = page is Map<String, Object?> ? page['media'] : null;
@@ -182,6 +186,10 @@ BookCatalogRecord? mapAniListMedia(Map<String, Object?> media) {
   }
   final Object? year = _map(media['startDate'])['year'];
   return BookCatalogRecord(
+    format: aniListFormat(
+      catalogString(media['format']),
+      catalogString(media['countryOfOrigin']),
+    ),
     id: '$rawId',
     title: main,
     originalTitle: alt,
@@ -195,6 +203,20 @@ BookCatalogRecord? mapAniListMedia(Map<String, Object?> media) {
     isAdult: media['isAdult'] == true,
   );
 }
+
+/// AniList `format` + `countryOfOrigin` → [BookCatalogFormat]：`MANGA` 再按出版国分
+/// 漫画 / 韩漫（KR）/ 国漫（CN、TW、HK）。认不出返回 null。
+BookCatalogFormat? aniListFormat(String? format, String? countryOfOrigin) =>
+    switch (format) {
+      'NOVEL' => BookCatalogFormat.novel,
+      'ONE_SHOT' => BookCatalogFormat.oneShot,
+      'MANGA' => switch (countryOfOrigin) {
+        'KR' => BookCatalogFormat.manhwa,
+        'CN' || 'TW' || 'HK' => BookCatalogFormat.manhua,
+        _ => BookCatalogFormat.manga,
+      },
+      _ => null,
+    };
 
 Map<String, Object?> _map(Object? v) =>
     v is Map<String, Object?> ? v : const <String, Object?>{};

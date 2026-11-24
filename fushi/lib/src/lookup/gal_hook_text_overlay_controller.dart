@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart'
 import 'package:fushi_anki/fushi_anki.dart';
 
 import 'package:fushi/src/anki/mined_card_undo.dart';
+import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
@@ -2944,7 +2945,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
     final GalMiningSettings mining = model.galMiningSettingsForGame(
       _session.activityGameKey,
     );
-    final GalHookMiningResult result = await _miningCoordinator.mineLine(
+    final GalHookMiningTicket ticket = await _miningCoordinator.startMineLine(
       lineId: lineId,
       fields: fields,
       sentenceOverride:
@@ -2971,6 +2972,99 @@ class GalHookTextOverlayController extends ChangeNotifier {
       audioLimit: mining.audioLimit,
       captureLeaseFactory: captureLeaseFactory,
     );
+    final String mineSentence = resolveMineSentence(fields, cardSentence ?? '');
+    // 反馈 y90oiVojic：弹窗只陪到**采样**结束（画面与句音必须趁台词还在屏上拿）。编码
+    // （默认 avif 动图的 ffmpeg）+ 写卡要好几秒，以前弹窗一直等它，按钮锁着、提示成功
+    // 前挖不了下一句。新卡现在回 `queued`（按钮立刻变「已加入制卡队列」的 ✓ 并解锁），
+    // 结局在落地时报，失败结果卡带「重试」——与在线视频后台制卡同一模式。
+    //
+    // 仍然陪等的两种：采样就已失败（结论现成，原因要就地回给弹窗）；覆写既有卡
+    // （popup.js 的 updateEntry 路径不认 queued，且卡本来就在，与视频覆写同口径）。
+    if (ticket.captured && updateNoteId == null) {
+      unawaited(
+        _landLookupMineInBackground(
+          ticket.result,
+          model: model,
+          fields: fields,
+          sentence: mineSentence,
+        ),
+      );
+      return GalHookMiningResult.queuedPopupReply;
+    }
+    return _reportLookupMine(
+      await ticket.result,
+      repo: repo,
+      fields: fields,
+      updateNoteId: updateNoteId,
+    );
+  }
+
+  /// 后台写卡落地：报结果（成功 / 失败 + 重试），成功时补记统计并让正在显示这个词的
+  /// 弹窗重问制卡态。弹窗拿到的是 `queued`，bridge 不会替它记统计（只认
+  /// `ankiConnect: true`），所以统计在这里、落地时记，恰好一次。
+  Future<void> _landLookupMineInBackground(
+    Future<GalHookMiningResult> pending, {
+    required AppModel model,
+    required Map<String, String> fields,
+    required String sentence,
+  }) async {
+    GalHookMiningResult result;
+    try {
+      result = await pending;
+    } catch (error, stack) {
+      // 收尾队列本身永不抛（SerialJobQueue 兜底）；这里防的是将来换实现。
+      ErrorLogService.instance.log(
+        'GalHookTextOverlayController.landLookupMine',
+        error,
+        stack,
+      );
+      result = GalHookMiningResult(failureReason: '$error');
+    }
+    final GalHookRetryWrite? retryWrite = result.retryWrite;
+    _reportLookupMine(
+      result,
+      repo: model.miningAnkiRepository,
+      fields: fields,
+      updateNoteId: null,
+      retry: retryWrite == null
+          ? null
+          : () {
+              FushiToast.showMine(
+                msg: t.card_mining_pending,
+                status: MineToastStatus.pending,
+                term: fields['expression'],
+                reading: fields['reading'],
+              );
+              unawaited(
+                _landLookupMineInBackground(
+                  retryWrite(repo: model.miningAnkiRepository),
+                  model: model,
+                  fields: fields,
+                  sentence: sentence,
+                ),
+              );
+            },
+    );
+    if (!result.success) return;
+    unawaited(
+      recordOverlayMinedStats(model, fields, result.outcome?.noteId, sentence),
+    );
+    // 弹窗手里是「已加入」：卡真正进 Anki 是现在，让还开着的应用内弹窗重问一次。
+    MinedStateSignal.instance.notifyWord(fields['expression'] ?? '');
+  }
+
+  /// 把一次 gal 查词制卡的结局告诉用户（toast），并返回给弹窗的回包。陪等与后台两条
+  /// 路共用；[retry] 只在后台路径上给（弹窗早已放手，结果卡是唯一的重来入口）。
+  Map<String, Object?> _reportLookupMine(
+    GalHookMiningResult result, {
+    required BaseAnkiRepository repo,
+    required Map<String, String> fields,
+    required int? updateNoteId,
+    VoidCallback? retry,
+  }) {
+    final MineNoticeAction? retryAction = retry == null
+        ? null
+        : MineNoticeAction(label: t.card_notice_retry, onPressed: retry);
     if (result.aborted) {
       // 截图已经成功后，resource-only 音频门禁也可能中止制卡。不要把所有
       // abort 都误报成“窗口截图失败”；与 texthooker 页入口保持同一分流。
@@ -2984,6 +3078,7 @@ class GalHookTextOverlayController extends ChangeNotifier {
         status: MineToastStatus.failed,
         term: fields['expression'],
         reading: fields['reading'],
+        action: retryAction,
       );
       // BUG-1908：同一句话也回给浮窗——游戏全屏时主 app 窗在后台，上面那个 toast
       // 用户看不见。
@@ -3001,12 +3096,15 @@ class GalHookTextOverlayController extends ChangeNotifier {
       term: fields['expression'],
       reading: fields['reading'],
       // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
-      action: mineResultToastAction(
-        repo,
-        outcome,
-        expression: fields['expression'],
-        overwrite: updateNoteId != null,
-      ),
+      // 后台写卡失败带「重试」（反馈 y90oiVojic）。
+      action: retryAction != null && described.status == MineToastStatus.failed
+          ? retryAction
+          : mineResultToastAction(
+              repo,
+              outcome,
+              expression: fields['expression'],
+              overwrite: updateNoteId != null,
+            ),
     );
     // BUG-1908：失败时把 describeMineOutcome 算出的**同一句**本地化文案回给浮窗。
     // 成功不带（浮窗靠 ➕→✓ 翻转表达成功，不需要多一条提示）。

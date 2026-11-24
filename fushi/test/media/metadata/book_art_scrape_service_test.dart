@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/collections/collection_art_scrape.dart';
 import 'package:fushi/src/media/metadata/book_art_scrape_service.dart';
 import 'package:fushi/src/media/metadata/book_art_store.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart'
@@ -232,6 +233,55 @@ void main() {
     }
     return http.Response('unexpected ${req.url}', 404);
   }
+
+  // BUG-5396：v83 起合集 epub 成员行 entryKey 是书 uid，不是 bookKey。合集入口
+  // 曾把 entryKey 直接当 bookKey 用：一本书都认不出，结果面板只剩「0 / 0 / 0」，
+  // 横幅也按 uid 去查刮削层，永远是空。
+  test('合集成员按 uid 存：刮削认得出书、写入卷封面，横幅能按成员读回', () async {
+    await seed('k1', 'テスト漫画 1');
+    await seed('k2', 'テスト漫画 2');
+    await seed('legacy', 'テスト漫画 3');
+    final String uid1 = (await db.resolveEpubBookUid('k1'))!;
+    final String uid2 = (await db.resolveEpubBookUid('k2'))!;
+    expect(uid1, isNot('k1'));
+    final int collectionId = await db.createMediaCollection('テスト漫画');
+    await db.addToCollection(collectionId, MediaKind.epub, uid1);
+    await db.addToCollection(collectionId, MediaKind.epub, uid2);
+    // v83 前的存量行（bookKey）照样认；远端透传行 / 非书成员跳过。
+    await db.addToCollection(collectionId, MediaKind.epub, 'legacy');
+    await db.addToCollection(collectionId, MediaKind.epub, 'remote-only');
+    await db.addToCollection(collectionId, MediaKind.video, 'k1');
+
+    expect(await collectionMemberBookKeys(db, collectionId), <String>[
+      'k1',
+      'k2',
+      'legacy',
+    ]);
+
+    final BookArtScrapeService svc = service(mangaBakaOk);
+    final BookArtRunResult result = await svc.run(
+      await svc.collectionBookKeys(collectionId),
+    );
+    svc.close();
+
+    expect(result.series, hasLength(1));
+    expect(result.series.single.decision, BookArtDecision.accepted);
+    expect(result.count(BookArtBookOutcome.written), 3);
+    expect(store.hasCover('k1'), isTrue);
+    expect(store.hasCover('k2'), isTrue);
+
+    final CollectionArtScrape art = CollectionArtScrape(
+      database: db,
+      thumbnailsDirectory: thumbs,
+      servicesEnabled: () => true,
+      migrationReadonly: () => false,
+    );
+    final File? banner = await art.bannerFor(
+      await db.getCollectionItems(collectionId),
+    );
+    expect(banner, isNotNull);
+    expect(banner!.existsSync(), isTrue);
+  });
 
   test('MangaBaka 命中：逐卷写入 + 横幅 + 署名标记；UA 不带用户信息', () async {
     await seed('k1', 'テスト漫画 1');
@@ -988,6 +1038,59 @@ void main() {
       'native_title': full,
     });
     expect(once, <String>[full]);
+  });
+
+  test('双语书名的查询序列：全名 → 日文段 → 罗马字段；单语书名不多出查询', () {
+    expect(BookArtScrapeService.queriesFor('Horimiya ホリミヤ'), <String>[
+      'Horimiya ホリミヤ',
+      'ホリミヤ',
+      'Horimiya',
+    ]);
+    expect(BookArtScrapeService.queriesFor('テスト漫画：ブルー'), <String>[
+      'テスト漫画：ブルー',
+      'テスト漫画',
+    ]);
+    expect(BookArtScrapeService.queriesFor('One Piece'), <String>[
+      'One Piece',
+      'One',
+    ]);
+  });
+
+  // Bangumi 是关键词精确搜索：「Horimiya ホリミヤ」零结果，只有「ホリミヤ」搜得到。
+  // 曾只用全名搜一次，双语书名的系列从来拿不到 Bangumi 候选。
+  test('Bangumi 全名零结果：改用日文段再搜，拿到候选', () async {
+    await seed('k1', 'Test テスト漫画 1');
+    await seed('k2', 'Test テスト漫画 2');
+    final List<String> keywords = <String>[];
+    final BookArtScrapeService svc = service((http.Request req) async {
+      if (req.url.host == 'api.mangabaka.org') {
+        return http.Response('boom', 500);
+      }
+      if (req.url.path == '/v0/search/subjects') {
+        final String keyword =
+            (jsonDecode(req.body) as Map<String, Object?>)['keyword']!
+                as String;
+        keywords.add(keyword);
+        return json(<String, Object?>{
+          'data': <Object?>[if (keyword == 'テスト漫画') bangumiSeries7],
+        });
+      }
+      return bangumi(req) ?? image(req) ?? http.Response('?', 404);
+    });
+    final BookArtRunResult result = await svc.run(<String>['k1', 'k2']);
+    svc.close();
+
+    expect(keywords, <String>['Test テスト漫画', 'テスト漫画']);
+    final BookArtSeriesPlan plan = result.series.single;
+    expect(
+      plan.source == BookArtSource.bangumi ||
+          plan.options.any(
+            (BookArtSeriesOption o) =>
+                o.source == BookArtSource.bangumi && o.id == '7',
+          ),
+      isTrue,
+      reason: 'Bangumi 系列 7 应被采用或列为候选：${plan.decision} ${plan.reason}',
+    );
   });
 
   test('刮削进行中书被删了：这本不再写入，不留孤儿文件', () async {

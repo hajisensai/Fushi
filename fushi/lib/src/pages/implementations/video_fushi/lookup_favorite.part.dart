@@ -20,6 +20,12 @@ part of '../video_fushi_page.dart';
 /// [_videoFavoriteCacheKey], [_matchingVideoFavorites]). The popup-stack
 /// infrastructure and the @override mining hooks stay in the main shell.
 extension _VideoLookupFavorite on _VideoFushiPageState {
+  /// 本页写收藏时记下的远端来源身份（[FavoriteSentence.originSourceId]，BUG-5402）：
+  /// 远端页（媒体服务器浏览页直接串流 / 互联对端 / 在线源……）= 播放客户端的
+  /// `remoteLibrarySourceId`，此时 bookKey 只是该来源内的条目 id；本机库条目 = null。
+  String? get _favoriteOriginSourceId =>
+      widget.remoteClient?.remoteLibrarySourceId;
+
   /// 点字幕第 [graphemeIndex] 个字符：暂停 → 从该位置起取词 → 推入与阅读器/词典页
   /// 同款的 [DictionaryPopupLayer] 浮层（定位到被点字符的屏幕 [charRect] 附近）。
   ///
@@ -285,6 +291,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
           dateKey: statTodayKey(),
           expression: headword?.expression,
           reading: headword?.reading,
+          originSourceId: _favoriteOriginSourceId,
         ),
       );
     }
@@ -478,6 +485,7 @@ extension _VideoLookupFavorite on _VideoFushiPageState {
           normCharLength: (cue.endMs - cue.startMs).clamp(0, 1 << 31).toInt(),
           source: kFavoriteSentenceSourceVideo,
           dateKey: statTodayKey(),
+          originSourceId: _favoriteOriginSourceId,
         ),
       );
     }

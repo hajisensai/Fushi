@@ -38,6 +38,22 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5393](bugs/BUG-5393-merged-user-collection-resurrected-by-sync.md) | ✅ | ✅ | 用户合集被合并掉后，下一次合集同步按对端旧副本原样重建 |
+> 共 4699 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5402](bugs/BUG-5402-media-server-favorite-jump-dead-end.md) | ✅ | ✅ | 媒体服务器直接串流（未入库）的收藏句在收藏夹点了没反应 |
+| [BUG-5401](bugs/BUG-5401-anilist-cover-search-novels-only.md) | ✅ | ✅ | anilist-cover-search-novels-only |
+| [BUG-5400](bugs/BUG-5400-series-key-split-volume-parts.md) | ✅ | ✅ | series-key-split-volume-parts |
+| [BUG-5399](bugs/BUG-5399-series-key-digit-name-dash-title.md) | ✅ | ✅ | series-key-digit-name-dash-title |
+| [BUG-5398](bugs/BUG-5398-book-art-bangumi-bilingual-title.md) | ✅ | ✅ | 双语书名（罗马字 + 日文）的系列永远拿不到 Bangumi 候选 |
+| [BUG-5397](bugs/BUG-5397-book-art-banner-gc-locked-file.md) | ✅ | ✅ | 孤儿横幅删不掉时整个清除中断 |
+| [BUG-5396](bugs/BUG-5396-collection-art-scrape-uid-members.md) | ✅ | ✅ | 合集「获取各卷封面与横幅」对按 uid 存的成员一本都认不出 |
+| [BUG-5395](bugs/BUG-5395-mangabaka-search-volume-suffix.md) | ✅ | ✅ | mangabaka-search-volume-suffix |
+| [BUG-5394](bugs/BUG-5394-srs-close-blocks-ui-thread-anr.md) | ✅ | ✅ | 关复习库在 UI 线程等在途命令，Android 主线程 ANR |
+| [BUG-5392](bugs/BUG-5392-backup-merge-source-id-cross-db.md) | ✅ | ✅ | 备份合并导入把书 / 视频的 source_id（备份库来源自增 id）原样搬进本机，挂到不相干的来源上 |
+| [BUG-5387](bugs/BUG-5387-restore-quiesce-media-background-writers.md) | ✅ | ✅ | restore-quiesce-media-background-writers |
+| [BUG-5386](bugs/BUG-5386-gal-lookup-mine-blocks-until-card-written.md) | ✅ | ✅ | 游戏内查词制卡要等写卡结束（约 10 秒）才能挖下一句 |
 | [BUG-5385](bugs/BUG-5385-lyrics-illustration-viewer-stale-reached.md) | ✅ | ✅ | 有声书插图大图浏览打开期间新走过的插图看不到（只列已听到的、且不随播放刷新） |
 | [BUG-5384](bugs/BUG-5384-manga-ocr-page-identity.md) | ✅ | ✅ | manga-ocr-page-identity |
 | [BUG-5383](bugs/BUG-5383-develop-import-cycle-627.md) | ✅ | ✅ | develop import 环守卫红：最大环 627 > 上限 623 |
@@ -46,6 +62,9 @@
 | [BUG-5380](bugs/BUG-5380-popup-source-strip-cross-line-sentence.md) | ✅ | ✅ | popup-source-strip-cross-line-sentence |
 | [BUG-5379](bugs/BUG-5379-mangabaka-volume-cover-pop-type.md) | ✅ | ✅ | mangabaka-volume-cover-pop-type |
 | [BUG-5378](bugs/BUG-5378-nav-peek-book-progress-ignores-completed.md) | ✅ | ✅ | 导航速览里已读完的书写成 0%，同一本书各卡百分比不一致 |
+| [BUG-5377](bugs/BUG-5377-dist-mac-orphan-flutter-tester.md) | 🚧 | 🚧 | dist 在 macOS worker 上跑完测试后留下孤儿 flutter_tester 进程 |
+| [BUG-5376](bugs/BUG-5376-android-shared-prefs-multiprocess-clobber.md) | 🚧 | 🚧 | Android 多进程下 SharedPreferences 会被别的进程的旧副本整份覆盖 |
+| [BUG-5375](bugs/BUG-5375-android-library-anchor-clobbered-links-lost.md) | ✅ | ✅ | Android 更新后书库全部失去链接（书库位置锚点被别的进程冲掉 + 沙箱重基不经磁盘核实） |
 | [BUG-5374](bugs/BUG-5374-windows-dart-silent-black-window.md) | 🚧 | ✅ | Windows 缩窗后主窗口黑屏冻结，平台线程空闲而 Dart 不回应，旧看门狗量不到 |
 | [BUG-5373](bugs/BUG-5373-tracking-series-merge-declined-pref-not-device-local.md) | ✅ | ✅ | 系列「不合并」偏好存本机合集 id 却随备份 / 设置同步出境 |
 | [BUG-5372](bugs/BUG-5372-tracking-series-attention-n-plus-one.md) | ✅ | ✅ | 追踪页加载时系列合并候选 / 系列待处理卷逐条查库（N+1） |
@@ -127,7 +146,7 @@
 | [BUG-5272](bugs/BUG-5272-jitendex-redirect-not-followed.md) | ✅ | ✅ | jitendex-redirect-not-followed |
 | [BUG-5271](bugs/BUG-5271-manga-audio-name-reading-phase3.md) | 🚧 | 🚧 | 漫画有声人名读法第三期：AI 抄原页振假名 / 查官方资料记出处；同一写法按角色区分读音 |
 | [BUG-5270](bugs/BUG-5270-webview-wgc-worker-occluded-join-hang.md) | ✅ | ✅ | 显示器关着时关掉带 WebView 的页面，Windows app 整个卡死（WGC 取帧线程 join 不回） |
-| [BUG-5269](bugs/BUG-5269-srs4-parity-unverified-card-stats.md) | 🚧 | 🚧 | srs4-parity-unverified-card-stats |
+| [BUG-5269](bugs/BUG-5269-srs4-parity-unverified-card-stats.md) | ✅ | ✅ | srs4-parity-unverified-card-stats |
 | [BUG-5268](bugs/BUG-5268-windows-display-off-black-screen.md) | 🚧 | 🚧 | windows-display-off-black-screen |
 | [BUG-5267](bugs/BUG-5267-gen4-parity-cross-profile-entities.md) | ✅ | ✅ | gen4 迁移对拍：同库另一个 profile 占走了 `srs_entities` 行的实体，`entities` 判新代多出、整份撤回 |
 | [BUG-5266](bugs/BUG-5266-manga-audio-no-volume-control.md) | ✅ | ✅ | manga-audio-no-volume-control |

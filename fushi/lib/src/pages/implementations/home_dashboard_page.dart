@@ -73,6 +73,19 @@ import 'package:fushi/src/pages/implementations/home_panorama_panel.dart';
 import 'package:fushi/src/media/panorama/panorama_library.dart'
     show PanoramaWork, PanoramaWorkKind;
 import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
+import 'package:fushi/src/pages/implementations/home_favorites_panel.dart';
+import 'package:fushi/src/media/display_title.dart'
+    show displayTitleForBook, displayTitleForVideo;
+import 'package:fushi/src/pages/implementations/stat_activity.dart'
+    show statTodayKey;
+import 'package:fushi/src/media/favorites/favorite_batch_mining.dart'
+    show favoriteBatchMiningAvailable, showFavoriteBatchMining;
+import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
+import 'package:fushi_audio/fushi_audio.dart'
+    show
+        FavoriteSentence,
+        kFavoriteSentenceSourceVideo,
+        kFavoriteSentenceSourceWeb;
 import 'package:fushi/src/pages/implementations/home_tracking_panel.dart';
 import 'package:fushi/src/pages/implementations/home_profile_chip.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -4790,6 +4803,19 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       adaptivePageRoute<void>(
         context: context,
         builder: (_) => const CollectionsPage(),
+      ),
+    );
+  }
+
+  /// 首页「收藏句子」小组件点标题：进收藏夹，预选「句子」页签。
+  void _openFavoriteSentences() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const CollectionsPage(
+          initialFilter: CollectionsInitialFilter.sentence,
+        ),
       ),
     );
   }
