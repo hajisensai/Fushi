@@ -1050,9 +1050,60 @@ void main() {
       'テスト漫画：ブルー',
       'テスト漫画',
     ]);
-    expect(BookArtScrapeService.queriesFor('One Piece'), <String>[
-      'One Piece',
-      'One',
+    // 拉丁书名词间本来就有空格，不再切出「One」这种必然搜偏的词。
+    expect(BookArtScrapeService.queriesFor('One Piece'), <String>['One Piece']);
+  });
+
+  // review-book-scrape-query-unify：批量与手动搜索弹窗同一份 bookSearchQueries。
+  test('查询序列与手动搜索统一：剥打头标签、拆混写名、最后试主标题', () {
+    expect(BookArtScrapeService.queriesFor('[川原礫] ソードアート・オンライン'), <String>[
+      'ソードアート・オンライン',
+    ]);
+    expect(BookArtScrapeService.queriesFor('ソードアート・オンライン プログレッシブ'), <String>[
+      'ソードアート・オンライン プログレッシブ',
+      'ソードアート・オンライン',
+    ]);
+    expect(BookArtScrapeService.queriesFor('Re:ゼロから始める異世界生活'), <String>[
+      'Re:ゼロから始める異世界生活',
+    ]);
+  });
+
+  test('书名带打头作者标签：搜索与判档都用去掉标签的系列名，照常采用', () async {
+    await seed('k1', '[Taro] テスト漫画 1');
+    await seed('k2', '[Taro] テスト漫画 2');
+    final List<String> queries = <String>[];
+    final BookArtScrapeService svc = service((http.Request req) async {
+      if (req.url.path == '/v1/series/search') {
+        queries.add(req.url.queryParameters['q'] ?? '');
+      }
+      return mangaBakaOk(req);
+    });
+    final BookArtRunResult result = await svc.run(<String>['k1', 'k2']);
+    svc.close();
+
+    expect(queries, <String>['テスト漫画']);
+    expect(result.series.single.decision, BookArtDecision.accepted);
+    expect(result.count(BookArtBookOutcome.written), 2);
+  });
+
+  // 系列名本身以数字结尾（`Steins;Gate 0`）：组名已去过一次卷号，搜索 / 判档用的
+  // 系列名不能拿组名再解析一次，否则 `0` 又被当成卷号去掉、搜成别的系列。
+  test('系列名以数字结尾：只去一次卷号，搜的仍是完整系列名', () async {
+    await seed('k1', 'Steins;Gate 0 1');
+    await seed('k2', 'Steins;Gate 0 2');
+    final List<String> queries = <String>[];
+    final BookArtScrapeService svc = service((http.Request req) async {
+      if (req.url.path == '/v1/series/search') {
+        queries.add(req.url.queryParameters['q'] ?? '');
+      }
+      return mangaBakaOk(req);
+    });
+    await svc.run(<String>['k1', 'k2']);
+    svc.close();
+
+    expect(queries, <String>['Steins;Gate 0']);
+    expect(BookArtScrapeService.queriesFor('Steins;Gate 0 1'), <String>[
+      'Steins;Gate 0',
     ]);
   });
 
