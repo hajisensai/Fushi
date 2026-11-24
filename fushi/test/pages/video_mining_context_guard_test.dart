@@ -159,7 +159,7 @@ void main() {
       reason: '成功历史落库必须只消费点击时快照。',
     );
     final int mountedIndex = mine.indexOf(
-      'if (!mounted || _currentEpisode != queuedEpisode) return result;',
+      'if (!mounted || _playingEpisodeScope != queuedEpisode) return result;',
       awaitIndex,
     );
     final int clearIndex = mine.indexOf('_miningDraft.clear()', awaitIndex);
@@ -190,7 +190,7 @@ void main() {
     );
     final int updateAwait = update.indexOf('await _mineVideoCard(');
     final int updateGuard = update.indexOf(
-      'if (!mounted || _currentEpisode != queuedEpisode) return result;',
+      'if (!mounted || _playingEpisodeScope != queuedEpisode) return result;',
       updateAwait,
     );
     final int updateClear = update.indexOf('_miningDraft.clear()', updateAwait);

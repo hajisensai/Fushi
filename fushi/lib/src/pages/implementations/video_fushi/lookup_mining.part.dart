@@ -335,7 +335,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       _resolveVideoMiningRange(controller),
       overrides,
     );
-    final int queuedEpisode = _currentEpisode;
+    final String queuedEpisode = _playingEpisodeScope;
     final AudioCue? historyCue = _lastLookupCue;
     // 制卡历史的回跳锚点按句子所属那一行的时间轴记（原盘「全部播放」= 那一集，
     // BUG-5356），与收藏句同一口径。
@@ -387,7 +387,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // 后台 / 看完再制卡：请求已冻结了草稿里的句子，当场清空（popup.js 在同一次回包
       // 里把上下文角标归零），下一次查词从空草稿重新累积。与落卡路径同一道门：页面
       // 已销毁或已换集就不碰新页面 / 新集的草稿。
-      if (!mounted || _currentEpisode != queuedEpisode) return result;
+      if (!mounted || _playingEpisodeScope != queuedEpisode) return result;
       _miningDraft.clear();
       return result;
     }
@@ -400,7 +400,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       if (_sourceReviewSession == null) {
         unawaited(_recordMinedSentenceForVideo(historySnapshot, result.noteId));
       }
-      if (!mounted || _currentEpisode != queuedEpisode) return result;
+      if (!mounted || _playingEpisodeScope != queuedEpisode) return result;
       // TODO-270 E：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，两端在
       // 同一事件归零、不漂移）。下一次查词从空草稿重新累积。
       _miningDraft.clear();
@@ -434,7 +434,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       _resolveVideoMiningRange(controller),
       overrides,
     );
-    final int queuedEpisode = _currentEpisode;
+    final String queuedEpisode = _playingEpisodeScope;
 
     final MinePopupResult result = await _mineVideoCard(
       fields: fields,
@@ -447,7 +447,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       updateNoteId: noteId,
     );
     if (result.ankiConnect) {
-      if (!mounted || _currentEpisode != queuedEpisode) return result;
+      if (!mounted || _playingEpisodeScope != queuedEpisode) return result;
       _miningDraft.clear();
     }
     return result;
@@ -514,7 +514,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         range: range,
         overrides: overrides,
         controller: controller,
-        episode: _currentEpisode,
+        episodeScope: _playingEpisodeScope,
         frame: frame,
         repo: ref.read(ankiRepositoryProvider),
       ),
@@ -597,7 +597,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 没有可抽取的播放器，同样作罢。
     if (!mounted ||
         !identical(_controller, request.controller) ||
-        _currentEpisode != request.episode) {
+        _playingEpisodeScope != request.episodeScope) {
       if (mounted) {
         _showOsd(
           t.video_mine_overwrite_cancelled_episode,
@@ -740,7 +740,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
       volume: controller.muted ? 0 : controller.requestedVolume,
       webBackend: controller.isWebBackend,
     );
-    final int episode = _currentEpisode;
+    final int episode = _playingEpisodeIndex;
+    final String episodeScope = _playingEpisodeScope;
     final SourceReviewSession? reviewSession = _sourceReviewSession;
     final (String sourceUid, int sourceEpisode) = _isRemote
         ? _remotePositionKeyForIndex(episode)
@@ -870,7 +871,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         : () {
             if (!mounted ||
                 !identical(_controller, controller) ||
-                _currentEpisode != episode) {
+                _playingEpisodeScope != episodeScope) {
               if (mounted) {
                 _showOsd(
                   t.video_mine_retry_cancelled_episode,
@@ -1442,7 +1443,7 @@ class _QueuedVideoOverwrite {
     required this.range,
     required this.overrides,
     required this.controller,
-    required this.episode,
+    required this.episodeScope,
     required this.frame,
     required this.repo,
   });
@@ -1456,7 +1457,7 @@ class _QueuedVideoOverwrite {
 
   /// 排队时的播放器与集数：落地时变了就不覆盖。
   final VideoPlayerController controller;
-  final int episode;
+  final String episodeScope;
 
   /// 排队时的查词画面（高级制卡锁帧或当时截图）；不要图片时 null。
   final Future<Uint8List?>? frame;

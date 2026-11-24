@@ -60,6 +60,39 @@ void main() {
     );
   });
 
+  test('「换没换集」按书 + 播放集下标判，不按选集列表位置判', () {
+    // 每集一本书的列表里 `_currentEpisode` 是选集位置：长播放列表后几批晚到、刷新重排都会
+    // 动它，播的却还是同一集——拿它判「换集了」会把排队的覆盖制卡 / 失败重试当成换集作废、
+    // 把跳转记录清掉；网页档站内原地换集又只换书不换播放器，光比集下标看不出来。
+    expect(
+      src.contains(
+        'int get _playingEpisodeIndex => _streamBookEpisodes ? 0 : _currentEpisode;',
+      ),
+      isTrue,
+    );
+    expect(
+      src.contains(
+        "String get _playingEpisodeScope => '\$_activeBookUid#\$_playingEpisodeIndex';",
+      ),
+      isTrue,
+    );
+    expect(
+      RegExp(
+        r'_currentEpisode != (queuedEpisode|request\.|episode\b)',
+      ).hasMatch(src),
+      isFalse,
+      reason: '制卡排队 / 覆盖 / 重试的换集判据走 _playingEpisodeScope',
+    );
+    expect(src.contains("'\$_activeBookUid#\$_currentEpisode'"), isFalse);
+    expect(
+      bodyOf(
+        'Future<bool> _reloadRemoteEpisodeInSession(',
+      ).contains('_playingEpisodeIndex'),
+      isTrue,
+      reason: '换档 / 换线路重载的是本书自己的流，不是选集位置那一集',
+    );
+  });
+
   test('列表在网页档 / 内置网页播放器 / 内核播放分流之前建', () {
     final int load = src.indexOf('await _loadStreamBookEpisodes();');
     final int split = src.indexOf('shouldOpenInWebVideoPlayer(row.videoPath)');

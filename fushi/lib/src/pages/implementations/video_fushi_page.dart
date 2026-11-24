@@ -3790,6 +3790,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// [_currentEpisode] 只是它在列表里的位置，远端键不随它变（[_remotePositionKeyForIndex]）。
   bool _streamBookEpisodes = false;
 
+  /// 正在播的这一集在**它所属的书 / 流**里的集下标：单视频 / 本地合集 / 远端合集 / host
+  /// 播放列表就是 [_currentEpisode]；每集一本书的列表里恒 0——那里 [_currentEpisode]
+  /// 只是选集列表里的位置，列表晚到（长播放列表的后几批）、刷新重排、站内点出列表收起
+  /// 都会动它，播的却还是同一集。
+  int get _playingEpisodeIndex => _streamBookEpisodes ? 0 : _currentEpisode;
+
+  /// 「还是不是同一集」的判据（书 + 集下标）：制卡排队 / 重试、跳转记录据此判换没换集。
+  /// 网页档站内原地换集只换书（[_activeBookUid]）不换播放器，光比集下标看不出来。
+  String get _playingEpisodeScope => '$_activeBookUid#$_playingEpisodeIndex';
+
   /// 流媒体书合集的合集名（制卡「系列名 - 剧集名」，见 [_initRemote]）。
   String? _streamBookSeriesTitle;
 
@@ -6481,7 +6491,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }) {
     final RemoteVideoInfo? info = _effectiveRemoteInfo;
     final RemoteVideoClient? client = _effectiveRemoteClient;
-    final int episode = _currentEpisode < 0 ? 0 : _currentEpisode;
+    final int episode = _playingEpisodeIndex < 0 ? 0 : _playingEpisodeIndex;
     return reloadRemoteEpisodeInSession(
       generation: generation,
       currentGeneration: () => _remotePlaybackGeneration,
