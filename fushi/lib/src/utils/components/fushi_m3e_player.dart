@@ -596,6 +596,11 @@ class FushiWavySeekBar extends StatefulWidget {
   State<FushiWavySeekBar> createState() => _FushiWavySeekBarState();
 }
 
+/// Apple 细轨（进度条、播放页音量轨）已播 / 已填部分的颜色：静止 secondaryLabel，
+/// 拖动强调度 [emphasis]（0 = 静止，1 = 按住拖动）插值到 label。两处同一份口径。
+Color fushiAppleTrackPlayedColor(FushiAppleColors apple, double emphasis) =>
+    Color.lerp(apple.secondaryLabel, apple.label, emphasis.clamp(0.0, 1.0))!;
+
 /// [FushiWavySeekBar] 一段按下 / 拖动的发起方。
 enum _SeekGesture { tap, drag }
 
@@ -966,7 +971,7 @@ class _FushiWavySeekBarState extends State<FushiWavySeekBar>
       widget.barHeight,
       ui.lerpDouble(mac ? 4 : 6, mac ? 8 : 12, drag)! * scale,
     );
-    final Color played = Color.lerp(apple.secondaryLabel, apple.label, drag)!;
+    final Color played = fushiAppleTrackPlayedColor(apple, drag);
     final TextStyle timeStyle =
         (Theme.of(context).textTheme.labelSmall ?? const TextStyle()).copyWith(
           fontSize: (mac ? 10 : 11) * scale,

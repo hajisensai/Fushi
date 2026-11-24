@@ -184,19 +184,26 @@ class _AppleVolumeRowState extends State<_AppleVolumeRow> {
         Expanded(
           child: Semantics(
             label: t.music_volume_title,
-            // Apple Music 全屏播放器的音量轨是白色（label），与进度条同色系，
-            // 不用强调色。
-            child: FushiSlider(
-              key: const ValueKey<String>('music_lyrics_apple_volume_slider'),
-              value: v,
-              max: 100,
-              activeColor: apple.label,
-              inactiveColor: apple.fill,
-              onChanged: (double next) {
-                setState(() => _dragging = next);
-                unawaited(widget.appModel.setMusicVolume(next));
-              },
-              onChangeEnd: (_) => setState(() => _dragging = null),
+            // 与进度条同一份配色（[fushiAppleTrackPlayedColor]）：静止
+            // secondaryLabel、拖动时过渡到 label，不用强调色。
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(end: _dragging == null ? 0 : 1),
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              builder: (BuildContext context, double emphasis, _) =>
+                  FushiSlider(
+                    key: const ValueKey<String>(
+                      'music_lyrics_apple_volume_slider',
+                    ),
+                    value: v,
+                    max: 100,
+                    activeColor: fushiAppleTrackPlayedColor(apple, emphasis),
+                    inactiveColor: apple.fill,
+                    onChanged: (double next) {
+                      setState(() => _dragging = next);
+                      unawaited(widget.appModel.setMusicVolume(next));
+                    },
+                    onChangeEnd: (_) => setState(() => _dragging = null),
+                  ),
             ),
           ),
         ),

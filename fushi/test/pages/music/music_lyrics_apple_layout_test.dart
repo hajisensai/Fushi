@@ -16,7 +16,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show FushiAppleMenuCheck, FushiMenuAnchor;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
-    show FushiPlaybackClock;
+    show FushiPlaybackClock, fushiAppleTrackPlayedColor;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
@@ -284,10 +284,28 @@ void main() {
       expect(more, contains('trailing: effects'));
       expect(more, isNot(contains('music_quality_chip_semantics')));
       final String part = _part();
-      expect(part, contains('activeColor: apple.label'));
+      // 音量轨与进度条同一份配色函数（静止 secondaryLabel、拖动 label）。
+      expect(part, contains('activeColor: fushiAppleTrackPlayedColor(apple,'));
+      expect(
+        File(
+          'lib/src/utils/components/fushi_m3e_player.dart',
+        ).readAsStringSync(),
+        contains(
+          'final Color played = fushiAppleTrackPlayedColor(apple, drag);',
+        ),
+      );
       expect(part, isNot(contains('adaptiveSlider(')));
     },
   );
+
+  test('Apple track colour: secondaryLabel at rest, label while dragging', () {
+    final FushiAppleColors apple = FushiAppleColors.of(
+      Brightness.dark,
+      const Color(0xFF0A84FF),
+    );
+    expect(fushiAppleTrackPlayedColor(apple, 0), apple.secondaryLabel);
+    expect(fushiAppleTrackPlayedColor(apple, 1), apple.label);
+  });
 
   test('Apple lyrics appearance: label colours, anchor at 1/3, blur on', () {
     final FushiAppleColors apple = FushiAppleColors.of(
