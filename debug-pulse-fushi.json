@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T21:00:21Z",
+ "generatedAt": "2026-11-24T22:03:13Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "0c3cc1ea736260806467974824ca2709f1e3682c",
-  "seq": 32530
+  "sha": "4f21942be4a461312fbcf5d6654facdca2b2a943",
+  "seq": 32553
  },
  "builds": [
   {
@@ -25,7 +25,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "queued",
+     "state": "building",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45437823764"
     },
     "windows": {
@@ -218,10 +218,26 @@
   }
  ],
  "pending": {
-  "headSha": "0c3cc1ea736260806467974824ca2709f1e3682c",
-  "headSeq": 32530,
+  "headSha": "4f21942be4a461312fbcf5d6654facdca2b2a943",
+  "headSeq": 32553,
   "prs": [],
   "direct": [
+   {
+    "sha": "4f21942be4a461312fbcf5d6654facdca2b2a943",
+    "subject": "docs(release): 3.4.0 公告：生成字幕措辞跟上 #4400，修复条目放在「另有 600 多项」之前"
+   },
+   {
+    "sha": "6f57bfa86540868669490405e4ebb1b7fc1231f1",
+    "subject": "docs(release): 3.4.0 公告补 #4382 #4405 #4400；test(video): 扫描回调守卫跟上 8d125e4ecd 的变量名 scanned"
+   },
+   {
+    "sha": "44583f19cf5365c494c116cdd0308b3cf2666646",
+    "subject": "Merge origin/develop into claude/notes-340-batch3"
+   },
+   {
+    "sha": "5ed5f1109912a6278cee368e9cb37c933f93059f",
+    "subject": "docs(release): 3.4.0 公告补本轮 30 个合入项与两条注意事项（Apple 玻璃质量重选、自动对时歌词旧版不可读）"
+   },
    {
     "sha": "0c3cc1ea736260806467974824ca2709f1e3682c",
     "subject": "test(video): 遥控入口测试跟上页头统一收纳（宽度够时「⋯」项平铺）；下载登记测试在显示过落盘封面的用例里收尾读盘句柄（Windows 下一条删同名封面不再被占用）"
@@ -363,19 +379,19 @@
   "platforms": {
    "android": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45484783803"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45492837874"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45484783537"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45492837861"
    },
    "macos": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45484783537"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45492837861"
    },
    "ios": {
     "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45484783537"
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45492837861"
    }
   }
  },
