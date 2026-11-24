@@ -51,7 +51,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
     show FushiAppleSwitch, FushiSegmentedButton;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
-    show GlassStepper, GlassTextField;
+    show GlassStepper;
 
 class SettingsSectionHeader extends StatelessWidget {
   const SettingsSectionHeader(this.text, {super.key, this.padding});
@@ -934,7 +934,13 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
           ),
         );
       }
-      result.add(rows[i]);
+      // 「玻璃」：每行挂分组行作用域；直接是输入框的行另挂表单行作用域
+      // （iOS / macOS 表单行，见 [FushiAppleFormRowScope]）。
+      result.add(
+        glassDesign && !cupertino
+            ? FushiAppleFormRowScope.wrapRow(rows[i])
+            : rows[i],
+      );
     }
     return result;
   }
@@ -1165,6 +1171,33 @@ class AdaptiveSettingsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
+    // 「玻璃」：分组里一行「标题 + 输入框」的设置行就是 iOS / macOS 的表单行——
+    // 标题交给字段（iOS 写法① 当占位 / 写法② 左标题；macOS 左标题 + 右输入框），
+    // 说明排在行内下方，不再是「标题在上 + 下面一个填充框」的 M3E 表单写法。
+    final Widget? field = trailing;
+    if (field is FushiAppleFormRowField &&
+        onTap == null &&
+        !cupertino &&
+        isGlassDesign(context) &&
+        FushiAppleGroupedRowScope.of(context)) {
+      return FushiAppleFormRowScope(
+        label: title,
+        helper: subtitle,
+        leading: switch (leading ??
+            (settingsRowIconShown(context, showIcon, icon)
+                ? _SettingsIcon(icon: icon!)
+                : null)) {
+          final Widget lead => Padding(
+            padding: EdgeInsetsDirectional.only(
+              end: FushiDesignTokens.of(context).spacing.gap + 4,
+            ),
+            child: lead,
+          ),
+          null => null,
+        },
+        child: trailing!,
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // Auto-stack a non-flex trailing under the label only when the row is
     // genuinely too narrow to host both side by side — NOT on every typical
@@ -3745,7 +3778,8 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
   }
 }
 
-class AdaptiveSettingsTextField extends StatefulWidget {
+class AdaptiveSettingsTextField extends StatefulWidget
+    implements FushiAppleFormRowField {
   const AdaptiveSettingsTextField({
     super.key,
     this.controller,
@@ -3881,7 +3915,8 @@ class _AdaptiveSettingsTextFieldState extends State<AdaptiveSettingsTextField> {
 /// 正文又收进 560、其余分类的设置行（[AdaptiveSettingsTextField]）撑满 pane。
 /// 用户 2026-08-25 实报「这里和别的输入框宽度不一样」并拍板统一成撑满，两层限宽
 /// 随之删除。要再引入宽度上限，只能加在这里（全 app 一处），不能各段自设。
-class SettingsFormField extends StatelessWidget {
+class SettingsFormField extends StatelessWidget
+    implements FushiAppleFormRowField {
   const SettingsFormField({
     required this.label,
     required this.onChanged,
@@ -3936,9 +3971,14 @@ class SettingsFormField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isGlassDesign(context)) return _buildGlass(context);
+    // 两套设计系统同一条路：[FushiTextFormFieldControl] 自己分派——M3E 是填充式
+    // 字段（浮动标签）；Apple 是实色输入框（标签在框上方），在 inset grouped
+    // 分组里是一整行表单行（[FushiAppleFormRowScope]，不再留字段间距）。此前
+    // Apple 分支是液态玻璃 GlassTextField + 自画标签，与其它 Apple 输入框两样。
     return Padding(
-      padding: EdgeInsets.only(bottom: bottomSpacing),
+      padding: EdgeInsets.only(
+        bottom: FushiAppleFormRowScope.of(context) ? 0 : bottomSpacing,
+      ),
       child: SizedBox(
         width: double.infinity,
         // 共享 M3E 输入框（FushiTextFormFieldControl → fushiMd3FieldDecoration）：
@@ -3965,120 +4005,6 @@ class SettingsFormField extends StatelessWidget {
           onChanged: onChanged,
         ),
       ),
-    );
-  }
-
-  /// 「玻璃」设计系统：[GlassTextField]（玻璃输入框）。它没有浮动标签 /
-  /// helper / error，标签放在框上方、说明与错误放在框下方（iOS 表单写法），
-  /// 宽度契约（恒撑满）与间距不变。只给初值时交给有状态的宿主持有控制器。
-  Widget _buildGlass(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final String? error = errorText;
-    final String? helper = helperText;
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomSpacing),
-      child: SizedBox(
-        width: double.infinity,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 4),
-              child: Text(
-                label,
-                style: tokens.type.metadata.copyWith(
-                  color: error != null ? colors.error : null,
-                ),
-              ),
-            ),
-            _GlassFormInput(
-              initialValue: initialValue,
-              controller: controller,
-              focusNode: focusNode,
-              hintText: hintText,
-              obscureText: obscureText,
-              keyboardType: keyboardType,
-              suffixIcon: suffixIcon,
-              onChanged: onChanged,
-            ),
-            if (error != null || helper != null)
-              Padding(
-                padding: const EdgeInsets.only(left: 4, top: 4),
-                child: Text(
-                  error ?? helper!,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.metadata.copyWith(
-                    color: error != null
-                        ? colors.error
-                        : colors.onSurfaceVariant,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// [SettingsFormField] 玻璃分支的输入框宿主：[GlassTextField] 没有
-/// `initialValue`，只给初值时由这里持有控制器。
-class _GlassFormInput extends StatefulWidget {
-  const _GlassFormInput({
-    required this.onChanged,
-    this.initialValue,
-    this.controller,
-    this.focusNode,
-    this.hintText,
-    this.obscureText = false,
-    this.keyboardType,
-    this.suffixIcon,
-  });
-
-  final String? initialValue;
-  final TextEditingController? controller;
-  final FocusNode? focusNode;
-  final String? hintText;
-  final bool obscureText;
-  final TextInputType? keyboardType;
-  final Widget? suffixIcon;
-  final ValueChanged<String> onChanged;
-
-  @override
-  State<_GlassFormInput> createState() => _GlassFormInputState();
-}
-
-class _GlassFormInputState extends State<_GlassFormInput> {
-  TextEditingController? _owned;
-
-  @override
-  void dispose() {
-    _owned?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final TextEditingController controller =
-        widget.controller ??
-        (_owned ??= TextEditingController(text: widget.initialValue ?? ''));
-    return GlassTextField(
-      controller: controller,
-      focusNode: widget.focusNode,
-      placeholder: widget.hintText,
-      obscureText: widget.obscureText,
-      keyboardType: widget.keyboardType,
-      suffixIcon: widget.suffixIcon,
-      textStyle: tokens.type.listTitle,
-      placeholderStyle: tokens.type.listSubtitle,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      shape: fushiGlassShapeOf(tokens.radii.controlRadius),
-      quality: fushiGlassQuality(context),
-      onChanged: widget.onChanged,
     );
   }
 }

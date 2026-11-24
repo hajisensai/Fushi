@@ -914,28 +914,45 @@ class ImportSectionBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isGlassDesign(context)) {
-      // Apple：一组表单字段（分组外标题 + 分组卡里的 Apple 输入框），不画块色
-      // 与 glyph。
+      // Apple：一组表单行（分组外标题 + inset grouped 分组），不画块色与 glyph。
+      // 每个字段一行：直接是输入框的由分组排成 iOS / macOS 表单行
+      // （[FushiAppleFormRowScope]，标题当占位 / 左标题，无填充框），其余件
+      // （提示条、按钮、组合行）按行内边距排在自己的一行里。
       final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
       final Widget? tail = trailing;
+      Widget padded(Widget child) => Padding(
+        padding: EdgeInsets.symmetric(
+          horizontal: metrics.rowHorizontal,
+          vertical: metrics.rowHorizontal * 0.75,
+        ),
+        child: child,
+      );
+      final List<Widget> rows = <Widget>[
+        for (final Widget child in children)
+          child is FushiAppleFormRowField ? child : padded(child),
+      ];
+      if (tail != null) {
+        // 尾部（可折叠的高级字段）贴在最后一行下面，收起时不多出一行分隔。
+        final Widget? last = rows.isEmpty ? null : rows.removeLast();
+        rows.add(
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (last != null) FushiAppleFormRowScope.wrapRow(last),
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: metrics.rowHorizontal,
+                ),
+                child: tail,
+              ),
+            ],
+          ),
+        );
+      }
       return AdaptiveSettingsSection(
         title: title ?? groupTitle,
-        children: <Widget>[
-          Padding(
-            padding: EdgeInsets.symmetric(
-              horizontal: metrics.rowHorizontal,
-              vertical: metrics.rowHorizontal * 0.75,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                FushiFormSection(children: children),
-                ?tail,
-              ],
-            ),
-          ),
-        ],
+        children: rows,
       );
     }
     final FushiCoverBlockColors colors = importToneColors(context, tone);

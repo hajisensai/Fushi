@@ -45,11 +45,6 @@ const Map<String, Map<String, int>> _legacy = <String, Map<String, int>>{
   'lib/src/settings/settings_kit_core.dart': <String, int>{
     'CupertinoSearchTextField': 1,
   },
-  // AdaptiveSettingsTextField 的 Apple 分支：iOS 表单的玻璃输入框（标签在框
-  // 上方、说明在框下方），MD3 分支已走 FushiTextFormFieldControl。
-  'lib/src/utils/components/settings_shared.dart': <String, int>{
-    'GlassTextField': 1,
-  },
 };
 
 Map<String, Map<String, int>> _scan() {

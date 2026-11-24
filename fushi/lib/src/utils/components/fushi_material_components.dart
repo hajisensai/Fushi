@@ -1161,6 +1161,7 @@ class FushiSearchField extends StatelessWidget {
       iconSize: apple ? appleIconSize : iconSize,
       padding: apple ? const EdgeInsets.all(3) : padding,
       color: appleIconColor,
+      revealOnFocus: focusNode,
     );
     return <Widget>[
       if (onClear != null && value.text.isNotEmpty)
@@ -1699,7 +1700,7 @@ const double kFushiSearchFieldLargeIconSize = 24;
 /// 收窄 size 与 padding。
 const double kFushiSearchFieldIconSize = 18;
 
-class FushiTextField extends StatefulWidget {
+class FushiTextField extends StatefulWidget implements FushiAppleFormRowField {
   const FushiTextField({
     super.key,
     this.controller,
@@ -1836,6 +1837,9 @@ class _FushiTextFieldState extends State<FushiTextField> {
     if (widget.suffixIcon != null) return widget.suffixIcon;
     final TextEditingController? controller = widget.controller;
     final bool editable = !widget.readOnly && (widget.enabled ?? true);
+    if (isGlassDesign(context)) {
+      return _buildAppleSuffix(context, controller, editable);
+    }
     // 尺寸档下尾部钮收成紧凑尺寸（20 + 6 = 32），否则 48 的标准触控区会把
     // small（40）档撑高。
     final bool compact = widget.size != null;
@@ -1886,6 +1890,84 @@ class _FushiTextFieldState extends State<FushiTextField> {
       valueListenable: controller,
       builder: (BuildContext context, TextEditingValue value, Widget? _) =>
           row(value.text.isNotEmpty),
+    );
+  }
+
+  /// Apple（iOS 27 UITextField / macOS 27 NSTextField）的尾部件：清除钮是灰色
+  /// 实心 ⊗（`xmark.circle.fill`，tertiaryLabel），**编辑中**（字段聚焦且有内容）
+  /// 才出现（`clearButtonMode = .whileEditing`）；屏幕键盘 / 粘贴辅助钮同为
+  /// tertiaryLabel 小图标，也只在字段聚焦时出现。分组里的表单行
+  /// （[FushiAppleFormRowScope]）默认带清除钮。图标按 Apple 档收小，不撑高行。
+  Widget? _buildAppleSuffix(
+    BuildContext context,
+    TextEditingController? controller,
+    bool editable,
+  ) {
+    final bool desktop = FushiAppleMetrics.of(context).desktop;
+    final double iconSize = desktop ? 14 * fushiAppleMacScale(context) : 17;
+    const EdgeInsets padding = EdgeInsets.all(3);
+    final Color quiet = appleColorsOf(context).tertiaryLabel;
+    final bool toggle = widget.obscureText && widget.showObscureToggle;
+    final bool clear =
+        (widget.clearable || FushiAppleFormRowScope.of(context)) &&
+        editable &&
+        controller != null &&
+        !widget.obscureText;
+    final bool assist =
+        editable && widget.showInputAssist && controller != null;
+    if (!toggle && !clear && !assist) return null;
+    final Widget? assistButton = _fushiTextFieldInputSuffix(
+      context: context,
+      controller: assist ? controller : null,
+      onChanged: widget.onChanged,
+      iconSize: iconSize,
+      padding: padding,
+      padTouchTarget: false,
+      color: quiet,
+    );
+    Widget row(bool active, bool hasText) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (clear && active && hasText)
+          FushiIconButton(
+            icon: CupertinoIcons.clear_circled_solid,
+            tooltip: t.clear,
+            size: iconSize,
+            padding: padding,
+            padTouchTarget: false,
+            enabledColor: quiet,
+            onTap: () {
+              controller.clear();
+              widget.onChanged?.call('');
+              widget.onClear?.call();
+              _effectiveFocusNode.requestFocus();
+            },
+          ),
+        if (toggle)
+          FushiIconButton(
+            icon: _obscured ? FushiIcons.visibility : FushiIcons.visibilityOff,
+            tooltip: _obscured
+                ? t.text_field_password_show
+                : t.text_field_password_hide,
+            size: iconSize,
+            padding: padding,
+            padTouchTarget: false,
+            enabledColor: appleColorsOf(context).secondaryLabel,
+            onTap: () => setState(() => _obscured = !_obscured),
+          ),
+        if (assistButton != null && active) assistButton,
+      ],
+    );
+    return FushiFieldFocusReveal(
+      fieldFocus: _effectiveFocusNode,
+      builder: (BuildContext context, bool active) => controller == null
+          ? row(active, false)
+          : ValueListenableBuilder<TextEditingValue>(
+              valueListenable: controller,
+              builder:
+                  (BuildContext context, TextEditingValue value, Widget? _) =>
+                      row(active, value.text.isNotEmpty),
+            ),
     );
   }
 
@@ -2047,8 +2129,28 @@ Widget? _fushiTextFieldInputSuffix({
   EdgeInsets? padding,
   bool padTouchTarget = true,
   Color? color,
+  FocusNode? revealOnFocus,
 }) {
   if (controller == null) return null;
+  // Apple（iOS / macOS 没有常驻的输入辅助钮）：给了字段焦点节点就只在字段聚焦
+  // （或钮自己拿着焦点）时出现，不在每个框尾巴上常驻一枚键盘 / 粘贴图标。
+  if (revealOnFocus != null && isGlassDesign(context)) {
+    final Widget? button = _fushiTextFieldInputSuffix(
+      context: context,
+      controller: controller,
+      onChanged: onChanged,
+      iconSize: iconSize,
+      padding: padding,
+      padTouchTarget: padTouchTarget,
+      color: color,
+    );
+    if (button == null) return null;
+    return FushiFieldFocusReveal(
+      fieldFocus: revealOnFocus,
+      builder: (BuildContext context, bool active) =>
+          active ? button : const SizedBox.shrink(),
+    );
+  }
   // 彩色色块里的字段：尾部钮跟指示线 / 标题同一档压暗的块前景色；其余用
   // [color]（Apple 搜索框的灰色辅助钮）或 IconButton 默认（M3 trailing icon =
   // onSurfaceVariant）。
@@ -2085,6 +2187,70 @@ Widget? _fushiTextFieldInputSuffix({
       }
     },
   );
+}
+
+/// 输入框尾部「只在编辑中出现」的件（Apple 的清除钮 / 输入辅助钮）：[builder]
+/// 的 `active` = 字段 [fieldFocus] 聚焦，或这组件里的按钮自己拿着焦点（键盘 /
+/// 手柄从字段 Tab 到按钮上时不消失）。整组挂在字段的 [TextFieldTapRegion] 里：
+/// 点按钮不算「点到字段外」，桌面上不会先失焦把按钮收掉、点击落空。
+///
+/// 与设计系统无关的行为原语（外观由 [builder] 给）；目前只有 Apple 分支用。
+class FushiFieldFocusReveal extends StatefulWidget {
+  const FushiFieldFocusReveal({
+    required this.fieldFocus,
+    required this.builder,
+    super.key,
+  });
+
+  final FocusNode fieldFocus;
+  final Widget Function(BuildContext context, bool active) builder;
+
+  @override
+  State<FushiFieldFocusReveal> createState() => _FushiFieldFocusRevealState();
+}
+
+class _FushiFieldFocusRevealState extends State<FushiFieldFocusReveal> {
+  bool _selfFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.fieldFocus.addListener(_onFieldFocus);
+  }
+
+  @override
+  void didUpdateWidget(FushiFieldFocusReveal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fieldFocus != widget.fieldFocus) {
+      oldWidget.fieldFocus.removeListener(_onFieldFocus);
+      widget.fieldFocus.addListener(_onFieldFocus);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.fieldFocus.removeListener(_onFieldFocus);
+    super.dispose();
+  }
+
+  void _onFieldFocus() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFieldTapRegion(
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onFocusChange: (bool focused) => setState(() => _selfFocused = focused),
+        child: widget.builder(
+          context,
+          widget.fieldFocus.hasFocus || _selfFocused,
+        ),
+      ),
+    );
+  }
 }
 
 class FushiSelectableChip extends StatelessWidget {
@@ -7709,6 +7875,7 @@ class FushiCompactSearchRow extends StatelessWidget {
       context: context,
       controller: controller,
       padTouchTarget: false,
+      revealOnFocus: focusNode,
     );
     // 与 [FushiSearchField] 同一形态语言：MD3 是 surfaceContainerHigh 填充胶囊。
     // Apple 复用 [FushiSearchField] 的 Apple 分支（[FushiTextFieldControl] 认出

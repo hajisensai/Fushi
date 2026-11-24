@@ -128,6 +128,82 @@ class FushiAppleLargeSearchScope extends InheritedWidget {
   bool updateShouldNotify(FushiAppleLargeSearchScope oldWidget) => false;
 }
 
+/// 子树是 inset grouped 分组（`AdaptiveSettingsSection`）里的一行。设置行据此判断
+/// 自己是不是分组的一整行（trailing 是输入框的设置行在分组里改排表单行，分组
+/// 外——对话框正文直接放一行——维持原样）。纯语义作用域，本身不画任何东西。
+class FushiAppleGroupedRowScope extends InheritedWidget {
+  const FushiAppleGroupedRowScope({required super.child, super.key});
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FushiAppleGroupedRowScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(FushiAppleGroupedRowScope oldWidget) => false;
+}
+
+/// 标记接口：Apple 设计系统下，作为 inset grouped 分组里**一整行**时渲染成
+/// iOS / macOS 表单行的文本输入组件（[FushiTextFieldControl]、
+/// [FushiTextFormFieldControl]、`FushiTextField`、`SettingsFormField`）。
+///
+/// 分组容器（`AdaptiveSettingsSection` 等）只给**直接**是这类组件的行挂
+/// [FushiAppleFormRowScope]（见 [FushiAppleFormRowScope.wrapRow]），嵌在自绘
+/// 复合行里的输入框（行尾小输入、标题 + 字段的组合行）不受影响。
+abstract interface class FushiAppleFormRowField {}
+
+/// 子树里的 Apple 文本输入框是 inset grouped 分组的一整行，按表单行排：
+///
+/// - iOS 档：行高 = [FushiAppleMetrics.rowMinHeight]、无填充框无描边，行间分隔线
+///   由分组画。只有标题（`labelText`）时标题当占位文字（写法①，Contacts /
+///   「新建提醒事项」）；标题 + 占位都有时左标题、右侧右对齐输入（写法②，
+///   SwiftUI `LabeledContent` / Settings）。多行是行内多行，不加外框。
+/// - macOS 档（[FushiAppleMetrics.desktop]）：macOS 27 grouped Form 行——左标题、
+///   右侧 NSTextField 式小圆角输入框（白 / 深灰底 + 0.5px 描边 + 聚焦环）。
+///
+/// 纯语义作用域，本身不画任何东西；MD3 下不读它。
+///
+/// 设置行（`AdaptiveSettingsRow` 的 trailing 是输入框）把行标题 / 说明 / 行首
+/// 图标经 [label] / [helper] / [leading] 交给字段：标题取代字段自己的
+/// `labelText`（两者常常同文，避免画两遍），说明排在行内下方。
+class FushiAppleFormRowScope extends InheritedWidget {
+  const FushiAppleFormRowScope({
+    required super.child,
+    super.key,
+    this.label,
+    this.helper,
+    this.leading,
+  });
+
+  /// 行标题；null = 用字段自己的 `labelText` / `label`。
+  final String? label;
+
+  /// 行说明（字段没有 helper 时排在行内下方）。
+  final String? helper;
+
+  /// 行首件（设置行的彩色图标块），自带与标题之间的间距（与同组其它设置行的
+  /// 文字起点、分隔线缩进对齐）。
+  final Widget? leading;
+
+  static FushiAppleFormRowScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FushiAppleFormRowScope>();
+
+  static bool of(BuildContext context) => maybeOf(context) != null;
+
+  /// 分组的一行：一律挂 [FushiAppleGroupedRowScope]；直接是
+  /// [FushiAppleFormRowField] 时再挂表单行作用域。
+  static Widget wrapRow(Widget row) => FushiAppleGroupedRowScope(
+    child: row is FushiAppleFormRowField
+        ? FushiAppleFormRowScope(child: row)
+        : row,
+  );
+
+  @override
+  bool updateShouldNotify(FushiAppleFormRowScope oldWidget) =>
+      oldWidget.label != label ||
+      oldWidget.helper != helper ||
+      oldWidget.leading != leading;
+}
+
 /// 装饰是不是「搜索框」：前缀图标是放大镜。iOS 上搜索框是全胶囊
 /// （UISearchBar），普通输入框是圆角 10 的矩形——这是唯一能从调用点无侵入
 /// 读出的信号。
@@ -755,7 +831,8 @@ class _FushiFieldIndicatorScope extends InheritedWidget {
 /// [CupertinoTextField] + 自绘壳：iOS 27 `tertiarySystemFill` 圆角 10 无描边
 /// （搜索装饰 = 高 36 全胶囊），macOS 27 宽窗白底 / 深色 tertiaryFill + 0.5px
 /// 描边圆角 6（搜索装饰 = 高 28 灰填充胶囊），正文 17 / 13。
-class FushiTextFieldControl extends StatelessWidget {
+class FushiTextFieldControl extends StatelessWidget
+    implements FushiAppleFormRowField {
   const FushiTextFieldControl({
     super.key,
     this.groupId = EditableText,
@@ -1089,7 +1166,13 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     states.update(WidgetState.error, _hasError);
   }
 
-  Widget _buildEditable(BuildContext context, TextStyle style, bool hasError) {
+  Widget _buildEditable(
+    BuildContext context,
+    TextStyle style,
+    bool hasError, {
+    String? placeholder,
+    TextAlign? textAlign,
+  }) {
     final FushiAppleColors apple = appleColorsOf(context);
     final InputDecoration? decoration = _c.decoration;
     // 占位符与正文同字号、secondaryLabel 色（iOS placeholder）。
@@ -1195,14 +1278,14 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       focusNode: _focusNode,
       undoController: _c.undoController,
       padding: EdgeInsets.zero,
-      placeholder: decoration?.hintText,
+      placeholder: placeholder ?? decoration?.hintText,
       placeholderStyle: hintStyle,
       keyboardType: _c.keyboardType,
       textInputAction: _c.textInputAction,
       textCapitalization: _c.textCapitalization,
       style: style,
       strutStyle: _c.strutStyle,
-      textAlign: _c.textAlign,
+      textAlign: textAlign ?? _c.textAlign,
       // 多行框必须显式顶对齐（BUG-2973）：CupertinoTextField 在有占位符时把
       // 缺省的竖直对齐当成 center，而它的占位符栈高度取「占位符全部行」与
       // 「编辑区一行」的并集——空框里一行高的编辑区被居中进两行高的栈，占位符
@@ -1330,7 +1413,44 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
           .merge(_c.style),
     );
 
-    final Widget editable = _buildEditable(context, style, hasError);
+    // inset grouped 分组的一整行（[FushiAppleFormRowScope]）：表单行。iOS 档只有
+    // 标题时标题当占位（写法①），标题 + 占位都有时左标题、右侧右对齐输入
+    // （写法②）；macOS 档有标题就是「左标题 + 右输入框」。
+    final FushiAppleFormRowScope? rowScope = FushiAppleFormRowScope.maybeOf(
+      context,
+    );
+    final bool formRow =
+        rowScope != null &&
+        decoration != null &&
+        !_isSearchDecoration(decoration) &&
+        !_c.expands;
+    final String? formLabelText = formRow
+        ? (rowScope.label ?? decoration.labelText)
+        : null;
+    final Widget? formLabel = !formRow
+        ? null
+        : (rowScope.label == null ? decoration.label : null) ??
+              (formLabelText == null ? null : Text(formLabelText));
+    final bool formLabeled =
+        formLabel != null &&
+        (desktop ||
+            decoration!.hintText != null ||
+            (rowScope!.label == null && decoration.label != null));
+    final Widget editable = _buildEditable(
+      context,
+      style,
+      hasError,
+      placeholder: formRow && !formLabeled
+          ? (decoration.hintText ?? formLabelText)
+          : null,
+      textAlign:
+          formLabeled &&
+              !desktop &&
+              _c.maxLines == 1 &&
+              _c.textAlign == TextAlign.start
+          ? TextAlign.end
+          : null,
+    );
 
     // decoration: null 在 Material 下是「只有文字、没有任何装饰」；玻璃形态
     // 同样不加壳，保持调用方的布局意图（常见于自绘容器里的内嵌输入）。
@@ -1545,6 +1665,23 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
                     )));
     final Widget? counter = _buildCounter(context, captionStyle);
 
+    if (formRow) {
+      final String? rowHelper = rowScope.helper;
+      return _buildFormRow(
+        context,
+        field: desktop ? shell : row,
+        leading: rowScope.leading,
+        label: formLabeled ? formLabel : null,
+        labelColor: enabled && hasError ? apple.destructive : apple.label,
+        helperOrError:
+            helperOrError ??
+            (rowHelper == null ? null : Text(rowHelper, style: captionStyle)),
+        counter: counter,
+        multiline: multiline,
+        focused: enabled && focused,
+      );
+    }
+
     Widget content = Column(
       mainAxisSize: _c.expands ? MainAxisSize.max : MainAxisSize.min,
       // 调用方常把单行框放进比字段本身更高的定高盒（库页 / 工具条搜索
@@ -1605,10 +1742,115 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     // Opacity 层恒在：按 enabled 增删会让内层输入框重挂。
     return Opacity(opacity: enabled ? 1 : 0.6, child: content);
   }
+
+  /// inset grouped 分组里的一整行（[FushiAppleFormRowScope]）。
+  ///
+  /// iOS 档：行高 [FushiAppleMetrics.rowMinHeight]、左右 [FushiAppleMetrics.rowHorizontal]，
+  /// [field] 是无壳的输入行（无填充、无描边），分隔线由分组画；键盘 / 手柄导航
+  /// 落到行上时画一圈强调色描边（与 [FushiAppleRow] 的焦点描边同口径），触屏点
+  /// 进来只有光标。macOS 档：[field] 是 NSTextField 式小框（自带聚焦环），左边
+  /// 是行标题。说明 / 错误 / 计数排在行内下方，与行文字左对齐。
+  Widget _buildFormRow(
+    BuildContext context, {
+    required Widget field,
+    required Widget? leading,
+    required Widget? label,
+    required Color labelColor,
+    required Widget? helperOrError,
+    required Widget? counter,
+    required bool multiline,
+    required bool focused,
+  }) {
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool desktop = metrics.desktop;
+    final double scale = metrics.scale;
+    Widget line = field;
+    if (label != null) {
+      line = Row(
+        crossAxisAlignment: multiline
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
+        children: <Widget>[
+          // 标题按内容宽，最多占一段定宽（长标题换行），其余给输入。
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: desktop ? 180 * scale : 150),
+            child: Padding(
+              // 多行时标题与输入首行对齐：macOS 输入框有 5 的上内边距。
+              padding: EdgeInsets.only(
+                top: multiline && desktop ? 5 * scale : 0,
+              ),
+              child: DefaultTextStyle.merge(
+                style: metrics.titleStyle(context).copyWith(color: labelColor),
+                child: label,
+              ),
+            ),
+          ),
+          SizedBox(width: (desktop ? 12 : 16) * scale),
+          Expanded(child: field),
+        ],
+      );
+    }
+    if (leading != null) {
+      line = Row(
+        crossAxisAlignment: multiline
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
+        children: <Widget>[
+          leading,
+          Expanded(child: line),
+        ],
+      );
+    }
+    final bool keyboardFocus =
+        focused &&
+        !desktop &&
+        FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
+    final Widget body = Container(
+      constraints: BoxConstraints(minHeight: metrics.rowMinHeight),
+      padding: EdgeInsets.symmetric(
+        horizontal: metrics.rowHorizontal,
+        vertical: multiline
+            ? (desktop ? 8 * scale : 11)
+            : (desktop ? 4 * scale : 6),
+      ),
+      alignment: AlignmentDirectional.centerStart,
+      foregroundDecoration: keyboardFocus
+          ? BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: apple.accent, width: 2),
+            )
+          : null,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          line,
+          if (helperOrError != null || counter != null)
+            Padding(
+              padding: EdgeInsets.only(top: 4 * scale),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(child: helperOrError ?? const SizedBox.shrink()),
+                  if (counter != null) ...<Widget>[
+                    const SizedBox(width: 8),
+                    counter,
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    // Opacity 层恒在：按 enabled 增删会让内层输入框重挂。
+    return Opacity(opacity: _enabled ? 1 : 0.6, child: body);
+  }
 }
 
 /// [TextFormField] 的设计系统分派版。
-class FushiTextFormFieldControl extends StatelessWidget {
+class FushiTextFormFieldControl extends StatelessWidget
+    implements FushiAppleFormRowField {
   const FushiTextFormFieldControl({
     super.key,
     this.groupId = EditableText,
