@@ -507,3 +507,129 @@ describe('/dev/decisions', () => {
     expect(p.data).toContain('name="base" value="later"');
   });
 });
+
+describe('附件公开分享（迁移 0025）', () => {
+  /** 一条带三个附件（html / md / 外部 key）的事项 + 一个开发者会话。 */
+  async function setup() {
+    const env = makeEnv();
+    env.DB.raw.exec(addSql([{ id: 'design-s', kind: 'design', title: '设计', ask: '选哪个' }], NOW - 10).sql);
+    const files = [
+      { name: 'mock.html', type: 'text/html', key: 'decisions/design-s/1-mock.html', bytes: 11 },
+      { name: 'spec.md', type: 'text/plain', key: 'decisions/design-s/2-spec.md', bytes: 8 },
+      { name: 'evil.html', type: 'text/html', key: 'feedback/other/secret', bytes: 6 },
+    ];
+    env.DB.raw.prepare('UPDATE decisions SET files = ? WHERE id = ?').run(JSON.stringify(files), 'design-s');
+    await env.MEDIA.put('decisions/design-s/1-mock.html', new TextEncoder().encode('<h1>hi</h1>'));
+    await env.MEDIA.put('decisions/design-s/2-spec.md', new TextEncoder().encode('# 规格'));
+    await env.MEDIA.put('feedback/other/secret', new TextEncoder().encode('secret'));
+    return { env, s: await devSession(env) };
+  }
+  const post = (env, s, path, { origin = BASE, accept = 'application/json', cookie = s && s.cookie, now = NOW } = {}) => call(env, 'POST', path, {
+    headers: {
+      ...(cookie ? { Cookie: cookie } : {}), Origin: origin, 'Content-Type': 'application/x-www-form-urlencoded', Accept: accept,
+    },
+    body: new TextEncoder().encode('back=all'),
+    now,
+  });
+  const pub = (env, path) => call(env, 'GET', path, { now: NOW });
+  const shares = (env) => env.DB.raw.prepare('SELECT * FROM decision_file_shares ORDER BY created_at, token').all();
+
+  it('签发：回链接与新卡片，重复点幂等；公开路由不登录可读，沿用 sandbox CSP，不许嵌、不缓存、不收录', async () => {
+    const { env, s } = await setup();
+    const r = await post(env, s, '/dev/d/design-s/f/0/share', { now: NOW + 5 });
+    expect(r.status).toBe(200);
+    expect(r.data.path).toMatch(/^\/share\/f\/[A-Za-z0-9_-]{32}$/);
+    expect(r.data.item.html).toContain(`href="${r.data.path}"`);
+    expect(r.data.item.html).toContain('撤销分享');
+    expect(r.data.item.html).toContain('action="/dev/d/design-s/f/1/share"'); // 另一个附件还没分享
+    expect(row(env, 'design-s').updated_at).toBe(NOW + 5); // 卡片版本随之变化，别的页面同步得到
+    const again = await post(env, s, '/dev/d/design-s/f/0/share');
+    expect(again.data.path).toBe(r.data.path);
+    expect(shares(env)).toHaveLength(1);
+    expect(shares(env)[0]).toMatchObject({ decision_id: 'design-s', file_key: 'decisions/design-s/1-mock.html', created_by: s.dev.id });
+
+    const got = await pub(env, r.data.path);
+    expect(got.status).toBe(200);
+    expect(got.data).toBe('<h1>hi</h1>');
+    const h = got.res.headers;
+    expect(h.get('Content-Type')).toBe('text/html; charset=utf-8');
+    expect(h.get('Content-Security-Policy')).toBe("sandbox allow-scripts allow-popups allow-forms allow-modals; frame-ancestors 'none'");
+    expect(h.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(h.get('Cache-Control')).toBe('no-store');
+    expect(h.get('X-Robots-Tag')).toContain('noindex');
+    expect(h.get('Referrer-Policy')).toBe('no-referrer');
+
+    // md 按纯文本回；整页（无脚本）也渲染出公开链接。
+    const md = await post(env, s, '/dev/d/design-s/f/1/share');
+    const mdGot = await pub(env, md.data.path);
+    expect(mdGot.data).toBe('# 规格');
+    expect(mdGot.res.headers.get('Content-Type')).toBe('text/plain; charset=utf-8');
+    const p = (await page(env, s, 'all')).data;
+    expect(p).toContain(`<a href="${r.data.path}" class="dsharelink"`);
+    expect(p).toContain(`data-href="${md.data.path}"`);
+  });
+
+  it('撤销：原链接立刻 404，卡片回到「分享」按钮；再分享换新 token，旧的仍 404；无脚本表单 303 回原栏', async () => {
+    const { env, s } = await setup();
+    const first = (await post(env, s, '/dev/d/design-s/f/0/share')).data.path;
+    const un = await post(env, s, '/dev/d/design-s/f/0/unshare');
+    expect(un.status).toBe(200);
+    expect(un.data.item.html).toContain('action="/dev/d/design-s/f/0/share"');
+    expect(un.data.item.html).not.toContain(first);
+    expect((await pub(env, first)).status).toBe(404);
+    expect(shares(env)[0].revoked_at).toBe(NOW);
+    // 没有分享时撤销也算成功（幂等）。
+    expect((await post(env, s, '/dev/d/design-s/f/0/unshare')).status).toBe(200);
+
+    const second = (await post(env, s, '/dev/d/design-s/f/0/share')).data.path;
+    expect(second).not.toBe(first);
+    expect((await pub(env, second)).status).toBe(200);
+    expect((await pub(env, first)).status).toBe(404);
+
+    const plain = await post(env, s, '/dev/d/design-s/f/0/unshare', { accept: 'text/html' });
+    expect(plain.status).toBe(303);
+    expect(plain.res.headers.get('Location')).toBe('/dev/decisions?stage=all#d-design-s');
+    expect((await pub(env, second)).status).toBe(404);
+  });
+
+  it('越权：签发 / 撤销要开发者会话与本站 Origin；token 只开一个附件；越界 / 外部 key / 坏 token 一律 404', async () => {
+    const { env, s } = await setup();
+    // 没登录、非开发者账户的会话、外站 Origin。
+    expect((await post(env, null, '/dev/d/design-s/f/0/share', { cookie: null })).status).toBe(401);
+    const user = await registerUser(env, 'plain', { now: NOW });
+    const utok = 'utok'.padEnd(43, 'y');
+    env.DB.raw.prepare('INSERT INTO dev_sessions (token_hash, account_id, expires_at) VALUES (?, ?, ?)')
+      .run(hex(await sha256(new TextEncoder().encode(utok))), user.id, NOW + DAY);
+    expect((await post(env, null, '/dev/d/design-s/f/0/share', { cookie: `fushi_dev=${utok}` })).status).toBe(401);
+    expect((await post(env, s, '/dev/d/design-s/f/0/share', { origin: 'https://evil.example' })).status).toBe(403);
+    expect(shares(env)).toHaveLength(0);
+
+    const path = (await post(env, s, '/dev/d/design-s/f/0/share')).data.path;
+    // 公开路由只读；无会话撤销被拒，链接照常可用。
+    expect((await call(env, 'POST', path, { now: NOW })).status).toBe(404);
+    expect((await post(env, null, '/dev/d/design-s/f/0/unshare', { cookie: null })).status).toBe(401);
+    expect((await pub(env, path)).status).toBe(200);
+    // token 只对应 mock.html：拼路径拿不到别的附件；处理台附件路由仍要登录。
+    expect((await pub(env, `${path}/1`)).status).toBe(404);
+    expect((await pub(env, '/dev/d/design-s/f/1')).status).toBe(303);
+    expect((await pub(env, `/share/f/${'A'.repeat(32)}`)).status).toBe(404);
+    expect((await pub(env, '/share/f/short')).status).toBe(404);
+    // 越界序号、被过滤掉的外部 key（合法列表只有 2 个）、不存在的事项。
+    expect((await post(env, s, '/dev/d/design-s/f/2/share')).status).toBe(404);
+    expect((await post(env, s, '/dev/d/design-s/f/9/share')).status).toBe(404);
+    expect((await post(env, s, '/dev/d/nope/f/0/share')).status).toBe(404);
+  });
+
+  it('失效：签发人被撤开发者 → 404（恢复后可用）；附件从事项里删掉 → 404，不会错指到顶上来的附件', async () => {
+    const { env, s } = await setup();
+    const path = (await post(env, s, '/dev/d/design-s/f/0/share')).data.path;
+    const role = (r) => call(env, 'POST', `/admin/api/accounts/${s.dev.id}/role`, { headers: basic, body: { role: r }, now: NOW });
+    expect((await role('user')).status).toBe(200);
+    expect((await pub(env, path)).status).toBe(404);
+    expect((await role('dev')).status).toBe(200);
+    expect((await pub(env, path)).status).toBe(200);
+    const files = JSON.parse(row(env, 'design-s').files).slice(1);
+    env.DB.raw.prepare('UPDATE decisions SET files = ? WHERE id = ?').run(JSON.stringify(files), 'design-s');
+    expect((await pub(env, path)).status).toBe(404);
+  });
+});

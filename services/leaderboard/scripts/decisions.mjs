@@ -25,6 +25,11 @@
 //        传到 R2 后卡片里直接预览，html 在 sandbox iframe 里跑）
 //   node scripts/decisions.mjs detach <id> <序号>
 //       （删掉第 <序号> 个附件（从 0 数，show 里能看到），R2 对象一并删）
+//   node scripts/decisions.mjs share <id> <序号>
+//       （给第 <序号> 个附件签发公开分享链接（不登录可看，只读），打印链接；已分享过就打印原来那条。只在 HTTP 模式可用：
+//        链接记在密钥所属开发者名下，账户被撤开发者后失效）
+//   node scripts/decisions.mjs unshare <id> <序号>
+//       （撤销第 <序号> 个附件的公开链接，原链接立刻 404。只在 HTTP 模式可用）
 //   node scripts/decisions.mjs files <id> [--out <目录>]
 //       （把这条的全部附件从 R2 下到本地（默认 ./decision-files/<id>/），含开发者在网页上拖进去的设计图 / 截图）
 //   全局：--local（读写 wrangler 本地 D1，调试用；默认 --remote）
@@ -256,8 +261,17 @@ export function wranglerBackend(where) {
       wrangler(['r2', 'object', 'delete', `${BUCKET}/${gone.key}`, ...r2WhereArgs(where)]);
       return gone.name;
     },
+    async share() {
+      throw new Error(SHARE_NEEDS_HTTP);
+    },
+    async unshare() {
+      throw new Error(SHARE_NEEDS_HTTP);
+    },
   };
 }
+
+/** 分享链接要记签发的开发者（账户被撤开发者后失效），wrangler 直连 D1 没有账户身份。 */
+const SHARE_NEEDS_HTTP = 'share / unshare 只在 HTTP 模式可用（设 FUSHI_DECISIONS_TOKEN），或在网页附件旁点「分享」';
 
 export const DEFAULT_DECISIONS_URL = 'https://rank.fushi.moe';
 
@@ -331,6 +345,14 @@ export function httpBackend({ token, base = DEFAULT_DECISIONS_URL, fetchImpl = g
     async detach(id, n) {
       if (!Number.isInteger(n) || n < 0) throw new Error(`附件序号不合法：${n}`);
       return (await getJson('DELETE', `/v1/decisions/${checkId(id)}/files/${n}`)).removed;
+    },
+    async share(id, n) {
+      if (!Number.isInteger(n) || n < 0) throw new Error(`附件序号不合法：${n}`);
+      return getJson('POST', `/v1/decisions/${checkId(id)}/files/${n}/share`);
+    },
+    async unshare(id, n) {
+      if (!Number.isInteger(n) || n < 0) throw new Error(`附件序号不合法：${n}`);
+      return getJson('DELETE', `/v1/decisions/${checkId(id)}/files/${n}/share`);
     },
   };
 }
@@ -419,6 +441,16 @@ export async function main(argv, out = console.log, deps = {}) {
   if (cmd === 'detach') {
     const name = await backend.detach(checkId(id), Number(rest[0]), now);
     out(`#${id} 已删附件：${name}`);
+    return;
+  }
+  if (cmd === 'share') {
+    const { url, created } = await backend.share(checkId(id), Number(rest[0]), now);
+    out(`#${id} 第 ${rest[0]} 个附件${created ? '已分享' : '已有分享链接'}：${url}`);
+    return;
+  }
+  if (cmd === 'unshare') {
+    const { revoked, name } = await backend.unshare(checkId(id), Number(rest[0]), now);
+    out(revoked ? `#${id} 已撤销 ${name} 的分享链接` : `#${id} ${name} 没有分享链接`);
     return;
   }
   if (cmd === 'verdict') {

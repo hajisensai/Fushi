@@ -88,6 +88,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > `0020_decisions.sql`（新表 `decisions` / `decision_notes`，处理台 `/dev/decisions`）：没迁移就部署时只有 `/dev/decisions` 与拍板提交会 500（其余接口不受影响）。纯新表。
 > `0021_install_stats_snapshot.sql`（新表 `install_stats_snapshot`，处理台 `/dev/stats` / `/dev/stats.json` / `/dev/project` 改读安装统计快照）：没迁移就部署时这三页与定时任务的快照一步会 500（其余接口不受影响）——**先迁移**。纯新表。
 > `0022_notices.sql`（新表 `notice_rules` / `notice_known_h` / `notice_seen`，`POST /v1/notices`、`/admin/api/notices/**`、处理台 `/dev/notices`，src/notices.js）：没迁移就部署时这几个接口与定时任务的计数清理一步会 500（定时任务后面的步骤随之不跑）——**先迁移**。纯新表。
+> `0025_decision_file_shares.sql`（新表 `decision_file_shares`，拍板台附件公开分享 `/share/f/:token`）：没迁移就部署时 `/dev/decisions`（列表要读分享状态）、拍板 / 上传后的回卡、`/v1/decisions` 列表与公开分享路由会 500——**先迁移**。纯新表，旧 Worker 不读它。
 > `0009_feedback_release.sql`（修复 / 发布追踪列）同理：处理台列表显式选 `fix_*` 列，`/v1/ci/feedback/**` 也读写这些列，没迁移就部署时都会 500（反馈人接口 `SELECT *` 不受影响，`fix` 恒为 null）。
 
 部署后还要知道的：
@@ -182,6 +183,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | GET | `/v1/ci/feedback/pending?channel&platform` | Bearer | 180 天内、需要新 App、该通道 / 平台还没回填的修复 `{items:[{id, sha}]}`（≤ 500） |
 | POST | `/v1/ci/feedback/released` `{channel, platform, version, ids: [{id, sha}] ≤ 500}` | Bearer | 回填「哪个版本已包含修复」，只记首次 → `{updated}`；行的当前 `fix_sha` 与该条 `sha` 不同（其间被重新标记修复）的静默跳过。只写 `fixed_in`，不刷 `dev_reply_at` / `updated_at`（回填不是开发者回复，不影响红点、「新消息」与处理台排序）。反馈人 / 开发者接口的摘要带 `fix: {sha, scope, at, releases}` |
 | GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev；除拍板台外无脚本、POST 验 Origin）：`/dev` 反馈（`/dev/feedback.json?status&cursor&q`、`/dev/f/:id.json` 同数据的 JSON）、`/dev/stats` 安装统计（读定时快照，每 6 小时重算，页面可「刷新」、冷却 15 分钟；`/dev/stats.json` 同一份数据的 JSON 加 `computedAt`，供维护者看板 Fushi Pulse 用同一会话取数，没会话回 401 而不是跳登录页）、`/dev/project` 项目数据（GitHub star / fork / 关注 / issue、App Release 各平台下载、官网 fushi.moe 每日页面浏览 / 访客 / 流量 / 国家；定时任务每 3 / 6 小时取一次存成每日快照画趋势，页面可「立即刷新」；细节见 `src/project_stats.js` 文件头）、`/dev/decisions` 拍板台（AI 代理经 `node scripts/decisions.mjs` 写入待拍事项，开发者点做 / 不做 / 以后 / 永远不做 / 没看懂 / 你定并留言；`POST /dev/d/:id`（带 `Accept: application/json` 回新卡片，不跳转）；页面只放行本站脚本 `/dev/decisions.js`（`src/decisions_client.js`）做无刷新提交、本地切栏、撤销、键盘快捷键，并每 20 秒按签名轮询 `/dev/decisions.json` 同步；没有脚本时退回普通表单；规则见 `docs/agent/decision-board.md`） |
+| GET | `/share/f/:token` | 无（链接即凭据） | 拍板台附件公开分享（迁移 0025，`src/decisions.js`）：开发者在处理台附件旁「分享」签发（`POST /dev/d/:id/f/:n/share`，撤销 `…/unshare`），或 API `POST/DELETE /v1/decisions/:id/files/:n/share`。只读一个附件，回包与处理台同一套 CSP sandbox + nosniff，另加 `frame-ancestors 'none'`、`no-store`、`X-Robots-Tag: noindex`；撤销 / 附件已删 / 签发人不再是开发者 → 404。按 IP 过 READ_LIMITER |
 | GET/POST/DELETE | `/v1/decisions/**` | Bearer 开发者个人密钥 `fdk_…` | 拍板台 JSON API（`src/decisions_api.js` 文件头）：列 / 取事项、写待拍事项、Claude 留言、结单、校正决定、附件上传 / 下载 / 删除。密钥由开发者在 `/dev/keys` 自己签发（库里只存 SHA-256，明文只显示一次，每人 ≤ 5 把未吊销），账户被撤开发者后失效；`scripts/decisions.mjs` 设了 `FUSHI_DECISIONS_TOKEN` 就走这里，不需要 Cloudflare 凭据。按 IP 过 READ_LIMITER |
 
 「ticket 或同账户签名」：带了非空 `X-Fushi-Ticket` 就只认 ticket；否则验 `X-Fushi-Account` 签名，反馈须是该账户提交的。
