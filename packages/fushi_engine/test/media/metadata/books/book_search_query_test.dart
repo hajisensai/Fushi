@@ -101,6 +101,14 @@ void main() {
       expect(bookTitleMainPart('Spice and Wolf: Spring Log'), 'Spice and Wolf');
     });
 
+    test('半角 - ~ : 两边都是中日韩字时也算分隔（文件名常见写法）', () {
+      expect(bookTitleMainPart('ワンパンマン~外伝~'), 'ワンパンマン');
+      expect(bookTitleMainPart('三体-黑暗森林'), '三体');
+      expect(bookTitleMainPart('テスト漫画:ブルー'), 'テスト漫画');
+      expect(bookTitleMainPart('テスト漫画－ブルー'), 'テスト漫画');
+      expect(bookTitleMainPart('Re:ゼロから始める異世界生活 ~外伝~'), 'Re:ゼロから始める異世界生活');
+    });
+
     test('切不出像样的主标题时 null', () {
       expect(bookTitleMainPart('One Piece'), isNull);
       expect(bookTitleMainPart('Spider-Man'), isNull);
