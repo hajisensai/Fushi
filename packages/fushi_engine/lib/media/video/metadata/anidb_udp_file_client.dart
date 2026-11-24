@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show md5;
 import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_text.dart';
 import 'package:meta/meta.dart';
 
 /// A registered AniDB client identity and the user's website credentials.
@@ -663,9 +664,9 @@ class AnidbUdpFileClient {
           airedAt: aired <= 0
               ? null
               : DateTime.fromMillisecondsSinceEpoch(aired * 1000, isUtc: true),
-          englishTitle: fields[6].trim(),
-          romajiTitle: fields[7].trim(),
-          kanjiTitle: fields[8].trim(),
+          englishTitle: aniDbDisplayText(fields[6].trim()),
+          romajiTitle: aniDbDisplayText(fields[7].trim()),
+          kanjiTitle: aniDbDisplayText(fields[8].trim()),
         );
       });
 
