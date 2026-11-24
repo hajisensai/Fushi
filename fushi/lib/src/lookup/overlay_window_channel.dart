@@ -256,6 +256,20 @@ class OverlayWindowChannel {
     <String, Object?>{'id': id, 'value': jsonEncode(jsonEncode(value))},
   );
 
+  /// 把一次**后台写卡**的结局推进覆盖窗（`window.__globalLookupHost.settleQueuedMine`
+  /// → 每个卡片帧的 `window.fushiSettleQueuedMine`）：弹窗当初只拿到 `queued`、按钮画成
+  /// 「已加入」，卡后来落地 / 失败时由宿主这一推，弹窗撤掉「已加入」、就地说原因
+  /// （review-gal-overlay-mine-fail，回补 BUG-1908：全屏游戏里看不到主窗 toast）。
+  ///
+  /// [settlement] 形如 `{expression, reading, outcome: landed|failed|duplicate,
+  /// noteId?, message?}`。与 [resolveBridge] 同样双重编码、同样**不受 route 作废影响**：
+  /// 它只兑现页面自己记着的那个「已加入」标记（popup.js 只动本弹窗排过队的那颗按钮），
+  /// 不碰卡面；查词卡上叠了嵌套子卡、根卡仍在屏上时也得送到。
+  Future<void> settleQueuedMine(Map<String, Object?> settlement) => _send<void>(
+    'settleQueuedMine',
+    <String, Object?>{'json': jsonEncode(jsonEncode(settlement))},
+  );
+
   /// Moves the off-screen-rendered overlay to its pending anchor at the final
   /// size and makes it visible.
   Future<void> reveal({required int width, required int height}) =>

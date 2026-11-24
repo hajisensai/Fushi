@@ -3930,6 +3930,51 @@
     return acted;
   }
 
+  // review-gal-overlay-mine-fail — 宿主（native SettleQueuedMine）推来的「后台写卡
+  // 结局」：查词卡制卡时只拿到 queued、按钮画成「已加入」，卡后来落地 / 失败由 Dart
+  // 推到这里。转发进**每一个**卡片帧的 popup.js fushiSettleQueuedMine——发起制卡的
+  // 那颗按钮可能在根卡里，用户此后又点开了嵌套子卡，只送顶层卡会漏掉它。哪颗按钮
+  // 认领由 popup.js 自己判（只有本弹窗排过队的那颗才撤「已加入」、才就地说原因）。
+  //
+  // jsonText 是 Dart 双重编码后的 JSON 文本；解析失败 / 形状不对一律 no-op，绝不抛
+  // （本函数由 fire-and-forget 的 ExecuteScript 调用）。返回转发到的帧数（诊断 / 测试）。
+  function settleQueuedMine(jsonText) {
+    var settlement = null;
+    try {
+      settlement = typeof jsonText === 'string' ? JSON.parse(jsonText) : jsonText;
+    } catch (e) {
+      return 0;
+    }
+    if (!settlement || typeof settlement !== 'object' ||
+        typeof settlement.expression !== 'string') {
+      return 0;
+    }
+    var forwarded = 0;
+    frames.forEach(function (record) {
+      var win = frameWindowOf(record);
+      if (!win || typeof win.fushiSettleQueuedMine !== 'function') {
+        return;
+      }
+      forwarded++;
+      var done = function () {
+        // 卡片是离屏渲染后 blit 进游戏 Layer 的：按钮翻面 / 就地提示要显式补一次
+        // 重采（同 gamepadAction），不能只赌 MutationObserver 的时机。
+        requestGalFrameDirty(record.route);
+      };
+      try {
+        var pending = win.fushiSettleQueuedMine(settlement);
+        if (pending && typeof pending.then === 'function') {
+          pending.then(done, done);
+        } else {
+          done();
+        }
+      } catch (e) {
+        done();
+      }
+    });
+    return forwarded;
+  }
+
   // TODO-1188 — the contentWindow of a frame record, or null when unavailable
   // (cross-origin guard / torn-down iframe / node harness).
   function frameWindowOf(record) {
@@ -4393,6 +4438,7 @@
     armGalFrameDirty: requestGalFrameDirty,
     requestGalFrameDirty: requestGalFrameDirty,
     gamepadAction: gamepadAction,
+    settleQueuedMine: settleQueuedMine,
     measureAndReport: measureAndReport,
     commitLayerShift: commitLayerShift,
     resetLayerOffsetForLegacyReveal: resetLayerOffsetForLegacyReveal,

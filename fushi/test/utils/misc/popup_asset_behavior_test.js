@@ -4002,6 +4002,308 @@ Promise.all([
   testHostRefreshAfterBackgroundLandingClearsAppQueuedMark(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
+// review-gal-overlay-mine-fail：gal 查词制卡采样完就回 queued（按钮「已加入」），写卡在
+// 宿主后台完成。结局以前只走主窗 toast——游戏全屏时看不见（回退 BUG-1908），「已加入」
+// 也永远撤不掉。宿主现在落地时推 window.fushiSettleQueuedMine(settlement)。
+// mountMineHeaderFor 把按钮挂在 window.__fushiRoot（shadow-root 车道）下，提示也画在那里。
+function mountedHintText(context) {
+  const root = context.window.__fushiRoot;
+  const hint = root?.querySelector('.inline-hint') ||
+    context.document.querySelector('.inline-hint');
+  return hint ? (hint.textContent || '') : null;
+}
+
+async function testHostSettledFailureClearsQueuedMarkInPlace() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '離陸');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1');
+  const probesBefore = state.mines;
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離陸',
+    reading: '',
+    outcome: 'failed',
+    message: 'ANKI_DOWN',
+  });
+  await flush();
+  assert.equal(claimed, 1, '排过队的那颗按钮认领结局');
+  assert.equal(mountedHintText(context), 'ANKI_DOWN', '失败原因必须在查词卡上就地说');
+  assert.equal(button.dataset.queued, '', '「已加入」必须撤掉');
+  assert.equal(button.textContent, '+', '写卡失败：回可点的 +');
+  assert.equal(state.mines, probesBefore);
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 2, '失败后再点按新卡制作，不再走排队');
+  assert.equal(state.queueCalls.length, 0);
+}
+
+async function testHostSettledLandingPaintsLatestEditableCheck() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '離脱');
+  await flush();
+  await button.onclick();
+  await flush();
+  state.inAnki = true;
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離脱',
+    reading: '',
+    outcome: 'landed',
+    noteId: 42,
+  });
+  await flush();
+  assert.equal(claimed, 1);
+  assert.equal(button.dataset.queued, '', '落地：「已加入」撤掉');
+  assert.equal(button.dataset.mined, '1', '落地：重问 Anki 后画 ✓');
+  assert.equal(button.dataset.latest, '1', '带回真 note id 的卡是「最新可改」✓↩');
+  assert.equal(mountedHintText(context), null, '成功不说话');
+}
+
+async function testHostSettledDuplicatePaintsCheckWithoutProbe() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  let probes = 0;
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') probes++;
+    return base(name, payload);
+  };
+  const button = mountMineHeaderFor(context, '離農');
+  await flush();
+  await button.onclick();
+  await flush();
+  const before = probes;
+  await context.window.fushiSettleQueuedMine({
+    expression: '離農',
+    outcome: 'duplicate',
+    message: 'DUP',
+  });
+  await flush();
+  assert.equal(probes, before, '失败 / 重复按宿主给的事实画，不回查（TODO-448）');
+  assert.equal(button.dataset.mined, '1', '重复 = 卡确实在 Anki 里');
+  assert.equal(mountedHintText(context), 'DUP');
+  assert.equal(state.mines, 1);
+}
+
+async function testHostSettledFailureIgnoresButtonsThatDidNotQueue() {
+  const context = loadPopup();
+  appQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '離任');
+  await flush();
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離任',
+    outcome: 'failed',
+    message: 'NOT_MINE',
+  });
+  await flush();
+  assert.equal(claimed, 0, '没排过队的按钮不认领');
+  assert.equal(mountedHintText(context), null, '不在没排队的按钮旁说别人的失败');
+  assert.equal(button.textContent, '+');
+  assert.equal(await context.window.fushiSettleQueuedMine({ outcome: 'failed' }), 0);
+}
+
+// 结局推送与 queued 回包是宿主两条各自异步的出口：写卡失败得够快时结局先到，那一刻
+// 还没有按钮排过队。凭 token 暂存、回包一到当场兑现，按钮不得挂着「已加入」。
+async function testHostSettlementArrivingBeforeQueuedReplyIsHonoured() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = async (name, payload) => {
+    if (name !== 'mineEntry') return base(name, payload);
+    state.mines++;
+    const early = await context.window.fushiSettleQueuedMine({
+      expression: '離島',
+      reading: '',
+      outcome: 'failed',
+      message: 'EARLY_FAIL',
+      token: 7,
+    });
+    assert.equal(early, 0, '回包未到：没有按钮能认领，只暂存');
+    return { queued: true, ankiConnect: false, queuedToken: 7 };
+  };
+  const button = mountMineHeaderFor(context, '離島');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '', '先到的失败结局当场兑现，不挂「已加入」');
+  assert.equal(button.textContent, '+');
+  assert.equal(mountedHintText(context), 'EARLY_FAIL', '失败原因照样就地说');
+}
+
+// 同一个词排过两次队：旧那次的结局（token 不同）不得撤掉新那次的「已加入」。
+async function testHostSettlementWithOtherTokenDoesNotClaim() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name !== 'mineEntry') return base(name, payload);
+    state.mines++;
+    return Promise.resolve({ queued: true, ankiConnect: false, queuedToken: 2 });
+  };
+  const button = mountMineHeaderFor(context, '離脚');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1');
+  const stale = await context.window.fushiSettleQueuedMine({
+    expression: '離脚',
+    outcome: 'failed',
+    message: 'OLD_FAIL',
+    token: 1,
+  });
+  await flush();
+  assert.equal(stale, 0, '别的那次排队的结局不认领');
+  assert.equal(button.dataset.queued, '1', '本次「已加入」依然属实');
+  assert.equal(mountedHintText(context), null);
+  const own = await context.window.fushiSettleQueuedMine({
+    expression: '離脚',
+    outcome: 'failed',
+    message: 'OWN_FAIL',
+    token: 2,
+  });
+  await flush();
+  assert.equal(own, 1);
+  assert.equal(button.dataset.queued, '');
+  assert.equal(mountedHintText(context), 'OWN_FAIL');
+}
+
+// 后台写卡失败、宿主还留着那张卡的画面与句音（retryable）：卡上的 + 就是「重试」——
+// 走 retryQueuedMine（宿主原样重写，与主窗 toast 的重试共用一次性入口），不重新制卡
+// （那会重抓已经换掉的游戏画面）。全屏游戏里这是唯一看得见的重试入口。
+function retryHarness(context, expression, retryReply) {
+  const state = appQueuedHarness(context);
+  state.retryCalls = [];
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'retryQueuedMine') {
+      state.retryCalls.push(payload);
+      return Promise.resolve(retryReply);
+    }
+    if (name !== 'mineEntry') return base(name, payload);
+    state.mines++;
+    return Promise.resolve({ queued: true, ankiConnect: false, queuedToken: 9 });
+  };
+  return state;
+}
+
+async function testRetryableFailureTurnsPlusIntoRetry() {
+  const context = loadPopup();
+  context.window.i18nMineRetryHint = 'RETRY_HINT';
+  const state = retryHarness(context, '離宮', { accepted: true });
+  const button = mountMineHeaderFor(context, '離宮');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 1);
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離宮', outcome: 'failed', message: 'ANKI_DOWN', token: 9, retryable: true,
+  });
+  await flush();
+  assert.equal(claimed, 1);
+  assert.equal(mountedHintText(context), 'ANKI_DOWN RETRY_HINT', '原因后面说可以点 + 重试');
+  assert.equal(button.dataset.queued, '');
+  assert.equal(button.textContent, '+');
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 1, '重试不得重新制卡（会重抓已换掉的画面）');
+  assert.equal(state.retryCalls.length, 1);
+  assert.equal(state.retryCalls[0], 9, '凭 token 请宿主原样重写');
+  assert.equal(button.dataset.queued, '1', '重写在路上：画回「已加入」');
+  const landed = await context.window.fushiSettleQueuedMine({
+    expression: '離宮', outcome: 'landed', noteId: 5, token: 9,
+  });
+  await flush();
+  assert.equal(landed, 1, '重写的结局凭同一 token 认领');
+  assert.equal(button.dataset.queued, '');
+}
+
+async function testRejectedRetrySaysSoInPlace() {
+  const context = loadPopup();
+  context.window.i18nMineRetryUnavailable = 'RETRY_GONE';
+  const state = retryHarness(context, '離散', { accepted: false });
+  const button = mountMineHeaderFor(context, '離散');
+  await flush();
+  await button.onclick();
+  await flush();
+  await context.window.fushiSettleQueuedMine({
+    expression: '離散', outcome: 'failed', message: 'X', token: 9, retryable: true,
+  });
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(state.retryCalls.length, 1);
+  assert.equal(mountedHintText(context), 'RETRY_GONE', '入口已失效（toast 上已点过）要就地说明');
+  assert.equal(button.dataset.queued, '', '不能挂着「已加入」');
+  assert.equal(button.textContent, '+');
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 2, '入口失效后再点按新卡制作');
+}
+
+async function testToastRetryRequeuesTheCardButton() {
+  const context = loadPopup();
+  const state = retryHarness(context, '離縁', { accepted: true });
+  const button = mountMineHeaderFor(context, '離縁');
+  await flush();
+  await button.onclick();
+  await flush();
+  await context.window.fushiSettleQueuedMine({
+    expression: '離縁', outcome: 'failed', message: 'X', token: 9, retryable: true,
+  });
+  await flush();
+  assert.equal(button.dataset.queued, '');
+  // 主窗 toast 上点了重试：宿主推 requeued，卡上的按钮跟着画回「已加入」。
+  const requeued = await context.window.fushiSettleQueuedMine({
+    expression: '離縁', outcome: 'requeued', token: 9,
+  });
+  await flush();
+  assert.equal(requeued, 1);
+  assert.equal(button.dataset.queued, '1');
+  await button.onclick();
+  await flush();
+  assert.equal(state.retryCalls.length, 0, '已在重写：+ 不再是重试入口');
+  assert.equal(state.mines, 1);
+}
+
+// 不带 retryable 的失败（素材已不在）：+ 照旧按新卡制作。
+async function testNonRetryableFailureMinesAnew() {
+  const context = loadPopup();
+  context.window.i18nMineRetryHint = 'RETRY_HINT';
+  const state = retryHarness(context, '離床', { accepted: true });
+  const button = mountMineHeaderFor(context, '離床');
+  await flush();
+  await button.onclick();
+  await flush();
+  await context.window.fushiSettleQueuedMine({
+    expression: '離床', outcome: 'failed', message: 'ONLY_REASON', token: 9,
+  });
+  await flush();
+  assert.equal(mountedHintText(context), 'ONLY_REASON');
+  await button.onclick();
+  await flush();
+  assert.equal(state.retryCalls.length, 0);
+  assert.equal(state.mines, 2);
+}
+
+Promise.all([
+  testRetryableFailureTurnsPlusIntoRetry(),
+  testRejectedRetrySaysSoInPlace(),
+  testToastRetryRequeuesTheCardButton(),
+  testNonRetryableFailureMinesAnew(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
+Promise.all([
+  testHostSettledFailureClearsQueuedMarkInPlace(),
+  testHostSettledLandingPaintsLatestEditableCheck(),
+  testHostSettledDuplicatePaintsCheckWithoutProbe(),
+  testHostSettledFailureIgnoresButtonsThatDidNotQueue(),
+  testHostSettlementArrivingBeforeQueuedReplyIsHonoured(),
+  testHostSettlementWithOtherTokenDoesNotClaim(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
 // 宿主主动刷新已渲染的「已制卡 ✓ / 可制卡 +」（window.fushiRefreshMineStates）。
 //
 // 为什么需要这条入口：查词时探测出的 ✓ 画完就不再动。AnkiMobile 后端上「卡真的进库
