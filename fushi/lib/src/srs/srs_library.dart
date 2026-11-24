@@ -77,7 +77,8 @@ class SrsLibraries {
       _sameEntries(other.entries, entries);
 
   @override
-  int get hashCode => Object.hash(activeUid, viewedUid, Object.hashAll(entries));
+  int get hashCode =>
+      Object.hash(activeUid, viewedUid, Object.hashAll(entries));
 
   static bool _sameEntries(List<SrsLibraryEntry> a, List<SrsLibraryEntry> b) {
     if (a.length != b.length) return false;
@@ -123,9 +124,10 @@ final StateProvider<String?> srsLibraryChoiceProvider = StateProvider<String?>(
 /// 复习库解析结果。`profiles` / `profile_settings` 有写入（建 / 删组合、拆 `srs.library`、迁移定
 /// 下共享库）时现算一遍，**结果不变就不通知**——下游用 `selectAsync` 只在 uid 真变了时重建。
 final AsyncNotifierProvider<SrsLibrariesNotifier, SrsLibraries>
-srsLibrariesProvider = AsyncNotifierProvider<SrsLibrariesNotifier, SrsLibraries>(
-  SrsLibrariesNotifier.new,
-);
+srsLibrariesProvider =
+    AsyncNotifierProvider<SrsLibrariesNotifier, SrsLibraries>(
+      SrsLibrariesNotifier.new,
+    );
 
 class SrsLibrariesNotifier extends AsyncNotifier<SrsLibraries> {
   @override
@@ -139,10 +141,12 @@ class SrsLibrariesNotifier extends AsyncNotifier<SrsLibraries> {
     final FushiDatabase db = ref.read(appProvider).database;
     final StreamSubscription<void> changes = db
         .tableUpdates(
-          TableUpdateQuery.onAllTables(<ResultSetImplementation<dynamic, dynamic>>[
-            db.profiles,
-            db.profileSettings,
-          ]),
+          TableUpdateQuery.onAllTables(
+            <ResultSetImplementation<dynamic, dynamic>>[
+              db.profiles,
+              db.profileSettings,
+            ],
+          ),
         )
         .listen((_) => unawaited(_refresh(db, activeId, choice)));
     ref.onDispose(changes.cancel);
@@ -168,8 +172,7 @@ class SrsLibrariesNotifier extends AsyncNotifier<SrsLibraries> {
   ) async {
     final List<ProfileRow> profiles = await db.getAllProfiles();
     // 激活 id 已不在库里（刚删掉、视图模型还没跟上）：与 `resolveActiveProfileId` 同口径取一份。
-    final int active =
-        profiles.any((ProfileRow p) => p.id == activeProfileId)
+    final int active = profiles.any((ProfileRow p) => p.id == activeProfileId)
         ? activeProfileId
         : await db.resolveActiveProfileId();
     return srsLibrariesOf(

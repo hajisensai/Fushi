@@ -222,21 +222,23 @@ mixin _FushiDbSrs on _$FushiDatabase {
   /// 共享复习库的指针（默认组合的 `combo/srs_shared_uid` 行，引擎 `combo_rows.dart`）指着旧 uid 时一并改指
   /// 新 uid：这份 profile 承载的就是共享库，换了集合身份共享库也跟着换，否则共享库指向一个已不存在的
   /// uid（制卡 / 复习打开一份空库）。同一个事务里改，不会有只改了一半的时刻。
-  Future<void> adoptProfileUid(int profileId, String uid) => transaction(() async {
-    final QueryRow? row = await customSelect(
-      'SELECT uid FROM profiles WHERE id = ?',
-      variables: <Variable<Object>>[Variable<int>(profileId)],
-    ).getSingleOrNull();
-    final String? old = row?.read<String?>('uid');
-    await customStatement('UPDATE profiles SET uid = ? WHERE id = ?', <Object>[
-      uid,
-      profileId,
-    ]);
-    if (old == null || old.isEmpty || old == uid) return;
-    await customStatement(
-      'UPDATE profile_settings SET value = ? '
-      'WHERE category = ? AND key = ? AND value = ?',
-      <Object>[uid, kProfileComboCategory, kProfileComboSrsSharedUidKey, old],
-    );
-  });
+  Future<void> adoptProfileUid(int profileId, String uid) => transaction(
+    () async {
+      final QueryRow? row = await customSelect(
+        'SELECT uid FROM profiles WHERE id = ?',
+        variables: <Variable<Object>>[Variable<int>(profileId)],
+      ).getSingleOrNull();
+      final String? old = row?.read<String?>('uid');
+      await customStatement(
+        'UPDATE profiles SET uid = ? WHERE id = ?',
+        <Object>[uid, profileId],
+      );
+      if (old == null || old.isEmpty || old == uid) return;
+      await customStatement(
+        'UPDATE profile_settings SET value = ? '
+        'WHERE category = ? AND key = ? AND value = ?',
+        <Object>[uid, kProfileComboCategory, kProfileComboSrsSharedUidKey, old],
+      );
+    },
+  );
 }

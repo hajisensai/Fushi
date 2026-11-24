@@ -359,8 +359,11 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
   ref.onDispose(() => disposed = true);
   bool shouldStop() => disposed || store.isWindingDown;
   // 偏好里存的牌组 / 笔记类型 / 字段映射 ID 与内置实体 ID 换成规范 ID（G9-6，srs_persisted_ids.dart）：补盐 / 并入后
-  // 旧盐算出的成员 ID 在牌组树里查不到。归一不到的原样保留。
+  // 旧盐算出的成员 ID 在牌组树里查不到。归一不到的原样保留。偏好里的落点属于激活配置制卡落的那份库：复习页
+  // 切到别的库时不拿那份库的规范 ID 去改写它（组合阶段 4）。
   srsRunLogged('srsNormalizeStoreIds', () async {
+    final SrsLibraries libraries = await ref.read(srsLibrariesProvider.future);
+    if (libraries.activeUid != profileUid) return;
     await srsNormalizeStoreIds(
       store: store,
       prefs: app.prefsRepo,

@@ -7,6 +7,8 @@ import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/profile/combo/combo_repository.dart';
 import 'package:fushi/src/profile/combo/fushi_settings_tree.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
+import 'package:fushi/src/profile/profile_deletion_cascade.dart'
+    show ProfileHostsSharedSrsLibraryException;
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -524,7 +526,34 @@ void main() {
       );
     });
 
-    test('删除默认组合：激活的组合接班成默认，其余组合生效值不变', () async {
+    test('删除承载共享复习库的默认组合：拒绝，一行不改（组合阶段 4）', () async {
+      expect(
+        (await rawRows(defaultId))[const SettingKey(
+          kComboSyntheticCategory,
+          kComboSrsSharedUidKey,
+        )],
+        await db.profileUidOf(defaultId),
+      );
+      final Map<SettingKey, String> before = await rawRows(defaultId);
+      await expectLater(
+        repo.deleteProfile(defaultId),
+        throwsA(isA<ProfileHostsSharedSrsLibraryException>()),
+      );
+      expect(await repo.combos.defaultComboId(), defaultId);
+      expect(await rawRows(defaultId), before);
+      expect(await repo.hostsSharedSrsLibrary(b), isFalse);
+    });
+
+    test('删除默认组合（共享库挂在别的配置上）：激活的组合接班成默认，其余组合生效值不变', () async {
+      // §4.2：只有 B 有复习数据时共享库指向 B，默认组合本身不承载复习库、可以删。
+      await db.upsertProfileSetting(
+        ProfileSettingsCompanion.insert(
+          profileId: defaultId,
+          category: kComboSyntheticCategory,
+          key: kComboSrsSharedUidKey,
+          value: await db.profileUidOf(b),
+        ),
+      );
       final int c = await repo.createProfile('C');
       await repo.combos.saveDocument(
         c,
@@ -545,6 +574,14 @@ void main() {
 
       expect(await repo.combos.defaultComboId(), b);
       expect(await repo.getActiveProfileId(), b);
+      expect(
+        (await rawRows(b))[const SettingKey(
+          kComboSyntheticCategory,
+          kComboSrsSharedUidKey,
+        )],
+        await db.profileUidOf(b),
+        reason: '共享库指针跟着接班者走，仍指向 B 的集合',
+      );
       expect(await db.getPref(theme), PrefCodec.encode('glass'));
       final Map<SettingKey, String> cAfter = (await repo.combos.resolve(
         <ComboScope, int>{ComboScope.language: c},

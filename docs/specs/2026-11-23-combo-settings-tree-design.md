@@ -2,7 +2,7 @@
 
 日期：2026-11-23
 拍板来源：拍板台 `design-combo-node-split`（做）、`design-srs-shared-library`（方案 a）
-状态：阶段 1 已实现（PR #4268）；阶段 2 已实现（见 §3.2，PR #4306）；阶段 3 已实现（见 §3.3）；阶段 4～6 待做，见文末「分期与登记」
+状态：阶段 1 已实现（PR #4268）；阶段 2 已实现（见 §3.2，PR #4306）；阶段 3 已实现（见 §3.3）；阶段 4 已实现（见 §4.5）；阶段 5～6 待做，见文末「分期与登记」
 
 ## 1. 要解决的问题
 
@@ -121,8 +121,8 @@
 - 会话制卡落哪份复习副本（过渡）：复习落点的牌组 id（`mining.deck`）与笔记类型 id
   （`mining.note_type`）只在所在副本里有意义，取用户选过具体 id 的那几个叶子的来源（都没选过则取
   两个叶子的来源），多个候选取优先级最高的层（`WorkProfileSession.miningProfileId`）；只看牌组
-  叶子会让「牌组用默认、笔记类型是绑定配置自建的」落进激活副本、自建类型回落 Lapis。阶段 4 换成
-  `srs.library` 解析。
+  叶子会让「牌组用默认、笔记类型是绑定配置自建的」落进激活副本、自建类型回落 Lapis。**阶段 4 已
+  换成 `srs.library` 解析，`miningProfileId` 已删**（§4.5）。
 - `resolveProfileId` / `resolveBoundProfileId`（浏览器扩展按「浏览器」媒体类型选一份配置）顺序同步
   改为 作品 > 媒体类型 > 语言。
 - **阶段 2 刻意没动、留给阶段 3 的点（阶段 3 已做，见 §3.3）**：生产路径不产生组合格式的行（只有 `ComboRepository.saveDocument`
@@ -235,6 +235,24 @@
   载荷带「生效值全量 + 拆分叶子列表」；导入为新组合时按本机默认组合重新 diff。v1 文件照旧导入
   （整份当快照，导入时 diff）。服务端 profile hub 用同一份引擎代码。
 
+### 4.5 阶段 4 实现（已实现）
+
+- 解析规则只写一次：引擎 `packages/fushi_engine/lib/profile/combo/combo_srs_library.dart`
+  （`ComboSrsLibraries`，纯函数）；app 读口 `fushi/lib/src/profile/combo/srs_library_resolver.dart`
+  （`loadComboSrsLibraries` / `resolveSrsLibraryUid`），消费方不再拿「激活配置的 uid」当集合身份。
+- 「待定」（还没有默认组合，或默认组合没写 `srs_shared_uid`）时取激活配置自己的 uid（迁移前语义），
+  不在没定的时候把卡写进可能被判成别人独立库的集合。
+- 制卡：本机制卡（`_readSrsMiner`）按 作品会话绑定层 + 激活配置 解析；替对端 / 浏览器扩展制卡按
+  所选配置解析（`_hostProfileMiningMiner`）；互联主机的「复习库」目录列共享库 + 独立库。
+- 复习页 / .apkg 导入：`srsStoreProvider` 打开 `SrsLibraries.viewedUid`（默认 = 激活配置解析出的库）；
+  导入落复习页正看的那份库，所以没拆 `srs.library` 的组合导入同一份 .apkg 落同一个集合，
+  `otherProfileNoteType` 冲突只在独立库之间出现。存在独立库时牌组列表顶部出库切换
+  （`srs_library_switcher.dart`，只在本次运行内记选择）；制卡落点选项与偏好 ID 归一只对激活配置的库做。
+- 采用对端 uid（铁律 E，`adoptProfileUid`）时共享库指针同事务改指新 uid。
+- **承载共享库的 Profile 不能删**（`ProfileHostsSharedSrsLibraryException`，配置页确认框写明原因）：
+  共享库的集合挂在它的 `profiles` 行上，删了所有没拆独立库的组合的复习一起没了。阶段 3 的「删默认
+  组合时共享库改指接班者」只剩共享库挂在别的配置上 / 待定的情形会走到。
+
 ## 5. UI（阶段 6）
 
 - 配置管理页：只有默认组合时不出现「组合」概念（设置页照常编辑默认值）。
@@ -254,7 +272,7 @@
 | 1 | 设置树登记 + 解析 / 编辑 / diff 核心 + 守卫测试，不接 UI、不改持久化 | 已实现（PR #4268） |
 | 2 | `ComboRepository`（`combo` category 读写）+ 作品会话改由解析结果填充 + 媒体类型 / 语言层不再整包切换 | 已实现（§3.2） |
 | 3 | 一次性迁移（§3.3）+ 迁移报告 + 往返测试 | 已实现（§3.3） |
-| 4 | 复习库解析接入制卡 / .apkg 导入 / 复习页 + 迁移规则（§4.2） | 待做，依赖 3 |
+| 4 | 复习库解析接入制卡 / .apkg 导入 / 复习页 + 迁移规则（§4.2） | 已实现（§4.5；迁移规则随阶段 3 落地） |
 | 5 | 手动合并进共享库（Rust 核心命令 + 冲突确认 UI + 同步事件） | 待做，依赖 4 |
 | 6 | 组合编辑 UI、作品生效值表、分享 JSON v2、备份合并规则 | 待做，依赖 2～3 |
 

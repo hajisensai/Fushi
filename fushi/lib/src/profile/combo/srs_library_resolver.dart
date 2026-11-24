@@ -53,10 +53,7 @@ Future<String> resolveSrsLibraryUid(
 
 /// 复习库 [libraryUid] 挂在哪份配置上（`profiles.uid` 等于它的那份：共享库可能挂在激活配置以外的
 /// 配置上，见设计 §4.2）；不在库里时 null。
-Future<int?> profileIdOfSrsLibrary(
-  FushiDatabase db,
-  String libraryUid,
-) async {
+Future<int?> profileIdOfSrsLibrary(FushiDatabase db, String libraryUid) async {
   if (libraryUid.isEmpty) return null;
   for (final ProfileRow p in await db.getAllProfiles()) {
     if (await db.profileUidOf(p.id) == libraryUid) return p.id;

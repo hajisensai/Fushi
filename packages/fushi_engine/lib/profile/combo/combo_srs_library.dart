@@ -139,8 +139,11 @@ class ComboSrsLibraries {
     return null;
   }
 
-  ComboSrsLibrary get _shared =>
-      ComboSrsLibrary(uid: sharedUid!, shared: true, ownerProfileId: sharedHostId);
+  ComboSrsLibrary get _shared => ComboSrsLibrary(
+    uid: sharedUid!,
+    shared: true,
+    ownerProfileId: sharedHostId,
+  );
 
   /// [baseProfileId]（激活配置，或浏览器扩展 / 互联选的那份配置）之上叠 [layers]（绑定层 →
   /// Profile id）时制卡 / 导入 / 复习落进哪份库。指向 [baseProfileId] 自己、已不存在的层忽略。
@@ -188,7 +191,11 @@ class ComboSrsLibraries {
         // 独立库的 uid 恰好就是共享库那份（迁移时共享库指向了它，之后又被设成 own）：同一份
         // 集合，不重复列。
         if (_uidById[id] != sharedUid)
-          ComboSrsLibrary(uid: _uidById[id]!, shared: false, ownerProfileId: id),
+          ComboSrsLibrary(
+            uid: _uidById[id]!,
+            shared: false,
+            ownerProfileId: id,
+          ),
     ];
   }
 

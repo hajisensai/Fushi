@@ -21,13 +21,13 @@ import 'package:fushi/src/mining/mining_image_mode_target.dart'
     show probeSynchronizedClipSupport;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
-import 'package:fushi/src/profile/combo/combo_repository.dart'
-    show ComboScope;
+import 'package:fushi/src/profile/combo/combo_repository.dart' show ComboScope;
 import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
 import 'package:fushi/src/profile/work_profile_anki_settings_store.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
-import 'package:fushi_engine/srs/srs_mining_target.dart' show SrsMiningDestination;
+import 'package:fushi_engine/srs/srs_mining_target.dart'
+    show SrsMiningDestination;
 import 'package:fushi/src/srs/srs_generation_kind.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
