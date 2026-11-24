@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
+
 import 'package:fushi/src/utils/window_caption_channel.dart';
 
 /// Dart 失联检测的 Dart 侧：每秒经 `app.fushi/window` 向 Windows runner 报一次平安。
@@ -14,14 +16,18 @@ const Duration kDartHeartbeatInterval = Duration(seconds: 1);
 
 Timer? _heartbeatTimer;
 
-/// 在 `main()` 里调一次（仅 Windows 生效，重复调用无效果）。[send] 与 [interval]
-/// 供测试注入。
+/// 在 `main()` 里调一次（仅 Windows 的 profile / release 生效，重复调用无效果）。
+/// debug 构建不发心跳：Dart 断点 / VM service 暂停会让 isolate 停住任意久，而 runner
+/// 的 `IsDebuggerPresent()` 只认原生调试器、认不出 Dart 调试器，发了就会把每次断点
+/// 都抓成 hang dump。[send]、[interval]、[isWindows]、[isDebug] 供测试注入。
 void installDartHeartbeat({
   Future<void> Function()? send,
   Duration interval = kDartHeartbeatInterval,
   bool? isWindows,
+  bool? isDebug,
 }) {
   if (!(isWindows ?? Platform.isWindows)) return;
+  if (isDebug ?? kDebugMode) return;
   if (_heartbeatTimer != null) return;
   final Future<void> Function() beat =
       send ?? WindowCaptionChannel.dartHeartbeat;

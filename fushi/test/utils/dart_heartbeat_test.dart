@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/feedback/feedback_gal_lookup_log.dart';
 import 'package:fushi/src/utils/dart_heartbeat.dart';
 
 /// Dart 失联检测：Dart 侧每秒心跳 + runner 看门狗据此判定的接线守卫。
@@ -14,8 +15,16 @@ void main() {
   test('Windows：每个间隔发一次心跳，重复安装不叠定时器', () {
     fakeAsync((FakeAsync async) {
       int beats = 0;
-      installDartHeartbeat(send: () async => beats++, isWindows: true);
-      installDartHeartbeat(send: () async => beats += 100, isWindows: true);
+      installDartHeartbeat(
+        send: () async => beats++,
+        isWindows: true,
+        isDebug: false,
+      );
+      installDartHeartbeat(
+        send: () async => beats += 100,
+        isWindows: true,
+        isDebug: false,
+      );
       async.elapse(const Duration(seconds: 5));
       expect(beats, 5);
     });
@@ -24,10 +33,33 @@ void main() {
   test('非 Windows：不起定时器', () {
     fakeAsync((FakeAsync async) {
       int beats = 0;
-      installDartHeartbeat(send: () async => beats++, isWindows: false);
+      installDartHeartbeat(
+        send: () async => beats++,
+        isWindows: false,
+        isDebug: false,
+      );
       async.elapse(const Duration(seconds: 5));
       expect(beats, 0);
     });
+  });
+
+  test('debug 构建：不起定时器（Dart 断点暂停不是卡死）', () {
+    fakeAsync((FakeAsync async) {
+      int beats = 0;
+      installDartHeartbeat(
+        send: () async => beats++,
+        isWindows: true,
+        isDebug: true,
+      );
+      async.elapse(const Duration(seconds: 5));
+      expect(beats, 0);
+    });
+  });
+
+  test('Dart 失联计量行在反馈日志白名单里', () {
+    const String raw =
+        '2026-11-24T10:00:00  [native] dart-silence: ms=10100 dump=hang-1.dmp';
+    expect(galLookupDiagnosticLines(raw), hasLength(1));
   });
 
   test('Dart 方法名与 runner 处理器、看门狗接线一致', () {
@@ -54,7 +86,7 @@ void main() {
     expect(window, contains('::fushi::NoteDartHeartbeat();'));
     expect(header, contains('void NoteDartHeartbeat();'));
     expect(dog, contains('g_dart_beat_ms'));
-    expect(dog, contains('dart_beat_ms != 0'), reason: '第一次心跳到达前不布防，启动期不能算失联');
+    expect(dog, contains('dart_beat_ms == 0'), reason: '第一次心跳到达前不布防，启动期不能算失联');
     expect(dog, contains('dart heartbeat silent'));
     expect(
       dog,
