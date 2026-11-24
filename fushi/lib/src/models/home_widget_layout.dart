@@ -186,6 +186,18 @@ enum HomeWidgetKind {
     max: HomeWidgetSize(3, 2),
     compactDefault: HomeWidgetSize(1, 1),
     wideDefault: HomeWidgetSize(2, 1),
+  ),
+
+  /// 「收藏句子」：最近收藏的句子（1×1 = 总数 + 今日新增；2×1 = 最新一句；两行以上 =
+  /// 最近几句的列表，行数跟高度走；够宽再挂「制卡（N）」）。可选组件，不进默认模板 /
+  /// 迁移，只能从「添加组件 → 学习」自己加。
+  favorites(
+    'favorites',
+    HomeWidgetCategory.study,
+    min: HomeWidgetSize(1, 1),
+    max: HomeWidgetSize(6, 4),
+    compactDefault: HomeWidgetSize(2, 2),
+    wideDefault: HomeWidgetSize(4, 2),
   );
 
   const HomeWidgetKind(
@@ -361,7 +373,8 @@ bool homeWidgetAvailable(
   HomeWidgetKind.week ||
   HomeWidgetKind.recentlyAdded ||
   HomeWidgetKind.panorama ||
-  HomeWidgetKind.languageGoals => true,
+  HomeWidgetKind.languageGoals ||
+  HomeWidgetKind.favorites => true,
 };
 
 // ── 尺寸 ────────────────────────────────────────────────────────────────

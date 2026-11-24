@@ -65,6 +65,29 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         poster: poster,
       ),
       HomeWidgetKind.languageGoals => _languageGoalsCell(tokens, item, poster),
+      HomeWidgetKind.favorites => HomeFavoritesPanel(
+        key: const ValueKey<String>('home-favorites-card'),
+        poster: poster,
+        onOpenCollections: _openFavoriteSentences,
+        canOpenFavorite: (FavoriteSentence f) =>
+            favoriteSentenceOriginReachable(f, appModel.moduleVisibility),
+        onOpenFavorite: (HomeFavoriteEntry e) =>
+            FavoriteOriginNavigator.openFavoriteSentence(
+              context: context,
+              ref: ref,
+              appModel: appModel,
+              favorite: e.favorite,
+              displayTitle: e.title,
+            ),
+        onCreateCards: favoriteBatchMiningAvailable(appModel)
+            ? (List<FavoriteSentence> favorites) => unawaited(
+                showFavoriteBatchMining(context, <FavoriteMiningItem>[
+                  for (final FavoriteSentence f in favorites)
+                    ?favoriteMiningItemOfSentence(f),
+                ]),
+              )
+            : null,
+      ),
     };
   }
 

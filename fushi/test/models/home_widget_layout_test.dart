@@ -20,7 +20,7 @@ List<HomeWidgetKind> kinds(List<HomeWidgetItem> items) => <HomeWidgetKind>[
 
 void main() {
   group('目录', () {
-    test('12 种组件，持久化 id 冻结且唯一', () {
+    test('13 种组件，持久化 id 冻结且唯一', () {
       expect(
         HomeWidgetKind.values.map((HomeWidgetKind k) => k.id).toList(),
         <String>[
@@ -36,6 +36,7 @@ void main() {
           'ai_agent',
           'panorama',
           'language_goals',
+          'favorites',
         ],
       );
       for (final HomeWidgetKind k in HomeWidgetKind.values) {
@@ -66,6 +67,7 @@ void main() {
             HomeWidgetKind.aiAgent: (s11, HomeWidgetSize(3, 2)),
             HomeWidgetKind.panorama: (s11, HomeWidgetSize(6, 4)),
             HomeWidgetKind.languageGoals: (s11, HomeWidgetSize(3, 2)),
+            HomeWidgetKind.favorites: (s11, HomeWidgetSize(6, 4)),
           };
       expect(spec.keys.toSet(), HomeWidgetKind.values.toSet());
       for (final HomeWidgetKind k in HomeWidgetKind.values) {
@@ -79,6 +81,39 @@ void main() {
         expect(k.resizableIn(HomeGridKind.compact), isTrue, reason: k.id);
       }
       expect(s21.toString(), '2×1');
+    });
+
+    test('「收藏句子」：学习类、默认 2×2 / 4×2，可选组件不进默认模板', () {
+      const HomeWidgetKind k = HomeWidgetKind.favorites;
+      expect(k.category, HomeWidgetCategory.study);
+      expect(k.defaultFor(HomeGridKind.compact), s22);
+      expect(k.defaultFor(HomeGridKind.wide), s42);
+      expect(k.maxFor(HomeGridKind.compact), const HomeWidgetSize(2, 4));
+      expect(k.repeatable, isFalse);
+      for (final bool on in <bool>[false, true]) {
+        for (final HomeGridKind g in HomeGridKind.values) {
+          final List<HomeWidgetItem> migrated = migrateHomeWidgetLayout(
+            grid: g,
+            modes: <HomeDashboardPanel, HomeDashboardPanelMode>{
+              for (final HomeDashboardPanel p in HomeDashboardPanel.values)
+                p: on
+                    ? HomeDashboardPanelMode.shown
+                    : HomeDashboardPanelMode.hidden,
+            },
+            auto: HomeWidgetAutoFacts(
+              srsReview: on,
+              tracking: on,
+              aiAgent: on,
+              panorama: on,
+            ),
+          );
+          expect(
+            kinds(migrated),
+            isNot(contains(HomeWidgetKind.favorites)),
+            reason: g.wire,
+          );
+        }
+      }
     });
 
     test('窄网格宽度封顶 2 列，高度范围不变', () {
@@ -804,6 +839,7 @@ void main() {
         HomeWidgetKind.week,
         HomeWidgetKind.recentlyAdded,
         HomeWidgetKind.panorama,
+        HomeWidgetKind.favorites,
       ]) {
         expect(
           available(
