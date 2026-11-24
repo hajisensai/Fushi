@@ -320,4 +320,122 @@ void main() {
       );
     });
   });
+
+  group('反馈 RCv76PPoiJ：书库位置锚点多进程安全 + 磁盘对账', () {
+    const String internal = AppPaths.androidDocumentsLocationInternal;
+    const String external = AppPaths.androidDocumentsLocationExternal;
+
+    test('锚定的根是空的、另一个根有书 → 以磁盘为准改正锚点', () {
+      expect(
+        AppPaths.reconcileAndroidDocumentsLocation(
+          anchored: internal,
+          anchoredHasLibrary: false,
+          otherHasLibrary: true,
+        ),
+        external,
+        reason: '锚点被冲回 internal，但书全在外部：必须回到外部，而不是对着空根',
+      );
+      expect(
+        AppPaths.reconcileAndroidDocumentsLocation(
+          anchored: external,
+          anchoredHasLibrary: false,
+          otherHasLibrary: true,
+        ),
+        internal,
+      );
+    });
+
+    test('锚定的根有书 / 两边都空 → 沿用锚点', () {
+      for (final (bool, bool) c in <(bool, bool)>[
+        (true, true),
+        (true, false),
+        (false, false),
+      ]) {
+        expect(
+          AppPaths.reconcileAndroidDocumentsLocation(
+            anchored: external,
+            anchoredHasLibrary: c.$1,
+            otherHasLibrary: c.$2,
+          ),
+          external,
+          reason: '$c：迁移中断（两边都有）与全新安装（两边都空）都不改锚点',
+        );
+      }
+    });
+
+    group('磁盘', () {
+      late Directory tmp;
+      setUp(() => tmp = Directory.systemTemp.createTempSync('fushi_anchor_'));
+      tearDown(() {
+        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+      });
+
+      test('hasLibraryFiles 只认白名单目录里的文件，空目录不算', () async {
+        Directory(
+          p.join(tmp.path, 'fushi_books', 'empty', 'deeper'),
+        ).createSync(recursive: true);
+        File(p.join(tmp.path, 'not_owned', 'x.txt'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('x');
+        expect(await AppPaths.hasLibraryFiles(tmp, onTimeout: true), isFalse);
+
+        File(
+          p.join(tmp.path, 'fushi_books', 'empty', 'deeper', 'c.jpg'),
+        ).writeAsStringSync('jpg');
+        expect(await AppPaths.hasLibraryFiles(tmp, onTimeout: false), isTrue);
+      });
+
+      test('锚点文件原子写、读回一致；坏内容按不存在处理', () async {
+        expect(await AppPaths.readAndroidLibraryAnchor(tmp), isNull);
+        const AndroidLibraryAnchor anchor = AndroidLibraryAnchor(
+          location: internal,
+          layout: AppPaths.documentsLayoutNested,
+        );
+        await AppPaths.writeAndroidLibraryAnchor(tmp, anchor);
+        expect(await AppPaths.readAndroidLibraryAnchor(tmp), anchor);
+        expect(
+          tmp.listSync().whereType<File>().map((File f) => p.basename(f.path)),
+          <String>[AppPaths.androidLibraryAnchorFileName],
+          reason: '临时文件不留残渣',
+        );
+
+        File(
+          p.join(tmp.path, AppPaths.androidLibraryAnchorFileName),
+        ).writeAsStringSync('{"location":"sdcard"}');
+        expect(await AppPaths.readAndroidLibraryAnchor(tmp), isNull);
+      });
+    });
+
+    test('AndroidLibraryAnchor 编解码', () {
+      expect(
+        AndroidLibraryAnchor.tryParse(
+          const AndroidLibraryAnchor(location: external).encode(),
+        ),
+        const AndroidLibraryAnchor(location: external),
+      );
+      expect(AndroidLibraryAnchor.tryParse('not json'), isNull);
+      expect(
+        AndroidLibraryAnchor.tryParse('{"location":"internal","layout":"x"}'),
+        const AndroidLibraryAnchor(location: internal),
+        reason: '布局是垃圾值时当没给',
+      );
+    });
+
+    test('守卫：位置锚点不再写进 SharedPreferences（多进程会被旧副本整份覆盖）', () {
+      final RegExp write = RegExp(
+        r'set(String|Bool)\(\s*AppPaths\.androidDocumentsLocationPrefKey|'
+        r'set(String|Bool)\(\s*androidDocumentsLocationPrefKey',
+      );
+      final List<String> offenders = <String>[
+        for (final FileSystemEntity e in Directory(
+          'lib',
+        ).listSync(recursive: true))
+          if (e is File &&
+              e.path.endsWith('.dart') &&
+              write.hasMatch(e.readAsStringSync()))
+            e.path,
+      ];
+      expect(offenders, isEmpty);
+    });
+  });
 }

@@ -623,36 +623,35 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
   /// 迁过，不再弹）。迁回内部时布局锚点一起锚成 nested——目标就是 `app_flutter/<容器>/data`，
   /// 留着 flat 锚点会让下次启动解析回 `app_flutter` 根，书库在 UI 上集体消失。任一步失败
   /// 复原已改的键并抛错，由引擎回滚整次迁移。
+  ///
+  /// 位置与布局的真相源是 support 根下的锚点文件（[AndroidLibraryAnchor]，多进程安全，
+  /// 反馈 RCv76PPoiJ）；布局键在 prefs 里照写一份，供不经 Android 锚点的通用布局判定读。
   static Future<void> _commitAndroidLocation(
     SharedPreferences sp,
     String location,
   ) async {
-    final String? previousLocation = sp.getString(
-      AppPaths.androidDocumentsLocationPrefKey,
-    );
     final String? previousLayout = sp.getString(
       AppPaths.documentsLayoutPrefKey,
     );
+    final bool toInternal =
+        location == AppPaths.androidDocumentsLocationInternal;
     try {
-      if (location == AppPaths.androidDocumentsLocationInternal &&
+      if (toInternal &&
           !await sp.setString(
             AppPaths.documentsLayoutPrefKey,
             AppPaths.documentsLayoutNested,
           )) {
         throw const DataRootMigrationException('写入数据位置布局设置失败');
       }
-      if (!await sp.setString(
-        AppPaths.androidDocumentsLocationPrefKey,
-        location,
-      )) {
-        throw const DataRootMigrationException('写入数据位置设置失败');
-      }
-    } catch (e) {
-      await _restorePrefString(
-        sp,
-        AppPaths.androidDocumentsLocationPrefKey,
-        previousLocation,
+      // 锚点是最后一步：它写成功 = 提交成功；它抛错时锚点文件原子替换没发生，
+      // 只需复原上面的布局键。
+      await AppPaths.commitAndroidLibraryAnchor(
+        AndroidLibraryAnchor(
+          location: location,
+          layout: toInternal ? AppPaths.documentsLayoutNested : null,
+        ),
       );
+    } catch (e) {
       await _restorePrefString(
         sp,
         AppPaths.documentsLayoutPrefKey,

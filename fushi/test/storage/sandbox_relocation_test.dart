@@ -5,6 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/storage/data_root_migrator.dart'
+    show DocumentsPathRebaser;
 import 'package:fushi/src/storage/sandbox_relocation.dart';
 
 /// iOS「每次更新文件都失效」的回归。
@@ -374,6 +377,159 @@ void main() {
         nested.path,
         reason: '台账要跟上新根，否则下次启动还会再判一次嵌套',
       );
+    });
+  });
+
+  group('反馈 RCv76PPoiJ：台账给的映射也要磁盘作证', () {
+    late Directory sandbox;
+    late Directory external;
+    late Directory internal;
+    late FushiDatabase db;
+
+    setUp(() {
+      sandbox = Directory.systemTemp.createTempSync('sandbox_reloc_rc_');
+      external = Directory(
+        p.join(sandbox.path, 'sdcard', 'Android', 'files', 'data'),
+      )..createSync(recursive: true);
+      internal = Directory(p.join(sandbox.path, 'data', 'app_flutter'))
+        ..createSync(recursive: true);
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+    });
+
+    tearDown(() async {
+      await db.close();
+      if (sandbox.existsSync()) sandbox.deleteSync(recursive: true);
+    });
+
+    Future<String> seedBookIn(Directory root, {required bool onDisk}) async {
+      final String dir = p.join(root.path, 'fushi_books', 'norway');
+      if (onDisk) {
+        Directory(dir).createSync(recursive: true);
+        File(p.join(dir, 'cover.jpg')).writeAsStringSync('jpg');
+      }
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'norway',
+          title: 'ノルウェイの森',
+          epubPath: 'o.epub',
+          extractDir: dir,
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 0,
+        ),
+      );
+      return dir;
+    }
+
+    test('书库在外部、本次根被判回空的内部 → 拒绝改写，路径与台账都不动', () async {
+      // 现场：书库已迁到外部（文件在、库里路径指外部、台账记外部）；书库位置锚点
+      // 被别的进程的旧 SharedPreferences 副本冲掉，本次冷启动解析成空的内部根。
+      final String live = await seedBookIn(external, onDisk: true);
+      await db.setPref(
+        SandboxRelocation.lastDocumentsRootPrefKey,
+        external.path,
+      );
+
+      final SandboxRelocationOutcome outcome =
+          await SandboxRelocation.reconcile(
+            db: db,
+            documentsRoot: internal.path,
+            supportRoot: p.join(sandbox.path, 'data', 'files'),
+          );
+
+      expect(outcome.rebased, isFalse);
+      expect(outcome.refusedEvidence, isNotNull);
+      expect(outcome.refusedEvidence!.contradicted, 1);
+      expect(outcome.isNoteworthy, isTrue, reason: '拒绝要进诊断日志');
+      expect(
+        (await db.getAllEpubBooks()).single.extractDir,
+        live,
+        reason: '旧实现在这里把路径改到空的内部根，整个书架封面 / 音频集体丢失',
+      );
+      expect(
+        await db.getPref(SandboxRelocation.lastDocumentsRootPrefKey),
+        external.path,
+        reason: '台账不能跟着换：根被纠正回外部后，下次启动要能直接对上',
+      );
+    });
+
+    test('已经被改坏的安装：根纠正回外部后，按台账把路径改回来', () async {
+      // 旧实现留下的现场：路径被改到内部（不存在），台账记内部，文件仍在外部。
+      Directory(
+        p.join(external.path, 'fushi_books', 'norway'),
+      ).createSync(recursive: true);
+      File(
+        p.join(external.path, 'fushi_books', 'norway', 'cover.jpg'),
+      ).writeAsStringSync('jpg');
+      await seedBookIn(internal, onDisk: false);
+      await db.setPref(
+        SandboxRelocation.lastDocumentsRootPrefKey,
+        internal.path,
+      );
+
+      final SandboxRelocationOutcome outcome =
+          await SandboxRelocation.reconcile(
+            db: db,
+            documentsRoot: external.path,
+            supportRoot: p.join(sandbox.path, 'data', 'files'),
+          );
+
+      expect(outcome.rebased, isTrue);
+      final String repaired = (await db.getAllEpubBooks()).single.extractDir;
+      expect(
+        File(p.join(repaired, 'cover.jpg')).existsSync(),
+        isTrue,
+        reason: '封面要沿修复后的路径打开',
+      );
+    });
+  });
+
+  group('rebaseEvidenceFor 纯函数', () {
+    const String oldRoot = '/old';
+    const String newRoot = '/new';
+    final DocumentsPathRebaser docs = DocumentsPathRebaser(
+      oldRoot: oldRoot,
+      newRoot: newRoot,
+      scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
+    );
+
+    SandboxRebaseEvidence evidence(List<String> stored, Set<String> onDisk) =>
+        SandboxRelocation.rebaseEvidenceFor(
+          storedPaths: stored,
+          docs: docs,
+          exists: onDisk.contains,
+        );
+
+    test('旧不在、新在 → 证实', () {
+      final SandboxRebaseEvidence e = evidence(
+        <String>['/old/fushi_books/a'],
+        <String>{'/new/fushi_books/a'},
+      );
+      expect((e.confirmed, e.contradicted, e.sampled), (1, 0, 1));
+    });
+
+    test('旧在、新不在 → 反证', () {
+      final SandboxRebaseEvidence e = evidence(
+        <String>['/old/fushi_books/a'],
+        <String>{'/old/fushi_books/a'},
+      );
+      expect((e.confirmed, e.contradicted), (0, 1));
+    });
+
+    test('两边都在 / 都不在 → 中性', () {
+      final SandboxRebaseEvidence e = evidence(
+        <String>['/old/fushi_books/a', '/old/fushi_books/b'],
+        <String>{'/old/fushi_books/a', '/new/fushi_books/a'},
+      );
+      expect((e.confirmed, e.contradicted, e.sampled), (0, 0, 2));
+    });
+
+    test('作用域外的样本不计', () {
+      final SandboxRebaseEvidence e = evidence(
+        <String>['/old/my_music/a', '/elsewhere/fushi_books/a'],
+        <String>{'/old/my_music/a'},
+      );
+      expect(e.sampled, 0);
     });
   });
 }
