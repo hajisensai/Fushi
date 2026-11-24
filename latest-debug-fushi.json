@@ -8,16 +8,6 @@
   "notes": "Automated desktop debug-channel build from develop @ 58b4601. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-3.4.0-debug.32203-linux-x86_64.flatpak",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32203-linux-x86_64.flatpak",
-      "releaseSequence": 32203,
-      "tag": "v3.4.0-debug.32203+f8f2847",
-      "version": "3.4.0-debug.32203",
-      "size": 260146816,
-      "sha256": "ca17dee79d25de7cf51ad3acfec848ce3bbc188821a9a89b4de1c573b18711d8",
-      "dbSchemaVersion": 178
-    },
-    {
       "name": "fushi-3.4.0-debug.32216-58b4601-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32216-58b4601-debug.apk",
       "releaseSequence": 32216,
@@ -35,6 +25,16 @@
       "version": "3.4.0-debug.32216",
       "size": 97592667,
       "sha256": "82c494d97accc86435cb1b23bdbd05c92fb0299e638bf52309b0a9719f8df4c0",
+      "dbSchemaVersion": 178
+    },
+    {
+      "name": "fushi-3.4.0-debug.32216-linux-x86_64.flatpak",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32216-linux-x86_64.flatpak",
+      "releaseSequence": 32216,
+      "tag": "v3.4.0-debug.32216+58b4601",
+      "version": "3.4.0-debug.32216",
+      "size": 260161720,
+      "sha256": "a8d0f4e283459a1281ddc0a70e1b6c05e6d7a6e9344b02d2b93d9dd4cde5ec8e",
       "dbSchemaVersion": 178
     },
     {
