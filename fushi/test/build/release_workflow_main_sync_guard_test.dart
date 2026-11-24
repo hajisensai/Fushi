@@ -11,8 +11,8 @@ import 'package:test/test.dart';
 ///    绝不能动 main；从 main 发的正式版也不跑（main 本身就是正式版代码）。
 /// 3. 排在更新清单发布之后：清单落地 = 资产上传完，那才是「发布成功后」。
 /// 4. 合并方式是 `git merge --no-ff -X theirs`，失败走 `merge --abort` 报错；**绝不 force-push**：
-///    main 上的机器人图表提交让它永远不是 develop 的祖先，纯快进永远失败；而 force 会
-///    抹掉 main 的历史。
+///    main 上的合并提交（与 2026-11-25 前的机器人图表提交）让它永远不是 develop 的祖先，
+///    纯快进永远失败；而 force 会抹掉 main 的历史。
 /// 5. 用 GITHUB_TOKEN 推（不级联触发 main 的 push 构建，不会因此多发一版）。
 void main() {
   final Directory workflowsDir = Directory('../.github/workflows');
@@ -67,7 +67,7 @@ void main() {
     expect(
       body,
       contains('git -C "\$WORK" merge --no-ff -X theirs'),
-      reason: 'main 上的机器人图表提交让纯快进永远失败；-X theirs 只让图表 SVG 取 develop 的',
+      reason: 'main 上的合并 / 历史图表提交让纯快进永远失败；-X theirs 只让图表 SVG 取 develop 的',
     );
     expect(body, contains('merge --abort'));
     expect(body, contains('::error title=main sync failed::'));
