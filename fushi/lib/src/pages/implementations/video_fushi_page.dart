@@ -230,6 +230,17 @@ import 'package:fushi/src/media/video/subtitle_retiming_service.dart';
 import 'package:fushi/src/media/video/video_display_claim.dart';
 import 'package:fushi/src/media/video/remote_session_reload.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
+import 'package:fushi/src/media/async_file_existence_cache.dart'
+    show AsyncFileExistenceCache;
+import 'package:fushi/src/media/video/metadata/video_metadata_image_provider.dart'
+    show videoFileEpisodeStillImage, videoPanelEpisodeThumbCandidates;
+import 'package:fushi/src/media/video/video_cover_meta_loader.dart';
+import 'package:fushi/src/media/video/video_home_layout.dart'
+    show VideoFileEpisodeStills;
+import 'package:fushi/src/media/video/video_library_scrape_maps.dart'
+    show videoFileEpisodeStillsByBook;
+import 'package:fushi_engine/media/video/scraper/scraper_types.dart'
+    show CoverMeta, CoverOriginDisplay;
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/video/video_study_clock_cover.dart';
 import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
@@ -934,6 +945,7 @@ class _PlaylistEpisodeRef {
     this.started = false,
     this.progress,
     this.sectionKey,
+    this.positionMs = 0,
   });
   final String? bookUid;
   final String title;
@@ -969,6 +981,10 @@ class _PlaylistEpisodeRef {
   /// 观看进度 0..1（断点 / 时长），只在两者都已知时给（远端 host 下发时长；
   /// 本地集行没有时长列，恒 null）。选集卡底部进度条的数据源，纯展示。
   final double? progress;
+
+  /// 本地集的续播点（`video_books.lastPositionMs`；远端集恒 0）。一文件多集时据此
+  /// 挑「续播点所在那一集」的剧照（`videoFileEpisodeStillImage`，与合集选集页同口径）。
+  final int positionMs;
 }
 
 class VideoFushiPage extends ConsumerStatefulWidget {
@@ -3738,6 +3754,28 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// titleCard → backdrop）。仅本地合集连播路径填充；单视频/远端恒空。
   List<MediaImageRow> _playlistCollectionImages = const <MediaImageRow>[];
 
+  /// 播放中合集各本地集 → 绑到它的分集与各集刮削剧照（[videoFileEpisodeStillsByBook]，
+  /// 与合集选集页同一份聚合）。选集面板取图链「手动封面 > 分集剧照 > 自动截图」的
+  /// 剧照一环（拍板 design-player-episode-rail-stills）。成员列表建好后后台读
+  /// （[_loadPlaylistEpisodeThumbSources]），不挡首帧；整体替换、从不原地改。
+  Map<String, List<VideoFileEpisodeStills>> _playlistFileEpisodes =
+      const <String, List<VideoFileEpisodeStills>>{};
+
+  /// 播放中合集各本地集的封面来源（`cover_meta.json`）：判定集封面是不是用户手动
+  /// 设置的。null = 还没读到（封面与剧照都有的集先停在待定占位，见
+  /// `videoEpisodeThumbCandidates`）。整体替换、从不原地改。
+  Map<String, CoverMeta>? _playlistCoverMeta;
+
+  /// 选集面板剧照本地文件的「在不在」异步记忆表（零同步 IO，BUG-3756 口径）：
+  /// 探测落定后作废面板 memo 并重建。
+  late final AsyncFileExistenceCache _playlistStillExists =
+      AsyncFileExistenceCache(
+        onChanged: () {
+          if (!mounted) return;
+          setState(() => _episodePanelEntriesMemo = null);
+        },
+      );
+
   /// [_episodePanelEntries] 的 memo 及其三个输入的身份快照。
   ///
   /// 剧集面板常驻挂在 [_videoWithSubtitlePanel] 的 Stack 里（隐藏态留树做
@@ -3745,13 +3783,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// N 集重新 new [VideoEpisodeEntry] + 远端封面 provider + 跑
   /// [parsedEpisodeNumberOf] 正则，远端合集几十集时每帧白做几十次正则与 provider
   /// 构造，新 provider 实例还让每张卡的 `Image` 逐帧走 key 比较。三个输入
-  /// （[_episodes] / 封面拉取器 / [_playlistCollectionImages]）都是**整体替换、
+  /// （[_episodes] / 封面拉取器 / [_playlistCollectionImages] / [_playlistFileEpisodes] /
+  /// [_playlistCoverMeta]）都是**整体替换、
   /// 从不原地改**的列表 / 对象，按身份缓存即与重算逐字等价；当前集 / 高亮由面板
   /// 按 [_currentEpisode] 单独跟随，不在 entries 里。
   List<VideoEpisodeEntry>? _episodePanelEntriesMemo;
   List<_PlaylistEpisodeRef>? _episodePanelEntriesEpisodes;
   RemoteCoverFetcher? _episodePanelEntriesFetcher;
   List<MediaImageRow>? _episodePanelEntriesImages;
+  Map<String, List<VideoFileEpisodeStills>>? _episodePanelEntriesStills;
+  Map<String, CoverMeta>? _episodePanelEntriesCoverMeta;
 
   /// 当前集索引（[_episodes] 下标）；单视频恒 0。
   int _currentEpisode = 0;
@@ -5207,10 +5248,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             completed: er.completedAt != null,
             started: er.lastPositionMs > 0,
             sectionKey: sectionKeys[er.bookUid],
+            positionMs: er.lastPositionMs,
           ),
         );
       }
       _episodes = refs;
+      // 选集面板的剧照与封面来源后台读，不挡首帧（拍板
+      // design-player-episode-rail-stills）。
+      unawaited(_loadPlaylistEpisodeThumbSources(refs));
       final int idx = refs.indexWhere(
         (_PlaylistEpisodeRef e) => e.bookUid == _activeBookUid,
       );
@@ -8103,6 +8148,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
+    _playlistStillExists.dispose();
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();

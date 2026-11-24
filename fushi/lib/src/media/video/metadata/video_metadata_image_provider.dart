@@ -137,3 +137,24 @@ List<ImageProvider> videoEpisodeThumbCandidates({
       ?image,
   ];
 }
+
+/// 播放器选集面板一集的取图链（拍板 design-player-episode-rail-stills）：与合集
+/// 选集页**同一套** [videoEpisodeThumbCandidates]（手动封面 > 分集剧照 > 自动截图），
+/// 末尾再垫上合集段回落 [seriesFallback]（原盘盘面图 / 合集横图 / 背景，见播放器
+/// `_playlistSeriesFallbackCover`）。渲染端从第一张起显示，加载失败依次回落。
+///
+/// 远端集没有剧照与封面来源：[still] 传 null、[coverIsUserChosen] 传 false，
+/// 退化成「host 封面 > 合集段」。
+List<ImageProvider> videoPanelEpisodeThumbCandidates({
+  required ImageProvider? cover,
+  required bool? coverIsUserChosen,
+  required ImageProvider? still,
+  required ImageProvider? seriesFallback,
+}) => <ImageProvider>[
+  ...videoEpisodeThumbCandidates(
+    cover: cover,
+    coverIsUserChosen: coverIsUserChosen,
+    still: still,
+  ),
+  ?seriesFallback,
+];

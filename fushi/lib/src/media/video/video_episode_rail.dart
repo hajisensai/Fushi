@@ -25,6 +25,7 @@ class VideoEpisodeEntry {
   const VideoEpisodeEntry({
     required this.title,
     this.cover,
+    this.coverFallbacks = const <ImageProvider>[],
     this.episodeNumber,
     this.groupKey,
     this.completed = false,
@@ -34,6 +35,11 @@ class VideoEpisodeEntry {
 
   final String title;
   final ImageProvider? cover;
+
+  /// [cover] 加载 / 解码失败时依次换的图（与合集选集页 `collectionEpisodeThumb`
+  /// 的 `fallbacks` 同一口径：剧照远程地址失效退回截图、截图坏了退回合集横图），
+  /// 全失败才退占位。拍板 design-player-episode-rail-stills。
+  final List<ImageProvider> coverFallbacks;
 
   /// 季分组键（`collectionGroupKeyForFilename` 派生：`s<N>` / extras）。面板据此
   /// 把多季合集切成季 chip；null 或全表同键 = 单季，面板零变化。与合集详情页
@@ -695,7 +701,10 @@ class _EpisodeCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ImageProvider? cover = entry.cover;
+    final List<ImageProvider> images = <ImageProvider>[
+      ?entry.cover,
+      ...entry.coverFallbacks,
+    ];
     // 剧照套光面海报横版材质（用户 2026-10-26）。集卡自己有选中外框、放大与
     // 投影（上面的 [AnimatedScale] / [AnimatedContainer]），这里只取材质的
     // 简化档——光泽 + 内描边，不再叠第二层投影 / 扫光。墨水屏退回描边框。
@@ -708,16 +717,19 @@ class _EpisodeCover extends StatelessWidget {
         // 过的集（2:3 刮削海报 / 方图）模糊垫底 + contain 完整显示。此前这里是
         // 全域唯一还在裸 `BoxFit.cover` 硬裁的封面消费点——竖版海报被裁成中间
         // 一条（BUG-1299 同病）。
-        child: cover == null
-            ? _placeholder()
-            : PortraitCoverImage(
-                image: cover,
-                landscapeSlot: true,
-                errorBuilder: (BuildContext _) => _placeholder(),
-              ),
+        child: _chain(images),
       ),
     );
   }
+
+  /// 从 [images] 第一张起显示，加载失败换下一张，全失败退占位。
+  Widget _chain(List<ImageProvider> images) => images.isEmpty
+      ? _placeholder()
+      : PortraitCoverImage(
+          image: images.first,
+          landscapeSlot: true,
+          errorBuilder: (BuildContext _) => _chain(images.sublist(1)),
+        );
 
   Widget _placeholder() => ColoredBox(
     color: colorScheme.surfaceContainerHighest,
