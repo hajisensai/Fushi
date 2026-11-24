@@ -29,6 +29,7 @@ class _Sources {
   FavoriteRemoteVideoLibrary? interconnect;
   FavoriteRemoteVideoLibrary? cloud;
   Exception? onlineError;
+  bool onlineSourcesAvailable = true;
   final _Client onlineClient = _Client('online');
   final List<String> cloudAsked = <String>[];
   final List<(AnimeSourceBookSpec, String)> onlineAsked =
@@ -41,6 +42,7 @@ class _Sources {
       cloudAsked.add(sourceId);
       return cloud;
     },
+    onlineSourcesAvailable: onlineSourcesAvailable,
     onlineEpisode: (AnimeSourceBookSpec spec, String bookUid) async {
       onlineAsked.add((spec, bookUid));
       final Exception? error = onlineError;
@@ -258,6 +260,23 @@ void main() {
         )).failure,
         FavoriteVideoOriginFailure.onlineSourceMissing,
       );
+    });
+
+    test('本机不能跑在线源（iOS 商店版 / 无扩展运行时）：onlineSourceUnsupported，'
+        '不去建客户端', () async {
+      final _Sources sources = _Sources()..onlineSourcesAvailable = false;
+      for (final String? locator in <String?>[_spec.encode(), null]) {
+        expect(
+          (await _resolve(
+            sources,
+            itemId: _onlineId,
+            origin: 'anime-source:eu.kanade.ext.demo:42',
+            locator: locator,
+          )).failure,
+          FavoriteVideoOriginFailure.onlineSourceUnsupported,
+        );
+      }
+      expect(sources.onlineAsked, isEmpty);
     });
 
     test('旧版本收藏没记重开规格：notReopenable，不去建客户端', () async {

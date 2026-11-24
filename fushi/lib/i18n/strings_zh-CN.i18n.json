@@ -13708,6 +13708,7 @@
   "video_favorite_no_link": "这条收藏没有记下来自哪个视频。",
   "video_favorite_not_reopenable": "这条收藏的来源没有可回去的入口（粘贴的直链、音乐 MV、不能串流的云盘，或旧版本收藏的在线源）。",
   "video_favorite_online_source_missing": "收藏这句时用的在线源扩展没有安装或已停用。",
+  "video_favorite_online_source_unsupported": "这条收藏来自在线视频源，这台设备不支持在线视频源。",
   "video_favorite_other_video": "电脑上当前的播放器只能跳到正在播放的视频里的收藏。",
   "video_favorite_peer_item_missing": "互联对端的媒体库里已经没有这个视频。",
   "video_favorite_peer_offline": "收藏这句时的互联对端不在线，等它上线后再试。",

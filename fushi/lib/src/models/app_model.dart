@@ -54,6 +54,12 @@ import 'package:fushi/src/updates/update_probes.dart';
 import 'package:fushi/src/updates/video_library_update_probe.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart'
     show isVideoOnlineSourcesAvailable;
+import 'package:fushi/src/media/favorites/favorite_video_origin.dart'
+    show FavoriteVideoOriginSources;
+import 'package:fushi/src/sync/remote_library_cache.dart'
+    show RemoteLibraryCache;
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
+    show resolveSubtitleDownloadLanguage;
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
 import 'package:fushi/src/feedback/feedback_reply_alerts.dart'
     show feedbackReplyNotificationsEnabled;
@@ -8093,6 +8099,23 @@ class AppModel
     _onlineSourcesTouched = true;
     return _animeMihonManager ??= _createMihonManager(MihonMediaKind.anime);
   }
+
+  /// 视频收藏「跳回原处」解析器（`resolveFavoriteVideoOrigin`）的真实来源：收藏夹 /
+  /// 首页「收藏句子」与手机遥控跳收藏（原生 / 网页播放页）共用这一处装配。在线源的
+  /// 扩展 manager 只在解析器过了 [isVideoOnlineSourcesAvailable] 门、真要重建在线集
+  /// 时才取（门外取会在 iOS / 没有 Mihon 宿主的平台上起宿主）；字幕语言与在线作品页
+  /// 同一条链；[cache] 是库页的远端清单缓存。
+  FavoriteVideoOriginSources favoriteVideoOriginSources({
+    RemoteLibraryCache? cache,
+  }) => FavoriteVideoOriginSources.live(
+    database: database,
+    animeManager: () => animeMihonManager,
+    subtitleLanguage: () => resolveSubtitleDownloadLanguage(
+      explicitSubtitlePreference: jimakuDefaultLanguage,
+      globalDefaultContentLanguage: defaultContentLanguage,
+    ),
+    cache: cache,
+  );
 
   /// 本进程里有没有任何调用方取过 [mihonManager] / [animeMihonManager]。
   ///

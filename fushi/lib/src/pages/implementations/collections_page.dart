@@ -58,8 +58,6 @@ import 'package:fushi/src/media/video/remote_client_teardown.dart'
     show closeOwnedRemoteVideoClient;
 import 'package:fushi/src/sync/remote_library_cache.dart'
     show remoteLibraryCacheProvider;
-import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
-    show resolveSubtitleDownloadLanguage;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
@@ -2522,13 +2520,7 @@ class FavoriteOriginNavigator {
         originSourceId: item.originSourceId,
         originLocator: item.originLocator,
         expectedTitle: item.bookTitle ?? '',
-        sources: FavoriteVideoOriginSources.live(
-          database: appModel.database,
-          animeManager: () => appModel.animeMihonManager,
-          subtitleLanguage: () => resolveSubtitleDownloadLanguage(
-            explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
-            globalDefaultContentLanguage: appModel.defaultContentLanguage,
-          ),
+        sources: appModel.favoriteVideoOriginSources(
           cache: ref.read(remoteLibraryCacheProvider),
         ),
       );

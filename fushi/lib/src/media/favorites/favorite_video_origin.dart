@@ -26,6 +26,8 @@ import 'package:fushi/src/media/video/online/anime_source_book_spec.dart';
 import 'package:fushi/src/media/video/online/anime_source_launch.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart'
     show AnimeSourceVideoClient, kAnimeSourceVideoIdPrefix;
+import 'package:fushi/src/media/video/online/video_online_sources_gate.dart'
+    show isVideoOnlineSourcesAvailable;
 import 'package:fushi/src/sync/cloud_remote_video_client.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_library_cache.dart';
@@ -75,6 +77,7 @@ final class FavoriteVideoOriginSources {
     required this.mediaServers,
     required this.interconnect,
     required this.cloud,
+    required this.onlineSourcesAvailable,
     required this.onlineEpisode,
   });
 
@@ -131,6 +134,9 @@ final class FavoriteVideoOriginSources {
           listing: listingOf(sourceId, cloud.listRemoteVideos),
         );
       },
+      // 合规门 + 运行时平台门：iOS 不带在线源宿主、没有 Mihon 宿主的平台不起
+      // 宿主（与播放页重开入库在线行同一判据）。
+      onlineSourcesAvailable: isVideoOnlineSourcesAvailable,
       onlineEpisode: (AnimeSourceBookSpec spec, String bookUid) async {
         final ({AnimeSourceVideoClient client, RemoteVideoInfo info}) launch =
             await buildAnimeSourceEpisodeLaunch(
@@ -154,6 +160,12 @@ final class FavoriteVideoOriginSources {
   /// 或现在用的不是这种云盘。
   final Future<FavoriteRemoteVideoLibrary?> Function(String sourceId) cloud;
 
+  /// 本机能不能跑在线视频源（[isVideoOnlineSourcesAvailable]：iOS 商店合规不带在线源
+  /// 宿主，或平台没有 Mihon 宿主）。为假时在线源收藏一律
+  /// [FavoriteVideoOriginFailure.onlineSourceUnsupported]，不碰 [onlineEpisode]——
+  /// 门外取扩展 manager 会在不该有宿主的平台上起宿主。
+  final bool onlineSourcesAvailable;
+
   /// 在线视频源按重开规格建这一集的客户端（现建、归调用方）。扩展没装 / 停用抛
   /// [AnimeSourceLaunchUnavailable]。
   final Future<({RemoteVideoClient client, RemoteVideoInfo info})> Function(
@@ -169,7 +181,8 @@ final class FavoriteVideoOriginSources {
 /// - 互联对端（`interconnect`）：对端在线时在它的清单里按 id 找（要有可串流的字节）。
 ///   互联的 bookUid 是对端库的全局身份，换了对端也不会错认。
 /// - 云盘（`cloud:<类型>`）：现用的就是那种云盘时在它的视频目录里按 id 找。
-/// - 在线视频源（`anime-source:…`）：按 [originLocator]（作品 + 集）重建客户端。
+/// - 在线视频源（`anime-source:…`）：按 [originLocator]（作品 + 集）重建客户端；本机
+///   不能跑在线源（iOS / 无 Mihon 宿主）是 [FavoriteVideoOriginFailure.onlineSourceUnsupported]。
 /// - 直链 / 音乐 MV 等临时播放，或没记重开规格的在线源：[FavoriteVideoOriginFailure.notReopenable]。
 /// - null（v179 之前的旧收藏）：先挨台问媒体服务器（核对标题），再问互联对端（核对
 ///   标题）；哪儿都没有是 [FavoriteVideoOriginFailure.originUnknown]，有一处连不上
@@ -233,6 +246,11 @@ Future<FavoriteVideoOriginResult> resolveFavoriteVideoOrigin({
     );
   }
   if (origin.startsWith(kAnimeSourceVideoIdPrefix)) {
+    if (!sources.onlineSourcesAvailable) {
+      return const FavoriteVideoOriginResult.failed(
+        FavoriteVideoOriginFailure.onlineSourceUnsupported,
+      );
+    }
     final AnimeSourceBookSpec? spec = AnimeSourceBookSpec.tryParse(
       originLocator,
     );

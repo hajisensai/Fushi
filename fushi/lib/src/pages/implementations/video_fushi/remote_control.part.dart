@@ -794,13 +794,7 @@ Future<RemoteFavoriteVideoPage> resolveRemoteFavoriteVideoPage({
     originSourceId: favorite.originSourceId,
     originLocator: favorite.originLocator,
     expectedTitle: favorite.bookTitle,
-    sources: FavoriteVideoOriginSources.live(
-      database: appModel.database,
-      animeManager: () => appModel.animeMihonManager,
-      subtitleLanguage: () => resolveSubtitleDownloadLanguage(
-        explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
-        globalDefaultContentLanguage: appModel.defaultContentLanguage,
-      ),
+    sources: appModel.favoriteVideoOriginSources(
       cache: ref.read(remoteLibraryCacheProvider),
     ),
   );

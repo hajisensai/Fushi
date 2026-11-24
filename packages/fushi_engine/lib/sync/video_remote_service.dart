@@ -58,8 +58,11 @@ const Set<String> videoRemoteFavoriteSourceReasons = <String>{
   'cloud_unavailable',
   'cloud_unreachable',
   'cloud_item_missing',
-  // Online video source: the extension is not installed or disabled.
+  // Online video source: the extension is not installed or disabled / this
+  // device cannot run online video sources (the iOS store build, or no
+  // extension runtime on the platform).
   'online_source_missing',
+  'online_source_unsupported',
   // A source that has no way back (pasted stream URL, music MV, an online
   // source favorite from before the work was recorded).
   'not_reopenable',

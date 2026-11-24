@@ -52,6 +52,10 @@ enum FavoriteVideoOriginFailure {
   /// 在线视频源：收藏时那个扩展没装或停用了。
   onlineSourceMissing('online_source_missing'),
 
+  /// 在线视频源：这台设备不能跑在线视频源（iOS 商店版不带在线源宿主，或平台没有
+  /// 扩展运行时），收藏是在别的设备上记的。
+  onlineSourceUnsupported('online_source_unsupported'),
+
   /// 来源没有可回去的入口：粘贴的直链、音乐 MV、不能串流的云盘（FTP），或旧版本
   /// 收藏、没记下作品的在线源。
   notReopenable('not_reopenable'),
@@ -93,6 +97,7 @@ enum FavoriteVideoOriginFailure {
     cloudUnreachable => t.video_favorite_cloud_unreachable,
     cloudItemMissing => t.video_favorite_cloud_item_missing,
     onlineSourceMissing => t.video_favorite_online_source_missing,
+    onlineSourceUnsupported => t.video_favorite_online_source_unsupported,
     notReopenable => t.video_favorite_not_reopenable,
     playbackFailed => t.video_favorite_playback_failed,
     otherVideo => t.video_favorite_other_video,
