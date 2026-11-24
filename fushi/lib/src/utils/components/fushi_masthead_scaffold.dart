@@ -31,7 +31,7 @@ import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
 import 'package:fushi/src/utils/components/fushi_icon_button.dart'
     show FushiIconButton;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
-    show FushiScrollOwnerDepth;
+    show FushiPinnedPageChromeScope, FushiScrollOwnerDepth;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiShellHeaderActions, fushiHeaderTitleFloor;
 import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
@@ -541,14 +541,19 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
   /// 主滚动区未封顶的偏移（只给页名淡入用）。
   double _rawOffset = 0;
 
-  /// 主深度上每个竖向滚动区未封顶的偏移，按滚动区（通知的 context）分开记。
+  /// 并排各自滚动的多栏（[FushiPinnedPageChromeScope] 里、主深度上的竖向滚动区）
+  /// 未封顶的偏移，按滚动区（通知的 context）分开记。
   ///
-  /// 宽窗表单两栏（`SrsAdaptiveSections`）是同一深度上两个各自滚动的列表，页头
-  /// 却只有一条：取其中滚得最远的那个——任一栏有内容压在页头下面就收起，两栏都
-  /// 回到顶才展开。只记「最后一条通知」时，页头在两栏各自的位置之间来回切换，
-  /// 一栏在顶、另一栏已滚动就大字 / 小字反复跳（反馈 ONNjqh7wxs）。
-  final Map<BuildContext, ({int depth, double offset})> _scrollables =
-      <BuildContext, ({int depth, double offset})>{};
+  /// 宽窗表单两栏（`SrsAdaptiveSections`）是同一深度上两个同时可见、各自滚动的
+  /// 列表，页头却只有一条：取其中滚得最远的那个——任一栏有内容压在页头下面就
+  /// 收起，两栏都回到顶才展开。只记「最后一条通知」时，页头在两栏各自的位置之间
+  /// 来回切换，一栏在顶、另一栏已滚动就大字 / 小字反复跳（反馈 ONNjqh7wxs）。
+  ///
+  /// 只对声明了并排的多栏取最大值：分页 / 换页（TabBarView、IndexedStack、
+  /// AnimatedSwitcher）里同一深度的几个列表是换着显示的，离开的那页可能还挂着
+  /// （保活 / 过渡中），它的位置不能压住刚换上、停在顶部的那页。来自多栏以外的
+  /// 主滚动区通知直接定页头位置并清空这里。
+  final Map<BuildContext, double> _panes = <BuildContext, double>{};
 
   /// 展开态页头高度（跨布局记住，见 [_MastheadFrameDelegate]）。
   final _MastheadRestMemo _memo = _MastheadRestMemo();
@@ -598,8 +603,8 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
   /// 主滚动区的竖向位置：用户 / 动画滚动（[ScrollUpdateNotification]）与版面修正
   /// （[ScrollMetricsNotification]，只认主滚动区深度，嵌套小列表首次布局不算）。
   ///
-  /// 页头的偏移 = 主深度上各滚动区偏移的最大值（见 [_scrollables]）；比主深度更深
-  /// 的嵌套竖向列表不算。
+  /// 并排多栏里页头的偏移取各栏最大值（见 [_panes]）；比主深度更深的嵌套竖向
+  /// 列表不算。
   bool _onNotification(Notification notification) {
     if (notification is ScrollUpdateNotification) _owner.claim(notification);
     final (
@@ -607,7 +612,7 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
       int depth,
       ScrollMetrics? metrics,
     ) = switch (notification) {
-      ScrollUpdateNotification n => (n.context, n.depth, n.metrics),
+      final ScrollUpdateNotification n => (n.context, n.depth, n.metrics),
       final ScrollMetricsNotification n when _owner.owns(n) => (
         n.context,
         n.depth,
@@ -616,20 +621,16 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
       _ => (null, 0, null),
     };
     if (metrics == null || metrics.axis != Axis.vertical) return false;
-    _scrollables[source ?? context] = (
-      depth: depth,
-      offset: metrics.extentBefore,
-    );
-    final int owner = _owner.depth;
-    _scrollables.removeWhere(
-      (BuildContext key, ({int depth, double offset}) entry) =>
-          !key.mounted || entry.depth > owner,
-    );
-    double raw = 0;
-    for (final ({int depth, double offset}) entry in _scrollables.values) {
-      raw = math.max(raw, entry.offset);
+    // 比主滚动区更深的嵌套竖向列表（正文里自带滚动的小框）不驱动页头。
+    if (depth > _owner.depth) return false;
+    if (source != null && FushiPinnedPageChromeScope.pins(source)) {
+      _panes[source] = metrics.extentBefore;
+      _panes.removeWhere((BuildContext pane, double _) => !pane.mounted);
+      _rawOffset = _panes.values.fold(0.0, math.max);
+    } else {
+      _panes.clear();
+      _rawOffset = metrics.extentBefore;
     }
-    _rawOffset = raw;
     final double tracked = _rawOffset.clamp(0.0, kFushiMastheadTrackedOffset);
     if (tracked != _offset.value) _offset.value = tracked;
     _syncReveal();

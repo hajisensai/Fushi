@@ -2,7 +2,11 @@ import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
-    show FushiPageChromeCapsule, FushiPageChromeCircle, FushiPageChromeTitle;
+    show
+        FushiPageChromeCapsule,
+        FushiPageChromeCircle,
+        FushiPageChromeTitle,
+        FushiPinnedPageChromeScope;
 import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiPageHeader, FushiPageScaffold, FushiToolScaffold;
@@ -99,12 +103,15 @@ void main() {
       tester,
       FushiMastheadScaffold(
         title: 'Deck options',
-        body: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Expanded(child: pane(left, 'left')),
-            Expanded(child: pane(right, 'right')),
-          ],
+        // SrsAdaptiveSections 宽窗两栏就是这样声明「并排各自滚动」的。
+        body: FushiPinnedPageChromeScope(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(child: pane(left, 'left')),
+              Expanded(child: pane(right, 'right')),
+            ],
+          ),
         ),
       ),
     );
@@ -140,6 +147,101 @@ void main() {
     // 两栏都回到顶才展开。
     right.jumpTo(0);
     await tester.pump();
+    expect(progress(), 0);
+  });
+
+  // BUG-5409 审查：取最大值只对声明了「并排各自滚动」的两栏（
+  // FushiPinnedPageChromeScope）成立。分页 / 换页（TabBarView、IndexedStack、
+  // AnimatedSwitcher）里同一深度的几个列表是「换着显示」的，前一页滚下去的位置
+  // 不能把刚换上、停在顶部的那一页的页头压成收起态。
+  testWidgets('分页切到停在顶部的另一页：页头展开，不被前一页的滚动位置压住', (WidgetTester tester) async {
+    final ScrollController first = ScrollController();
+    final ScrollController second = ScrollController();
+    addTearDown(first.dispose);
+    addTearDown(second.dispose);
+    final TabController tabs = TabController(
+      length: 2,
+      vsync: const TestVSync(),
+    );
+    addTearDown(tabs.dispose);
+    Widget page(ScrollController controller, String tag) => ListView.builder(
+      controller: controller,
+      itemExtent: 80,
+      itemCount: 60,
+      itemBuilder: (BuildContext context, int i) => Text('$tag $i'),
+    );
+    await pumpHost(
+      tester,
+      FushiMastheadScaffold(
+        title: 'Statistics',
+        body: TabBarView(
+          controller: tabs,
+          children: <Widget>[page(first, 'first'), page(second, 'second')],
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    double progress() => tester
+        .widget<FushiMastheadHeader>(find.byType(FushiMastheadHeader))
+        .progress;
+
+    first.jumpTo(400);
+    await tester.pump();
+    expect(progress(), greaterThan(0));
+
+    tabs.animateTo(1);
+    await tester.pumpAndSettle();
+    expect(second.offset, 0);
+    expect(progress(), 0);
+  });
+
+  testWidgets('两栏收成一栏（窄窗）：页头跟这一栏走，不留两栏时的位置', (WidgetTester tester) async {
+    final ScrollController left = ScrollController();
+    final ScrollController right = ScrollController();
+    final ScrollController single = ScrollController();
+    addTearDown(left.dispose);
+    addTearDown(right.dispose);
+    addTearDown(single.dispose);
+    final ValueNotifier<bool> wide = ValueNotifier<bool>(true);
+    addTearDown(wide.dispose);
+    Widget pane(ScrollController controller, String tag) => ListView.builder(
+      controller: controller,
+      itemExtent: 80,
+      itemCount: 60,
+      itemBuilder: (BuildContext context, int i) => Text('$tag $i'),
+    );
+    await pumpHost(
+      tester,
+      FushiMastheadScaffold(
+        title: 'Deck options',
+        body: ValueListenableBuilder<bool>(
+          valueListenable: wide,
+          builder: (BuildContext context, bool isWide, Widget? _) => isWide
+              ? FushiPinnedPageChromeScope(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(child: pane(left, 'left')),
+                      Expanded(child: pane(right, 'right')),
+                    ],
+                  ),
+                )
+              : pane(single, 'single'),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    double progress() => tester
+        .widget<FushiMastheadHeader>(find.byType(FushiMastheadHeader))
+        .progress;
+
+    left.jumpTo(400);
+    await tester.pump();
+    expect(progress(), greaterThan(0));
+
+    wide.value = false;
+    await tester.pumpAndSettle();
+    expect(single.offset, 0);
     expect(progress(), 0);
   });
 
