@@ -835,7 +835,7 @@ class AnotherPopupPart {
           kLyricVisualizerSceneContent,
       'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text.dart':
           kLyricVisualizerSceneContent,
-      'lib/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_scene.dart':
+      'lib/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_glyph_atlas.dart':
           kLyricVisualizerSceneContent,
       'lib/src/media/music/lyrics/visualizer/modes/luminous/luminous_scene.dart':
           kLyricVisualizerSceneContent,
@@ -1582,7 +1582,7 @@ class AnotherPopupPart {
           <String>{'fontSize:'},
       'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text.dart':
           <String>{'fontSize:'},
-      'lib/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_scene.dart':
+      'lib/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_glyph_atlas.dart':
           <String>{'fontSize:'},
       'lib/src/media/music/lyrics/visualizer/modes/luminous/luminous_scene.dart':
           <String>{'fontSize:'},

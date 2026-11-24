@@ -108,6 +108,12 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5413](bugs/BUG-5413-android-engine-destroy-native-callback-abort.md) | ✅ | ✅ | Android 引擎被销毁、进程留在后台时，原生线程回调已删的 NativeCallable，VM abort 整个进程 |
+> 共 4701 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5405](bugs/BUG-5405-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |
+| [BUG-5404](bugs/BUG-5404-lumiere-glyph-atlas-blurry.md) | ✅ | ✅ | 绘光大字发虚 |
 | [BUG-5402](bugs/BUG-5402-media-server-favorite-jump-dead-end.md) | ✅ | ✅ | 媒体服务器直接串流（未入库）的收藏句在收藏夹点了没反应 |
 | [BUG-5401](bugs/BUG-5401-anilist-cover-search-novels-only.md) | ✅ | ✅ | anilist-cover-search-novels-only |
 | [BUG-5400](bugs/BUG-5400-series-key-split-volume-parts.md) | ✅ | ✅ | series-key-split-volume-parts |

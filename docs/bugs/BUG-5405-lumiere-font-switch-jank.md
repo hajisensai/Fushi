@@ -1,0 +1,7 @@
+## BUG-5405 · 绘光切字体卡顿、自定义字体加载完不重画
+- **报告**：2026-11-24（用户：Windows 桌面全屏歌词，「频繁切换字体好像有点卡，不知道是资源没加载完还是怎样」）
+- **真实性**：✅ 真 bug（卡顿是同步重建，不是资源没加载完）。根因 `fushi/lib/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_visualizer.dart:287-325`（修前）：`_sceneFor` 在 `build()` 里把 fontFamily / fontWeight 放进场景键，换字体就 dispose 旧场景、在 UI 线程同步 `new LumiereScene`——重编整首节目单（`compileLumiereProgram`）、重画精灵图、每个不同的字一个 TextPainter 排版再 `toImageSync`（`lumiere_scene.dart:485-510`）。量化（`flutter test`，debug JIT，机器同时有别的测试在跑，149 个不同字、Noto Sans JP / SC 互切）：一次切换在单帧里同步占 57～188 ms。
+  - 附带两处同根问题：① `fontFamilyFallback` 不在键里，只改字体链第 2、3 位时图集停在旧字体；② 没订阅 `PaintingBinding.systemFonts`，字族名先于字体注册生效时（AI 主题字体提示、别处后注册的同名字族）图集会一直停在回落字体。app 字体本身（`AppModel.refreshAppFont`）是 `FontLoader.load` 完成后才 notify，键变化晚于注册，这条路径不会卡在回落字体。
+- **[x] ① 已修复** — 场景键只留节目单输入（歌词 / 种子 / 无缝 / 标题等），字体改由 `LumiereGlyphs.requestStyle` 处理：在后台分片排字（每片 ≤3 ms，片间让出事件循环）、按页异步 `toImage`，带上旧图集已有的档，整套就绪后才换上、释放旧图集，期间一直画旧图集；连续切换只落最后一个，切回正在画的字体直接作废后台任务；`LumiereGlyphStyle` 相等比较含回落链与字重；State 订阅 `systemFonts`，字体注册表一变就同字体整套重画。图集换了经 `glyphs.changed` 触发重画（暂停时也会刷新）。修后 UI 线程上不可再分的最长一段是单个字的排版（同一条件下实测 16～36 ms 的尖峰，出现在第一次排某个需要回落查找的字时；一般远低于 1 ms），节目单不再重编。
+- **[x] ② 已加自动化测试** — `fushi/test/media/music/visualizer/modes/lumiere_glyph_atlas_test.dart`：「后台重建」组（换字体同步返回仍是旧图集、就绪后换上且保留已有档、旧图集释放；连续切换落到最后一个；切回作废；回落链 / 字重变化；reload；释放后不再换；审查补：后台 `toImage` 失败时上报 FlutterError、继续画旧图集、不释放旧图集、已画好的页不泄漏，挂起的字体放下可再请求，补档失败的那一档不每帧重试）+ widget 测试（换 DefaultTextStyle 字体时场景实例不变、只挂后台任务；`fontsChange` 系统消息触发重画）。
+- **备注**：未在 Windows 真机用 DevTools Timeline 量切换时的帧耗时，待补。
