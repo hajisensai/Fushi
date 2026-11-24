@@ -566,7 +566,7 @@ class _AppleMusicBrowseCategoriesState
               header: AppleMusicSectionHeader(
                 title: t.music_recommend_browse_categories,
               ),
-              child: AppleMusicShelf(
+              child: AppleMusicCarousel(
                 itemCount: facets.length + 1,
                 itemExtent: 150 * k,
                 height: 96 * k,
@@ -575,8 +575,8 @@ class _AppleMusicBrowseCategoriesState
                     return AppleMusicCategoryTile(
                       key: ValueKey<String>('music-plugin-browse-all-${m.id}'),
                       label: t.music_plugin_browse_all_works,
+                      seed: 'all-works',
                       icon: FushiIcons.gridView,
-                      emphasized: true,
                       onTap: () => unawaited(
                         openMusicPluginBrowseList(
                           context,
@@ -592,6 +592,7 @@ class _AppleMusicBrowseCategoriesState
                       'music-plugin-browse-facet-${m.id}-${f.id}',
                     ),
                     label: f.label,
+                    seed: f.id,
                     icon: FushiIcons.tag,
                     onTap: () => unawaited(
                       _push(
@@ -627,7 +628,7 @@ class _AppleMusicEntityShelf extends ConsumerWidget {
     ];
     final double k = FushiAppleMetrics.of(context).scale;
     final double w = 150 * k;
-    return AppleMusicShelf(
+    return AppleMusicCarousel(
       itemCount: cards.length,
       itemExtent: w,
       height: AppleMusicCoverTile.heightFor(context, w),
@@ -671,10 +672,10 @@ class _AppleMusicChartShelf extends StatelessWidget {
     final FushiAppleMetrics m = FushiAppleMetrics.of(context);
     final double k = m.scale;
     final double w = (m.desktop ? 330 : 320) * k;
-    return AppleMusicShelf(
+    return AppleMusicCarousel(
       itemCount: charts.length,
       itemExtent: w,
-      height: _AppleMusicChartCard.heightFor(k),
+      height: _AppleMusicChartCard.heightFor(context),
       spacing: (m.desktop ? 16 : 12) * k,
       itemBuilder: (BuildContext context, int i) => _AppleMusicChartCard(
         key: ValueKey<String>(
@@ -701,7 +702,36 @@ class _AppleMusicChartCard extends ConsumerWidget {
 
   static const int _rows = 3;
 
-  static double heightFor(double k) => (12 + 56 + 8 + _rows * 46 + 6) * k;
+  /// 卡头（封面 56 与两行文字取大者）高。
+  static double _headExtent(BuildContext context) {
+    final double k = FushiAppleMetrics.of(context).scale;
+    return math.max(
+      56 * k,
+      appleMusicLineExtent(context, 16 * k) +
+          appleMusicLineExtent(context, 12 * k),
+    );
+  }
+
+  /// 一行名次（封面 36 与两行文字取大者，上下各留 5）高。
+  static double _rowExtent(BuildContext context) {
+    final double k = FushiAppleMetrics.of(context).scale;
+    return math.max(
+          36 * k,
+          appleMusicLineExtent(context, 14.5 * k) +
+              appleMusicLineExtent(context, 12.5 * k),
+        ) +
+        10 * k;
+  }
+
+  /// 卡总高：上 12 + 卡头 + 分隔 8 + [_rows] 行 + 下 6，与 build 同一份度量。
+  static double heightFor(BuildContext context) {
+    final double k = FushiAppleMetrics.of(context).scale;
+    return 12 * k +
+        _headExtent(context) +
+        8 * k +
+        _rows * _rowExtent(context) +
+        6 * k;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -728,7 +758,7 @@ class _AppleMusicChartCard extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Container(
-              height: 64 * k,
+              height: _headExtent(context) + 8 * k,
               padding: EdgeInsets.only(bottom: 8 * k),
               decoration: BoxDecoration(
                 border: Border(
@@ -783,7 +813,7 @@ class _AppleMusicChartCard extends ConsumerWidget {
             ),
             for (int i = 0; i < top.length; i++)
               SizedBox(
-                height: 46 * k,
+                height: _rowExtent(context),
                 child: Row(
                   children: <Widget>[
                     SizedBox(
@@ -873,59 +903,25 @@ class _AppleMusicSongColumns extends StatelessWidget {
     required this.tracks,
   });
 
-  static const int _perColumn = 4;
-
   final MusicPluginManifest manifest;
   final List<MusicPluginTrack> tracks;
 
   @override
-  Widget build(BuildContext context) {
-    final FushiAppleMetrics m = FushiAppleMetrics.of(context);
-    final double k = m.scale;
-    final double pad = appleMusicPagePadding(context);
-    final double gap = 18 * k;
-    final double rowHeight = 60 * k;
-    final int columns = (tracks.length / _perColumn).ceil();
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints c) {
-        final double avail = c.maxWidth - pad * 2;
-        final double colWidth = m.desktop
-            ? math.max(240 * k, (avail - gap * 2) / 3)
-            : math.min(360.0, avail - 28);
-        return AppleMusicShelf(
-          itemCount: columns,
-          itemExtent: colWidth,
-          spacing: gap,
-          height: rowHeight * _perColumn,
-          itemBuilder: (BuildContext context, int col) {
-            final int start = col * _perColumn;
-            final int end = math.min(start + _perColumn, tracks.length);
-            return Column(
-              key: ValueKey<String>('music-plugin-song-column-$col'),
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                for (int i = start; i < end; i++)
-                  SizedBox(
-                    height: rowHeight,
-                    child: _AppleMusicSongRow(
-                      manifest: manifest,
-                      tracks: tracks,
-                      index: i,
-                      separator: i < end - 1,
-                    ),
-                  ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
+  Widget build(BuildContext context) => AppleMusicSongColumns(
+    itemCount: tracks.length,
+    columnKeyPrefix: 'music-plugin-song-column',
+    rowBuilder: (BuildContext context, int i, bool separator) =>
+        _AppleMusicSongRow(
+          manifest: manifest,
+          tracks: tracks,
+          index: i,
+          separator: separator,
+        ),
+  );
 }
 
-/// 一行歌曲（Apple 列表行）：封面 48 + 标题（正在播放 = 强调色 + 均衡器）+
-/// 艺人 · 专辑 · 备注 / 不可播放（半透明）+ MV 标（可点）+ ⋯ 菜单；按下整行
-/// fill 底、不缩放；长按 / 右键同一份曲目菜单。
+/// 一行插件歌曲（[AppleMusicSongRow]）：艺人 · 专辑 · 备注 / 不可播放（半透明）、
+/// MV 标（可点）、⋯ 菜单；长按 / 右键同一份曲目菜单；分页列里不画时长。
 class _AppleMusicSongRow extends ConsumerWidget {
   const _AppleMusicSongRow({
     required this.manifest,
@@ -942,8 +938,6 @@ class _AppleMusicSongRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final MusicPluginTrack track = tracks[index];
-    final FushiAppleColors c = appleColorsOf(context);
-    final double k = FushiAppleMetrics.of(context).scale;
     final MusicItemMenu? menu = musicPluginTrackMenu(
       context,
       ref,
@@ -958,104 +952,6 @@ class _AppleMusicSongRow extends ConsumerWidget {
     ].join(' · ');
     final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
     final String uid = musicPluginTrackUid(manifest.id, track.id);
-    Widget row(bool playing) => _AppleRowHighlight(
-      onTap: track.playable
-          ? () => _playTracks(ref, manifest.id, tracks, start: index)
-          : null,
-      child: Row(
-        children: <Widget>[
-          appleMusicCover(cover: track.coverUrl, size: 48 * k, radius: 6 * k),
-          SizedBox(width: 11 * k),
-          Expanded(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: separator
-                    ? Border(bottom: BorderSide(color: c.separator, width: 0.5))
-                    : null,
-              ),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Row(
-                          children: <Widget>[
-                            if (playing) ...<Widget>[
-                              _AppleEqualizerGlyph(color: c.accent),
-                              SizedBox(width: 5 * k),
-                            ],
-                            Flexible(
-                              child: Text(
-                                track.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: appleMusicText(
-                                  context,
-                                  size: 14.5 * k,
-                                  color: playing ? c.accent : c.label,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (subtitle.isNotEmpty)
-                          Text(
-                            subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: appleMusicText(
-                              context,
-                              size: 12.5 * k,
-                              color: c.secondaryLabel,
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (mv != null)
-                    FushiFocusable(
-                      key: ValueKey<String>(
-                        'music-plugin-track-mv-${track.id}',
-                      ),
-                      onTap: mv,
-                      child: Semantics(
-                        button: true,
-                        label: t.music_mv_play,
-                        excludeSemantics: true,
-                        child: SizedBox(
-                          width: 44,
-                          height: 44,
-                          child: Center(
-                            child: Container(
-                              padding: EdgeInsets.symmetric(horizontal: 3 * k),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: c.tertiaryLabel),
-                                borderRadius: BorderRadius.circular(4 * k),
-                              ),
-                              child: Text(
-                                'MV',
-                                style: appleMusicText(
-                                  context,
-                                  size: 9.5 * k,
-                                  weight: FontWeight.w700,
-                                  color: c.secondaryLabel,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ?menu?.button(),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
     return Opacity(
       key: ValueKey<String>('music-plugin-track-${track.id}'),
       opacity: track.playable ? 1 : 0.45,
@@ -1064,73 +960,25 @@ class _AppleMusicSongRow extends ConsumerWidget {
         MusicNowPlayingMatch(
           listenable: engine,
           isCurrent: () => engine.current?.trackUid == uid,
-          builder: (BuildContext context, bool playing) => row(playing),
-        ),
-      ),
-    );
-  }
-}
-
-/// 正在播放的三根柱（静态字形，强调色）。
-class _AppleEqualizerGlyph extends StatelessWidget {
-  const _AppleEqualizerGlyph({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.end,
-    spacing: 2,
-    children: <Widget>[
-      for (final double h in const <double>[6, 12, 8])
-        Container(
-          width: 2.5,
-          height: h,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(1),
+          builder: (BuildContext context, bool playing) => AppleMusicSongRow(
+            title: track.title,
+            subtitle: subtitle,
+            cover: track.coverUrl,
+            playing: playing,
+            separator: separator,
+            onTap: track.playable
+                ? () => _playTracks(ref, manifest.id, tracks, start: index)
+                : null,
+            trailing: <Widget>[
+              if (mv != null)
+                AppleMusicMvBadge(
+                  key: ValueKey<String>('music-plugin-track-mv-${track.id}'),
+                  onTap: mv,
+                  semanticLabel: t.music_mv_play,
+                ),
+              ?menu?.button(),
+            ],
           ),
-        ),
-    ],
-  );
-}
-
-/// Apple 列表行的按下高亮：按下整行铺 fill 底（不缩放），可聚焦、Enter 激活。
-class _AppleRowHighlight extends StatefulWidget {
-  const _AppleRowHighlight({required this.onTap, required this.child});
-
-  final VoidCallback? onTap;
-  final Widget child;
-
-  @override
-  State<_AppleRowHighlight> createState() => _AppleRowHighlightState();
-}
-
-class _AppleRowHighlightState extends State<_AppleRowHighlight> {
-  bool _pressed = false;
-
-  void _set(bool v) {
-    if (_pressed != v && mounted) setState(() => _pressed = v);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiAppleColors c = appleColorsOf(context);
-    return Listener(
-      onPointerDown: widget.onTap == null ? null : (_) => _set(true),
-      onPointerUp: (_) => _set(false),
-      onPointerCancel: (_) => _set(false),
-      child: FushiFocusable(
-        onTap: widget.onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: fushiMotionDuration(context, FushiMotion.micro),
-          decoration: BoxDecoration(
-            color: _pressed ? c.fill : c.fill.withValues(alpha: 0),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: widget.child,
         ),
       ),
     );
@@ -1285,12 +1133,12 @@ class _AppleMusicTopPicks extends ConsumerWidget {
       final double w = (m.desktop ? 186 : 250) * k;
       return _AppleMusicSection(
         header: AppleMusicSectionHeader(title: t.music_recommend_top_picks),
-        child: AppleMusicShelf(
+        child: AppleMusicCarousel(
           itemCount: cards.length,
           itemExtent: w,
           spacing: (m.desktop ? 16 : 12) * k,
-          height: _AppleTopPickCard.heightFor(k, w),
-          arrowCenter: _AppleTopPickCard.eyebrowHeight(k) + w * 0.68,
+          height: _AppleTopPickCard.heightFor(context, w),
+          arrowCenter: _AppleTopPickCard.eyebrowHeight(context) + w * 0.68,
           itemBuilder: (BuildContext context, int i) => i < 3
               ? FushiStaggeredEntrance(index: i, child: cards[i])
               : cards[i],
@@ -1339,10 +1187,16 @@ class _AppleTopPickCard extends StatelessWidget {
   final VoidCallback onTap;
   final List<_TopPickAction> actions;
 
-  static double eyebrowHeight(double k) => 22 * k;
+  /// 眉标行高：一行 12.5 号字 + 下方 6 间距。
+  static double eyebrowHeight(BuildContext context) =>
+      appleMusicLineExtent(
+        context,
+        12.5 * FushiAppleMetrics.of(context).scale,
+      ) +
+      6 * FushiAppleMetrics.of(context).scale;
 
-  static double heightFor(double k, double w) =>
-      eyebrowHeight(k) + (w * 1.36).roundToDouble();
+  static double heightFor(BuildContext context, double w) =>
+      eyebrowHeight(context) + (w * 1.36).roundToDouble();
 
   @override
   Widget build(BuildContext context) {
@@ -1357,7 +1211,7 @@ class _AppleTopPickCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             SizedBox(
-              height: eyebrowHeight(k),
+              height: eyebrowHeight(context),
               child: Padding(
                 padding: EdgeInsetsDirectional.only(start: 2 * k),
                 child: Text(

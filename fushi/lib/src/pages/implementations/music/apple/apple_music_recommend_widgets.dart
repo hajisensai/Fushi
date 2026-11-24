@@ -14,6 +14,8 @@ import 'dart:math' as math;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_browse_widgets.dart'
+    show appleMusicCategoryGradient;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_focusable.dart';
@@ -36,8 +38,46 @@ import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
 
 /// 推荐页 Apple 版的页边距（左右）：货架贴着这条线起排、横滑时滑出到屏幕边。
+/// 在 [AppleMusicContained] 里为 0（外层列表已经留了页边）。
 double appleMusicPagePadding(BuildContext context) =>
-    FushiDesignTokens.of(context).spacing.page;
+    context.dependOnInheritedWidgetOfExactType<AppleMusicContained>() != null
+    ? 0
+    : FushiDesignTokens.of(context).spacing.page;
+
+/// 标记：这一列内容左右不留页边（Apple 段头 / 货架自己带页边、横滑到屏幕边）。
+/// 由放 Apple 货架的滚动列表包在外面（见 [appleMusicFitShelf]）。
+class AppleMusicFullBleed extends InheritedWidget {
+  const AppleMusicFullBleed({super.key, required super.child});
+
+  static bool active(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AppleMusicFullBleed>() != null;
+
+  @override
+  bool updateShouldNotify(AppleMusicFullBleed oldWidget) => false;
+}
+
+/// 标记：外层列表已留页边，里面的 Apple 段头 / 货架不再加页边（货架在页边内横滑）。
+class AppleMusicContained extends InheritedWidget {
+  const AppleMusicContained({super.key, required super.child});
+
+  @override
+  bool updateShouldNotify(AppleMusicContained oldWidget) => false;
+}
+
+/// 把一段 Apple 段头 / 货架放进当前列表：在 [AppleMusicFullBleed] 列表里原样（自带
+/// 页边、横滑到屏幕边），在留了页边的普通列表里套 [AppleMusicContained]。
+Widget appleMusicFitShelf(BuildContext context, Widget child) =>
+    AppleMusicFullBleed.active(context)
+    ? child
+    : AppleMusicContained(child: child);
+
+/// 在 [AppleMusicFullBleed] 列表里给非 Apple 段（提示行 / 按钮行）补回左右页边。
+Widget appleMusicInset(BuildContext context, Widget child) => Padding(
+  padding: EdgeInsets.symmetric(
+    horizontal: FushiDesignTokens.of(context).spacing.page,
+  ),
+  child: child,
+);
 
 /// 一段文字的 Apple 字样：去掉 MD3 字距，字号 / 字重 / 颜色由调用方给。
 TextStyle appleMusicText(
@@ -53,6 +93,14 @@ TextStyle appleMusicText(
   height: height,
   color: color ?? appleColorsOf(context).label,
 );
+
+/// 一行 [size] 号字（已乘 macOS 档缩放）在当前 textScaler 下占的高（行高倍数
+/// [height] 与 [appleMusicText] 默认值一致）。定高的行 / 货架按它推导，不写死像素。
+double appleMusicLineExtent(
+  BuildContext context,
+  double size, {
+  double height = 1.25,
+}) => (MediaQuery.textScalerOf(context).scale(size) * height).ceilToDouble();
 
 /// 连续曲率圆角裁切（iOS / macOS 的 squircle 圆角）。
 Widget appleMusicSquircle({
@@ -251,8 +299,8 @@ class AppleMusicCapsuleButton extends StatelessWidget {
 /// 滑出到屏幕边。iOS 档弹性滚动 + 按条吸附（[stride] = 单条宽 + 间距，歌曲分页列
 /// 按整列）；macOS 档触控板横扫走原生惯性，鼠标悬停时两端淡入玻璃圆形箭头，点一下
 /// 滚一屏、到头淡出。整排随段进场，内部不逐张错峰（Apple Music 不做）。
-class AppleMusicShelf extends StatefulWidget {
-  const AppleMusicShelf({
+class AppleMusicCarousel extends StatefulWidget {
+  const AppleMusicCarousel({
     super.key,
     required this.itemCount,
     required this.itemExtent,
@@ -276,10 +324,10 @@ class AppleMusicShelf extends StatefulWidget {
   final double? arrowCenter;
 
   @override
-  State<AppleMusicShelf> createState() => _AppleMusicShelfState();
+  State<AppleMusicCarousel> createState() => _AppleMusicCarouselState();
 }
 
-class _AppleMusicShelfState extends State<AppleMusicShelf> {
+class _AppleMusicCarouselState extends State<AppleMusicCarousel> {
   final ScrollController _controller = ScrollController();
   bool _hovering = false;
 
@@ -470,10 +518,25 @@ class AppleMusicCoverTile extends StatelessWidget {
   /// 副行尾部的小件（如服务器试听角标）。
   final Widget? subtitleTrailing;
 
-  /// [width] 宽的卡总高（封面 + 两行文字）。
+  static const double _titleSize = 13;
+  static const double _subtitleSize = 12;
+  static const double _lineHeight = 1.25;
+  static const double _titleGap = 7;
+  static const double _subtitleGap = 2;
+
+  /// 一行 [size] 号字（已乘 macOS 档缩放）在当前 textScaler 下的行高：文字行
+  /// 按这个高度定死（[SizedBox]），卡高与布局出自同一份度量。
+  static double _lineExtent(BuildContext context, double size) =>
+      appleMusicLineExtent(context, size, height: _lineHeight);
+
+  /// [width] 宽的卡总高（封面 + 标题行 + 副行，按 textScaler 与 macOS 档缩放）。
   static double heightFor(BuildContext context, double width) {
     final double k = FushiAppleMetrics.of(context).scale;
-    return width + 7 * k + 17 * k + 2 * k + 16 * k;
+    return width +
+        _titleGap * k +
+        _lineExtent(context, _titleSize * k) +
+        _subtitleGap * k +
+        _lineExtent(context, _subtitleSize * k);
   }
 
   @override
@@ -516,21 +579,28 @@ class AppleMusicCoverTile extends StatelessWidget {
                   circular: circular,
                 ),
               ),
-              SizedBox(height: 7 * k),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: align,
-                style: appleMusicText(
-                  context,
-                  size: 13 * k,
-                  weight: FontWeight.w500,
+              SizedBox(height: _titleGap * k),
+              SizedBox(
+                height: _lineExtent(context, _titleSize * k),
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: align,
+                  style: appleMusicText(
+                    context,
+                    size: _titleSize * k,
+                    weight: FontWeight.w500,
+                    height: _lineHeight,
+                  ),
                 ),
               ),
               if (subtitle case final String s when s.isNotEmpty)
-                Padding(
-                  padding: EdgeInsets.only(top: 2 * k),
+                Container(
+                  height:
+                      _subtitleGap * k +
+                      _lineExtent(context, _subtitleSize * k),
+                  padding: EdgeInsets.only(top: _subtitleGap * k),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
@@ -542,8 +612,9 @@ class AppleMusicCoverTile extends StatelessWidget {
                           textAlign: align,
                           style: appleMusicText(
                             context,
-                            size: 12 * k,
+                            size: _subtitleSize * k,
                             color: c.secondaryLabel,
+                            height: _lineHeight,
                           ),
                         ),
                       ),
@@ -730,30 +801,36 @@ class AppleMusicSourceGroupHeader extends StatelessWidget {
   }
 }
 
-/// 「浏览分类」横滑里的一块（Apple「按类别浏览」）：连续曲率圆角块，左下角粗体
-/// 类名、右上一枚斜放的图标。[emphasized]（「全部作品」）是强调色实底，其余是
-/// tertiaryFill 中性底——只用系统色令牌。
+/// 「浏览分类」/ 流派的一块（Apple Music「按类别浏览」）：连续曲率圆角块，底是按
+/// [seed]（分类 id / 名）稳定映射到一组系统色对的彩色渐变（深浅色各取系统色的
+/// 对应值，[appleMusicCategoryGradient]），左下白色粗体类名（可选一行副文字），
+/// 右上一枚斜放的半透明白底图标片。「全部作品」同样是渐变块。
 class AppleMusicCategoryTile extends StatelessWidget {
   const AppleMusicCategoryTile({
     super.key,
     required this.label,
+    required this.seed,
     required this.icon,
     required this.onTap,
-    this.emphasized = false,
+    this.subtitle,
   });
 
   final String label;
+
+  /// 定颜色用的稳定键（分类 id；没有 id 时用类名）。
+  final String seed;
   final IconData icon;
   final VoidCallback onTap;
-  final bool emphasized;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
-    final FushiAppleColors c = appleColorsOf(context);
     final double k = FushiAppleMetrics.of(context).scale;
-    final Color bg = emphasized ? c.accent : c.tertiaryFill;
-    final Color fg = emphasized ? c.onAccent : c.label;
     final double radius = 14 * k;
+    const Color onTile = Colors.white;
+    const List<Shadow> legibility = <Shadow>[
+      Shadow(color: Color(0x40000000), blurRadius: 4, offset: Offset(0, 1)),
+    ];
     return FushiHoverLift(
       builder: (BuildContext context, bool hovering) => FushiPressScale(
         child: FushiFocusable(
@@ -766,20 +843,35 @@ class AppleMusicCategoryTile extends StatelessWidget {
             excludeSemantics: true,
             child: appleMusicSquircle(
               radius: radius,
-              child: ColoredBox(
-                color: bg,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: appleMusicCategoryGradient(context, seed),
+                ),
                 child: Stack(
                   children: <Widget>[
                     PositionedDirectional(
-                      end: 10 * k,
+                      end: -8 * k,
                       top: 10 * k,
                       child: Transform.rotate(
                         angle: 18 * math.pi / 180,
-                        child: FushiIcon(
-                          icon,
-                          size: 34 * k,
-                          color: (emphasized ? fg : c.accent).withValues(
-                            alpha: 0.85,
+                        child: Container(
+                          width: 52 * k,
+                          height: 52 * k,
+                          decoration: ShapeDecoration(
+                            color: onTile.withValues(alpha: 0.22),
+                            shape: RoundedSuperellipseBorder(
+                              borderRadius: BorderRadius.circular(10 * k),
+                            ),
+                            shadows: const <BoxShadow>[
+                              BoxShadow(
+                                color: Color(0x33000000),
+                                blurRadius: 14,
+                                offset: Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: FushiIcon(icon, size: 26 * k, color: onTile),
                           ),
                         ),
                       ),
@@ -788,16 +880,35 @@ class AppleMusicCategoryTile extends StatelessWidget {
                       start: 12 * k,
                       end: 12 * k,
                       bottom: 10 * k,
-                      child: Text(
-                        label,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: appleMusicText(
-                          context,
-                          size: 16 * k,
-                          weight: FontWeight.w700,
-                          color: fg,
-                        ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: appleMusicText(
+                              context,
+                              size: 16 * k,
+                              weight: FontWeight.w700,
+                              color: onTile,
+                            ).copyWith(shadows: legibility),
+                          ),
+                          if (subtitle case final String sub
+                              when sub.isNotEmpty)
+                            Text(
+                              sub,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: appleMusicText(
+                                context,
+                                size: 12 * k,
+                                weight: FontWeight.w500,
+                                color: onTile.withValues(alpha: 0.85),
+                              ).copyWith(shadows: legibility),
+                            ),
+                        ],
                       ),
                     ),
                   ],
@@ -866,7 +977,8 @@ class AppleMusicRecommendSkeleton extends StatelessWidget {
             ),
             title(),
             SizedBox(
-              height: 150 * k + 34 * k,
+              // 与下面一格的各段同一份数：封面 + 间距 + 标题条 + 间距 + 副行条。
+              height: (150 + 8 + 12 + 6 + 10) * k,
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 physics: const NeverScrollableScrollPhysics(),

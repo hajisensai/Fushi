@@ -248,6 +248,7 @@ void main() {
     required bool glass,
     TargetPlatform platform = TargetPlatform.iOS,
     Size size = const Size(420, 2400),
+    double textScale = 1,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -264,7 +265,10 @@ void main() {
               glassDesign: glass,
             ).copyWith(platform: platform),
             builder: (BuildContext context, Widget? child) => MediaQuery(
-              data: MediaQuery.of(context).copyWith(disableAnimations: true),
+              data: MediaQuery.of(context).copyWith(
+                disableAnimations: true,
+                textScaler: TextScaler.linear(textScale),
+              ),
               child: child!,
             ),
             home: FushiGlassScope(child: Scaffold(body: body)),
@@ -304,7 +308,7 @@ void main() {
       expect(key('music-plugin-home-refresh-$_a'), findsOneWidget);
       expect(key('music-top-picks'), findsNothing);
       expect(find.byType(AppleMusicSectionHeader), findsNothing);
-      expect(find.byType(AppleMusicShelf), findsNothing);
+      expect(find.byType(AppleMusicCarousel), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     });
   });
@@ -566,5 +570,32 @@ void main() {
       expect(key('music-recommend-source-all'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     });
+  });
+
+  group('货架条目不溢出（高度出自同一份文字度量）', () {
+    for (final (TargetPlatform platform, Size size) in <(TargetPlatform, Size)>[
+      (TargetPlatform.iOS, const Size(420, 3200)),
+      // Windows 桌面宽窗 = macOS 档 ×1.15（run7 报溢出的形态）。
+      (TargetPlatform.windows, const Size(1300, 3200)),
+      (TargetPlatform.macOS, const Size(1300, 3200)),
+    ]) {
+      for (final double scale in <double>[1, 1.3, 2]) {
+        testWidgets('${platform.name} textScaler ×$scale：推荐页全部来源无溢出', (
+          WidgetTester tester,
+        ) async {
+          await pump(
+            tester,
+            all(),
+            glass: true,
+            platform: platform,
+            size: size,
+            textScale: scale,
+          );
+          expect(key('music-top-picks'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+          await tester.pumpWidget(const SizedBox.shrink());
+        });
+      }
+    }
   });
 }

@@ -527,7 +527,7 @@ class _ServerShelfState extends State<_ServerShelf> {
                       );
                     }
                     final MusicServerBrowser browser = widget.browser;
-                    return AppleMusicShelf(
+                    return AppleMusicCarousel(
                       itemCount: albums.length,
                       itemExtent: w,
                       height: height,
@@ -678,12 +678,23 @@ class _AppleMusicRegionButton extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) => FushiPressScale(
-    child: FushiTextButton.icon(
-      key: const ValueKey<String>('music-apple-music-region'),
-      onPressed: () => unawaited(_open(context)),
-      icon: const FushiIcon(FushiIcons.globe, size: 18),
-      label: Text('${t.music_sources_region} · ${storefront.toUpperCase()}'),
-    ),
-  );
+  Widget build(BuildContext context) => isGlassDesign(context)
+      // Cupertino：设计稿③的「地区 · JP」胶囊，点开是系统 pull-down（showFushiMenu
+      // 的 Apple 分支）。
+      ? AppleMusicCapsuleButton(
+          key: const ValueKey<String>('music-apple-music-region'),
+          icon: FushiIcons.globe,
+          label: '${t.music_sources_region} · ${storefront.toUpperCase()}',
+          onTap: () => unawaited(_open(context)),
+        )
+      : FushiPressScale(
+          child: FushiTextButton.icon(
+            key: const ValueKey<String>('music-apple-music-region'),
+            onPressed: () => unawaited(_open(context)),
+            icon: const FushiIcon(FushiIcons.globe, size: 18),
+            label: Text(
+              '${t.music_sources_region} · ${storefront.toUpperCase()}',
+            ),
+          ),
+        );
 }
