@@ -9,7 +9,6 @@ import 'package:fushi/src/utils/components/fushi_header_search.dart'
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -21,7 +20,6 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         FushiMastheadRole,
         fushiMastheadRoleOf;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
-import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_import_button.dart';
 import 'package:fushi/src/pages/implementations/library_layout/library_chrome_spec.dart';
 import 'package:fushi/src/pages/implementations/library_layout/library_layout.dart';
 import 'package:fushi/src/utils/components/library_section_tab.dart';
@@ -113,21 +111,11 @@ Widget libraryImportChromeButton({
   return KeyedSubtree(
     key: anchorKey,
     child: Builder(
-      // Apple：与右侧动作组同一形态（无色玻璃胶囊，高 fushiAppleFloatingExtent），
-      // 不套 56 高的 MD3 圆，否则比动作组高一截；MD3 用页头圆。页头大字顶栏
-      // （重设计外壳）里是主按钮：indicator 底、圆角 20，悬停 / 选中弹到 28。
-      // 页头大字先判（Apple 设计系统下同样生效，只换配色）。
+      // 只在 M3E 外壳里画（Apple 外壳的导入钮是 `AppleLibraryImportButton`，由
+      // `AppleLibraryLayout` 画）。页头大字顶栏（重设计外壳）里是主按钮：
+      // indicator 底、圆角 20，悬停 / 选中弹到 28；墨水屏是页头圆。
       builder: (BuildContext context) =>
-          fushiMastheadRoleOf(context) == FushiMastheadRole.primary &&
-              isGlassDesign(context)
-          // Apple 导航栏：中性玻璃圆钮（窄窗 44 / 宽窗 36），材质随玻璃画质
-          // 档位（实色档实色圆）。
-          ? AppleLibraryImportButton(
-              key: ValueKey<String>('$focusIdPrefix-import'),
-              selected: selected,
-              onTap: onTap,
-            )
-          : fushiMastheadRoleOf(context) == FushiMastheadRole.primary
+          fushiMastheadRoleOf(context) == FushiMastheadRole.primary
           ? FushiMastheadPrimaryButton(
               selected: selected,
               builder:
@@ -152,11 +140,6 @@ Widget libraryImportChromeButton({
                       height: extent,
                     ),
                   ),
-            )
-          : isGlassDesign(context)
-          ? FushiShellHeaderActions(
-              actions: <Widget>[button],
-              appleFloating: true,
             )
           : fushiFloatingLeading(button)!,
     ),

@@ -186,7 +186,7 @@ class _AppleLibraryLayoutState<T extends Object>
       slot: spec.actionsSlot,
       titleWrapper: titleMenu ? wrapTitle : null,
       trailing: _trailing(import, macMetrics: macMetrics),
-      secondary: scopeBar,
+      secondary: _secondary(scopeBar, spec.accessory),
     );
     // 大标题恒在（它本身就是一级分组的菜单入口）：侧栏已标出模块与分区时内容区
     // 标题换成当前分区名（macOS Finder / Music 的做法，停在导入页时仍是页名）；
@@ -234,6 +234,17 @@ class _AppleLibraryLayoutState<T extends Object>
           child: body,
         ),
       ),
+    );
+  }
+
+  /// 标题下的分区区：分区胶囊行 + 视图自己的三级行（如音乐推荐页的来源页签）。
+  Widget? _secondary(Widget? scopeBar, Widget? accessory) {
+    if (accessory == null || scopeBar == null) return scopeBar ?? accessory;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: 8,
+      children: <Widget>[scopeBar, accessory],
     );
   }
 

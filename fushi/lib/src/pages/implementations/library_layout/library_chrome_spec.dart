@@ -37,6 +37,7 @@ class LibraryChromeSpec<T extends Object> {
     this.swipeCoversSubNavigation = false,
     this.navigationKey,
     this.iconOf,
+    this.accessory,
   });
 
   /// 页面名（外壳给本 tab 的名字：书架 / 漫画 / 视频 / 游戏）。
@@ -87,6 +88,10 @@ class LibraryChromeSpec<T extends Object> {
 
   /// 分区的图标（Apple macOS 档侧栏子项用）；null = 不画图标。
   final IconData Function(T value)? iconOf;
+
+  /// 分区行下面再跟的一行（只属于当前视图的三级导航，如音乐推荐页的来源页签）；
+  /// null = 没有。
+  final Widget? accessory;
 
   /// 当前组（停在导入页时为 null）。
   LibraryChromeGroup<T>? get current {

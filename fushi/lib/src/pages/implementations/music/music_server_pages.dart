@@ -112,10 +112,8 @@ const double kMusicAlbumGridMaxExtent = 200;
 SliverGridDelegate musicAlbumGridDelegate(BuildContext context, double width) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final double spacing = tokens.spacing.gap * 1.5;
+  final int columns = musicAlbumGridColumns(context, width);
   final double available = math.max(1, width - tokens.spacing.page * 2);
-  final int columns = (available / (kMusicAlbumGridMaxExtent + spacing))
-      .ceil()
-      .clamp(1, 1 << 10);
   final double cardWidth = (available - (columns - 1) * spacing) / columns;
   return SliverGridDelegateWithMaxCrossAxisExtent(
     maxCrossAxisExtent: kMusicAlbumGridMaxExtent,
@@ -124,6 +122,38 @@ SliverGridDelegate musicAlbumGridDelegate(BuildContext context, double width) {
     mainAxisExtent:
         cardWidth / kShelfAlbumAspectRatio + ShelfCardMeta.heightFor(context),
   );
+}
+
+/// 专辑网格在 [width] 下按 `MaxCrossAxisExtent` 公式算出的自动列数。
+int musicAlbumGridColumns(BuildContext context, double width) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final double spacing = tokens.spacing.gap * 1.5;
+  final double available = math.max(1, width - tokens.spacing.page * 2);
+  return (available / (kMusicAlbumGridMaxExtent + spacing)).ceil().clamp(
+    1,
+    1 << 10,
+  );
+}
+
+/// 曲库专辑网格的几何：[fixedColumns] 为 null 时就是 [musicAlbumGridDelegate]
+/// （自动列数，像素不变）；用户定了「每行数量」（Apple 外壳的捏合 / ⌘± / 滑杆，
+/// 写回 `library_grid_columns` 的 music 格）时按固定列数排、行高同一公式。
+MusicGridDelegateBuilder musicAlbumGridDelegateFor({int? fixedColumns}) {
+  if (fixedColumns == null || fixedColumns <= 0) return musicAlbumGridDelegate;
+  return (BuildContext context, double width) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double spacing = tokens.spacing.gap * 1.5;
+    final double available = math.max(1, width - tokens.spacing.page * 2);
+    final double cardWidth =
+        (available - (fixedColumns - 1) * spacing) / fixedColumns;
+    return SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: fixedColumns,
+      mainAxisSpacing: spacing,
+      crossAxisSpacing: spacing,
+      mainAxisExtent:
+          cardWidth / kShelfAlbumAspectRatio + ShelfCardMeta.heightFor(context),
+    );
+  };
 }
 
 /// 专辑详情页大封面的边长。

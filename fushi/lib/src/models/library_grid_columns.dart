@@ -16,8 +16,8 @@ import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
 /// 偏好键（JSON：`"<domain>.<sizeClass>" → 列数`，缺省 = 自动）。
 const String kLibraryGridColumnsPrefKey = 'library_grid_columns';
 
-/// 哪个库页。书架与漫画库同一个页面类但分别记。
-enum LibraryGridDomain { books, manga, video, games }
+/// 哪个库页。书架与漫画库同一个页面类但分别记；音乐只管专辑 / 光盘的封面网格。
+enum LibraryGridDomain { books, manga, video, games, music }
 
 /// [sizeClass] 下可选的固定列数（不含「自动」）。手机竖屏最多 4 列（用户拍板）；
 /// 宽档的上限给到足够覆盖常见桌面窗口的自动列数。

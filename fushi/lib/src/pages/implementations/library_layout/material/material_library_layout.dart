@@ -88,12 +88,24 @@ class MaterialLibraryLayout<T extends Object> extends StatelessWidget {
                   anchorKey: import.anchorKey,
                 ),
           // 页头大字顶栏里二级页签由大字行画（放得下与页名同一行）。
-          secondary: subTabs,
+          secondary: _secondary(context, subTabs),
         ),
         child: spec.swipeCoversSubNavigation
             ? swiped(nested(body))
             : nested(swiped(body)),
       ),
+    );
+  }
+
+  /// 大字行的二级区：二级页签 + 视图自己的三级行（[LibraryChromeSpec.accessory]）。
+  Widget? _secondary(BuildContext context, Widget? subTabs) {
+    final Widget? accessory = spec.accessory;
+    if (accessory == null || subTabs == null) return subTabs ?? accessory;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: FushiDesignTokens.of(context).spacing.gap / 2,
+      children: <Widget>[subTabs, accessory],
     );
   }
 

@@ -21,6 +21,11 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/media/music/music_view_style.dart';
+import 'package:fushi/src/models/library_grid_columns.dart'
+    show libraryGridColumnChoices;
+import 'package:fushi/src/pages/implementations/library_layout/library_grid_zoom.dart';
+import 'package:fushi/src/pages/implementations/library_view_options.dart'
+    show libraryGridSizeClassOf;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
     show
         MusicCover,
@@ -396,6 +401,8 @@ class MusicStyledCollection extends StatelessWidget {
     this.shrinkWrap = false,
     this.controller,
     this.scrollKey,
+    this.gridColumnsOf,
+    this.onGridColumnsChanged,
   });
 
   final MusicViewStyle style;
@@ -418,6 +425,13 @@ class MusicStyledCollection extends StatelessWidget {
 
   /// 滚动视图的 key（调用页原有列表的 key 原样传进来）。
   final Key? scrollKey;
+
+  /// 网格卡此刻的列数（[width] 是滚动视口宽）；与 [onGridColumnsChanged] 同时给出
+  /// 时网格接 Apple 外壳的「捏合 / ⌘± 调每行个数」（[LibraryGridZoom]，M3E 不变）。
+  final int Function(BuildContext context, double width)? gridColumnsOf;
+
+  /// 写回「每行数量」（null = 自动）。
+  final ValueChanged<int?>? onGridColumnsChanged;
 
   bool _useGridCards(BuildContext context) =>
       style == MusicViewStyle.blocks &&
@@ -491,8 +505,20 @@ class MusicStyledCollection extends StatelessWidget {
     child: _useGridCards(context)
         ? LayoutBuilder(
             builder: (BuildContext context, BoxConstraints c) =>
-                _scroll(context, c.maxWidth),
+                _zoomable(context, c.maxWidth, _scroll(context, c.maxWidth)),
           )
         : _scroll(context, double.infinity),
   );
+
+  Widget _zoomable(BuildContext context, double width, Widget child) {
+    final int Function(BuildContext, double)? columnsOf = gridColumnsOf;
+    final ValueChanged<int?>? onChanged = onGridColumnsChanged;
+    if (columnsOf == null || onChanged == null) return child;
+    return LibraryGridZoom(
+      columns: columnsOf(context, width),
+      choices: libraryGridColumnChoices(libraryGridSizeClassOf(context)),
+      onColumnsChanged: onChanged,
+      child: child,
+    );
+  }
 }

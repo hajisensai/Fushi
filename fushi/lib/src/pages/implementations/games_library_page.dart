@@ -105,7 +105,8 @@ import 'package:fushi/src/pages/implementations/library_filter_panel.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/library_view_options.dart';
 import 'package:fushi/src/models/library_grid_columns.dart'
-    show LibraryGridDomain;
+    show LibraryGridDomain, libraryGridColumnChoices;
+import 'package:fushi/src/pages/implementations/library_layout/library_grid_zoom.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
@@ -1146,17 +1147,20 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     return libraryGridColumnsSection(
       sizeClass: sizeClass,
       selected: _gridFixedColumns,
-      onSelected: (int? columns) {
-        unawaited(
-          _appModel.prefsRepo.setLibraryGridColumns(
-            LibraryGridDomain.games,
-            sizeClass,
-            columns,
-          ),
-        );
-        setState(() {});
-      },
+      onSelected: _setGridColumns,
     );
+  }
+
+  /// 写回当前尺寸档的「每行数量」（null = 自动）：排序菜单 / 抽屉与网格缩放共用。
+  void _setGridColumns(int? columns) {
+    unawaited(
+      _appModel.prefsRepo.setLibraryGridColumns(
+        LibraryGridDomain.games,
+        libraryGridSizeClassOf(context),
+        columns,
+      ),
+    );
+    setState(() {});
   }
 
   /// 窄窗「排序与显示」底部抽屉：排序维度（再点当前维度 = 翻转方向，选中项带
@@ -1613,7 +1617,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
             visible,
             tagFilterActive: tagFilterActive,
           );
-          return MediaQuery.removePadding(
+          final Widget content = MediaQuery.removePadding(
             context: context,
             removeTop: true,
             child: CustomScrollView(
@@ -1638,6 +1642,14 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
                 ),
               ],
             ),
+          );
+          // 网格布局下双指捏合 / ⌘± 调每行个数（Apple 外壳，M3E 原样返回）。
+          if (_listLayout) return content;
+          return LibraryGridZoom(
+            columns: metrics.columns,
+            choices: libraryGridColumnChoices(libraryGridSizeClassOf(context)),
+            onColumnsChanged: _setGridColumns,
+            child: content,
           );
         },
       ),
