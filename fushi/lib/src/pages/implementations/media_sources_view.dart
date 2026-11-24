@@ -1935,12 +1935,13 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
             final SourceLibraryRow? updated = await _db.getMediaSourceById(
               row.id,
             );
+            final SourceScanSummary? scanned = summary;
             if (row.mediaKind == 'video' &&
-                summary != null &&
+                scanned != null &&
                 onVideoScanCompleted != null) {
               // 回调属于 HomePage，页面在扫描期间被切走也要继续执行。
               // 保持 _scanning 到回调结束，确保同来源扫描与自动刮削不会重入。
-              await onVideoScanCompleted(updated ?? row, summary);
+              await onVideoScanCompleted(updated ?? row, scanned);
             }
             if (mounted) {
               setState(() {
@@ -1956,8 +1957,9 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
               // 扫描可能新增条目，刷新累计计数（TODO-1036）。
               await _refreshCount(row.id);
               final SourceScanSummary? done = summary;
-              if (done != null && done.succeeded)
+              if (done != null && done.succeeded) {
                 _showBookAudiobookSummary(done);
+              }
               if (blockedByScrapeCleanup || done?.blocked != null) {
                 // 扫描器给的 error 就是按 blocked 种类写的本地化文案（清理中 / 来源已移除）。
                 FushiToast.show(

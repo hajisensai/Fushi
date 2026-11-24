@@ -37,7 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-5387](bugs/BUG-5387-restore-quiesce-media-background-writers.md) | 🚧 | 🚧 | restore-quiesce-media-background-writers |
+| [BUG-5387](bugs/BUG-5387-restore-quiesce-media-background-writers.md) | ✅ | ✅ | restore-quiesce-media-background-writers |
 | [BUG-5379](bugs/BUG-5379-mangabaka-volume-cover-pop-type.md) | ✅ | ✅ | mangabaka-volume-cover-pop-type |
 | [BUG-5378](bugs/BUG-5378-nav-peek-book-progress-ignores-completed.md) | ✅ | ✅ | 导航速览里已读完的书写成 0%，同一本书各卡百分比不一致 |
 | [BUG-5374](bugs/BUG-5374-windows-dart-silent-black-window.md) | 🚧 | ✅ | Windows 缩窗后主窗口黑屏冻结，平台线程空闲而 Dart 不回应，旧看门狗量不到 |
