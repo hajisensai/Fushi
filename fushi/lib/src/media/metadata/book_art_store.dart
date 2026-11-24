@@ -481,7 +481,15 @@ class BookArtStore extends ChangeNotifier {
       if (referenced.contains(name) || _bannerHolds.containsKey(name)) {
         continue;
       }
-      await e.delete();
+      try {
+        await e.delete();
+      } on FileSystemException catch (err) {
+        // 文件还被占着（Windows 上背景带的图片正在读它）：回收是尽力而为，这张留到
+        // 下一次回收（每次刮削收尾 / 清除 / 否决都会跑）再删。记录此时已一致，
+        // 不让它中断调用方——清除逐本删，曾因此中途抛出、后面的书一本都没清。
+        ErrorLogService.instance.logDiagnostic('BookArtStore.gc', '$err');
+        continue;
+      }
       await evictImageCacheForFile(e);
       removed++;
     }

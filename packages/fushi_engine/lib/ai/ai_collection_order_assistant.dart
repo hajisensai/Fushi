@@ -55,6 +55,7 @@ class AiCollectionOrderMember {
     this.episode,
     this.volume,
     this.bookEpisode,
+    this.bookSplit = 0,
     this.bookBonus = false,
     String? volumeMarkerText,
     this.metadata = const <String, Object?>{},
@@ -88,9 +89,13 @@ class AiCollectionOrderMember {
       title: title,
       volume: key?.volume,
       bookEpisode: episode,
+      bookSplit: key?.split ?? 0,
       bookBonus: key?.bonus ?? false,
-      // 已解析成话号的结尾「第N話 前編」不是认不出的卷位标记，只查它前面那段。
-      volumeMarkerText: episode == null ? null : key!.seriesTitle,
+      // 已解析成话号的结尾「第N話 前編」/ 分册「上 / 下」不是认不出的卷位标记，只查
+      // 它前面那段。
+      volumeMarkerText: episode == null && (key?.split ?? 0) == 0
+          ? null
+          : key!.seriesTitle,
     );
   }
 
@@ -103,6 +108,9 @@ class AiCollectionOrderMember {
   /// 书成员的话号（按话发布的漫画「第N話 前編」，见 [BookSeriesKey.episode]）。
   final BookEpisodeNumber? bookEpisode;
 
+  /// 书成员的分册（结尾「上 / 中 / 下」，见 [BookSeriesKey.split]）。
+  final int bookSplit;
+
   /// 书成员是否特典册（排在同卷正篇之后，见 [BookSeriesKey.bonus]）。
   final bool bookBonus;
 
@@ -114,7 +122,8 @@ class AiCollectionOrderMember {
   final Map<String, Object?> metadata;
 }
 
-/// 书名里规则认不出、但明显带「卷位」语义的标记：上 / 中 / 下卷、前后编、外传、
+/// 书名里规则认不出、但明显带「卷位」语义的标记：上 / 中 / 下卷（结尾的已由
+/// [BookSeriesKey.split] 读出，这里兜书名中间的）、前后编、外传、
 /// 番外、特别篇、短篇集、汉字卷号（第三巻）。命中即视为规则判不出。
 final RegExp _bookUnparsedVolumeMarker = RegExp(
   r'([上中下]巻|[上中下]卷|[上中下]冊|[上中下]册'
@@ -160,6 +169,7 @@ Set<int> collectionOrderAmbiguousIndices(
         final BookSeriesPosition? position = bookSeriesPositionOf(
           volume: m.volume,
           episode: m.bookEpisode,
+          split: m.bookSplit,
           bonus: m.bookBonus,
         );
         if (position == null) {
@@ -172,6 +182,13 @@ Set<int> collectionOrderAmbiguousIndices(
         if (same.length > 1) out.addAll(same);
       }
       if (unnumbered.length > 1) out.addAll(unnumbered);
+      // 无卷号的分册（「物語 上巻」）与带卷号的卷混在一起时，分册排在哪一卷前后规则
+      // 说不准（只有上 / 中 / 下自己时次序是确定的）。
+      if (members.any((AiCollectionOrderMember m) => m.volume != null)) {
+        for (int i = 0; i < members.length; i++) {
+          if (members[i].volume == null && members[i].bookSplit > 0) out.add(i);
+        }
+      }
       return out;
   }
 }
@@ -199,9 +216,11 @@ List<int> ruleOrderCollectionMembers(
         c = compareBookSeriesPositionParts(
           volumeA: ma.volume,
           episodeA: ma.bookEpisode,
+          splitA: ma.bookSplit,
           bonusA: ma.bookBonus,
           volumeB: mb.volume,
           episodeB: mb.bookEpisode,
+          splitB: mb.bookSplit,
           bonusB: mb.bookBonus,
         );
         if (c != 0) return c;

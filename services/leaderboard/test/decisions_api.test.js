@@ -295,3 +295,41 @@ describe('scripts/decisions.mjs HTTP 模式', () => {
     await expect(main(['list'], () => {}, { backend: revoked })).rejects.toThrow(/HTTP 401 bad_decision_key.*\/dev\/keys/);
   });
 });
+
+describe('附件公开分享：API 与 CLI', () => {
+  it('share / unshare 经 HTTP 打到 Worker；签发人记为密钥所属开发者；无密钥 401；wrangler 模式拒绝', async () => {
+    const env = makeEnv();
+    const s = await devSession(env);
+    const key = await issueKey(env, s);
+    env.DB.raw.exec(addSql([ITEMS[0]], NOW - 10).sql);
+    const fetchImpl = (url, init) => worker.fetch(new Request(url, init), env);
+    const backend = httpBackend({ token: key, base: BASE, fetchImpl });
+    const dir = mkdtempSync(join(tmpdir(), 'decisions-share-'));
+    const out = [];
+    const run = (...argv) => main(argv, (l) => out.push(l), { backend });
+    writeFileSync(join(dir, 'mock.html'), '<p>mock</p>');
+    await run('attach', 'pr1', join(dir, 'mock.html'));
+
+    expect((await api(env, null, 'POST', '/v1/decisions/pr1/files/0/share')).status).toBe(401);
+    await run('share', 'pr1', '0');
+    const line = out.pop();
+    const m = /^#pr1 第 0 个附件已分享：(https?:\/\/\S+\/share\/f\/[A-Za-z0-9_-]{32})$/.exec(line);
+    expect(m).not.toBeNull();
+    const path = new URL(m[1]).pathname;
+    expect(env.DB.raw.prepare('SELECT created_by FROM decision_file_shares').get().created_by).toBe(s.dev.id);
+    await run('share', 'pr1', '0');
+    expect(out.pop()).toBe(`#pr1 第 0 个附件已有分享链接：${m[1]}`);
+    const got = await call(env, 'GET', path, { now: NOW });
+    expect(got.data).toBe('<p>mock</p>');
+    await expect(run('share', 'pr1', '5')).rejects.toThrow(/HTTP 404/);
+
+    await run('unshare', 'pr1', '0');
+    expect(out.pop()).toBe('#pr1 已撤销 mock.html 的分享链接');
+    expect((await call(env, 'GET', path, { now: NOW })).status).toBe(404);
+    await run('unshare', 'pr1', '0');
+    expect(out.pop()).toBe('#pr1 mock.html 没有分享链接');
+
+    const wr = pickBackend({ wrangler: true }, { FUSHI_DECISIONS_TOKEN: key });
+    await expect(main(['share', 'pr1', '0'], () => {}, { backend: wr })).rejects.toThrow(/HTTP 模式/);
+  });
+});

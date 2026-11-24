@@ -66,7 +66,12 @@ import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 /// scan paths), `sync_baselines` (would corrupt later incremental sync fork
 /// detection), the five durable video-download tables (backend fingerprints,
 /// local paths and schedule leases), and device-local sync prefs
-/// ([SyncRepository.deviceLocalPrefKeys]).
+/// ([SyncRepository.deviceLocalPrefKeys]). Rows that DO travel but carry an
+/// integer FK into a skipped table (`epub_books` / `video_books.source_id` →
+/// `media_sources`) get that FK remapped by the referenced row's cross-device
+/// identity, or NULL when this device has no such row — never the src integer
+/// verbatim ([_buildSourceIdMap], guarded by
+/// [_assertIntegerForeignKeysRemapped], BUG-5392).
 class BackupMergeEngine {
   BackupMergeEngine(
     this._db, {
@@ -216,6 +221,9 @@ class BackupMergeEngine {
   Future<void> _mergeMainDatabase() async {
     await _db.transaction(() async {
       await _createExcludedBookKeysTable();
+      // 书 / 视频行的 source_id 是两库各自的 media_sources 自增 id，先建好
+      // src → 本机来源的身份映射，插行时逐行换（BUG-5392）。
+      await _buildSourceIdMap();
       // Content categories are gated by the import dialog's per-category
       // selection (merge mode). Rows with no dialog toggle (favorites / tags /
       // profiles / history / collections) always merge — they carry no bulk
@@ -342,8 +350,148 @@ class BackupMergeEngine {
         );
       }
       await _db.customStatement('DROP TABLE IF EXISTS $_gameMapTable');
+      await _db.customStatement('DROP TABLE IF EXISTS $_sourceMapTable');
       await _db.customStatement('DROP TABLE IF EXISTS $_excludedBookKeysTable');
     });
+  }
+
+  /// TEMP table `(src_id, dst_id)`：src `media_sources.id` → 本机代表**同一个
+  /// 来源**的 `media_sources.id`。连接级，[merge] 结束时删除。
+  static const String _sourceMapTable = 'temp.merge_source_map';
+
+  /// 建 [_sourceMapTable]（BUG-5392）。`media_sources` 是设备本地的扫描根，合并
+  /// 不搬它；但 `epub_books` / `video_books` 的 `source_id` 是指向它的**自增整数**
+  /// 外键，两库的 id 互不相干，原样搬进来就挂到本机碰巧同号的另一个来源上（或
+  /// 悬空）。来源的跨库身份是 `(media_kind, transport, root_path)`——与覆盖导入
+  /// 回填下载任务目标来源（`_insertVideoDownloadJobsFromBak`）同一判据；
+  /// `root_path` 落库时已按 `normalizeSourceRootPath` 归一，直接比字符串。多个本机
+  /// 候选取最小 id，结果确定。映射不到的 src 来源不进表，行上的 `source_id` 落 NULL
+  /// （见 [_mappedSourceIdSql]）。
+  Future<void> _buildSourceIdMap() async {
+    await _db.customStatement('DROP TABLE IF EXISTS $_sourceMapTable');
+    await _db.customStatement(
+      'CREATE TEMP TABLE merge_source_map '
+      '(src_id INTEGER PRIMARY KEY, dst_id INTEGER NOT NULL)',
+    );
+    _srcHasSources = await _srcTableExists('media_sources');
+    if (!_srcHasSources) return;
+    _srcSourcesHavePrivacy = await _srcColumnExists(
+      'media_sources',
+      'is_private',
+    );
+    await _db.customStatement(
+      'INSERT INTO $_sourceMapTable (src_id, dst_id) '
+      'SELECT s.id, MIN(t.id) FROM $_srcAlias.media_sources AS s '
+      'JOIN media_sources AS t ON t.media_kind = s.media_kind '
+      'AND t.transport = s.transport AND t.root_path = s.root_path '
+      'GROUP BY s.id',
+    );
+  }
+
+  /// src 库有没有 `media_sources` 表（手搓的旧库可能没有）。[_buildSourceIdMap] 写。
+  bool _srcHasSources = false;
+
+  /// src 库的 `media_sources` 有没有 `is_private` 列（v140）。[_buildSourceIdMap] 写。
+  bool _srcSourcesHavePrivacy = false;
+
+  /// src 行（别名 `s`）的 `source_id` 换成本机来源 id 的 SQL 表达式：映射到了用本机
+  /// 那一行，src 本就无来源 / 本机没有同一个来源时为 NULL——绝不落 src 的整数 id。
+  String get _mappedSourceIdSql => _srcHasSources
+      ? '(SELECT m.dst_id FROM $_sourceMapTable AS m '
+            'WHERE m.src_id = s.source_id)'
+      : 'NULL';
+
+  /// 「src 行原本有来源、本机却没有同一个来源」的 SQL 条件（别名 `s`）。这类行的
+  /// 来源归属在本机等同于「来源已移除」，按 [FushiDatabase.deleteMediaSource] 的
+  /// 语义保留来源留下的意图（视频的分组方式、隐私来源的私密）。
+  String get _sourceDroppedSql =>
+      's.source_id IS NOT NULL AND $_mappedSourceIdSql IS NULL';
+
+  /// 跨库整搬一张表之前的结构守卫（BUG-5392）：表里每个指向**整数主键**（自增
+  /// id，只在本库内有意义）的外键列都必须在 [remapped] 里——也就是调用方已经
+  /// 显式换过。新 schema 给被整搬的表加了这种外键而合并没跟上时，这里大声失败
+  /// （整个合并事务回滚），而不是把别的库的 id 静默落进来。指向文本键（book_key /
+  /// book_uid 这类跨库稳定身份）的外键不受限。
+  Future<void> _assertIntegerForeignKeysRemapped(
+    String table, {
+    Set<String> remapped = const <String>{},
+  }) async {
+    for (final QueryRow fk
+        in await _db.customSelect('PRAGMA foreign_key_list($table)').get()) {
+      final String from = fk.read<String>('from');
+      if (remapped.contains(from)) continue;
+      final String refTable = fk.read<String>('table');
+      final String? refColumn = fk.readNullable<String>('to');
+      final bool pointsAtIntegerKey =
+          (await _db.customSelect('PRAGMA table_info($refTable)').get()).any(
+            (QueryRow c) =>
+                c.read<int>('pk') > 0 &&
+                (refColumn == null || c.read<String>('name') == refColumn) &&
+                c.read<String>('type').toUpperCase().contains('INT'),
+          );
+      if (pointsAtIntegerKey) {
+        throw StateError(
+          'BackupMergeEngine: $table.$from references the local integer key '
+          '$refTable.${refColumn ?? 'rowid'} and would be copied verbatim from '
+          'the backup DB; remap it by a cross-device identity first.',
+        );
+      }
+    }
+  }
+
+  /// 本次合并新插入、而它在 src 设备上属于**隐私来源**、本机又没有同一个隐私
+  /// 来源承接的条目：照 [FushiDatabase.deleteMediaSource] 的做法写作品级私密
+  /// 标记，「别上排行榜」的意图跟着条目走，不因换了设备突然公开。本机已有该作品
+  /// 的私密时钟行（用户在本机表过态）就不动。[insertedKeys] 是插入前算好的
+  /// 候选（src 隐私来源下、这次会插入的行的键）。
+  Future<void> _carrySourcePrivacy(
+    TagHostKind kind,
+    String table,
+    String keyColumn,
+    List<String> insertedKeys,
+  ) async {
+    if (insertedKeys.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    for (final String key in insertedKeys) {
+      final QueryRow? row = await _db
+          .customSelect(
+            'SELECT 1 FROM $table AS t WHERE t.$keyColumn = ? '
+            'AND NOT EXISTS (SELECT 1 FROM media_sources AS ts '
+            'WHERE ts.id = t.source_id AND ts.is_private = 1) '
+            'AND NOT EXISTS (SELECT 1 FROM media_privacy_flags AS f '
+            'WHERE f.media_kind = ? AND f.entry_key = t.$keyColumn)',
+            variables: <Variable<Object>>[
+              Variable<String>(key),
+              Variable<String>(kind.dbValue),
+            ],
+          )
+          .getSingleOrNull();
+      if (row == null) continue;
+      await _db.setMediaPrivate(kind, key, true, at: now);
+    }
+  }
+
+  /// 「这次会插入、且 src 来源是隐私来源」的 src 行键（别名 `s`，[whereSql] 与
+  /// 插入语句的 WHERE 逐字相同，[args] 是它的占位参数）。
+  Future<List<String>> _privateSourceKeysToInsert(
+    String table,
+    String keyColumn,
+    String whereSql,
+    List<Object?> args,
+  ) async {
+    if (!_srcHasSources || !_srcSourcesHavePrivacy) return const <String>[];
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT s.$keyColumn AS k FROM $_srcAlias.$table AS s '
+          'JOIN $_srcAlias.media_sources AS ss ON ss.id = s.source_id '
+          'AND ss.is_private = 1 '
+          'WHERE $whereSql',
+          variables: args
+              .map((Object? a) => Variable<String>(a as String?))
+              .toList(),
+        )
+        .get();
+    return rows.map((QueryRow r) => r.read<String>('k')).toList();
   }
 
   /// TEMP table `(src_id, dst_id)` mapping every src `galgames.id` that has a
@@ -406,6 +554,7 @@ class BackupMergeEngine {
   /// `cover_path` is inserted verbatim (source-device path) and re-homed by the
   /// caller's `_rebaseGameCoverPaths` after the covers are copied in.
   Future<void> _insertMissingGalgames() async {
+    await _assertIntegerForeignKeysRemapped('galgames');
     final List<String> cols = await _allColumns('galgames');
     final String colList = cols.join(', ');
     await _db.customStatement(
@@ -692,6 +841,7 @@ class BackupMergeEngine {
     bool skipBookTombstones = false,
     String? tombstoneKeyColumn,
   }) async {
+    await _assertIntegerForeignKeysRemapped(table);
     final List<String> cols = await _columnsExceptId(table);
     final String colList = cols.join(', ');
     final String tombCol = tombstoneKeyColumn ?? keyColumn;
@@ -711,10 +861,17 @@ class BackupMergeEngine {
   /// merge 事务。撞时按同命名空间重生成（src rowid + 当前 epoch + `_m` 后缀，
   /// 批内唯一；万一再撞由唯一索引大声失败，绝不静默错配）。
   Future<void> _insertMissingEpubBooks() async {
+    await _assertIntegerForeignKeysRemapped(
+      'epub_books',
+      remapped: const <String>{'source_id'},
+    );
     final List<String> cols = await _columnsExceptId('epub_books');
     final String colList = cols.join(', ');
     final String selList = cols
         .map((String c) {
+          // BUG-5392：source_id 是 src 库 media_sources 的自增 id，按来源身份换成
+          // 本机 id，映射不到落 NULL（= 手动导入、无来源）。
+          if (c == '"source_id"') return _mappedSourceIdSql;
           if (c != '"uid"') return 's.$c';
           return "CASE WHEN s.uid != '' AND EXISTS "
               '(SELECT 1 FROM epub_books AS e WHERE e.uid = s.uid) '
@@ -722,12 +879,26 @@ class BackupMergeEngine {
               'ELSE s.uid END';
         })
         .join(', ');
+    final String where =
+        'NOT EXISTS (SELECT 1 FROM epub_books AS t '
+        'WHERE t.book_key = s.book_key) '
+        'AND s.book_key NOT IN $_blockedBookKeysSubquery';
+    final List<String> privateKeys = await _privateSourceKeysToInsert(
+      'epub_books',
+      'book_key',
+      where,
+      const <Object?>[],
+    );
     await _db.customStatement(
       'INSERT INTO epub_books ($colList) '
       'SELECT $selList FROM $_srcAlias.epub_books AS s '
-      'WHERE NOT EXISTS (SELECT 1 FROM epub_books AS t '
-      'WHERE t.book_key = s.book_key) '
-      'AND s.book_key NOT IN $_blockedBookKeysSubquery',
+      'WHERE $where',
+    );
+    await _carrySourcePrivacy(
+      TagHostKind.epub,
+      'epub_books',
+      'book_key',
+      privateKeys,
     );
   }
 
@@ -737,17 +908,56 @@ class BackupMergeEngine {
   /// carried.
   /// A local-file video whose file never travelled is skipped so it never lands
   /// as a dead "empty video" shell that can't play (TODO-1261). `video_books`
-  /// has no autoincrement id (PK is `book_uid`), so every column travels.
+  /// has no autoincrement id (PK is `book_uid`), so every column travels —
+  /// except `source_id`, an integer FK into the device-local `media_sources`,
+  /// which is remapped by source identity ([_buildSourceIdMap], BUG-5392).
   Future<void> _insertMissingVideoBooks() async {
+    await _assertIntegerForeignKeysRemapped(
+      'video_books',
+      remapped: const <String>{'source_id'},
+    );
     final List<String> cols = await _columnsExceptId('video_books');
     final String colList = cols.join(', ');
+    // BUG-5392：source_id 按来源身份换成本机 id（映射不到落 NULL）。来源在本机
+    // 没有对应行时，等同「来源已移除」：照 [FushiDatabase.deleteMediaSource] 把
+    // src 来源的分组方式（作品 / 目录）落到行上——有来源时分组以来源设置为准，
+    // 来源没了就靠这一列保住，否则视频会换一种分组方式归组。
+    final String groupingWhenDropped = _srcHasSources
+        ? 'CASE WHEN $_sourceDroppedSql THEN COALESCE('
+              '(SELECT ss.video_grouping_mode FROM $_srcAlias.media_sources '
+              'AS ss WHERE ss.id = s.source_id), s.video_grouping_mode) '
+              'ELSE s.video_grouping_mode END'
+        : 's.video_grouping_mode';
+    final String selList = cols
+        .map(
+          (String c) => switch (c) {
+            '"source_id"' => _mappedSourceIdSql,
+            '"video_grouping_mode"' => groupingWhenDropped,
+            _ => 's.$c',
+          },
+        )
+        .join(', ');
+    final String where =
+        'NOT EXISTS (SELECT 1 FROM video_books AS t '
+        'WHERE t.book_uid = s.book_uid) '
+        'AND $_reachableVideoPredicate';
+    final List<String> privateKeys = await _privateSourceKeysToInsert(
+      'video_books',
+      'book_uid',
+      where,
+      _reachableVideoArgs,
+    );
     await _db.customStatement(
       'INSERT INTO video_books ($colList) '
-      'SELECT $colList FROM $_srcAlias.video_books AS s '
-      'WHERE NOT EXISTS (SELECT 1 FROM video_books AS t '
-      'WHERE t.book_uid = s.book_uid) '
-      'AND $_reachableVideoPredicate',
+      'SELECT $selList FROM $_srcAlias.video_books AS s '
+      'WHERE $where',
       _reachableVideoArgs,
+    );
+    await _carrySourcePrivacy(
+      TagHostKind.video,
+      'video_books',
+      'book_uid',
+      privateKeys,
     );
   }
 
@@ -1101,6 +1311,7 @@ class BackupMergeEngine {
   /// AudioCues: import only cues for book_keys with no existing cues in the
   /// target (idempotent, no duplicate streams).
   Future<void> _insertAudioCues() async {
+    await _assertIntegerForeignKeysRemapped('audio_cues');
     final List<String> cols = await _columnsExceptId('audio_cues');
     final String colList = cols.join(', ');
     await _db.customStatement(

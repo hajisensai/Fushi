@@ -15096,6 +15096,17 @@ class $FavoriteSentencesTable extends FavoriteSentences
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _originSourceIdMeta = const VerificationMeta(
+    'originSourceId',
+  );
+  @override
+  late final GeneratedColumn<String> originSourceId = GeneratedColumn<String>(
+    'origin_source_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -15113,6 +15124,7 @@ class $FavoriteSentencesTable extends FavoriteSentences
     dateKey,
     expression,
     reading,
+    originSourceId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -15237,6 +15249,15 @@ class $FavoriteSentencesTable extends FavoriteSentences
         reading.isAcceptableOrUnknown(data['reading']!, _readingMeta),
       );
     }
+    if (data.containsKey('origin_source_id')) {
+      context.handle(
+        _originSourceIdMeta,
+        originSourceId.isAcceptableOrUnknown(
+          data['origin_source_id']!,
+          _originSourceIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -15306,6 +15327,10 @@ class $FavoriteSentencesTable extends FavoriteSentences
         DriftSqlType.string,
         data['${effectivePrefix}reading'],
       ),
+      originSourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}origin_source_id'],
+      ),
     );
   }
 
@@ -15340,6 +15365,16 @@ class FavoriteSentenceRow extends DataClass
   final String? dateKey;
   final String? expression;
   final String? reading;
+
+  /// 收藏时句子所在条目的**远端来源身份**（v179，BUG-5402）：从没入库的远端条目
+  /// （媒体服务器浏览页直接串流、互联对端……）收藏时记下播放客户端的
+  /// `RemoteLibrarySource.remoteLibrarySourceId`（Jellyfin / Emby =
+  /// `jellyfin:<地址>|<用户>`、Plex = `plex:<机器>|<账号>`，与
+  /// `MediaServerConfig.sourceId` 同口径）。[bookKey] 此时是该来源内的条目 id，
+  /// Plex ratingKey / Emby id 是各服务器自增数字、跨服务器会撞号，跳回原处必须按它
+  /// 精确找回那一台。NULL = 本机库条目（[bookKey] 本身就是全局身份）或 v179 之前
+  /// 的旧收藏。
+  final String? originSourceId;
   const FavoriteSentenceRow({
     required this.id,
     required this.sentence,
@@ -15356,6 +15391,7 @@ class FavoriteSentenceRow extends DataClass
     this.dateKey,
     this.expression,
     this.reading,
+    this.originSourceId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -15394,6 +15430,9 @@ class FavoriteSentenceRow extends DataClass
     }
     if (!nullToAbsent || reading != null) {
       map['reading'] = Variable<String>(reading);
+    }
+    if (!nullToAbsent || originSourceId != null) {
+      map['origin_source_id'] = Variable<String>(originSourceId);
     }
     return map;
   }
@@ -15435,6 +15474,9 @@ class FavoriteSentenceRow extends DataClass
       reading: reading == null && nullToAbsent
           ? const Value.absent()
           : Value(reading),
+      originSourceId: originSourceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originSourceId),
     );
   }
 
@@ -15459,6 +15501,7 @@ class FavoriteSentenceRow extends DataClass
       dateKey: serializer.fromJson<String?>(json['dateKey']),
       expression: serializer.fromJson<String?>(json['expression']),
       reading: serializer.fromJson<String?>(json['reading']),
+      originSourceId: serializer.fromJson<String?>(json['originSourceId']),
     );
   }
   @override
@@ -15480,6 +15523,7 @@ class FavoriteSentenceRow extends DataClass
       'dateKey': serializer.toJson<String?>(dateKey),
       'expression': serializer.toJson<String?>(expression),
       'reading': serializer.toJson<String?>(reading),
+      'originSourceId': serializer.toJson<String?>(originSourceId),
     };
   }
 
@@ -15499,6 +15543,7 @@ class FavoriteSentenceRow extends DataClass
     Value<String?> dateKey = const Value.absent(),
     Value<String?> expression = const Value.absent(),
     Value<String?> reading = const Value.absent(),
+    Value<String?> originSourceId = const Value.absent(),
   }) => FavoriteSentenceRow(
     id: id ?? this.id,
     sentence: sentence ?? this.sentence,
@@ -15521,6 +15566,9 @@ class FavoriteSentenceRow extends DataClass
     dateKey: dateKey.present ? dateKey.value : this.dateKey,
     expression: expression.present ? expression.value : this.expression,
     reading: reading.present ? reading.value : this.reading,
+    originSourceId: originSourceId.present
+        ? originSourceId.value
+        : this.originSourceId,
   );
   FavoriteSentenceRow copyWithCompanion(FavoriteSentencesCompanion data) {
     return FavoriteSentenceRow(
@@ -15553,6 +15601,9 @@ class FavoriteSentenceRow extends DataClass
           ? data.expression.value
           : this.expression,
       reading: data.reading.present ? data.reading.value : this.reading,
+      originSourceId: data.originSourceId.present
+          ? data.originSourceId.value
+          : this.originSourceId,
     );
   }
 
@@ -15573,7 +15624,8 @@ class FavoriteSentenceRow extends DataClass
           ..write('source: $source, ')
           ..write('dateKey: $dateKey, ')
           ..write('expression: $expression, ')
-          ..write('reading: $reading')
+          ..write('reading: $reading, ')
+          ..write('originSourceId: $originSourceId')
           ..write(')'))
         .toString();
   }
@@ -15595,6 +15647,7 @@ class FavoriteSentenceRow extends DataClass
     dateKey,
     expression,
     reading,
+    originSourceId,
   );
   @override
   bool operator ==(Object other) =>
@@ -15614,7 +15667,8 @@ class FavoriteSentenceRow extends DataClass
           other.source == this.source &&
           other.dateKey == this.dateKey &&
           other.expression == this.expression &&
-          other.reading == this.reading);
+          other.reading == this.reading &&
+          other.originSourceId == this.originSourceId);
 }
 
 class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
@@ -15633,6 +15687,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
   final Value<String?> dateKey;
   final Value<String?> expression;
   final Value<String?> reading;
+  final Value<String?> originSourceId;
   final Value<int> rowid;
   const FavoriteSentencesCompanion({
     this.id = const Value.absent(),
@@ -15650,6 +15705,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     this.dateKey = const Value.absent(),
     this.expression = const Value.absent(),
     this.reading = const Value.absent(),
+    this.originSourceId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FavoriteSentencesCompanion.insert({
@@ -15668,6 +15724,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     this.dateKey = const Value.absent(),
     this.expression = const Value.absent(),
     this.reading = const Value.absent(),
+    this.originSourceId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        sentence = Value(sentence),
@@ -15688,6 +15745,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     Expression<String>? dateKey,
     Expression<String>? expression,
     Expression<String>? reading,
+    Expression<String>? originSourceId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -15706,6 +15764,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
       if (dateKey != null) 'date_key': dateKey,
       if (expression != null) 'expression': expression,
       if (reading != null) 'reading': reading,
+      if (originSourceId != null) 'origin_source_id': originSourceId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -15726,6 +15785,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     Value<String?>? dateKey,
     Value<String?>? expression,
     Value<String?>? reading,
+    Value<String?>? originSourceId,
     Value<int>? rowid,
   }) {
     return FavoriteSentencesCompanion(
@@ -15744,6 +15804,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
       dateKey: dateKey ?? this.dateKey,
       expression: expression ?? this.expression,
       reading: reading ?? this.reading,
+      originSourceId: originSourceId ?? this.originSourceId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -15796,6 +15857,9 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
     if (reading.present) {
       map['reading'] = Variable<String>(reading.value);
     }
+    if (originSourceId.present) {
+      map['origin_source_id'] = Variable<String>(originSourceId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -15820,6 +15884,7 @@ class FavoriteSentencesCompanion extends UpdateCompanion<FavoriteSentenceRow> {
           ..write('dateKey: $dateKey, ')
           ..write('expression: $expression, ')
           ..write('reading: $reading, ')
+          ..write('originSourceId: $originSourceId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -100651,6 +100716,7 @@ typedef $$FavoriteSentencesTableCreateCompanionBuilder =
       Value<String?> dateKey,
       Value<String?> expression,
       Value<String?> reading,
+      Value<String?> originSourceId,
       Value<int> rowid,
     });
 typedef $$FavoriteSentencesTableUpdateCompanionBuilder =
@@ -100670,6 +100736,7 @@ typedef $$FavoriteSentencesTableUpdateCompanionBuilder =
       Value<String?> dateKey,
       Value<String?> expression,
       Value<String?> reading,
+      Value<String?> originSourceId,
       Value<int> rowid,
     });
 
@@ -100754,6 +100821,11 @@ class $$FavoriteSentencesTableFilterComposer
 
   ColumnFilters<String> get reading => $composableBuilder(
     column: $table.reading,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originSourceId => $composableBuilder(
+    column: $table.originSourceId,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -100841,6 +100913,11 @@ class $$FavoriteSentencesTableOrderingComposer
     column: $table.reading,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get originSourceId => $composableBuilder(
+    column: $table.originSourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FavoriteSentencesTableAnnotationComposer
@@ -100910,6 +100987,11 @@ class $$FavoriteSentencesTableAnnotationComposer
 
   GeneratedColumn<String> get reading =>
       $composableBuilder(column: $table.reading, builder: (column) => column);
+
+  GeneratedColumn<String> get originSourceId => $composableBuilder(
+    column: $table.originSourceId,
+    builder: (column) => column,
+  );
 }
 
 class $$FavoriteSentencesTableTableManager
@@ -100967,6 +101049,7 @@ class $$FavoriteSentencesTableTableManager
                 Value<String?> dateKey = const Value.absent(),
                 Value<String?> expression = const Value.absent(),
                 Value<String?> reading = const Value.absent(),
+                Value<String?> originSourceId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FavoriteSentencesCompanion(
                 id: id,
@@ -100984,6 +101067,7 @@ class $$FavoriteSentencesTableTableManager
                 dateKey: dateKey,
                 expression: expression,
                 reading: reading,
+                originSourceId: originSourceId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -101003,6 +101087,7 @@ class $$FavoriteSentencesTableTableManager
                 Value<String?> dateKey = const Value.absent(),
                 Value<String?> expression = const Value.absent(),
                 Value<String?> reading = const Value.absent(),
+                Value<String?> originSourceId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FavoriteSentencesCompanion.insert(
                 id: id,
@@ -101020,6 +101105,7 @@ class $$FavoriteSentencesTableTableManager
                 dateKey: dateKey,
                 expression: expression,
                 reading: reading,
+                originSourceId: originSourceId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

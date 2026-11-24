@@ -1010,6 +1010,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     super.key,
   }) : remoteInfo = null,
        remoteClient = null,
+       ownsRemoteClient = false,
        remoteCollectionMembers = null;
 
   VideoFushiPage.remote({
@@ -1023,11 +1024,12 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.initialEpisodeIndex,
     this.initialSubtitleListVisible = false,
     this.remoteCollectionMembers,
+    this.ownsRemoteClient = false,
+    this.initialFullscreen = false,
     super.key,
   }) : bookUid = info.id,
        remoteInfo = info,
        remoteClient = client,
-       initialFullscreen = false,
        initialImmersiveLocked = false,
        openBlurayMenu = false,
        discLaunchCover = null,
@@ -1042,6 +1044,12 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   final VideoBookRepository repo;
   final RemoteVideoInfo? remoteInfo;
   final RemoteVideoClient? remoteClient;
+
+  /// [remoteClient] 是不是调用方为这一页现建、交给本页的（媒体服务器收藏跳转按条目 id
+  /// 现解析出的客户端，`resolveMediaServerItemLaunch`，BUG-5402）。真 = 退页时与本页
+  /// 自建的流客户端同一条收尾（[RemoteClientTeardown]，等断点落库 / 停止上报用完再关）；
+  /// 假（缺省）= 归调用方（互联 host、浏览页的媒体服务器浏览器），本页不碰。
+  final bool ownsRemoteClient;
 
   /// 客户端互联视频合集播放：本远端视频所属合集的**有序成员**（含自己）。非空且 >1 = 作为
   /// 合集某一集打开，播放器据此建剧集列表 + 跨成员自动连播（成员各自独立 video id，换集换
@@ -1064,7 +1072,9 @@ class VideoFushiPage extends ConsumerStatefulWidget {
 
   /// BUG-839：作为「从全屏页连播/换集而来」的新页打开——首帧就绪后自动重进全屏路由，
   /// 保持连播全屏沉浸不被换集打断。仅本地 pushReplacement 换集在换集前处于全屏时置真
-  /// （见 [_VideoEpisode._switchEpisode]）；首开 / 远端恒 false。
+  /// （见 [_VideoEpisode._switchEpisode]），以及全屏中被遥控跳到另一部视频的收藏
+  /// （`_openRemoteVideoFavorite`；媒体服务器条目经远端构造器接管，BUG-5402）；
+  /// 其余首开 / 远端恒 false。
   final bool initialFullscreen;
 
   /// 作为「从沉浸锁定态换集 / 连播而来」的新页打开：首帧起就处于沉浸锁定
@@ -1178,6 +1188,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     int? initialEpisodeIndex,
     bool initialSubtitleListVisible = false,
     List<RemoteVideoInfo>? remoteCollectionMembers,
+    bool ownsRemoteClient = false,
+    bool initialFullscreen = false,
   }) => FushiAppUiScaleNeutralizer(
     child: VideoFushiPage.remote(
       info: info,
@@ -1190,6 +1202,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       initialEpisodeIndex: initialEpisodeIndex,
       initialSubtitleListVisible: initialSubtitleListVisible,
       remoteCollectionMembers: remoteCollectionMembers,
+      ownsRemoteClient: ownsRemoteClient,
+      initialFullscreen: initialFullscreen,
     ),
   );
 
@@ -8281,6 +8295,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 断点写入、退出路径发起的落库与停止上报都已登记进 [_remoteTeardown]，等它们用完。
     final RemoteVideoClient? ownedStreamClient = _resolvedStreamClient;
     if (ownedStreamClient != null) _releaseOwnedStreamClient(ownedStreamClient);
+    final RemoteVideoClient? handedOverClient = widget.remoteClient;
+    if (widget.ownsRemoteClient && handedOverClient != null) {
+      _releaseOwnedStreamClient(handedOverClient);
+    }
     _videoFocusNode.dispose();
     _titleNotifier.dispose();
     _videoTimeShowsRemainingNotifier?.dispose();

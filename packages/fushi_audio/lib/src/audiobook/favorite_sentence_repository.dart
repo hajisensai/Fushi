@@ -96,6 +96,10 @@ class FavoriteSentence {
         dateKey: json['dateKey'] as String?,
         expression: json['expression'] as String?,
         reading: json['reading'] as String?,
+        originSourceId: switch (json['originSourceId']) {
+          final String raw when raw.isNotEmpty => raw,
+          _ => null,
+        },
       );
   FavoriteSentence({
     required this.text,
@@ -113,6 +117,7 @@ class FavoriteSentence {
     this.dateKey,
     this.expression,
     this.reading,
+    this.originSourceId,
   }) : id = id ?? _generateFavoriteId(),
        source = source ?? kFavoriteSentenceSourceBook;
 
@@ -150,6 +155,13 @@ class FavoriteSentence {
   final String? expression;
   final String? reading;
 
+  /// 收藏时所在条目的远端来源身份（`RemoteLibrarySource.remoteLibrarySourceId`，
+  /// v179，BUG-5402）：只有从没入库的远端条目（媒体服务器直接串流、互联对端）收藏
+  /// 时才有，此时 [bookKey] 是该来源内的条目 id，跳回原处按它找回那一台服务器。
+  /// null = 本机库条目，或 v179 之前的旧收藏。wire 上是可选字段 `originSourceId`，
+  /// 旧版本读到会忽略。
+  final String? originSourceId;
+
   // BUG-494 (TODO-1053 Bug C)：id 生成必须无碰撞。旧 'hl_<microsecondsSinceEpoch>' 在同一
   // 微秒内连续 new 两条（快速连续收藏 / 测试）会撞出相同 id → id 身份键坍缩（add 按 id 去重
   // 误判重复丢第二条、removeById 连坐）。加进程内单调计数器后缀，保证同微秒也唯一。
@@ -177,7 +189,30 @@ class FavoriteSentence {
     if (dateKey != null) 'dateKey': dateKey,
     if (expression != null) 'expression': expression,
     if (reading != null) 'reading': reading,
+    if (originSourceId != null) 'originSourceId': originSourceId,
   };
+
+  /// 只补上来源身份的副本（合并时另一侧记着来源、本侧没有：同一条收藏在旧版本设备
+  /// 上同步过来时不带它）。
+  FavoriteSentence withOriginSourceId(String? originSourceId) =>
+      FavoriteSentence(
+        id: id,
+        text: text,
+        bookTitle: bookTitle,
+        chapterLabel: chapterLabel,
+        createdAt: createdAt,
+        bookKey: bookKey,
+        sectionIndex: sectionIndex,
+        normCharOffset: normCharOffset,
+        normCharLength: normCharLength,
+        color: color,
+        colorUpdatedAt: colorUpdatedAt,
+        source: source,
+        dateKey: dateKey,
+        expression: expression,
+        reading: reading,
+        originSourceId: originSourceId,
+      );
 
   /// 只换颜色与颜色时钟的副本（合并取较新颜色、收藏夹改色后更新本地镜像用）。
   FavoriteSentence withColor(String? color, DateTime? colorUpdatedAt) =>
@@ -197,6 +232,7 @@ class FavoriteSentence {
         dateKey: dateKey,
         expression: expression,
         reading: reading,
+        originSourceId: originSourceId,
       );
 }
 
@@ -225,6 +261,7 @@ class FavoriteSentenceRepository {
       final int us => DateTime.fromMicrosecondsSinceEpoch(us),
       null => null,
     },
+    originSourceId: r.originSourceId,
   );
 
   /// 模型 → 表行。
@@ -245,6 +282,7 @@ class FavoriteSentenceRepository {
         dateKey: Value<String?>(s.dateKey),
         expression: Value<String?>(s.expression),
         reading: Value<String?>(s.reading),
+        originSourceId: Value<String?>(s.originSourceId),
       );
 
   /// 跨设备稳定的内容身份键（**唯一真源**：aggregate 去重、删除墓碑 itemKey、接收端删除

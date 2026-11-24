@@ -19,6 +19,8 @@
 //   GET  /dev/decisions.js        拍板台客户端脚本（decisions_client.js）
 //   POST /dev/d/:id/files         拍板台网页上传附件（multipart file，可多个；拖放 / 粘贴 / 选文件）
 //   GET  /dev/d/:id/f/:n          拍板台附件（设计图 html / md / 图片；CSP sandbox，见 decisions.js）
+//   POST /dev/d/:id/f/:n/share    给附件签发公开分享链接 /share/f/<token>（已有就回原来的；Accept: application/json → 回新卡片 + 链接）
+//   POST /dev/d/:id/f/:n/unshare  撤销该附件的公开分享链接（撤销后 /share/f/<token> 404）
 //   POST /dev/d/:id  {v,text,back} 拍板并 / 或留言（Accept: application/json → 回新卡片 JSON，不跳转）
 //   GET  /dev/keys                拍板台个人密钥：本人签发过的密钥（只显示末 4 位）与用法（decisions_api.js）
 //   POST /dev/keys   {label}      签发一把新密钥，明文只在这次的响应页里显示
@@ -47,7 +49,7 @@ import { PING_PLATFORMS, loadInstallStats, refreshInstallStatsSnapshot, versionI
 import { RELEASE_PLATFORMS, projectStats, refreshProjectStats } from './project_stats.js';
 import {
   DECISIONS_STYLE, DECISION_LIMITS, decisionItem, decisionStageParam, decisionsPayload, decisionsSig, getDecision,
-  DECISION_UPLOAD_BODY_MAX, ORIGINAL_IMAGE_ORIGINS, decisionFileResponse, uploadDecisionFiles, listDecisions, renderDecisions, submitDecision,
+  DECISION_UPLOAD_BODY_MAX, ORIGINAL_IMAGE_ORIGINS, decisionFileResponse, revokeDecisionFileShare, shareDecisionFile, uploadDecisionFiles, listDecisions, renderDecisions, submitDecision,
 } from './decisions.js';
 import { DECISIONS_CLIENT_JS } from './decisions_client.js';
 import { NOTICE_LIMITS, listKnown, listRules, seenSummary } from './notices.js';
@@ -1035,6 +1037,18 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   }
   if (method === 'GET' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})\/f\/(\d{1,2})$/.exec(path))) {
     return decisionFileResponse(env, m[1], Number(m[2]));
+  }
+  if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})\/f\/(\d{1,2})\/(share|unshare)$/.exec(path))) {
+    const form = await readForm(request);
+    const n = Number(m[2]);
+    const out = m[3] === 'share'
+      ? await shareDecisionFile(env, dev, m[1], n, now)
+      : await revokeDecisionFileShare(env, m[1], n, now);
+    if ((request.headers.get('Accept') || '').includes('application/json')) {
+      const [row, sig] = await Promise.all([getDecision(env, m[1]), decisionsSig(env)]);
+      return json({ ...(out.path ? { path: out.path } : {}), item: decisionItem(row), sig }, 200, { 'Cache-Control': 'no-store' });
+    }
+    return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
   }
   if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})\/files$/.exec(path))) {
     if (Number(request.headers.get('Content-Length') || '0') > DECISION_UPLOAD_BODY_MAX) throw new HttpError(413, 'file_too_large');

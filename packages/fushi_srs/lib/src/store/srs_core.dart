@@ -538,6 +538,9 @@ final class SrsCoreBindings {
         'ffsrs_set_temp_dir',
       ),
       close = lib.lookupFunction<_CloseC, _CloseDart>('ffsrs_store_close'),
+      closeBegin = lib.lookupFunction<_CloseC, _CloseDart>(
+        'ffsrs_store_close_begin',
+      ),
       snapshot = lib.lookupFunction<_SnapshotC, _SnapshotDart>(
         'ffsrs_store_snapshot',
       ),
@@ -579,7 +582,12 @@ final class SrsCoreBindings {
   final FushiFsrs _fsrs;
   final _OpenDart open;
   final _SetTempDirDart setTempDir;
+
+  /// 收尾关闭：等在途命令、关连接。会阻塞，只在后台 isolate 调（[SrsCore.close]）。
   final _CloseDart close;
+
+  /// 开始关闭：只摘句柄、不等任何东西（任意线程可调）。
+  final _CloseDart closeBegin;
   final _SnapshotDart snapshot;
   final _QueryDart debugQuery;
   final _ExecDart exec;
@@ -850,11 +858,38 @@ final class SrsCore {
 
   bool get isClosed => _handle == ffi.nullptr;
 
-  void close() {
-    if (isClosed) return;
-    if (owned) _b.close(_handle);
+  Future<void>? _closing;
+
+  /// 关库（幂等；借来的句柄 [owned] 为假，只丢掉自己这份、不关库）。
+  ///
+  /// 同步部分只摘句柄（`ffsrs_store_close_begin`，不等任何东西）：返回时这个包装与经句柄号的任何调用（别的
+  /// isolate、已经排着队的 worker 命令）都报「已关闭」。等在途命令跑完、关连接的那一步（`ffsrs_store_close`）
+  /// 在后台 isolate 里做——在途的可能是开库时几十秒的整层重建，Android / iOS 上 UI isolate 就是平台主线程，在那里
+  /// 等就是 ANR（反馈 3he3GEoqcU）。Future 完成时连接已关、库文件可以换 / 删（覆盖恢复）。
+  Future<void> close() {
+    final Future<void>? closing = _closing;
+    if (closing != null) return closing;
+    if (isClosed) return Future<void>.value();
+    final ffi.Pointer<ffi.Void> handle = _handle;
     _handle = ffi.nullptr;
+    if (!owned) return _closing = Future<void>.value();
+    _b.closeBegin(handle);
+    return _closing = _finishCloseInBackground(handle.address, _b.libraryPath);
   }
+
+  /// [close] 的后台一半（静态：闭包只带句柄号与库路径，不捕获 [SrsCoreBindings]）。
+  static Future<void> _finishCloseInBackground(
+    int address,
+    String? libraryPath,
+  ) => Isolate.run(
+    () => _finishClose(address, libraryPath),
+    debugName: 'srs-store-close',
+  );
+
+  static void _finishClose(int address, String? libraryPath) =>
+      SrsCoreBindings.load(
+        libraryPath: libraryPath,
+      ).close(ffi.Pointer<ffi.Void>.fromAddress(address));
 
   ffi.Pointer<ffi.Void> get _h {
     if (isClosed) throw StateError('srs store is closed');

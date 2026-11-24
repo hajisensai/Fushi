@@ -13,6 +13,8 @@
 //   POST   /v1/decisions/:id/files?name=<文件名>   请求体 = 文件原始字节，附一个附件（≤ 10 MB，每条 ≤ 10 个）
 //   GET    /v1/decisions/:id/files/:n             取第 n 个附件
 //   DELETE /v1/decisions/:id/files/:n             删第 n 个附件（R2 对象一并删）
+//   POST   /v1/decisions/:id/files/:n/share       给第 n 个附件签发公开链接（已有就回原来的）→ {url, path, created}；签发人记为密钥所属开发者
+//   DELETE /v1/decisions/:id/files/:n/share       撤销第 n 个附件的公开链接 → {revoked}
 //
 // SQL 与校验全部复用 decisions.js（与网页、wrangler 模式的 CLI 同一份）。
 // 鉴权只认请求头，不读 Cookie，所以没有 CSRF 面；限流在 worker.js 按 IP 过 READ_LIMITER。
@@ -21,7 +23,7 @@ import { HttpError, b64urlEncode, hex, json, parseJsonBytes, randomId, readBodyB
 import {
   ADD_NOTE_SQL, CLOSE_DECISION_SQL, DECISION_ID_RE, DECISION_LIMITS, DECISION_VERDICTS, INSERT_DECISION_SQL, SET_VERDICT_SQL,
   cleanDecisionText, decisionFileResponse, decisionFileType, decisionStage, getDecision, insertDecisionArgs, listDecisions,
-  normalizeDecision, parseChoices, parseDecisionFiles,
+  normalizeDecision, parseChoices, parseDecisionFiles, revokeDecisionFileShare, shareDecisionFile,
 } from './decisions.js';
 
 export const DECISION_KEY_PREFIX = 'fdk_';
@@ -309,6 +311,14 @@ export async function routeDecisionsApi(request, env, url, now) {
       throw new HttpError(409, 'files_changed');
     }
     return json({ ok: true, file: entry }, 200, noStore);
+  }
+  if ((m = /^\/v1\/decisions\/([A-Za-z0-9_-]{1,40})\/files\/(\d{1,2})\/share$/.exec(path))) {
+    if (method === 'POST') {
+      const { path: p, created } = await shareDecisionFile(env, dev, m[1], Number(m[2]), now);
+      return json({ ok: true, url: url.origin + p, path: p, created }, 200, noStore);
+    }
+    if (method === 'DELETE') return json({ ok: true, ...(await revokeDecisionFileShare(env, m[1], Number(m[2]), now)) }, 200, noStore);
+    throw new HttpError(405, 'method_not_allowed');
   }
   if ((m = /^\/v1\/decisions\/([A-Za-z0-9_-]{1,40})\/files\/(\d{1,2})$/.exec(path))) {
     if (method === 'GET') return decisionFileResponse(env, m[1], Number(m[2]));

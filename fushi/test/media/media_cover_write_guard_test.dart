@@ -169,11 +169,12 @@ kCoverPathDerivers = <String, (CoverDeriverRole, String)>{
     CoverDeriverRole.writesViaService,
     '成员封面清理/重取，重取那半走 applyCover*。',
   ),
-  'lib/src/pages/implementations/media_collection_detail_page.dart': (
+  'lib/src/media/video/video_cover_meta_loader.dart': (
     CoverDeriverRole.derivesPathOnly,
-    '合集详情页（GLMHiavo0y 选集页剧照优先，#4312）：派生 VideoStorage.coversDir 只为'
-        '读 CoverMetaStore 的封面来源（手动封面排在分集剧照前），不落盘；合集封面改图'
-        '交给 MediaCoverService.applyCollectionCover，本文件一个字节都不写。',
+    '封面来源表整表读取（合集选集页 media_collection_detail_page 与播放器选集面板共用，'
+        '原先在合集详情页里的派生挪到这里）：派生 '
+        'VideoStorage.coversDir 只为读 CoverMetaStore 判「手动封面排在剧照前」，'
+        '不落盘、不把路径交给任何写手。',
   ),
   'lib/src/media/video/cover_ui/video_scrape_actions.dart': (
     CoverDeriverRole.derivesPathOnly,

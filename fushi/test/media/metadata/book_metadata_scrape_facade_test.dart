@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -10,6 +11,8 @@ import 'package:fushi/src/media/metadata/book_metadata_scrape_facade.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import '../../ops/book_metadata_test_fixture.dart';
 
@@ -75,6 +78,111 @@ void main() {
       expect(
         await _search(facade, source: BookScrapeSource.bangumi, query: '  '),
         isEmpty,
+      );
+    });
+  });
+
+  // BUG-5395：书架单卷名原词零结果时按源的粒度改写重搜，命中即停。
+  group('searchDetailed 改写重搜', () {
+    /// Bangumi 桩：只有 [hit] 这个词有结果；记下每次搜的 keyword。
+    BookMetadataScrapeFacade bangumiOnly(
+      String hit,
+      List<String> keywords, {
+      int status = 200,
+    }) => BookMetadataScrapeFacade(
+      scraper: BookMetadataScraper(
+        client: MockClient((http.Request req) async {
+          final Object? body = req.body.isEmpty ? null : jsonDecode(req.body);
+          final String keyword = body is Map ? '${body['keyword']}' : '';
+          keywords.add(keyword);
+          if (status != 200) return http.Response('', status);
+          return http.Response.bytes(
+            utf8.encode(
+              jsonEncode(<String, Object?>{
+                'data': <Object?>[
+                  if (keyword == hit) bangumiSubject('1', 'Hit'),
+                ],
+              }),
+            ),
+            200,
+            headers: const <String, String>{'content-type': 'application/json'},
+          );
+        }),
+      ),
+    );
+
+    test('原词零结果：依次试「名 卷号」→ 名，命中即停并报实际用的词', () async {
+      final List<String> keywords = <String>[];
+      final BookScrapeSearchResult got = await bangumiOnly('ホリミヤ', keywords)
+          .searchDetailed(
+            source: BookScrapeSource.bangumi,
+            query: 'Horimiya ホリミヤ 第01巻',
+          );
+      expect(keywords, <String>['Horimiya ホリミヤ 第01巻', 'ホリミヤ 1', 'ホリミヤ']);
+      expect(got.query, 'ホリミヤ');
+      expect(got.candidates.single.subjectId, '1');
+    });
+
+    test('原词有结果：只搜一次，query 不变', () async {
+      final List<String> keywords = <String>[];
+      final BookScrapeSearchResult got = await bangumiOnly(
+        '进击的巨人 第1卷',
+        keywords,
+      ).searchDetailed(source: BookScrapeSource.bangumi, query: '进击的巨人 第1卷');
+      expect(keywords, <String>['进击的巨人 第1卷']);
+      expect(got.query, '进击的巨人 第1卷');
+    });
+
+    test('全都零结果：空结果，query 是原词', () async {
+      final List<String> keywords = <String>[];
+      final BookScrapeSearchResult got = await bangumiOnly(
+        'nothing',
+        keywords,
+      ).searchDetailed(source: BookScrapeSource.bangumi, query: '龍珠 第1集');
+      expect(keywords, <String>['龍珠 第1集', '龍珠 1', '龍珠']);
+      expect(got.candidates, isEmpty);
+      expect(got.query, '龍珠 第1集');
+    });
+
+    test('请求出错：直接抛出，不拿改写词接着打', () async {
+      final List<String> keywords = <String>[];
+      await expectLater(
+        bangumiOnly(
+          'x',
+          keywords,
+          status: 500,
+        ).searchDetailed(source: BookScrapeSource.bangumi, query: 'ホリミヤ 第01巻'),
+        throwsA(anything),
+      );
+      expect(keywords, hasLength(1));
+    });
+
+    test('searchQueriesFor：系列源去卷号；ISBN / URL / 纯数字 / 无粒度源不改写', () {
+      expect(
+        BookMetadataScrapeFacade.searchQueriesFor(
+          BookScrapeSource.mangabaka,
+          'Horimiya ホリミヤ 第01巻',
+        ),
+        <String>['Horimiya ホリミヤ', 'ホリミヤ', 'Horimiya'],
+      );
+      for (final String q in <String>[
+        '9784757541734',
+        'ISBN 978-4-7575-4173-4',
+        'https://bgm.tv/subject/42',
+        '1984',
+      ]) {
+        expect(
+          BookMetadataScrapeFacade.searchQueriesFor(BookScrapeSource.ndl, q),
+          <String>[q],
+          reason: q,
+        );
+      }
+      expect(
+        BookMetadataScrapeFacade.searchQueriesFor(
+          BookScrapeSource.dlsite,
+          'ホリミヤ 第01巻',
+        ),
+        <String>['ホリミヤ 第01巻'],
       );
     });
   });

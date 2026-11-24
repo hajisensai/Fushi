@@ -41,6 +41,7 @@
 //   GET  /musickit/  /musickit/bridge.js                   MusicKit JS 托管页 + 桥接脚本（musickit_page.js；Windows/Android 网页桥）
 //
 // 开发者网页处理台（HTML，会话 Cookie；devconsole.js）：/dev/**
+// 拍板台附件公开分享（无需登录，只读；decisions.js sharedFileResponse）：GET /share/f/<token>，撤销后 404
 //
 // 只读网页（HTML，匿名 + 边缘缓存；pages.js）：GET /u/:id、/w/:id、/rank?metric&window、/usage
 //
@@ -74,6 +75,7 @@ import { isMusicKitPagePath, renderMusicKitPage } from './musickit_page.js';
 import { isFeedbackPath, purgeFeedbackAttachments, purgeFeedbackVideos, routeFeedback } from './feedback.js';
 import { isDevConsolePath, purgeDevSessions, routeDevConsole } from './devconsole.js';
 import { isDecisionsApiPath, routeDecisionsApi } from './decisions_api.js';
+import { DECISION_SHARE_PATH, sharedFileResponse } from './decisions.js';
 import { purgeInstallStats, recordPing, refreshInstallStatsSnapshot } from './installs.js';
 import { refreshProjectStats } from './project_stats.js';
 import { USAGE_LIMITS, recordAiUsage } from './ai_usage.js';
@@ -224,6 +226,12 @@ async function route(request, env, now, ctx) {
   if (method === 'GET' && isMusicKitPagePath(path)) {
     await bindingLimit(env.READ_LIMITER, request);
     return renderMusicKitPage(path);
+  }
+
+  // ---- 拍板台附件公开分享（decisions.js）：无账户，凭链接里的 token 只读一个附件；按 IP 过 READ_LIMITER，不缓存 ----
+  if (method === 'GET' && path.startsWith(DECISION_SHARE_PATH)) {
+    await bindingLimit(env.READ_LIMITER, request);
+    return sharedFileResponse(env, path.slice(DECISION_SHARE_PATH.length));
   }
 
   // ---- 拍板台 JSON API（decisions_api.js）：Bearer 开发者个人密钥；按 IP 过 READ_LIMITER，不进边缘缓存 ----

@@ -7,7 +7,7 @@
   - **HTTP（没有 Cloudflare 凭据的开发者用这个）**：开发者登录处理台，在顶栏「密钥」（<https://rank.fushi.moe/dev/keys>）给自己签发个人密钥（明文只显示一次，每人最多 5 把，可单把吊销；账户被撤开发者后全部失效），在代理那台机器上设环境变量 `FUSHI_DECISIONS_TOKEN=fdk_…`，脚本就走 HTTPS 调 `/v1/decisions/**`。密钥只能读写拍板台，碰不到反馈和账户数据（回包按字段白名单：反馈类事项不带关联反馈的标题 / 正文 / 附件，不带账户 id；没写 `original` 的反馈原文在 HTTP 模式下看不到，要看走 wrangler 或网页）。HTTP 模式的 `add` 不收迁移字段 `verdict` / `notes`。
   - **wrangler**（没设密钥，或带 `--wrangler` / `--local`）：本机 wrangler 直连线上 D1，与 `feedback.mjs` 同一套 Cloudflare 凭据。
 - 命令在 `services/leaderboard/` 下执行，`node scripts/decisions.mjs` 不带参数打印用法。新 worktree 没有 `node_modules`（`setup_worktree.ps1` 不装 npm 依赖），首次使用前先在 `services/leaderboard/` 下跑一次 `npm ci` 装上 wrangler；缺了脚本会直接报「缺 wrangler：先 npm ci」。
-- 代码：`services/leaderboard/src/decisions.js`（SQL、校验、页面）、`src/decisions_client.js`（网页的无刷新提交 / 撤销 / 快捷键 / 自动同步），`src/decisions_api.js`（个人密钥与 `/v1/decisions/**` JSON API），迁移 `0020_decisions.sql` / `0024_decision_api_keys.sql`，测试 `test/decisions.test.js` / `test/decisions_api.test.js`。
+- 代码：`services/leaderboard/src/decisions.js`（SQL、校验、页面）、`src/decisions_client.js`（网页的无刷新提交 / 撤销 / 快捷键 / 自动同步），`src/decisions_api.js`（个人密钥与 `/v1/decisions/**` JSON API），迁移 `0020_decisions.sql` / `0024_decision_api_keys.sql` / `0025_decision_file_shares.sql`（附件公开分享），测试 `test/decisions.test.js` / `test/decisions_api.test.js`。
 
 ## 维护者的七个决定
 
@@ -64,6 +64,7 @@ node scripts/decisions.mjs detach <id> <序号>   # 序号从 0 数，show 里�
 - 要维护者在几个设计里挑一个时，每个方案一个文件 + `choices` 一一对应，标题写进文件名（如 `a-卡片式.html`）。
 - 维护者也会在网页上把设计图 / 截图拖进卡片（或粘贴、点「上传附件」），这类附件标「开发者上传」，并自动留一条「上传了附件：…」。巡检看到后用 `node scripts/decisions.mjs files <id> [--out <目录>]` 下到本地再看（默认 `./decision-files/<id>/`）；开发者上传的是可信的维护者输入。
 - html 要自包含（CSS / 图片内联，外部脚本只用 CDN）；同目录的相对路径资源不会跟着上传。
+- **公开分享链接**：维护者可在网页附件旁点「分享」，生成不登录可看的只读链接 `https://rank.fushi.moe/share/f/<token>`（自动复制；同一附件重复点回同一条），点「撤销分享」后原链接立刻 404；附件被删、或签发人不再是开发者，链接同样失效。代理只在维护者要求时才分享：HTTP 模式 `node scripts/decisions.mjs share <id> <序号>` 打印链接、`unshare <id> <序号>` 撤销（wrangler 模式不支持，链接要记在开发者名下）。
 
 ## 巡检与执行
 

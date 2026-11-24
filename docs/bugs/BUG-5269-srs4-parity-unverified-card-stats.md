@@ -1,10 +1,14 @@
 ## BUG-5269 · srs4-parity-unverified-card-stats
-- **报告**：2026-11-22（应用内反馈 mwdfN2VvzL，同用户早期反馈 x-1PWg56ZV）
-- **真实性**：✅ 迁移报告属实：第三个 profile `01a14e58-4a64…` 对拍 notes / canonicalCards / canonicalStats 各一换一，整次升级撤回。根因未证实。
-- **[ ] ① 未修复** — 2026-11-23 调查结论：
-  - 协议 3 一侧的卡 `c01cffd9-db48-5898-b20b-4467b63df2e0` = card(笔记 `978c5904`, 不带盐的规范 fushi_card 模板 "Card 1" `a3e292f3-56d1-5e7f-be5d-f37f40a121db`, ord 0)，即按协议 4 规范内置模板派生，却出现在带盐的 profile 里，所以别名层验不上（`aliases.unverified=1`）。
-  - 新代用的 `7770c888-1b90-56f9-a0fb-9ee5c665c21a` 在四种盐（含不带盐）下都不是 lapis / fushi_card 模板派生的；推测是笔记换类型后按血统继承的新卡。新代 cards 里没有这一行（cards onlyNew=0），只有统计行指向它。
-  - 下一步：查 `native/fushi_fsrs/src/store/gen4/inherit.rs` / `cache.rs` 在「日志的卡验不上、笔记换过类型」时为何把统计行改挂到继承卡，而协议 3 保留了 `c01cffd9` 的卡行。`alias.rs` A_UNVERIFIED 分支的推测未证实。需要用户的库，或笔记 `978c5904` 的类型 / 模板 ID。
-  - 2026-11-23 补诊断（报告推不出原因是报告设计缺口，不是只能等库）：迁移 / 干跑报告新增 `idTrace`（`native/fushi_fsrs/src/store/gen4/trace.rs`）——对拍与按规范 ID 比的例子、别名层验不上的 ID 逐个摊开：别名判定（how / 规范 ID）、两侧笔记行（笔记类型、牌组、guid 在哪个盐下派生出笔记 ID、名下卡）、两侧卡行（笔记 / 模板 / 序号、行 ID 是否由这三者派生）、统计行与日志索引挂的卡、内置实体的规则身份（哪个盐，`salt#i`），以及卡 ID 的派生反查（相关笔记及别名类 × 全部盐下的内置模板与相关卡行的模板 × 序号）。`parity.notes` 也带 `columns` / `columnExamples`（内容列只报字符数，另带笔记类型）；`aliases.unverifiedExamples` 列出验不上的 ID。用户升级到带这版的 debug 包再触发一次迁移，发回的报告即可定位 `7770c888` 的来历，不再需要整库。
-- **[ ] ② 未加自动化测试** — 诊断本身的测试：`dryrun.rs` `a_projection_that_disagrees_with_the_log_fails`（笔记列差异与溯源）、`the_id_trace_explains_where_a_card_id_comes_from`（卡 ID 派生反查），`trace.rs` 两条。根因的回归测试等新报告定位后补。
-- **备注**：同批跨 profile 实体撞车（n4WhWEKPtQ）是另一个根因，已由 BUG-5267 修。
+- **报告**：2026-11-22（应用内反馈 mwdfN2VvzL，同用户早期反馈 x-1PWg56ZV）；2026-11-23 同一台设备（TECNO KL4，Android 3.4.0-debug.31707）带 `idTrace` 的新报告 1_MeD_RbWU，与闪退报告 n0eMBDo31-（日志里 2026-11-22 12:09 起到 11-23 21:30 一直 `SrsStoreNotMigrated(migrationFailed)`，`failure.reason = fail`）。
+- **真实性**：✅ 真 bug。四个 profile 里第三个 `01a14e58-4a64…` 对拍 notes / cards / stats 各一处不同，整次升级撤回，复习整个不可用。
+- **根因**（由 1_MeD_RbWU 报告的 `idTrace` 逐项推定，并用同形合成库复现出逐字段相同的签名）：
+  - 报告里新代笔记 `978c5904` 的笔记类型 `0a8866e2-728c-50b8-a9e8-96aa9fbe91d2` = `note_type(第一个 profile 01a14e58-4a5e… 的 uid, fushi_card 的内置 ankiNum)`，即**另一个 profile 的带盐内置 fushi_card 笔记类型**（`gen4_ids::rules::note_type` 按四个 profile uid 逐个算出来对上）；协议 3 一侧的卡 `7770c888` = card(带本 profile 盐的笔记 `689d4beb`, 本 profile 盐下的 fushi_card 模板 `21ccec38`, 0)。
+  - 协议 3 的 `srs_entities` 以实体 ID 为主键、全库共用（`native/fushi_fsrs/src/store/schema.rs:136`）：本 profile 的笔记挂在别的 profile 的内置笔记类型上时，协议 3 按 ID 读到那一行，再按本 profile 的缓存配置（`store/caches.rs:66` `builtin_of` 只看载荷里的 `builtin` 键）给出带本 profile 盐的内置模板，笔记照常有卡、有词条键、复习落在 `7770c888` 上。
+  - 新代按集合建库，迁移写进新身份的 `Salts` 只有本 profile 的 uid 与已退役 uid（`native/fushi_fsrs/src/store/gen4/legacy.rs:252` `salts`，修复前）。别名层不认得另一个 uid 加盐的 `0a8866e2`，笔记的类型归不到内置 fushi_card，缓存层没有类型视图（`store/gen4/cache.rs:1589` `type_info` → `None`，`store/caches.rs:759` `note_row` 给空词条键、零张卡），复习日志挂的卡 `7770c888` 由笔记 × 模板派生不出来（`gen4_ids/alias.rs` `full_pass` 第 4 步），留成 `unverified`。对拍于是报：notes 的 `term_key` / `reading_key` / `sort_field` / `dupe_norm` 旧有新空，cards 旧侧多 `c01cffd9`（协议 3 卡的规范 ID），stats 的卡 `c01cffd9` ↔ `7770c888`，`aliases.unverified = 1`——与报告逐项相同。
+  - 是数据形态没覆盖，不是 IO / 空间：`failure.reason = fail`（`migrate.rs` `AbortReason::Fail`，对拍有差异）。每次启动不会自动重迁（`migrate.rs` `status` 认出旁边这份旧库的中止报告就报 `migrationFailed`，要用户在恢复页手动「重新升级」）。
+- **[x] ① 已修复** — `native/fushi_fsrs/src/store/gen4/legacy.rs` `salts` 并上 `foreign_builtin_salts`：同库其它 profile 里，本 profile 的协议 3 笔记缓存（前提补完已刷新）挂着其带盐内置笔记类型的那些 uid。本 profile 的数据里出现了那个 uid 加盐的 ID，它就是这个集合的盐（与退役 uid 同理，设计 §5.1），新代别名层把它认成规范内置笔记类型，缓存层给出规范卡与词条键，复习挂在规范卡上，两侧对上。没有这种引用的 profile 盐集合不变（不把全库 uid 都塞进去：盐越多，每条笔记的卡派生要试的组合越多）。
+- **[x] ② 已加自动化测试** — `native/fushi_fsrs/src/store/gen4/migrate_tests.rs` `a_note_on_another_profiles_builtin_note_type_migrates`：两 profile 的库，[Q] 的笔记 `noteTypeId` 是 [P] 的带盐内置 lapis、字段键与复习的卡按 [Q] 的配置，协议 3 缓存按各自带盐配置建好；删 / 不删笔记两种都跑真实迁移，断言整份提交、[P] 盐 1 个 / [Q] 盐 2 个、新代规范卡在（隐藏与否同协议 3）、笔记排序字段有值、统计挂在规范卡上。去掉修复时红，报告签名与用户的逐项相同。
+- **备注**：
+  - 用户需升级到含修复的版本后在复习页恢复界面点「重新升级」；失败状态不会随版本更新自动重试。
+  - n0eMBDo31- 日志里 109 条 `UncaughtZone`（全部 `SrsStoreNotMigrated` / `SrsStoreMigrating`，紧跟 `ProfileManagement.sweepOrphans`）是同一用户在配置管理页反复点删除：BUG-5275（34a0cfad88，晚于 31707）已修，`_showDeleteDialog` 的统计包进 try、`sweepOrphans` 在换代状态下返回 0。
+  - 未覆盖的相邻形态（推测，未在用户报告中出现）：本 profile 自己**从没有**任何内置笔记类型的身份记录、笔记只挂在别的 profile 的内置笔记类型上时，带上盐别名能认出，但新代集合里没有这个笔记类型的定义，缓存层仍建不出卡，对拍照样中止（安全撤回、不丢数据）。用户报告里新代为这个 profile 建出了 407 张卡（`settled.cacheCards`），推定它有自己的内置笔记类型定义。别的 profile 的**自定义**笔记类型被跨 profile 引用同理缺定义。两者要把那条身份记录（与定义史）补进本 profile 的操作日志，遇到再开。

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:fushi_engine/media/metadata/books/anilist_novels.dart';
+import 'package:fushi_engine/media/metadata/books/anilist_books.dart';
 import 'package:fushi_engine/media/metadata/books/book_catalog.dart';
 import 'package:fushi_engine/media/metadata/books/itunes_music.dart';
 import 'package:fushi_engine/media/metadata/books/ndl_search.dart';
@@ -41,7 +41,7 @@ void main() {
 
   group('AniList', () {
     test('搜索响应：native 标题、罗马字原名、Story 作者、extraLarge 封面、横幅', () {
-      final List<BookCatalogRecord> found = parseAniListNovelSearchResponse(
+      final List<BookCatalogRecord> found = parseAniListSearchResponse(
         fixture('anilist_search_kusuriya.json'),
       );
       expect(found, hasLength(1));
@@ -60,7 +60,7 @@ void main() {
     });
 
     test('不存在的 id：fetchById 返回 null（404 + data.Media null）', () async {
-      final AniListNovelClient client = AniListNovelClient(
+      final AniListBookClient client = AniListBookClient(
         BookCatalogHttp(
           client: MockClient(
             (http.Request req) async =>
@@ -72,9 +72,10 @@ void main() {
       expect(await client.fetchById('999999999'), isNull);
     });
 
-    test('搜索请求是 MANGA + NOVEL 的 GraphQL POST，带通用 UA', () async {
+    // BUG-5401：以前写死 format: NOVEL，漫画在 AniList 源永远搜不到。
+    test('搜索请求是 MANGA 类型、不限形态的 GraphQL POST，带通用 UA，要回 format', () async {
       late http.Request seen;
-      final AniListNovelClient client = AniListNovelClient(
+      final AniListBookClient client = AniListBookClient(
         BookCatalogHttp(
           client: MockClient((http.Request req) async {
             seen = req;
@@ -91,8 +92,9 @@ void main() {
       expect(seen.url.host, 'graphql.anilist.co');
       final Map<String, Object?> body =
           jsonDecode(seen.body) as Map<String, Object?>;
-      expect(body['query'], contains('format: NOVEL'));
+      expect(body['query'], isNot(contains('format:')));
       expect(body['query'], contains('type: MANGA'));
+      expect(body['query'], contains('format countryOfOrigin'));
       // 默认不要成人向：服务端过滤，不占一页的名额（拍板台 pr3497）。
       expect(body['query'], contains('isAdult: false'));
       expect(seen.headers['User-Agent'], kBookCatalogUserAgent);
@@ -100,7 +102,7 @@ void main() {
 
     test('includeAdult: true 时查询不带 isAdult 过滤', () async {
       late http.Request seen;
-      final AniListNovelClient client = AniListNovelClient(
+      final AniListBookClient client = AniListBookClient(
         BookCatalogHttp(
           client: MockClient((http.Request req) async {
             seen = req;
@@ -116,12 +118,40 @@ void main() {
       final Map<String, Object?> body =
           jsonDecode(seen.body) as Map<String, Object?>;
       expect(body['query'], isNot(contains('isAdult:')));
-      expect(body['query'], contains('format: NOVEL'));
+      expect(body['query'], isNot(contains('format:')));
+    });
+
+    test('format + countryOfOrigin → 轻小说 / 漫画 / 韩漫 / 国漫 / 短篇', () {
+      expect(aniListFormat('NOVEL', 'JP'), BookCatalogFormat.novel);
+      expect(aniListFormat('MANGA', 'JP'), BookCatalogFormat.manga);
+      expect(aniListFormat('MANGA', 'KR'), BookCatalogFormat.manhwa);
+      expect(aniListFormat('MANGA', 'CN'), BookCatalogFormat.manhua);
+      expect(aniListFormat('MANGA', 'TW'), BookCatalogFormat.manhua);
+      expect(aniListFormat('ONE_SHOT', 'JP'), BookCatalogFormat.oneShot);
+      expect(aniListFormat(null, null), isNull);
+      final List<BookCatalogRecord> found = parseAniListSearchResponse(
+        jsonEncode(<String, Object?>{
+          'data': <String, Object?>{
+            'Page': <String, Object?>{
+              'media': <Object?>[
+                <String, Object?>{
+                  'id': 30001,
+                  'format': 'MANGA',
+                  'countryOfOrigin': 'CN',
+                  'title': <String, Object?>{'native': '一人之下'},
+                  'coverImage': <String, Object?>{'large': 'https://c/1.jpg'},
+                },
+              ],
+            },
+          },
+        }),
+      );
+      expect(found.single.format, BookCatalogFormat.manhua);
     });
 
     test('GraphQL 报错且无 data → BookCatalogException', () {
       expect(
-        () => parseAniListNovelSearchResponse(
+        () => parseAniListSearchResponse(
           '{"errors":[{"message":"Too Many Requests.","status":429}],"data":null}',
         ),
         throwsA(

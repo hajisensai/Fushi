@@ -749,6 +749,15 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_online',
   // String（JSON 数组 [{id, enabled}]）：歌词插件来源的顺序与启停；LRCLIB 结构上固定在最前、不存。
   'music_lyrics_providers',
+  // bool（默认 true）：歌词页 / MV 结构化歌词显示罗马音副行。设备本地观感偏好
+  // （KaraokeLyricsAppearance.showRomanization）。
+  'music_lyrics_show_romanization',
+  // bool（默认 true）：显示音节注音（歌词源自带的 ruby，QRC 注音轨 / ASS / TTML）。
+  // 设备本地观感偏好（KaraokeLyricsAppearance.showRuby）。
+  'music_lyrics_show_ruby',
+  // bool（默认 true）：显示翻译副行（false = 单语，只看原文）。设备本地观感偏好
+  // （KaraokeLyricsAppearance.showTranslation）。
+  'music_lyrics_show_translation',
   // String（JSON 数组 [{id, enabled}]）：音乐在线来源（插件 `plugin:<id>` / 服务器
   // `server:<serverId>` / `apple-music`）的顺序与「推荐 / 搜索里显示」开关。
   'music_online_sources',
