@@ -6,7 +6,6 @@ library;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -14,6 +13,7 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 class AppleImportDropOverlay extends StatelessWidget {
   const AppleImportDropOverlay({required this.visible, super.key});
@@ -36,7 +36,7 @@ class AppleImportDropOverlay extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: colors.accent.withValues(alpha: 0.10),
-              borderRadius: FushiBorderRadius.group,
+              borderRadius: FushiAppleRadii.of(context).groupRadius,
               border: Border.all(color: colors.accent, width: 2.5),
             ),
             child: Center(
@@ -47,7 +47,7 @@ class AppleImportDropOverlay extends StatelessWidget {
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 440),
                   child: FushiGlassSurface(
-                    borderRadius: FushiBorderRadius.dialog,
+                    borderRadius: FushiAppleRadii.of(context).popoverRadius,
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
                       child: Column(

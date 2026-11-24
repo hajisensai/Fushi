@@ -46,6 +46,7 @@ import 'package:fushi/src/utils/components/shelf_cover_material.dart'
 import 'package:fushi/src/utils/cover_image.dart'
     show kActivityCoverDecodePixelWidth;
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 // ── 公共小件 ────────────────────────────────────────────────────────────────
 
@@ -810,7 +811,7 @@ class AppleGalgameStatusCard extends StatelessWidget {
       children: <Widget>[
         ExcludeSemantics(
           child: ClipRSuperellipse(
-            borderRadius: BorderRadius.circular(5 * k),
+            borderRadius: FushiAppleRadii.of(context).thumbnailRadius,
             child: SizedBox(
               height: 10 * k,
               child: total == 0
@@ -915,6 +916,7 @@ class AppleGalgameRandomCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiAppleMetrics m = FushiAppleMetrics.of(context);
     final double k = m.scale;
+    final double chipHeight = 28 * k;
     final FushiAppleColors c = appleColorsOf(context);
     final BorderRadius radius = fushiCardBorderRadius(context);
     final String meta = <String>[
@@ -969,11 +971,11 @@ class AppleGalgameRandomCard extends StatelessWidget {
                     SizedBox(height: 12 * k),
                     ExcludeSemantics(
                       child: Container(
-                        height: 28 * k,
+                        height: chipHeight,
                         padding: EdgeInsets.symmetric(horizontal: 12 * k),
                         decoration: BoxDecoration(
                           color: c.fill,
-                          borderRadius: BorderRadius.circular(14 * k),
+                          borderRadius: BorderRadius.circular(chipHeight / 2),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,

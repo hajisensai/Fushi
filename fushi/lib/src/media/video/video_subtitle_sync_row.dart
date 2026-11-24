@@ -21,6 +21,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 /// TODO-413：「自动对轴」按钮的功能开关。音频能量互相关自动对轴（TODO-701 阶段1）算法
 /// 管线已完整落地（抽包络 + 互相关 + 置信门控 + 写穿 delayMs），TODO-742 曾因「真机未验、
@@ -747,7 +748,7 @@ class _DelayReadoutFieldState extends State<_DelayReadoutField> {
         ? (lit ? apple.accent : apple.label)
         : (lit ? cs.onSecondaryContainer : cs.onSurfaceVariant);
     final BorderRadius radius = apple != null
-        ? BorderRadius.circular(10)
+        ? FushiAppleRadii.of(context).fieldRadius
         : FushiM3eShape.cardRadius;
     final Color ring = apple?.accent ?? cs.primary;
     final Widget content = _editing

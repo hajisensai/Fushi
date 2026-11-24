@@ -11,7 +11,6 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/import/import_collage_blocks.dart'
     show ImportDestinationLabel;
 import 'package:fushi/src/media/import/import_surface_spec.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -45,7 +44,7 @@ class AppleImportIconTile extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: plain ? Colors.transparent : colors.fill,
-          borderRadius: FushiBorderRadius.chip,
+          borderRadius: BorderRadius.circular(size * 0.22),
         ),
         child: Center(
           child: FushiIcon(

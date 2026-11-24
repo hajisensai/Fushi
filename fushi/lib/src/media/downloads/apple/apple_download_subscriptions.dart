@@ -306,7 +306,7 @@ class _AppleSubscriptionRow extends StatelessWidget {
       height: width * 1.5,
       decoration: BoxDecoration(
         color: apple.fill,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: FushiAppleRadii.of(context).thumbnailRadius,
       ),
       child: Center(
         child: FushiIcon(

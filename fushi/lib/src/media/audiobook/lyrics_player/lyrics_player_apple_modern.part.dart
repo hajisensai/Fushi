@@ -36,9 +36,7 @@ const double _kAppleModernMiniLineBand = 14;
 const double _kAppleModernGrabHeight = 12;
 
 /// 卡片圆角（连续曲率）。
-const BorderRadius _kAppleModernCardRadius = BorderRadius.all(
-  Radius.circular(26),
-);
+final BorderRadius _kAppleModernCardRadius = FushiAppleRadii.ios.groupRadius;
 
 /// 窄屏卡片的字（字阶角色 + 深底白字，不写裸字号）。
 @immutable
@@ -155,7 +153,7 @@ Widget _appleModernArtwork(
   callbacks,
   height: height,
   uncropped: uncropped,
-  borderRadius: const BorderRadius.all(Radius.circular(8)),
+  borderRadius: FushiAppleRadii.ios.coverRadius,
   backdrop: Colors.white.withValues(alpha: 0.08),
   placeholder: (BuildContext context) => ColoredBox(
     color: Colors.white.withValues(alpha: 0.12),
@@ -368,7 +366,7 @@ class _AppleModernWideChrome extends StatelessWidget {
             controller: data.illustrations,
             width: popup.width,
             height: popup.height,
-            borderRadius: const BorderRadius.all(Radius.circular(14)),
+            borderRadius: FushiAppleRadii.ios.popoverRadius,
             onOpen: callbacks.onOpenIllustration == null
                 ? null
                 : (int index) => callbacks.onOpenIllustration!(
@@ -774,7 +772,7 @@ class _AppleModernNarrowChrome extends StatelessWidget {
             callbacks: callbacks,
             size: size,
             geometry: g,
-            popupBorderRadius: const BorderRadius.all(Radius.circular(14)),
+            popupBorderRadius: FushiAppleRadii.ios.popoverRadius,
             card: LyricsSpringEntrance(
               child: LyricsModernCollapsibleCard(
                 expanded: data.compactControlsExpanded,
@@ -797,7 +795,7 @@ class _AppleModernNarrowChrome extends StatelessWidget {
                 // 悬浮面实色（Apple 设计系统组件规则）：系统材质实色 + 发丝描边。
                 surface: (BuildContext context, Widget content) =>
                     FushiAppleFloatingSurface(
-                      shape: const RoundedSuperellipseBorder(
+                      shape: RoundedSuperellipseBorder(
                         borderRadius: _kAppleModernCardRadius,
                       ),
                       child: ClipRSuperellipse(
@@ -840,7 +838,7 @@ class _AppleGrabHandle extends StatelessWidget {
       child: FushiPlainButton(
         key: const ValueKey<String>('lyrics_modern_grab_handle'),
         semanticLabel: label,
-        borderRadius: const BorderRadius.all(Radius.circular(6)),
+        borderRadius: FushiAppleRadii.ios.highlightRadius,
         onPressed: onToggle,
         child: SizedBox(
           width: 96,

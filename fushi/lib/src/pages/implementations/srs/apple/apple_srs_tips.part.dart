@@ -106,7 +106,9 @@ class _AppleSrsTip extends StatelessWidget {
                               key: a.key,
                               onPressed: a.onPressed,
                               semanticLabel: a.label,
-                              borderRadius: BorderRadius.circular(8 * s),
+                              borderRadius: FushiAppleRadii.of(
+                                context,
+                              ).highlightRadius,
                               child: ConstrainedBox(
                                 constraints: BoxConstraints(
                                   minHeight: m.desktop ? 28 * s : 44,

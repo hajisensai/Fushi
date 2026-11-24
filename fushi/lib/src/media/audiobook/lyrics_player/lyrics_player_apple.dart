@@ -27,6 +27,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 part 'lyrics_player_apple_modern.part.dart';
 
@@ -225,7 +226,7 @@ class _PlayerPanel extends StatelessWidget {
               child: LyricsIllustrationArtworkSlot(
                 controller: data.illustrations,
                 side: layout.artworkSize,
-                borderRadius: const BorderRadius.all(Radius.circular(12)),
+                borderRadius: FushiAppleRadii.ios.artworkRadius,
                 onOpen: callbacks.onOpenIllustration == null
                     ? null
                     : (int index) => callbacks.onOpenIllustration!(
@@ -372,7 +373,7 @@ class _ArtworkState extends State<_Artwork> {
     final double aspect = _aspect ?? 0.7;
     final double cardW = aspect >= 1 ? size : size * aspect;
     final double cardH = aspect >= 1 ? size / aspect : size;
-    const BorderRadius radius = BorderRadius.all(Radius.circular(12));
+    final BorderRadius radius = FushiAppleRadii.ios.artworkRadius;
     final Widget face = cover == null
         ? ColoredBox(
             color: Colors.white.withValues(alpha: 0.12),
@@ -408,7 +409,7 @@ class _ArtworkState extends State<_Artwork> {
             width: cover == null ? size : cardW,
             height: cover == null ? size : cardH,
             decoration: ShapeDecoration(
-              shape: const RoundedSuperellipseBorder(borderRadius: radius),
+              shape: RoundedSuperellipseBorder(borderRadius: radius),
               shadows: <BoxShadow>[
                 BoxShadow(
                   color: Colors.black.withValues(alpha: playing ? 0.38 : 0.22),
@@ -644,7 +645,7 @@ class _NarrowChrome extends StatelessWidget {
             controller: data.illustrations,
             width: popupWidth,
             height: popupHeight,
-            borderRadius: const BorderRadius.all(Radius.circular(14)),
+            borderRadius: FushiAppleRadii.ios.popoverRadius,
             alignment: AlignmentDirectional.topStart,
             onOpen: callbacks.onOpenIllustration == null
                 ? null
@@ -838,7 +839,7 @@ class _NarrowIllustrationEntry extends StatelessWidget {
                       callbacks.onOpenIllustration!(index, returnToCover: true),
             builder: (BuildContext context, ImageProvider? illustration) =>
                 ClipRSuperellipse(
-                  borderRadius: const BorderRadius.all(Radius.circular(8)),
+                  borderRadius: FushiAppleRadii.ios.coverRadius,
                   child: SizedBox.square(
                     dimension: _size,
                     child: Image(

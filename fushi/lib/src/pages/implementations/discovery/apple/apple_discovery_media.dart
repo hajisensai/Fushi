@@ -180,13 +180,14 @@ class AppleDiscoveryPosterSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color fill = appleColorsOf(context).tertiaryFill;
+    const double barHeight = 10;
     Widget bar(double widthFactor) => FractionallySizedBox(
       widthFactor: widthFactor,
       child: Container(
-        height: 10,
+        height: barHeight,
         decoration: BoxDecoration(
           color: fill,
-          borderRadius: BorderRadius.circular(5),
+          borderRadius: BorderRadius.circular(barHeight / 2),
         ),
       ),
     );

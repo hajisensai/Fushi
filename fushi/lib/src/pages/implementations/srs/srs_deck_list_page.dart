@@ -125,6 +125,7 @@ import 'package:fushi/src/utils/components/fushi_continue_blocks.dart'
     show FushiBlockSectionTitle;
 import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
     show kFushiCoverBlockSpacing;
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 part 'srs_deck_home.dart';
 part 'srs_deck_home_paired.dart';

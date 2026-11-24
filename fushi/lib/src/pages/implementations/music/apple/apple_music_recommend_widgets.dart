@@ -37,6 +37,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart'
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 /// 推荐页 Apple 版的页边距（左右）：货架贴着这条线起排、横滑时滑出到屏幕边。
 /// 在 [AppleMusicContained] 里为 0（外层列表已经留了页边）。
@@ -574,7 +575,9 @@ class AppleMusicCategoryTile extends StatelessWidget {
                           decoration: ShapeDecoration(
                             color: onTile.withValues(alpha: 0.22),
                             shape: RoundedSuperellipseBorder(
-                              borderRadius: BorderRadius.circular(10 * k),
+                              borderRadius: FushiAppleRadii.of(
+                                context,
+                              ).tileRadius,
                             ),
                             shadows: const <BoxShadow>[
                               BoxShadow(

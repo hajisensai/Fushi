@@ -41,7 +41,8 @@ class AppleCapsuleButton extends StatelessWidget {
     final double k = FushiAppleMetrics.of(context).scale;
     final Color bg = background ?? c.fill;
     final Color fg = foreground ?? c.accent;
-    final BorderRadius radius = BorderRadius.circular(15 * k);
+    final double height = 30 * k;
+    final BorderRadius radius = BorderRadius.circular(height / 2);
     final IconData? glyph = icon;
     return FushiPressScale(
       child: FushiFocusable(
@@ -53,7 +54,7 @@ class AppleCapsuleButton extends StatelessWidget {
           label: label,
           excludeSemantics: true,
           child: Container(
-            height: 30 * k,
+            height: height,
             padding: EdgeInsets.symmetric(horizontal: 12 * k),
             decoration: BoxDecoration(color: bg, borderRadius: radius),
             child: Row(

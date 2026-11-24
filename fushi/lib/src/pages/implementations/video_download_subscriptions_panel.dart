@@ -69,6 +69,7 @@ import 'package:fushi/src/media/downloads/download_task_card.dart'
     show DownloadTaskCoverThumb;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 part '../../media/downloads/apple/apple_download_subscriptions.dart';
 

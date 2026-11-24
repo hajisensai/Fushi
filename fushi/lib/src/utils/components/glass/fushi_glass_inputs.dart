@@ -17,6 +17,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
     show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 // 输入框族的「设计系统分派」包装：构造参数与 Material 原控件逐个同名同型，
 // 调用点只改类名。MD3 设计系统下原样构造 [TextField] / [TextFormField]（像素、
@@ -1588,9 +1589,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
         : (macField
               ? (dark ? apple.tertiaryFill : Colors.white)
               : apple.tertiaryFill);
-    final BorderRadius shellRadius = BorderRadius.circular(
-      capsule ? searchHeight / 2 : (desktop ? 6 * macScale : 10),
-    );
+    final BorderRadius shellRadius = capsule
+        ? BorderRadius.circular(searchHeight / 2)
+        : FushiAppleRadii.of(context).fieldRadius;
     // 聚焦本身在 iOS 上没有描边（UISearchTextField / UITextField 触屏聚焦只亮光标）：
     // iOS 档只在键盘 / 手柄导航（traditional 高亮模式）落到输入框时给一圈细的强调色
     // 内环（1.5px、50% 透明、画在框内）；macOS 档是 NSSearchField / NSTextField 的
@@ -1826,7 +1827,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       alignment: AlignmentDirectional.centerStart,
       foregroundDecoration: keyboardFocus
           ? BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: FushiAppleRadii.of(context).selectionRadius,
               border: Border.all(color: apple.accent, width: 2),
             )
           : null,

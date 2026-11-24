@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/apple_design_sources.dart';
 import '../helpers/source_guard.dart';
 import '../pages/reader_history_source_corpus.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
@@ -1499,20 +1500,6 @@ class AnotherPopupPart {
           'Apple branch of the shortcut key-cap chip pins its label to 12 w500 '
           '(macOS key-cap label); the MD3 branch stays on the shared tag chip '
           'type. FushiTypeRoles has no Apple key-cap role yet.',
-      // Apple 分支的 HIG 圆角（iOS 27 / macOS 27 分支）：Apple 设计系统暂无圆角
-      // 刻度令牌（只有分组圆角 FushiAppleMetrics.groupRadius），M3E 分支仍走
-      // FushiM3eShape / FushiBorderRadius。
-      'lib/src/media/video/video_subtitle_sync_row.dart':
-          'Apple branch of the subtitle-delay readout is an iOS text-field-shaped '
-          'tertiaryFill box with the iOS text-field corner (10, same as the '
-          'FushiTextFieldControl iOS shell it morphs into when editing); the '
-          'M3E branch stays on FushiM3eShape.cardRadius. Apple has no radius '
-          'scale token yet.',
-      'lib/src/pages/implementations/home_dashboard_widget_cells.part.dart':
-          'Apple branch of the in-widget mini tap target: FushiPlainButton '
-          'requires an explicit press-highlight shape, 8 = iOS cell highlight '
-          'inset inside a home widget; the M3E branch stays on '
-          'FushiBorderRadius.card. Apple has no radius scale token yet.',
       // M3E-only 拆分文件：Apple 行在 lookup/apple/apple_lookup_history_row.dart，
       // 查词页按 isGlassDesign 分派（home_dictionary_page `if (glass)`），本文件
       // 不会在 Apple 下渲染，「漏出 Material 色调」的风险不存在；但判据
@@ -1988,11 +1975,6 @@ class AnotherPopupPart {
       'lib/src/utils/components/fushi_date_time_picker.dart': <String>{
         'fontSize:',
       },
-      'lib/src/media/video/video_subtitle_sync_row.dart': <String>{
-        'BorderRadius.circular(',
-      },
-      'lib/src/pages/implementations/home_dashboard_widget_cells.part.dart':
-          <String>{'BorderRadius.circular('},
       'lib/src/pages/implementations/lookup_history_row.dart': <String>{
         'surfaceContainerHigh',
       },
@@ -2037,8 +2019,9 @@ class AnotherPopupPart {
     for (final File file in dartFiles) {
       final String path = file.path.replaceAll(r'\', '/');
       // Apple 专属文件（`isGlassDesign` 分派后才渲染的 Cupertino 版面 / 原语）
-      // 不画 M3E chrome，本守卫的「M3E 决策」无从谈起，不在扫描面内。
-      if (_isAppleOnlySource(path)) continue;
+      // 不画 M3E chrome，本守卫的「M3E 决策」无从谈起，不在扫描面内；它们由
+      // apple_design_tokens_guard_test 按 Apple 令牌审（判据两边共用）。
+      if (isAppleDesignOnlySource(path)) continue;
       final String? reason = allowedFiles[path];
       // TODO-2715：先剥注释。判据是禁止型（isNot），注释里写着 `fontSize:` 的说明
       // 文字会被当成命中——既制造假红，又会把一条注释登记进豁免范围。
@@ -4465,17 +4448,6 @@ String _withoutTransparentInkHosts(String source) {
 ///
 /// 其余 token（`fontSize:`、`VisualDensity.compact`、裸 `Card(` / `ListTile(` …）
 /// 判据不变：M3E 字阶走 `context.fushiType`，组件走共享 Fushi* 原语。
-/// Apple 专属源文件：路径里有 `/apple/` 目录（各模块的 Cupertino 方案 A 版面，
-/// 如 `srs/apple/`、`library_layout/apple/`），或文件名本身带 `apple` 词元
-/// （`apple_*.dart`、`*_apple.dart`、`*_apple.part.dart`、`fushi_apple_*`）。约定：
-/// 这类文件只在 `isGlassDesign(context)` 分派后的 Apple 分支里渲染，没有 M3E
-/// 外观；M3E 与 Apple 混写的文件不按此豁免，仍逐个受审。
-bool _isAppleOnlySource(String path) {
-  if (path.contains('/apple/')) return true;
-  final String name = path.substring(path.lastIndexOf('/') + 1);
-  return RegExp(r'(^|_)apple(_|\.)').hasMatch(name);
-}
-
 List<String> _m3eChromeHits(String source, List<String> forbidden) {
   final bool appleAware = RegExp(
     r'isGlassDesign\(|appleColorsOf\(|FushiAppleColors',

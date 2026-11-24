@@ -34,9 +34,6 @@ part of 'fushi_now_playing_bar.dart';
 /// Apple 按钮也传这个值，与传输键同一行高。
 const double kFushiNowPlayingAppleGlyphExtent = 44;
 
-/// 封面连续曲率圆角半径（Apple Music 迷你播放器封面约 6–8）。
-const double _kAppleCoverRadius = 7;
-
 /// iOS 档封面边长。
 const double _kAppleCoverIos = 40;
 
@@ -190,7 +187,7 @@ class _AppleCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ClipRSuperellipse(
     key: const ValueKey<String>('now-playing-apple-cover'),
-    borderRadius: BorderRadius.circular(_kAppleCoverRadius),
+    borderRadius: FushiAppleRadii.of(context).coverRadius,
     child: SizedBox.square(
       dimension: size,
       child: bar.coverBuilder(context, size),
@@ -676,7 +673,7 @@ class _AppleProgressLineState extends State<_AppleProgressLine> {
     return IgnorePointer(
       child: ExcludeSemantics(
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(1),
+          borderRadius: FushiAppleRadii.of(context).markRadius,
           child: ColoredBox(
             color: apple.label.withValues(alpha: 0.10),
             child: Align(

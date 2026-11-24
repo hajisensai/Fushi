@@ -28,6 +28,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 /// 来源区交给 Apple 布局的全部数据（纯数据 + 回调，动作仍在来源视图里）。
 @immutable
@@ -612,7 +613,7 @@ class _AppleSourceBadge extends StatelessWidget {
     final Widget badge = DecoratedBox(
       decoration: BoxDecoration(
         color: colors.fill,
-        borderRadius: FushiBorderRadius.chip,
+        borderRadius: FushiAppleRadii.of(context).badgeRadius,
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
