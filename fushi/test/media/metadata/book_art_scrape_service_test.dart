@@ -1040,6 +1040,59 @@ void main() {
     expect(once, <String>[full]);
   });
 
+  test('双语书名的查询序列：全名 → 日文段 → 罗马字段；单语书名不多出查询', () {
+    expect(BookArtScrapeService.queriesFor('Horimiya ホリミヤ'), <String>[
+      'Horimiya ホリミヤ',
+      'ホリミヤ',
+      'Horimiya',
+    ]);
+    expect(BookArtScrapeService.queriesFor('テスト漫画：ブルー'), <String>[
+      'テスト漫画：ブルー',
+      'テスト漫画',
+    ]);
+    expect(BookArtScrapeService.queriesFor('One Piece'), <String>[
+      'One Piece',
+      'One',
+    ]);
+  });
+
+  // Bangumi 是关键词精确搜索：「Horimiya ホリミヤ」零结果，只有「ホリミヤ」搜得到。
+  // 曾只用全名搜一次，双语书名的系列从来拿不到 Bangumi 候选。
+  test('Bangumi 全名零结果：改用日文段再搜，拿到候选', () async {
+    await seed('k1', 'Test テスト漫画 1');
+    await seed('k2', 'Test テスト漫画 2');
+    final List<String> keywords = <String>[];
+    final BookArtScrapeService svc = service((http.Request req) async {
+      if (req.url.host == 'api.mangabaka.org') {
+        return http.Response('boom', 500);
+      }
+      if (req.url.path == '/v0/search/subjects') {
+        final String keyword =
+            (jsonDecode(req.body) as Map<String, Object?>)['keyword']!
+                as String;
+        keywords.add(keyword);
+        return json(<String, Object?>{
+          'data': <Object?>[if (keyword == 'テスト漫画') bangumiSeries7],
+        });
+      }
+      return bangumi(req) ?? image(req) ?? http.Response('?', 404);
+    });
+    final BookArtRunResult result = await svc.run(<String>['k1', 'k2']);
+    svc.close();
+
+    expect(keywords, <String>['Test テスト漫画', 'テスト漫画']);
+    final BookArtSeriesPlan plan = result.series.single;
+    expect(
+      plan.source == BookArtSource.bangumi ||
+          plan.options.any(
+            (BookArtSeriesOption o) =>
+                o.source == BookArtSource.bangumi && o.id == '7',
+          ),
+      isTrue,
+      reason: 'Bangumi 系列 7 应被采用或列为候选：${plan.decision} ${plan.reason}',
+    );
+  });
+
   test('刮削进行中书被删了：这本不再写入，不留孤儿文件', () async {
     await seed('k1', 'テスト漫画 1');
     await seed('k2', 'テスト漫画 2');

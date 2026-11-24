@@ -23,6 +23,8 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart';
@@ -1156,16 +1158,24 @@ class BookArtScrapeService {
   }
 
   /// 查询词：系列名；带副标题时再去掉副标题搜一次（最多 2 次）。
-  List<String> _queries(String seriesTitle) {
+  @visibleForTesting
+  static List<String> queriesFor(String seriesTitle) => _queries(seriesTitle);
+
+  /// 搜索用的查询序列：全名 → 双语书名的日文段（`Horimiya ホリミヤ` → `ホリミヤ`，
+  /// [bilingualBookTitleParts]；Bangumi 是关键词精确搜索，全名与罗马字都搜不到）→
+  /// 去掉副标题。
+  static List<String> _queries(String seriesTitle) {
     final String full = seriesTitle.trim();
+    final List<String> bilingual = bilingualBookTitleParts(full);
     final RegExpMatch? cut = RegExp(
       r'^(.+?)\s*[\s\-‐―—~〜～:：(（「『〈]',
     ).firstMatch(full);
     final String? head = cut?.group(1)?.trim();
-    return <String>[
+    return <String>{
       full,
-      if (head != null && head.length >= 2 && head != full) head,
-    ];
+      if (bilingual.isNotEmpty) bilingual.first,
+      if (head != null && head.length >= 2) head,
+    }.toList();
   }
 
   /// Bangumi 匹配。[assistKind] 非 null = MangaBaka 已认定系列（种类为它），这里只补
@@ -1174,22 +1184,37 @@ class BookArtScrapeService {
     BookArtLocalSeries local, {
     BookArtCandidateKind? assistKind,
   }) async {
-    final BangumiRawResponse response = await _bangumi.searchSubjects(
-      local.seriesTitle,
-      subjectType: kBangumiSubjectTypeBook,
-    );
-    if (response.statusCode == 404) return (null, null);
-    if (!response.isOk) {
-      throw _BangumiHttpException('search HTTP ${response.statusCode}');
+    // 与 MangaBaka 同一查询序列（[_queries]）：Bangumi 按关键词精确搜，双语书名的
+    // 全名常常零结果；出现说得过去的候选就不再往下试。
+    final Map<String, BangumiBookSubject> byId = <String, BangumiBookSubject>{};
+    bool answered = false;
+    for (final String q in _queries(local.seriesTitle)) {
+      final BangumiRawResponse response = await _bangumi.searchSubjects(
+        q,
+        subjectType: kBangumiSubjectTypeBook,
+      );
+      if (response.statusCode == 404) continue;
+      if (!response.isOk) {
+        throw _BangumiHttpException('search HTTP ${response.statusCode}');
+      }
+      answered = true;
+      for (final BangumiBookSubject s in parseBangumiBookSearch(
+        response.body,
+      )) {
+        byId.putIfAbsent('${s.id}', () => s);
+      }
+      if (byId.values.any(
+        (BangumiBookSubject s) =>
+            s.isSeries &&
+            assessBookArtCandidate(local, s.toCandidate()).worthVolumeCheck,
+      )) {
+        break;
+      }
     }
-    final List<BangumiBookSubject> subjects = parseBangumiBookSearch(
-      response.body,
-    );
-    final Map<String, BangumiBookSubject> byId = <String, BangumiBookSubject>{
-      for (final BangumiBookSubject s in subjects) '${s.id}': s,
-    };
+    // 每个查询都 404（搜索接口不可用）：与原来一样当作没有 Bangumi 结果。
+    if (!answered) return (null, null);
     final List<BookArtCandidate> candidates = <BookArtCandidate>[
-      for (final BangumiBookSubject s in subjects) s.toCandidate(),
+      for (final BangumiBookSubject s in byId.values) s.toCandidate(),
     ];
     final Map<String, Set<num>> indexes = <String, Set<num>>{};
     final Map<String, List<BangumiTankobon>> tankobons =

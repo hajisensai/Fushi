@@ -100,6 +100,23 @@ void main() {
     expect(File(store.bannerPathFor('mangabaka_1')).existsSync(), isFalse);
   });
 
+  // 横幅文件还被打开着（Windows 上背景带正在读它，删不掉）：清除照常完成，孤儿
+  // 横幅留到下一次回收再删。曾直接抛出，合集清除逐本删到这里就中断。
+  test('孤儿横幅删不掉时清除不中断，下一次回收再删', () async {
+    await store.writeBanner('mangabaka_1', png(16, 9));
+    await store.write(record: record('a', bannerKey: 'mangabaka_1'));
+    final File banner = File(store.bannerPathFor('mangabaka_1'));
+    final RandomAccessFile reader = await banner.open();
+    try {
+      await store.remove('a');
+      expect(store.recordFor('a'), isNull);
+    } finally {
+      await reader.close();
+    }
+    await store.collectOrphanBanners();
+    expect(banner.existsSync(), isFalse);
+  });
+
   test('快照 → 覆盖写 → 恢复：卷封面字节与元数据回到快照', () async {
     await store.write(
       record: record('a', scrapedAt: 1),

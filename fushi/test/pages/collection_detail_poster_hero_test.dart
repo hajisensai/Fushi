@@ -304,13 +304,6 @@ void main() {
       final String bannerPath = art.store.bannerPathFor('mangabaka_42');
       await settleBackdrop(tester, bannerPath);
       expect(backdropPath(heroBackdrop(tester)), bannerPath);
-      // 背景带的 FileImage 正在读横幅文件：Windows 上读完前删不掉，先让读取收尾。
-      for (int i = 0; i < 5; i++) {
-        await tester.pump(const Duration(milliseconds: 20));
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(milliseconds: 20)),
-        );
-      }
 
       // 清除（逐本 remove，回收孤儿横幅）后不再指向已删的文件。
       await tester.runAsync(() async {
