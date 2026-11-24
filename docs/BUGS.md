@@ -33,16 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4672 条。点号进各自文件。
+> 共 4675 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5373](bugs/BUG-5373-tracking-series-merge-declined-pref-not-device-local.md) | ✅ | ✅ | 系列「不合并」偏好存本机合集 id 却随备份 / 设置同步出境 |
 | [BUG-5372](bugs/BUG-5372-tracking-series-attention-n-plus-one.md) | ✅ | ✅ | 追踪页加载时系列合并候选 / 系列待处理卷逐条查库（N+1） |
-> 共 4673 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-5371](bugs/BUG-5371-anidb-tag-tree-backtick.md) | ✅ | ✅ | anidb-tag-tree-backtick |
 | [BUG-5370](bugs/BUG-5370-page-backdrop-image-lost-after-ios-update.md) | ✅ | ✅ | page-backdrop-image-lost-after-ios-update |
 | [BUG-5369](bugs/BUG-5369-lyric-visualizer-style-desc-truncated.md) | ✅ | ✅ | lyric-visualizer-style-desc-truncated |
