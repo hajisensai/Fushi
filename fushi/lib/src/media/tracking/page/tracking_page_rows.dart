@@ -25,6 +25,7 @@ import 'package:fushi_core/fushi_core.dart'
         MediaTrackingActivityRow,
         MediaTrackingIgnoredRow,
         MediaTrackingMappingRow;
+import 'package:fushi_engine/media/tracking/book_series_link.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:material_ui/material_ui.dart';
@@ -34,27 +35,30 @@ String trackingPageLastSync(int lastSyncAt, DateTime now) => lastSyncAt <= 0
     ? t.media_tracking_never_synced
     : formatActivityRelativeTime(lastSyncAt, now);
 
-/// The progress unit of [mapping] in words.
+/// The progress unit of [mapping] in words. A series link of books counts
+/// its card's volumes ([trackingSeriesUnitLabel] says how many).
 String trackingLinkUnitLabel(MediaTrackingMappingRow mapping) =>
-    switch (TrackingProgressMode.tryParse(mapping.progressMode)) {
-      TrackingProgressMode.volume => t.media_tracking_track_by_volume(
-        volume: '${mapping.progressOffset}',
-      ),
-      TrackingProgressMode.chapter => t.media_tracking_track_by_chapter,
-      // One video / episode sends its own number; a collection or season
-      // sends its episodes from the starting number on (T2 G11).
-      TrackingProgressMode.episode =>
-        isSeriesTrackingKey(mapping.mediaType)
-            ? mapping.progressOffset == 1
-                  ? t.media_tracking_episode
-                  : t.media_tracking_link_unit_episodes_from(
-                      n: '${mapping.progressOffset}',
-                    )
-            : t.media_tracking_link_unit_episode_n(
-                n: '${mapping.progressOffset}',
-              ),
-      _ => trackingProgressModeLabel(mapping.progressMode),
-    };
+    mapping.mediaType == TrackingMediaType.bookCollection.value
+    ? t.tracking_series_unit_plain
+    : switch (TrackingProgressMode.tryParse(mapping.progressMode)) {
+        TrackingProgressMode.volume => t.media_tracking_track_by_volume(
+          volume: '${mapping.progressOffset}',
+        ),
+        TrackingProgressMode.chapter => t.media_tracking_track_by_chapter,
+        // One video / episode sends its own number; a collection or season
+        // sends its episodes from the starting number on (T2 G11).
+        TrackingProgressMode.episode =>
+          isSeriesTrackingKey(mapping.mediaType)
+              ? mapping.progressOffset == 1
+                    ? t.media_tracking_episode
+                    : t.media_tracking_link_unit_episodes_from(
+                        n: '${mapping.progressOffset}',
+                      )
+              : t.media_tracking_link_unit_episode_n(
+                  n: '${mapping.progressOffset}',
+                ),
+        _ => trackingProgressModeLabel(mapping.progressMode),
+      };
 
 /// Connected sites and their state, last sync, "Sync now" and the way to the
 /// settings page.
@@ -297,8 +301,69 @@ class TrackingAttentionRow extends StatelessWidget {
           icon: const FushiIcon(FushiIcons.linkOff),
         ),
       ),
+      TrackingAttentionReason.seriesCardRemoved => (
+        FushiIcons.syncProblem,
+        entry.title,
+        <String>[
+          if (entry.rowKind case final TrackingRowKind kind)
+            trackingRowKindLabel(kind),
+          site,
+          t.tracking_series_card_removed,
+        ].where((String part) => part.isNotEmpty).join(' · '),
+        FushiIconButtonControl(
+          key: ValueKey<String>('tracking-attention-remove-$index'),
+          tooltip: t.media_tracking_page_remove_link,
+          onPressed: onTap,
+          icon: const FushiIcon(FushiIcons.linkOff),
+        ),
+      ),
+      // A volume a series link leaves out: its Track sheet says why and
+      // fixes it (volume number, own link, not counted).
+      TrackingAttentionReason.seriesVolume => (
+        FushiIcons.help,
+        entry.title,
+        <String>[
+          if (entry.rowKind case final TrackingRowKind kind)
+            trackingRowKindLabel(kind),
+          site,
+          ?entry.mapping?.mediaTitle,
+          entry.seriesMember?.state == TrackingSeriesMemberState.otherSeries
+              ? t.tracking_series_attention_other_series
+              : t.tracking_series_attention_no_number,
+        ].where((String part) => part.isNotEmpty).join(' · '),
+        FushiIconButtonControl(
+          key: ValueKey<String>('tracking-attention-open-$index'),
+          tooltip: t.tracking_series_open_sheet,
+          onPressed: onTap,
+          icon: const FushiIcon(FushiIcons.edit),
+        ),
+      ),
+      // Volume links one series link can replace: merged on confirmation
+      // (tap or the button), "Don't merge" in the menu.
+      TrackingAttentionReason.seriesMerge => (
+        FushiIcons.link,
+        entry.title,
+        <String>[
+          if (entry.merge case final TrackingSeriesMergeCandidate merge)
+            trackingKindLabel(merge.kind),
+          site,
+          t.tracking_series_merge_summary(
+            n: '${entry.merge?.volumeLinks.length ?? 0}',
+            entry: entry.merge?.subjectName ?? '',
+          ),
+        ].where((String part) => part.isNotEmpty).join(' · '),
+        FushiIconButtonControl(
+          key: ValueKey<String>('tracking-attention-merge-$index'),
+          tooltip: t.tracking_series_merge_action,
+          onPressed: onTap,
+          icon: const FushiIcon(FushiIcons.link),
+        ),
+      ),
     };
-    final bool problem = entry.reason != TrackingAttentionReason.unlinked;
+    final bool problem =
+        entry.reason != TrackingAttentionReason.unlinked &&
+        entry.reason != TrackingAttentionReason.seriesVolume &&
+        entry.reason != TrackingAttentionReason.seriesMerge;
     final VoidCallback? onIgnore = this.onIgnore;
     return _RowShell(
       index: index,
@@ -326,7 +391,10 @@ class TrackingAttentionRow extends StatelessWidget {
                     actions: <TrackingRowAction>[
                       TrackingRowAction(
                         id: 'ignore',
-                        label: t.media_tracking_ignore_action,
+                        label:
+                            entry.reason == TrackingAttentionReason.seriesMerge
+                            ? t.tracking_series_merge_decline
+                            : t.media_tracking_ignore_action,
                         icon: FushiIcons.block,
                         onSelected: onIgnore,
                       ),
@@ -399,6 +467,13 @@ class TrackingLinkedRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final VoidCallback? onOpen = this.onOpen;
+    // A series link whose card was deleted sends nothing: never healthy.
+    final bool broken = failed || entry.seriesCardRemoved;
+    final String unit = entry.seriesCardRemoved
+        ? t.tracking_series_card_removed
+        : entry.isBookSeries
+        ? trackingSeriesUnitLabel(entry.series)
+        : trackingLinkUnitLabel(mapping);
     final List<TrackingRowAction> menu = <TrackingRowAction>[
       if (onTrackAgain case final VoidCallback onTrackAgain)
         TrackingRowAction(
@@ -429,11 +504,11 @@ class TrackingLinkedRow extends StatelessWidget {
         leading: FushiListLeadingIcon(
           paused
               ? FushiIcons.pause
-              : failed
+              : broken
               ? FushiIcons.syncProblem
               : FushiIcons.link,
           shape: FushiLeadingShape.square,
-          tone: failed && !paused
+          tone: broken && !paused
               ? FushiCardTone.error
               : FushiCardTone.secondary,
         ),
@@ -452,9 +527,10 @@ class TrackingLinkedRow extends StatelessWidget {
                 siteName,
                 mapping.subjectName,
               ].join(' · '),
-            trackingLinkUnitLabel(mapping),
+            unit,
             if (paused) t.media_tracking_ignore_paused,
           ].join('\n'),
+          key: ValueKey<String>('tracking-linked-unit-${mapping.id}'),
         ),
         subtitleMaxLines: 3,
         onTap: onTap,
@@ -480,6 +556,64 @@ class TrackingLinkedRow extends StatelessWidget {
                 actions: menu,
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One volume of a series link, under the series row: its title, the
+/// volume number it counts as and whether it counts; tap opens its Track
+/// sheet.
+class TrackingSeriesVolumeRow extends StatelessWidget {
+  const TrackingSeriesVolumeRow({
+    required this.member,
+    required this.byPosition,
+    required this.index,
+    required this.count,
+    required this.onTap,
+    super.key,
+  });
+
+  final TrackingSeriesMember member;
+
+  /// The card's volumes count by their position on it.
+  final bool byPosition;
+  final int index;
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final int? volume = member.volume;
+    final bool counted =
+        member.counted || member.state == TrackingSeriesMemberState.ownLink;
+    return _RowShell(
+      index: index,
+      count: count,
+      child: FushiListItem(
+        leading: FushiListLeadingIcon(
+          counted ? FushiIcons.check : FushiIcons.block,
+          shape: FushiLeadingShape.square,
+          tone: FushiCardTone.secondary,
+        ),
+        title: Text(member.title),
+        titleMaxLines: 2,
+        subtitle: Text(
+          <String>[
+            if (volume != null)
+              byPosition
+                  ? t.tracking_series_volume_by_position(volume: '$volume')
+                  : t.media_tracking_track_by_volume(volume: '$volume'),
+            trackingSeriesStateLabel(member.state),
+          ].join(' · '),
+        ),
+        subtitleMaxLines: 2,
+        onTap: onTap,
+        trailing: FushiIconButtonControl(
+          tooltip: t.tracking_series_open_sheet,
+          onPressed: onTap,
+          icon: const FushiIcon(FushiIcons.chevronRight),
         ),
       ),
     );
@@ -691,6 +825,10 @@ class TrackingLinkGroupRow extends StatelessWidget {
     final Set<TrackingRowKind> kinds = <TrackingRowKind>{
       for (final TrackingLinkedEntry entry in group.members) ?entry.rowKind,
     };
+    // A series link of books: the group lists its volumes.
+    final TrackingLinkedEntry? series = group.seriesVolumes.isEmpty
+        ? null
+        : group.parent;
     final String toggle = expanded
         ? t.media_tracking_group_collapse
         : t.media_tracking_group_expand;
@@ -711,9 +849,14 @@ class TrackingLinkGroupRow extends StatelessWidget {
             <String>[
               for (final TrackingRowKind kind in kinds)
                 trackingRowKindLabel(kind),
-              t.media_tracking_group_links(n: '${group.members.length}'),
+              if (series != null) ...<String>[
+                series.title,
+                trackingSeriesUnitLabel(series.series),
+              ] else
+                t.media_tracking_group_links(n: '${group.members.length}'),
               siteName,
             ].join(' · '),
+            key: ValueKey<String>('tracking-group-subtitle-${group.key}'),
           ),
           subtitleMaxLines: 2,
           onTap: onToggle,

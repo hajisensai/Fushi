@@ -1,4 +1,5 @@
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/tracking/book_series_link.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show formatActivityRelativeTime;
 import 'package:fushi/i18n/strings.g.dart';
@@ -102,3 +103,35 @@ String trackingChaptersCount(int n) => n == 1
 String trackingFailedUpdatesCount(int n) => n == 1
     ? t.media_tracking_site_failed_count_one(n: '$n')
     : t.media_tracking_site_failed_count(n: '$n');
+
+/// Whether a volume of a series card counts through the series link, in
+/// words (the Track sheet and the Tracking page's volume rows).
+String trackingSeriesStateLabel(TrackingSeriesMemberState state) =>
+    switch (state) {
+      TrackingSeriesMemberState.counted => t.tracking_series_state_counted,
+      TrackingSeriesMemberState.excluded => t.tracking_series_state_excluded,
+      TrackingSeriesMemberState.noNumber => t.tracking_series_state_no_number,
+      TrackingSeriesMemberState.otherSeries =>
+        t.tracking_series_state_other_series,
+      TrackingSeriesMemberState.private => t.tracking_series_state_private,
+      TrackingSeriesMemberState.otherKind => t.tracking_series_state_other_kind,
+      TrackingSeriesMemberState.ownLink => t.tracking_series_state_own_link,
+    };
+
+/// Volumes of a series card the series link leaves out: neither counted by
+/// it nor by a link of their own.
+int trackingSeriesNotCounted(TrackingSeriesCoverage coverage) =>
+    coverage.members.length -
+    coverage.countOf(TrackingSeriesMemberState.counted) -
+    coverage.countOf(TrackingSeriesMemberState.ownLink);
+
+/// The unit of a series link: "Series · 10 volumes", or "Series · 10
+/// volumes, 1 not counted"; "Series" when its volumes are not known.
+String trackingSeriesUnitLabel(TrackingSeriesCoverage? coverage) {
+  if (coverage == null) return t.tracking_series_unit_plain;
+  final String volumes = trackingVolumesCount(coverage.members.length);
+  final int notCounted = trackingSeriesNotCounted(coverage);
+  return notCounted == 0
+      ? t.tracking_series_unit(volumes: volumes)
+      : t.tracking_series_unit_not_counted(volumes: volumes, n: '$notCounted');
+}
