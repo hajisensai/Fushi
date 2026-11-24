@@ -87,7 +87,7 @@ void main() {
           isTrue,
           reason: '覆写前必须落盘词典外字媒体缓存',
         );
-        // 覆写不记账：不得在覆写路径调 _recordMinedStats（与 in-app overwrite=true 一致）。
+        // 覆写不记账：不得在覆写路径调 recordOverlayMinedStats（与 in-app overwrite=true 一致）。
         final int updateStart = src.indexOf(
           'Future<Map<String, Object?>> _updateEntry(',
         );
@@ -95,7 +95,7 @@ void main() {
         final int updateEnd = src.indexOf('\n  }', updateStart);
         final String updateBody = src.substring(updateStart, updateEnd);
         expect(
-          updateBody.contains('_recordMinedStats('),
+          updateBody.contains('recordOverlayMinedStats('),
           isFalse,
           reason: '覆写不得计入制卡统计（overwrite 修正已存在卡，不记账）',
         );
