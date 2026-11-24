@@ -186,6 +186,80 @@ void main() {
       l.dispose();
     });
 
+    test('歌词显示开关关掉：不排注音、不排罗马音 / 翻译副行', () {
+      final LyricLine line = LyricLine(
+        startMs: 0,
+        endMs: 1000,
+        romanization: 'yoru ni',
+        syllables: const <LyricSyllable>[
+          LyricSyllable(text: '夜', startMs: 0, endMs: 500, ruby: 'よる'),
+          LyricSyllable(text: 'に', startMs: 500, endMs: 1000),
+        ],
+        translations: const <LyricTranslation>[LyricTranslation('zh', '在夜里')],
+      );
+      KaraokeLineLayout layout({
+        required bool ruby,
+        required bool translation,
+        required bool romanization,
+      }) {
+        final KaraokeResolvedStyle base = _style();
+        final KaraokeResolvedStyle resolved = KaraokeResolvedStyle(
+          main: base.main,
+          background: base.background,
+          ruby: base.ruby,
+          sub: base.sub,
+          active: base.active,
+          inactive: base.inactive,
+          secondary: base.secondary,
+          textScaler: base.textScaler,
+          showRuby: ruby,
+          showTranslation: translation,
+          showRomanization: romanization,
+          glow: base.glow,
+        );
+        return KaraokeLineLayout.build(
+          line: line,
+          width: 400,
+          style: resolved.main,
+          resolved: resolved,
+          align: TextAlign.left,
+          lineLevel: false,
+        );
+      }
+
+      final KaraokeLineLayout all = layout(
+        ruby: true,
+        translation: true,
+        romanization: true,
+      );
+      final KaraokeLineLayout noTranslation = layout(
+        ruby: true,
+        translation: false,
+        romanization: true,
+      );
+      final KaraokeLineLayout bare = layout(
+        ruby: false,
+        translation: false,
+        romanization: false,
+      );
+      expect(all.syllables[0].rubyInactive, isNotNull);
+      expect(bare.syllables[0].rubyInactive, isNull, reason: '注音关');
+      expect(bare.textTop, 0, reason: '注音关不再给 ruby 预留顶部空间');
+      expect(
+        noTranslation.size.height,
+        lessThan(all.size.height),
+        reason: '翻译关少一条副行',
+      );
+      expect(
+        bare.size.height,
+        closeTo(bare.syllables[0].boxes.first.bottom, 0.5),
+        reason: '罗马音 / 翻译都关：主行下面没有副行',
+      );
+      all.dispose();
+      noTranslation.dispose();
+      bare.dispose();
+    });
+
     test('折行的当前行：逐字裁剪 / 辉光不越到同一句的另一视觉行', () {
       // "And I'm here every night and / day"：窄宽度下折成多行（测试字体每字宽 = 字号）。
       final LyricLine line = _syllables(0, <(String, int)>[

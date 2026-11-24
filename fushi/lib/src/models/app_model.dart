@@ -3006,6 +3006,18 @@ class AppModel
   Future<void> setMusicLyricsBlurInactive(bool value) =>
       prefsRepo.setMusicLyricsBlurInactive(value);
 
+  bool get musicLyricsShowTranslation => prefsRepo.musicLyricsShowTranslation;
+  Future<void> setMusicLyricsShowTranslation(bool value) =>
+      prefsRepo.setMusicLyricsShowTranslation(value);
+
+  bool get musicLyricsShowRomanization => prefsRepo.musicLyricsShowRomanization;
+  Future<void> setMusicLyricsShowRomanization(bool value) =>
+      prefsRepo.setMusicLyricsShowRomanization(value);
+
+  bool get musicLyricsShowRuby => prefsRepo.musicLyricsShowRuby;
+  Future<void> setMusicLyricsShowRuby(bool value) =>
+      prefsRepo.setMusicLyricsShowRuby(value);
+
   /// 本地 MV 后台自动匹配（音乐来源扫完后跑；「有 MV 时背景放 MV」关着不跑）。
   late final MusicVideoAutoMatcher musicVideoAutoMatch = MusicVideoAutoMatcher(
     database: () => isDatabaseReady ? database : null,
