@@ -11,6 +11,8 @@ import 'package:fushi/src/profile/combo/combo_repository.dart';
 import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_library.dart';
+import 'package:fushi/src/srs/srs_providers.dart'
+    show SrsLibrariesNotifier, srsLibrariesProvider;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -18,25 +20,6 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/inert_profile_repository.dart';
 import '../helpers/test_platform_services.dart';
-
-class _FixedLibraries extends SrsLibrariesNotifier {
-  _FixedLibraries(this._value);
-
-  final SrsLibraries _value;
-
-  @override
-  Future<SrsLibraries> build() async {
-    final String? choice = ref.watch(srsLibraryChoiceProvider);
-    final bool valid =
-        choice != null &&
-        _value.entries.any((SrsLibraryEntry e) => e.uid == choice);
-    return SrsLibraries(
-      activeUid: _value.activeUid,
-      viewedUid: valid ? choice : _value.activeUid,
-      entries: _value.entries,
-    );
-  }
-}
 
 class _AppModel extends AppModel {
   _AppModel(this._db) : super(testPlatformServices());
@@ -265,39 +248,39 @@ void main() {
     testWidgets('复习页库切换：只有共享库时不出现；有独立库时可切，选回激活库清掉选择（apple=$apple）', (
       WidgetTester tester,
     ) async {
-      Future<ProviderContainer> pump(List<SrsLibraryEntry> entries) async {
-        final ProviderContainer container = ProviderContainer(
-          overrides: <Override>[
-            srsLibrariesProvider.overrideWith(
-              () => _FixedLibraries(
-                SrsLibraries(
-                  activeUid: 'shared',
-                  viewedUid: 'shared',
-                  entries: entries,
-                ),
-              ),
-            ),
-          ],
-        );
-        addTearDown(container.dispose);
+      String? choice;
+      Future<void> pump(List<SrsLibraryEntry> entries) async {
         await tester.pumpWidget(
-          UncontrolledProviderScope(
-            container: container,
-            child: MaterialApp(
-              theme: buildFushiThemeData(
-                scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-                textTheme: Typography.material2021().black,
-                glass: FushiGlassMaterial.off,
-                glassDesign: apple,
-              ),
-              home: const FushiGlassScope(
-                child: Scaffold(body: SrsLibrarySwitcher()),
+          MaterialApp(
+            theme: buildFushiThemeData(
+              scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+              textTheme: Typography.material2021().black,
+              glass: FushiGlassMaterial.off,
+              glassDesign: apple,
+            ),
+            home: FushiGlassScope(
+              child: Scaffold(
+                body: StatefulBuilder(
+                  builder: (BuildContext context, StateSetter setState) {
+                    final bool valid =
+                        choice != null &&
+                        entries.any((SrsLibraryEntry e) => e.uid == choice);
+                    return SrsLibrarySwitcher(
+                      libraries: SrsLibraries(
+                        activeUid: 'shared',
+                        viewedUid: valid ? choice! : 'shared',
+                        entries: entries,
+                      ),
+                      onChoiceChanged: (String? next) =>
+                          setState(() => choice = next),
+                    );
+                  },
+                ),
               ),
             ),
           ),
         );
         await tester.pumpAndSettle();
-        return container;
       }
 
       await pump(const <SrsLibraryEntry>[
@@ -305,17 +288,17 @@ void main() {
       ]);
       expect(find.text(t.srs_library_shared), findsNothing);
 
-      final ProviderContainer c = await pump(const <SrsLibraryEntry>[
+      await pump(const <SrsLibraryEntry>[
         SrsLibraryEntry(uid: 'shared', shared: true),
         SrsLibraryEntry(uid: 'own', shared: false, ownerName: 'Manga'),
       ]);
       expect(find.text('Manga'), findsOneWidget);
       await tester.tap(find.text('Manga'));
       await tester.pumpAndSettle();
-      expect(c.read(srsLibraryChoiceProvider), 'own');
+      expect(choice, 'own');
       await tester.tap(find.text(t.srs_library_shared));
       await tester.pumpAndSettle();
-      expect(c.read(srsLibraryChoiceProvider), isNull);
+      expect(choice, isNull);
     });
   }
 }

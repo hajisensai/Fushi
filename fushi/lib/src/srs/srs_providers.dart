@@ -21,8 +21,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart'
+    show ResultSetImplementation, TableUpdateQuery;
 import 'package:flutter/foundation.dart'
-    show ChangeNotifier, ValueListenable, ValueNotifier;
+    show ChangeNotifier, ValueListenable, ValueNotifier, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_miner.dart';
@@ -36,6 +38,7 @@ import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -284,6 +287,88 @@ final Provider<SrsProfileStores> srsProfileStoresProvider =
         ),
       );
     });
+
+/// 复习库解析结果。`profiles` / `profile_settings` 有写入（建 / 删组合、拆 `srs.library`、迁移定
+/// 下共享库）时现算一遍，**结果不变就不通知**——下游用 `selectAsync` 只在 uid 真变了时重建。
+final AsyncNotifierProvider<SrsLibrariesNotifier, SrsLibraries>
+srsLibrariesProvider =
+    AsyncNotifierProvider<SrsLibrariesNotifier, SrsLibraries>(
+      SrsLibrariesNotifier.new,
+    );
+
+class SrsLibrariesNotifier extends AsyncNotifier<SrsLibraries> {
+  /// 每次发起现算（build 或某次写入后的 [_refresh]）领一个序号，只有**最后发起**的那次结果算数。
+  ///
+  /// 现算是几条异步查询，结果可能乱序回来：切激活配置时先快照旧配置（写 `profile_settings`，触发一次按
+  /// **旧**激活 id 的 [_refresh]），再改激活 id 让 provider 重建；那次旧的现算若晚于重建回来，会把
+  /// 「旧配置的库」写回 state，`srsStoreProvider` 就打开错库，直到下一次写入才纠正。切库选择同理。
+  int _ticket = 0;
+
+  /// 正在算的 build 个数：期间的写入只领序号、不自己写 state，由 build 发现序号变了再算一遍。
+  int _buildsInFlight = 0;
+
+  @override
+  Future<SrsLibraries> build() async {
+    // 配置装载完再读激活 id（装载期间是初值 -1，见 `ProfileViewModel.loaded`）。
+    await ref.watch(profileViewModelProvider.notifier).loaded;
+    final int activeId = ref.watch(
+      profileViewModelProvider.select((ProfileUiState s) => s.activeProfileId),
+    );
+    final String? choice = ref.watch(srsLibraryChoiceProvider);
+    final FushiDatabase db = ref.read(appProvider).database;
+    bool disposed = false;
+    final StreamSubscription<void> changes = db
+        .tableUpdates(
+          TableUpdateQuery.onAllTables(
+            <ResultSetImplementation<dynamic, dynamic>>[
+              db.profiles,
+              db.profileSettings,
+            ],
+          ),
+        )
+        .listen((_) => unawaited(_refresh(db, activeId, choice)));
+    ref.onDispose(() {
+      disposed = true;
+      unawaited(changes.cancel());
+    });
+    _buildsInFlight++;
+    try {
+      while (true) {
+        final int ticket = ++_ticket;
+        final SrsLibraries value = await compute(db, activeId, choice);
+        // 算的期间有写入（或已被新的 build 取代）：已作废的 build 直接交差（Riverpod 不用它的结果），
+        // 否则按最新的表再算一遍，保证交出去的不早于最后一次写入。
+        if (disposed || ticket == _ticket) return value;
+      }
+    } finally {
+      _buildsInFlight--;
+    }
+  }
+
+  Future<void> _refresh(FushiDatabase db, int activeId, String? choice) async {
+    final int ticket = ++_ticket;
+    if (_buildsInFlight > 0) return;
+    final SrsLibraries next;
+    try {
+      next = await compute(db, activeId, choice);
+    } on Object {
+      // 读表失败（库正在关）：保持现状，下一次写入再算。
+      return;
+    }
+    // 之后又发起过现算（再一次写入，或换了激活配置 / 切库重建）：这次的结果已过时。
+    if (ticket != _ticket) return;
+    if (state.valueOrNull == next) return;
+    state = AsyncData<SrsLibraries>(next);
+  }
+
+  /// 按此刻的表算一遍（测试可覆写来控制返回时机）。
+  @visibleForTesting
+  Future<SrsLibraries> compute(
+    FushiDatabase db,
+    int activeProfileId,
+    String? choice,
+  ) => computeSrsLibraries(db, activeProfileId, choice);
+}
 
 /// 当前 profile 的 SRS 副本；模块关着时为 null。
 ///

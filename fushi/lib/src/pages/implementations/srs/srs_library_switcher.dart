@@ -4,9 +4,11 @@
 /// 只在有两份以上复习库（共享库 + 某些组合拆出的独立库）时由牌组列表放进页头横幅；切换只改
 /// 复习页此刻看的库（[srsLibraryChoiceProvider]），不改制卡落点——制卡仍落激活配置解析出的那份库
 /// （[SrsLibraries.activeUid]）。选回激活配置的库 = 清掉选择、跟着激活配置走。
+///
+/// 只收数据与回调、不读 provider：复习库 provider 在 `srs_providers.dart`（AppModel 所在的 import 环里），
+/// 本控件直接 watch 它会把自己拉进环（`import_cycle_guard_test.dart`）。牌组列表负责 watch 与写选择。
 library;
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
@@ -20,15 +22,22 @@ String srsLibraryEntryLabel(SrsLibraryEntry entry) =>
     entry.shared ? t.srs_library_shared : (entry.ownerName ?? entry.uid);
 
 /// 复习库切换条（见库文档）。少于两份库时不占位。
-class SrsLibrarySwitcher extends ConsumerWidget {
-  const SrsLibrarySwitcher({super.key});
+class SrsLibrarySwitcher extends StatelessWidget {
+  const SrsLibrarySwitcher({
+    super.key,
+    required this.libraries,
+    required this.onChoiceChanged,
+  });
+
+  /// 此刻的复习库解析结果。
+  final SrsLibraries libraries;
+
+  /// 用户切了库：新的选择（写进 [srsLibraryChoiceProvider]）；null = 跟着激活配置。
+  final ValueChanged<String?> onChoiceChanged;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final SrsLibraries? libraries = ref.watch(srsLibrariesProvider).valueOrNull;
-    if (libraries == null || !libraries.switchable) {
-      return const SizedBox.shrink();
-    }
+  Widget build(BuildContext context) {
+    if (!libraries.switchable) return const SizedBox.shrink();
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return Semantics(
       container: true,
@@ -59,8 +68,7 @@ class SrsLibrarySwitcher extends ConsumerWidget {
                   if (next.isEmpty) return;
                   final String uid = next.first;
                   // 选回激活配置的库 = 跟着激活配置走（切配置时随之换库）。
-                  ref.read(srsLibraryChoiceProvider.notifier).state =
-                      uid == libraries.activeUid ? null : uid;
+                  onChoiceChanged(uid == libraries.activeUid ? null : uid);
                 },
               ),
             ),
