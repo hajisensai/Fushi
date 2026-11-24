@@ -7,11 +7,18 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/reader/illustration_zoom_viewer.dart'
-    show illustrationZoomRoute;
+    show
+        copyImageFileToClipboard,
+        illustrationZoomRoute,
+        showImageCopyContextMenu;
 import 'package:fushi/src/reader/image_actions_sheet.dart'
-    show showImageActionsSheet;
+    show ImageAction, runImageAction, showImageActionsSheet;
 import 'package:fushi/src/reader/masked_illustration_cover.dart'
     show maskedIllustrationCover;
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show ContextMenuTrigger, kReaderMouseLadder;
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show isWindowsPlatform;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -400,29 +407,36 @@ class _IllustrationCardState extends State<_IllustrationCard> {
                 Semantics(
                   button: true,
                   label: t.lyrics_illustration_open,
-                  child: GestureDetector(
-                    key: const ValueKey<String>('lyrics_illustration_card'),
-                    behavior: HitTestBehavior.opaque,
-                    onTapUp: (TapUpDetails d) => _onTapUp(d, w),
-                    onLongPress: _longPressFor(context, c.items[widget.index]),
-                    child: MouseRegion(
-                      cursor: SystemMouseCursors.zoomIn,
-                      child: Image(
-                        image: _image,
-                        fit: BoxFit.cover,
-                        filterQuality: FilterQuality.medium,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, Object e, StackTrace? s) =>
-                            ColoredBox(
-                              color: cs.surfaceContainerHigh,
-                              child: Center(
-                                child: FushiIcon(
-                                  FushiIcons.brokenImage,
-                                  size: math.min(w, h) * 0.2,
-                                  color: cs.onSurfaceVariant,
+                  child: _illustrationContextMenu(
+                    context,
+                    c.items[widget.index],
+                    child: GestureDetector(
+                      key: const ValueKey<String>('lyrics_illustration_card'),
+                      behavior: HitTestBehavior.opaque,
+                      onTapUp: (TapUpDetails d) => _onTapUp(d, w),
+                      onLongPress: _longPressFor(
+                        context,
+                        c.items[widget.index],
+                      ),
+                      child: MouseRegion(
+                        cursor: SystemMouseCursors.zoomIn,
+                        child: Image(
+                          image: _image,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.medium,
+                          gaplessPlayback: true,
+                          errorBuilder: (_, Object e, StackTrace? s) =>
+                              ColoredBox(
+                                color: cs.surfaceContainerHigh,
+                                child: Center(
+                                  child: FushiIcon(
+                                    FushiIcons.brokenImage,
+                                    size: math.min(w, h) * 0.2,
+                                    color: cs.onSurfaceVariant,
+                                  ),
                                 ),
                               ),
-                            ),
+                        ),
                       ),
                     ),
                   ),
@@ -913,7 +927,8 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
     return KeyEventResult.ignored;
   }
 
-  /// 已解锁的一页：可缩放、长按出图片动作面板。
+  /// 已解锁的一页：可缩放；Windows 右键（唤出键由绑定表决定）出保存 / 复制菜单，
+  /// 其余平台长按出图片动作面板。
   Widget _buildUnlockedPage(
     BuildContext context,
     LyricsIllustration item,
@@ -921,31 +936,35 @@ class _LyricsIllustrationViewerState extends State<LyricsIllustrationViewer> {
     ColorScheme cs,
   ) {
     Offset focal = Offset.zero;
-    return GestureDetector(
-      onDoubleTapDown: (TapDownDetails d) => focal = d.localPosition,
-      onDoubleTap: () => _toggleZoom(index, focal),
-      onLongPress: _longPressFor(context, item),
-      child: InteractiveViewer(
-        transformationController: _zoomFor(index),
-        minScale: 1,
-        maxScale: 10,
-        onInteractionEnd: (_) => _onInteractionEnd(index),
-        child: Center(
-          child: Image(
-            image: item.image,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.medium,
-            errorBuilder: (_, Object error, StackTrace? stack) {
-              ErrorLogService.instance.logDiagnostic(
-                'LyricsIllustrationViewer.decode',
-                '${item.key}: $error',
-              );
-              return FushiIcon(
-                FushiIcons.brokenImage,
-                size: 64,
-                color: cs.onSurfaceVariant,
-              );
-            },
+    return _illustrationContextMenu(
+      context,
+      item,
+      child: GestureDetector(
+        onDoubleTapDown: (TapDownDetails d) => focal = d.localPosition,
+        onDoubleTap: () => _toggleZoom(index, focal),
+        onLongPress: _longPressFor(context, item),
+        child: InteractiveViewer(
+          transformationController: _zoomFor(index),
+          minScale: 1,
+          maxScale: 10,
+          onInteractionEnd: (_) => _onInteractionEnd(index),
+          child: Center(
+            child: Image(
+              image: item.image,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, Object error, StackTrace? stack) {
+                ErrorLogService.instance.logDiagnostic(
+                  'LyricsIllustrationViewer.decode',
+                  '${item.key}: $error',
+                );
+                return FushiIcon(
+                  FushiIcons.brokenImage,
+                  size: 64,
+                  color: cs.onSurfaceVariant,
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -1185,12 +1204,43 @@ class _LockedIllustrationPage extends StatelessWidget {
   }
 }
 
-/// 长按插图 = 全局图片动作面板（保存 / 分享，与阅读器正文同一个）；没有磁盘
-/// 文件（测试里的内存图源）时不挂长按。
+/// 插图的图片动作入口分两条腿，与阅读器正文看图 / 书架插图册同一套
+/// （`reader_fushi/chrome.part.dart` 的 `_openImageViewer`）：
+///
+///  * Windows：右键（唤出键由绑定表决定，右键被别的动作占用时自动让位）= 「保存 /
+///    复制」菜单，见 [_illustrationContextMenu]；不挂长按。
+///  * 其余平台：长按 = 全局图片动作面板（保存 / 分享）。
+///
+/// BUG-5424（反馈 oYQN9hgT9G）：旧实现只挂了长按，Windows 上右键插图卡 / 大图没有
+/// 任何反应。没有磁盘文件（测试里的内存图源）时两条腿都不挂。
 VoidCallback? _longPressFor(BuildContext context, LyricsIllustration item) {
   final File? file = item.file;
-  if (file == null) return null;
+  if (file == null || isWindowsPlatform) return null;
   return () => unawaited(showImageActionsSheet(context, file: file));
+}
+
+/// 给插图包上右键菜单（仅 Windows、有磁盘文件时）；其余情况原样返回 [child]。
+/// 阶梯用阅读器那条（歌词模式是阅读器的一种视图，插图大图也是阅读器推出的路由）。
+Widget _illustrationContextMenu(
+  BuildContext context,
+  LyricsIllustration item, {
+  required Widget child,
+}) {
+  final File? file = item.file;
+  return ContextMenuTrigger(
+    onInvoke: isWindowsPlatform && file != null
+        ? (Offset position) => unawaited(
+            showImageCopyContextMenu(
+              context,
+              position,
+              onCopy: () => copyImageFileToClipboard(file),
+              onSave: () => runImageAction(ImageAction.save, file),
+            ),
+          )
+        : null,
+    ladder: kReaderMouseLadder,
+    child: child,
+  );
 }
 
 /// 插图工具按钮的悬浮面底色：悬浮面实色，不再半透明（Apple 2026-10-13 拍板：
