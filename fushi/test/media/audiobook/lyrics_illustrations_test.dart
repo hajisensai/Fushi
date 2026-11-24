@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fake_async/fake_async.dart';
@@ -65,14 +66,14 @@ void main() {
       );
     });
 
-    test('尺寸读不出（SVG）时只看排版', () {
+    test('文件头认不出位图格式（SVG / 残缺 / 加扰）一律不当插图（BUG-5408）', () {
       expect(
         classifyLyricsIllustration(size: null, sharesLineWithText: false),
-        LyricsIllustrationVerdict.illustration,
+        LyricsIllustrationVerdict.undecodable,
       );
       expect(
         classifyLyricsIllustration(size: null, sharesLineWithText: true),
-        LyricsIllustrationVerdict.inlineGlyph,
+        LyricsIllustrationVerdict.undecodable,
       );
     });
 
@@ -639,5 +640,78 @@ void main() {
     );
     expect(selection.verdicts['rule.png'], LyricsIllustrationVerdict.tooSmall);
     expect(selection.verdicts.containsKey('missing.jpg'), isFalse);
+  });
+
+  test('BUG-5408：EPUB 里加扰过的 PNG（文件头不是位图）经真实文件探测后不进插图列表', () {
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'lyrics_undecodable_',
+    );
+    addTearDown(() => dir.deleteSync(recursive: true));
+    // 合法 PNG 头：签名 + IHDR（1072×1528）。
+    Uint8List pngHead(int width, int height) {
+      final ByteData d = ByteData(33);
+      const List<int> sig = <int>[
+        0x89,
+        0x50,
+        0x4E,
+        0x47,
+        0x0D,
+        0x0A,
+        0x1A,
+        0x0A,
+      ];
+      for (int i = 0; i < sig.length; i++) {
+        d.setUint8(i, sig[i]);
+      }
+      d.setUint32(8, 13);
+      const List<int> ihdr = <int>[0x49, 0x48, 0x44, 0x52];
+      for (int i = 0; i < ihdr.length; i++) {
+        d.setUint8(12 + i, ihdr[i]);
+      }
+      d.setUint32(16, width);
+      d.setUint32(20, height);
+      d.setUint8(24, 8);
+      d.setUint8(25, 3);
+      return d.buffer.asUint8List();
+    }
+
+    final Uint8List plate = pngHead(1072, 1528);
+    // 反馈 U5nBMFFVwO 那本书的 `bookwalker.png`：扩展名与 manifest 都说 PNG，
+    // 字节却整段加扰（开头 b8 d2 1a c1 …），任何解码器都认不出。
+    final Uint8List scrambled = Uint8List.fromList(
+      List<int>.generate(plate.length, (int i) => plate[i] ^ 0x31),
+    );
+    final String platePath = '${dir.path}${Platform.pathSeparator}k001.png';
+    final String scrambledPath =
+        '${dir.path}${Platform.pathSeparator}bookwalker.png';
+    File(platePath).writeAsBytesSync(plate);
+    File(scrambledPath).writeAsBytesSync(scrambled);
+
+    final Map<String, LyricsIllustrationFileProbe> probes =
+        probeLyricsIllustrationFiles(<String>[platePath, scrambledPath]);
+    EpubImageRef ref(String key, int chapter) => EpubImageRef(
+      chapterIndex: chapter,
+      orderInBook: 0,
+      src: key,
+      revealKey: key,
+      charOffset: 0,
+      sharesLineWithText: false,
+    );
+    final LyricsIllustrationSelection selection = selectLyricsIllustrations(
+      refs: <EpubImageRef>[ref('k001.png', 1), ref('bookwalker.png', 34)],
+      pathByKey: <String, String>{
+        'k001.png': platePath,
+        'bookwalker.png': scrambledPath,
+      },
+      probes: probes,
+    );
+    expect(
+      selection.items.map((LyricsIllustration i) => i.key).toList(),
+      <String>['k001.png'],
+    );
+    expect(
+      selection.verdicts['bookwalker.png'],
+      LyricsIllustrationVerdict.undecodable,
+    );
   });
 }
