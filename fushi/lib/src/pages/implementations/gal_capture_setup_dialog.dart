@@ -428,7 +428,7 @@ class _AudioSourceSummary extends StatelessWidget {
         index: 0,
         count: 1,
         child: FushiListItem(
-          leading: const FushiListLeadingIcon(Icons.graphic_eq_outlined),
+          leading: const FushiListLeadingIcon(FushiIcons.audio),
           title: Text(source),
           subtitle: format == null
               ? null
@@ -453,7 +453,7 @@ class _AudioSourceSummary extends StatelessWidget {
       child: Row(
         children: <Widget>[
           const FushiListLeadingIcon(
-            Icons.graphic_eq_outlined,
+            FushiIcons.audio,
             tone: FushiCardTone.primary,
             size: 40,
           ),

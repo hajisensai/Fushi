@@ -5703,9 +5703,9 @@ class _TexthookerLineTextState extends State<_TexthookerLineText> {
               Expanded(
                 child: Text(
                   t.game_line_bulk_text_hint,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: widget.hintColor,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: widget.hintColor),
                 ),
               ),
             ],

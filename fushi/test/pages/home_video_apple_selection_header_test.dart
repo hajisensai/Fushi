@@ -31,6 +31,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 import '../helpers/shell_layout.dart';
+import '../helpers/unmount_and_close_db.dart';
 
 class _NoopScrapeRunner implements VideoSourceScrapeRunner {
   @override
@@ -83,8 +84,10 @@ void main() {
   late Directory storeDir;
   late VideoSourceScrapeTaskController scrapeController;
   late ChangeNotifier refreshSignal;
+  bool dbClosed = false;
 
   setUp(() async {
+    dbClosed = false;
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
@@ -110,7 +113,7 @@ void main() {
   tearDown(() async {
     scrapeController.dispose();
     refreshSignal.dispose();
-    await db.close();
+    if (!dbClosed) await db.close();
     try {
       storeDir.deleteSync(recursive: true);
     } catch (_) {}
@@ -207,6 +210,9 @@ void main() {
       lessThan(0.5),
       reason: '顶栏玻璃钮竖直居中对齐',
     );
+    // 视频库页挂载即起后台封面回填：用例体内卸页推进到关库完成（见 helper）。
+    await unmountAndCloseDb(tester, db);
+    dbClosed = true;
     debugDefaultTargetPlatformOverride = null;
   });
 
