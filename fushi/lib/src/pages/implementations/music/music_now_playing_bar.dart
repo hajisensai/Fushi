@@ -21,6 +21,7 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/pages/implementations/music/music_apple_glyph_button.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
@@ -34,6 +35,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -372,6 +374,7 @@ Widget musicPlayModeButton(
   BuildContext context,
   MusicPlayerEngine engine, {
   double? iconSize,
+  double? appleExtent,
 }) {
   final MusicRepeatMode repeat = engine.repeatMode;
   final bool shuffled = engine.shuffled;
@@ -411,6 +414,19 @@ Widget musicPlayModeButton(
     }
   }
 
+  // Apple：Apple Music 式裸字形，开着时实心 + label 色，关着 secondaryLabel 描边，
+  // 不再画玻璃选中圆钮（[appleExtent] = 命中区直径，null 取 bar button 口径）。
+  if (isGlassDesign(context)) {
+    return MusicAppleGlyphButton(
+      key: const ValueKey<String>('music_lyrics_play_mode'),
+      icon: glyph,
+      tooltip: tip,
+      selected: on,
+      glyphSize: iconSize,
+      extent: appleExtent,
+      onPressed: engine.canShuffleOrRepeat ? () => unawaited(cycle()) : null,
+    );
+  }
   return FushiIconButtonControl(
     key: const ValueKey<String>('music_lyrics_play_mode'),
     iconSize: iconSize,
@@ -449,7 +465,19 @@ Widget _musicBarCloseButton(MusicSession session) => FushiIconButtonControl(
 
 /// 音量按钮：点开弹出音量滑杆（迷你条与播放页共用，读写 [AppModel.musicVolume]）。
 class MusicVolumeButton extends StatefulWidget {
-  const MusicVolumeButton({super.key, this.onOpenChanged, this.iconSize});
+  const MusicVolumeButton({
+    super.key,
+    this.onOpenChanged,
+    this.iconSize,
+    this.appleExtent,
+    this.appleSecondary = false,
+  });
+
+  /// Apple 下的命中区直径；null = bar button 口径。
+  final double? appleExtent;
+
+  /// Apple 下静止时取 secondaryLabel（播放页底部工具排）；false = label（迷你条）。
+  final bool appleSecondary;
 
   /// 图标尺寸；null = 按钮默认（迷你条）。播放页按钮行传自己的统一尺寸。
   final double? iconSize;
@@ -509,16 +537,28 @@ class _MusicVolumeButtonState extends State<MusicVolumeButton> {
         ),
       ],
       builder: (BuildContext context, MenuController menu, Widget? _) =>
-          FushiIconButtonControl(
-            key: const ValueKey<String>('music_bar_volume'),
-            tooltip: t.music_volume_title,
-            isSelected: menu.isOpen,
-            iconSize: widget.iconSize,
-            onPressed: () => menu.isOpen ? menu.close() : menu.open(),
-            icon: FushiIcon(
-              volume <= 0 ? FushiIcons.volumeOff : FushiIcons.volumeUp,
+          isGlassDesign(context)
+          // Apple：裸字形，滑杆展开时实心 + label 色，不画玻璃选中圆钮。
+          ? MusicAppleGlyphButton(
+              key: const ValueKey<String>('music_bar_volume'),
+              icon: volume <= 0 ? FushiIcons.volumeOff : FushiIcons.volumeUp,
+              tooltip: t.music_volume_title,
+              selected: menu.isOpen ? true : null,
+              secondary: widget.appleSecondary,
+              glyphSize: widget.iconSize,
+              extent: widget.appleExtent,
+              onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+            )
+          : FushiIconButtonControl(
+              key: const ValueKey<String>('music_bar_volume'),
+              tooltip: t.music_volume_title,
+              isSelected: menu.isOpen,
+              iconSize: widget.iconSize,
+              onPressed: () => menu.isOpen ? menu.close() : menu.open(),
+              icon: FushiIcon(
+                volume <= 0 ? FushiIcons.volumeOff : FushiIcons.volumeUp,
+              ),
             ),
-          ),
     );
   }
 }

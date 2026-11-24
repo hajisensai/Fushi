@@ -60,6 +60,7 @@ import 'package:fushi/src/media/music/analysis/music_audio_analysis_service.dart
 import 'package:fushi/src/media/music/music_remote_media.dart'
     show musicItemResolvesStream;
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/pages/implementations/music/music_apple_glyph_button.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyric_visualizer_view.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/ai_theme/lyric_visualizer_ai_theme_controller.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
@@ -146,6 +147,7 @@ import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
@@ -2185,10 +2187,23 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     required bool showBack,
     bool showFaceToggle = false,
   }) {
+    final bool apple = isGlassDesign(context);
+    // Apple：Apple Music 播放页的工具图标——静止 secondaryLabel 裸字形，开着的
+    // （当前布局 / 卡拉 OK 原样 / 桌面歌词）提到 label 色并换实心字形，不染强调色、
+    // 不铺底（用户 2026-11-24「cupertino 按钮就不要着色和背景了」）。
+    IconData glyph(IconData icon, bool selected) =>
+        apple && selected ? FushiIcons.filled(icon) : icon;
+    final FushiFloatingToolbarColors? colors = apple
+        ? FushiFloatingToolbarColors(
+            foreground: appleColorsOf(context).secondaryLabel,
+            selectedForeground: appleColorsOf(context).label,
+          )
+        : null;
     return FushiFloatingTopBar(
       key: const ValueKey<String>('music_lyrics_back'),
       // 右上动作与左上返回一样裸露图标，不套悬浮胶囊（用户 2026-10-29）。
       bare: true,
+      colors: colors,
       leading: <FushiToolbarItem>[
         if (showBack)
           FushiToolbarItem(
@@ -2210,13 +2225,9 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                     ])
             FushiToolbarItem(
               key: ValueKey<String>('music_lyrics_layout_${l.name}'),
-              icon: l.icon,
+              icon: glyph(l.icon, _layoutSelected(context, l)),
               label: l.label,
-              selected:
-                  l == MusicLyricsLayout.split &&
-                      !lyricsPlayerIsWide(MediaQuery.sizeOf(context))
-                  ? _layout != MusicLyricsLayout.disc
-                  : _layout == l,
+              selected: _layoutSelected(context, l),
               onPressed: () => _setLayout(l),
             ),
         ],
@@ -2239,7 +2250,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           if (_hasKaraokeStage)
             FushiToolbarItem(
               key: const ValueKey<String>('music_lyrics_karaoke'),
-              icon: FushiIcons.mic,
+              icon: glyph(FushiIcons.mic, _prefersOriginal),
               label: t.music_karaoke_open,
               selected: _prefersOriginal,
               onPressed: () => unawaited(_openKaraoke()),
@@ -2247,7 +2258,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           if (FloatingLyricChannel.supported)
             FushiToolbarItem(
               key: const ValueKey<String>('music_lyrics_desktop'),
-              icon: FushiIcons.pictureInPicture,
+              icon: glyph(
+                FushiIcons.pictureInPicture,
+                appModel.musicDesktopLyrics,
+              ),
               label: t.music_desktop_lyrics_title,
               selected: appModel.musicDesktopLyrics,
               onPressed: () => unawaited(_toggleDesktopLyrics()),
@@ -2270,6 +2284,14 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       ],
     );
   }
+
+  /// 顶栏布局按钮的选中态：窄屏下「分栏」「舞台」落成同一个竖排版面，只留分栏
+  /// （选中时记为分栏）。
+  bool _layoutSelected(BuildContext context, MusicLyricsLayout l) =>
+      l == MusicLyricsLayout.split &&
+          !lyricsPlayerIsWide(MediaQuery.sizeOf(context))
+      ? _layout != MusicLyricsLayout.disc
+      : _layout == l;
 
   /// B / C 的顶行：小封面 + 歌名在左，动作在右。
   Widget _buildHeaderRow(
@@ -2421,6 +2443,13 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           ? '${t.music_effects_title} · '
                 '${musicEqPresetLabel(appModelNoUpdate.musicEqPreset)}'
           : '${t.music_effects_title} · ${t.music_eq_off}';
+      if (isGlassDesign(context)) {
+        return _buildAppleActionRow(
+          context,
+          quality: quality,
+          effects: effects,
+        );
+      }
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
@@ -2454,6 +2483,51 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     },
   );
 
+  /// [_buildActionRow] 的 Apple 版：Apple Music 播放页底部那排工具图标——音量
+  /// （从按钮行挪来，Apple Music 的音量不和传输键同排）· 音质 · 音效 · 队列，全是
+  /// secondaryLabel 裸字形；音效处理中 / 音量滑杆展开时提到 label 色 + 实心字形。
+  Widget _buildAppleActionRow(
+    BuildContext context, {
+    required String? quality,
+    required String effects,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        const MusicVolumeButton(
+          appleExtent: _kAppleToolExtent,
+          appleSecondary: true,
+        ),
+        if (quality != null)
+          MusicAppleGlyphButton(
+            key: const ValueKey<String>('music_lyrics_quality'),
+            icon: FushiIcons.highQuality,
+            tooltip: t.music_quality_chip_semantics(quality: quality),
+            extent: _kAppleToolExtent,
+            onPressed: () => unawaited(
+              showMusicQualitySheet(_themedContext, appModelNoUpdate),
+            ),
+          ),
+        if (_engine.capabilities.signalPath)
+          MusicAppleGlyphButton(
+            key: const ValueKey<String>('music_lyrics_effects'),
+            icon: FushiIcons.barChart,
+            selected: appModelNoUpdate.musicAudioEffects.isActive,
+            tooltip: effects,
+            extent: _kAppleToolExtent,
+            onPressed: () => unawaited(_openEffects()),
+          ),
+        MusicAppleGlyphButton(
+          key: const ValueKey<String>('music_lyrics_queue'),
+          icon: FushiIcons.playlist,
+          tooltip: t.music_queue_button_count(count: _engine.queue.length),
+          extent: _kAppleToolExtent,
+          onPressed: () => unawaited(showMusicQueue(_themedContext, _engine)),
+        ),
+      ],
+    );
+  }
+
   /// 播放器按钮行（用户 2026-10-29 参考图）：播放模式 · 上一首 · 播放 · 下一首 ·
   /// 收藏 · 音量，六格等宽、等距、同一行，图标同一尺寸，只有播放键是实心圆。音量与
   /// 迷你条同一枚按钮，点开弹滑杆（用户 2026-10-30「做成和底栏一样点击打开的，
@@ -2462,6 +2536,17 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     final MusicSession session = appModelNoUpdate.musicSession;
     final MusicPlayerEngine engine = session.engine;
     final ColorScheme cs = Theme.of(context).colorScheme;
+    if (isGlassDesign(context)) {
+      return LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) =>
+            _buildAppleTransportRow(
+              context,
+              engine,
+              session,
+              constraints.maxWidth,
+            ),
+      );
+    }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         // 六格 64dp + 五道 12dp 间距 = 444dp；窄于此（手机竖屏的歌词栏常只有 320dp 上下）
@@ -2538,6 +2623,108 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     );
   }
 
+  /// Apple Music（iOS 27 / macOS 27）「正在播放」传输行：播放模式 · 上一首 ·
+  /// **播放** · 下一首 · 喜欢，五格对称。上一首 / 播放 / 下一首是 label 色实心大字形
+  /// （播放键约为两侧的 1.7 倍），播放模式与喜欢是两翼的小号开关字形（开 = 实心 +
+  /// label，关 = secondaryLabel 描边）。全部无底、无着色，按下才浮出半透明圆高亮。
+  /// 音量挪到底部工具排（[_buildAppleActionRow]）。宽度不够时整行等比收窄，命中区
+  /// 下限 44。
+  Widget _buildAppleTransportRow(
+    BuildContext context,
+    MusicPlayerEngine engine,
+    MusicSession session,
+    double width,
+  ) {
+    // 满尺寸：两翼 48 + 两侧 64 + 播放 80 + 四道 12 间距 = 352。
+    const double full = 352;
+    final double k = width.isFinite
+        ? (width / full).clamp(0.8, 1.0).toDouble()
+        : 1.0;
+    final double wing = math.max(44, 48 * k);
+    final double side = math.max(44, 64 * k);
+    final double play = 80 * k;
+    final double gap = 12 * k;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: gap,
+      children: <Widget>[
+        SizedBox.square(
+          dimension: wing,
+          child: Center(
+            child: musicPlayModeButton(
+              context,
+              engine,
+              iconSize: 22 * k,
+              appleExtent: wing,
+            ),
+          ),
+        ),
+        MusicAppleGlyphButton(
+          key: const ValueKey<String>('music_lyrics_previous'),
+          icon: FushiIcons.skipPrevious,
+          tooltip: t.shortcut_action_music_previous_track,
+          prominent: true,
+          glyphSize: 36 * k,
+          extent: side,
+          onPressed: engine.canSkipPrevious
+              ? () => unawaited(engine.skipPrevious())
+              : null,
+        ),
+        MusicApplePlayPauseButton(
+          key: const ValueKey<String>('music_lyrics_play_pause'),
+          isPlaying: engine.isPlaying,
+          tooltip: engine.isPlaying ? t.pause : t.play,
+          glyphSize: 60 * k,
+          extent: play,
+          onPressed: () => unawaited(engine.togglePlayPause()),
+        ),
+        MusicAppleGlyphButton(
+          key: const ValueKey<String>('music_lyrics_next'),
+          icon: FushiIcons.skipNext,
+          tooltip: t.shortcut_action_music_next_track,
+          prominent: true,
+          glyphSize: 36 * k,
+          extent: side,
+          onPressed: () => unawaited(engine.skipNext()),
+        ),
+        SizedBox.square(
+          dimension: wing,
+          child: Center(
+            child: _buildAppleFavoriteButton(session, 22 * k, wing),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// [_buildFavoriteButton] 的 Apple 版：喜欢 = 实心心形（label 色，与 Apple Music
+  /// 播放页收藏字形同色），未喜欢 = secondaryLabel 描边；不画红色实心块。
+  Widget _buildAppleFavoriteButton(
+    MusicSession session,
+    double glyph,
+    double extent,
+  ) {
+    return ListenableBuilder(
+      listenable: session,
+      builder: (BuildContext context, _) {
+        final MusicPlayItem? item = session.engine.current;
+        if (item == null || !session.canFavorite(item)) {
+          return const SizedBox.shrink();
+        }
+        final bool liked = session.isFavorite(item);
+        return MusicAppleGlyphButton(
+          key: const ValueKey<String>('music_lyrics_favorite'),
+          icon: FushiIcons.favorite,
+          selected: liked,
+          tooltip: liked ? t.music_favorite_remove : t.music_favorite_add,
+          glyphSize: glyph,
+          extent: extent,
+          onPressed: () => unawaited(_toggleFavorite(session, item)),
+        );
+      },
+    );
+  }
+
   /// 收藏（在线平台的「喜欢」）：只有声明了收藏能力的插件曲目才有，其余留空位
   /// 保持六格对称。
   Widget _buildFavoriteButton(
@@ -2609,6 +2796,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           ? Center(child: _buildActionRow(context))
           : const SizedBox.shrink();
     }
+    if (isGlassDesign(context)) return _buildAppleTools(context, actions);
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -2649,6 +2837,62 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                   key: const ValueKey<String>('music_lyrics_ab_loop_extend'),
                   icon: const FushiIcon(FushiIcons.addCircle),
                   tooltip: t.music_lyrics_ab_loop_extend,
+                  onPressed: () => unawaited(_extendLoop()),
+                ),
+        ),
+        if (actions) _buildActionRow(context),
+      ],
+    );
+  }
+
+  /// [_buildTools] 的 Apple 版：偏移 −/数值/+ · AB 循环（· 再加一行）都是
+  /// secondaryLabel 裸字形，循环开着时 label 色 + 实心字形；[actions] 时同一排接
+  /// [_buildActionRow]（音量 · 音质 · 音效 · 队列）。
+  Widget _buildAppleTools(BuildContext context, bool actions) {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        MusicAppleGlyphButton(
+          key: const ValueKey<String>('music_lyrics_offset_earlier'),
+          icon: FushiIcons.remove,
+          tooltip: t.music_lyrics_offset_later,
+          extent: _kAppleToolExtent,
+          onPressed: () => _nudgeOffset(-kMusicLyricsOffsetStepMs),
+        ),
+        Text(
+          t.music_lyrics_offset_value(ms: _offsetMs),
+          style: context.fushiType.bodySmall.copyWith(
+            color: appleColorsOf(context).secondaryLabel,
+          ),
+        ),
+        MusicAppleGlyphButton(
+          key: const ValueKey<String>('music_lyrics_offset_later'),
+          icon: FushiIcons.add,
+          tooltip: t.music_lyrics_offset_earlier,
+          extent: _kAppleToolExtent,
+          onPressed: () => _nudgeOffset(kMusicLyricsOffsetStepMs),
+        ),
+        if (_engine.capabilities.abLoop)
+          MusicAppleGlyphButton(
+            key: const ValueKey<String>('music_lyrics_ab_loop'),
+            icon: FushiIcons.repeat,
+            selected: _loopLines != null,
+            tooltip: _loopLines == null
+                ? t.music_lyrics_ab_loop_line
+                : t.music_lyrics_ab_loop_off,
+            extent: _kAppleToolExtent,
+            onPressed: () => unawaited(_toggleLoop()),
+          ),
+        AnimatedSwitcher(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          child: _loopLines == null
+              ? const SizedBox.shrink()
+              : MusicAppleGlyphButton(
+                  key: const ValueKey<String>('music_lyrics_ab_loop_extend'),
+                  icon: FushiIcons.addCircle,
+                  tooltip: t.music_lyrics_ab_loop_extend,
+                  extent: _kAppleToolExtent,
                   onPressed: () => unawaited(_extendLoop()),
                 ),
         ),
@@ -2943,6 +3187,10 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     );
   }
 }
+
+/// Apple 下播放页工具图标（偏移 / AB 循环 / 音量 / 音质 / 音效 / 队列）的命中区
+/// 直径：iOS 最小触控区 44。
+const double _kAppleToolExtent = 44;
 
 /// 歌词页布局（偏好 `music_lyrics_layout`）。
 enum MusicLyricsLayout {

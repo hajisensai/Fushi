@@ -21,8 +21,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
+import 'package:fushi/src/pages/implementations/music/music_apple_glyph_button.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_floating_panel.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart'
@@ -379,20 +381,33 @@ class _MusicQueuePanelState extends State<MusicQueuePanel> {
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
       child: Row(
         children: <Widget>[
-          FushiPressScale(
-            child: FushiIconButtonControl(
+          // Apple：Apple Music 队列头的循环 / 随机是裸字形开关（开 = 实心 + label，
+          // 关 = secondaryLabel 描边），不画玻璃选中圆钮。
+          if (isGlassDesign(context))
+            MusicAppleGlyphButton(
               key: const ValueKey<String>('music_queue_repeat'),
-              isSelected: repeat != MusicRepeatMode.off,
+              icon: glyph,
+              selected: repeat != MusicRepeatMode.off,
               tooltip: label,
               onPressed: modes
                   ? () => unawaited(_engine.setRepeatMode(nextRepeat))
                   : null,
-              icon: AnimatedSwitcher(
-                duration: fushiMotionDuration(context, FushiMotion.short),
-                child: FushiIcon(glyph, key: ValueKey<IconData>(glyph)),
+            )
+          else
+            FushiPressScale(
+              child: FushiIconButtonControl(
+                key: const ValueKey<String>('music_queue_repeat'),
+                isSelected: repeat != MusicRepeatMode.off,
+                tooltip: label,
+                onPressed: modes
+                    ? () => unawaited(_engine.setRepeatMode(nextRepeat))
+                    : null,
+                icon: AnimatedSwitcher(
+                  duration: fushiMotionDuration(context, FushiMotion.short),
+                  child: FushiIcon(glyph, key: ValueKey<IconData>(glyph)),
+                ),
               ),
             ),
-          ),
           Flexible(
             child: Text(
               label,
@@ -402,17 +417,28 @@ class _MusicQueuePanelState extends State<MusicQueuePanel> {
             ),
           ),
           const SizedBox(width: 4),
-          FushiPressScale(
-            child: FushiIconButtonControl(
+          if (isGlassDesign(context))
+            MusicAppleGlyphButton(
               key: const ValueKey<String>('music_queue_shuffle'),
-              isSelected: _engine.shuffled,
+              icon: FushiIcons.shuffle,
+              selected: _engine.shuffled,
               tooltip: t.music_play_mode_shuffle,
               onPressed: modes
                   ? () => unawaited(_engine.setShuffle(!_engine.shuffled))
                   : null,
-              icon: const FushiIcon(FushiIcons.shuffle),
+            )
+          else
+            FushiPressScale(
+              child: FushiIconButtonControl(
+                key: const ValueKey<String>('music_queue_shuffle'),
+                isSelected: _engine.shuffled,
+                tooltip: t.music_play_mode_shuffle,
+                onPressed: modes
+                    ? () => unawaited(_engine.setShuffle(!_engine.shuffled))
+                    : null,
+                icon: const FushiIcon(FushiIcons.shuffle),
+              ),
             ),
-          ),
           const Spacer(),
           FushiPressScale(
             child: FushiTextButton(
