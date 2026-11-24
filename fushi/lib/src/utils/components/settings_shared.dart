@@ -160,9 +160,15 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
     this.actions,
     this.padding,
     this.bottom,
+    this.subtitle,
   });
 
   final Widget title;
+
+  /// 页名下一行（可交互，如词典管理页的「配置 · 名字」按钮）。与 [title] 分开
+  /// 传：[title] 保持纯 [Text] 才走统一的页头大字；把副标题拼进标题组件会让整页
+  /// 退回旧胶囊顶栏（BUG-5410）。
+  final Widget? subtitle;
   final List<Widget> children;
   final List<Widget>? actions;
   final EdgeInsetsGeometry? padding;
@@ -197,6 +203,17 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
                   ? Row(mainAxisSize: MainAxisSize.min, children: actions!)
                   : null,
             ),
+            if (subtitle != null)
+              SliverPadding(
+                // 与下方列表同一水平内边距，副标题和第一组左缘对齐。
+                padding: const EdgeInsetsDirectional.symmetric(horizontal: 12),
+                sliver: SliverToBoxAdapter(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: subtitle,
+                  ),
+                ),
+              ),
             SliverPadding(
               padding: listPadding,
               sliver: SliverList(delegate: SliverChildListDelegate(children)),
@@ -213,6 +230,7 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
     if (titleWidget is Text && titleWidget.data != null) {
       return SettingsKitScaffold(
         title: titleWidget.data!,
+        subtitle: subtitle,
         actions: actions ?? const <Widget>[],
         // 列表滚到叠放的页头底下：顶部内边距加上壳的页头让位。
         bodyConsumesTopPadding: true,
@@ -243,6 +261,7 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
     final Widget list = ListView(padding: listPadding, children: children);
     return FushiToolScaffold.customTitle(
       title: title,
+      subtitle: subtitle,
       actions: actions ?? const <Widget>[],
       body: bottom == null
           ? list

@@ -5618,6 +5618,7 @@ class FushiToolScaffold extends StatelessWidget {
     super.key,
     this.leading,
     this.actions = const <Widget>[],
+    this.subtitle,
     this.bottom,
     this.bottomNavigationBar,
     this.backgroundColor,
@@ -5629,6 +5630,7 @@ class FushiToolScaffold extends StatelessWidget {
     super.key,
     this.leading,
     this.actions = const <Widget>[],
+    this.subtitle,
     this.bottom,
     this.bottomNavigationBar,
     this.backgroundColor,
@@ -5640,6 +5642,12 @@ class FushiToolScaffold extends StatelessWidget {
   final Widget body;
   final Widget? leading;
   final List<Widget> actions;
+
+  /// 页名下一行（如词典管理页的「配置 · 名字」按钮，可交互）。与页名分开传：
+  /// 页名保持纯文字才能走页头大字（[_mastheadTitle]），副标题塞进标题组件会让
+  /// 整页退回旧胶囊顶栏（BUG-5410）。页头大字形态下画在页名下方
+  /// （[FushiMastheadScaffold.subtitle]），旧形态画在顶栏行下方。
+  final Widget? subtitle;
   final Widget? bottom;
   final Widget? bottomNavigationBar;
   final Color? backgroundColor;
@@ -5667,6 +5675,7 @@ class FushiToolScaffold extends StatelessWidget {
         title: mastheadTitle,
         actions: actions,
         leading: leading,
+        subtitle: subtitle,
         bottom: bottom,
         extendBodyBehindHeader: false,
         ownPrimaryScroll: false,
@@ -5804,6 +5813,19 @@ class FushiToolScaffold extends StatelessWidget {
                 ),
               ),
             ),
+            if (subtitle != null)
+              Padding(
+                padding: EdgeInsetsDirectional.fromSTEB(
+                  tokens.spacing.gap,
+                  0,
+                  tokens.spacing.gap,
+                  tokens.spacing.gap / 2,
+                ),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: subtitle,
+                ),
+              ),
             if (bottom != null)
               Padding(
                 padding: EdgeInsets.fromLTRB(
