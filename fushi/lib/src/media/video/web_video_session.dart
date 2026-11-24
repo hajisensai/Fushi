@@ -1,10 +1,11 @@
 // 网页站点视频的宿主会话（Windows WebView2）：两个宿主页共用的那一层。
 //
-// · 原生播放器页（VideoFushiPage 的网页档）：底层合成下的窗口宿主档——WebView2 子窗口垫在
-//   Flutter 下面，硬件 PlayReady（Netflix 4K），播放控件 / 字幕 / 查词全是原生页自己的；
-//   本会话只负责环境、注入脚本、登录 cookie、JS 消息分派、页面命令与输入归属。
-// · 内置网页播放器（WebVideoFushiPage）：可捕获的 1080p 内置档（制卡队列重放的宿主）或
-//   原版引擎上的窗口档；Flutter 叠层画在 WebView 上面，WebView 照常收输入。
+// · 原生播放器页（VideoFushiPage 的网页档，用户看到的唯一网页视频播放器）：两档同一套播放器
+//   外观与控件——「画质优先」是底层合成下的窗口宿主档（WebView2 子窗口垫在 Flutter 下面，硬件
+//   PlayReady，Netflix 4K）；「制卡优先」是可捕获档（离屏纹理画在 Flutter 树里，软件 DRM ≤1080p，
+//   帧可截）。本会话只负责环境、注入脚本、登录 cookie、JS 消息分派、页面命令与输入归属。
+// · 内置网页播放器（WebVideoFushiPage）：只当制卡队列重放的后台宿主（可捕获档），不再给用户
+//   当播放器打开；Flutter 叠层画在 WebView 上面，WebView 照常收输入。
 //
 // 两个宿主页用同一个 [WebVideoSession] + [WebVideoSurface]（gap-webvideo-11）：环境与登录
 // cookie、注入脚本、WebView 设置（播放器必需项 + 浏览器广告拦截 / 网站设置权限 / 页内样式）、
@@ -225,11 +226,10 @@ String webVideoKeyBridgeScript(FushiShortcutRegistry registry) {
 
 /// document-start 注入脚本：垫片（可选）→ 全部站点 bridge（各自按当前文档 host 自判，见
 /// [webVideoHostGuardedBridgeSource]：document-start 脚本建 WebView 时就定死，按起始页选 bridge
-/// 的话换站后就没有 bridge）→ adapters → providers →（可选）原生字幕开关 → glue →（可选）DOM
-/// 字幕层 → 键盘桥。资产读取失败直接抛（调用方落失败态）。
+/// 的话换站后就没有 bridge）→ adapters → providers →（可选）原生字幕开关 → glue →（可选）悬停
+/// 查词 → 键盘桥。资产读取失败直接抛（调用方落失败态）。
 Future<UnmodifiableListView<UserScript>> loadWebVideoUserScripts({
   required bool softwareDrm,
-  required bool domOverlay,
   required String keyBridgeScript,
   bool pageLookup = false,
   bool hideNativeSubtitles = false,
@@ -247,7 +247,6 @@ Future<UnmodifiableListView<UserScript>> loadWebVideoUserScripts({
     // 站点字幕在页面第一帧之前就藏（glue 装载即读这个开关），不等 onLoadStop。
     if (hideNativeSubtitles) kWebVideoHideNativeSubtitlesPrelude,
     await rootBundle.loadString(kWebVideoGlueAsset),
-    if (domOverlay) await rootBundle.loadString(kWebVideoDomSubtitlesAsset),
     if (pageLookup) await rootBundle.loadString(kWebVideoPageLookupAsset),
     keyBridgeScript,
   ];
@@ -412,9 +411,10 @@ bool webVideoIsWatchPage(String href) {
   return true;
 }
 
-// ── 会话（原生播放器页的网页档）──────────────────────────────────────────────
+// ── 会话 ───────────────────────────────────────────────────────────────────
 
-/// 一本网页站流媒体书在原生播放器页里的宿主会话：窗口宿主档 + 底层合成。
+/// 一本网页站流媒体书的宿主会话：原生播放器页的「画质优先」（窗口宿主档 + 底层合成）/
+/// 「制卡优先」（可捕获档离屏纹理），以及制卡重放宿主（内置网页播放器页，可捕获档）。
 ///
 /// 生命周期：页面 [prepare] 成功后把 [WebVideoSurface] 挂进视频区最底层（同一棵子树、
 /// 稳定 key，加载 / 就绪切换不重建），页面 dispose 时 [dispose]。WebView 自身随 widget 销毁。
@@ -425,7 +425,6 @@ class WebVideoSession {
     this.hosting = WebVideoHosting.windowed,
     this.softwareDrm = false,
     this.underlay = true,
-    this.domOverlay = false,
     this.pageLookup = true,
     this.hideNativeSubtitles = true,
     this.onTrack,
@@ -441,7 +440,6 @@ class WebVideoSession {
     this.browserPrefs,
     this.onSurfaceCreated,
     this.onDocumentReady,
-    this.onDomLookup,
     this.onProcessGone,
   });
 
@@ -452,14 +450,12 @@ class WebVideoSession {
   /// 软件 DRM 垫片 + 去掉 Edg/ 的 UA（只在可捕获的内置档有意义，见 [kWebVideoChromeUserAgent]）。
   final bool softwareDrm;
 
-  /// 底层合成宿主（原生播放器页的网页档）：WebView2 子窗口垫在 Flutter 下面，输入归属 /
+  /// 底层合成宿主（原生播放器页的「画质优先」档）：WebView2 子窗口垫在 Flutter 下面，输入归属 /
   /// 挖洞 / 被盖住时停收输入都由本会话下发（[syncInput] / [setCovered] /
-  /// [setInputExclusions]），网页深色只在网页档生效。内置网页播放器为 false：WebView 照常
-  /// 收输入，整页始终是播放页，不套网页深色。
+  /// [setInputExclusions]），网页深色只在网页档生效。离屏纹理宿主（原生播放器页的「制卡优先」档、
+  /// 内置网页播放器）为 false：WebView 是 Flutter 树里的纹理，输入由宿主页的命中测试管，不套
+  /// 网页深色。
   final bool underlay;
-
-  /// 页面 DOM 字幕层（Flutter 叠层画不到 WebView 上面的窗口档用，[kWebVideoDomSubtitlesAsset]）。
-  final bool domOverlay;
 
   /// 网页档里按住修饰键悬停查站点任意文字（[kWebVideoPageLookupAsset]）。
   final bool pageLookup;
@@ -474,9 +470,6 @@ class WebVideoSession {
   /// 每个文档加载完、本会话自己的重挂（悬停查词键、整轨重投、页面模式）做完之后：宿主页把属于
   /// 当前文档、整页导航会丢的页面状态（DOM 字幕层样式、chrome 隐藏……）重挂一遍。
   void Function()? onDocumentReady;
-
-  /// DOM 字幕层上的查词点击（`type: 'lookup'`，[kWebVideoDomSubtitlesAsset]）。
-  void Function(Map<dynamic, dynamic> msg)? onDomLookup;
 
   /// 进程死亡、本会话已作废死表面（在途 JS 调用以 null 结束、控制器置空、[surfaceGeneration]
   /// 前进）之后、换环境之前：宿主页作废自己绑在死表面上的状态。抛出由 death guard 记录，
@@ -643,7 +636,6 @@ class WebVideoSession {
         await loadWebVideoUserScripts(
           // 软件 DRM 垫片只在可捕获档有意义；窗口宿主档就是为硬件 DRM 开的。
           softwareDrm: softwareDrm && hosting == WebVideoHosting.builtin,
-          domOverlay: domOverlay,
           keyBridgeScript: webVideoKeyBridgeScript(shortcuts),
           pageLookup: pageLookup,
           // 站点自己的字幕从第一帧起就藏（visibility，DOM 采样 live 轨照读）。
@@ -803,6 +795,30 @@ class WebVideoSession {
     return webVideoCookieHeader(<(String, String)>[
       for (final Cookie c in cookies) (c.name, '${c.value ?? ''}'),
     ]);
+  }
+
+  /// 截整个 WebView 表面（CDP 截图）。只对可捕获档（[WebVideoHosting.builtin]）有意义：窗口宿主档
+  /// 的硬件 DRM 画面截出来是黑的。播放器档的页面只留铺满的 `<video>`，截表面就是截画面。没有
+  /// 表面 / 超时 / 失败返回 null（失败记诊断日志）。
+  Future<Uint8List?> captureSurface({required bool png}) async {
+    final InAppWebViewController? web = _web;
+    if (web == null || _disposed) return null;
+    try {
+      return await web
+          .takeScreenshot(
+            screenshotConfiguration: ScreenshotConfiguration(
+              compressFormat: png ? CompressFormat.PNG : CompressFormat.JPEG,
+              quality: 90,
+            ),
+          )
+          .timeout(const Duration(seconds: 4));
+    } catch (e) {
+      ErrorLogService.instance.logDiagnostic(
+        'web_video',
+        'surface capture: $e',
+      );
+      return null;
+    }
   }
 
   /// 原样求值（诊断 / 集成测试读页面状态），返回结果的字符串形式。
@@ -987,8 +1003,6 @@ class WebVideoSession {
           bookUid: bookUid,
         );
         if (track != null) onTrack?.call(track);
-      case 'lookup':
-        onDomLookup?.call(msg);
       case 'pageLookup':
         final WebVideoLookupRequest? request = parseWebVideoLookupPayload(msg);
         if (request != null) onPageLookup?.call(request);
@@ -1049,7 +1063,6 @@ class WebVideoSession {
     _viewId = null;
     onSurfaceCreated = null;
     onDocumentReady = null;
-    onDomLookup = null;
     onProcessGone = null;
     onTrack = null;
     onState = null;

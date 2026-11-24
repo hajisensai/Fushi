@@ -285,6 +285,17 @@ import 'package:fushi/src/media/video/netflix_metadata.dart';
 import 'package:fushi/src/media/video/web_video_platform_player.dart';
 import 'package:fushi/src/media/video/web_video_track_selection.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
+import 'package:fushi/src/media/video/web_video_mode_chip.dart';
+import 'package:fushi/src/media/video/video_web_playback_mode_panel.dart'
+    show VideoWebPlaybackModeHost;
+import 'package:fushi/src/media/video/web_video_shaders.dart'
+    show
+        applyWebVideoShaders,
+        kWebVideoShaderTierPrefKey,
+        loadWebVideoShaderTexts,
+        webVideoShaderTierFromPref;
+import 'package:fushi/src/mining/galgame_audio_source.dart'
+    show LoopbackGalAudioSource;
 import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
     show
         WebVideoSubtitleMediaBlock,
@@ -1006,6 +1017,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     this.webSite,
     this.webBackToBrowser = false,
     this.webReturnState,
+    this.webHosting,
     this.remoteDisc,
     super.key,
   }) : remoteInfo = null,
@@ -1037,6 +1049,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        webSite = null,
        webBackToBrowser = false,
        webReturnState = null,
+       webHosting = null,
        remoteDisc = null,
        playlistCollectionId = null;
 
@@ -1106,6 +1119,11 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 画面就绪后原样恢复（web_source.part.dart `_applyWebPendingRestore`）。
   final WebMineReturnState? webReturnState;
 
+  /// 网页档的播放档位（「制卡优先」= [WebVideoHosting.builtin] / 「画质优先」=
+  /// [WebVideoHosting.windowed]）；null = 按站点偏好与默认规则定（[resolveWebVideoHostingFromPrefs]）。
+  /// 本页换档（[_VideoWebSource._switchWebHosting]）与制卡重放换回来时给。
+  final WebVideoHosting? webHosting;
+
   /// 流式原盘会话（远端原盘第二期）：盘在已配对 host 上，libmpv 经 HTTP 读它。只与
   /// [openBlurayMenu] 一起用（入口 [neutralizedRemoteDisc]）；本机没有这张盘的库行，
   /// 会话里的标题不绑定库行、不写进度。
@@ -1137,6 +1155,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     WebVideoSite? webSite,
     bool webBackToBrowser = false,
     WebMineReturnState? webReturnState,
+    WebVideoHosting? webHosting,
   }) => FushiAppUiScaleNeutralizer(
     child: VideoFushiPage(
       bookUid: bookUid,
@@ -1156,6 +1175,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       webSite: webSite,
       webBackToBrowser: webBackToBrowser,
       webReturnState: webReturnState,
+      webHosting: webHosting,
     ),
   );
 
@@ -2785,10 +2805,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 在途的后台制卡任务。离开页面时先等它们暂存完，再统一写入。
   final List<Future<void>> _backgroundMineJobs = <Future<void>>[];
 
-  // ── 网页站点后端（Netflix / YouTube 页……，底层合成；方法见 web_source.part.dart）──
+  // ── 网页站点后端（Netflix / YouTube 页……；方法见 web_source.part.dart）──
 
-  /// 网页档会话：非 null = 本页的片源是站点视频（[VideoPlayerController.isWebBackend]），
-  /// 站点画面由垫在 Flutter 下面的 WebView2 子窗口自己画，控件 / 字幕 / 查词照常是本页的。
+  /// 网页档会话：非 null = 本页的片源是站点视频（[VideoPlayerController.isWebBackend]）。
+  /// 站点画面由 WebView2 画——「画质优先」是垫在 Flutter 下面的子窗口，「制卡优先」是 Flutter
+  /// 树里的可捕获纹理（[_webHosting]）；控件 / 字幕 / 查词两档都是本页的同一套。
   WebVideoSession? _webSession;
 
   /// 网页档的 media_kit 播放器后端（页面快照 → player.state）。
@@ -2804,10 +2825,24 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// ——WebView 收输入、整页原样，播放器控件不挂，只留顶部一条细返回条。
   bool _webPlayerMode = false;
 
-  /// 站点原生播放的实测探针（[_observeWebHosting]）：本页的网页档一定是窗口宿主档。
-  final WebVideoHostingProbe _webHostingProbe = WebVideoHostingProbe(
-    hosting: WebVideoHosting.windowed,
-  );
+  /// 网页档实际用的播放档位（[_openWebSource] 定）：「画质优先」= 窗口宿主档 + 底层合成
+  /// （WebView2 子窗口垫在 Flutter 下面，硬件 DRM）；「制卡优先」= 可捕获档（离屏纹理画在 Flutter
+  /// 树里，软件 DRM ≤1080p，帧可截 → 超分 / 截图 / OCR）。两档同一套播放器外观与控件。
+  WebVideoHosting _webHosting = WebVideoHosting.windowed;
+
+  /// 这台机器能不能用「画质优先」（引擎支持底层合成）；不能时档位切换只剩「制卡优先」。
+  bool _webQualityFirstAvailable = false;
+
+  /// 实测探针（[_observeWebHosting]）：按本页实际档位下结论（[_openWebSource] 建）。
+  WebVideoHostingProbe? _webHostingProbe;
+
+  /// 「制卡优先」档的超分档位（与 mpv 页同一套 Anime4K 文件，经 fork 的 libplacebo 通道跑在
+  /// 页面帧上，偏好 [kWebVideoShaderTierPrefKey]）；[_webShaderActive] = fork 确认已启用。
+  VideoShaderTier _webShaderTier = VideoShaderTier.off;
+  bool _webShaderActive = false;
+
+  /// 「制卡优先」档：用户自己开播时检查过一次可捕获档会话有没有停在静音重放留下的 -100 dB。
+  bool _webDuckResidueChecked = false;
 
   /// 正在因离开观看页 / 「在浏览器中打开」关掉本页（[_exitWebToBrowser] 只跑一次）。
   bool _webExitingToBrowser = false;
@@ -13451,14 +13486,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         VideoQuickSettingsSheet.settingsGroups,
   }) {
     // 网页档：mpv / 弹幕都作用在 libmpv 或本地文件上，站点视频用不上；「画质增强」页签
-    // 留着、画成说明态（着色器不生效 + 切内置网页播放器档的入口）。
+    // 画成网页档的档位二选一 + 本档超分（拍板 cbKi3PN0G7-r2）。
     if (_webMode) groups = videoWebBackendSettingsGroups(groups);
     return VideoQuickSettingsSheet(
       appModel: appModel,
       ref: ref,
-      webBackend: _webMode,
-      onSwitchToBuiltinWebPlayer: _webMode && widget.webSite == null
-          ? () => unawaited(_switchWebToBuiltinHosting())
+      webPlaybackMode: _webMode
+          ? VideoWebPlaybackModeHost(
+              current: _webHosting,
+              qualityFirstAvailable: _webQualityFirstAvailable,
+              onSelectMode: (WebVideoHosting mode) =>
+                  unawaited(_switchWebHosting(mode)),
+              shaderTier: _webShaderTier,
+              onSelectShaderTier: (VideoShaderTier tier) =>
+                  unawaited(_selectWebShaderTier(tier)),
+            )
           : null,
       // 单分组面板（字幕 / 音频）恒开在自己的分组；字幕面板挂载即触发字幕源加载。
       initialCategory: groups.length == 1
