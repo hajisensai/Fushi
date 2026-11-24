@@ -170,12 +170,23 @@ class FushiBlockColorScope extends StatelessWidget {
       .dependOnInheritedWidgetOfExactType<_FushiBlockColorsMarker>()
       ?.colors;
 
+  /// [context] 外最近一层带色块之外的原主题（中性主题）；不在带色块里时为 null。
+  /// 见 [FushiNeutralColorScope]。
+  static ThemeData? neutralThemeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_FushiBlockColorsMarker>()
+      ?.neutral;
+
   @override
   Widget build(BuildContext context) {
     if (colors.hue == null) return child;
     final ThemeData theme = fushiBlockTheme(Theme.of(context), colors);
+    // 嵌套 / 弹层里再包的块沿用最外层块之外的原主题，[FushiNeutralColorScope]
+    // 据此一步退回中性主题。
+    final ThemeData neutral =
+        FushiBlockColorScope.neutralThemeOf(context) ?? Theme.of(context);
     return _FushiBlockColorsMarker(
       colors: colors,
+      neutral: neutral,
       child: FushiPopupOriginScope(
         origin: FushiPopupOrigin(
           (Widget popup) => FushiBlockColorScope(colors: colors, child: popup),
@@ -189,18 +200,56 @@ class FushiBlockColorScope extends StatelessWidget {
 /// 块配色标记。是 [InheritedTheme]：弹层捕获主题时一并带走（弹层里的子块据此
 /// 取同色相的深浅档，见 [FushiBlockColorScope.maybeColorsOf]）。
 class _FushiBlockColorsMarker extends InheritedTheme {
-  const _FushiBlockColorsMarker({required this.colors, required super.child});
+  const _FushiBlockColorsMarker({
+    required this.colors,
+    required this.neutral,
+    required super.child,
+  });
 
-  final FushiCoverBlockColors colors;
+  /// null = [FushiNeutralColorScope] 退回了中性主题（子树不再算在色块里）。
+  final FushiCoverBlockColors? colors;
+
+  /// 最外层带色块之外的原主题。
+  final ThemeData neutral;
 
   @override
   Widget wrap(BuildContext context, Widget child) =>
-      _FushiBlockColorsMarker(colors: colors, child: child);
+      _FushiBlockColorsMarker(colors: colors, neutral: neutral, child: child);
 
   @override
   bool updateShouldNotify(_FushiBlockColorsMarker oldWidget) =>
-      colors.container != oldWidget.colors.container ||
-      colors.onContainer != oldWidget.colors.onContainer ||
-      colors.accent != oldWidget.colors.accent ||
-      colors.hue != oldWidget.colors.hue;
+      !identical(neutral, oldWidget.neutral) ||
+      colors?.container != oldWidget.colors?.container ||
+      colors?.onContainer != oldWidget.colors?.onContainer ||
+      colors?.accent != oldWidget.colors?.accent ||
+      colors?.hue != oldWidget.colors?.hue;
+}
+
+/// 让子树退出带色块的局部配色、回到色块之外的原主题（中性主题）。不在带色块
+/// 里时原样返回 [child]。
+///
+/// 用于设计系统本身要求中性配色的弹层：Apple（Cupertino）设计系统的导入对话框
+/// 是 iOS 27 / macOS 27 的 inset grouped 表单（系统灰 + 强调色），从导入页色块
+/// 弹出时不承接块配色（用户 2026-11-24：Cupertino 下不要暖色色块）。MD3 仍按
+/// [FushiBlockColorScope] 的规则承接来源配色。
+class FushiNeutralColorScope extends StatelessWidget {
+  const FushiNeutralColorScope({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final _FushiBlockColorsMarker? marker = context
+        .dependOnInheritedWidgetOfExactType<_FushiBlockColorsMarker>();
+    if (marker == null || marker.colors == null) return child;
+    return _FushiBlockColorsMarker(
+      colors: null,
+      neutral: marker.neutral,
+      child: FushiPopupOriginScope(
+        // 子树里再弹出的东西同样是中性的（主题捕获已带走中性主题）。
+        origin: FushiPopupOrigin((Widget popup) => popup),
+        child: Theme(data: marker.neutral, child: child),
+      ),
+    );
+  }
 }

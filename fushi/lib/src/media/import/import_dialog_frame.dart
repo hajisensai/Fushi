@@ -2,8 +2,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_block_color_scope.dart'
-    show FushiBlockColorScope;
+    show FushiBlockColorScope, FushiNeutralColorScope;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 
 /// 所有导入类对话框的共享外框（2026-11 导入对话框统一：书 / 有声书 / 漫画 /
@@ -88,6 +89,7 @@ class ImportDialogFrame extends StatelessWidget {
         ),
       );
     }
+    if (isGlassDesign(context)) return _buildApple(context, footer);
     final Widget frame = FushiDialogFrame(
       maxWidth: maxWidth,
       maxHeightFactor: 0.86,
@@ -106,6 +108,42 @@ class ImportDialogFrame extends StatelessWidget {
     );
     final ThemeData? toned = importToneThemeOrNull(context, tone);
     return toned == null ? frame : Theme(data: toned, child: frame);
+  }
+
+  /// Apple（Cupertino）设计系统：iOS 27 / macOS 27 的 sheet 表单。
+  ///
+  /// - 配色一律中性（系统灰 + 强调色）：[tone] 不生效，从导入页色块弹出也经
+  ///   [FushiNeutralColorScope] 退出块配色——此前承接了色块的深棕前景，标题在
+  ///   深色玻璃面板上几乎看不见，正文全是暖色色块。
+  /// - 正文是 inset grouped 列表（色块件的 Apple 分支，见
+  ///   `import_dialog_blocks.dart`），iOS 档 / macOS 档的行高、字号、圆角都由
+  ///   [FushiAppleMetrics] 按窗口宽度判（`fushiAppleUsesMacMetrics`）。
+  /// - 标题固定在顶部；正文在自己的滚动视口里滚，滚离顶部 / 底部还有内容时
+  ///   边缘柔和渐隐（scroll edge），内容不再一刀切在标题下沿。
+  /// - 按钮区沿用 Apple sheet 的动作区（右下，主操作最右）。
+  Widget _buildApple(BuildContext context, Widget? footer) {
+    return FushiNeutralColorScope(
+      child: FushiDialogFrame(
+        maxWidth: maxWidth,
+        maxHeightFactor: 0.86,
+        scrollable: false,
+        child: FushiModalSheetFrame(
+          title: title,
+          subtitle: subtitle,
+          footerPadding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          body: FushiHorizontalEdgeFade(
+            axis: Axis.vertical,
+            extent: 20,
+            child: SingleChildScrollView(
+              primary: false,
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: body,
+            ),
+          ),
+          footer: footer,
+        ),
+      ),
+    );
   }
 }
 

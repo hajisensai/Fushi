@@ -14,6 +14,14 @@
 ///   流…），色块里放 M3E 填充式字段。
 ///
 /// 墨水屏：取色表退成主题中性色，块靠 [FushiCard] / 描边分界，不做浮起与淡入。
+///
+/// Apple（Cupertino，[isGlassDesign]）设计系统不画色块（用户 2026-11-24「不像
+/// Cupertino」）：每个件换成 iOS 27 / macOS 27 的 inset grouped 表单——
+/// [ImportPickBlock] 是独占一组的选择行（拖放说明是组尾脚注），
+/// [ImportPickTileGrid] 是一组带分隔线的选择行，[ImportPickTile] 是其中一行
+/// （行首强调色 SF 图标 / 缩略图、标题 + 当前值、行尾清除钮或 chevron），
+/// [ImportSectionBlock] 是一组表单字段。配色一律系统灰 + 强调色，[ImportTone]
+/// 不生效；度量（iOS 档 / macOS 档）取 [FushiAppleMetrics]。
 library;
 
 import 'package:material_ui/material_ui.dart';
@@ -27,11 +35,18 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_block_color_scope.dart';
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsRow, AdaptiveSettingsSection, SettingsRowIconProbe;
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart'
+    show FushiAppleColors, appleColorsOf;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleChevron, FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -60,6 +75,20 @@ class ImportBlockIconButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final VoidCallback? tap = onTap;
+    if (isGlassDesign(context)) {
+      // Apple：行尾的强调色图标钮，不画块色圆底。
+      final FushiAppleColors apple = appleColorsOf(context);
+      return FushiIconButton(
+        icon: icon,
+        tooltip: tooltip,
+        size: FushiAppleMetrics.of(context).leadingIconSize,
+        isWideTapArea: true,
+        enabled: enabled && tap != null,
+        enabledColor: apple.accent,
+        disabledColor: apple.tertiaryLabel,
+        onTap: tap == null ? null : () async => tap(),
+      );
+    }
     return FushiIconButton(
       icon: icon,
       tooltip: tooltip,
@@ -121,6 +150,7 @@ class ImportTileActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String? hint = note;
+    if (isGlassDesign(context)) return _buildApple(context, hint);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -145,6 +175,44 @@ class ImportTileActions extends StatelessWidget {
             ),
           ),
         ],
+      ],
+    );
+  }
+
+  /// Apple：行下的强调色文字钮（当前来源换成实心对勾），说明是脚注字号的
+  /// secondaryLabel。
+  Widget _buildApple(BuildContext context, String? hint) {
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          children: <Widget>[
+            for (final ImportTileAction a in actions)
+              FushiTextButton.icon(
+                key: a.actionKey,
+                onPressed: a.enabled ? a.onTap : null,
+                icon: FushiIcon(
+                  a.selected ? FushiIcons.success : a.icon,
+                  fill: a.selected ? 1 : null,
+                  size: metrics.leadingIconSize * 0.8,
+                ),
+                label: Text(
+                  a.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+        ),
+        if (hint != null && hint.isNotEmpty)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 4, top: 2),
+            child: Text(hint, style: metrics.footnoteStyle(context)),
+          ),
       ],
     );
   }
@@ -280,6 +348,7 @@ class ImportPickBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     final FushiCoverBlockColors colors = colorsOf(context, tone);
     final bool eink = isEinkTheme(context);
     final bool motion = fushiMotionEnabled(context);
@@ -439,8 +508,44 @@ class ImportPickBlock extends StatelessWidget {
   }
 }
 
+extension on ImportPickBlock {
+  /// Apple：独占一组的选择行；拖放说明是组尾脚注（桌面、未选时）。拖文件悬停
+  /// 在对话框上时行换成「松手导入」并铺一层强调色。
+  Widget _buildApple(BuildContext context) {
+    final String? hint = dropHint;
+    final bool droppable = hint != null && isDesktopPlatform;
+    final bool dragging =
+        droppable && FushiFileDropTarget.dragHoveringOf(context);
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    return AdaptiveSettingsSection(
+      footer: droppable && !selected
+          ? Padding(
+              padding: EdgeInsets.symmetric(horizontal: metrics.rowHorizontal),
+              child: Text(hint, style: metrics.footnoteStyle(context)),
+            )
+          : null,
+      children: <Widget>[
+        _ImportAppleRow(
+          icon: icon,
+          title: dragging ? t.import_drop_release_title : title,
+          subtitle: subtitle,
+          busy: busy,
+          selected: selected,
+          enabled: enabled,
+          dragging: dragging,
+          onTap: onTap,
+          onClear: onClear,
+          actions: actions,
+          below: below,
+          showChevron: actions.isEmpty && below == null,
+        ),
+      ],
+    );
+  }
+}
+
 /// 外层方式块右下角的 → 圆钮（悬停右移 4）；装饰性，调用方自己包
-/// [ExcludeSemantics]。
+/// [ExcludeSemantics]。Apple 下是 inset grouped 行尾的 chevron。
 class ImportGoArrow extends StatelessWidget {
   const ImportGoArrow({required this.colors, this.nudge = false, super.key});
 
@@ -451,6 +556,7 @@ class ImportGoArrow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return const FushiAppleChevron();
     return AnimatedSlide(
       duration: fushiMotionDuration(context, FushiMotion.medium),
       curve: FushiMotion.release,
@@ -476,7 +582,7 @@ class ImportGoArrow extends StatelessWidget {
 }
 
 /// 次要选择块（见文件头）。
-class ImportPickTile extends StatelessWidget {
+class ImportPickTile extends StatelessWidget implements SettingsRowIconProbe {
   const ImportPickTile({
     required this.tone,
     required this.icon,
@@ -528,8 +634,13 @@ class ImportPickTile extends StatelessWidget {
   /// 头部格高：封面缩略图（34×48）与 48 触控区的清除钮都放得下。
   static const double _headerHeight = 48;
 
+  /// Apple 行恒带行首图标（分组分隔线从文字起点开始）。
+  @override
+  bool get settingsRowHasIcon => true;
+
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) return _buildApple(context);
     final FushiCoverBlockColors colors = colorsOf(context, tone);
     final bool motion = fushiMotionEnabled(context);
     final bool dragging =
@@ -667,6 +778,33 @@ class ImportPickTile extends StatelessWidget {
   }
 }
 
+extension on ImportPickTile {
+  /// Apple：一条 inset grouped 选择行；在 [ImportPickTileGrid] 里与同组各行共用
+  /// 一张分组卡，单独使用时自成一组。
+  Widget _buildApple(BuildContext context) {
+    final bool dragging =
+        droppable &&
+        isDesktopPlatform &&
+        FushiFileDropTarget.dragHoveringOf(context);
+    final Widget row = _ImportAppleRow(
+      icon: icon,
+      thumbnail: thumbnail,
+      title: title,
+      subtitle: subtitle,
+      selected: selected,
+      enabled: enabled,
+      dragging: dragging,
+      onTap: onTap,
+      onClear: onClear,
+      actions: actions,
+      below: below,
+      showChevron: showGo || (actions.isEmpty && below == null),
+    );
+    if (_ImportAppleGroupScope.of(context)) return row;
+    return AdaptiveSettingsSection(children: <Widget>[row]);
+  }
+}
+
 /// [ImportPickTile] 的等高网格：宽 ≥ 480 时一行最多 3 格，否则 2 格；只有一格
 /// 时占满一行。每格等宽（末行不满时留空位，不拉宽）、同一行等高。格间
 /// [importDialogRhythm]，与对话框里块与块的竖向间距同一个值。
@@ -679,6 +817,15 @@ class ImportPickTileGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      // Apple：一组带分隔线的选择行（不排网格）。
+      return AdaptiveSettingsSection(
+        children: <Widget>[
+          for (final Widget child in children)
+            _ImportAppleGroupScope(child: child),
+        ],
+      );
+    }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final int perRow = constraints.maxWidth >= 480 ? 3 : 2;
@@ -741,6 +888,31 @@ class ImportSectionBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      // Apple：一组表单字段（分组外标题 + 分组卡里的 Apple 输入框），不画块色
+      // 与 glyph。
+      final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+      final Widget? tail = trailing;
+      return AdaptiveSettingsSection(
+        title: title,
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: metrics.rowHorizontal,
+              vertical: metrics.rowHorizontal * 0.75,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                FushiFormSection(children: children),
+                ?tail,
+              ],
+            ),
+          ),
+        ],
+      );
+    }
     final FushiCoverBlockColors colors = importToneColors(context, tone);
     final bool eink = isEinkTheme(context);
     final IconData? glyph = icon;
@@ -816,5 +988,171 @@ class ImportSectionBlock extends StatelessWidget {
       ),
     );
     return FushiBlockColorScope(colors: colors, child: block);
+  }
+}
+
+/// Apple：[ImportPickTileGrid] 给组内各行的标记（行不再自成一组）。也替分组
+/// 的分隔线回答「这一行带行首图标」。
+class _ImportAppleGroupScope extends InheritedWidget
+    implements SettingsRowIconProbe {
+  const _ImportAppleGroupScope({required super.child});
+
+  static bool of(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<_ImportAppleGroupScope>() != null;
+
+  @override
+  bool get settingsRowHasIcon => true;
+
+  @override
+  bool updateShouldNotify(_ImportAppleGroupScope oldWidget) => false;
+}
+
+/// Apple：导入对话框的一条 inset grouped 选择行（共享设置行
+/// [AdaptiveSettingsRow] 的 Apple 外观：行高 / 字号 / 按下高亮随 iOS 档 /
+/// macOS 档）。行首是强调色 SF 图标（已选换成实心对勾，弹簧淡入切换）或
+/// 缩略图；标题下是当前值 / 说明；行尾是额外动作、清除钮（已选时）或 chevron。
+/// [below] 排在文字列下方（与标题左对齐），如「转录」与它的不可用说明。
+class _ImportAppleRow extends StatelessWidget {
+  const _ImportAppleRow({
+    required this.icon,
+    required this.title,
+    required this.selected,
+    required this.enabled,
+    required this.dragging,
+    required this.actions,
+    required this.showChevron,
+    this.thumbnail,
+    this.subtitle,
+    this.busy = false,
+    this.onTap,
+    this.onClear,
+    this.below,
+  });
+
+  final IconData icon;
+  final Widget? thumbnail;
+  final String title;
+  final String? subtitle;
+  final bool busy;
+  final bool selected;
+  final bool enabled;
+  final bool dragging;
+  final VoidCallback? onTap;
+  final VoidCallback? onClear;
+  final List<Widget> actions;
+  final Widget? below;
+  final bool showChevron;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final FushiMotionScheme motion = context.fushiMotion;
+    final VoidCallback? clear = onClear;
+    final String? sub = subtitle;
+    final Widget? extra = below;
+    final Widget lead =
+        thumbnail ??
+        SizedBox.square(
+          dimension: metrics.iconTileSize,
+          child: Center(
+            child: AnimatedSwitcher(
+              duration: motion.spatialDefault.duration,
+              switchInCurve: motion.spatialDefault.curve,
+              switchOutCurve: motion.effectsFast.curve,
+              transitionBuilder: (Widget child, Animation<double> animation) =>
+                  ScaleTransition(
+                    scale: animation,
+                    child: FadeTransition(
+                      opacity: fushiUnitClamped(animation),
+                      child: child,
+                    ),
+                  ),
+              child: FushiIcon(
+                selected ? FushiIcons.success : icon,
+                key: ValueKey<bool>(selected),
+                fill: selected ? 1 : null,
+                size: metrics.leadingIconSize,
+                color: apple.accent,
+              ),
+            ),
+          ),
+        );
+    final List<Widget> trailing = <Widget>[
+      ...actions,
+      if (selected && clear != null)
+        FushiIconButton(
+          icon: FushiIcons.cancel,
+          tooltip: t.dialog_clear,
+          size: metrics.leadingIconSize * 0.9,
+          isWideTapArea: true,
+          enabled: enabled,
+          enabledColor: apple.tertiaryLabel,
+          disabledColor: apple.tertiaryLabel,
+          onTap: () async => clear(),
+        )
+      else if (showChevron && onTap != null)
+        const ExcludeSemantics(child: FushiAppleChevron()),
+    ];
+    Widget row = AdaptiveSettingsRow(
+      title: title,
+      subtitle: sub == null || sub.isEmpty ? null : sub,
+      leading: lead,
+      titleMaxLines: 2,
+      subtitleMaxLines: 2,
+      subtitleLeading: busy
+          ? SizedBox.square(
+              dimension: 14,
+              child: adaptiveIndicator(context: context, strokeWidth: 2),
+            )
+          : null,
+      trailing: trailing.isEmpty
+          ? null
+          : Row(mainAxisSize: MainAxisSize.min, children: trailing),
+      onTap: enabled ? onTap : null,
+    );
+    if (extra != null) {
+      final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+      row = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          row,
+          Padding(
+            padding: EdgeInsetsDirectional.only(
+              start:
+                  metrics.rowHorizontal +
+                  metrics.iconTileSize +
+                  tokens.spacing.gap +
+                  4,
+              end: metrics.rowHorizontal,
+              bottom: metrics.rowVertical + 2,
+            ),
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: extra,
+            ),
+          ),
+        ],
+      );
+    }
+    return AnimatedOpacity(
+      opacity: enabled ? 1 : 0.5,
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      child: Semantics(
+        selected: selected,
+        child: AnimatedContainer(
+          duration: fushiMotionDuration(context, FushiMotion.short),
+          curve: FushiMotion.standard,
+          foregroundDecoration: BoxDecoration(
+            color: dragging
+                ? apple.accent.withValues(alpha: 0.14)
+                : apple.accent.withValues(alpha: 0),
+          ),
+          child: row,
+        ),
+      ),
+    );
   }
 }
