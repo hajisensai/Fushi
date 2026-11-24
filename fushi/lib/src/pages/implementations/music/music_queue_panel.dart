@@ -21,7 +21,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
-import 'package:fushi/src/pages/implementations/music/music_apple_glyph_button.dart';
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_floating_panel.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -384,7 +384,7 @@ class _MusicQueuePanelState extends State<MusicQueuePanel> {
           // Apple：Apple Music 队列头的循环 / 随机是裸字形开关（开 = 实心 + label，
           // 关 = secondaryLabel 描边），不画玻璃选中圆钮。
           if (isGlassDesign(context))
-            MusicAppleGlyphButton(
+            FushiAppleGlyphButton(
               key: const ValueKey<String>('music_queue_repeat'),
               icon: glyph,
               selected: repeat != MusicRepeatMode.off,
@@ -418,7 +418,7 @@ class _MusicQueuePanelState extends State<MusicQueuePanel> {
           ),
           const SizedBox(width: 4),
           if (isGlassDesign(context))
-            MusicAppleGlyphButton(
+            FushiAppleGlyphButton(
               key: const ValueKey<String>('music_queue_shuffle'),
               icon: FushiIcons.shuffle,
               selected: _engine.shuffled,

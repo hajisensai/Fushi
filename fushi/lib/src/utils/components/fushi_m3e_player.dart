@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show isGlassDesign;
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart'
+    show FushiApplePlayPauseButton;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
     show FushiJumpProgressMarks;
@@ -1516,15 +1518,23 @@ OutlinedBorder fushiPlayButtonBorder({BorderSide side = BorderSide.none}) =>
 /// 屏时弹簧直接跳到终值，不出动画。字形反向转回，始终正立。
 const double kFushiPlayButtonPlayingTurns = 1 / 24;
 
+/// Apple 分支裸字形边长相对按钮边长（命中区）的比例：迷你条 44 / 48 → 约
+/// 24 / 26pt，与 Apple Music 迷你播放器的播放字形相当；64 → 35pt。
+const double kFushiApplePlayGlyphRatio = 0.55;
+
 /// 播放态进度 [t]（0 = 暂停、1 = 播放）对应的外形旋转角（弧度）。
 double fushiPlayButtonRotation(double t) =>
     t * kFushiPlayButtonPlayingTurns * 2 * math.pi;
 
 /// 大号 Expressive 播放键。MD3：[fushiPlayButtonPolygon] 12 瓣饼干实色主色填充，
-/// 播放态按 default spatial 弹簧转半瓣（[fushiPlayButtonRotation]）。Apple：播放
-/// 中是圆、暂停时是圆角方（圆角 = 边长 30%），两态之间弹簧形变。按下整体缩 6%
+/// 播放态按 default spatial 弹簧转半瓣（[fushiPlayButtonRotation]）。按下整体缩 6%
 /// （fast spatial）。图标交叉缩放 + 轻旋转切换。外形是显式 shape，所以
 /// FushiFilledButton 自己的按压变形让位。
+///
+/// Apple（用户 2026-11-24 拍板）：与 Apple Music 一致的裸字形——无底、无着色，
+/// label 色实心 play / pause 字形，按下缩小 + 身后半透明圆高亮
+/// （[FushiApplePlayPauseButton]，与音乐正在播放页同一份实现）。命中区沿用
+/// [size]（布局不变），字形按 [kFushiApplePlayGlyphRatio] 从 [size] 推导。
 class FushiExpressivePlayButton extends StatefulWidget {
   const FushiExpressivePlayButton({
     super.key,
@@ -1576,10 +1586,18 @@ class _FushiExpressivePlayButtonState extends State<FushiExpressivePlayButton>
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      return FushiApplePlayPauseButton(
+        isPlaying: widget.isPlaying,
+        tooltip: widget.isPlaying ? t.pause : t.play,
+        glyphSize: widget.size * kFushiApplePlayGlyphRatio,
+        extent: widget.size,
+        onPressed: widget.onPressed,
+      );
+    }
     final ColorScheme cs = Theme.of(context).colorScheme;
     final double size = widget.size;
     final bool motion = fushiExpressiveMotionEnabled(context);
-    final bool glass = isGlassDesign(context);
     final Widget icon = AnimatedSwitcher(
       duration: Duration(milliseconds: motion ? 220 : 0),
       switchInCurve: FushiSpringCurve.spatialFast,
@@ -1610,7 +1628,7 @@ class _FushiExpressivePlayButtonState extends State<FushiExpressivePlayButton>
           ]),
           builder: (BuildContext context, Widget? child) {
             final double pill = _shape.value;
-            final double angle = glass ? 0 : fushiPlayButtonRotation(pill);
+            final double angle = fushiPlayButtonRotation(pill);
             final Widget button = FushiFilledButton(
               onPressed: widget.onPressed,
               style: ButtonStyle(
@@ -1624,13 +1642,7 @@ class _FushiExpressivePlayButtonState extends State<FushiExpressivePlayButton>
                 elevation: const WidgetStatePropertyAll<double>(0),
                 animationDuration: Duration.zero,
                 shape: WidgetStatePropertyAll<OutlinedBorder>(
-                  glass
-                      ? FushiMorphBorder(
-                          radius: size * 0.3,
-                          startPill: pill,
-                          endPill: pill,
-                        )
-                      : fushiPlayButtonBorder(),
+                  fushiPlayButtonBorder(),
                 ),
               ),
               // 外形随播放态转半瓣，字形反向转回保持正立。旋转层恒在树里

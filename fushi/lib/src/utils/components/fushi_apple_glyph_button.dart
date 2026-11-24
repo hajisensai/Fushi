@@ -12,13 +12,14 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 音乐「正在播放」页（及其迷你条 / 队列面板）在 **Apple 设计系统下**的按钮：
-/// Apple Music（iOS 27 / macOS 27）式裸字形——静止时无底、无着色、无玻璃圆钮，
-/// 只有一枚 label / secondaryLabel 色的 SF 字形；按下时字形缩小（[FushiPressScale]）、
-/// 身后浮出一枚半透明圆形高亮，松手即淡出。
+/// Apple 设计系统下的 Apple Music（iOS 27 / macOS 27）式裸字形按钮：静止时无底、
+/// 无着色、无玻璃圆钮，只有一枚 label / secondaryLabel 色的 SF 字形；按下时字形
+/// 缩小（[FushiPressScale]）、身后浮出一枚半透明圆形高亮，松手即淡出。
 ///
-/// 只在 `isGlassDesign(context)` 为真的分支里用；MD3 分支照旧走
-/// `FushiIconButtonControl` / `FushiExpressivePlayButton`。
+/// 只在 `isGlassDesign(context)` 为真的分支里用（M3E 分支走
+/// `FushiIconButtonControl` / `FushiExpressivePlayButton` 的 M3E 外形）。使用方：
+/// 音乐「正在播放」页 / 迷你条 / 队列面板，以及所有播放条共用的
+/// `FushiExpressivePlayButton` 的 Apple 分支（经 [FushiApplePlayPauseButton]）。
 ///
 /// 开关类（循环 / 随机 / 喜欢 / AB 循环 / 音效）的「开」不铺色块：[selected] 时
 /// 字形换实心版（[FushiIcons.filled]）并提到 label 色，关时是 secondaryLabel 的
@@ -29,8 +30,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 /// 键盘 / 手柄可达：自带 [FocusableActionDetector]，Enter / 手柄 A
 /// （[ActivateIntent]）触发 [onPressed]，键盘焦点时画一圈强调色焦点环；
 /// [tooltip] 同时作悬停提示与无障碍名称。
-class MusicAppleGlyphButton extends StatefulWidget {
-  const MusicAppleGlyphButton({
+class FushiAppleGlyphButton extends StatefulWidget {
+  const FushiAppleGlyphButton({
     super.key,
     required this.icon,
     required this.tooltip,
@@ -68,10 +69,10 @@ class MusicAppleGlyphButton extends StatefulWidget {
   final bool autofocus;
 
   @override
-  State<MusicAppleGlyphButton> createState() => _MusicAppleGlyphButtonState();
+  State<FushiAppleGlyphButton> createState() => _FushiAppleGlyphButtonState();
 }
 
-class _MusicAppleGlyphButtonState extends State<MusicAppleGlyphButton> {
+class _FushiAppleGlyphButtonState extends State<FushiAppleGlyphButton> {
   bool _pressed = false;
   bool _focusHighlight = false;
 
@@ -189,9 +190,9 @@ class _MusicAppleGlyphButtonState extends State<MusicAppleGlyphButton> {
 
 /// Apple Music 式播放 / 暂停键：无底、无着色的大号实心字形（play.fill /
 /// pause.fill，label 色），按下缩小 + 身后半透明圆高亮；两态之间字形交叉淡入 +
-/// 缩放（[MusicAppleGlyphButton] 里的 [AnimatedSwitcher]，时长取动效令牌）。
-class MusicApplePlayPauseButton extends StatelessWidget {
-  const MusicApplePlayPauseButton({
+/// 缩放（[FushiAppleGlyphButton] 里的 [AnimatedSwitcher]，时长取动效令牌）。
+class FushiApplePlayPauseButton extends StatelessWidget {
+  const FushiApplePlayPauseButton({
     super.key,
     required this.isPlaying,
     required this.tooltip,
@@ -207,7 +208,7 @@ class MusicApplePlayPauseButton extends StatelessWidget {
   final double extent;
 
   @override
-  Widget build(BuildContext context) => MusicAppleGlyphButton(
+  Widget build(BuildContext context) => FushiAppleGlyphButton(
     icon: isPlaying ? FushiIcons.pause : FushiIcons.play,
     tooltip: tooltip,
     onPressed: onPressed,

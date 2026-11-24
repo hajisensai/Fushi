@@ -60,7 +60,7 @@ import 'package:fushi/src/media/music/analysis/music_audio_analysis_service.dart
 import 'package:fushi/src/media/music/music_remote_media.dart'
     show musicItemResolvesStream;
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/pages/implementations/music/music_apple_glyph_button.dart';
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyric_visualizer_view.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/ai_theme/lyric_visualizer_ai_theme_controller.dart';
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
@@ -2499,7 +2499,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           appleSecondary: true,
         ),
         if (quality != null)
-          MusicAppleGlyphButton(
+          FushiAppleGlyphButton(
             key: const ValueKey<String>('music_lyrics_quality'),
             icon: FushiIcons.highQuality,
             tooltip: t.music_quality_chip_semantics(quality: quality),
@@ -2509,7 +2509,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             ),
           ),
         if (_engine.capabilities.signalPath)
-          MusicAppleGlyphButton(
+          FushiAppleGlyphButton(
             key: const ValueKey<String>('music_lyrics_effects'),
             icon: FushiIcons.barChart,
             selected: appModelNoUpdate.musicAudioEffects.isActive,
@@ -2517,7 +2517,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             extent: _kAppleToolExtent,
             onPressed: () => unawaited(_openEffects()),
           ),
-        MusicAppleGlyphButton(
+        FushiAppleGlyphButton(
           key: const ValueKey<String>('music_lyrics_queue'),
           icon: FushiIcons.playlist,
           tooltip: t.music_queue_button_count(count: _engine.queue.length),
@@ -2659,7 +2659,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             ),
           ),
         ),
-        MusicAppleGlyphButton(
+        FushiAppleGlyphButton(
           key: const ValueKey<String>('music_lyrics_previous'),
           icon: FushiIcons.skipPrevious,
           tooltip: t.shortcut_action_music_previous_track,
@@ -2670,7 +2670,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
               ? () => unawaited(engine.skipPrevious())
               : null,
         ),
-        MusicApplePlayPauseButton(
+        FushiApplePlayPauseButton(
           key: const ValueKey<String>('music_lyrics_play_pause'),
           isPlaying: engine.isPlaying,
           tooltip: engine.isPlaying ? t.pause : t.play,
@@ -2678,7 +2678,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           extent: play,
           onPressed: () => unawaited(engine.togglePlayPause()),
         ),
-        MusicAppleGlyphButton(
+        FushiAppleGlyphButton(
           key: const ValueKey<String>('music_lyrics_next'),
           icon: FushiIcons.skipNext,
           tooltip: t.shortcut_action_music_next_track,
@@ -2712,7 +2712,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           return const SizedBox.shrink();
         }
         final bool liked = session.isFavorite(item);
-        return MusicAppleGlyphButton(
+        return FushiAppleGlyphButton(
           key: const ValueKey<String>('music_lyrics_favorite'),
           icon: FushiIcons.favorite,
           selected: liked,
@@ -2853,7 +2853,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        MusicAppleGlyphButton(
+        FushiAppleGlyphButton(
           key: const ValueKey<String>('music_lyrics_offset_earlier'),
           icon: FushiIcons.remove,
           tooltip: t.music_lyrics_offset_later,
@@ -2866,7 +2866,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
             color: appleColorsOf(context).secondaryLabel,
           ),
         ),
-        MusicAppleGlyphButton(
+        FushiAppleGlyphButton(
           key: const ValueKey<String>('music_lyrics_offset_later'),
           icon: FushiIcons.add,
           tooltip: t.music_lyrics_offset_earlier,
@@ -2874,7 +2874,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           onPressed: () => _nudgeOffset(kMusicLyricsOffsetStepMs),
         ),
         if (_engine.capabilities.abLoop)
-          MusicAppleGlyphButton(
+          FushiAppleGlyphButton(
             key: const ValueKey<String>('music_lyrics_ab_loop'),
             icon: FushiIcons.repeat,
             selected: _loopLines != null,
@@ -2888,7 +2888,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
           duration: fushiMotionDuration(context, FushiMotion.short),
           child: _loopLines == null
               ? const SizedBox.shrink()
-              : MusicAppleGlyphButton(
+              : FushiAppleGlyphButton(
                   key: const ValueKey<String>('music_lyrics_ab_loop_extend'),
                   icon: FushiIcons.addCircle,
                   tooltip: t.music_lyrics_ab_loop_extend,

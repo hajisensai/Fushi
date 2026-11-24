@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/pages/implementations/music/music_apple_glyph_button.dart';
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -12,7 +12,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 // 用户 2026-11-24：Cupertino 下音乐播放页按钮「不要着色和背景，和 Apple Music
-// 一致」。Apple 分支的播放 / 暂停、喜欢、循环等全走 [MusicAppleGlyphButton]：
+// 一致」。Apple 分支的播放 / 暂停、喜欢、循环等全走 [FushiAppleGlyphButton]：
 // 静止无底、无着色，字形 label / secondaryLabel 色，开关的「开」用实心字形。
 void main() {
   ThemeData theme() => buildFushiThemeData(
@@ -73,7 +73,7 @@ void main() {
   ) async {
     final BuildContext ctx = await pump(
       tester,
-      MusicApplePlayPauseButton(
+      FushiApplePlayPauseButton(
         key: const ValueKey<String>('play'),
         isPlaying: false,
         tooltip: 'Play',
@@ -95,7 +95,7 @@ void main() {
   ) async {
     final BuildContext ctx = await pump(
       tester,
-      MusicAppleGlyphButton(
+      FushiAppleGlyphButton(
         key: const ValueKey<String>('fav'),
         icon: FushiIcons.favorite,
         selected: true,
@@ -129,7 +129,7 @@ void main() {
   ) async {
     final BuildContext ctx = await pump(
       tester,
-      MusicAppleGlyphButton(
+      FushiAppleGlyphButton(
         key: const ValueKey<String>('fav'),
         icon: FushiIcons.favorite,
         selected: false,
@@ -152,7 +152,7 @@ void main() {
       tester,
       StatefulBuilder(
         builder: (BuildContext context, StateSetter setState) =>
-            MusicApplePlayPauseButton(
+            FushiApplePlayPauseButton(
               key: const ValueKey<String>('play'),
               isPlaying: playing,
               tooltip: playing ? 'Pause' : 'Play',

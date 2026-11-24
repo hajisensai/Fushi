@@ -21,7 +21,7 @@ import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/audio_controller.dart';
-import 'package:fushi/src/pages/implementations/music/music_apple_glyph_button.dart';
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
 import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
@@ -417,7 +417,7 @@ Widget musicPlayModeButton(
   // Apple：Apple Music 式裸字形，开着时实心 + label 色，关着 secondaryLabel 描边，
   // 不再画玻璃选中圆钮（[appleExtent] = 命中区直径，null 取 bar button 口径）。
   if (isGlassDesign(context)) {
-    return MusicAppleGlyphButton(
+    return FushiAppleGlyphButton(
       key: const ValueKey<String>('music_lyrics_play_mode'),
       icon: glyph,
       tooltip: tip,
@@ -539,7 +539,7 @@ class _MusicVolumeButtonState extends State<MusicVolumeButton> {
       builder: (BuildContext context, MenuController menu, Widget? _) =>
           isGlassDesign(context)
           // Apple：裸字形，滑杆展开时实心 + label 色，不画玻璃选中圆钮。
-          ? MusicAppleGlyphButton(
+          ? FushiAppleGlyphButton(
               key: const ValueKey<String>('music_bar_volume'),
               icon: volume <= 0 ? FushiIcons.volumeOff : FushiIcons.volumeUp,
               tooltip: t.music_volume_title,
