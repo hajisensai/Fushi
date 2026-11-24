@@ -727,9 +727,16 @@ class VideoSourceScrapeCoordinator
     try {
       return await database.runBackgroundWork<SourceScrapeReport>(label, (
         DatabaseWorkToken work,
-      ) {
-        unawaited(work.whenCancelled.then((_) => cancellationToken.cancel()));
-        return body();
+      ) async {
+        // 刮削结束就注销：库活一整个会话，每次刮削都挂一条回调不注销会无界累积。
+        final void Function() unlink = work.onCancelled(
+          cancellationToken.cancel,
+        );
+        try {
+          return await body();
+        } finally {
+          unlink();
+        }
       });
     } on DatabaseWorkCancelledException {
       throw const VideoSourceScrapeCancelled();

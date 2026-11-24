@@ -40,8 +40,12 @@ final class DatabaseWorkToken {
   /// 开这份工作的库是否已开始关闭。
   bool get isCancelled => _owner.isClosing;
 
-  /// 库开始关闭时完成。
-  Future<void> get whenCancelled => _owner._closing.future;
+  /// 库开始关闭时调 [callback]（库已在关闭就当场调）。返回注销函数。
+  ///
+  /// 等的东西一结束就必须注销：库实例活一整个会话，逐文件 / 逐曲目 / 逐次刮削登记
+  /// 却不注销的回调会一直挂在库上（连同它捕获的对象），无界增长到关库为止。
+  void Function() onCancelled(void Function() callback) =>
+      _owner._addCancelListener(callback);
 
   /// 已取消就抛 [DatabaseWorkCancelledException]。长循环每一步开头调一次。
   void throwIfCancelled() {
@@ -50,25 +54,35 @@ final class DatabaseWorkToken {
 
   /// 等一个不经数据库的长操作（整文件哈希、FFmpeg、网络请求、等用户确认）——库开始关时
   /// 不再等它，直接抛 [DatabaseWorkCancelledException]。被放弃的 [operation] 自己跑完，
-  /// 结果丢弃（它的错误也吞掉，避免成为未处理的异步错误）。
+  /// 结果丢弃（它的错误也吞掉，避免成为未处理的异步错误）。[operation] 结束即注销取消
+  /// 回调，不在库上留东西。
   Future<T> guard<T>(Future<T> operation) {
     throwIfCancelled();
     final Completer<T> out = Completer<T>();
-    operation.then(
-      (T value) {
-        if (!out.isCompleted) out.complete(value);
-      },
-      onError: (Object error, StackTrace stack) {
-        if (!out.isCompleted) out.completeError(error, stack);
-      },
-    );
-    whenCancelled.then((_) {
+    final void Function() unregister = onCancelled(() {
       if (!out.isCompleted) {
         out.completeError(DatabaseWorkCancelledException(label));
       }
     });
+    operation.then(
+      (T value) {
+        unregister();
+        if (!out.isCompleted) out.complete(value);
+      },
+      onError: (Object error, StackTrace stack) {
+        unregister();
+        if (!out.isCompleted) out.completeError(error, stack);
+      },
+    );
     return out.future;
   }
+}
+
+/// 一条取消回调的登记（按身份区分：同一个闭包登记两次是两条）。
+final class _CancelListener {
+  _CancelListener(this.callback);
+
+  final void Function() callback;
 }
 
 const Symbol _databaseWorkZoneKey = #fushiDatabaseWorkToken;
@@ -83,11 +97,39 @@ const Symbol _databaseWorkZoneKey = #fushiDatabaseWorkToken;
 ///   导入、数据根迁移、退出）都不会让后台工作打在已关闭的连接上，也不会让旧库读出的
 ///   行身份在换上新库后写进去。
 final class DatabaseBackgroundWork {
-  final Completer<void> _closing = Completer<void>();
+  bool _closing = false;
   final Map<Future<void>, String> _inFlight = <Future<void>, String>{};
+  final Set<_CancelListener> _cancelListeners = <_CancelListener>{};
 
   /// 库是否已开始关闭（关闭后不可逆：一个库实例只关一次）。
-  bool get isClosing => _closing.isCompleted;
+  bool get isClosing => _closing;
+
+  /// 尚未触发、也未注销的取消回调数（诊断 / 测试用：正常运行时应随工作结束归零）。
+  int get pendingCancelListenerCount => _cancelListeners.length;
+
+  void Function() _addCancelListener(void Function() callback) {
+    if (_closing) {
+      callback();
+      return _noop;
+    }
+    final _CancelListener listener = _CancelListener(callback);
+    _cancelListeners.add(listener);
+    return () => _cancelListeners.remove(listener);
+  }
+
+  static void _noop() {}
+
+  void _beginClosing() {
+    if (_closing) return;
+    _closing = true;
+    final List<_CancelListener> listeners = _cancelListeners.toList(
+      growable: false,
+    );
+    _cancelListeners.clear();
+    for (final _CancelListener listener in listeners) {
+      listener.callback();
+    }
+  }
 
   /// 在跑的工作标签（诊断 / 测试用）。
   List<String> get inFlightLabels => _inFlight.values.toList(growable: false);
@@ -119,13 +161,23 @@ final class DatabaseBackgroundWork {
 
   /// 取消本库名下全部工作并等它们退出。幂等；可与 [run] 并发调用。
   ///
+  /// 不能在本库自己的后台工作里调用：那是在等自己退出，永远等不到——直接抛
+  /// [StateError]，不让关库静默挂死。
+  ///
   /// [onSlow]：等了 [slowAfter] 还有工作没退出时回调一次（带仍在跑的标签），只用于
   /// 留诊断——照样继续等，不放行（放行就是让它打在已关闭 / 已换掉的库上）。
   Future<void> quiesce({
     Duration slowAfter = const Duration(seconds: 10),
     void Function(List<String> stillRunning)? onSlow,
   }) async {
-    if (!_closing.isCompleted) _closing.complete();
+    final DatabaseWorkToken? caller = DatabaseWorkToken.current;
+    if (caller != null && identical(caller._owner, this)) {
+      throw StateError(
+        'quiesce() called from inside background work "${caller.label}" '
+        'of the same database: it would wait for itself forever',
+      );
+    }
+    _beginClosing();
     if (_inFlight.isEmpty) return;
     Timer? slow;
     if (onSlow != null) {

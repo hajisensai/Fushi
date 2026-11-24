@@ -125,4 +125,58 @@ void main() {
     expect(DatabaseWorkToken.current, isNull);
     await db.close();
   });
+
+  test('guard / onCancelled 结束即注销：长寿命的库上取消回调不随操作数累积', () async {
+    final FushiDatabase db = _memoryDb();
+    await db.runBackgroundWork<void>('test.manyFiles', (
+      DatabaseWorkToken token,
+    ) async {
+      for (int i = 0; i < 500; i++) {
+        await token.guard(Future<int>.value(i));
+        await expectLater(
+          token.guard(Future<int>.error(StateError('bad file $i'))),
+          throwsStateError,
+        );
+      }
+      final void Function() unlink = token.onCancelled(() {});
+      expect(db.backgroundWork.pendingCancelListenerCount, 1);
+      unlink();
+    });
+    expect(db.backgroundWork.pendingCancelListenerCount, 0);
+    await db.close();
+  });
+
+  test('onCancelled：关库时触发；库已在关时登记当场触发', () async {
+    final FushiDatabase db = _memoryDb();
+    final Completer<void> release = Completer<void>();
+    int fired = 0;
+    final Future<void> work = db.runBackgroundWork<void>('test.scrape', (
+      DatabaseWorkToken token,
+    ) async {
+      final void Function() unlink = token.onCancelled(() => fired++);
+      try {
+        await release.future;
+      } finally {
+        unlink();
+      }
+      token.onCancelled(() => fired++);
+    });
+    final Future<void> closing = db.close();
+    expect(fired, 1);
+    release.complete();
+    await work;
+    await closing;
+    expect(fired, 2);
+    expect(db.backgroundWork.pendingCancelListenerCount, 0);
+  });
+
+  test('在本库自己的后台工作里关库直接报错，不自等挂死', () async {
+    final FushiDatabase db = _memoryDb();
+    await expectLater(
+      db.runBackgroundWork<void>('test.self', (_) => db.close()),
+      throwsStateError,
+    );
+    expect(db.backgroundWork.isClosing, isFalse);
+    await db.close();
+  });
 }
