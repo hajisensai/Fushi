@@ -78,6 +78,16 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_services.dart';
 import 'package:fushi_core/fushi_core.dart'
     show VideoDownloadJobFileRow, VideoDownloadJobRow;
+import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_layout.dart'
+    show appleSidebarHostsLibrarySections;
+import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_title_menu.dart';
+import 'package:fushi/src/utils/adaptive/apple_sidebar_library_host.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleMacScale, fushiAppleUsesMacMetrics;
+import 'package:fushi/src/utils/fushi_icons.dart';
+
+part 'browse/apple/apple_browse_layout.part.dart';
 
 /// 「浏览」页签（Mihon 的 Browse 形态）：来源 / 扩展 / 发现 / 下载。
 ///
@@ -235,6 +245,12 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
   /// 悬浮按钮组胶囊画出（与库页壳 [MediaLibraryShell] 同构）。
   final FushiShellActionsSlot _actionsSlot = FushiShellActionsSlot();
 
+  /// Apple 宽窗侧栏宿主（macOS 档把一级登记成侧栏子项；卸下时撤回）。
+  AppleSidebarLibraryHost? _appleSidebarHost;
+
+  /// Apple 外壳（part 里的 extension）改页内状态用。
+  void _updateState(VoidCallback fn) => setState(fn);
+
   /// 「下载执行设备」指向的已配对主机名；null = 本机（任务汇总 hero 的设备 chip）。
   String? _executionDeviceLabel;
 
@@ -307,6 +323,13 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     _selectedTab = _onlineSlotOf(request.tab);
     final int index = _controllerTabs.indexOf(_selectedTab!);
     if (index >= 0) _tabController?.index = index;
+  }
+
+  @override
+  void deactivate() {
+    // 卸下（换 tab 父节点 / 整页销毁）时撤回侧栏登记；重新挂上会重建、再登记。
+    _appleSidebarHost?.publish(this, null);
+    super.deactivate();
   }
 
   @override
@@ -433,35 +456,37 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
           : null,
       // 在线来源面的主滚动视图自己把头部高度加成顶部 sliver（内容滚到头部底下）。
       pageHandlesInset: true,
-      pageBuilder: (OnlineSourcesDomain domain) => Stack(
-        children: <Widget>[
-          for (final OnlineSourcesSection section
-              in OnlineSourcesSection.values)
-            if (_onlineVisited.contains(section))
-              Offstage(
-                offstage: section != _onlineSection,
-                child: TickerMode(
-                  enabled: section == _onlineSection,
-                  child: SectionVisibilityScope(
-                    visible: section == _onlineSection,
-                    // 来源 / 扩展同时保活：各给一份主滚动控制器，共用外层
-                    // 那一个会让两个主滚动视图附着同一控制器、Scrollbar 断言。
-                    child: SectionPrimaryScrollScope(
-                      child: BrowseOnlineSourcesView(
-                        key: ValueKey<String>(
-                          'browse-${section.name}-${domain.name}',
-                        ),
-                        domain: domain,
-                        section: section,
-                      ),
+      pageBuilder: _buildOnlineDomainPage,
+    );
+  }
+
+  /// 在线源一个内容域的页面：来源 / 扩展两个分区各自惰性构建、保活。
+  Widget _buildOnlineDomainPage(OnlineSourcesDomain domain) => Stack(
+    children: <Widget>[
+      for (final OnlineSourcesSection section in OnlineSourcesSection.values)
+        if (_onlineVisited.contains(section))
+          Offstage(
+            offstage: section != _onlineSection,
+            child: TickerMode(
+              enabled: section == _onlineSection,
+              child: SectionVisibilityScope(
+                visible: section == _onlineSection,
+                // 来源 / 扩展同时保活：各给一份主滚动控制器，共用外层
+                // 那一个会让两个主滚动视图附着同一控制器、Scrollbar 断言。
+                child: SectionPrimaryScrollScope(
+                  child: BrowseOnlineSourcesView(
+                    key: ValueKey<String>(
+                      'browse-${section.name}-${domain.name}',
                     ),
+                    domain: domain,
+                    section: section,
                   ),
                 ),
               ),
-        ],
-      ),
-    );
-  }
+            ),
+          ),
+    ],
+  );
 
   /// 二级标签横滑越过首 / 尾段时，把手势交给相邻的顶层页签：从 [from] 往 [delta]
   /// 方向（+1 下一个 / -1 上一个）切过去，并让目标页签的二级标签落在衔接的那一端
@@ -729,16 +754,20 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
       // 各域发现页的动作（AI 找资源 / ⋯）登记进本页浮动顶栏右侧的动作组
       // （[_actionsSlot]，与库页外壳同一机制）：顶栏只留动作，搜索框是各域内容
       // 第一行；切域时由各页按可见性替换（拼贴改版设计稿第 2 节，最多两层分段）。
-      pageBuilder: (_DownloadsResourceDomain domain) => FushiShellTitleScope(
+      pageBuilder: _buildResourceDomainPage,
+    );
+  }
+
+  /// 发现一个内容域的页面：各域发现页的动作登记进本页顶栏动作槽（[_actionsSlot]）。
+  Widget _buildResourceDomainPage(_DownloadsResourceDomain domain) =>
+      FushiShellTitleScope(
         title: FushiShellTitleScope.maybeTitleOf(context) ?? '',
         actionsSlot: _actionsSlot,
         child: KeyedSubtree(
           key: ValueKey<String>('downloads-resource-${domain.name}'),
           child: _buildResourceDomain(domain),
         ),
-      ),
-    );
-  }
+      );
 
   /// 手动添加任务（磁力链接 / .torrent 文件）：与搜索出的资源同走 v78 持久
   /// 管线，任务出现在任务 tab、同一套排序/搜索/优先级/删除操作。
@@ -1120,6 +1149,8 @@ class _BrowsePageState extends ConsumerState<BrowsePage>
     // 初始页签：跳转请求 / initialTab 播种进 [_selectedTab]，此刻不可见就落第一个
     // 页签（见 [_syncTabController]）。
     final TabController controller = _syncTabController(tabs);
+    // Cupertino：Apple 外壳（大标题菜单 / 侧栏一级 + scope bar），M3E 原样在下面。
+    if (isGlassDesign(context)) return _buildApple(tabs, controller);
     // 整页是 .torrent 的落点（桌面拖放）；移动端 FushiFileDropTarget 直接透传。
     return FushiFileDropTarget(
       debugLabel: 'downloads',

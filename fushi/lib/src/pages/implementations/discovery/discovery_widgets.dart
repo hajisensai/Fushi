@@ -19,7 +19,11 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleUsesMacMetrics;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -27,6 +31,8 @@ import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_shelf.dart'
+    show AppleShelfHoverArrows;
 import 'package:fushi/src/pages/implementations/discovery/discovery_layout.dart';
 
 export 'package:fushi/src/pages/implementations/discovery/discovery_hero_carousel.dart';
@@ -317,7 +323,10 @@ class DiscoveryShelf extends StatelessWidget {
         ),
         Padding(
           padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-          child: strip,
+          // Apple（宽屏货架）：悬停两端出翻页箭头。
+          child: isGlassDesign(context) && !loading
+              ? AppleShelfHoverArrows(child: strip)
+              : strip,
         ),
       ],
     );
@@ -336,6 +345,18 @@ class DiscoveryAiAcquireButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Apple（拍板点 8）：进导航栏 / 工具栏的玻璃按钮组，不用强调色胶囊——iOS 档
+    // 只画 ✦（文字进 tooltip / 无障碍标签），macOS 档写全称。
+    if (isGlassDesign(context)) {
+      return FushiIconButton(
+        icon: FushiIcons.ai,
+        tooltip: t.discovery_ai_acquire_label,
+        label: fushiAppleUsesMacMetrics(context)
+            ? t.discovery_ai_acquire_label
+            : null,
+        onTap: onPressed,
+      );
+    }
     if (MediaQuery.sizeOf(context).width < _kLabelMinWidth) {
       return FushiIconButtonControl.filledTonal(
         constraints: const BoxConstraints(

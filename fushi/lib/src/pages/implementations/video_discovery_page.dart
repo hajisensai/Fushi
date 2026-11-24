@@ -41,6 +41,11 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show FushiShellTitleScope;
+
+part 'discovery/apple/apple_video_discovery.part.dart';
 
 /// Aggregated discovery port consumed by the page. Implementations may fan a
 /// request out to TMDB and AniList, but the UI receives one redacted
@@ -117,6 +122,9 @@ class VideoDiscoveryPage extends StatefulWidget {
 const int _kHeroCount = 5;
 
 class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
+  /// Apple 画法（part 里的 extension）改页内状态用。
+  void _updateState(VoidCallback fn) => setState(fn);
+
   // 与分类 chip 同一视觉高度（同处一条单行筛选行）。
   static const double _filterControlHeight = 36;
   static const int _pageSize = 30;
@@ -457,14 +465,17 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
       child: DesktopContentLayout(
         kind: DesktopContentKind.readerShelf,
         child: FushiFloatingChromeOverlay(
-          chrome: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (_headerVisible) _buildHeader(),
-              _buildControls(),
-            ],
-          ),
+          // Cupertino：分类 pull-down + 外壳玻璃按钮组（part 里的 extension）。
+          chrome: isGlassDesign(context)
+              ? _buildAppleChrome()
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (_headerVisible) _buildHeader(),
+                    _buildControls(),
+                  ],
+                ),
           // 下拉刷新（设计稿 DI15：刷新进「⋯」，同时支持下拉）。指示器从浮动
           // 工具区下沿冒出，不压在搜索行上。
           child: Builder(
@@ -546,17 +557,26 @@ class _VideoDiscoveryPageState extends State<VideoDiscoveryPage> {
     tooltip: t.common_more_actions,
     onSelected: (VoidCallback action) => action(),
     items: <PopupMenuEntry<VoidCallback>>[
-      PopupMenuItem<VoidCallback>(
-        key: const ValueKey<String>('video-discovery-refresh'),
-        value: () => unawaited(_reload()),
-        child: Row(
-          children: <Widget>[
-            const FushiIcon(FushiIcons.refresh, size: 20),
-            const SizedBox(width: 12),
-            Expanded(child: Text(t.refresh)),
-          ],
+      // Apple：公共菜单项（showFushiMenu 按结构化字段画标准 iOS / macOS 行）。
+      if (isGlassDesign(context))
+        FushiPopupMenuItem<VoidCallback>(
+          key: const ValueKey<String>('video-discovery-refresh'),
+          label: t.refresh,
+          icon: FushiIcons.refresh,
+          value: () => unawaited(_reload()),
+        )
+      else
+        PopupMenuItem<VoidCallback>(
+          key: const ValueKey<String>('video-discovery-refresh'),
+          value: () => unawaited(_reload()),
+          child: Row(
+            children: <Widget>[
+              const FushiIcon(FushiIcons.refresh, size: 20),
+              const SizedBox(width: 12),
+              Expanded(child: Text(t.refresh)),
+            ],
+          ),
         ),
-      ),
     ],
   );
 

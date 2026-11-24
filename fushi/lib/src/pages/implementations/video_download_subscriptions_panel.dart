@@ -62,6 +62,15 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
+import 'package:fushi/src/media/downloads/apple/apple_download_list_parts.dart';
+import 'package:fushi/src/media/downloads/apple/apple_download_task_row.dart'
+    show appleDownloadMenuPosition;
+import 'package:fushi/src/media/downloads/download_task_card.dart'
+    show DownloadTaskCoverThumb;
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart';
+
+part '../../media/downloads/apple/apple_download_subscriptions.dart';
 
 typedef VideoDownloadSubscriptionAction =
     Future<void> Function(VideoDownloadSubscriptionRow subscription);
@@ -447,6 +456,9 @@ class _VideoDownloadSubscriptionsViewState
     }
   }
 
+  /// 给 Apple 版式（part 里的 extension）用的 setState 入口。
+  void _appleUpdate(VoidCallback fn) => setState(fn);
+
   static String _sortLabel(VideoDownloadSubscriptionSort sort) =>
       switch (sort) {
         VideoDownloadSubscriptionSort.createdDesc =>
@@ -675,6 +687,7 @@ class _VideoDownloadSubscriptionsViewState
           filterVideoDownloadSubscriptions(widget.subscriptions, _searchQuery),
           _sort,
         );
+    if (isGlassDesign(context)) return _buildApple(context, visible);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double page = tokens.spacing.page;
     final double gap = tokens.spacing.gap;
