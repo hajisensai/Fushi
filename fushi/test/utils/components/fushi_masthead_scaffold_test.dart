@@ -245,6 +245,81 @@ void main() {
     expect(progress(), 0);
   });
 
+  // BUG-5409 复审：主深度要等第一次竖向滚动才定。栏里更深的竖向滚动区（多行
+  // 输入框的内部滚动等）先动时会被当成一栏记下，主深度定到栏这一层后它的记录
+  // 必须作废，否则它的内部偏移一直压着页头，两栏都回顶也展不开。
+  testWidgets('并排两栏：栏里嵌套的竖向滚动区先动过，两栏回顶后页头照样展开', (WidgetTester tester) async {
+    final ScrollController left = ScrollController();
+    final ScrollController right = ScrollController();
+    final ScrollController inner = ScrollController();
+    addTearDown(left.dispose);
+    addTearDown(right.dispose);
+    addTearDown(inner.dispose);
+    Widget rows(String tag) => Column(
+      children: <Widget>[
+        for (int i = 0; i < 60; i++)
+          SizedBox(height: 80, child: Text('$tag $i')),
+      ],
+    );
+    await pumpHost(
+      tester,
+      FushiMastheadScaffold(
+        title: 'Deck options',
+        body: FushiPinnedPageChromeScope(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(
+                child: ListView(
+                  controller: left,
+                  children: <Widget>[
+                    SizedBox(
+                      height: 120,
+                      child: ListView(
+                        controller: inner,
+                        children: <Widget>[rows('inner')],
+                      ),
+                    ),
+                    rows('left'),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: right,
+                  children: <Widget>[rows('right')],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    double progress() => tester
+        .widget<FushiMastheadHeader>(find.byType(FushiMastheadHeader))
+        .progress;
+    expect(progress(), 0);
+
+    // 页面上第一次竖向滚动发生在栏里的小框：主深度暂时落在它那一层。
+    inner.jumpTo(300);
+    await tester.pump();
+
+    // 栏本身滚一下再回顶（小框仍挂着、内部仍停在 300）：页头回到大字。
+    left.jumpTo(100);
+    await tester.pump();
+    expect(progress(), greaterThan(0));
+    left.jumpTo(0);
+    await tester.pump();
+    expect(inner.offset, 300);
+    expect(progress(), 0);
+
+    // 之后再动小框也不驱动页头。
+    inner.jumpTo(600);
+    await tester.pump();
+    expect(progress(), 0);
+  });
+
   // 2026-11-20 用户截图「设置的字看着怪」：设置页名用二级字阶（52 / w700），
   // 库页仍是 84 / w900 大字。
   testWidgets('titleTier: section 的页名是 52 / w700，默认 page 仍是 84 / w900', (

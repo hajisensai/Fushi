@@ -553,7 +553,12 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
   /// AnimatedSwitcher）里同一深度的几个列表是换着显示的，离开的那页可能还挂着
   /// （保活 / 过渡中），它的位置不能压住刚换上、停在顶部的那页。来自多栏以外的
   /// 主滚动区通知直接定页头位置并清空这里。
-  final Map<BuildContext, double> _panes = <BuildContext, double>{};
+  ///
+  /// 每栏连同通知深度一起记：主深度要等第一次竖向滚动才定下来，在那之前栏里
+  /// 更深的竖向滚动区（多行输入框的内部滚动等）可能先被当成一栏记进来；主深度
+  /// 定到更浅处后这些记录不再算数，否则它们的内部偏移会一直压着页头。
+  final Map<BuildContext, ({int depth, double offset})> _panes =
+      <BuildContext, ({int depth, double offset})>{};
 
   /// 展开态页头高度（跨布局记住，见 [_MastheadFrameDelegate]）。
   final _MastheadRestMemo _memo = _MastheadRestMemo();
@@ -624,9 +629,17 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
     // 比主滚动区更深的嵌套竖向列表（正文里自带滚动的小框）不驱动页头。
     if (depth > _owner.depth) return false;
     if (source != null && FushiPinnedPageChromeScope.pins(source)) {
-      _panes[source] = metrics.extentBefore;
-      _panes.removeWhere((BuildContext pane, double _) => !pane.mounted);
-      _rawOffset = _panes.values.fold(0.0, math.max);
+      _panes[source] = (depth: depth, offset: metrics.extentBefore);
+      final int ownerDepth = _owner.depth;
+      _panes.removeWhere(
+        (BuildContext pane, ({int depth, double offset}) entry) =>
+            !pane.mounted || entry.depth > ownerDepth,
+      );
+      _rawOffset = _panes.values.fold(
+        0.0,
+        (double acc, ({int depth, double offset}) entry) =>
+            math.max(acc, entry.offset),
+      );
     } else {
       _panes.clear();
       _rawOffset = metrics.extentBefore;
