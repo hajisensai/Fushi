@@ -9,7 +9,7 @@ import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
 import 'package:fushi_engine/media/metadata/books/book_search_query.dart'
     show parseBookSearchSeries;
 import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
-    show findIsbnIn, normalizeIsbn13;
+    show BookCatalogFormat, findIsbnIn, normalizeIsbn13;
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
@@ -44,7 +44,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 /// 源用下拉切换（[BookScrapeSource]，八个源分段放不下）：Bangumi 书籍条目
 /// （`filter.type=[1]`）、DLsite 音声 / 漫画 / 小说作品、MangaBaka 漫画 / 轻小说系列（选中
 /// 系列后进卷封面网格，预选本地卷号 [BookCoverScrapeDialog.volume] 那一卷；结果区底部显示
-/// MangaBaka 署名）、AniList 轻小说、openBD（只按 ISBN）、NDL Search、楽天ブックス（要设备
+/// MangaBaka 署名）、AniList（轻小说、漫画）、openBD（只按 ISBN）、NDL Search、楽天ブックス（要设备
 /// 本地凭据；没填时下拉里照样列出，**只有选中它时**结果区才提示去哪填，不发请求）、iTunes
 /// 歌曲（专辑封面）。默认 Bangumi（填了楽天凭据也不会变成默认源）；预填词里认得出 DLsite
 /// 编号时默认切到 DLsite 并只填编号（直取），预填词本身就是 ISBN 时默认 openBD；这本「书」
@@ -793,6 +793,15 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
     );
   }
 
+  /// 候选形态（AniList：轻小说 / 漫画…）的显示名。
+  static String _formatLabel(BookCatalogFormat format) => switch (format) {
+    BookCatalogFormat.novel => t.book_scrape_format_novel,
+    BookCatalogFormat.manga => t.book_scrape_format_manga,
+    BookCatalogFormat.manhwa => t.book_scrape_format_manhwa,
+    BookCatalogFormat.manhua => t.book_scrape_format_manhua,
+    BookCatalogFormat.oneShot => t.book_scrape_format_one_shot,
+  };
+
   Widget _buildTile(
     ThemeData theme,
     FushiDesignTokens tokens,
@@ -800,6 +809,7 @@ class _BookCoverScrapeDialogState extends State<BookCoverScrapeDialog> {
   ) {
     final List<String> metaParts = <String>[
       if (candidate.isAdult) 'NSFW',
+      if (candidate.format case final BookCatalogFormat f) _formatLabel(f),
       if (candidate.year != null) '${candidate.year}',
       if (candidate.author != null) candidate.author!,
       if (candidate.publisher != null) candidate.publisher!,

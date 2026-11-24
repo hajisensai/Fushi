@@ -4,7 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
-import 'package:fushi_engine/media/metadata/books/anilist_novels.dart'
+import 'package:fushi_engine/media/metadata/books/anilist_books.dart'
     show parseAniListMediaUrl;
 import 'package:fushi_engine/media/metadata/books/itunes_music.dart'
     show parseItunesUrl;

@@ -597,6 +597,64 @@ void main() {
       findsOneWidget,
     );
   });
+
+  // BUG-5378：AniList 源不再只搜轻小说；候选写明形态，同名的轻小说与漫画分得清。
+  testWidgets('AniList：漫画与轻小说都搜出来，候选写明形态', (WidgetTester tester) async {
+    final List<String> queries = <String>[];
+    Map<String, Object?> media(int id, String format, String title) =>
+        <String, Object?>{
+          'id': id,
+          'format': format,
+          'countryOfOrigin': 'JP',
+          'title': <String, Object?>{'native': title},
+          'coverImage': <String, Object?>{'large': 'https://c/$id.jpg'},
+        };
+    final MockClient client = MockClient((http.Request req) async {
+      if (req.url.host == 'graphql.anilist.co') {
+        queries.add(
+          '${(jsonDecode(req.body) as Map<String, Object?>)['query']}',
+        );
+        return http.Response.bytes(
+          utf8.encode(
+            jsonEncode(<String, Object?>{
+              'data': <String, Object?>{
+                'Page': <String, Object?>{
+                  'media': <Object?>[
+                    media(1, 'MANGA', 'ホリミヤ'),
+                    media(2, 'NOVEL', 'ホリミヤ 小説'),
+                  ],
+                },
+              },
+            }),
+          ),
+          200,
+        );
+      }
+      return http.Response.bytes(utf8.encode('{"data":[]}'), 200);
+    });
+    await tester.pumpWidget(
+      wrap(
+        BookCoverScrapeDialog(
+          initialQuery: 'ホリミヤ',
+          scraperOverride: BookMetadataScraper(
+            client: client,
+            catalogHttp: BookCatalogHttp(client: client, throttle: false),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('book_scrape_source_picker')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('AniList').last);
+    await tester.pumpAndSettle();
+
+    expect(queries.single, isNot(contains('format:')));
+    expect(find.textContaining(t.book_scrape_format_manga), findsOneWidget);
+    expect(find.textContaining(t.book_scrape_format_novel), findsOneWidget);
+  });
 }
 
 /// 源下拉切到 MangaBaka，点首个候选的「使用」进卷封面网格。

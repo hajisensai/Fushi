@@ -38,7 +38,8 @@ List<OpDescription> describeBookMetadataOps(
     summary:
         'Search online book metadata candidates. Sources: bangumi (books), '
         'dlsite (voice / manga / novel works), mangabaka (manga / light novel '
-        'series), anilist (light novels; also returns a banner image), openbd '
+        'series), anilist (light novels, manga, manhwa and manhua; each candidate '
+        'carries format; also returns a banner image), openbd '
         '(ISBN lookup only), ndl (National Diet Library, title or ISBN), '
         'rakuten (Rakuten Books, title or ISBN; only when the user entered '
         'Rakuten credentials in settings), itunes (songs on the Japanese '

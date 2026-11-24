@@ -455,6 +455,8 @@ Map<String, Object?> bookScrapeCandidateJson(BookScrapeCandidate c) =>
       'title': c.title,
       if (c.originalTitle != null) 'originalTitle': c.originalTitle,
       if (c.author != null) 'author': c.author,
+      // 形态：novel / manga / manhwa / manhua / oneShot（AniList 给，其余源不带）。
+      if (c.format != null) 'format': c.format!.name,
       if (c.year != null) 'year': c.year,
       if (c.publisher != null) 'publisher': c.publisher,
       if (c.series != null) 'series': c.series,
