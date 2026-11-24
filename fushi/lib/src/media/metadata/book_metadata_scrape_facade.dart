@@ -8,6 +8,11 @@ import 'package:fushi_engine/media/metadata/books/anilist_novels.dart'
     show parseAniListMediaUrl;
 import 'package:fushi_engine/media/metadata/books/itunes_music.dart'
     show parseItunesUrl;
+import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
+    show findIsbnIn;
+import 'package:fushi_engine/media/metadata/books/book_search_query.dart';
+import 'package:fushi_engine/models/content_language.dart'
+    show contentLanguageKey;
 import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
@@ -32,9 +37,13 @@ typedef BookCoverDownloader =
 /// 一次搜索的结果：给用户看的候选 + 因作品没标 NSFW 而藏起来的 NSFW 候选条数
 /// （弹窗据此提示「标为 NSFW 后显示」）。AniList 在服务端就过滤掉了成人向条目，
 /// 那部分不计入 [hiddenNsfw]。
+///
+/// [query] 是实际命中的搜索词：原词零结果时按 `bookSearchQueries` 改写后重试
+/// （去卷号 / 拆混写名 / 去打头标签，BUG-5372），弹窗据此提示「显示的是 X 的结果」。
 typedef BookScrapeSearchResult = ({
   List<BookScrapeCandidate> candidates,
   int hiddenNsfw,
+  String query,
 });
 
 /// 书在 NSFW 标记表（`media_nsfw_flags`）里的宿主身份：EPUB / 漫画 / PDF =
@@ -253,6 +262,19 @@ class BookMetadataScrapeFacade {
   /// [item] 的 ISBN-13（EPUB 导入时从 OPF `dc:identifier` 规范化写进
   /// `epub_books.isbn`；字幕书 / 漫画 / 没有 ISBN 的书返回 null）。openBD 等按 ISBN
   /// 查的源用它预填。
+  /// 书的版本语言（EPUB / 漫画 `dc:language`，主子标签；认不出 / 不是书为空串）：
+  /// MangaBaka 卷封面按它挑（中文版用中文版封面）。
+  static Future<String> languageForItem(
+    FushiDatabase db,
+    MediaItem item,
+  ) async {
+    final String? bookKey = ReaderFushiSource.parseBookKey(
+      item.mediaIdentifier,
+    );
+    if (bookKey == null) return '';
+    return contentLanguageKey((await db.getEpubBook(bookKey))?.language);
+  }
+
   static Future<String?> isbnForItem(FushiDatabase db, MediaItem item) async {
     final String? bookKey = ReaderFushiSource.parseBookKey(
       item.mediaIdentifier,
@@ -284,17 +306,53 @@ class BookMetadataScrapeFacade {
     required String query,
     bool includeNsfw = false,
   }) async {
-    final List<BookScrapeCandidate> all = await _searchAll(
-      source,
-      query.trim(),
-      includeNsfw: includeNsfw,
+    final List<String> queries = searchQueriesFor(source, query);
+    BookScrapeSearchResult result = (
+      candidates: const <BookScrapeCandidate>[],
+      hiddenNsfw: 0,
+      query: query.trim(),
     );
-    if (includeNsfw) return (candidates: all, hiddenNsfw: 0);
-    final List<BookScrapeCandidate> shown = <BookScrapeCandidate>[
-      for (final BookScrapeCandidate c in all)
-        if (!c.isAdult) c,
-    ];
-    return (candidates: shown, hiddenNsfw: all.length - shown.length);
+    // 依次试改写后的词，第一个有结果（含藏起来的 NSFW 条目）的为准；请求失败照常
+    // 抛出（不吞、不换下一个词掩盖）。
+    for (final String q in queries) {
+      final List<BookScrapeCandidate> all = await _searchAll(
+        source,
+        q,
+        includeNsfw: includeNsfw,
+      );
+      final List<BookScrapeCandidate> shown = includeNsfw
+          ? all
+          : <BookScrapeCandidate>[
+              for (final BookScrapeCandidate c in all)
+                if (!c.isAdult) c,
+            ];
+      result = (
+        candidates: shown,
+        hiddenNsfw: all.length - shown.length,
+        query: q,
+      );
+      if (all.isNotEmpty) return result;
+    }
+    return (
+      candidates: result.candidates,
+      hiddenNsfw: result.hiddenNsfw,
+      query: query.trim(),
+    );
+  }
+
+  /// [query] 在 [source] 上要依次试的搜索词（纯函数）。贴的是链接 / 纯数字 id /
+  /// ISBN，或源不按书名搜（[BookScrapeSource.searchGranularity] 为 null）时只有原词。
+  static List<String> searchQueriesFor(BookScrapeSource source, String query) {
+    final String q = query.trim();
+    if (q.isEmpty) return const <String>[];
+    final BookSearchGranularity? granularity = source.searchGranularity;
+    if (granularity == null ||
+        q.contains('://') ||
+        RegExp(r'^\d+$').hasMatch(q) ||
+        findIsbnIn(q) != null) {
+      return <String>[q];
+    }
+    return bookSearchQueries(q, granularity: granularity);
   }
 
   Future<List<BookScrapeCandidate>> _searchAll(
@@ -425,8 +483,17 @@ class BookMetadataScrapeFacade {
   }
 
   /// MangaBaka 系列 [seriesId] 的每卷封面（弹窗的卷网格）。
-  Future<List<BookVolumeCover>> volumeCovers(String seriesId) =>
-      _scraper.fetchMangaBakaVolumeCovers(seriesId);
+  Future<List<BookVolumeCover>> volumeCovers(
+    String seriesId, {
+    String language = '',
+  }) => _scraper.fetchMangaBakaVolumeCovers(seriesId, language: language);
+
+  /// [volumeCovers] 连同实际用的版本语言（本语言没有卷封面时回落日文版，弹窗据此
+  /// 提示）。
+  Future<BookVolumeCoverSet> volumeCoverSet(
+    String seriesId, {
+    String language = '',
+  }) => _scraper.fetchMangaBakaVolumeCoverSet(seriesId, language: language);
 
   /// 下载某卷封面到临时文件（失败抛 [ImageDownloadException]）。
   Future<File> downloadVolumeCover(BookVolumeCover cover) =>

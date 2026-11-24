@@ -24,7 +24,11 @@ import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart'
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart'
     show pickMangaBakaVolumeImages;
 import 'package:fushi_engine/media/metadata/books/anilist_novels.dart';
+import 'package:fushi_engine/models/content_language.dart'
+    show contentLanguageKey;
 import 'package:fushi_engine/media/metadata/books/book_catalog.dart';
+import 'package:fushi_engine/media/metadata/books/book_search_query.dart'
+    show BookSearchGranularity;
 import 'package:fushi_engine/media/metadata/books/itunes_music.dart';
 import 'package:fushi_engine/media/metadata/books/ndl_search.dart';
 import 'package:fushi_engine/media/metadata/books/openbd.dart';
@@ -61,6 +65,20 @@ enum BookScrapeSource {
 
   /// 要用户自己的凭据（没填就不可用）。
   bool get needsCredentials => this == BookScrapeSource.rakuten;
+
+  /// 按书名搜时的条目粒度（决定搜索词怎么改写，见 `bookSearchQueries`）：
+  /// MangaBaka 系列 / AniList media 是整部系列；Bangumi 单行本 / NDL / 楽天按卷；
+  /// DLsite（作品编号）/ openBD（ISBN）/ iTunes（歌名）不改写（null）。
+  BookSearchGranularity? get searchGranularity => switch (this) {
+    BookScrapeSource.mangabaka ||
+    BookScrapeSource.anilist => BookSearchGranularity.series,
+    BookScrapeSource.bangumi ||
+    BookScrapeSource.ndl ||
+    BookScrapeSource.rakuten => BookSearchGranularity.volume,
+    BookScrapeSource.dlsite ||
+    BookScrapeSource.openbd ||
+    BookScrapeSource.itunes => null,
+  };
 
   /// 按 wire 名（`bangumi` / `dlsite` / `mangabaka` / `anilist` / `openbd` / `ndl` /
   /// `rakuten` / `itunes`）解析。
@@ -573,19 +591,29 @@ class BookMetadataScraper {
     }
   }
 
-  /// MangaBaka 系列 [seriesId] 的日文版每卷封面（每卷一张：常规版、安全分级优先，再比
-  /// 面积），按卷号升序。失败抛 [BookScrapeException]。
-  Future<List<BookVolumeCover>> fetchMangaBakaVolumeCovers(
-    String seriesId,
-  ) async {
+  /// MangaBaka 系列 [seriesId] 的每卷封面（每卷一张：常规版、安全分级优先，再比
+  /// 面积），按卷号升序。[language] 是书的版本语言（`zh` / `zh-TW` / `ko`…，空 = 日文
+  /// 版）：先挑这个语言的封面，一张都没有再回落日文版（BUG-5287 同一判据）；返回
+  /// 实际用的语言（主子标签）。失败抛 [BookScrapeException]。
+  Future<BookVolumeCoverSet> fetchMangaBakaVolumeCoverSet(
+    String seriesId, {
+    String language = '',
+  }) async {
     final int? id = int.tryParse(seriesId.trim());
-    if (id == null) return const <BookVolumeCover>[];
+    final String wanted = contentLanguageKey(language).isEmpty
+        ? 'ja'
+        : contentLanguageKey(language);
+    if (id == null) {
+      return (covers: const <BookVolumeCover>[], language: wanted);
+    }
     final List<MangaBakaImage> images;
     try {
+      // 日文版按源站语言过滤取（一页就够）；别的语言要连 `zh-tw` / `zh-hk` 这类
+      // 地区子标签一起认，取全部语言后本地按主子标签挑（与批量刮削同一做法）。
       images = await _mangaBaka.fetchSeriesImages(
         id,
         type: 'volume',
-        language: 'ja',
+        language: wanted == 'ja' ? 'ja' : null,
       );
     } on MangaBakaException catch (e) {
       throw BookScrapeException(
@@ -593,24 +621,36 @@ class BookMetadataScraper {
         statusCode: e.statusCode,
       );
     }
-    final List<BookVolumeCover> out = <BookVolumeCover>[
-      for (final MapEntry<num, MangaBakaImage> e in pickMangaBakaVolumeImages(
-        images,
-      ).entries)
-        BookVolumeCover(
-          volume: e.key,
-          label: e.value.index,
-          url: e.value.raw.url,
-          width: e.value.raw.width,
-          height: e.value.raw.height,
-          thumbnailUrl: e.value.thumbnailUrl,
-        ),
-    ];
-    out.sort(
-      (BookVolumeCover a, BookVolumeCover b) => a.volume.compareTo(b.volume),
-    );
-    return out;
+    for (final String lang in <String>{wanted, 'ja'}) {
+      final List<BookVolumeCover> out = <BookVolumeCover>[
+        for (final MapEntry<num, MangaBakaImage> e in pickMangaBakaVolumeImages(
+          images,
+          language: lang,
+        ).entries)
+          BookVolumeCover(
+            volume: e.key,
+            label: e.value.index,
+            url: e.value.raw.url,
+            width: e.value.raw.width,
+            height: e.value.raw.height,
+            thumbnailUrl: e.value.thumbnailUrl,
+          ),
+      ];
+      if (out.isEmpty) continue;
+      out.sort(
+        (BookVolumeCover a, BookVolumeCover b) => a.volume.compareTo(b.volume),
+      );
+      return (covers: out, language: lang);
+    }
+    return (covers: const <BookVolumeCover>[], language: wanted);
   }
+
+  /// [fetchMangaBakaVolumeCoverSet] 只要封面列表。
+  Future<List<BookVolumeCover>> fetchMangaBakaVolumeCovers(
+    String seriesId, {
+    String language = '',
+  }) async =>
+      (await fetchMangaBakaVolumeCoverSet(seriesId, language: language)).covers;
 
   /// 关闭内部 client（若为默认自建）。
   void close() {
@@ -620,6 +660,10 @@ class BookMetadataScraper {
     if (_ownsCatalog) _catalog.close();
   }
 }
+
+/// 一部系列的每卷封面 + 实际用的版本语言（主子标签，`ja` / `zh` / `ko`…；与书的
+/// 语言不同 = 本语言没有卷封面、回落了日文版）。
+typedef BookVolumeCoverSet = ({List<BookVolumeCover> covers, String language});
 
 /// 一卷封面（MangaBaka 每卷封面网格用）。
 class BookVolumeCover {

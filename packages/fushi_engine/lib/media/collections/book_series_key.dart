@@ -167,8 +167,8 @@ BookSeriesPosition? bookSeriesPositionOf({
 /// 圆括号、大小写都认、可连续多段；此前这里只认一段方括号）。
 final RegExp _hashSuffix = trailingCrcTagsPattern;
 
-/// 结尾卷号：`2` / `第2巻` / `2巻` / `Vol.2` / `Vol-2` / `Volume 2` / `v02` /
-/// `(2)` / `#2`、连字符 / 下划线卷号 `Karakai-Jouzu-Takagi-san-02` / `Series_02`，
+/// 结尾卷号：`2` / `第2巻` / `2巻` / `第2卷` / `第2冊` / `第2集`（台港单行本）/
+/// `2권`（韩文）/ `Vol.2` / `Vol-2` / `Volume 2` / `v02` / `(2)` / `#2`、连字符 / 下划线卷号 `Karakai-Jouzu-Takagi-san-02` / `Series_02`，
 /// 以及直接贴在汉字 / 假名后的 `安達としまむら10`。数字前必须有分隔或非 ASCII
 /// 字符，「86」这类纯数字书名、「Catch22」这类拉丁字母贴数字的书名尾数不会被吃掉
 /// （「Fahrenheit 451」「Spider-Man 2099」「Spider-Man-2099」会被读成卷号，但归组
@@ -181,7 +181,7 @@ final RegExp _volumeSuffix = RegExp(
   r'(?:\s+|[\s_\-:・]*(?:第|vol(?:ume)?[\s._\-]*|v(?=\d)|#)|\s*\(|'
   r'(?<=[A-Za-z)\]]|[^\x00-\x7F])[\-_]\s*|(?<=[^\x00-\x7F]))'
   r'(\d{1,4}(?:\.\d)?)'
-  r'\s*(?:巻|卷|册|冊)?\s*\)?\s*$',
+  r'\s*(?:巻|卷|册|冊|集|권)?\s*\)?\s*$',
   caseSensitive: false,
 );
 
