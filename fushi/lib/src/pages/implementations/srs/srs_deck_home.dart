@@ -278,7 +278,8 @@ class _SrsHomeView extends StatelessWidget {
   /// - 首行 = 等高三块（[HomePosterRows]，与首页仪表盘同一套按行拉齐的排布，
   ///   底边对齐）：今日计划 · 选中牌组（保持率 + 未来 7 天到期 + 复习 / 浏览 /
   ///   选项）· 连续天数热力图；放不下三列时排成 2 + 1；
-  /// - 下面是「牌组」分区标题 + 整宽牌组树（点行 = 首行中间那块换成该牌组）。
+  /// - 下面是「牌组」分区标题 + 整宽牌组树（有活的行点行 = 复习；没活的行点行、行菜单
+  ///   「牌组详情」、点计数区 = 首行中间那块换成该牌组）。
   ///
   /// 未来 7 天到期只在牌组块里出现一次（单牌组时它就是全库）；「开始复习」只在
   /// 页头主按钮。
@@ -2181,11 +2182,34 @@ class _SrsDeckBreadcrumb extends StatelessWidget {
 }
 
 /// 牌组菜单项（牌组行、详情面板「选项」共用一份）。
+///
+/// [details]：第一项放「牌组详情」（牌组行的菜单；有活的行点行是复习，看详情走这里）。
 List<PopupMenuEntry<_DeckAction>> _deckMenuItems({
   required bool isDefault,
   required bool canMoveUp,
   required bool canMoveDown,
   bool remote = false,
+  bool details = false,
+}) => <PopupMenuEntry<_DeckAction>>[
+  if (details)
+    PopupMenuItem<_DeckAction>(
+      key: const ValueKey<String>('srs-deck-menu-details'),
+      value: _DeckAction.details,
+      child: Text(t.srs_deck_details),
+    ),
+  ..._deckActionMenuItems(
+    isDefault: isDefault,
+    canMoveUp: canMoveUp,
+    canMoveDown: canMoveDown,
+    remote: remote,
+  ),
+];
+
+List<PopupMenuEntry<_DeckAction>> _deckActionMenuItems({
+  required bool isDefault,
+  required bool canMoveUp,
+  required bool canMoveDown,
+  required bool remote,
 }) => remote
     // 已配对设备上的牌组：只有在主机库上能做、且不改牌组结构的几项（改名 / 移动 / 删除留给主机自己）。
     ? <PopupMenuEntry<_DeckAction>>[
@@ -2260,6 +2284,8 @@ List<PopupMenuEntry<_DeckAction>> _deckMenuItems({
 /// 右键经 [contextMenuInvoker] 同步派发到这里时，菜单贴着按下点弹出（M3 / 桌面右键
 /// 菜单的约定，反馈 Ne6WHI9TYE）；长按 / 菜单键 / 「选项」按钮没有按下坐标，贴在
 /// [anchorContext] 的右端。
+///
+/// [onDetails] 非 null 时菜单第一项是「牌组详情」，选它调 [onDetails]（不经 [onAction]）。
 Future<void> _showDeckMenu(
   BuildContext anchorContext, {
   required SrsDeckSummary deck,
@@ -2268,6 +2294,7 @@ Future<void> _showDeckMenu(
   required bool canMoveDown,
   required void Function(SrsDeckSummary deck, _DeckAction action) onAction,
   bool remote = false,
+  VoidCallback? onDetails,
 }) async {
   // 必须在第一个 await 之前读：只在右键回调同步执行期间非空。
   final Offset? pointer = activeContextMenuAnchor;
@@ -2291,9 +2318,15 @@ Future<void> _showDeckMenu(
       canMoveUp: canMoveUp,
       canMoveDown: canMoveDown,
       remote: remote,
+      details: onDetails != null,
     ),
   );
-  if (picked != null) onAction(deck, picked);
+  if (picked == null) return;
+  if (picked == _DeckAction.details) {
+    onDetails?.call();
+  } else {
+    onAction(deck, picked);
+  }
 }
 
 /// 牌组页的横幅（导入任务 / Lapis 迁移提醒 / 引擎不可用 / 空库）：首页根层树的最前面。
