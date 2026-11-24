@@ -1358,7 +1358,8 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     );
   }
 
-  /// 「今日」的大字版：今日字数；不矮时下面一行是目标进度（没设目标时是时长）；
+  /// 「今日」的大字版：今日字数；内容区放得下时下面一行是目标进度（没设目标时是时长，
+  /// [HomeWidgetFigureWithLine]）；
   /// [wide]（色块外观的宽格）时起始侧再挂目标环。
   Widget _todayFigure(
     FushiDesignTokens tokens, {
@@ -1416,37 +1417,33 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
             ],
           ),
         );
-        final Widget column = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            figure,
-            if (!dense) ...<Widget>[
-              const SizedBox(height: 4),
-              // 宽格有目标时目标进度与今日时长同一行：时长不让位，目标文字放不下才省略。
-              if (goalLine != null && wide)
-                Row(
-                  children: <Widget>[
-                    Flexible(
-                      child: Text(
-                        goalLine,
-                        key: const ValueKey<String>('home-today-goal-line'),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: caption,
-                      ),
+        // 宽格有目标时目标进度与今日时长同一行：时长不让位，目标文字放不下才省略。
+        final Widget line = goalLine != null && wide
+            ? Row(
+                children: <Widget>[
+                  Flexible(
+                    child: Text(
+                      goalLine,
+                      key: const ValueKey<String>('home-today-goal-line'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: caption,
                     ),
-                    Text(' · ', maxLines: 1, style: caption),
-                    time,
-                  ],
-                )
-              else
-                time,
-            ],
-          ],
+                  ),
+                  Text(' · ', maxLines: 1, style: caption),
+                  time,
+                ],
+              )
+            : time;
+        // TinO49VcdQ：挂不挂副行、大字多大按内容区实际高度定（整格高度减掉卡头后
+        // 更矮），副行完整画出，不再竖向居中裁掉下半截。
+        final Widget column = HomeWidgetFigureWithLine(
+          figure: figure,
+          line: line,
+          lineStyle: caption,
         );
         final FushiCoverBlockColors? colors = style?.colors;
-        if (!wide || colors == null) return _fitCenter(column);
+        if (!wide || colors == null) return column;
         return Row(
           children: <Widget>[
             ExcludeSemantics(
@@ -1471,7 +1468,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
               ),
             ),
             const SizedBox(width: 12),
-            Expanded(child: _fitCenter(column)),
+            Expanded(child: column),
           ],
         );
       },

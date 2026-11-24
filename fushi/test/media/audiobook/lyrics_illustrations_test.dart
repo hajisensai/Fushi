@@ -254,15 +254,80 @@ void main() {
       expect(c.shown, isNull);
     });
 
-    test('showAt 夹在已听到范围内；一张都没听到时不动', () {
+    test('showAt：未解锁的不放上插图位；一张都没听到时浏览从第一张看起', () {
       final LyricsIllustrationController c = LyricsIllustrationController()
         ..load(items(), position: const LyricsBookPosition(0, 0));
       c.showAt(2);
       expect(c.shown, isNull);
-      expect(c.browseStart, isNull);
+      expect(c.browseStart, 0, reason: '全部插图可浏览（遮着），不再是 null');
       c.load(items(), position: const LyricsBookPosition(3, 0));
       c.showAt(9);
+      expect(c.shown, isNull, reason: '夹到最后一张，它还没听到：不动');
+      c.showAt(1);
       expect(c.shown, 1);
+      expect(
+        (LyricsIllustrationController()..load(const <LyricsIllustration>[]))
+            .browseStart,
+        isNull,
+      );
+    });
+
+    // 反馈 wV1kvoLjI3：大图浏览列出全部插图；还没听到的遮着，点一下揭开。揭开
+    // 状态与阅读器共用（load 的 revealed 种子 + onReveal 回写）。
+    test('未解锁 = 没听到且没揭开；揭开回写宿主，插图位翻页跳过未解锁的', () {
+      final List<String> written = <String>[];
+      final LyricsIllustrationController c = LyricsIllustrationController()
+        ..onReveal = written.add
+        ..load(
+          <LyricsIllustration>[...items(), _item('d', 7, 0)],
+          position: const LyricsBookPosition(1, 5),
+          revealed: const <String>['d'],
+        );
+      expect(c.reached, 0);
+      expect(c.isLocked(0), isFalse);
+      expect(c.isLocked(1), isTrue);
+      expect(c.isLocked(2), isTrue);
+      expect(c.isLocked(3), isFalse, reason: '阅读器里揭开过的不遮');
+      expect(c.isLocked(-1), isTrue);
+      expect(c.isLocked(9), isTrue);
+
+      c.showAt(0);
+      expect(c.canShowNext, isTrue, reason: '后面有揭开过的 d');
+      c.showNext();
+      expect(c.shown, 3, reason: '跳过未解锁的 b、c');
+      c.showPrevious();
+      expect(c.shown, 0);
+
+      int notified = 0;
+      c.addListener(() => notified++);
+      c.reveal(1);
+      expect(c.isLocked(1), isFalse);
+      expect(written, <String>['b']);
+      expect(notified, 1);
+      c.reveal(1);
+      expect(written, <String>['b'], reason: '重复揭开不重复回写');
+      c.showNext();
+      expect(c.shown, 1);
+    });
+
+    test('往回 seek：揭开过的插图留在插图位，没揭开的收回封面', () {
+      final LyricsIllustrationController c = LyricsIllustrationController()
+        ..load(
+          items(),
+          position: const LyricsBookPosition(5, 1300),
+          audioPosition: const Duration(minutes: 30),
+        );
+      c
+        ..reveal(2)
+        ..showAt(2);
+      c.observe(
+        const LyricsBookPosition(1, 5),
+        audioPosition: const Duration(minutes: 3),
+      );
+      expect(c.reached, 0);
+      expect(c.shown, 2, reason: '揭开过的不算剧透，不收回');
+      c.showAt(1);
+      expect(c.shown, 2, reason: 'b 未解锁：showAt 不动');
     });
   });
 

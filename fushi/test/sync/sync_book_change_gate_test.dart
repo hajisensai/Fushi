@@ -16,6 +16,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/aggregate_peer_snapshot_cache.dart';
+import 'package:fushi_engine/sync/aggregate_sync_service.dart'
+    show aggregateSnapshotDeviceOf;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
@@ -577,5 +579,14 @@ void main() {
     );
     expect(bookManifestDeviceOf('books-abc.json'), 'abc');
     expect(bookManifestDeviceOf('collections-abc.json'), isNull);
+  });
+
+  // 旧版客户端检测认的聚合快照名与聚合同步本身同源（引擎 aggregate_sync_service），
+  // Hibiki 时代旧后缀的快照（云根迁移原样保留）也认得出写它的设备。
+  test('聚合快照名 → 设备 id：新旧后缀都认，空设备 / 非快照返回 null', () {
+    expect(aggregateSnapshotDeviceOf('devA.fushiaggregate'), 'devA');
+    expect(aggregateSnapshotDeviceOf('devB.hibikiaggregate'), 'devB');
+    expect(aggregateSnapshotDeviceOf('.fushiaggregate'), isNull);
+    expect(aggregateSnapshotDeviceOf('books-devA.json'), isNull);
   });
 }

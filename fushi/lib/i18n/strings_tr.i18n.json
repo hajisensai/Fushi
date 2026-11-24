@@ -5677,6 +5677,7 @@
   "lyrics_illustration_cue_dot": "Dot",
   "lyrics_illustration_cue_hint": "Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.",
   "lyrics_illustration_cue_popup": "Pop up",
+  "lyrics_illustration_locked_hint": "Not heard yet · Tap to reveal",
   "lyrics_illustration_next": "Next illustration",
   "lyrics_illustration_open": "View illustrations",
   "lyrics_illustration_previous": "Previous illustration",

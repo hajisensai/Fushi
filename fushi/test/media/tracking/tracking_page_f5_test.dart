@@ -234,6 +234,7 @@ void main() {
               service: service,
               database: db,
               onOpenSettings: () {},
+              openSeriesCard: (BuildContext _, int _, String _) async {},
               initialTab: tab,
             ),
           ),
@@ -624,7 +625,11 @@ void main() {
         child: TranslationProvider(
           child: MaterialApp(
             home: Scaffold(
-              body: BookTrackingDialog(service: service, bookKey: 'Ajin 02'),
+              body: BookTrackingDialog(
+                service: service,
+                bookKey: 'Ajin 02',
+                openSeriesCard: (BuildContext _, int _, String _) async {},
+              ),
             ),
           ),
         ),

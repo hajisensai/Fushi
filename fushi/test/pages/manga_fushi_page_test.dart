@@ -1325,7 +1325,7 @@ void main() {
       reason: '重进正在跑 OCR 的书，HUD 必须接回进度',
     );
     // 接回的任务可能是别处从第一页排的：阅读器要把它改道到读者眼前这页。
-    expect(focus.take(), 0, reason: '接回任务时要把读者当前页送给任务（边看边识别）');
+    expect(focus.take(), 'images/p001.jpg', reason: '接回任务时要把读者当前页送给任务（边看边识别）');
 
     // 退出阅读页：只是不再观察，底层任务不得被取消。
     await tester.pumpWidget(const SizedBox.shrink());

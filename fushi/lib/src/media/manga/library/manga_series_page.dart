@@ -100,6 +100,7 @@ import 'package:fushi/src/media/links/media_link_opener.dart'
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
 import 'package:fushi/src/media/tracking/book_tracking_dialog.dart';
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
 
 /// 作品页要显示**哪一部**作品。
 ///
@@ -2979,6 +2980,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           context,
           service: appModel.mediaTrackingService,
           bookKey: bookKey,
+          openSeriesCard: trackingSeriesCardOpener(appModel),
         ),
       ),
     );
@@ -3003,6 +3005,7 @@ class _MangaSeriesPageState extends ConsumerState<MangaSeriesPage> {
           context,
           service: appModel.mediaTrackingService,
           bookKey: bookKey,
+          openSeriesCard: trackingSeriesCardOpener(appModel),
         ),
       ),
     );

@@ -140,6 +140,7 @@ import 'package:fushi/src/settings/settings_schema_tracking.dart'
     show buildMediaTrackingDestination;
 import 'package:fushi/src/media/tracking/page/tracking_page.dart'
     show openTrackingPage;
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
 import 'package:fushi/src/media/tracking/page/tracking_page_data.dart'
     show TrackingPageTab;
 import 'package:fushi/src/media/tracking/tracking_auto_link_notice.dart';
@@ -1177,6 +1178,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             navContext,
             service: appModel.mediaTrackingService,
             database: appModel.database,
+            openSeriesCard: trackingSeriesCardOpener(appModel),
             initialTab: TrackingPageTab.linked,
             onOpenSettings: () {
               final NavigatorState? navigator =

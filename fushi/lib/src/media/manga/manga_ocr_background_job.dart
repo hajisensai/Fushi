@@ -70,6 +70,11 @@ abstract interface class MangaOcrJobFollower {
 
 /// 后台 OCR 的统一事件。支持增量引擎时 [pageIndex]/[page] 随进度事件返回，
 /// 阅读器可立即替换该页的透明文字层；不支持增量的执行器在最终事件一次性刷新。
+///
+/// [pageIndex] 是**执行器页表**里的页号（执行器按 `enumerateMangaPages` 枚举目录），
+/// 与书的 manga.json 页表不一定一一对应：目录里多一张不在页表里的图，两边页号就
+/// 错开。消费方要把结果挂到书的哪一页，按 [page] 的 url 算页身份
+/// （`mangaPageId`）去对，不得拿 [pageIndex] 当书的页号（反馈 -5BJ11GqOk）。
 class MangaOcrBackgroundEvent {
   const MangaOcrBackgroundEvent.progress({
     required this.pagesDone,

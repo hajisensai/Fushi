@@ -301,6 +301,7 @@ void main() {
               service: service,
               database: db,
               onOpenSettings: () {},
+              openSeriesCard: (BuildContext _, int _, String _) async {},
             ),
           ),
         ),
