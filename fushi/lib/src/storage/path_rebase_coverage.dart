@@ -501,6 +501,13 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '收藏来源枚举值（book/video/audiobook/lyrics/game/manga/music/web），不是路径。',
   ),
   PathRebaseColumn(
+    'FavoriteSentences',
+    'originSourceId',
+    PathRebaseKind.notAPath,
+    '远端来源身份（v179，`jellyfin:<地址>|<用户>` / `plex:<机器>|<账号>`），'
+        '与 MediaServerConfig.sourceId 同口径，不是本机路径。',
+  ),
+  PathRebaseColumn(
     'FavoriteWords',
     'sourceType',
     PathRebaseKind.notAPath,
