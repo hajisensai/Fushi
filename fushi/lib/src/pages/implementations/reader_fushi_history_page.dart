@@ -90,8 +90,9 @@ import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/library_view_options.dart';
+import 'package:fushi/src/pages/implementations/library_layout/library_grid_zoom.dart';
 import 'package:fushi/src/models/library_grid_columns.dart'
-    show LibraryGridDomain;
+    show LibraryGridDomain, libraryGridColumnChoices;
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
@@ -1592,23 +1593,26 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
   LibraryGridDomain get _gridDomain =>
       _mangaOnly ? LibraryGridDomain.manga : LibraryGridDomain.books;
 
+  /// 写本页当前尺寸档的「每行数量」（null = 自动）并重建网格。
+  void _setGridColumns(int? columns) {
+    // 偏好内存缓存在第一个 await 前已更新，这里 setState 读到的就是新值。
+    unawaited(
+      appModel.prefsRepo.setLibraryGridColumns(
+        _gridDomain,
+        libraryGridSizeClassOf(context),
+        columns,
+      ),
+    );
+    setState(() {});
+  }
+
   /// 「每行数量」一组（菜单与窄窗抽屉共用）。
   LibraryViewSection _gridColumnsSection() {
     final WindowSizeClass sizeClass = libraryGridSizeClassOf(context);
     return libraryGridColumnsSection(
       sizeClass: sizeClass,
       selected: appModel.prefsRepo.libraryGridColumns(_gridDomain, sizeClass),
-      onSelected: (int? columns) {
-        // 偏好内存缓存在第一个 await 前已更新，这里 setState 读到的就是新值。
-        unawaited(
-          appModel.prefsRepo.setLibraryGridColumns(
-            _gridDomain,
-            sizeClass,
-            columns,
-          ),
-        );
-        setState(() {});
-      },
+      onSelected: _setGridColumns,
     );
   }
 
@@ -2938,80 +2942,87 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         controller: _shelfScrollController,
         child: LayoutBuilder(
           // 下拉刷新：保活后切回书架不再隐式重拉远端，给用户显式强制刷新入口。
-          builder: (context, constraints) => RefreshIndicator(
-            onRefresh: _pullToRefreshBooks,
-            // 叠放工具区的高度（恒定，不随显隐变）：转圈从工具区下沿出来。
-            edgeOffset: FushiFloatingChromeInset.of(context),
-            child: CustomScrollView(
-              controller: _shelfScrollController,
-              physics: const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
-              ),
-              slivers: [
-                // 叠放工具区让出的顶部高度（不在外壳里时为 0）+ 原有的 gap：内容
-                // 从工具区下方开始、滚动时滚到工具区底下。
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height:
-                        FushiFloatingChromeInset.of(context) +
-                        tokens.spacing.gap,
-                  ),
+          builder: (context, constraints) => LibraryGridZoom(
+            // Apple 库页：双指 / 触控板捏合、⌘+ ⌘− 改每行个数（写回「每行数量」
+            // 偏好，与「显示」菜单同一份值）；M3E 原样返回子树。
+            columns: _shelfCardLayout(constraints).columns,
+            choices: libraryGridColumnChoices(libraryGridSizeClassOf(context)),
+            onColumnsChanged: _setGridColumns,
+            child: RefreshIndicator(
+              onRefresh: _pullToRefreshBooks,
+              // 叠放工具区的高度（恒定，不随显隐变）：转圈从工具区下沿出来。
+              edgeOffset: FushiFloatingChromeInset.of(context),
+              child: CustomScrollView(
+                controller: _shelfScrollController,
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
                 ),
-                // 书架顶部「继续阅读 hero」条。原并排的「统计」三格（总数/在读/
-                // 已完成）按用户反馈移除——右上角「阅读统计」已有完整入口，此处
-                // 属重复信息。无在读候选时整条隐藏。
-                // BUG-804：hero 喂**未过滤的全量 EPUB-backed `books`**（含有声书），
-                // 不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续阅读」永不更新。
-                // 库墙首块已是同一本且带「继续」标识时整段不画（去重，见
-                // [_wallLeadsWithContinue]）。
-                if (continuePick != null && continueShown)
+                slivers: [
+                  // 叠放工具区让出的顶部高度（不在外壳里时为 0）+ 原有的 gap：内容
+                  // 从工具区下方开始、滚动时滚到工具区底下。
                   SliverToBoxAdapter(
-                    child: _buildShelfOverviewSection(
-                      continuePick,
-                      constraints,
+                    child: SizedBox(
+                      height:
+                          FushiFloatingChromeInset.of(context) +
+                          tokens.spacing.gap,
                     ),
                   ),
-                // 封面色块版式：「继续阅读」色块与库墙色块之间隔一个分区标题，
-                // 两组色块不连成一片。
-                if (continueShown && FushiContinueBlocks.active(context))
-                  SliverPadding(
-                    padding: EdgeInsets.fromLTRB(
-                      tokens.spacing.page,
-                      tokens.spacing.card * 2,
-                      tokens.spacing.page,
-                      tokens.spacing.card,
-                    ),
-                    sliver: SliverToBoxAdapter(
-                      child: FushiBlockSectionTitle(
-                        _mangaOnly
-                            ? t.library_organize_domain_manga
-                            : t.library_organize_domain_books,
+                  // 书架顶部「继续阅读 hero」条。原并排的「统计」三格（总数/在读/
+                  // 已完成）按用户反馈移除——右上角「阅读统计」已有完整入口，此处
+                  // 属重复信息。无在读候选时整条隐藏。
+                  // BUG-804：hero 喂**未过滤的全量 EPUB-backed `books`**（含有声书），
+                  // 不是 srt 过滤后的 `epubBooks`——否则读了有声书「继续阅读」永不更新。
+                  // 库墙首块已是同一本且带「继续」标识时整段不画（去重，见
+                  // [_wallLeadsWithContinue]）。
+                  if (continuePick != null && continueShown)
+                    SliverToBoxAdapter(
+                      child: _buildShelfOverviewSection(
+                        continuePick,
+                        constraints,
                       ),
                     ),
-                  ),
-                // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
-                // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
-                // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频不再进书架
-                // （归「视频」tab 独占）。
-                // 合集折成网格里的一个格子，与散书同一个 SliverGrid。多端库联合
-                // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
-                // shelfGroups 非空即渲染（含仅远端占位、无任何本地书的情形）。
-                if (shelfGroups.isNotEmpty)
-                  ..._buildShelfGroupSlivers(
-                    shelfGroups,
-                    epubCoverUrisByBookKey,
-                    constraints,
-                    unitKeys: <String>[
-                      for (final CollectionGroup<_ShelfBookSlot> g
-                          in shelfGroups)
-                        sortKeys[g]!.tieKey,
-                    ],
-                    // 与合集详情页 `canReorder` 同一口径：多选 / 搜索 / 筛选下不直拖
-                    // 重排（只剩拖进合集），排序模式另走拖排网格。
-                    dragReorderable:
-                        !_selectionMode && !hasActiveFilter && !searching,
-                  ),
-              ],
+                  // 封面色块版式：「继续阅读」色块与库墙色块之间隔一个分区标题，
+                  // 两组色块不连成一片。
+                  if (continueShown && FushiContinueBlocks.active(context))
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(
+                        tokens.spacing.page,
+                        tokens.spacing.card * 2,
+                        tokens.spacing.page,
+                        tokens.spacing.card,
+                      ),
+                      sliver: SliverToBoxAdapter(
+                        child: FushiBlockSectionTitle(
+                          _mangaOnly
+                              ? t.library_organize_domain_manga
+                              : t.library_organize_domain_books,
+                        ),
+                      ),
+                    ),
+                  // TODO-902: 书架不再按类型分区（删 srt_books_section / section_epub
+                  // 两个分区头），SRT 有声书卡与 EPUB 卡混排进同一网格（SRT 在前、EPUB
+                  // 在后，沿用各自现有顺序，卡片本身的类型标识保留）。视频不再进书架
+                  // （归「视频」tab 独占）。
+                  // 合集折成网格里的一个格子，与散书同一个 SliverGrid。多端库联合
+                  // 视图（spec §2.1）：远端占位书已作为散卡混入 shelfGroups（撤独立远端分区），
+                  // shelfGroups 非空即渲染（含仅远端占位、无任何本地书的情形）。
+                  if (shelfGroups.isNotEmpty)
+                    ..._buildShelfGroupSlivers(
+                      shelfGroups,
+                      epubCoverUrisByBookKey,
+                      constraints,
+                      unitKeys: <String>[
+                        for (final CollectionGroup<_ShelfBookSlot> g
+                            in shelfGroups)
+                          sortKeys[g]!.tieKey,
+                      ],
+                      // 与合集详情页 `canReorder` 同一口径：多选 / 搜索 / 筛选下不直拖
+                      // 重排（只剩拖进合集），排序模式另走拖排网格。
+                      dragReorderable:
+                          !_selectionMode && !hasActiveFilter && !searching,
+                    ),
+                ],
+              ),
             ),
           ),
         ),

@@ -1773,11 +1773,18 @@ class FushiFloatingChromeBar extends StatefulWidget {
     this.leading,
     this.trailing,
     this.secondary,
+    this.titleWrapper,
     super.key,
   });
 
   final Widget tabs;
   final FushiShellActionsSlot slot;
+
+  /// 页头大字行里给页名包一层（Apple 库页的标题下拉菜单，见
+  /// `AppleLibraryTitleMenu`）：收到已按字阶画好的页名与字阶，返回替换它的
+  /// 控件（随大标题收起一起缩放）。null = 页名原样画。只在页头大字顶栏里生效。
+  final Widget Function(BuildContext context, Widget title, TextStyle style)?
+  titleWrapper;
 
   /// 二级页签（库页壳当前组的 [LibrarySectionTabs]，不带外层页边 / 对齐）。
   /// 只在页头大字顶栏里用：宽窗放得下时与页名同一行，否则排在大字行下方；
@@ -1971,10 +1978,14 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
                             key: const ValueKey<String>(
                               'floating-chrome-shell-title',
                             ),
-                            child: FushiMastheadTitle(
-                              title: title,
-                              compact: compact,
-                              style: apple ? titleStyle : null,
+                            child: _wrapTitle(
+                              context,
+                              FushiMastheadTitle(
+                                title: title,
+                                compact: compact,
+                                style: apple ? titleStyle : null,
+                              ),
+                              titleStyle,
                             ),
                           )
                         else
@@ -2020,6 +2031,12 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
         },
       ),
     );
+  }
+
+  Widget _wrapTitle(BuildContext context, Widget title, TextStyle style) {
+    final Widget Function(BuildContext, Widget, TextStyle)? wrapper =
+        widget.titleWrapper;
+    return wrapper == null ? title : wrapper(context, title, style);
   }
 
   Widget _buildChrome(BuildContext context) {

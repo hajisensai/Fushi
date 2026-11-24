@@ -170,7 +170,8 @@ import 'package:fushi/src/pages/implementations/video_library_drop_port.dart';
 import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
 import 'package:fushi/src/pages/implementations/library_view_options.dart';
 import 'package:fushi/src/models/library_grid_columns.dart'
-    show LibraryGridDomain;
+    show LibraryGridDomain, libraryGridColumnChoices;
+import 'package:fushi/src/pages/implementations/library_layout/library_grid_zoom.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -6281,123 +6282,119 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                     onRefresh: _pullToRefresh,
                     // 叠放工具区的高度（恒定，不随显隐变）：转圈从工具区下沿出来。
                     edgeOffset: FushiFloatingChromeInset.of(context),
-                    child: LayoutBuilder(
-                      builder:
-                          (BuildContext context, BoxConstraints constraints) {
-                            final FushiDesignTokens tokens =
-                                FushiDesignTokens.of(context);
-                            // 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏
-                            // （宽<600）用 150 → 至少 2 列，不再「1 列铺满整屏、卡片过大」；宽屏
-                            // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
-                            final double availableWallWidth =
-                                constraints.maxWidth - tokens.spacing.card * 2;
-                            // 「每行数量」（BUG-4219 / 2026-11-07）：系列墙与「全部
-                            // 视频」共用这一格设定，null = 自动按目标卡宽算。
-                            final int? fixedColumns = _gridFixedColumns;
-                            final ({int columns, double cardWidth}) cardLayout =
-                                unifiedShelfCardLayout(
-                                  availableWidth: availableWallWidth,
-                                  targetWidth: readerShelfGridExtentForWidth(
-                                    constraints.maxWidth,
-                                  ),
-                                  fixedColumns: fixedColumns,
+                    child: _gridZoom(
+                      LayoutBuilder(
+                        builder:
+                            (BuildContext context, BoxConstraints constraints) {
+                              final FushiDesignTokens tokens =
+                                  FushiDesignTokens.of(context);
+                              // 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏
+                              // （宽<600）用 150 → 至少 2 列，不再「1 列铺满整屏、卡片过大」；宽屏
+                              // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
+                              final double availableWallWidth =
+                                  constraints.maxWidth -
+                                  tokens.spacing.card * 2;
+                              final ({
+                                ({int columns, double cardWidth}) cardLayout,
+                                ({int columns, double cardWidth})
+                                allVideosCardLayout,
+                              })
+                              wall = _wallLayouts(constraints);
+                              final ({int columns, double cardWidth})
+                              cardLayout = wall.cardLayout;
+                              final ({int columns, double cardWidth})
+                              allVideosCardLayout = wall.allVideosCardLayout;
+                              final double chromeInset =
+                                  FushiFloatingChromeInset.of(context);
+                              // BUG-3235 首屏：分组 / 折叠 / 筛选要的映射还没到，此刻的
+                              // 一切分组都是拿空映射算的（全员散卡、系列筛选全判否），
+                              // 画出来就是「先铺散卡、再收拢成合集、再换海报」一块块地
+                              // 变。等映射，期间画与真实墙同几何的骨架。
+                              if (firstPaintPending) {
+                                return CustomScrollView(
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  slivers: <Widget>[
+                                    SliverToBoxAdapter(
+                                      child: SizedBox(height: chromeInset),
+                                    ),
+                                    ..._buildLibraryMapsPendingSlivers(
+                                      cardLayout: cardLayout,
+                                      allVideosCardLayout: allVideosCardLayout,
+                                      availableWidth: availableWallWidth,
+                                      homeHeroLikely:
+                                          loaded == null ||
+                                          all.any(_mayHaveContinueProgress) ||
+                                          remoteVideos.any(
+                                            (RemoteVideoInfo v) =>
+                                                v.positionMs > 0,
+                                          ),
+                                    ),
+                                  ],
                                 );
-                            final ({int columns, double cardWidth})
-                            allVideosCardLayout = unifiedShelfCardLayout(
-                              availableWidth: availableWallWidth,
-                              targetWidth: allVideoThumbnailTargetWidthForWidth(
-                                constraints.maxWidth,
-                              ),
-                              fixedColumns: fixedColumns,
-                            );
-                            final double chromeInset =
-                                FushiFloatingChromeInset.of(context);
-                            // BUG-3235 首屏：分组 / 折叠 / 筛选要的映射还没到，此刻的
-                            // 一切分组都是拿空映射算的（全员散卡、系列筛选全判否），
-                            // 画出来就是「先铺散卡、再收拢成合集、再换海报」一块块地
-                            // 变。等映射，期间画与真实墙同几何的骨架。
-                            if (firstPaintPending) {
+                              }
                               return CustomScrollView(
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 slivers: <Widget>[
+                                  // 叠放工具区让出的顶部高度：内容从工具区下方开始、滚动时
+                                  // 滚到工具区底下。高度恒定，工具区收起 / 弹回不改版面。
+                                  // 恒在（不在外壳里时为 0）：不按条件插拔，免得后面的
+                                  // sliver 错位重建。
                                   SliverToBoxAdapter(
                                     child: SizedBox(height: chromeInset),
                                   ),
-                                  ..._buildLibraryMapsPendingSlivers(
-                                    cardLayout: cardLayout,
-                                    allVideosCardLayout: allVideosCardLayout,
-                                    availableWidth: availableWallWidth,
-                                    homeHeroLikely:
-                                        loaded == null ||
-                                        all.any(_mayHaveContinueProgress) ||
-                                        remoteVideos.any(
-                                          (RemoteVideoInfo v) =>
-                                              v.positionMs > 0,
-                                        ),
-                                  ),
+                                  // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
+                                  // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
+                                  // [all] 描述整库，不随标签筛选变。
+                                  // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
+                                  // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
+                                  if (widget.section ==
+                                          VideoLibrarySection.home &&
+                                      (all.isNotEmpty || homeRemote.isNotEmpty))
+                                    SliverToBoxAdapter(
+                                      child: _buildOverviewSection(
+                                        all,
+                                        homeRemote,
+                                        homeLocal,
+                                        constraints.maxWidth,
+                                      ),
+                                    ),
+                                  if (widget.section ==
+                                      VideoLibrarySection.series)
+                                    ..._buildLocalVideoSlivers(
+                                      all,
+                                      ordered,
+                                      remoteVideos,
+                                      cardLayout,
+                                    ),
+                                  if (widget.section ==
+                                      VideoLibrarySection.allVideos)
+                                    ..._buildAllVideoSlivers(
+                                      all,
+                                      ordered,
+                                      remoteVideos,
+                                      allVideosCardLayout,
+                                    ),
+                                  // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
+                                  // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
+                                  // 同一个 State，多选态下从「全部视频」切到首页时，可见序
+                                  // 若停在上一档，底栏计数与批量删除就作用于一批屏幕上根本
+                                  // 没有的条目（批量栏不按分区门控，切过来照样显示）。
+                                  if (widget.section ==
+                                      VideoLibrarySection.home)
+                                    ..._homeSectionSelectionReset(),
+                                  if (widget.section ==
+                                          VideoLibrarySection.home &&
+                                      all.isEmpty &&
+                                      homeRemote.isEmpty)
+                                    SliverFillRemaining(
+                                      hasScrollBody: false,
+                                      child: _buildEmpty(),
+                                    ),
                                 ],
                               );
-                            }
-                            return CustomScrollView(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              slivers: <Widget>[
-                                // 叠放工具区让出的顶部高度：内容从工具区下方开始、滚动时
-                                // 滚到工具区底下。高度恒定，工具区收起 / 弹回不改版面。
-                                // 恒在（不在外壳里时为 0）：不按条件插拔，免得后面的
-                                // sliver 错位重建。
-                                SliverToBoxAdapter(
-                                  child: SizedBox(height: chromeInset),
-                                ),
-                                // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
-                                // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
-                                // [all] 描述整库，不随标签筛选变。
-                                // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
-                                // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
-                                if (widget.section ==
-                                        VideoLibrarySection.home &&
-                                    (all.isNotEmpty || homeRemote.isNotEmpty))
-                                  SliverToBoxAdapter(
-                                    child: _buildOverviewSection(
-                                      all,
-                                      homeRemote,
-                                      homeLocal,
-                                      constraints.maxWidth,
-                                    ),
-                                  ),
-                                if (widget.section ==
-                                    VideoLibrarySection.series)
-                                  ..._buildLocalVideoSlivers(
-                                    all,
-                                    ordered,
-                                    remoteVideos,
-                                    cardLayout,
-                                  ),
-                                if (widget.section ==
-                                    VideoLibrarySection.allVideos)
-                                  ..._buildAllVideoSlivers(
-                                    all,
-                                    ordered,
-                                    remoteVideos,
-                                    allVideosCardLayout,
-                                  ),
-                                // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
-                                // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
-                                // 同一个 State，多选态下从「全部视频」切到首页时，可见序
-                                // 若停在上一档，底栏计数与批量删除就作用于一批屏幕上根本
-                                // 没有的条目（批量栏不按分区门控，切过来照样显示）。
-                                if (widget.section == VideoLibrarySection.home)
-                                  ..._homeSectionSelectionReset(),
-                                if (widget.section ==
-                                        VideoLibrarySection.home &&
-                                    all.isEmpty &&
-                                    homeRemote.isEmpty)
-                                  SliverFillRemaining(
-                                    hasScrollBody: false,
-                                    child: _buildEmpty(),
-                                  ),
-                              ],
-                            );
-                          },
+                            },
+                      ),
                     ),
                   ),
                 );
@@ -9768,6 +9765,70 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ? null
       : _headerSearch;
 
+  /// 系列墙与「全部视频」两种卡的列数 / 卡宽（[constraints] 是墙的版面约束）。
+  ///
+  /// 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏（宽<600）
+  /// 用 150 → 至少 2 列；宽屏按断点收敛列数。「每行数量」（BUG-4219 /
+  /// 2026-11-07）：系列墙与「全部视频」共用这一格设定，null = 自动按目标卡宽算。
+  ({
+    ({int columns, double cardWidth}) cardLayout,
+    ({int columns, double cardWidth}) allVideosCardLayout,
+  })
+  _wallLayouts(BoxConstraints constraints) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double availableWallWidth =
+        constraints.maxWidth - tokens.spacing.card * 2;
+    final int? fixedColumns = _gridFixedColumns;
+    return (
+      cardLayout: unifiedShelfCardLayout(
+        availableWidth: availableWallWidth,
+        targetWidth: readerShelfGridExtentForWidth(constraints.maxWidth),
+        fixedColumns: fixedColumns,
+      ),
+      allVideosCardLayout: unifiedShelfCardLayout(
+        availableWidth: availableWallWidth,
+        targetWidth: allVideoThumbnailTargetWidthForWidth(constraints.maxWidth),
+        fixedColumns: fixedColumns,
+      ),
+    );
+  }
+
+  /// Apple 库页：双指 / 触控板捏合、⌘+ ⌘− 改每行个数（写回「每行数量」偏好，
+  /// 与「显示」菜单同一份值）；M3E 原样返回 [child]。列数按当前分区的墙取
+  /// （「全部视频」是缩略图墙，其余是海报墙）。
+  Widget _gridZoom(Widget child) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) {
+      final ({
+        ({int columns, double cardWidth}) cardLayout,
+        ({int columns, double cardWidth}) allVideosCardLayout,
+      })
+      wall = _wallLayouts(constraints);
+      return LibraryGridZoom(
+        columns: widget.section == VideoLibrarySection.allVideos
+            ? wall.allVideosCardLayout.columns
+            : wall.cardLayout.columns,
+        choices: libraryGridColumnChoices(libraryGridSizeClassOf(context)),
+        onColumnsChanged: _setGridColumns,
+        child: child,
+      );
+    },
+  );
+
+  /// 写本页当前尺寸档的「每行数量」（null = 自动）并重建网格。
+  void _setGridColumns(int? columns) {
+    unawaited(
+      ref
+          .read(appProvider)
+          .prefsRepo
+          .setLibraryGridColumns(
+            LibraryGridDomain.video,
+            libraryGridSizeClassOf(context),
+            columns,
+          ),
+    );
+    setState(() {});
+  }
+
   /// 本页网格当前尺寸档下的「每行数量」，null = 自动。
   int? get _gridFixedColumns => ref
       .read(appProvider)
@@ -9783,19 +9844,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     return libraryGridColumnsSection(
       sizeClass: sizeClass,
       selected: _gridFixedColumns,
-      onSelected: (int? columns) {
-        unawaited(
-          ref
-              .read(appProvider)
-              .prefsRepo
-              .setLibraryGridColumns(
-                LibraryGridDomain.video,
-                sizeClass,
-                columns,
-              ),
-        );
-        setState(() {});
-      },
+      onSelected: _setGridColumns,
     );
   }
 

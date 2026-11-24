@@ -29,6 +29,9 @@ const double _kAppleSidebarSearchHeight = 28;
 const double _kAppleSidebarSectionHeight = 26;
 const double _kAppleSidebarRowGap = 2;
 
+/// 库页分区子项每一级的缩进（macOS 源列表的子项缩进量）。
+const double _kAppleSidebarSubIndent = 14;
+
 /// macOS 26（Tahoe）源列表的行：行高 28、选中底圆角 8、13 号常规字重标签、
 /// 16 号强调色描线图标（SF Symbols 侧栏默认中号）。
 const double _kAppleSidebarRowHeight = 28;
@@ -85,6 +88,7 @@ class AppleSidebarTabsShell extends StatefulWidget {
     required this.onToggle,
     required this.child,
     this.leading,
+    this.libraryHost,
   });
 
   final List<AdaptiveNavItem> items;
@@ -107,6 +111,11 @@ class AppleSidebarTabsShell extends StatefulWidget {
   /// 内容区。
   final Widget child;
 
+  /// 库页登记分区子项的宿主（2026-11-24 方案 A）：macOS 档侧栏形态下，当前
+  /// 模块的行下面展开它登记的分区行；本壳也把自己的形态报给它（收成标签栏时
+  /// 库页把分区画回内容区）。null = 不展开。
+  final AppleSidebarLibraryHost? libraryHost;
+
   @override
   State<AppleSidebarTabsShell> createState() => _AppleSidebarTabsShellState();
 }
@@ -125,11 +134,20 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   void initState() {
     super.initState();
     _query.addListener(() => setState(() {}));
+    widget.libraryHost?.addListener(_onLibraryRows);
+  }
+
+  void _onLibraryRows() {
+    if (mounted) setState(() {});
   }
 
   @override
   void didUpdateWidget(covariant AppleSidebarTabsShell oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.libraryHost != widget.libraryHost) {
+      oldWidget.libraryHost?.removeListener(_onLibraryRows);
+      widget.libraryHost?.addListener(_onLibraryRows);
+    }
     if (oldWidget.tabBar != widget.tabBar) {
       _t.animateTo(
         widget.tabBar ? 1 : 0,
@@ -140,6 +158,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
 
   @override
   void dispose() {
+    widget.libraryHost?.removeListener(_onLibraryRows);
     _t.dispose();
     _query.dispose();
     super.dispose();
@@ -158,10 +177,12 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
 
   /// 侧栏模式下每个目的地行的矩形（shell 坐标）；被折叠 / 过滤掉的行给 null。
   /// 同时返回每个分组标题的纵向位置。
-  ({Map<int, Rect> rows, List<double> sectionTops}) _sidebarLayout(
-    Size size,
-    double topInset,
-  ) {
+  ({
+    Map<int, Rect> rows,
+    List<double> sectionTops,
+    List<(AppleSidebarLibraryRow, Rect)> subRows,
+  })
+  _sidebarLayout(Size size, double topInset) {
     const double left = _kAppleSidebarPadding;
     const double width = kGlassNavSidebarWidth - 2 * left;
     final double k = _k;
@@ -175,6 +196,9 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
         8;
     final Map<int, Rect> rows = <int, Rect>{};
     final List<double> sectionTops = <double>[];
+    final List<AppleSidebarLibraryRow> library = _libraryRows;
+    final List<(AppleSidebarLibraryRow, Rect)> subRows =
+        <(AppleSidebarLibraryRow, Rect)>[];
     for (int s = 0; s < widget.sections.length; s++) {
       final AppleSidebarSection section = widget.sections[s];
       if (section.title != null) {
@@ -188,6 +212,17 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
         if (!_matches(i)) continue;
         rows[i] = Rect.fromLTWH(left, y, width, rowHeight);
         y += rowHeight + rowGap;
+        // 当前模块下展开库页登记的分区行（缩进一级 / 两级）。
+        if (i == widget.currentIndex) {
+          for (final AppleSidebarLibraryRow sub in library) {
+            final double indent = _kAppleSidebarSubIndent * k * sub.depth;
+            subRows.add((
+              sub,
+              Rect.fromLTWH(left + indent, y, width - indent, rowHeight),
+            ));
+            y += rowHeight + rowGap;
+          }
+        }
       }
       y += 6 * k;
     }
@@ -197,7 +232,16 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
       rows[i] = Rect.fromLTWH(left, bottom, width, rowHeight);
       bottom -= rowGap;
     }
-    return (rows: rows, sectionTops: sectionTops);
+    return (rows: rows, sectionTops: sectionTops, subRows: subRows);
+  }
+
+  /// 此刻要在当前模块下展开的库页分区行：侧栏形态 + macOS 档度量才展开。
+  List<AppleSidebarLibraryRow> get _libraryRows {
+    final AppleSidebarLibraryHost? host = widget.libraryHost;
+    if (host == null || widget.tabBar || !fushiAppleUsesMacMetrics(context)) {
+      return const <AppleSidebarLibraryRow>[];
+    }
+    return host.rows;
   }
 
   /// 标签栏模式：胶囊矩形 + 每个目的地格的矩形（shell 坐标）。放不下带字格
@@ -285,8 +329,15 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
         // 上沿铺起（伸到桌面自绘标题行 / 状态栏底下），侧栏内容、标签栏胶囊与
         // 内容区各自让开这一段。
         final double topInset = MediaQuery.paddingOf(context).top;
-        final ({Map<int, Rect> rows, List<double> sectionTops}) side =
-            _sidebarLayout(size, topInset);
+        // 侧栏形态报给库页（收成标签栏时库页把分区画回内容区）；通知推迟到
+        // 帧末，构建期间调用安全。
+        widget.libraryHost?.reportSidebarMode(!widget.tabBar);
+        final ({
+          Map<int, Rect> rows,
+          List<double> sectionTops,
+          List<(AppleSidebarLibraryRow, Rect)> subRows,
+        })
+        side = _sidebarLayout(size, topInset);
         final ({Rect capsule, Map<int, Rect> cells, bool iconOnly}) tabs =
             _tabLayout(size, tabLabel, topInset);
         // macOS 27（Golden Gate）侧栏贴边：紧贴窗口左 / 上 / 下缘。
@@ -357,6 +408,17 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                     sectionTops: side.sectionTops,
                     topInset: topInset,
                   ),
+                if (sideOnly > 0)
+                  for (int i = 0; i < side.subRows.length; i++)
+                    _buildLibraryRow(
+                      context,
+                      row: side.subRows[i].$1,
+                      rect: side.subRows[i].$2,
+                      index: i,
+                      apple: apple,
+                      opacity: sideOnly,
+                      windowActive: windowActive,
+                    ),
                 if (tabOnly > 0)
                   Positioned(
                     left: tabs.capsule.left + _kAppleTabBarPadding,
@@ -546,6 +608,73 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
               ),
             ),
     ];
+  }
+
+  /// 当前模块下展开的一行库页分区（与目的地行同一源列表规格：行高 28、选中
+  /// 中性色圆角底、图标强调色；缩进一级）。随侧栏独有部分一起淡出；首次出现
+  /// 时错峰淡入。
+  Widget _buildLibraryRow(
+    BuildContext context, {
+    required AppleSidebarLibraryRow row,
+    required Rect rect,
+    required int index,
+    required FushiAppleColors apple,
+    required double opacity,
+    required bool windowActive,
+  }) {
+    final double k = _k;
+    final Color sideFill = windowActive
+        ? apple.secondaryFill
+        : apple.secondaryFill.withValues(alpha: apple.secondaryFill.a * 0.5);
+    final IconData? icon = row.icon;
+    return Positioned.fromRect(
+      key: ValueKey<String>('apple-sidebar-library-${row.id}'),
+      rect: rect,
+      child: Opacity(
+        opacity: opacity,
+        child: IgnorePointer(
+          ignoring: opacity < 1,
+          child: FushiStaggeredEntrance(
+            index: index,
+            child: _AppleMorphDestination(
+              id: FushiFocusId('nav-rail-library-${row.id}'),
+              item: AdaptiveNavItem(
+                icon: icon ?? FushiIcons.chevronRight,
+                label: row.label,
+              ),
+              selected: row.selected,
+              onSelect: () {
+                if (!row.selected) fushiSelectionHaptic(context);
+                row.onTap();
+              },
+              fill: row.selected ? sideFill : Colors.transparent,
+              hover: apple.tertiaryFill.withValues(
+                alpha: apple.tertiaryFill.a * 0.6,
+              ),
+              radius: _kAppleSidebarRowRadius * k,
+              padding: 8 * k,
+              gap: 7 * k,
+              iconSize: (_kAppleSidebarIconSize - 1) * k,
+              iconColor: windowActive ? apple.accent : apple.secondaryLabel,
+              fillDuration: fushiMotionDuration(context, FushiMotion.short),
+              label: Text(
+                row.label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.fade,
+                style: context.fushiType.bodyMedium.copyWith(
+                  fontSize: _kAppleSidebarFontSize * k,
+                  fontWeight: FontWeight.w400,
+                  height: 1.2,
+                  color: apple.label,
+                ),
+              ),
+              centerIcon: false,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildItem(

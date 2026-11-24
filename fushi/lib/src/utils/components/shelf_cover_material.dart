@@ -700,6 +700,16 @@ double shelfFanMaxDegrees({
 /// 海报 / 专辑碟盒式叠层（[ShelfCoverPile]）每往后一层往右上错开的步长。
 const double kShelfCoverPileStackStep = 4;
 
+/// Apple 叠层（[ShelfCoverPile] 的 Cupertino 画法）最多画最前那本后面的几本。
+const int kShelfAppleStackMaxBehind = 2;
+
+/// Apple 叠层每往后一层上移的距离（静止 / 悬停）。
+const double kShelfAppleStackStep = 5;
+const double kShelfAppleStackHoverStep = 8;
+
+/// Apple 叠层每往后一层缩小的比例。
+const double kShelfAppleStackShrink = 0.06;
+
 /// [material] 下 [ShelfCoverPile] 是碟盒式叠层（海报 / 专辑）而非扇形（书 / 卡盒）。
 bool shelfCoverPileStacks(ShelfCoverMaterial material) =>
     material == ShelfCoverMaterial.glossyPoster ||
@@ -762,9 +772,14 @@ class ShelfCoverPile extends StatelessWidget {
   Widget build(BuildContext context) {
     final bool lifted = FushiHoverLift.liftedOf(context);
     final Duration duration = fushiMotionDuration(context, FushiMotion.long);
-    final bool stack = shelfCoverPileStacks(material);
+    // Apple 设计系统一律画 Apple 叠层（见下方 `apple` 分支）；M3E 照旧扇形 /
+    // 碟盒叠层。
+    final bool apple = isGlassDesign(context);
+    final bool stack = !apple && shelfCoverPileStacks(material);
     final List<Widget> back = behind
-        .take(shelfCoverPileMaxBehind(material))
+        .take(
+          apple ? kShelfAppleStackMaxBehind : shelfCoverPileMaxBehind(material),
+        )
         .toList(growable: false);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
@@ -793,7 +808,63 @@ class ShelfCoverPile extends StatelessWidget {
             );
 
         final List<Widget> layers = <Widget>[];
-        if (stack) {
+        if (apple) {
+          // Apple（Cupertino 方案 A，Apple Books「合集」叠层）：最前那本与单本
+          // 同大、铺满格子；后面每层以上缘中点缩 6%、上移 5px、压暗一档，
+          // 上缘从最前那本后面露出来（越往后越小越暗）。悬停时整摞再往上散开到
+          // 每层 8px。书 / 漫画 / 海报 / 卡盒 / 专辑一律同一种叠法，不画扇形。
+          final double frontW = w;
+          final double frontH = h;
+          for (int d = back.length; d >= 1; d--) {
+            final double rise =
+                (lifted ? kShelfAppleStackHoverStep : kShelfAppleStackStep) * d;
+            layers.add(
+              Positioned(
+                left: 0,
+                bottom: 0,
+                child: AnimatedSlide(
+                  offset: Offset(0, -rise / frontH),
+                  duration: duration,
+                  curve: FushiMotion.standard,
+                  child: Transform.scale(
+                    scale: 1 - kShelfAppleStackShrink * d,
+                    alignment: Alignment.topCenter,
+                    child: SizedBox(
+                      width: frontW,
+                      height: frontH,
+                      child: ShelfMaterialSurface(
+                        material: material,
+                        backgroundColor: backgroundColor,
+                        flat: flat,
+                        dim: d * 0.12,
+                        child: back[d - 1],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+          layers.add(
+            Positioned(
+              left: 0,
+              bottom: 0,
+              child: SizedBox(
+                width: frontW,
+                height: frontH,
+                child: ShelfMaterialSurface(
+                  material: material,
+                  backgroundColor: backgroundColor,
+                  flat: flat,
+                  lifted: lifted,
+                  pressGlint: true,
+                  overlay: frontOverlay,
+                  child: front,
+                ),
+              ),
+            ),
+          );
+        } else if (stack) {
           for (int d = back.length; d >= 1; d--) {
             final Offset rest = Offset(d * step, -d * step);
             final Offset spread = Offset(d * 7.0, -d * 6.0);

@@ -179,6 +179,7 @@ import 'package:fushi/src/pages/implementations/home_module_swipe.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_navigation.dart';
+import 'package:fushi/src/utils/adaptive/apple_sidebar_library_host.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart';
@@ -1121,6 +1122,7 @@ class _HomePageState extends BasePageState<HomePage>
 
   @override
   void dispose() {
+    _sidebarLibraryHost.dispose();
     // 正文里的宿主页（子元素）先于本 State 卸载、已各自注销；这里摘浮层、释放 controller。
     _sharedLookupPopupHost.dispose();
     _sourceAutoScan.dispose();
@@ -2299,6 +2301,10 @@ class _HomePageState extends BasePageState<HomePage>
   /// 分组按模块性质：媒体库（首页 + 各库页 + 网页）/ 工具（浏览、查词、复习）/
   /// 底部钉设置。收成标签栏 = 用户把 rail 记成「收起」（与 MD3 rail 的菜单钮
   /// 同一个偏好，见 [adaptiveAppleTabBarMode]）。
+  /// Apple 宽窗侧栏里「当前库页展开的分区子项」的登记处（方案 A，见
+  /// [AppleSidebarLibraryHost]）：各库页布局登记，侧栏外壳监听。
+  final AppleSidebarLibraryHost _sidebarLibraryHost = AppleSidebarLibraryHost();
+
   Widget _appleSidebarShell({
     required List<HomeTab> tabs,
     required bool reversed,
@@ -2338,6 +2344,7 @@ class _HomePageState extends BasePageState<HomePage>
             userExpanded: userExpanded,
           );
           return AppleSidebarTabsShell(
+            libraryHost: _sidebarLibraryHost,
             items: displayItems,
             currentIndex: visualIndex,
             onTap: selectVisual,
@@ -2356,7 +2363,10 @@ class _HomePageState extends BasePageState<HomePage>
             footer: footer,
             tabBar: tabBar,
             onToggle: () => unawaited(appModel.setNavRailExpanded(tabBar)),
-            child: _homeContentPane(),
+            child: AppleSidebarLibraryScope(
+              host: _sidebarLibraryHost,
+              child: _homeContentPane(),
+            ),
           );
         },
       ),
