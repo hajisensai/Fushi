@@ -14,6 +14,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnectionUser;
 import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
+import 'package:fushi_engine/srs/srs_db_store.dart' show srsProfileHasUserData;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart'
     show SrsCore, SrsGenState, SrsOpenMode, SrsStoreNotMigrated;
@@ -85,6 +86,35 @@ class SrsStorageHost {
       return Future<SrsStorage?>.value();
     }
     return acquire();
+  }
+
+  /// 组合迁移定复习库归属（拍板台 design-srs-shared-library §4.2）：[uids] 里哪些 profile 在本机复习数据里有用户
+  /// 数据（[srsProfileHasUserData]，铁律 E 的「有数据」）。返回 null = 此刻判断不了，归属留到下次再定：
+  ///
+  /// - 本机没有复习库文件、主库里也没有没搬过的协议 1 复习表 = 谁都没有（空集；不为此建库）；
+  /// - 没有复习库文件、但主库里还躺着协议 1 的 `srs_entities`（[srsLegacyMainDatabasePending]：数据在，只是本版本
+  ///   打不开，要先用旧版本搬）= null——当成「都没有」会把各自有卡的 profile 永久并进同一个共享库；
+  /// - 库此刻打不开（换代中 / 别的进程在迁移 / 上次迁移失败……）= null。
+  Future<Set<String>?> profileUidsWithUserData(List<String> uids) async {
+    if (!hasStoredLibrary) {
+      return await srsLegacyMainDatabasePending(
+            db: _legacyDatabase(),
+            directory: _directory,
+          )
+          ? null
+          : <String>{};
+    }
+    final SrsStorage? storage;
+    try {
+      storage = await acquire();
+    } on Object {
+      return null;
+    }
+    if (storage == null) return null;
+    return <String>{
+      for (final String uid in uids)
+        if (await srsProfileHasUserData(storage.core, uid)) uid,
+    };
   }
 
   /// 本进程是不是主进程（只有主进程迁移、写库）。

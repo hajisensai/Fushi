@@ -72,7 +72,8 @@ String _mediaTypeLabel(String dbValue) =>
       null => dbValue,
     };
 
-String _leaves(List<String> ids) => ids.map(comboLeafLabel).join('、');
+String _leaves(List<String> ids) =>
+    ids.map(comboLeafLabel).join(t.profile_combo_migration_list_separator);
 
 /// 报告弹框本体。
 Future<void> showComboMigrationReportDialog(
@@ -115,7 +116,12 @@ class ComboMigrationReportBody extends StatelessWidget {
           title: t.profile_combo_migration_splits_title,
           lines: <String>[
             for (final ComboMigrationEntry e in report.combos)
-              '${e.name}：${e.splitLeaves.isEmpty ? t.profile_combo_migration_inherits_all : _leaves(e.splitLeaves)}',
+              t.profile_combo_migration_split_item(
+                name: e.name,
+                items: e.splitLeaves.isEmpty
+                    ? t.profile_combo_migration_inherits_all
+                    : _leaves(e.splitLeaves),
+              ),
           ],
           titleStyle: text.titleSmall,
         ),
@@ -155,7 +161,9 @@ class ComboMigrationReportBody extends StatelessWidget {
             t.profile_combo_migration_srs_shared(name: srs.sharedProfile),
             if (srs.ownProfiles.isNotEmpty)
               t.profile_combo_migration_srs_own(
-                names: srs.ownProfiles.join('、'),
+                names: srs.ownProfiles.join(
+                  t.profile_combo_migration_list_separator,
+                ),
               ),
           ],
           titleStyle: text.titleSmall,

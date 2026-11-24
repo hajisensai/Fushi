@@ -9273,6 +9273,8 @@
   "profile_combo_migration_ignored_title": "在这一层不生效的项",
   "profile_combo_migration_inherits_all": "与默认相同，全部跟随",
   "profile_combo_migration_intro": "设置现在默认全部共用。每个配置只保留与「${name}」不同的项，其余都跟随它。没有设置丢失。",
+  "profile_combo_migration_list_separator": "、",
+  "profile_combo_migration_split_item": "${name}：${items}",
   "profile_combo_migration_splits_title": "各组合单独设置的项",
   "profile_combo_migration_srs_own": "保留各自的独立复习库（未合并）：${names}",
   "profile_combo_migration_srs_shared": "共享复习库用的是「${name}」的卡片。",

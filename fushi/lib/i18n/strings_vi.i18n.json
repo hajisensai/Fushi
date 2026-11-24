@@ -9273,6 +9273,8 @@
   "profile_combo_migration_ignored_title": "Not applied at this level",
   "profile_combo_migration_inherits_all": "Same as the default, follows it entirely",
   "profile_combo_migration_intro": "Settings are now shared by default. Each profile keeps only what it sets differently from “${name}” and follows it for everything else. No settings were lost.",
+  "profile_combo_migration_list_separator": ", ",
+  "profile_combo_migration_split_item": "${name}: ${items}",
   "profile_combo_migration_splits_title": "Set separately in each combo",
   "profile_combo_migration_srs_own": "Kept their own review library (not merged): ${names}",
   "profile_combo_migration_srs_shared": "The shared review library uses the cards of “${name}”.",

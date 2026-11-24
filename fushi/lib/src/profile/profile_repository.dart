@@ -39,6 +39,7 @@ import 'package:fushi/src/sync/sync_repository.dart'
         remoteDictionaryLookupHostIdsOf;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
     show kPageBackdropProfileParkedPrefKeyPrefixes;
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 // 分享 JSON 的模型与异常已下沉引擎（服务端共用），这里转出，调用方 import 不变。
 export 'package:fushi_engine/profile/profile_document.dart'
@@ -1383,7 +1384,18 @@ class ProfileRepository {
         await applyProfile(existing.first.id);
       }
     }
-    await normalizeCombos();
+    // 组合归一失败（迁移备份写不了、落库出错……）时库原样（备份先于改写、改写在一个事务里），
+    // 存量整份快照的读写路径照常可用：记进错误日志、下次启动再试，不让一次可选的格式升级把
+    // 启动（`AppModel` 初始化等这一步）卡成每次都失败。
+    try {
+      await normalizeCombos();
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'ProfileRepository.normalizeCombos',
+        e,
+        stack,
+      );
+    }
   }
 
   // ── 组合格式（拍板台 design-combo-node-split 阶段 3）────────────────
