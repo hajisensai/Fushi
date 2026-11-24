@@ -132,6 +132,44 @@ void main() {
       expect(c.sha256, 'a' * 64);
     });
 
+    test('滚动 debug 包只给 debug 通道；debug 通道三者都收', () {
+      final List<Object?> releases = <Object?>[
+        _release('v0.1.0-beta.120', 120),
+        _release(kServerDebugRollingTag, 150),
+        _release('v0.1.1', 110, prerelease: false),
+      ];
+      expect(
+        pickServerUpdate(
+          releasesJson: releases,
+          current: _beta,
+          assetSuffix: _suffix,
+        )!.sequence,
+        120,
+        reason: 'beta 装机不能被推到调试包上',
+      );
+      const ServerReleaseInfo debug = ServerReleaseInfo(
+        version: '0.1.0',
+        sequence: 100,
+        tag: kServerDebugRollingTag,
+        channel: 'debug',
+      );
+      final ServerReleaseCandidate c = pickServerUpdate(
+        releasesJson: releases,
+        current: debug,
+        assetSuffix: _suffix,
+      )!;
+      expect(c.sequence, 150);
+      expect(c.displayVersion, '0.1.0-debug.150');
+      expect(debug.displayVersion, '0.1.0-debug.100');
+      expect(
+        ServerReleaseInfo.tryParse(
+          '{"version":"3.4.0","sequence":9,"tag":"$kServerDebugRollingTag",'
+          '"channel":"debug"}',
+        )!.isDebug,
+        isTrue,
+      );
+    });
+
     test('formal 通道不收 prerelease；没有更新 → null', () {
       expect(
         pickServerUpdate(
@@ -584,6 +622,42 @@ void main() {
       await installed.future.timeout(const Duration(seconds: 10));
       expect(_read(p.join(root.path, 'bin', 'fushi_server')), 'new exe');
       expect((await u.status()).phase, HostUpdatePhase.installing);
+    });
+
+    test('debug 装机另按 tag 取滚动包；滚动包还不存在时仍看列表', () async {
+      const ServerReleaseInfo debug = ServerReleaseInfo(
+        version: '0.1.0',
+        sequence: 100,
+        tag: kServerDebugRollingTag,
+        channel: 'debug',
+      );
+      final List<String> paths = <String>[];
+      ServerSelfUpdater debugUpdater({required bool rollingExists}) => build(
+        onInstalled: () {},
+        current: debug,
+        fetch: (Uri url) async {
+          paths.add(url.path);
+          if (url.path.endsWith('/tags/$kServerDebugRollingTag')) {
+            if (!rollingExists) throw StateError('HTTP 404');
+            return _release(kServerDebugRollingTag, 150);
+          }
+          return <Object?>[_release('v0.1.0-beta.120', 120)];
+        },
+      );
+      final HostUpdateStatus s = await debugUpdater(
+        rollingExists: true,
+      ).status(refresh: true);
+      expect(paths, <String>[
+        '/repos/hajisensai/fushi-server/releases',
+        '/repos/hajisensai/fushi-server/releases/tags/$kServerDebugRollingTag',
+      ]);
+      expect(s.currentVersion, '0.1.0-debug.100');
+      expect(s.latestVersion, '0.1.0-debug.150');
+
+      final HostUpdateStatus noRolling = await debugUpdater(
+        rollingExists: false,
+      ).status(refresh: true);
+      expect(noRolling.latestVersion, '0.1.0-beta.120');
     });
 
     test('校验值对不上 → failed / digest_mismatch，安装目录不动', () async {

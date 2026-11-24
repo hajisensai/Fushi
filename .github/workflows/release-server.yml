@@ -15,11 +15,17 @@
 #   「已是最新」判成「远端不比本机新」而永远停更。把 Release 整体搬去独立仓后这个
 #   冲突不存在了——formal 在 fushi-server 里就是正常的 Latest。断言让这条硬规则
 #   不再依赖「记得 make_latest 恒 false」。
-# * 版本号独立：取 packages/fushi_server/pubspec.yaml 的 `version:`，与 fushi/pubspec
-#   无关；发布序号仍共用 tool/release_sequence.sh（同一条单调序列，从 fushi 的
-#   checkout 上算，别再造第二条）。
-# * 通道只有 beta / formal，没有 push 自动 debug：服务端装在别人的 NAS 上，滚动
-#   debug 包没有消费者。
+# * 版本号与 app 一致（2026-11-24 用户拍板）：取 fushi/pubspec.yaml 的 `version:`，
+#   tag 与 app 同形（`v<x.y.z>` / `v<x.y.z>-beta.<seq>`）；发布序号共用
+#   tool/release_sequence.sh（同一条单调序列，从 fushi 的 checkout 上算，别再造第二条）。
+# * 三个通道与 app 对齐（2026-11-24）：formal = 正式版 + Latest；beta = prerelease；
+#   debug = 固定滚动 release `debug-rolling`（与 app 的 fushi-debug-rolling 同理，不堆
+#   prerelease），body 里记 `source-sha: <sha>`。
+# * 自动发布：channel = auto 时 plan job 跑 tool/server_release_plan.py，按「app 的正式版 →
+#   app 的最新 beta → develop 新提交」挑一个还没发的目标；fushi-server 的 release.yml 定时
+#   以 auto 调本 workflow（跨仓事件要 PAT，所以是轮询）。
+# * Docker 镜像：publish 之后 docker job 用同一份 Linux 包打 ghcr.io/<owner>/fushi-server
+#   并冒烟、推送；tag 见 channel job 的 docker_tags。镜像随 release 发，不另设入口。
 # * concurrency 组带 workflow 名：与 release.yml / release-desktop.yml 曾共用一个组
 #   时同 sha 触发的第一条会被取消（PR#1302 教训）。
 #
@@ -39,7 +45,7 @@ on:
   workflow_call:
     inputs:
       channel:
-        description: Release channel (beta = prerelease; formal = non-prerelease + Latest)
+        description: Release channel (debug = rolling debug-rolling; beta = prerelease; formal = non-prerelease + Latest; auto = pick the next unreleased app channel)
         type: string
         required: false
         default: beta
@@ -70,15 +76,66 @@ env:
   SOURCE_REPO: hajisensai/Fushi
 
 jobs:
-  channel:
+  # 决定这一轮发什么：显式通道原样透传；auto 由 tool/server_release_plan.py 按
+  # 「app 正式版 → app 最新 beta → develop 新提交」挑一个 fushi-server 还没发的目标
+  # （连续失败 2 次的目标跳过并告警，免得坏 tag 每半小时重编一次）。channel 为空 = 无事可做，
+  # 下游全部跳过。脚本取自本 workflow 自己那一版（job_workflow_sha），与 workflow 定义同步。
+  plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
+      channel: ${{ steps.plan.outputs.channel }}
+      source_ref: ${{ steps.plan.outputs.source_ref }}
+      tag_name: ${{ steps.plan.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: hajisensai/Fushi
+          ref: ${{ github.job_workflow_sha || 'develop' }}
+          sparse-checkout: tool/server_release_plan.py
+          sparse-checkout-cone-mode: false
+      - name: Plan
+        id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          CALLER_REPO: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: python3 tool/server_release_plan.py
+      # 公开仓 60 天没有活动会停掉定时 workflow；每轮 auto 调一次 enable（已启用时是空操作）
+      # 续期。失败不影响发布。
+      - name: Keep the schedule alive
+        if: inputs.channel == 'auto'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CALLER_REPO: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          wf="${WORKFLOW_REF#*/.github/workflows/}"
+          gh api -X PUT "repos/$CALLER_REPO/actions/workflows/${wf%%@*}/enable"
+
+  channel:
+    needs: plan
+    if: needs.plan.outputs.channel != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      channel: ${{ steps.resolve.outputs.channel }}
       version: ${{ steps.resolve.outputs.version }}
       release_sequence: ${{ steps.resolve.outputs.release_sequence }}
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+      target: ${{ steps.resolve.outputs.target }}
       tag: ${{ steps.resolve.outputs.tag }}
       name: ${{ steps.resolve.outputs.name }}
       prerelease: ${{ steps.resolve.outputs.prerelease }}
       make_latest: ${{ steps.resolve.outputs.make_latest }}
+      docker_tags: ${{ steps.resolve.outputs.docker_tags }}
       body: ${{ steps.resolve.outputs.body }}
     steps:
       - name: Refuse to publish server releases into the app repo
@@ -96,7 +153,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: hajisensai/Fushi
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ needs.plan.outputs.source_ref }}
           fetch-depth: 0
       - name: Validate unified release policy
         shell: pwsh
@@ -105,33 +162,47 @@ jobs:
         id: resolve
         shell: bash
         env:
-          INPUT_CHANNEL: ${{ inputs.channel }}
-          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          INPUT_CHANNEL: ${{ needs.plan.outputs.channel }}
+          INPUT_TAG_NAME: ${{ needs.plan.outputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ inputs.release_name }}
-          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+          INPUT_SOURCE_REF: ${{ needs.plan.outputs.source_ref }}
         run: |
           set -euo pipefail
-          VERSION=$(grep '^version:' packages/fushi_server/pubspec.yaml | sed 's/version: *//;s/+.*//' | tr -d '"'"'"'')
-          [ -n "$VERSION" ] || { echo "::error::packages/fushi_server/pubspec.yaml has no version:"; exit 1; }
+          # 版本与 app 同一个（fushi/pubspec.yaml），不再用 packages/fushi_server 的包版本。
+          VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//' | tr -d '"'"'"'')
+          [ -n "$VERSION" ] || { echo "::error::fushi/pubspec.yaml has no version:"; exit 1; }
           RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
           if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
             exit 1
           fi
           # 源码 sha 是 fushi checkout 的 HEAD，不是 GITHUB_SHA（那是调用方仓库的）。
-          SOURCE_SHA="$(git rev-parse --short HEAD)"
+          # 后续 job 一律按这个完整 sha 检出，develop 在 job 之间前进也不会混进两份源码。
+          SOURCE_SHA_FULL="$(git rev-parse HEAD)"
+          SOURCE_SHA="${SOURCE_SHA_FULL:0:12}"
           SOURCE="${SOURCE_REPO}@${INPUT_SOURCE_REF} (${SOURCE_SHA})"
           CHANNEL="${INPUT_CHANNEL:-beta}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
           NOTES_FILE="docs/release-notes/server-${VERSION}.md"
+          DEBUG_TAG=debug-rolling
           PRERELEASE=true
           MAKE_LATEST=false
           case "$CHANNEL" in
+            debug)
+              # 固定滚动 tag，不接受覆盖：自更新与 plan 都按这个名字找 debug 包。
+              TAG="$DEBUG_TAG"
+              NAME="${NAME:-fushi_server ${VERSION} debug ${RELEASE_SEQUENCE} (${SOURCE_SHA})}"
+              BODY="Rolling fushi_server debug build from ${SOURCE}. Replaced on every develop build; prerelease, never Latest."
+              TARGET="debug@${SOURCE_SHA}"
+              DOCKER_TAGS="debug debug-${RELEASE_SEQUENCE}"
+              ;;
             beta)
               TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
               NAME="${NAME:-fushi_server ${VERSION} beta ${RELEASE_SEQUENCE}}"
               BODY="fushi_server beta build from ${SOURCE}."
+              TARGET="$TAG"
+              DOCKER_TAGS="${TAG#v} beta"
               ;;
             formal)
               TAG="${TAG:-v${VERSION}}"
@@ -139,27 +210,41 @@ jobs:
               BODY="fushi_server ${VERSION} from ${SOURCE}."
               PRERELEASE=false
               MAKE_LATEST=true
+              TARGET="$TAG"
+              v="${TAG#v}"
+              DOCKER_TAGS="$v latest"
+              # x.y.z 再挂 x.y 与 x，用户可以钉小版本 / 大版本。
+              if [[ "$v" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
+                DOCKER_TAGS="$DOCKER_TAGS ${BASH_REMATCH[1]}.${BASH_REMATCH[2]} ${BASH_REMATCH[1]}"
+              fi
               ;;
             *)
-              echo "::error title=Invalid release channel::Use beta or formal."
+              echo "::error title=Invalid release channel::Use debug, beta, formal or auto."
               exit 1
               ;;
           esac
-          if [ -f "$NOTES_FILE" ]; then
+          if [ "$CHANNEL" != debug ] && [ -f "$NOTES_FILE" ]; then
             BODY="$(cat "$NOTES_FILE")"
             BODY="${BODY}"$'\n\n'"Built from ${SOURCE}."
           fi
+          # plan 的 debug 判据：body 里的完整源码 sha。
+          BODY="${BODY}"$'\n\n'"source-sha: ${SOURCE_SHA_FULL}"
           case "$TAG" in
             v[0-9]*) : ;;
+            "$DEBUG_TAG") [ "$CHANNEL" = debug ] || { echo "::error title=Bad tag::$DEBUG_TAG is reserved for the debug channel"; exit 1; } ;;
             *) echo "::error title=Bad tag::server release tags must look like v<version>[-beta.<seq>] (got $TAG)"; exit 1 ;;
           esac
           {
+            echo "channel=$CHANNEL"
             echo "version=$VERSION"
             echo "release_sequence=$RELEASE_SEQUENCE"
+            echo "source_sha=$SOURCE_SHA_FULL"
+            echo "target=$TARGET"
             echo "tag=$TAG"
             echo "name=$NAME"
             echo "prerelease=$PRERELEASE"
             echo "make_latest=$MAKE_LATEST"
+            echo "docker_tags=$DOCKER_TAGS"
             echo "body<<EOF"
             echo "$BODY"
             echo "EOF"
@@ -168,13 +253,14 @@ jobs:
   # ubuntu-22.04（glibc 2.35）而不是 latest：bundle 里除 glibc 全是静态的，构建机的
   # glibc 就是产物的最低要求，老一点覆盖面大一点（Debian 12 / Ubuntu 22.04+ / 主流 NAS）。
   linux:
+    name: linux [target:${{ needs.channel.outputs.target }}]
     needs: channel
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: hajisensai/Fushi
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ needs.channel.outputs.source_sha }}
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.0'
@@ -411,14 +497,13 @@ jobs:
           VERSION: ${{ needs.channel.outputs.version }}
           SEQ: ${{ needs.channel.outputs.release_sequence }}
           TAG: ${{ needs.channel.outputs.tag }}
-          PRERELEASE: ${{ needs.channel.outputs.prerelease }}
+          CHANNEL: ${{ needs.channel.outputs.channel }}
         run: |
           set -euo pipefail
           mkdir -p build/release-artifacts stage
           cp -a build/fushi_server_linux/bundle stage/fushi_server
           cp packages/fushi_server/README.md stage/fushi_server/README.md
           # 版本身份：互联远程自更新据此判新旧（server_release.dart）；没有它 = 不是发布包。
-          CHANNEL=formal; [ "$PRERELEASE" = "true" ] && CHANNEL=beta
           printf '{"version":"%s","sequence":%s,"tag":"%s","channel":"%s"}\n' "$VERSION" "$SEQ" "$TAG" "$CHANNEL" > stage/fushi_server/release.json
           tar -C stage -czf "build/release-artifacts/fushi_server-${VERSION}-${SEQ}-linux-x64.tar.gz" fushi_server
           ls -la build/release-artifacts
@@ -429,13 +514,14 @@ jobs:
           if-no-files-found: error
 
   windows:
+    name: windows [target:${{ needs.channel.outputs.target }}]
     needs: channel
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: hajisensai/Fushi
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ needs.channel.outputs.source_sha }}
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: '3.50.0'
@@ -694,14 +780,13 @@ jobs:
           VERSION: ${{ needs.channel.outputs.version }}
           SEQ: ${{ needs.channel.outputs.release_sequence }}
           TAG: ${{ needs.channel.outputs.tag }}
-          PRERELEASE: ${{ needs.channel.outputs.prerelease }}
+          CHANNEL: ${{ needs.channel.outputs.channel }}
         run: |
           New-Item -ItemType Directory -Force build/release-artifacts, stage | Out-Null
           Copy-Item build/fushi_server_win/bundle stage/fushi_server -Recurse -Force
           Copy-Item packages/fushi_server/README.md stage/fushi_server/README.md -Force
           # 版本身份：互联远程自更新据此判新旧（server_release.dart）；没有它 = 不是发布包。
-          $channel = if ($env:PRERELEASE -eq 'true') { 'beta' } else { 'formal' }
-          [ordered]@{ version = $env:VERSION; sequence = [int]$env:SEQ; tag = $env:TAG; channel = $channel } |
+          [ordered]@{ version = $env:VERSION; sequence = [int]$env:SEQ; tag = $env:TAG; channel = $env:CHANNEL } |
             ConvertTo-Json -Compress | Set-Content -Encoding utf8NoBOM stage/fushi_server/release.json
           Compress-Archive -Path stage/fushi_server -DestinationPath "build/release-artifacts/fushi_server-$env:VERSION-$env:SEQ-windows-x64.zip" -Force
           Get-ChildItem build/release-artifacts
@@ -712,11 +797,13 @@ jobs:
           if-no-files-found: error
 
   publish:
+    name: publish [target:${{ needs.channel.outputs.target }}]
     needs:
       - channel
       - linux
       - windows
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # 可复用 workflow 的权限上限由调用方决定；调用方（fushi-server 的 release.yml）
     # 给 contents: write，这里的 GITHUB_TOKEN 就是 fushi-server 的。
     permissions:
@@ -743,3 +830,90 @@ jobs:
           files: |
             release-artifacts/fushi_server-*-linux-x64.tar.gz
             release-artifacts/fushi_server-*-windows-x64.zip
+      # 滚动 debug release 每次只留这一轮的两个包：新包先传上去，再删旧序号的，
+      # 中途失败也不会出现「release 里一个包都没有」的窗口。
+      - name: Drop superseded debug assets
+        if: needs.channel.outputs.channel == 'debug'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.channel.outputs.tag }}
+        run: |
+          set -euo pipefail
+          keep="$(ls release-artifacts)"
+          gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' | while read -r name; do
+            if ! grep -qxF "$name" <<<"$keep"; then
+              echo "deleting superseded $name"
+              gh release delete-asset "$TAG" "$name" --repo "$REPO" --yes
+            fi
+          done
+
+  # 镜像只在 release 发出之后推：GHCR 上有的 tag 一定对得上一个 release。镜像打的就是本 run
+  # 刚出的 Linux 包（Dockerfile 优先用 dist/ 里的 tarball），不再从 GitHub 下载一遍。
+  # 打包文件（Dockerfile / entrypoint / smoke_test）取本 workflow 自己那一版，与
+  # workflow 定义同步；被打包的程序来自 source_sha。
+  docker:
+    name: docker [target:${{ needs.channel.outputs.target }}]
+    needs:
+      - channel
+      - publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: hajisensai/Fushi
+          ref: ${{ github.job_workflow_sha || 'develop' }}
+          sparse-checkout: packages/fushi_server/docker
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: fushi_server-linux-x64
+          path: packages/fushi_server/docker/dist
+      - name: Build image
+        id: build
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+          CALLER_REPO: ${{ github.repository }}
+          TAG: ${{ needs.channel.outputs.tag }}
+          VERSION: ${{ needs.channel.outputs.version }}
+          SEQ: ${{ needs.channel.outputs.release_sequence }}
+          CHANNEL: ${{ needs.channel.outputs.channel }}
+          SOURCE_SHA: ${{ needs.channel.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          ls -la packages/fushi_server/docker/dist
+          version="${TAG#v}"
+          [ "$CHANNEL" = debug ] && version="${VERSION}-debug.${SEQ}"
+          # source 标签指向发布仓：GHCR 据此把包挂到 fushi-server 仓下，GITHUB_TOKEN 才有写权限。
+          docker build -t fushi-server:release \
+            --label org.opencontainers.image.source="https://github.com/${CALLER_REPO}" \
+            --label org.opencontainers.image.revision="$SOURCE_SHA" \
+            --label org.opencontainers.image.version="$version" \
+            --label org.opencontainers.image.title=fushi-server \
+            --label org.opencontainers.image.description="Headless Fushi server (${CHANNEL} channel)" \
+            packages/fushi_server/docker
+          echo "image=ghcr.io/${OWNER,,}/fushi-server" >> "$GITHUB_OUTPUT"
+      - name: Smoke test
+        run: bash packages/fushi_server/docker/smoke_test.sh fushi-server:release
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Push
+        shell: bash
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          DOCKER_TAGS: ${{ needs.channel.outputs.docker_tags }}
+        run: |
+          set -euo pipefail
+          for t in $DOCKER_TAGS; do
+            docker tag fushi-server:release "$IMAGE:$t"
+            docker push "$IMAGE:$t"
+            echo "pushed \`$IMAGE:$t\`" >> "$GITHUB_STEP_SUMMARY"
+          done

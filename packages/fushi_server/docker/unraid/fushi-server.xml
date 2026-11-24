@@ -1,9 +1,10 @@
 <?xml version="1.0"?>
 <!--
-  Unraid template for the fushi_server image. Needs a prebuilt image: the
-  Repository below only works once images are published to GHCR
-  (.github/workflows/server-docker-publish.yml). Until then, build with the
-  Compose Manager plugin from packages/fushi_server/docker (see docker/README.md).
+  Unraid template for the fushi_server image, pulled from GHCR (published with
+  every fushi-server release by .github/workflows/release-server.yml; `latest` is
+  the formal channel, `beta` / `debug` the prerelease ones). To build it yourself
+  instead, use the Compose Manager plugin from packages/fushi_server/docker
+  (see docker/README.md).
 
   Install by hand: copy this file to /boot/config/plugins/dockerMan/templates-user/
   on the Unraid flash drive, then Docker → Add Container → Template: fushi-server.
