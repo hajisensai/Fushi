@@ -231,16 +231,22 @@ ShapeDecoration fushiAppleSolidFloatingDecoration(
 ///
 /// [shape] 支持 [CircleBorder]、[StadiumBorder] 与带 [BorderRadius] 的圆角矩形
 /// / 平滑圆角（见 [fushiLiquidShapeOf]）。
+///
+/// [thick] = 承载成片正文的内容面板（视频设置 / 选集 / 章节 / 字幕面板、面板切换
+/// 竖条）：取厚材质 [fushiThickMaterialSettings]，而不是控件级的薄玻璃。null =
+/// 读祖先 [FushiThickMaterialScope]（默认薄）。
 class FushiAppleFloatingSurface extends StatelessWidget {
   const FushiAppleFloatingSurface({
     super.key,
     required this.shape,
     this.tint,
+    this.thick,
     this.child,
   });
 
   final OutlinedBorder shape;
   final Color? tint;
+  final bool? thick;
   final Widget? child;
 
   @override
@@ -255,15 +261,93 @@ class FushiAppleFloatingSurface extends StatelessWidget {
         child: child,
       );
     }
+    final bool useThick = thick ?? FushiThickMaterialScope.of(context);
     return GlassContainer(
       useOwnLayer: true,
       quality: fushiGlassQuality(context, prominent: true),
       shape: fushiLiquidShapeOf(shape),
-      settings: fushiGlassSettingsOverPlatformView(context, tint: tint),
+      settings: useThick
+          ? fushiThickMaterialSettings(context, tint: tint)
+          : fushiGlassSettingsOverPlatformView(context, tint: tint),
       platformViewBackdrop: fushiGlassOverPlatformView(context),
       child: child,
     );
   }
+}
+
+/// 厚材质的填充不透明度：深色 86%、浅色 90%（实色档 100%）。
+///
+/// 下限按「任何背景下正文对比度 ≥ WCAG AA 4.5:1」反推：最坏背景是与面板反色的
+/// 纯白 / 纯黑画面（模糊后仍是纯色）。深色 #1C1C1E @86% 压在纯白上合成 ≈ #3C3C3D
+/// （相对亮度 0.045）：白色正文 11:1，深色 secondaryLabel（#EBEBF5 @60%）4.5:1；
+/// 浅色 #F9F9F9 @90% 压在纯黑上合成 ≈ #E0E0E0（0.75）：黑色正文 16:1。
+const double kFushiThickMaterialDarkAlpha = 0.86;
+const double kFushiThickMaterialLightAlpha = 0.90;
+
+/// 厚材质（macOS `.regularMaterial` / `.thickMaterial`、iOS systemThickMaterial）
+/// 的填充色：系统材质实色（深 #1C1C1E / 浅 #F9F9F9，[tint] 覆盖色相）按
+/// [kFushiThickMaterialDarkAlpha] / [kFushiThickMaterialLightAlpha] 铺不透明度；
+/// 实色档（[FushiGlassMaterial.off]）不透明。
+Color fushiThickMaterialFill(BuildContext context, {Color? tint}) {
+  final bool dark = Theme.of(context).colorScheme.brightness == Brightness.dark;
+  final Color base = tint ?? fushiGlassPlatformViewFallback(context);
+  if (glassMaterialOf(context) == FushiGlassMaterial.off) {
+    return base.withValues(alpha: 1);
+  }
+  return base.withValues(
+    alpha: dark ? kFushiThickMaterialDarkAlpha : kFushiThickMaterialLightAlpha,
+  );
+}
+
+/// 厚材质的玻璃 settings：大面积承载正文的面板（视频设置 / 选集 / 章节 / 字幕
+/// 面板、tooltip 气泡）用。Apple 的分工是小控件（按钮、胶囊条）用清透液态玻璃，
+/// 内容面板用厚材质——强模糊 + 高不透明底色，画面只透出很淡的色彩氛围，正文在
+/// 任何画面下都可读（不透明度下限见 [kFushiThickMaterialDarkAlpha]）。
+///
+/// 不叠折射 / 高光边 / 色散：厚材质是磨砂板，不是透镜。实色档直接不透明、零模糊。
+/// 带 [LiquidGlassSettings.platformViewFallbackColor]，压在 iOS / macOS 原生视图
+/// 上采不到背景处是系统材质实色。
+LiquidGlassSettings fushiThickMaterialSettings(
+  BuildContext context, {
+  Color? tint,
+}) {
+  final bool off = glassMaterialOf(context) == FushiGlassMaterial.off;
+  return LiquidGlassSettings(
+    glassColor: fushiThickMaterialFill(context, tint: tint),
+    blur: off ? 0 : 30,
+    thickness: 8,
+    lightIntensity: 0,
+    ambientStrength: 0,
+    fresnelStrength: 0,
+    chromaticAberration: 0,
+    saturation: off ? 1.0 : 1.6,
+    refractiveIndex: 1.0,
+    shadowElevation: 0,
+    platformViewFallbackColor: fushiGlassPlatformViewFallback(context),
+  );
+}
+
+/// 子树里的 [FushiAppleFloatingSurface]（未显式给 `thick`）改用厚材质。给不便
+/// 逐层传参的共用件用（例如视频侧面板旁的面板切换竖条 [FushiFloatingToolbar]）。
+class FushiThickMaterialScope extends InheritedWidget {
+  const FushiThickMaterialScope({
+    super.key,
+    this.thick = true,
+    required super.child,
+  });
+
+  final bool thick;
+
+  /// 最近祖先作用域的取值；没有作用域时 false（薄玻璃）。
+  static bool of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<FushiThickMaterialScope>()
+          ?.thick ??
+      false;
+
+  @override
+  bool updateShouldNotify(FushiThickMaterialScope oldWidget) =>
+      oldWidget.thick != thick;
 }
 
 /// Flutter 形状 → 库的 [LiquidShape]：圆 → [LiquidOval]；胶囊 → 超大圆角的

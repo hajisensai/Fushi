@@ -124,7 +124,14 @@ extension _VideoAppleChrome on _VideoFushiPageState {
     );
   }
 
-  /// 右上玻璃胶囊：原盘菜单 / 跳转回退（有才出现）· 规划里的右上按钮 · 「⋯」。
+  /// 右上玻璃胶囊：网页托管 / 跳转回退 / 原盘菜单（有才出现）· 规划里的右上按钮 ·
+  /// 「⋯」。
+  ///
+  /// 有条件出现的按钮与其余按钮**同在这一枚胶囊里**，作为普通条目出现 / 消失
+  /// （iOS / macOS 27 工具栏的做法：一组相关动作共用一块玻璃，按钮增减时胶囊
+  /// 平滑伸缩），不另起玻璃形状——单独一颗圆钮紧挨胶囊会被液态玻璃融成一团、
+  /// 中间一道颈缩。胶囊宽度变化走 [AnimatedSize]（[FushiMotion.short]），跳转
+  /// 按钮自带插入时的弹簧缩放 + 淡入（强调态 [FushiToolbarButton]）。
   ///
   /// 「⋯」是整套 chrome 唯一的常驻溢出菜单：被移出播放器的全部动作（M3E 分在右上 /
   /// 右下两个「⋯」）、触屏收进来的截图、跳转记录都在这里；传输组（播放 / ±10）恒在
@@ -140,7 +147,20 @@ extension _VideoAppleChrome on _VideoFushiPageState {
       listenable: _videoJumpToolbarListenable,
       builder: (BuildContext jumpContext, Widget? _) {
         final VideoBarEntry? jumpMenu = _videoJumpHistoryMenuEntry(jumpContext);
+        final Widget? webHosting = _webHostingButton(desktop: desktop);
         final List<VideoBarEntry> entries = <VideoBarEntry>[
+          // 有条件出现的条目钉死（不参与收起）、带身份键：插在前面时后面的按钮
+          // 不错位继承状态。
+          if (webHosting != null)
+            VideoBarEntry(
+              slotKey: const ValueKey<String>('video_web_hosting_top_bar'),
+              child: webHosting,
+            ),
+          for (final ({Key key, Widget button}) b in _videoJumpHistoryButtons(
+            jumpContext,
+            desktop: desktop,
+          ))
+            VideoBarEntry(slotKey: b.key, child: b.button),
           if (controller.isBlurayNavigationSession)
             ..._discNavigationBarEntries(desktop: desktop),
           for (final VideoApplePlacement p in plan.topTrailing)
@@ -173,32 +193,26 @@ extension _VideoAppleChrome on _VideoFushiPageState {
             ),
           if (jumpMenu != null) jumpMenu,
         ];
-        final Widget? webHosting = _webHostingTopBarButton(desktop: desktop);
-        final bool jumpShown = _videoJumpToolbarShown;
-        final Widget capsule = entries.isEmpty
-            ? const SizedBox.shrink()
-            : VideoGlassSurface(
-                enabled: true,
-                padding: EdgeInsets.symmetric(horizontal: 4 * _videoUiScale),
-                child: VideoControlBar(
-                  fill: false,
-                  moreButtonBuilder: (VoidCallback open) =>
-                      _videoBarMoreButton(open, desktop: desktop),
-                  singleActionButtonBuilder: (VideoBarMenuAction action) =>
-                      _videoBarSingleActionButton(action, desktop: desktop),
-                  onMenuOpenChanged: _onVideoBarMenuOpenChanged,
-                  entries: entries,
-                ),
-              );
-        if (!jumpShown && webHosting == null) return capsule;
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (webHosting != null) webHosting,
-            if (jumpShown)
-              _videoJumpHistoryTopBarGroup(jumpContext, desktop: desktop),
-            Flexible(child: capsule),
-          ],
+        if (entries.isEmpty) return const SizedBox.shrink();
+        return VideoGlassSurface(
+          enabled: true,
+          padding: EdgeInsets.symmetric(horizontal: 4 * _videoUiScale),
+          // 玻璃是子树背后的 Positioned.fill 兄弟层：胶囊宽度随 [AnimatedSize]
+          // 逐帧变化，玻璃跟着一起伸缩（右端锚定，向左长出 / 收回）。
+          child: AnimatedSize(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.standard,
+            alignment: AlignmentDirectional.centerEnd,
+            child: VideoControlBar(
+              fill: false,
+              moreButtonBuilder: (VoidCallback open) =>
+                  _videoBarMoreButton(open, desktop: desktop),
+              singleActionButtonBuilder: (VideoBarMenuAction action) =>
+                  _videoBarSingleActionButton(action, desktop: desktop),
+              onMenuOpenChanged: _onVideoBarMenuOpenChanged,
+              entries: entries,
+            ),
+          ),
         );
       },
     );

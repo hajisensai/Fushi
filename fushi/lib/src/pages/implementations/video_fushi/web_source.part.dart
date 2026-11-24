@@ -1687,33 +1687,39 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
   }
 
-  /// 顶栏「切换到 Fushi 播放」（本页一定是站点原生播放；站点入口没有库里的书、Fushi 播放读不到，
-  /// 小窗 / 沉浸锁下也不画）。与跳转记录胶囊同一套外观，挂在右上组最前面。
-  Widget? _webHostingTopBarButton({required bool desktop}) {
+  /// 顶栏「切换到 Fushi 播放」按钮本体（本页一定是站点原生播放；站点入口没有库里的
+  /// 书、Fushi 播放读不到，小窗 / 沉浸锁下也不画 → null）。Apple 把它作为普通条目
+  /// 放进右上玻璃胶囊最前面（[_appleTopTrailingGroup]）；M3E 见
+  /// [_webHostingTopBarButton]。
+  Widget? _webHostingButton({required bool desktop}) {
     if (!_webMode ||
         widget.webSite != null ||
         _inMiniWindow ||
         _immersiveLocked.value) {
       return null;
     }
+    return FushiTooltip(
+      message: t.web_video_hosting_switch_to_builtin,
+      child: Semantics(
+        button: true,
+        label: t.web_video_hosting_switch_to_builtin,
+        child: _chromeIconButton(
+          icon: FushiIcons.video,
+          desktop: desktop,
+          onPressed: () => unawaited(_switchWebToBuiltinHosting()),
+        ),
+      ),
+    );
+  }
+
+  /// M3E 顶栏的「切换到 Fushi 播放」：与跳转记录胶囊同一套外观，挂在右上组最前面。
+  Widget? _webHostingTopBarButton({required bool desktop}) {
+    final Widget? button = _webHostingButton(desktop: desktop);
+    if (button == null) return null;
     return Padding(
       key: const ValueKey<String>('video_web_hosting_top_bar'),
       padding: EdgeInsetsDirectional.only(end: 8 * _videoUiScale),
-      child: VideoGlassSurface(
-        enabled: _appleChrome,
-        child: FushiTooltip(
-          message: t.web_video_hosting_switch_to_builtin,
-          child: Semantics(
-            button: true,
-            label: t.web_video_hosting_switch_to_builtin,
-            child: _chromeIconButton(
-              icon: FushiIcons.video,
-              desktop: desktop,
-              onPressed: () => unawaited(_switchWebToBuiltinHosting()),
-            ),
-          ),
-        ),
-      ),
+      child: button,
     );
   }
 
