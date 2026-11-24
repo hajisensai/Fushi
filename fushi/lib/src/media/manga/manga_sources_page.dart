@@ -19,7 +19,7 @@ import 'package:fushi/src/media/manga/interconnect/interconnect_manga_browse_pag
 import 'package:fushi/src/media/manga/manga_import_dialog.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_server_list_view.dart'
-    show openMediaServerSettings;
+    show mediaServerSettingsAction;
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -226,7 +226,7 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
                 interconnectBrowseLabel: t.import_interconnect_browse_manga,
                 interconnectBrowseDisabledHint:
                     t.import_interconnect_browse_disabled_hint,
-                onConnectServer: () => openMediaServerSettings(context),
+                onConnectServer: mediaServerSettingsAction(context, ref),
                 connectServerHint: 'Kavita · OPDS',
               ),
             ),

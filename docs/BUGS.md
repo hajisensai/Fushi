@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4660 条。点号进各自文件。
+> 共 4661 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5359](bugs/BUG-5359-media-server-add-row-dead-when-services-off.md) | ✅ | ✅ | 媒体服务器列表「去设置添加服务器」在线服务模块关着时点了没反应 |
 | [BUG-5358](bugs/BUG-5358-home-edit-jiggle-semantics-saturates-ui.md) | ✅ | ✅ | Cupertino 首页编辑态主线程被占满（「一进编辑首页就卡死」） |
 | [BUG-5357](bugs/BUG-5357-manga-novel-arrow-direction-parity.md) | ✅ | ✅ | 小说与漫画左右翻页方向判据不一致 |
 | [BUG-5356](bugs/BUG-5356-bluray-playall-episode-axis-anchors.md) | ✅ | ✅ | 原盘「全部播放」按集换库身份后，时间锚点仍在整条播放列表时间轴上 |

@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/implementations/media_server/media_server_server_list_view.dart';
@@ -92,7 +93,8 @@ class MediaServerBrowsePage extends StatefulWidget {
   /// 播放出口。null = 生产缺省：根 Navigator push `VideoFushiPage.neutralizedRemote`。
   final MediaServerPlayHandler? onPlay;
 
-  /// 空态「去设置添加服务器」。null = 生产缺省：push 服务设置页。
+  /// 「去设置添加服务器」。null = 生产缺省：在线服务模块开着时 push 服务设置页、
+  /// 关着时入口不渲染（[mediaServerSettingsAction]）。
   final VoidCallback? onOpenSettings;
 
   /// 本页此刻是否是用户看得见的那个分区。壳用 [Offstage] 保活本页、HomePage 又用
@@ -134,15 +136,6 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
       return;
     }
     await pushMediaServerPlayer(context, request, repo: widget.repo);
-  }
-
-  void _openSettings() {
-    final VoidCallback? injected = widget.onOpenSettings;
-    if (injected != null) {
-      injected();
-      return;
-    }
-    openMediaServerSettings(context);
   }
 
   /// 嵌套栈能退一层就退，并报告是否退了。
@@ -241,10 +234,22 @@ class _MediaServerBrowsePageState extends State<MediaServerBrowsePage> {
                             adaptivePageRoute<void>(
                               context: context,
                               settings: settings,
-                              builder: (_) => MediaServerListView(
-                                loadServers: widget.loadServers,
-                                play: _play,
-                                onOpenSettings: _openSettings,
+                              builder: (_) => Consumer(
+                                builder:
+                                    (
+                                      BuildContext context,
+                                      WidgetRef ref,
+                                      Widget? _,
+                                    ) => MediaServerListView(
+                                      loadServers: widget.loadServers,
+                                      play: _play,
+                                      onOpenSettings:
+                                          widget.onOpenSettings ??
+                                          mediaServerSettingsAction(
+                                            this.context,
+                                            ref,
+                                          ),
+                                    ),
                               ),
                             ),
                       ),
