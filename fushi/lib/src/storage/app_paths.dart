@@ -11,8 +11,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart'
     show activityNameFromBreadcrumbFileName;
 import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi/src/storage/android_library_db_witness.dart';
 import 'package:fushi/src/storage/directory_move.dart'
-    show moveDirectoryMerging;
+    show kDirectoryCopyPartSuffix, moveDirectoryMerging;
 import 'package:fushi/src/storage/macos_data_root_access.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -363,9 +364,13 @@ class AppPaths {
 
   /// 锚定位置 [anchored] 与磁盘对账，返回最终位置；纠正时往
   /// [androidLocationCorrections] 记一行。外部存储不可用时不对账（无从比较）。
+  ///
+  /// 两个根都有书库文件时让主库作证（[AndroidLibraryDbWitness]），并把落选的根记进
+  /// [androidStrayLibraryRoot]，开库后由 `AndroidStrayLibraryMerge` 把散落在那边的书并回来。
   static Future<String> _reconcileAndroidLocationWithDisk(
     String anchored,
   ) async {
+    androidStrayLibraryRoot = null;
     final Directory? ext = _androidExternalFilesDir;
     if (ext == null) return anchored;
     final Directory external = Directory(
@@ -377,39 +382,73 @@ class AppPaths {
     final bool anchoredExternal = anchored == androidDocumentsLocationExternal;
     final Directory anchoredRoot = anchoredExternal ? external : internal;
     final Directory otherRoot = anchoredExternal ? internal : external;
-    // 常态：锚定的根里有书 → 第一个文件就停，不碰另一个根。
     final bool anchoredHasLibrary = await hasLibraryFiles(
       anchoredRoot,
       onTimeout: true,
     );
-    if (anchoredHasLibrary) return anchored;
+    // 另一个根常态是空的（迁移成功后源已删空 / 从没用过），探测只是二十来次 exists。
+    final bool otherHasLibrary = await hasLibraryFiles(
+      otherRoot,
+      onTimeout: false,
+    );
+    AndroidLibraryDbWitness? witness;
+    if (anchoredHasLibrary && otherHasLibrary) {
+      witness = await AndroidLibraryDbWitness.probe(
+        supportRoot: await _resolveSupportRoot(),
+        anchoredRoot: anchoredRoot,
+        otherRoot: otherRoot,
+      );
+    }
     final String location = reconcileAndroidDocumentsLocation(
       anchored: anchored,
-      anchoredHasLibrary: false,
-      otherHasLibrary: await hasLibraryFiles(otherRoot, onTimeout: false),
+      anchoredHasLibrary: anchoredHasLibrary,
+      otherHasLibrary: otherHasLibrary,
+      dbWitness: witness,
     );
-    if (location != anchored) {
+    final bool switched = location != anchored;
+    final Directory chosenRoot = switched ? otherRoot : anchoredRoot;
+    final Directory losingRoot = switched ? anchoredRoot : otherRoot;
+    if (anchoredHasLibrary && otherHasLibrary) {
+      androidLocationCorrections.add(
+        '两个书库根都有书库文件（锚定 $anchored：${anchoredRoot.path}；另一个：'
+        '${otherRoot.path}），主库作证 ${witness ?? '无（主库读不到）'} → '
+        '${switched ? '改为' : '沿用'} $location',
+      );
+      // 只有主库作过证才去合并：读不到主库时谁对谁错没有依据，宁可原样不动。
+      if (witness != null) androidStrayLibraryRoot = losingRoot;
+    } else if (switched) {
       androidLocationCorrections.add(
         '锚点 $anchored 指向的书库根 ${anchoredRoot.path} 里没有书库文件，'
-        '${otherRoot.path} 里有 → 改为 $location',
+        '${chosenRoot.path} 里有 → 改为 $location',
       );
     }
     return location;
   }
 
-  /// 纯判定（测试钉住）：锚定的根里没有书库文件、另一个根里有 → 书库实际在另一个根，
-  /// 锚点是错的（反馈 RCv76PPoiJ：锚点被旧进程副本冲掉，判回空的内部根）。其余情形
-  /// 一律沿用锚点——两边都空是全新安装，两边都有是迁移中断（库与 DB 仍以锚点为准）。
+  /// 纯判定（测试钉住）：
+  ///  - 另一个根里没有书库文件 → 沿用锚点（常态，以及两边都空的全新安装）；
+  ///  - 锚定的根里没有、另一个根里有 → 书库实际在另一个根，锚点是错的（反馈
+  ///    RCv76PPoiJ：锚点被旧进程副本冲掉，判回空的内部根）；
+  ///  - 两边都有：让主库作证（[dbWitness]，拍板台 review-library-anchor-both-roots）。
+  ///    主库里的书「只在另一个根存在」的严格多于「只在锚定的根存在」的 → 改到另一个根；
+  ///    平局（迁移中断，两边是同一批文件）或没有证据 → 沿用锚点。
   static String reconcileAndroidDocumentsLocation({
     required String anchored,
     required bool anchoredHasLibrary,
     required bool otherHasLibrary,
+    AndroidLibraryDbWitness? dbWitness,
   }) {
-    if (anchoredHasLibrary || !otherHasLibrary) return anchored;
-    return anchored == androidDocumentsLocationExternal
+    if (!otherHasLibrary) return anchored;
+    final String other = anchored == androidDocumentsLocationExternal
         ? androidDocumentsLocationInternal
         : androidDocumentsLocationExternal;
+    if (!anchoredHasLibrary) return other;
+    return (dbWitness?.favorsOther ?? false) ? other : anchored;
   }
+
+  /// 本进程启动期判定时两个根都有书库文件、经主库作证后**落选**的那个根；开库后
+  /// `AndroidStrayLibraryMerge` 把散在那里的书并进书库根。null：只有一个根有书（常态）。
+  static Directory? androidStrayLibraryRoot;
 
   /// 书库证据里不算数的顶层项：app 每次冷启动自己就会往里放东西（导出目录的
   /// `.nomedia`）或只放过程性临时物，与「书库在不在这个根」无关。#4366 指出：已中招
@@ -424,8 +463,9 @@ class AppPaths {
   };
 
   /// 不算书库证据的文件名：`.nomedia` 是排除媒体扫描的占位（0 字节），任何目录都可能被
-  /// 顺手放一个。
-  static bool isLibraryEvidenceFileName(String name) => name != '.nomedia';
+  /// 顺手放一个；`*.fushi-part` 是中断的跨盘复制留下的半截临时文件，不是书。
+  static bool isLibraryEvidenceFileName(String name) =>
+      name != '.nomedia' && !name.endsWith(kDirectoryCopyPartSuffix);
 
   /// [root] 下 Fushi 自有顶层项（[fushiOwnedDocumentsEntries]，去掉
   /// [libraryEvidenceIgnoredEntries]）里是否至少有一个书库**文件**。只认文件不认目录：

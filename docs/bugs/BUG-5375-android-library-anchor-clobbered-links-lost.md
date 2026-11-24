@@ -20,3 +20,9 @@
     1. `hasLibraryFiles` 原把冷启动自建的 `fushiExport/.nomedia` 当书库文件，已中招的安装外部根里恰好只有它，对账判「锚定的根有书」、永不自愈。现跳过 `AppPaths.libraryEvidenceIgnoredEntries`（导出目录 / 导入暂存 / 推荐包暂存 / 引导状态）并忽略 `.nomedia`。
     2. `planAndroidDocumentsMigration`（`data_root.part.dart`）原无条件 `newDocs.delete(recursive: true)`：锚点错指空根时点「移回内部」，目标就是真书库，会被整树删光。现先核实目标是源的子集（`AppPaths.firstAndroidMigrationTargetOnlyFile`，中断的跨盘复制不删源，所以半成品一定是子集），有源里没有的文件就拒绝（`data_storage_migrate_target_has_library`），一个字节都不删。
     3. 测试：`android_documents_location_test.dart` 小米现场自愈判定、`.nomedia` / 空运行目录不算书库、目标子集核实三情形；`sandbox_relocation_test.dart` 书库在内部、路径被改到外部 → 根纠正回内部后改回。
+  - 两边根都有书（拍板台 review-library-anchor-both-roots，维护者「根本性修复」）：锚点错指期间用户往错的根又导入了书，原判据把「两边都有」一律当迁移中断、沿用锚点，永不自愈。现在：
+    1. 两边都有书库文件时让主库作证（`fushi/lib/src/storage/android_library_db_witness.dart` `AndroidLibraryDbWitness`）：`AppPaths.resolve` 早于开库，所以这里另开一条 **SQLite 只读连接**（后台 isolate，读完即关，不跑迁移、不建表），抽样 `epub_books.extract_dir` / `audiobooks.audio_root` / `srt_books.srt_path` / `video_books.video_path|cover_path`，取数据根内尾段，看它「只在哪个根」存在；另一个根严格多数才改锚点，平局（中断迁移的完整副本）或读不到主库沿用锚点。按尾段计票，与库里记的是哪个根的前缀无关，前后启动结论稳定。
+    2. 开库后、台账重基前把落选根里的散书并回书库根（`android_stray_library_merge.dart` `AndroidStrayLibraryMerge`，`app_model.dart` 启动期调用）：先改写库内落选根前缀的路径（`DataRootMigrator.rebaseOpenDatabasePaths` + fast-resume），再逐文件搬（跨卷 `*.fushi-part` + rename）；书库根里有**逐字节相同**副本的才删落选那边，半截 `*.fushi-part` 直接删；只要有一个同名文件内容不同就整次放弃、什么都不动，只写诊断（`AppPaths.androidStrayLibrary`）。半途崩溃下次启动会再作证、再合并（改写已是空操作）。
+    3. `hasLibraryFiles` / 迁移前子集核实不再把 `*.fushi-part` 当书库文件。
+    4. 不做「我确认目标可删」的强制清理按钮（拍板）：那种情形（上次迁移已提交但删源中断、之后又删了书再往回迁）很少见，而强制清理一旦判断错就是整树删掉真书库，代价不可逆；现在的合并只删逐字节相同的副本，覆盖了「中断迁移残留」这一常见来源。
+    5. 测试：`fushi/test/storage/android_library_db_witness_test.dart`（作证判定、尾段、真主库只读取样、合并 / 冲突放弃 / 半途崩溃后结论不变）。

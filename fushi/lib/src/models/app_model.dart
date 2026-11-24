@@ -190,6 +190,7 @@ import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
+import 'package:fushi/src/storage/android_stray_library_merge.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/download_layout.dart';
@@ -5667,6 +5668,24 @@ class AppModel
         ErrorLogService.instance.logDiagnostic(
           'AppPaths.androidLocation',
           note,
+        );
+      }
+      // 拍板台 review-library-anchor-both-roots：两个书库根都有书、主库作证选定之后，
+      // 把散在落选根里的书并回书库根（先改写库内路径再搬文件；有内容不同的同名文件
+      // 就整次放弃、什么都不动）。必须在台账重基之前：并完之后库里不再有落选根前缀的
+      // 路径，台账若停在落选根，重基抽样也不会被那几本散书反证拦下。
+      final Directory? strayLibraryRoot = AppPaths.androidStrayLibraryRoot;
+      if (strayLibraryRoot != null) {
+        final AndroidStrayMergeOutcome merge =
+            await AndroidStrayLibraryMerge.run(
+              db: _database,
+              libraryRoot: _appDirectory,
+              strayRoot: strayLibraryRoot,
+              supportRoot: _databaseDirectory.path,
+            );
+        ErrorLogService.instance.logDiagnostic(
+          'AppPaths.androidStrayLibrary',
+          '${strayLibraryRoot.path} → ${_appDirectory.path}：${merge.describe()}',
         );
       }
       final SandboxRelocationOutcome relocation =
