@@ -530,7 +530,6 @@ class LibraryCorpusService {
         t = await parseStoredMusicLyrics(
           row.raw,
           row.format,
-          isUserEdited: row.isUserEdited,
           parse: _parseLyricsInBackground,
         );
       }

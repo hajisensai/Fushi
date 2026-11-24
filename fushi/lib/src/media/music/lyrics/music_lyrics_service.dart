@@ -24,6 +24,8 @@ import 'package:fushi_engine/media/music/server/music_server.dart'
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/lyrics/music_lyrics_auto_sync.dart';
+import 'package:fushi_asr_subtitles/asr_subtitles.dart' show LyricsAlignment;
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart';
 import 'package:fushi_engine/media/music/lyrics/music_local_lyrics.dart';
 import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
@@ -122,15 +124,13 @@ buildMusicPluginLyrics(
 /// `music_lyrics` 一行（`raw` + `format`）→ 时间轴。所有读这张表的地方（歌词解析、语料索引）
 /// 共用这一条，不各自猜解析提示：
 /// - [kMusicPluginLyricsTracksFormat]：从插件原始各轨重新合并；
-/// - 手动指定行的 raw 是 TTML（无损交换格式）——选的是 ASS 时除外：ASS 原文要留给 libass
-///   原样渲染，按 ASS 解析；
-/// - 其余按行记的格式解析。
+/// - 其余按行记的格式解析。手动指定行的 `format` 记的就是原文的真实格式：选来源存 TTML
+///   （ASS / SSA 原样）、纯文本歌词自动对时存 LRC（[kMusicLyricsAutoSyncFormat]）。
 ///
 /// 原始各轨解不开时抛 [LyricsParseException]（与格式解析失败同一类错误）。
 Future<LyricTimeline> parseStoredMusicLyrics(
   Uint8List raw,
   String format, {
-  required bool isUserEdited,
   required Future<LyricTimeline> Function(Uint8List bytes, String hint, int? d)
   parse,
   int? durationMs,
@@ -147,11 +147,7 @@ Future<LyricTimeline> parseStoredMusicLyrics(
     }
     return (await buildMusicPluginLyrics(tracks, durationMs, parse)).timeline;
   }
-  return parse(
-    raw,
-    isUserEdited && !musicLyricsFormatIsAss(format) ? 'ttml' : format,
-    durationMs,
-  );
+  return parse(raw, format, durationMs);
 }
 
 /// 解析歌词所需的曲目信息。
@@ -337,9 +333,22 @@ class MusicLyricsService {
   final StreamController<String> _generated =
       StreamController<String>.broadcast();
 
-  /// [saveGenerated] 写完一首就发它的 trackUid：歌词页 / 桌面歌词正显示这首时重载
-  /// （生成任务常在页面关掉之后才结束）。
+  /// [saveGenerated] 写完一首就发它的 trackUid（等着这份转录的纯文本歌词自动对时跑完后
+  /// 再发一次）：歌词页 / 桌面歌词正显示这首时重载（生成任务常在页面关掉之后才结束）。
   Stream<String> get generatedUpdates => _generated.stream;
+
+  /// 等转录的纯文本歌词自动对时（[autoSyncWhenGenerated]）：trackUid → 曲目与歌词。只在
+  /// 内存里（重启后再点一次即可，转录已经在库里，直接对）。
+  final Map<String, ({MusicLyricsTrackRef track, LyricTimeline plain})>
+  _pendingAutoSync =
+      <String, ({MusicLyricsTrackRef track, LyricTimeline plain})>{};
+
+  final StreamController<MusicLyricsAutoSyncEvent> _autoSyncResults =
+      StreamController<MusicLyricsAutoSyncEvent>.broadcast();
+
+  /// 后台自动对时（转录完成后才跑的那种）的结果：界面据此提示「对好了 / 对不上」。
+  Stream<MusicLyricsAutoSyncEvent> get autoSyncResults =>
+      _autoSyncResults.stream;
 
   Future<List<MusicLyricRow>> _rows(FushiDatabase db, String trackUid) =>
       (db.select(
@@ -363,7 +372,6 @@ class MusicLyricsService {
       t = await parseStoredMusicLyrics(
         row.raw,
         row.format,
-        isUserEdited: row.isUserEdited,
         parse: _parse,
         durationMs: durationMs,
       );
@@ -1569,8 +1577,9 @@ class MusicLyricsService {
   /// TTML（无损交换格式，翻译合并后的结果也一并保住）；ASS / SSA 候选例外，原文照存——
   /// 字幕组特效要交给 libass 原样渲染，转成 TTML 会全部丢掉（设计 §6.3）。
   ///
-  /// 只有「选来源」这一条写入口：所有者 2026-10-24 拍板不做歌词编辑（改字 / 翻译 /
-  /// 注音 / 单行偏移），这里不接受任意改过的时间轴。
+  /// 这里只接受「选来源」：所有者 2026-10-24 拍板不另做音乐歌词编辑界面（改字 / 翻译 /
+  /// 注音 / 单行偏移），不接受任意改过的时间轴。纯文本歌词的自动对时与它在通用字幕
+  /// 工作台里的逐行微调另走 [saveAutoSynced] / [setAutoSyncedLineStart]。
   Future<void> choose(String trackUid, MusicLyricsCandidate candidate) async {
     final FushiDatabase? db = _database();
     if (db == null) return;
@@ -1640,6 +1649,201 @@ class MusicLyricsService {
       timeline: timeline.copyWith(source: MusicLyricsSource.asr, offsetMs: 0),
     );
     _generated.add(trackUid);
+    final ({MusicLyricsTrackRef track, LyricTimeline plain})? pending =
+        _pendingAutoSync.remove(trackUid);
+    if (pending != null) {
+      final MusicLyricsAutoSyncOutcome outcome = await autoSyncPlainLyrics(
+        pending.track,
+        pending.plain,
+      );
+      _autoSyncResults.add((trackUid: trackUid, outcome: outcome));
+      if (outcome.status == MusicLyricsAutoSyncStatus.synced) {
+        _generated.add(trackUid);
+      }
+    }
+  }
+
+  /// 这首的生成字幕（ASR 转录，`asr` 行）时间轴；没有返回 null。
+  Future<LyricTimeline?> generatedTimeline(MusicLyricsTrackRef track) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return null;
+    for (final MusicLyricRow r in await _rows(db, track.trackUid)) {
+      if (r.source != MusicLyricsSource.asr ||
+          r.format == kMusicLyricsNoneFormat) {
+        continue;
+      }
+      final LyricTimeline t = await _timelineOf(db, r, track.durationMs);
+      return t.lines.isEmpty ? null : t;
+    }
+    return null;
+  }
+
+  /// 纯文本歌词自动对时（拍板台 niQk_Ns4OV）：拿这首的生成字幕当时间参照逐行对时间，
+  /// 对上了就存成本地 LRC、设成这首的手动指定（[saveAutoSynced]）。还没有生成字幕时返回
+  /// [MusicLyricsAutoSyncStatus.needsTranscript]（界面先开生成面板，并用
+  /// [autoSyncWhenGenerated] 登记，转录落库时自动接着对）。
+  Future<MusicLyricsAutoSyncOutcome> autoSyncPlainLyrics(
+    MusicLyricsTrackRef track,
+    LyricTimeline plain,
+  ) async {
+    if (!musicLyricsCanAutoSync(plain)) {
+      return const MusicLyricsAutoSyncOutcome(
+        MusicLyricsAutoSyncStatus.noPlainLyrics,
+      );
+    }
+    final LyricTimeline? transcript = await generatedTimeline(track);
+    if (transcript == null) {
+      return const MusicLyricsAutoSyncOutcome(
+        MusicLyricsAutoSyncStatus.needsTranscript,
+      );
+    }
+    final LyricsAlignment alignment = await alignMusicPlainLyrics(
+      plain,
+      transcript,
+      durationMs: track.durationMs,
+    );
+    final Uint8List? lrc = musicAlignedLrc(
+      alignment,
+      title: track.title,
+      artist: track.artist,
+    );
+    if (lrc == null) {
+      return const MusicLyricsAutoSyncOutcome(
+        MusicLyricsAutoSyncStatus.noPlainLyrics,
+      );
+    }
+    if (!alignment.isReliable) {
+      return MusicLyricsAutoSyncOutcome(
+        MusicLyricsAutoSyncStatus.unreliable,
+        anchoredLines: alignment.anchoredLines,
+      );
+    }
+    final LyricTimeline timeline = await saveAutoSynced(track, lrc);
+    return MusicLyricsAutoSyncOutcome(
+      MusicLyricsAutoSyncStatus.synced,
+      lines: timeline.lines.length,
+      anchoredLines: alignment.anchoredLines,
+    );
+  }
+
+  /// 登记：这首的生成字幕落库（[saveGenerated]）后自动对时 [plain]。同一首再登记覆盖前一次。
+  void autoSyncWhenGenerated(MusicLyricsTrackRef track, LyricTimeline plain) {
+    _pendingAutoSync[track.trackUid] = (track: track, plain: plain);
+  }
+
+  /// 有没有在等转录的自动对时。
+  bool autoSyncPending(String trackUid) =>
+      _pendingAutoSync.containsKey(trackUid);
+
+  /// 把一份对好时间的 LRC 存成这首的手动指定（`user` 行，`format = lrc`，原文就是 LRC），
+  /// 偏移归零（时间是新对的）。互联 host 曲目同样写回 host。返回解析后的时间轴。
+  ///
+  /// 写入口只有两个：自动对时的结果，与字幕工作台对这份结果的逐行微调
+  /// （[setAutoSyncedLineStart]）。不另立歌词编辑界面（功能黑名单「单独的音乐歌词编辑
+  /// 界面」：歌词走通用字幕工作台）。
+  Future<LyricTimeline> saveAutoSynced(
+    MusicLyricsTrackRef track,
+    Uint8List lrc,
+  ) async {
+    final LyricTimeline parsed = await _parse(
+      lrc,
+      kMusicLyricsAutoSyncFormat,
+      track.durationMs,
+    );
+    final LyricTimeline t = parsed.copyWith(
+      source: MusicLyricsSource.user,
+      isUserEdited: true,
+      offsetMs: 0,
+    );
+    final FushiDatabase? db = _database();
+    if (db == null) return t;
+    await _upsert(
+      db,
+      trackUid: track.trackUid,
+      source: MusicLyricsSource.user,
+      format: kMusicLyricsAutoSyncFormat,
+      raw: lrc,
+      timeline: t,
+      isUserEdited: true,
+      offsetMs: 0,
+    );
+    await _writeBackHost(
+      track.trackUid,
+      (MusicHostLyricsLayer h, String path) => h.chooseLyrics(
+        path,
+        format: kMusicLyricsAutoSyncFormat,
+        raw: lrc,
+        offsetMs: 0,
+      ),
+    );
+    return t;
+  }
+
+  /// 生效的手动指定是不是自动对时存下的 LRC（字幕工作台据此给逐行微调）。
+  Future<bool> hasAutoSynced(String trackUid) async =>
+      (await _autoSyncedRow(trackUid)) != null;
+
+  Future<MusicLyricRow?> _autoSyncedRow(String trackUid) async {
+    final FushiDatabase? db = _database();
+    if (db == null) return null;
+    for (final MusicLyricRow r in await _rows(db, trackUid)) {
+      if (r.isUserEdited &&
+          r.source == MusicLyricsSource.user &&
+          r.format == kMusicLyricsAutoSyncFormat) {
+        return r;
+      }
+    }
+    return null;
+  }
+
+  /// 字幕工作台逐行微调：把自动对时结果第 [index] 行的起点改成 [startMs]（时间轴时间，
+  /// 不含整首偏移），夹在前后两行之间。生效的不是自动对时的 LRC 时什么也不做、返回 false。
+  /// 用户调过的整首偏移保留。
+  Future<bool> setAutoSyncedLineStart(
+    MusicLyricsTrackRef track,
+    int index,
+    int startMs,
+  ) async {
+    final FushiDatabase? db = _database();
+    final MusicLyricRow? row = await _autoSyncedRow(track.trackUid);
+    if (db == null || row == null) return false;
+    final LyricTimeline current = await _timelineOf(db, row, track.durationMs);
+    final Uint8List? lrc = musicLrcWithLineStart(
+      current,
+      index,
+      startMs,
+      title: track.title,
+      artist: track.artist,
+    );
+    if (lrc == null) return false;
+    final LyricTimeline parsed = await _parse(
+      lrc,
+      kMusicLyricsAutoSyncFormat,
+      track.durationMs,
+    );
+    await _upsert(
+      db,
+      trackUid: track.trackUid,
+      source: MusicLyricsSource.user,
+      format: kMusicLyricsAutoSyncFormat,
+      raw: lrc,
+      timeline: parsed.copyWith(
+        source: MusicLyricsSource.user,
+        isUserEdited: true,
+        offsetMs: 0,
+      ),
+      isUserEdited: true,
+    );
+    await _writeBackHost(
+      track.trackUid,
+      (MusicHostLyricsLayer h, String path) => h.chooseLyrics(
+        path,
+        format: kMusicLyricsAutoSyncFormat,
+        raw: lrc,
+        offsetMs: row.offsetMs,
+      ),
+    );
+    return true;
   }
 
   /// [trackUids] 里已有生成字幕（`asr` 行，非负缓存）的曲目：批量生成跳过它们，存量迁移
