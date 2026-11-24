@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/epub/epub_parser.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
@@ -116,10 +117,12 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
 
   /// 「取消」按钮：导入进行中禁用（理由同 [buildImportPopGuard]）。
   Widget buildCancelAction(BuildContext context) {
-    return adaptiveDialogAction(
-      context: context,
-      onPressed: importing ? null : () => Navigator.pop(context),
-      child: Text(t.dialog_cancel),
+    return FushiSheetAction.cancel(
+      child: adaptiveDialogAction(
+        context: context,
+        onPressed: importing ? null : () => Navigator.pop(context),
+        child: Text(t.dialog_cancel),
+      ),
     );
   }
 
@@ -139,7 +142,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
     String? label,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return adaptiveDialogAction(
+    final Widget button = adaptiveDialogAction(
       context: context,
       isDefaultAction: true,
       onPressed: importing || !enabled ? null : onImport,
@@ -162,6 +165,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
             )
           : Text(label ?? t.dialog_import),
     );
+    return FushiSheetAction.confirm(child: button);
   }
 
   /// 导入进行中时渲染的进度块组件序列：间距 + 进度条 + 间距 + 文案。

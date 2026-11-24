@@ -1014,7 +1014,13 @@ class AdaptiveSettingsRow extends StatelessWidget {
     this.subtitleLeading,
     this.animateSubtitle = false,
     this.titleTrailing,
+    this.focusId,
   });
+
+  /// 可点行在焦点导航里的稳定 id（[FushiFocusTarget.id]）；null = 按行实例
+  /// 自动生成。调用方要按 id 定位 / 恢复焦点时传入（MD3 与 Apple 两套外观
+  /// 同一个焦点目标）。
+  final FushiFocusId? focusId;
 
   /// 标题同一行最右侧的件（例如 Apple 滑块行的当前读数，iOS 27「标题 …… 读数」）。
   /// 标题让出它的宽度后省略；null = 标题独占一行（原行为）。
@@ -1235,6 +1241,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
       }
       return _SettingsRowFocusTarget(
         onTap: onTap!,
+        focusId: focusId,
         child: ExcludeFocus(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -1262,6 +1269,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
         : InkWell(onTap: onTap, child: content);
     return _SettingsRowFocusTarget(
       onTap: onTap!,
+      focusId: focusId,
       focusEnabled: hasFocusRoot,
       child: ExcludeFocus(excluding: hasFocusRoot, child: tapSurface),
     );
@@ -1659,10 +1667,14 @@ class _SettingsRowFocusTarget extends StatefulWidget {
     required this.child,
     this.autoHome = true,
     this.focusEnabled = true,
+    this.focusId,
   });
 
   final VoidCallback onTap;
   final Widget child;
+
+  /// 调用方指定的焦点 id；null = 按实例生成。
+  final FushiFocusId? focusId;
 
   /// False = 目标保持挂载但不参与遍历/注册（无焦点根时的恒定结构模式，
   /// 见调用处注释）。透传 [FushiFocusTarget.enabled]。
@@ -1679,7 +1691,7 @@ class _SettingsRowFocusTarget extends StatefulWidget {
 }
 
 class _SettingsRowFocusTargetState extends State<_SettingsRowFocusTarget> {
-  late final FushiFocusId _focusId = FushiFocusId(
+  late final FushiFocusId _fallbackId = FushiFocusId(
     'settings-row-${identityHashCode(this)}',
   );
 
@@ -1695,7 +1707,7 @@ class _SettingsRowFocusTargetState extends State<_SettingsRowFocusTarget> {
         ),
       },
       child: FushiFocusTarget(
-        id: _focusId,
+        id: widget.focusId ?? _fallbackId,
         autoHome: widget.autoHome,
         enabled: widget.focusEnabled,
         child: widget.child,

@@ -70,6 +70,24 @@ class FushiDialogActionScope extends InheritedWidget {
   bool updateShouldNotify(FushiDialogActionScope oldWidget) => false;
 }
 
+/// 标记「iOS 27 sheet 导航栏」（[FushiAppleSheetHeader] 的左右两端）：其中的
+/// 按钮画成导航栏玻璃胶囊——主操作（FilledButton）= `.confirmationAction`
+/// 的 `.glassProminent` 强调色玻璃胶囊（semibold 字），其余（取消 / 关闭类
+/// TextButton / tonal / outlined）= 无色透明玻璃胶囊 + label 色字；禁用态
+/// 一律褪成无色玻璃 + tertiaryLabel 字。尺寸取 iOS 档按钮高（44）。只在 Apple
+/// 设计系统下生效。
+class FushiSheetHeaderActionScope extends InheritedWidget {
+  const FushiSheetHeaderActionScope({super.key, required super.child});
+
+  static bool of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<FushiSheetHeaderActionScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(FushiSheetHeaderActionScope oldWidget) => false;
+}
+
 /// 无色透明液态玻璃（iOS / macOS 26 的 `.glass` 控件：Niratan 参考图里的
 /// 分段控件轨、工具栏图标组、弹出按钮）：几乎无填充、无着色，只有一圈清楚的
 /// 高光边与轻微折射——不是灰色玻璃块。[lighter] = 选中段 / 选中钮那枚「更亮
@@ -410,10 +428,12 @@ Widget _glassButton(
   final bool customBg = styleBg != null && styleBg.a > 0;
   final bool alertAction = FushiAlertActionScope.of(context);
   final bool sheetAction = FushiDialogActionScope.of(context);
+  final bool headerAction = FushiSheetHeaderActionScope.of(context);
   // 用户 2026-10-12：「所有组件都要遵循原有的 Cupertino」——内容区文字按钮
   // = `.plain`（无底强调色字），tonal / outlined = `.bordered`（灰底强调色
   // 字）。alert / sheet 动作区与调用方着色的按钮仍走玻璃胶囊。
-  final bool contentArea = !customBg && !alertAction && !sheetAction;
+  final bool contentArea =
+      !customBg && !alertAction && !sheetAction && !headerAction;
   final bool plain = kind == _FushiButtonKind.text && contentArea;
   final bool bordered =
       (kind == _FushiButtonKind.tonal || kind == _FushiButtonKind.outlined) &&
@@ -556,7 +576,9 @@ Widget _glassButton(
       child: content,
     );
   }
-  if (bordered || (tint == null && !customBg)) {
+  // sheet 导航栏里的非主操作 / 禁用主操作：无色透明玻璃胶囊（iOS 27 导航栏
+  // 按钮），不落到下面的灰底实色胶囊。
+  if (bordered || (tint == null && !customBg && !headerAction)) {
     // 只剩禁用的主按钮会走到这里（tint 在禁用时被清空）：iOS
     // `.borderedProminent` 禁用态是灰底 + tertiaryLabel 字，不是一枚透明玻璃。
     // `.bordered`：灰底实色胶囊（禁用态底保留、字褪成 tertiaryLabel）；

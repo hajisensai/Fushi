@@ -6,6 +6,7 @@ import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/media/import/import_dialog_blocks.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
@@ -175,6 +176,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
               FushiStaggeredEntrance(
                 index: 0,
                 child: ImportPickBlock(
+                  groupTitle: t.import_group_local_file,
                   tone: importMethodTone(
                     ImportMethodKind.iptv,
                     ImportTone.cyan,
@@ -195,6 +197,7 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
                 index: 1,
                 child: ImportSectionBlock(
                   tone: ImportTone.rose,
+                  groupTitle: t.import_group_web_address,
                   children: <Widget>[
                     FushiTextField(
                       controller: _urlController,
@@ -219,9 +222,11 @@ class _IptvPlaylistImportDialogState extends State<IptvPlaylistImportDialog>
           ),
         ),
         actions: <Widget>[
-          FushiTextButton(
-            onPressed: importing ? null : () => Navigator.pop(context),
-            child: Text(t.dialog_cancel),
+          FushiSheetAction.cancel(
+            child: FushiTextButton(
+              onPressed: importing ? null : () => Navigator.pop(context),
+              child: Text(t.dialog_cancel),
+            ),
           ),
           buildImportAction(
             context,

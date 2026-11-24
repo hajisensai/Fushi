@@ -307,8 +307,13 @@ class ImportPickBlock extends StatelessWidget {
     this.actions = const <Widget>[],
     this.below,
     this.focusId,
+    this.groupTitle,
     super.key,
   });
+
+  /// Apple（[isGlassDesign]）下这一组的 iOS 分组标题（分组卡上方的小号
+  /// secondaryLabel 字，如「书籍文件」「信息」）；MD3 色块自带视觉分组，不画。
+  final String? groupTitle;
 
   /// 模块色（书 coral / 漫画 violet / 视频 cyan…），取反色上底。
   final ImportTone tone;
@@ -518,6 +523,7 @@ extension on ImportPickBlock {
         droppable && FushiFileDropTarget.dragHoveringOf(context);
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
     return AdaptiveSettingsSection(
+      title: groupTitle,
       footer: droppable && !selected
           ? Padding(
               padding: EdgeInsets.symmetric(horizontal: metrics.rowHorizontal),
@@ -538,6 +544,7 @@ extension on ImportPickBlock {
           actions: actions,
           below: below,
           showChevron: actions.isEmpty && below == null,
+          focusId: focusId,
         ),
       ],
     );
@@ -799,6 +806,7 @@ extension on ImportPickTile {
       actions: actions,
       below: below,
       showChevron: showGo || (actions.isEmpty && below == null),
+      focusId: focusId,
     );
     if (_ImportAppleGroupScope.of(context)) return row;
     return AdaptiveSettingsSection(children: <Widget>[row]);
@@ -809,9 +817,17 @@ extension on ImportPickTile {
 /// 时占满一行。每格等宽（末行不满时留空位，不拉宽）、同一行等高。格间
 /// [importDialogRhythm]，与对话框里块与块的竖向间距同一个值。
 class ImportPickTileGrid extends StatelessWidget {
-  const ImportPickTileGrid({required this.children, super.key});
+  const ImportPickTileGrid({
+    required this.children,
+    this.groupTitle,
+    super.key,
+  });
 
   final List<Widget> children;
+
+  /// Apple（[isGlassDesign]）下这一组的 iOS 分组标题（分组卡上方的小号
+  /// secondaryLabel 字，如「书籍文件」「信息」）；MD3 色块自带视觉分组，不画。
+  final String? groupTitle;
 
   static const double _gap = importDialogRhythm;
 
@@ -820,6 +836,7 @@ class ImportPickTileGrid extends StatelessWidget {
     if (isGlassDesign(context)) {
       // Apple：一组带分隔线的选择行（不排网格）。
       return AdaptiveSettingsSection(
+        title: groupTitle,
         children: <Widget>[
           for (final Widget child in children)
             _ImportAppleGroupScope(child: child),
@@ -875,12 +892,20 @@ class ImportSectionBlock extends StatelessWidget {
     this.icon,
     this.title,
     this.trailing,
+    this.groupTitle,
     super.key,
   });
 
   final ImportTone tone;
   final IconData? icon;
+
+  /// 块头标题（MD3 块内粗标题；Apple 是分组标题）。
   final String? title;
+
+  /// [title] 为空时 Apple（[isGlassDesign]）下这一组的 iOS 分组标题（分组卡上方的小号
+  /// secondaryLabel 字，如「书籍文件」「信息」）；MD3 色块自带视觉分组，不画。
+  final String? groupTitle;
+
   final List<Widget> children;
 
   /// 字段列之后、不加字段间距的尾部（如可折叠的高级字段，收起时不留空隙）。
@@ -894,7 +919,7 @@ class ImportSectionBlock extends StatelessWidget {
       final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
       final Widget? tail = trailing;
       return AdaptiveSettingsSection(
-        title: title,
+        title: title ?? groupTitle,
         children: <Widget>[
           Padding(
             padding: EdgeInsets.symmetric(
@@ -1027,6 +1052,7 @@ class _ImportAppleRow extends StatelessWidget {
     this.onTap,
     this.onClear,
     this.below,
+    this.focusId,
   });
 
   final IconData icon;
@@ -1042,6 +1068,10 @@ class _ImportAppleRow extends StatelessWidget {
   final List<Widget> actions;
   final Widget? below;
   final bool showChevron;
+
+  /// 行的焦点 id（[AdaptiveSettingsRow.focusId]）：色块分支 [FushiCard] 用的
+  /// 同一个 id，Apple 分支不丢。
+  final FushiFocusId? focusId;
 
   @override
   Widget build(BuildContext context) {
@@ -1110,6 +1140,7 @@ class _ImportAppleRow extends StatelessWidget {
           ? null
           : Row(mainAxisSize: MainAxisSize.min, children: trailing),
       onTap: enabled ? onTap : null,
+      focusId: focusId,
     );
     if (extra != null) {
       final FushiDesignTokens tokens = FushiDesignTokens.of(context);

@@ -6,6 +6,9 @@ import 'package:fushi/src/utils/components/fushi_block_color_scope.dart'
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleUsesMacMetrics;
 
 /// 所有导入类对话框的共享外框（2026-11 导入对话框统一：书 / 有声书 / 漫画 /
 /// OCR / 视频 / IPTV / 粘贴文本 / 网络来源 / 字幕书重导入 / mokuro / 二选一 /
@@ -51,7 +54,10 @@ class ImportDialogFrame extends StatelessWidget {
   final String? subtitle;
   final Widget body;
 
-  /// 右侧按钮（取消 + 主操作）。
+  /// 右侧按钮（取消 + 主操作，主操作在最右）。用 [FushiSheetAction] 标上
+  /// 角色：Apple iOS 档据此把取消放导航栏左端、主操作放右端、其余排进内容区
+  /// 底部（见 [FushiSheetActionLayout.split]）；MD3 / macOS 档按原顺序排在
+  /// 底部按钮区。
   final List<Widget> actions;
 
   /// 左侧次要动作（见类注释）。
@@ -120,8 +126,13 @@ class ImportDialogFrame extends StatelessWidget {
   ///   [FushiAppleMetrics] 按窗口宽度判（`fushiAppleUsesMacMetrics`）。
   /// - 标题固定在顶部；正文在自己的滚动视口里滚，滚离顶部 / 底部还有内容时
   ///   边缘柔和渐隐（scroll edge），内容不再一刀切在标题下沿。
-  /// - 按钮区沿用 Apple sheet 的动作区（右下，主操作最右）。
+  /// - 宽屏（macOS 档）：macOS 浮动 sheet——标题在上，按钮区在右下（主操作
+  ///   最右）。
+  /// - 窄屏（iOS 档）：iOS 27 sheet 导航栏（[FushiAppleSheetHeader]）——左
+  ///   取消、中标题、右主操作，没有底部按钮区；[secondaryActions] 与多出来的
+  ///   动作排在内容区底部（见 [_buildAppleSheet]）。
   Widget _buildApple(BuildContext context, Widget? footer) {
+    if (!fushiAppleUsesMacMetrics(context)) return _buildAppleSheet(context);
     return FushiNeutralColorScope(
       child: FushiDialogFrame(
         maxWidth: maxWidth,
@@ -141,6 +152,62 @@ class ImportDialogFrame extends StatelessWidget {
             ),
           ),
           footer: footer,
+        ),
+      ),
+    );
+  }
+
+  /// Apple iOS 档：导航栏头部 + 可滚动的分组表单正文。取消 / 主操作由
+  /// [FushiSheetActionLayout.split] 从 [actions] 拆出；其余动作与
+  /// [secondaryActions] 是内容区按钮，排在正文最后。
+  Widget _buildAppleSheet(BuildContext context) {
+    final FushiSheetActionLayout layout = FushiSheetActionLayout.split(actions);
+    final List<Widget> inline = <Widget>[...secondaryActions, ...layout.others];
+    final double gap = FushiDesignTokens.of(context).spacing.gap;
+    return FushiNeutralColorScope(
+      child: FushiDialogFrame(
+        maxWidth: maxWidth,
+        maxHeightFactor: 0.86,
+        scrollable: false,
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              FushiAppleSheetHeader(
+                title: title,
+                subtitle: subtitle,
+                leading: layout.cancel,
+                trailing: layout.confirm,
+              ),
+              Flexible(
+                child: FushiHorizontalEdgeFade(
+                  axis: Axis.vertical,
+                  extent: 20,
+                  child: SingleChildScrollView(
+                    primary: false,
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                    child: inline.isEmpty
+                        ? body
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              body,
+                              const SizedBox(height: 20),
+                              Wrap(
+                                spacing: gap,
+                                runSpacing: gap,
+                                children: inline,
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

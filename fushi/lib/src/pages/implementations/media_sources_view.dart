@@ -31,6 +31,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
@@ -3097,16 +3098,20 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
         ),
       ],
       actions: <Widget>[
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
+        FushiSheetAction.cancel(
+          child: adaptiveDialogAction(
+            context: context,
+            onPressed: () => Navigator.pop(context),
+            child: Text(t.dialog_cancel),
+          ),
         ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
-          onPressed: _submit,
-          child: Text(t.media_source_add),
+        FushiSheetAction.confirm(
+          child: adaptiveDialogAction(
+            context: context,
+            isDefaultAction: true,
+            onPressed: _submit,
+            child: Text(t.media_source_add),
+          ),
         ),
       ],
     );

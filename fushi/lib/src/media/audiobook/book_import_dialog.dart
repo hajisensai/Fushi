@@ -556,6 +556,7 @@ class _BookImportDialogState extends State<BookImportDialog>
           // 音频 → 字幕 → 封面：转录依赖音频，依赖关系从左往右读。
           stagger(
             ImportPickTileGrid(
+              groupTitle: t.import_group_companion_files,
               children: <Widget>[_audioRow(), _subtitleRow(), _coverRow()],
             ),
           ),
@@ -656,6 +657,7 @@ class _BookImportDialogState extends State<BookImportDialog>
   Widget _epubRow() {
     final String? path = _epubPath;
     return ImportPickBlock(
+      groupTitle: t.import_group_book_file,
       key: ValueKey<String>(
         path == null ? 'book-import-pick-block' : 'book-import-selected-card',
       ),
@@ -704,6 +706,7 @@ class _BookImportDialogState extends State<BookImportDialog>
     // 与上面的选择块同一色系的表单色块（字段填充 / 指示线取块色）。
     return ImportSectionBlock(
       tone: ImportTone.coral,
+      groupTitle: t.import_group_details,
       children: <Widget>[
         FushiTextField(
           controller: _titleCtrl,
