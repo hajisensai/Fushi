@@ -419,8 +419,10 @@ HomeTab? pageBackdropModuleFromWire(Object? raw) {
 //
 // 页面层的设置与模块层存在同两个偏好键里（[kPageBackdropModulePresetsPrefKey] /
 // [kPageBackdropModuleImagesPrefKey]），键名是 [PageBackdropPage.wire]：设备本地登记、
-// 配置停放、存量路径改写、引用扫描都沿用模块那一套，不另立键。旧版本读到认不出的
-// wire 直接跳过（等于跟随）。
+// 配置停放、存量路径改写、引用扫描都沿用模块那一套，不另立键。读取侧（模块 / 页面
+// 各自的 decode）认不出的 wire 跳过（等于跟随上一层）；整键读改写（Scoped 编解码）
+// 原样保留认不出的 wire 及其图片——别的版本 / 设备写下的层级不会因为本机改了另一层
+// 被抹掉，它的图也照样算被引用、不被清扫误删。
 
 /// 模块里能单独设背景的页面。[wire] 冻结（改了等于数据迁移），且不得与
 /// [pageBackdropModuleWire] 的任何值重名（两层共用一个 JSON 对象）。
@@ -443,11 +445,6 @@ enum PageBackdropPage {
     return null;
   }
 }
-
-/// 两层共用的偏好 JSON 里认得的键：模块 wire 与页面 wire。
-bool _isPageBackdropScopeWire(String wire) =>
-    pageBackdropModuleFromWire(wire) != null ||
-    PageBackdropPage.fromWire(wire) != null;
 
 /// 某个模块（或页面）单独设的背景（不可变）。
 @immutable
@@ -495,14 +492,14 @@ PageBackdropSettings resolvePageBackdropSettings(
   );
 }
 
-/// 解析 [kPageBackdropModulePresetsPrefKey] 的值，按层级 wire（模块 / 页面）取：坏 JSON /
-/// 认不出的 wire 或预设一律跳过（等于那一层跟随上一层）；已删除的「角落形状」旧值解析为
-/// 默认预设。写入侧按这份整体改写，两层的设置互不丢。
+/// 解析 [kPageBackdropModulePresetsPrefKey] 的值，键是层级 wire（模块 / 页面，也包括本版本
+/// 认不出的 wire——原样保留，见上方分层说明）：坏 JSON / 空键 / 认不出的预设跳过；已删除的
+/// 「角落形状」旧值解析为默认预设。写入侧按这份整体改写，各层的设置互不丢。
 Map<String, PageBackdropPreset> decodePageBackdropScopedPresets(Object? raw) {
   final Map<String, Object?> json = _decodeJsonObject(raw);
   final Map<String, PageBackdropPreset> out = <String, PageBackdropPreset>{};
   json.forEach((String key, Object? value) {
-    if (!_isPageBackdropScopeWire(key) || value is! String) return;
+    if (key.isEmpty || value is! String) return;
     final PageBackdropPreset? preset = _presetFromWireOrNull(value);
     if (preset != null) out[key] = preset;
   });
@@ -543,8 +540,8 @@ String encodePageBackdropModulePresets(Map<HomeTab, PageBackdropPreset> map) =>
 /// 某个模块（或页面）的两张图片路径（未核对存在与否）。
 typedef PageBackdropModuleImages = ({String? landscape, String? portrait});
 
-/// 解析 [kPageBackdropModuleImagesPrefKey] 的值，按层级 wire（模块 / 页面）取；空串路径
-/// 视为没有。
+/// 解析 [kPageBackdropModuleImagesPrefKey] 的值，键是层级 wire（同
+/// [decodePageBackdropScopedPresets]，认不出的 wire 原样保留）；空串路径视为没有。
 Map<String, PageBackdropModuleImages> decodePageBackdropScopedImages(
   Object? raw,
 ) {
@@ -552,7 +549,7 @@ Map<String, PageBackdropModuleImages> decodePageBackdropScopedImages(
   final Map<String, PageBackdropModuleImages> out =
       <String, PageBackdropModuleImages>{};
   json.forEach((String key, Object? value) {
-    if (!_isPageBackdropScopeWire(key) || value is! Map) return;
+    if (key.isEmpty || value is! Map) return;
     String? path(Object? v) => v is String && v.isNotEmpty ? v : null;
     final PageBackdropModuleImages images = (
       landscape: path(value['landscape']),
