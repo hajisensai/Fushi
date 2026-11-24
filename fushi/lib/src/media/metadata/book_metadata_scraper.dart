@@ -20,7 +20,7 @@ import 'dart:convert';
 import 'package:fushi/src/media/metadata/bangumi_api_client.dart';
 import 'package:fushi/src/media/metadata/bangumi_cover_url.dart';
 import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart'
-    show seriesFirst;
+    show bangumiInfoboxAuthors, seriesFirst;
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart'
     show pickMangaBakaVolumeImages;
 import 'package:fushi_engine/media/metadata/books/anilist_books.dart';
@@ -823,11 +823,15 @@ BookScrapeCandidate? mapBookSubject(Map<String, Object?> subject) {
   final String? id = _nonEmptyString(subject['id']?.toString());
   if (id == null) return null; // 没 id 无法定位条目详情页。
 
+  // 搜索结果与条目详情都带 infobox：作者从这里取（BUG-5390：以前不取，库管家认对了
+  // 只缺作者的漫画也写不进作者）。
+  final List<String> authors = bangumiInfoboxAuthors(subject['infobox']);
   return BookScrapeCandidate(
     subjectId: id,
     title: title,
     coverUrl: coverUrl,
     originalTitle: originalTitle,
+    author: authors.isEmpty ? null : authors.join(', '),
     year: _yearFromDate(_nonEmptyString(subject['date'])),
     summary: _nonEmptyString(subject['summary']),
     date: _nonEmptyString(subject['date']),

@@ -1031,7 +1031,7 @@ void main() {
   });
 
   // BUG-5366：补刮换了判据，v1 状态里「查过没认出来」的书作废，下一趟全量重看。
-  test('状态 v1 → v2：书补刮的水位 / 进度 / seen / 待确认项作废，写回事实与抑制保留', () {
+  test('状态 v1 → v3：书补刮的水位 / 进度 / seen / 做完记号 / 待确认项作废，撤销抑制保留', () {
     final String v1 = jsonEncode(<String, Object?>{
       'v': 1,
       'runs': <Object?>[
@@ -1072,7 +1072,8 @@ void main() {
     final LibraryCurateState s = LibraryCurateState.decode(v1);
     expect(s.watermarks, <String, int>{'scrape.games': 10});
     expect(s.progress.keys, <String>['links']);
-    expect(s.seen, <String>{'scrape.books.done:book:d1', 'scrape.games:g1'});
+    // BUG-5390：做完记号也作废（以前没写任何字段也会记成做完）。
+    expect(s.seen, <String>{'scrape.games:g1'});
     expect(s.suppressed, <String>{'scrape.books:book:u1'});
     expect(
       s.runs.single.pendingItems.map((LibraryCuratePendingItem p) => p.kind),
@@ -1444,6 +1445,60 @@ void main() {
       expect(bookWrites, <String, Map<String, String>>{
         'book:k1': <String, String>{'author': '1'},
       });
+    });
+
+    // BUG-5390：认对了作品但候选没带这本缺的字段 → 不记做完，留在待确认（no_fields）。
+    test('认出了但候选给不出缺的字段：不记做完，留待确认 no_fields', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        single(vol('k1', 'Tau', missingCover: false)),
+      ];
+      bookFound['Tau'] = <Map<String, Object?>>[book('1', 'Tau', author: null)];
+      final LibraryCurateRun run = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      expect(applyArgs, isEmpty);
+      expect(
+        run.pendingItems
+            .where(
+              (LibraryCuratePendingItem p) => p.kind == 'book_scrape_pending',
+            )
+            .map(
+              (LibraryCuratePendingItem p) => '${p.ref}|${p.reason}|${p.ai}',
+            ),
+        <String>['book:k1|no_fields|not_asked'],
+      );
+      final LibraryCurateState after = await store.load();
+      expect(after.seen, contains('scrape.books:book:k1'));
+      expect(after.seen, isNot(contains('scrape.books.done:book:k1')));
+    });
+
+    // AI 认出了作品、候选却给不出缺的字段：待确认里如实记「AI 认了」，不沿用认不出
+    // 时的 declined（否则界面会说「AI 没认」）。
+    test('AI 认出但候选给不出缺的字段：no_fields 记 ai=accepted', () async {
+      facts.bookUnits = <LibraryCurateBookUnit>[
+        single(vol('k1', 'Upsilon', missingCover: false)),
+      ];
+      bookFound['Upsilon'] = <Map<String, Object?>>[
+        book('1', 'Upsilon Deluxe', author: null),
+        book('2', 'Upsilon Other', author: null),
+      ];
+      mediaAnswer = (_) =>
+          const AiVideoIdentityDecision(key: 'bangumi:1', confidence: 0.99);
+      final LibraryCurateRun run = await curator().run(
+        trigger: LibraryCurateTrigger.manual,
+      );
+      expect(mediaAsked, hasLength(1));
+      expect(applyArgs, isEmpty);
+      expect(
+        run.pendingItems
+            .where(
+              (LibraryCuratePendingItem p) => p.kind == 'book_scrape_pending',
+            )
+            .map(
+              (LibraryCuratePendingItem p) => '${p.ref}|${p.reason}|${p.ai}',
+            ),
+        <String>['book:k1|no_fields|accepted'],
+      );
     });
 
     test('整趟撤销后下一趟（手动全量）不再写回同一本书 / 同一款游戏', () async {

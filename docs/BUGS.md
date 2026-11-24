@@ -39,6 +39,7 @@
 |---|:--:|:--:|---|
 | [BUG-5393](bugs/BUG-5393-merged-user-collection-resurrected-by-sync.md) | ✅ | ✅ | 用户合集被合并掉后，下一次合集同步按对端旧副本原样重建 |
 > 共 4699 条。点号进各自文件。
+> 共 4700 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
@@ -52,6 +53,7 @@
 | [BUG-5395](bugs/BUG-5395-mangabaka-search-volume-suffix.md) | ✅ | ✅ | mangabaka-search-volume-suffix |
 | [BUG-5394](bugs/BUG-5394-srs-close-blocks-ui-thread-anr.md) | ✅ | ✅ | 关复习库在 UI 线程等在途命令，Android 主线程 ANR |
 | [BUG-5392](bugs/BUG-5392-backup-merge-source-id-cross-db.md) | ✅ | ✅ | 备份合并导入把书 / 视频的 source_id（备份库来源自增 id）原样搬进本机，挂到不相干的来源上 |
+| [BUG-5390](bugs/BUG-5390-curator-book-scrape-no-author-marked-done.md) | ✅ | ✅ | 库管家认对了只缺作者的漫画却写不进作者（Bangumi 候选不带作者），还把这些卷标成做完、从待确认里消失 |
 | [BUG-5387](bugs/BUG-5387-restore-quiesce-media-background-writers.md) | ✅ | ✅ | restore-quiesce-media-background-writers |
 | [BUG-5386](bugs/BUG-5386-gal-lookup-mine-blocks-until-card-written.md) | ✅ | ✅ | 游戏内查词制卡要等写卡结束（约 10 秒）才能挖下一句 |
 | [BUG-5385](bugs/BUG-5385-lyrics-illustration-viewer-stale-reached.md) | ✅ | ✅ | 有声书插图大图浏览打开期间新走过的插图看不到（只列已听到的、且不随播放刷新） |
