@@ -88,35 +88,39 @@ extension _AppleVideoDiscovery on _VideoDiscoveryPageState {
             ],
           ),
           const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            clipBehavior: Clip.none,
-            child: Row(
-              spacing: 8,
-              children: <Widget>[
-                categoryMenu,
-                if (mac) ...<Widget>[
-                  _appleYearPullDown(_year, _applyYearFilter),
-                  _appleRegionPullDown(_region, (String value) {
-                    _updateState(() => _region = value);
-                    unawaited(_reload());
-                  }),
-                  _appleGenrePullDown(_genre, (String value) {
-                    _updateState(() => _genre = value);
-                    unawaited(_reload());
-                  }),
-                  _appleSortPullDown(),
-                ] else ...<Widget>[
-                  FushiIconButton(
-                    key: const ValueKey<String>('video-discovery-open-filters'),
-                    icon: Icons.tune_rounded,
-                    tooltip: t.game_filter,
-                    badge: activeFilters > 0,
-                    onTap: _openAppleFilterSheet,
-                  ),
-                  _appleSortPullDown(),
+          HorizontalDragScrollable(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              child: Row(
+                spacing: 8,
+                children: <Widget>[
+                  categoryMenu,
+                  if (mac) ...<Widget>[
+                    _appleYearPullDown(_year, _applyYearFilter),
+                    _appleRegionPullDown(_region, (String value) {
+                      _updateState(() => _region = value);
+                      unawaited(_reload());
+                    }),
+                    _appleGenrePullDown(_genre, (String value) {
+                      _updateState(() => _genre = value);
+                      unawaited(_reload());
+                    }),
+                    _appleSortPullDown(),
+                  ] else ...<Widget>[
+                    FushiIconButton(
+                      key: const ValueKey<String>(
+                        'video-discovery-open-filters',
+                      ),
+                      icon: FushiIcons.filter,
+                      tooltip: t.game_filter,
+                      badge: activeFilters > 0,
+                      onTap: _openAppleFilterSheet,
+                    ),
+                    _appleSortPullDown(),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ],

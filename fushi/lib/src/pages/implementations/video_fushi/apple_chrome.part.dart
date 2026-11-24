@@ -133,7 +133,7 @@ extension _VideoAppleChrome on _VideoFushiPageState {
   /// 有条件出现的按钮与其余按钮**同在这一枚胶囊里**，作为普通条目出现 / 消失
   /// （iOS / macOS 27 工具栏的做法：一组相关动作共用一块玻璃，按钮增减时胶囊
   /// 平滑伸缩），不另起玻璃形状——单独一颗圆钮紧挨胶囊会被液态玻璃融成一团、
-  /// 中间一道颈缩。胶囊宽度变化走 [AnimatedSize]（[FushiMotion.short]），跳转
+  /// 中间一道颈缩。胶囊宽度变化走 [FushiAnimatedSize]（[FushiMotion.short]），跳转
   /// 按钮自带插入时的弹簧缩放 + 淡入（强调态 [FushiToolbarButton]）。
   ///
   /// 「⋯」是整套 chrome 唯一的常驻溢出菜单：被移出播放器的全部动作（M3E 分在右上 /
@@ -200,9 +200,9 @@ extension _VideoAppleChrome on _VideoFushiPageState {
         return VideoGlassSurface(
           enabled: true,
           padding: EdgeInsets.symmetric(horizontal: 4 * _videoUiScale),
-          // 玻璃是子树背后的 Positioned.fill 兄弟层：胶囊宽度随 [AnimatedSize]
+          // 玻璃是子树背后的 Positioned.fill 兄弟层：胶囊宽度随 [FushiAnimatedSize]
           // 逐帧变化，玻璃跟着一起伸缩（右端锚定，向左长出 / 收回）。
-          child: AnimatedSize(
+          child: FushiAnimatedSize(
             duration: fushiMotionDuration(context, FushiMotion.short),
             curve: FushiMotion.standard,
             alignment: AlignmentDirectional.centerEnd,

@@ -35,6 +35,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
     show FushiAdjustableSegmented;
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 
 /// 推荐页 Apple 版的页边距（左右）：货架贴着这条线起排、横滑时滑出到屏幕边。
 /// 在 [AppleMusicContained] 里为 0（外层列表已经留了页边）。
@@ -377,29 +379,32 @@ class AppleMusicSourcePills extends StatelessWidget {
       for (final AppleMusicSourcePill p in pills) p.value,
     ];
     final String current = values.contains(selected) ? selected : values.first;
-    final Widget row = SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      clipBehavior: Clip.none,
-      child: Row(
-        children: <Widget>[
-          for (int i = 0; i < pills.length; i++) ...<Widget>[
-            if (i > 0) SizedBox(width: gap),
-            FushiPressScale(
-              child: KeyedSubtree(
-                key: pills[i].labelKey,
-                child: AnimatedSwitcher(
-                  duration: fushiMotionDuration(context, FushiMotion.short),
-                  switchInCurve: FushiMotion.standard,
-                  switchOutCurve: FushiMotion.standard,
-                  child: KeyedSubtree(
-                    key: ValueKey<bool>(pills[i].value == current),
-                    child: _pill(context, pills[i], current, apple),
+    // 窄窗横滑：桌面端鼠标也能拖（胶囊本身只认点按，不抢横拖手势）。
+    final Widget row = HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        child: Row(
+          children: <Widget>[
+            for (int i = 0; i < pills.length; i++) ...<Widget>[
+              if (i > 0) SizedBox(width: gap),
+              FushiPressScale(
+                child: KeyedSubtree(
+                  key: pills[i].labelKey,
+                  child: AnimatedSwitcher(
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    switchInCurve: FushiMotion.standard,
+                    switchOutCurve: FushiMotion.standard,
+                    child: KeyedSubtree(
+                      key: ValueKey<bool>(pills[i].value == current),
+                      child: _pill(context, pills[i], current, apple),
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
     return FushiAdjustableSegmented<String>(

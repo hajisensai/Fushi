@@ -19,6 +19,8 @@ import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 
 /// 海报卡的封面宽（Apple TV / Books 货架档）：iOS 档竖版 120、横版 240；macOS 档
 /// 竖版 150、横版 280（Windows / Linux 乘 [fushiAppleMacScale]）。
@@ -265,20 +267,24 @@ class AppleDiscoveryPosterShelf extends StatelessWidget {
     final Widget strip = SizedBox(
       // 上下各留 8 给悬停抬升与投影。
       height: height + 16,
-      child: ListView.separated(
-        key: storage == null ? null : PageStorageKey<String>(storage),
-        scrollDirection: Axis.horizontal,
-        clipBehavior: Clip.none,
-        physics: loading ? const NeverScrollableScrollPhysics() : null,
-        padding: EdgeInsets.symmetric(horizontal: page, vertical: 8),
-        itemCount: loading ? 8 : itemCount,
-        separatorBuilder: (BuildContext context, int index) =>
-            SizedBox(width: gap),
-        itemBuilder: (BuildContext context, int index) => SizedBox(
-          width: width,
-          child: loading
-              ? ExcludeFocus(child: AppleDiscoveryPosterSkeleton(shape: shape))
-              : itemBuilder(context, index),
+      child: HorizontalDragScrollable(
+        child: ListView.separated(
+          key: storage == null ? null : PageStorageKey<String>(storage),
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none,
+          physics: loading ? const NeverScrollableScrollPhysics() : null,
+          padding: EdgeInsets.symmetric(horizontal: page, vertical: 8),
+          itemCount: loading ? 8 : itemCount,
+          separatorBuilder: (BuildContext context, int index) =>
+              SizedBox(width: gap),
+          itemBuilder: (BuildContext context, int index) => SizedBox(
+            width: width,
+            child: loading
+                ? ExcludeFocus(
+                    child: AppleDiscoveryPosterSkeleton(shape: shape),
+                  )
+                : itemBuilder(context, index),
+          ),
         ),
       ),
     );

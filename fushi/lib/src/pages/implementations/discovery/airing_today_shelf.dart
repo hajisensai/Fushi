@@ -19,6 +19,8 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -363,19 +365,23 @@ class _AiringTodayShelfState extends State<AiringTodayShelf> {
     final double gap = fushiAppleUsesMacMetrics(context) ? 16 : 12;
     final Widget strip = SizedBox(
       height: cardHeight + 16,
-      child: ListView.separated(
-        key: scrollable
-            ? const PageStorageKey<String>('video-discovery-airing-today-strip')
-            : null,
-        scrollDirection: Axis.horizontal,
-        clipBehavior: Clip.none,
-        physics: scrollable ? null : const NeverScrollableScrollPhysics(),
-        padding: EdgeInsets.symmetric(horizontal: page, vertical: 8),
-        itemCount: itemCount,
-        separatorBuilder: (BuildContext context, int index) =>
-            SizedBox(width: gap),
-        itemBuilder: (BuildContext context, int index) =>
-            SizedBox(width: itemWidth, child: itemBuilder(context, index)),
+      child: HorizontalDragScrollable(
+        child: ListView.separated(
+          key: scrollable
+              ? const PageStorageKey<String>(
+                  'video-discovery-airing-today-strip',
+                )
+              : null,
+          scrollDirection: Axis.horizontal,
+          clipBehavior: Clip.none,
+          physics: scrollable ? null : const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.symmetric(horizontal: page, vertical: 8),
+          itemCount: itemCount,
+          separatorBuilder: (BuildContext context, int index) =>
+              SizedBox(width: gap),
+          itemBuilder: (BuildContext context, int index) =>
+              SizedBox(width: itemWidth, child: itemBuilder(context, index)),
+        ),
       ),
     );
     return scrollable

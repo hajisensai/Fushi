@@ -11,6 +11,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
     show FushiAdjustableSegmented;
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 
 /// Apple 库页标题下的分区胶囊行（方案 A，Apple Music「资料库」式）：组内每个
 /// 分区一枚胶囊，选中项反白（label 色实底 + 背景色字），其余 tertiaryFill 灰
@@ -49,30 +51,36 @@ class AppleLibraryScopeBar<T extends Object> extends StatelessWidget {
     ];
     final T? current = selected;
     final bool onRow = current != null && values.contains(current);
-    final Widget row = SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      clipBehavior: Clip.none,
-      child: Row(
-        children: <Widget>[
-          for (int i = 0; i < sections.length; i++) ...<Widget>[
-            if (i > 0) SizedBox(width: gap),
-            FushiPressScale(
-              child: KeyedSubtree(
-                key: sections[i].labelKey,
-                child: _ScopeCapsule(
-                  label: sections[i].label,
-                  selected: onRow && sections[i].value == current,
-                  selectedFill: apple.label,
-                  onTap: () {
-                    final T value = sections[i].value;
-                    if (value == current && selectedIsCurrent && onRow) return;
-                    onSelect(value);
-                  },
+    // 桌面鼠标也能拖着横滑（Flutter 默认 dragDevices 不含 mouse）；胶囊只有
+    // 单击、没有长按手势，不需要长按容忍的鼠标拖动控制器。
+    final Widget row = HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        clipBehavior: Clip.none,
+        child: Row(
+          children: <Widget>[
+            for (int i = 0; i < sections.length; i++) ...<Widget>[
+              if (i > 0) SizedBox(width: gap),
+              FushiPressScale(
+                child: KeyedSubtree(
+                  key: sections[i].labelKey,
+                  child: _ScopeCapsule(
+                    label: sections[i].label,
+                    selected: onRow && sections[i].value == current,
+                    selectedFill: apple.label,
+                    onTap: () {
+                      final T value = sections[i].value;
+                      if (value == current && selectedIsCurrent && onRow) {
+                        return;
+                      }
+                      onSelect(value);
+                    },
+                  ),
                 ),
               ),
-            ),
+            ],
           ],
-        ],
+        ),
       ),
     );
     return FushiAdjustableSegmented<T>(

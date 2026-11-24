@@ -24,6 +24,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/import/apple/apple_import_rows.dart'
     show AppleImportSectionAction;
 import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
@@ -250,7 +251,7 @@ class _AppleMusicSourcesLayoutState extends State<AppleMusicSourcesLayout> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         main,
-        AnimatedSize(
+        FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
           curve: FushiMotion.standard,
           alignment: Alignment.topCenter,

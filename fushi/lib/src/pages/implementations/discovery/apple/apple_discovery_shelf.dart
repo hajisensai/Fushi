@@ -29,6 +29,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiCircularProgressIndicator;
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable;
 
 /// 货架头：标题（Title 2 粗体）+ 副标题 +「查看全部 ›」。
 class AppleDiscoveryShelfHeader extends StatelessWidget {
@@ -491,18 +493,20 @@ class AppleDiscoveryLockupStrip extends StatelessWidget {
       child: SizedBox(
         // 悬停上浮放大留出上下余量。
         height: appleDiscoveryLockupHeight(context) + 16,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          clipBehavior: Clip.none,
-          padding: EdgeInsets.symmetric(
-            horizontal: horizontalInset,
-            vertical: 8,
+        child: HorizontalDragScrollable(
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            clipBehavior: Clip.none,
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalInset,
+              vertical: 8,
+            ),
+            itemCount: children.length,
+            separatorBuilder: (BuildContext context, int index) =>
+                SizedBox(width: gap),
+            itemBuilder: (BuildContext context, int index) =>
+                SizedBox(width: math.max(width, 200), child: children[index]),
           ),
-          itemCount: children.length,
-          separatorBuilder: (BuildContext context, int index) =>
-              SizedBox(width: gap),
-          itemBuilder: (BuildContext context, int index) =>
-              SizedBox(width: math.max(width, 200), child: children[index]),
         ),
       ),
     );
