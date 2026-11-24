@@ -248,7 +248,8 @@ pub fn library_blockers(conn: &Connection) -> Result<Vec<String>, String> {
 }
 
 /// 迁移时写进新身份原生日志的那条 `Salts` 的盐（设计 §5.1、§6.1 第 7 步）：这个 profile 的 uid，并上本机已退役的
-/// profile uid（`srs_meta.srs_retired_profile_uids`，旧并入留下的）。升序、无重复。退役列表解不开当没有。
+/// profile uid（`srs_meta.srs_retired_profile_uids`，旧并入留下的），再并上这个 profile 的笔记挂着其内置笔记类型的
+/// 同库其它 profile 的 uid（[foreign_builtin_salts]）。升序、无重复。退役列表解不开当没有。
 pub fn salts(conn: &Connection, profile: &str) -> Result<Vec<String>, String> {
     let mut out: std::collections::BTreeSet<String> =
         std::collections::BTreeSet::from([profile.to_owned()]);
@@ -261,7 +262,48 @@ pub fn salts(conn: &Connection, profile: &str) -> Result<Vec<String>, String> {
     if let Some(list) = retired.and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok()) {
         out.extend(list);
     }
+    out.extend(foreign_builtin_salts(conn, profile)?);
     Ok(out.into_iter().collect())
+}
+
+/// 同库其它 profile 里，[profile] 的笔记挂着它的带盐内置笔记类型（`note_type(那个 uid, 内置 ankiNum)`）的那些 uid
+/// （BUG-5269，反馈 n0eMBDo31- / 1_MeD_RbWU）。
+///
+/// 协议 3 的 `srs_entities` 以实体 ID 为主键、全库共用，[profile] 的笔记可以挂在别的 profile 的内置笔记类型上：协议 3
+/// 按 ID 读到那一行，再按 [profile] 自己的缓存配置给出内置模板，这条笔记照常有卡、有复习。那个笔记类型的身份记录只在
+/// 别的 profile 的日志里，新代按集合建库，不带它的盐就认不出这个 ID 是内置笔记类型：笔记没有类型视图（没有卡、
+/// 词条键为空），复习日志挂的卡验不上，对拍判差异、整份撤回。这个 profile 的数据里出现了那个 uid 加盐的 ID，那个 uid
+/// 就是这个集合的盐（与退役 uid 同理，设计 §5.1：盐集合是集合里出现过的 profile uid）。
+///
+/// 读协议 3 的笔记缓存（前提补完已把待刷新的缓存刷完，`prepare.rs`；对拍的协议 3 一侧也是这份投影）。只看内置笔记
+/// 类型：别的带盐 ID 认不认得出不影响缓存行，对拍两侧一致。
+fn foreign_builtin_salts(conn: &Connection, profile: &str) -> Result<Vec<String>, String> {
+    use crate::gen4_ids::builtins::BUILTIN_NOTE_TYPES;
+    use crate::gen4_ids::rules;
+    if !table_exists(conn, "srs_notes_cache")? {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    for other in all_profiles(conn)? {
+        if other == profile {
+            continue;
+        }
+        for b in BUILTIN_NOTE_TYPES {
+            let nt = rules::note_type(Some(&other), rules::builtin_note_type_anki_num(b.key));
+            let used: bool = conn
+                .prepare_cached(
+                    "SELECT EXISTS(SELECT 1 FROM srs_notes_cache                      WHERE profile_uid = srs_id(?1) AND note_type_id = srs_id(?2))",
+                )
+                .map_err(sql)?
+                .query_row(params![profile, nt.text()], |r| r.get(0))
+                .map_err(sql)?;
+            if used {
+                out.push(other);
+                break;
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// 一台旧设备在这个库里的日志范围。

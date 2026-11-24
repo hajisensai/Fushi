@@ -3281,3 +3281,184 @@ fn entities_whose_protocol_3_row_left_with_a_purged_profile_migrate() {
         "{report:#}"
     );
 }
+
+/// 反馈 n0eMBDo31- / 1_MeD_RbWU（BUG-5269）：协议 3 的 `srs_entities` 全库共用，[Q] 的笔记可以挂在 [P] 的带盐内置
+/// 笔记类型上（`noteTypeId` = `note_type(P, …)`，身份记录只在 [P] 的日志里）：协议 3 按 ID 读到那一行（归 [P]），再按
+/// [Q] 的配置给出带 [Q] 盐的内置模板，卡 = card(Q 笔记, template(note_type(Q, …)), 0)，复习落在这张卡上。
+/// [Q] 自己的内置笔记类型也有身份记录（用户的库里新代为这个 profile 建出了 407 张卡）；[delete] = 最后删掉这条
+/// 笔记（用户报告里的形态）。
+fn library_with_a_note_on_another_profiles_builtin(tag: &str, delete: bool) -> (tempdir::Dir, Id) {
+    use crate::gen4_ids::rules::{self, CANONICAL};
+    let lapis = rules::builtin_note_type_anki_num("lapis");
+    let field_n = rules::builtin_field_anki_num("lapis", "Expression");
+    let tmpl_n = rules::builtin_template_anki_num("lapis", "Card 1");
+    let d = Device::new(tag);
+    for p in [P, Q] {
+        d.core.sync2_identity(p, T0).unwrap();
+        while d.core.sync2_migrate(p, T0, None).unwrap()["done"] != json!(true) {}
+    }
+    let apply = |p: &str, now: i64, events: Vec<Value>, note: &str| {
+        let input: Vec<Value> = events
+            .into_iter()
+            .map(|e| json!({"e": e, "note": note}))
+            .collect();
+        d.core
+            .sync2_apply_local(p, now, &Value::Array(input).to_string())
+            .unwrap();
+    };
+    let entity = |p: &str, id: &str, kind: &str, dd: Value| json!({"t": "entity", "x": {"id": id, "p": p, "k": kind, "d": dd}});
+    let edit = |p: &str, e: &str, key: &str, v: Value| {
+        json!({"t": "edit", "x": {
+            "id": "ignored", "p": p, "k": "note", "e": e, "f": key, "w": "dart", "s": 1,
+            "ctx": {"vv": {}}, "v": v, "hlc": "0:0:dart", "ts": "anchored"
+        }})
+    };
+    let deck = |p: &str| {
+        entity(
+            p,
+            &crate::store::sync2::config::default_deck_id(p),
+            "deck",
+            json!({"createdAt": 1, "builtin": "default"}),
+        )
+    };
+    let builtin = |p: &str| {
+        entity(
+            p,
+            &rules::note_type(Some(p), lapis).text(),
+            "notetype",
+            json!({"createdAt": 1, "ntKind": "standard", "builtin": "lapis", "ankiNum": lapis}),
+        )
+    };
+    let nt_q = rules::note_type(Some(Q), lapis);
+    apply(P, T0, vec![deck(P), builtin(P)], "N0");
+    let guid = "x-guid-q1";
+    let note = rules::note(Some(Q), guid).text();
+    let card = rules::card(
+        &rules::note(Some(Q), guid),
+        &rules::template(&nt_q, tmpl_n),
+        0,
+    );
+    let mut q = vec![deck(Q), builtin(Q)];
+    q.push(entity(
+        Q,
+        &note,
+        "note",
+        json!({"createdAt": 1, "guid": guid, "noteTypeId": rules::note_type(Some(P), lapis).text()}),
+    ));
+    // 字段键是 [Q] 的配置给的（Dart 按当前 profile 的内置视图写）。
+    q.push(edit(
+        Q,
+        &note,
+        &format!("f/{}", rules::field(&nt_q, field_n).text()),
+        json!("猫"),
+    ));
+    apply(Q, T0, q, &note);
+    let mut log = crate::store::sync2::tests::review(
+        "0193a1b2-0000-7000-8000-00000000d001",
+        &card.text(),
+        T0 + 10,
+        3,
+        "learn",
+    );
+    log["x"]["p"] = json!(Q);
+    apply(Q, T0 + 10, vec![log], &note);
+    if delete {
+        apply(
+            Q,
+            T0 + 20,
+            vec![edit(Q, &note, "deleted", json!(T0 + 20))],
+            &note,
+        );
+    }
+    for p in [P, Q] {
+        let salted = lapis_cfg(Some(p));
+        let parsed =
+            crate::store::caches::CacheConfig::parse(&serde_json::from_str(&salted).unwrap())
+                .unwrap();
+        let w = d.core.writer().unwrap();
+        crate::store::sync2::in_savepoint(&w, |c| crate::store::caches::rebuild(c, p, &parsed))
+            .unwrap();
+    }
+    // 协议 3 照常给了这条笔记一张卡。
+    let rows = d.rows(&format!(
+        "SELECT srs_idt(id) AS id, hidden FROM srs_cards_cache WHERE profile_uid = srs_id('{Q}')"
+    ));
+    assert_eq!(
+        rows[1..],
+        [vec![card.text(), (delete as i64).to_string()]],
+        "{rows:?}"
+    );
+    let Device { core, _dir } = d;
+    core.close();
+    drop(core);
+    let canonical_card = rules::card(
+        &rules::note(CANONICAL, guid),
+        &rules::template(&rules::note_type(CANONICAL, lapis), tmpl_n),
+        0,
+    );
+    (_dir, canonical_card)
+}
+
+/// 内置 lapis 只有一个字段、一条模板的缓存配置（[salt] 下的 ID；`None` = 规范 ID，交给新代内核的那份）。
+fn lapis_cfg(salt: Option<&str>) -> String {
+    use crate::gen4_ids::rules;
+    let lapis = rules::builtin_note_type_anki_num("lapis");
+    let nt = rules::note_type(salt, lapis);
+    let f = rules::field(&nt, rules::builtin_field_anki_num("lapis", "Expression")).text();
+    let tpl = rules::template(&nt, rules::builtin_template_anki_num("lapis", "Card 1")).text();
+    json!({
+        "defaultDeck": rules::builtin_default_deck(salt).text(),
+        "builtins": {"lapis": {"b": {
+            "name": "Lapis", "css": "", "termFieldId": f,
+            "fields": [{"id": f, "name": "Expression", "ord": 0}],
+            "templates": [{"id": tpl, "name": "Card 1", "ord": 0,
+                           "front": "{{Expression}}", "back": "{{FrontSide}}"}],
+        }, "reading": null}},
+    })
+    .to_string()
+}
+
+/// BUG-5269：[Q] 的笔记挂在 [P] 的带盐内置笔记类型上。[Q] 的盐集合带上 [P]（它的数据里有 [P] 加盐的 ID），新代认出
+/// 那是内置笔记类型：笔记有排序字段、有规范卡，复习挂在规范卡上，对拍通过、整份提交。[P] 不引用 [Q]，盐集合不变。
+/// 删没删笔记都一样。去掉修复时与用户报告同签名（notes 词条键 / 排序字段 /
+/// 去重键旧有新空，cards 旧侧多一张，stats 的卡两侧不同，别名层一个卡 ID 验不上）。
+#[test]
+fn a_note_on_another_profiles_builtin_note_type_migrates() {
+    let canonical = lapis_cfg(crate::gen4_ids::rules::CANONICAL);
+    let caches = BTreeMap::from([(P.to_owned(), canonical.clone()), (Q.to_owned(), canonical)]);
+    for delete in [true, false] {
+        let (dir, card) = library_with_a_note_on_another_profiles_builtin(
+            &format!("x-foreign-nt-{delete}"),
+            delete,
+        );
+        let out = migrate_with(&dir.0, &caches, &Stop::new(), &mut Vec::new());
+        let report = match &out {
+            Outcome::Committed { report } | Outcome::Aborted { report, .. } => report,
+            _ => panic!("{out:?}"),
+        };
+        assert_eq!(out.verdict(), "committed", "delete={delete} {report:#}");
+        let salts: Vec<(&str, &Value)> = report["profiles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| (p["profile"].as_str().unwrap(), &p["salts"]))
+            .collect();
+        assert_eq!(
+            salts,
+            vec![(P, &json!(1)), (Q, &json!(2))],
+            "delete={delete}"
+        );
+        let opened = open_gen4(&dir.0, OpenMode::Primary).unwrap();
+        let got: (i64, String, i64) = opened
+            .conn
+            .query_row(
+                "SELECT c.hidden, n.sort_field,                  (SELECT COUNT(*) FROM stats s WHERE s.col = c.col AND s.card = c.id)                  FROM cards c JOIN notes n ON n.col = c.col AND n.id = c.note_id WHERE c.id = ?1",
+                params![crate::store::gen4::derive::Ref::of(
+                    &crate::sync2::id::Key::Uuid(card)
+                )],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap_or_else(|e| panic!("delete={delete}: card {} has no row: {e}", card.text()));
+        assert_eq!(got, (delete as i64, "猫".to_owned(), 1), "delete={delete}");
+    }
+}
