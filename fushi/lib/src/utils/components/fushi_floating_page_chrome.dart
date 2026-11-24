@@ -415,9 +415,12 @@ class FushiScrollOwnerDepth {
     }
   }
 
+  /// 主滚动区所在的通知深度；还没见过滚动时是最外层（0）。
+  int get depth => _depth ?? 0;
+
   /// 这条版面修正通知来自主滚动区（或更外层）。还没见过滚动时只认最外层。
   bool owns(ScrollMetricsNotification notification) =>
-      notification.depth <= (_depth ?? 0);
+      notification.depth <= depth;
 }
 
 /// 子树里的滚动区不驱动页头收起：并排各自滚动的多栏正文（宽窗表单两栏）用。

@@ -82,6 +82,67 @@ void main() {
     expect(panel.progress, greaterThan(0));
   });
 
+  // 反馈 ONNjqh7wxs / BUG-5409：牌组设置页宽窗两栏各自滚动，页头只认最后一条
+  // 滚动通知，一栏在顶、另一栏已滚动时大字 / 小字来回跳。页头取两栏里滚得最远的。
+  testWidgets('并排两栏各自滚动：页头按滚得最远的一栏收起，不在两栏之间来回跳', (WidgetTester tester) async {
+    final ScrollController left = ScrollController();
+    final ScrollController right = ScrollController();
+    addTearDown(left.dispose);
+    addTearDown(right.dispose);
+    Widget pane(ScrollController controller, String tag) => ListView.builder(
+      controller: controller,
+      itemExtent: 80,
+      itemCount: 60,
+      itemBuilder: (BuildContext context, int i) => Text('$tag $i'),
+    );
+    await pumpHost(
+      tester,
+      FushiMastheadScaffold(
+        title: 'Deck options',
+        body: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Expanded(child: pane(left, 'left')),
+            Expanded(child: pane(right, 'right')),
+          ],
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 600));
+    double progress() => tester
+        .widget<FushiMastheadHeader>(find.byType(FushiMastheadHeader))
+        .progress;
+    expect(progress(), 0);
+
+    left.jumpTo(400);
+    await tester.pump();
+    final double collapsed = progress();
+    expect(collapsed, greaterThan(0));
+
+    // 另一栏轻轻一动（仍在顶部附近）：页头不因它弹回大字。
+    right.jumpTo(4);
+    await tester.pump();
+    expect(progress(), collapsed);
+    right.jumpTo(0);
+    await tester.pump();
+    expect(progress(), collapsed);
+
+    // 左栏继续滚 / 右栏也滚下去：都保持收起。
+    right.jumpTo(600);
+    await tester.pump();
+    expect(progress(), collapsed);
+
+    // 左栏回到顶，右栏还压在页头下：仍收起。
+    left.jumpTo(0);
+    await tester.pump();
+    expect(progress(), collapsed);
+
+    // 两栏都回到顶才展开。
+    right.jumpTo(0);
+    await tester.pump();
+    expect(progress(), 0);
+  });
+
   // 2026-11-20 用户截图「设置的字看着怪」：设置页名用二级字阶（52 / w700），
   // 库页仍是 84 / w900 大字。
   testWidgets('titleTier: section 的页名是 52 / w700，默认 page 仍是 84 / w900', (
