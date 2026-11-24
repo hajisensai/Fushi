@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T13:29:42Z",
+ "generatedAt": "2026-11-24T13:43:54Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "2f7a39313315812c5780de138ddcef295a9bef54",
@@ -12,7 +12,7 @@
    "version": "3.4.0",
    "sha": "43322ec35d7ccb75434980460cfa9582dcdf89b0",
    "unknown": false,
-   "publishedAt": "2026-11-24T13:29:27Z",
+   "publishedAt": "2026-11-24T13:43:36Z",
    "testflight": false,
    "baseSeq": 32216,
    "prs": [],
@@ -76,16 +76,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
+     "state": "ok"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
+     "state": "ok"
     }
    }
   },
@@ -179,38 +176,6 @@
    "platforms": {
     "android": {
      "state": "ok"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32193,
-   "version": "3.4.0",
-   "sha": "fe7110dbb7f877160e412699165bf897fddf49a4",
-   "unknown": false,
-   "publishedAt": "2026-11-24T04:57:05Z",
-   "testflight": true,
-   "baseSeq": 32189,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "fe7110dbb7f877160e412699165bf897fddf49a4",
-     "subject": "Merge #4348 (claude/pr4196-followup) into develop"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45318894341"
     },
     "windows": {
      "state": "ok"
