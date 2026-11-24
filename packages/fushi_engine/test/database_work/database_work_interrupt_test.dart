@@ -41,18 +41,29 @@ void main() {
     addTearDown(client.close);
     final FushiDatabase db = _memoryDb();
     final Uri uri = Uri.parse('http://127.0.0.1:${server.port}/slow');
+    Object? requestError;
     final Future<Object?> work = db
-        .runBackgroundWork<http.Response>(
-          'test.scrape',
-          (DatabaseWorkToken _) => client.post(uri, body: 'q=1'),
-        )
+        .runBackgroundWork<http.Response>('test.scrape', (
+          DatabaseWorkToken _,
+        ) async {
+          try {
+            return await client.post(uri, body: 'q=1');
+          } on Object catch (error) {
+            requestError = error;
+            rethrow;
+          }
+        })
         .then<Object?>((http.Response r) => r, onError: (Object e) => e);
 
     await requestArrived.future;
     final Stopwatch sw = Stopwatch()..start();
     await db.close().timeout(const Duration(seconds: 10));
     sw.stop();
-    expect(await work, isA<http.RequestAbortedException>());
+    // 请求本身是被中止的（不是等到超时 / 服务器回包）……
+    expect(requestError, isA<http.RequestAbortedException>());
+    // ……而工作对外报的是统一的取消：关库后冒出的中断异常归一成
+    // [DatabaseWorkCancelledException]，调用方据此不把它当真失败。
+    expect(await work, isA<DatabaseWorkCancelledException>());
     expect(sw.elapsed, lessThan(const Duration(seconds: 5)));
   });
 
