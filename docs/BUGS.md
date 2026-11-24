@@ -39,6 +39,8 @@
 |---|:--:|:--:|---|
 | [BUG-5383](bugs/BUG-5383-develop-import-cycle-627.md) | ✅ | ✅ | develop import 环守卫红：最大环 627 > 上限 623 |
 | [BUG-5382](bugs/BUG-5382-develop-rename-guard-hibikiaggregate.md) | ✅ | ✅ | develop 旧代号守卫红：书级变更闸门另抄了一份聚合快照后缀表（含 `.hibikiaggregate`） |
+| [BUG-5381](bugs/BUG-5381-home-today-time-line-clipped.md) | ✅ | ✅ | home-today-time-line-clipped |
+| [BUG-5380](bugs/BUG-5380-popup-source-strip-cross-line-sentence.md) | ✅ | ✅ | popup-source-strip-cross-line-sentence |
 | [BUG-5379](bugs/BUG-5379-mangabaka-volume-cover-pop-type.md) | ✅ | ✅ | mangabaka-volume-cover-pop-type |
 | [BUG-5378](bugs/BUG-5378-nav-peek-book-progress-ignores-completed.md) | ✅ | ✅ | 导航速览里已读完的书写成 0%，同一本书各卡百分比不一致 |
 | [BUG-5374](bugs/BUG-5374-windows-dart-silent-black-window.md) | 🚧 | ✅ | Windows 缩窗后主窗口黑屏冻结，平台线程空闲而 Dart 不回应，旧看门狗量不到 |

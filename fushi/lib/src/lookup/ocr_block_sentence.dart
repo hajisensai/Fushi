@@ -93,32 +93,107 @@ int _sentenceEndAt(String block, int i) {
 }
 
 /// 把块里的 [start, end) 一段拼回一句：去掉 OCR 折行，CJK 直接相连，拉丁词之间补空格。
-String _joinLines(String segment) {
-  final List<String> lines = segment
-      .split(RegExp(r'\r?\n|\r'))
-      .map((String l) => l.trim())
-      .where((String l) => l.isNotEmpty)
-      .toList();
+String _joinLines(String segment) =>
+    _joinRange(segment, 0, segment.length).text;
+
+/// [_joinLines] 的带下标版：拼好的文字连同「每段行文在块里 / 在拼好的文字里各从哪
+/// 起」的对照表（[OcrBlockSpan]），供块下标与拼好文字下标互换。
+OcrBlockSpan _joinRange(String block, int start, int end) {
   final StringBuffer out = StringBuffer();
-  for (final String line in lines) {
-    if (out.isNotEmpty) {
-      final String before = out.toString();
-      final String prev = before[before.length - 1];
-      if (_isLatinWordChar(prev) && _isLatinWordChar(line[0])) out.write(' ');
+  final List<_OcrJoinSegment> segments = <_OcrJoinSegment>[];
+  int lineStart = start;
+  while (lineStart <= end) {
+    int lineEnd = lineStart;
+    while (lineEnd < end && !_isLineBreak(block[lineEnd])) {
+      lineEnd++;
     }
-    out.write(line);
+    final String raw = block.substring(lineStart, lineEnd);
+    final String line = raw.trim();
+    if (line.isNotEmpty) {
+      if (out.isNotEmpty) {
+        final String before = out.toString();
+        final String prev = before[before.length - 1];
+        if (_isLatinWordChar(prev) && _isLatinWordChar(line[0])) out.write(' ');
+      }
+      segments.add(
+        _OcrJoinSegment(
+          block: lineStart + raw.length - raw.trimLeft().length,
+          text: out.length,
+          length: line.length,
+        ),
+      );
+      out.write(line);
+    }
+    lineStart = lineEnd + 1;
   }
-  return out.toString();
+  return OcrBlockSpan._(
+    out.toString(),
+    blockStart: start,
+    blockEnd: end,
+    segments: segments,
+  );
 }
 
-/// 块全文 [block] 里包含 UTF-16 下标 [index] 那个字的整句（已拼掉 OCR 折行、去首尾
-/// 空白）。下标越界、截出空串或长于 [maxLength] 时返回 null。
-String? ocrBlockSentenceAt(
-  String block,
-  int index, {
-  int maxLength = kOcrBlockSentenceMaxLength,
-}) {
-  if (block.isEmpty || index < 0 || index >= block.length) return null;
+/// [OcrBlockSpan] 的一段行文：在块里从 [block] 起、在拼好的文字里从 [text] 起，长
+/// [length] 个 UTF-16 码元（两边逐字对应）。
+class _OcrJoinSegment {
+  const _OcrJoinSegment({
+    required this.block,
+    required this.text,
+    required this.length,
+  });
+
+  final int block;
+  final int text;
+  final int length;
+}
+
+/// 块里一段 [blockStart, blockEnd) 拼掉 OCR 折行后的文字 [text]，带块下标 ↔ 文字下标
+/// 的换算（反馈 8Su1XoCjtl：app 外查词的源文本条显示跨行拼好的整句，被点字与条上点字
+/// 都要在块与条之间换算）。
+class OcrBlockSpan {
+  const OcrBlockSpan._(
+    this.text, {
+    required this.blockStart,
+    required this.blockEnd,
+    required List<_OcrJoinSegment> segments,
+  }) : _segments = segments;
+
+  /// 拼好的文字（首尾无空白）。
+  final String text;
+
+  /// 这段在块里的起止（UTF-16，止不含）。
+  final int blockStart;
+  final int blockEnd;
+
+  final List<_OcrJoinSegment> _segments;
+
+  /// 块下标 [blockIndex] 那个字在 [text] 里的 UTF-16 下标；落在被拼掉的折行 / 行首尾
+  /// 空白上时取后面最近的字，段外钳到首 / 末字。[text] 为空时返回 -1。
+  int textIndexOf(int blockIndex) {
+    if (_segments.isEmpty) return -1;
+    for (final _OcrJoinSegment s in _segments) {
+      if (blockIndex < s.block) return s.text;
+      if (blockIndex < s.block + s.length) return s.text + blockIndex - s.block;
+    }
+    return text.length - 1;
+  }
+
+  /// [text] 里 UTF-16 下标 [textIndex] 那个字在块里的下标；落在拼接时补的空格上时取
+  /// 后一行的行首，越界钳到首 / 末字。[text] 为空时返回 -1。
+  int blockIndexOf(int textIndex) {
+    if (_segments.isEmpty) return -1;
+    for (final _OcrJoinSegment s in _segments) {
+      if (textIndex < s.text) return s.block;
+      if (textIndex < s.text + s.length) return s.block + textIndex - s.text;
+    }
+    final _OcrJoinSegment last = _segments.last;
+    return last.block + last.length - 1;
+  }
+}
+
+/// 块里包含 UTF-16 下标 [index] 那个字的那一句在块里的起止（未拼折行；止不含）。
+({int start, int end}) _sentenceRangeAt(String block, int index) {
   int start = 0;
   int end = block.length;
   int i = 0;
@@ -135,9 +210,47 @@ String? ocrBlockSentenceAt(
     start = sentenceEnd;
     i = sentenceEnd;
   }
-  final String sentence = _joinLines(block.substring(start, end));
+  return (start: start, end: end);
+}
+
+/// 块全文 [block] 里包含 UTF-16 下标 [index] 那个字的整句（已拼掉 OCR 折行、去首尾
+/// 空白）。下标越界、截出空串或长于 [maxLength] 时返回 null。
+String? ocrBlockSentenceAt(
+  String block,
+  int index, {
+  int maxLength = kOcrBlockSentenceMaxLength,
+}) {
+  if (block.isEmpty || index < 0 || index >= block.length) return null;
+  final ({int start, int end}) range = _sentenceRangeAt(block, index);
+  final String sentence = _joinLines(block.substring(range.start, range.end));
   if (sentence.isEmpty || sentence.length > maxLength) return null;
   return sentence;
+}
+
+/// 反馈 8Su1XoCjtl：块里 [lineStart, lineEnd) 是被点的那一行时，源文本条该显示的那段——
+/// 从行首字所在句的句首到行末字所在句的句尾，拼掉 OCR 折行。整行都在里面（一行装着
+/// 几句时条上几句都能点），被折到上一行 / 下一行的半句也补全了。某一端那句截不出
+/// （长于 [maxLength]，多半是无标点的菜单 / 列表）时那一端停在行边上。行为空或越界
+/// 时返回 null。
+OcrBlockSpan? ocrBlockSpanAroundLine(
+  String block, {
+  required int lineStart,
+  required int lineEnd,
+  int maxLength = kOcrBlockSentenceMaxLength,
+}) {
+  if (lineStart < 0 || lineEnd > block.length || lineEnd <= lineStart) {
+    return null;
+  }
+  bool fits(({int start, int end}) range) =>
+      _joinLines(block.substring(range.start, range.end)).length <= maxLength;
+  final ({int start, int end}) first = _sentenceRangeAt(block, lineStart);
+  final ({int start, int end}) last = _sentenceRangeAt(block, lineEnd - 1);
+  final OcrBlockSpan span = _joinRange(
+    block,
+    fits(first) ? first.start : lineStart,
+    fits(last) ? last.end : lineEnd,
+  );
+  return span.text.isEmpty ? null : span;
 }
 
 /// BUG-4707：块全文 [block] 里被点那一行止于 UTF-16 下标 [lineEnd]（不含）时，接在
