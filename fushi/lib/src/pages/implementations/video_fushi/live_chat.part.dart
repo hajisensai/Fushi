@@ -21,6 +21,10 @@ extension _VideoLiveChat on _VideoFushiPageState {
 
   /// 视频就绪（首开 / 换集 / 换源）后调：当前是 YouTube 流就探测聊天回放。同一个视频、
   /// 同一个播放器复用已有会话；换了视频先撤掉旧的（按钮立刻消失），探测到再换上新的。
+  ///
+  /// 探测三种结局分开处理（BUG-5411）：有 → 换上会话；没有 → 不出按钮；探测失败（引擎已
+  /// 写诊断日志）→ 换上「探测失败」占位，按钮照出、聊天栏显示失败与「重试」，重试回到
+  /// 这里重新探测（占位留着、显示加载中，结果出来再整体换掉，不闪一下收起）。
   Future<void> _loadLiveChatForCurrentVideo() async {
     final int seq = ++_liveChatProbeSeq;
     final VideoPlayerController? controller = _controller;
@@ -29,30 +33,40 @@ extension _VideoLiveChat on _VideoFushiPageState {
         ? null
         : youtubeVideoIdOrNull(watchUrl);
     final VideoLiveChatReplay? current = _liveChat;
-    if (current != null &&
+    final bool sameVideo =
+        current != null &&
         videoId != null &&
         current.videoId == videoId &&
-        identical(_liveChatController, controller)) {
-      return;
-    }
+        identical(_liveChatController, controller);
+    if (sameVideo && !current.probeFailed) return;
     final bool wasOpen = _liveChatVisible.value;
-    _replaceLiveChat(null, controller: null);
+    if (!sameVideo) _replaceLiveChat(null, controller: null);
     if (videoId == null || controller == null) return;
-    final String? entry = await fetchYoutubeChatReplayEntry(videoId);
-    if (!mounted || seq != _liveChatProbeSeq || entry == null) return;
+    final YoutubeChatReplayProbe probe = await probeYoutubeChatReplay(videoId);
+    if (!mounted || seq != _liveChatProbeSeq) return;
     if (!identical(_controller, controller)) return;
-    _replaceLiveChat(
-      VideoLiveChatReplay(
+    final VideoLiveChatReplay? next = switch (probe) {
+      YoutubeChatReplayAvailable(:final String entryContinuation) =>
+        VideoLiveChatReplay(
+          videoId: videoId,
+          entryContinuation: entryContinuation,
+          position: controller.positionMsListenable,
+        ),
+      YoutubeChatReplayAbsent() => null,
+      YoutubeChatReplayProbeFailed() => VideoLiveChatReplay.probeFailed(
         videoId: videoId,
-        entryContinuation: entry,
         position: controller.positionMsListenable,
+        reprobe: _loadLiveChatForCurrentVideo,
       ),
-      controller: controller,
-    );
-    if (videoLiveChatOpensOnLoad(
-      wasOpen: wasOpen,
-      autoOpen: appModel.videoLiveChatAutoOpen,
-    )) {
+    };
+    _replaceLiveChat(next, controller: next == null ? null : controller);
+    if (next != null &&
+        !_liveChatVisible.value &&
+        videoLiveChatOpensOnLoad(
+          wasOpen: wasOpen,
+          autoOpen: appModel.videoLiveChatAutoOpen,
+          probeFailed: next.probeFailed,
+        )) {
       _openLiveChat();
     }
   }

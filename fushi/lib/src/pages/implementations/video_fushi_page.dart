@@ -323,7 +323,13 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         youtubeVideoIdOrNull,
         YoutubeManifestException;
 import 'package:fushi_engine/media/video/youtube_live_chat_replay.dart'
-    show YoutubeChatMessage, fetchYoutubeChatReplayEntry;
+    show
+        YoutubeChatMessage,
+        YoutubeChatReplayAbsent,
+        YoutubeChatReplayAvailable,
+        YoutubeChatReplayProbe,
+        YoutubeChatReplayProbeFailed,
+        probeYoutubeChatReplay;
 import 'package:fushi/src/media/video/video_live_chat_panel.dart';
 import 'package:fushi/src/media/video/video_live_chat_replay.dart';
 import 'package:fushi/src/media/video/video_resource_check.dart';

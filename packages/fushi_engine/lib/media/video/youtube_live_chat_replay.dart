@@ -28,10 +28,12 @@ import 'dart:collection' show UnmodifiableListView;
 import 'dart:convert' show jsonDecode;
 import 'dart:isolate' show Isolate;
 
+import 'package:fushi_engine/foundation/engine_log.dart' show engineLog;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show kYoutubeConnectTimeout;
 import 'package:fushi_engine/utils/net/app_http.dart'
     show createAppHttpIoClient;
+import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 
@@ -270,9 +272,11 @@ Map<String, Object?> _innertubeContext() => <String, Object?>{
   },
 };
 
-yt.YoutubeHttpClient _createChatHttpClient() => yt.YoutubeHttpClient(
-  createAppHttpIoClient(connectionTimeout: kYoutubeConnectTimeout),
-);
+yt.YoutubeHttpClient _createChatHttpClient(http.Client? transport) =>
+    yt.YoutubeHttpClient(
+      transport ??
+          createAppHttpIoClient(connectionTimeout: kYoutubeConnectTimeout),
+    );
 
 Future<String> _postInnertube(
   yt.YoutubeHttpClient http,
@@ -291,43 +295,91 @@ Future<String> _postInnertube(
   return text;
 }
 
-/// innertube POST：[endpoint]（如 `next`）+ JSON 请求体 → 响应正文。
-typedef YoutubeInnertubePost =
-    Future<String> Function(String endpoint, Map<String, Object?> body);
+/// 在后台 isolate 里把响应正文 [body] 解成 [T]（BUG-5411）。
+///
+/// 必须是**独立的顶层函数**：传给 [Isolate.run] 的闭包会连同它所在作用域链上被任何闭包
+/// 捕获的变量一起拷进消息。写在 IO 函数体里时，那条链上挂着 HTTP client——连接池里有
+/// 未完成的 `Future` / 原生 socket，拷贝直接抛 `Illegal argument in isolate message`，
+/// 探测永远失败。这里的作用域只有 [body] 与顶层函数 [decode]，二者都可发送。
+Future<T> _decodeOffMainIsolate<T>(String body, T Function(String) decode) =>
+    Isolate.run(() => decode(body));
 
-/// IO：查 [videoId] 有没有聊天回放，有则返回入口 continuation。没有 / 失败都返回 null
-/// （聊天栏是可选增强，查不到就是不出按钮）。[post] 仅供测试注入。
-Future<String?> fetchYoutubeChatReplayEntry(
+/// 一次「这个视频有没有聊天回放」探测的结果（BUG-5411：「没有」与「查不了」必须分开）。
+sealed class YoutubeChatReplayProbe {
+  const YoutubeChatReplayProbe();
+}
+
+/// 有聊天回放：[entryContinuation] 是 `get_live_chat_replay` 的入口。
+final class YoutubeChatReplayAvailable extends YoutubeChatReplayProbe {
+  const YoutubeChatReplayAvailable(this.entryContinuation);
+
+  final String entryContinuation;
+}
+
+/// YouTube 正常回了观看页数据，但这个视频没有聊天回放（普通视频、直播中、关了聊天）。
+final class YoutubeChatReplayAbsent extends YoutubeChatReplayProbe {
+  const YoutubeChatReplayAbsent();
+}
+
+/// 探测失败（网络 / 超时 / HTTP 错误 / 响应不是观看页数据），不知道有没有聊天回放。
+/// 已经写过诊断日志（[engineLog]，来源 `YoutubeChatReplay.probe`）。
+final class YoutubeChatReplayProbeFailed extends YoutubeChatReplayProbe {
+  const YoutubeChatReplayProbeFailed(this.error);
+
+  final Object error;
+}
+
+/// IO：查 [videoId] 有没有聊天回放。失败不抛，落 [YoutubeChatReplayProbeFailed] 并写诊断
+/// 日志——聊天栏是可选增强，绝不影响播放，但失败要能和「没有聊天回放」分开（BUG-5411）。
+/// [transport] 仅供测试注入底层 HTTP 传输（生产走应用代理与 YouTube 出口）。
+Future<YoutubeChatReplayProbe> probeYoutubeChatReplay(
   String videoId, {
-  @visibleForTesting YoutubeInnertubePost? post,
+  @visibleForTesting http.Client? transport,
 }) async {
-  final yt.YoutubeHttpClient? http = post == null
-      ? _createChatHttpClient()
-      : null;
-  final YoutubeInnertubePost send =
-      post ??
-      (String endpoint, Map<String, Object?> body) =>
-          _postInnertube(http!, endpoint, body);
+  final yt.YoutubeHttpClient client = _createChatHttpClient(transport);
   try {
-    final String body = await send('next', <String, Object?>{
+    final String body = await _postInnertube(client, 'next', <String, Object?>{
       'context': _innertubeContext(),
       'videoId': videoId,
     });
-    return await Isolate.run(() => decodeYoutubeChatReplayEntry(body));
-  } catch (_) {
-    return null;
+    final String? entry = await _decodeOffMainIsolate(
+      body,
+      decodeYoutubeChatReplayEntry,
+    );
+    return entry == null
+        ? const YoutubeChatReplayAbsent()
+        : YoutubeChatReplayAvailable(entry);
+  } catch (e, st) {
+    engineLog.log('YoutubeChatReplay.probe', 'videoId=$videoId: $e', st);
+    return YoutubeChatReplayProbeFailed(e);
   } finally {
-    http?.close();
+    client.close();
   }
 }
 
-/// 把 `/youtubei/v1/next` 的响应正文解成入口 continuation（非 JSON 对象 / 没有聊天回放
-/// 都是 null）。
+/// 把 `/youtubei/v1/next` 的响应正文解成入口 continuation；没有聊天回放返回 null。
+///
+/// 响应不是 JSON 对象、或没有观看页数据（`contents.twoColumnWatchNextResults`，常见于
+/// 被拦截 / 要求登录 / 客户端版本被拒时只回 `error` 或 `playabilityStatus`）抛
+/// [FormatException]：那是「查不了」，不能当成「没有聊天回放」。
 String? decodeYoutubeChatReplayEntry(String body) {
   final Object? decoded = jsonDecode(body);
-  return decoded is Map
-      ? parseYoutubeChatReplayEntry(decoded.cast<String, Object?>())
-      : null;
+  if (decoded is! Map) {
+    throw const FormatException('youtube next: not a JSON object');
+  }
+  final Map<String, Object?> json = decoded.cast<String, Object?>();
+  if (_map(_map(json['contents'])?['twoColumnWatchNextResults']) == null) {
+    final String? error = _str(_map(json['error'])?['message']);
+    final String? playability = _str(
+      _map(json['playabilityStatus'])?['status'],
+    );
+    throw FormatException(
+      'youtube next: no watch-page results'
+      '${error == null ? '' : ' (error: $error)'}'
+      '${playability == null ? '' : ' (playability: $playability)'}',
+    );
+  }
+  return parseYoutubeChatReplayEntry(json);
 }
 
 /// `get_live_chat_replay` 的请求体：从视频时刻 [playerOffsetMs] 起用 [continuation] 取。
@@ -343,8 +395,10 @@ Map<String, Object?> youtubeChatReplayRequestBody(
 };
 
 /// 生产用的取页函数：一个 session 共用一个 HTTP client（[close] 在 session 结束时调）。
+/// [transport] 仅供测试注入底层 HTTP 传输。
 class YoutubeChatReplayHttpFetcher {
-  YoutubeChatReplayHttpFetcher() : _http = _createChatHttpClient();
+  YoutubeChatReplayHttpFetcher({@visibleForTesting http.Client? transport})
+    : _http = _createChatHttpClient(transport);
 
   final yt.YoutubeHttpClient _http;
 
@@ -357,7 +411,7 @@ class YoutubeChatReplayHttpFetcher {
       'live_chat/get_live_chat_replay',
       youtubeChatReplayRequestBody(continuation, playerOffsetMs),
     );
-    return Isolate.run(() => decodeYoutubeChatReplayPage(body));
+    return _decodeOffMainIsolate(body, decodeYoutubeChatReplayPage);
   }
 
   void close() => _http.close();
@@ -521,8 +575,9 @@ class YoutubeChatReplaySession {
     YoutubeChatReplayPage page;
     try {
       page = await _fetch(continuation, offsetMs);
-    } catch (_) {
+    } catch (e, st) {
       if (_disposed || generation != _generation) return;
+      engineLog.log('YoutubeChatReplay.page', e, st);
       _inFlightTarget = null;
       _failed = true;
       _notify();
