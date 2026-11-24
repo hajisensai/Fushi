@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -354,7 +355,11 @@ class GalWorkbenchStartTile extends StatelessWidget {
         onTap: onTap,
         focusId: focusId,
         padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
-        borderRadius: const BorderRadius.all(Radius.circular(20)),
+        // Apple 走全局卡片圆角 token（连续曲率由 FushiCard 的超椭圆外形负责），
+        // M3E 维持 20。
+        borderRadius: glass
+            ? fushiCardBorderRadius(context)
+            : const BorderRadius.all(Radius.circular(20)),
         child: Row(
           children: <Widget>[
             badge,

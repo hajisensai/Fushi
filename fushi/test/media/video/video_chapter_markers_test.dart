@@ -345,11 +345,13 @@ void main() {
         reason: '刻度水平范围必须与 seekBarMargin 同源内缩',
       );
       // M3E 浮动工具栏（2026-10-05）：轨道再内缩一个悬浮轨道槽的探出量，槽外缘
-      // 对齐浮动胶囊外缘；Apple 仍收进玻璃胶囊。
+      // 对齐浮动胶囊外缘。Apple（方案 C，2026-11-24）：触屏进度条两端是时间，轨道
+      // 再让出时间标签宽；桌面进度条在底部条行内，刻度改画在行内道里。
       expect(
         src.contains(
           'double get _videoSeekBarSideInset => _appleChrome\n'
-          '      ? kVideoAppleChromeEdgeInset + 16\n'
+          '      ? _videoAppleButtonBarSideInset +\n'
+          '            (_isDesktopVideoControls ? 0 : _appleTouchTimeLabelReserve)\n'
           '      : _videoM3eFloatingSideInset + _videoM3eSeekLaneOverhang;',
         ),
         isTrue,

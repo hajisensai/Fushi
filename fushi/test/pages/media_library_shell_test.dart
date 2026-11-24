@@ -228,7 +228,9 @@ void main() {
     expect(top.labels, <String>['书架', '来源']);
   });
 
-  testWidgets('我的组 = 书架 + 媒体服务器：二级胶囊切换，一级用书架命名', (WidgetTester tester) async {
+  testWidgets('我的组 = 书架 + 媒体服务器：二级胶囊切换，一级用组名「媒体库」', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       harness(<MediaLibraryViewSpec>[
         spec(0, MediaLibraryViewKind.library, '书架'),
@@ -240,7 +242,9 @@ void main() {
     await tester.pumpAndSettle();
 
     final MastheadTabsView<MediaLibraryViewKind> top = read(tester, topStrip());
-    expect(top.labels, <String>['书架', '浏览']);
+    // 多于一个成员的「我的」组叫组名「媒体库」（与视频页同一口径，349bfac85d6）：
+    // 页名（书架 / 漫画）已画在标题上，组页签再叫「书架」就紧挨着重复。
+    expect(top.labels, <String>[t.library_view_media, '浏览']);
     final MastheadTabsView<MediaLibraryViewKind> sub = read(tester, subStrip());
     expect(valuesOf(sub), <MediaLibraryViewKind>[
       MediaLibraryViewKind.library,
@@ -273,8 +277,9 @@ void main() {
       findsOneWidget,
       reason: '没有一级页签时导入钮照样在工具栏右端',
     );
+    // 独立挂载（没有外壳页面名）时标题回落组名「媒体库」。
     expect(
-      find.widgetWithText(FushiFloatingChromeSoloTitle, '书架'),
+      find.widgetWithText(FushiFloatingChromeSoloTitle, t.library_view_media),
       findsOneWidget,
       reason: '一级页签的位置改放组名标题，左上角不空着',
     );

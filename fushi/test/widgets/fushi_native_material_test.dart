@@ -70,7 +70,7 @@ void main() {
         fushiNativePopupMaterialAvailable(
           theme: _theme(
             glassDesign: true,
-            material: FushiGlassMaterial.frosted,
+            material: FushiGlassMaterial.minimal,
           ),
           highContrast: false,
         ),

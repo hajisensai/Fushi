@@ -217,7 +217,7 @@ void main() {
       buildColorScheme: eink ? buildEinkColorScheme : blue,
       textTheme: const TextTheme(),
       glassDesign: true,
-      glass: FushiGlassMaterial.frosted,
+      glass: FushiGlassMaterial.minimal,
       lyricsMode: lyricsMode,
     );
 
@@ -226,7 +226,7 @@ void main() {
           buildFushiThemeData(
             scheme: blue(appBrightness),
             textTheme: const TextTheme(),
-            glass: FushiGlassMaterial.frosted,
+            glass: FushiGlassMaterial.minimal,
             glassDesign: true,
           ),
         );
@@ -267,7 +267,7 @@ void main() {
         buildColorScheme: blue,
         textTheme: const TextTheme(),
         glassDesign: true,
-        glass: FushiGlassMaterial.frosted,
+        glass: FushiGlassMaterial.minimal,
       );
       expect(off.theme.colorScheme, baseline.theme.colorScheme);
       expect(off.theme.colorScheme.brightness, Brightness.light);

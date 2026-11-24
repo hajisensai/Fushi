@@ -16,7 +16,12 @@ library;
 import 'package:fushi_core/fushi_core.dart' show MediaTrackingMappingRow;
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -272,9 +277,18 @@ class HomeTrackingPanel extends StatelessWidget {
           child: LayoutBuilder(
             builder: (BuildContext context, BoxConstraints box) {
               final HomeWidgetStyle style = HomeWidgetStyle.of(context);
+              // Apple：要处理的状态只把小标题染成 destructive（Health 摘要卡口径），
+              // 正文仍是 label；行尾是 tertiaryLabel 的 chevron，不是强调色箭头。
+              final FushiAppleColors? apple = !poster && isGlassDesign(context)
+                  ? appleColorsOf(context)
+                  : null;
               final TextStyle textStyle = context.fushiType.bodyMedium.copyWith(
                 fontWeight: FontWeight.w600,
-                color: attention && !poster ? scheme.error : style.foreground,
+                color: apple != null
+                    ? apple.label
+                    : attention && !poster
+                    ? scheme.error
+                    : style.foreground,
               );
               final int lines = dense
                   ? 1
@@ -318,12 +332,16 @@ class HomeTrackingPanel extends StatelessWidget {
                         key: const ValueKey<String>(
                           'home-tracking-panel-action',
                         ),
-                        icon: FushiIcons.forward,
+                        icon: apple != null
+                            ? CupertinoIcons.chevron_forward
+                            : FushiIcons.forward,
                         tooltip: actionLabel,
-                        size: 20,
+                        size: apple != null
+                            ? FushiAppleMetrics.of(context).chevronSize
+                            : 20,
                         // 28 高：窄网格一行高的格子里内容区只有 ~30。
                         padding: const EdgeInsets.all(4),
-                        enabledColor: style.accent,
+                        enabledColor: apple?.tertiaryLabel ?? style.accent,
                         onTap: onOpen,
                       )
                     else if (action)

@@ -5,6 +5,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show fushiAppleCompact;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleMacScale;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
@@ -735,28 +739,59 @@ class FushiTooltip extends StatelessWidget {
     final ThemeData theme = Theme.of(context);
     final FushiAppleColors apple = appleColorsOf(context);
     final TooltipThemeData tooltipTheme = TooltipTheme.of(context);
+    // macOS 档（宽窗 / 桌面）是 NSToolTip 式小圆角矩形；iOS 档是圆角 15 的
+    // 胶囊（单行时 = 半高，正好全胶囊）。
+    final bool compact = fushiAppleCompact(context);
+    final double macScale = compact ? fushiAppleMacScale(context) : 1;
     final TextStyle bubbleStyle =
         (theme.textTheme.labelMedium ?? const TextStyle())
             .copyWith(
               color: apple.label,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
+              fontSize: compact ? 12 * macScale : 13,
+              fontWeight: compact ? FontWeight.w400 : FontWeight.w500,
+              height: 1.25,
             )
             .merge(textStyle);
     final TextAlign align =
         textAlign ?? tooltipTheme.textAlign ?? TextAlign.start;
     final InlineSpan content = richMessage ?? TextSpan(text: message ?? '');
+    final double radius = compact ? 6 * macScale : 15;
+    final bool dark = theme.colorScheme.brightness == Brightness.dark;
 
-    // 单行时是全胶囊（圆角 = 半高 15），多行退成圆角 15 的玻璃块。
-    final Widget bubble = GlassContainer(
-      shape: const LiquidRoundedSuperellipse(borderRadius: 15),
-      quality: fushiGlassQuality(context),
-      settings: fushiGlassSettings(context),
-      padding:
-          padding ??
-          tooltipTheme.padding ??
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      child: Text.rich(content, style: bubbleStyle, textAlign: align),
+    // 气泡是承载文字的浮层：厚材质（[fushiThickMaterialSettings]，自带一层），
+    // 不是控件级薄玻璃——tooltip 常压在视频画面 / 封面 / 正文上，薄玻璃的 53% /
+    // 12% 填充在亮暗交错的画面上等于没有底板，只剩裸字。外圈一道发丝描边把
+    // 气泡从同色背景上切出来。
+    final Widget bubble = DecoratedBox(
+      position: DecorationPosition.foreground,
+      decoration: ShapeDecoration(
+        shape: RoundedSuperellipseBorder(
+          borderRadius: BorderRadius.circular(radius),
+          side: BorderSide(
+            color: dark
+                ? Colors.white.withValues(alpha: 0.14)
+                : Colors.black.withValues(alpha: 0.10),
+            width: 0.5,
+          ),
+        ),
+      ),
+      child: GlassContainer(
+        useOwnLayer: true,
+        shape: LiquidRoundedSuperellipse(borderRadius: radius),
+        quality: fushiGlassQuality(context),
+        settings: fushiThickMaterialSettings(context),
+        platformViewBackdrop: fushiGlassOverPlatformView(context),
+        padding:
+            padding ??
+            tooltipTheme.padding ??
+            (compact
+                ? EdgeInsets.symmetric(
+                    horizontal: 8 * macScale,
+                    vertical: 4 * macScale,
+                  )
+                : const EdgeInsets.symmetric(horizontal: 12, vertical: 6)),
+        child: Text.rich(content, style: bubbleStyle, textAlign: align),
+      ),
     );
 
     Widget result = Tooltip(
@@ -782,7 +817,13 @@ class FushiTooltip extends StatelessWidget {
       onTriggered: onTriggered,
       mouseCursor: mouseCursor,
       ignorePointer: ignorePointer,
-      positionDelegate: positionDelegate,
+      // 默认按目标的上 / 下沿留 [kFushiTooltipGap] 定位（Tooltip 自带的
+      // verticalOffset 量的是到目标**中心**的距离，高按钮上气泡贴着下沿）。
+      positionDelegate:
+          positionDelegate ??
+          (verticalOffset == null && tooltipTheme.verticalOffset == null
+              ? fushiTooltipEdgePosition
+              : null),
       child: child,
     );
     final bool exclude =
@@ -792,4 +833,20 @@ class FushiTooltip extends StatelessWidget {
     }
     return result;
   }
+}
+
+/// Apple tooltip 气泡与目标上 / 下沿的间距。
+const double kFushiTooltipGap = 6;
+
+/// Apple tooltip 的默认定位：按目标**边沿**（而非中心）留 [kFushiTooltipGap]，
+/// 优先在下方、放不下翻到上方，水平居中并离屏幕边至少 8。
+Offset fushiTooltipEdgePosition(TooltipPositionContext context) {
+  return positionDependentBox(
+    size: context.overlaySize,
+    childSize: context.tooltipSize,
+    target: context.target,
+    verticalOffset: context.targetSize.height / 2 + kFushiTooltipGap,
+    preferBelow: context.preferBelow,
+    margin: 8,
+  );
 }

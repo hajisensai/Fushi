@@ -243,7 +243,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.playback.immersive_mode',
             title: t.video_setting_immersive_mode,
             subtitle: t.video_setting_immersive_mode_hint,
-            icon: Icons.lock_outline,
+            icon: FushiIcons.lock,
             dropdown: true,
             video: VideoPlacement(group: VideoGroup.playback, order: 70),
             options: <SettingsSegmentOption<VideoImmersiveMode>>[

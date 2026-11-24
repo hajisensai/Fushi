@@ -22,15 +22,24 @@ bool adaptiveAppleTabBarMode(
     sizeClass == WindowSizeClass.expanded &&
     userExpanded == false;
 
-/// 侧栏面板离窗口的边距（与旧玻璃侧栏一致）。
-const double _kAppleSidebarMargin = _kGlassSidebarMargin;
-
-/// 面板内边距。
-const double _kAppleSidebarPadding = 8;
+/// 贴边侧栏的内容内边距（行离侧栏左右缘 / 上下缘的距离）。
+const double _kAppleSidebarPadding = 10;
 const double _kAppleSidebarHeaderHeight = 44;
-const double _kAppleSidebarSearchHeight = 32;
-const double _kAppleSidebarSectionHeight = 28;
+const double _kAppleSidebarSectionHeight = 26;
 const double _kAppleSidebarRowGap = 2;
+
+/// 库页分区子项每一级的缩进（macOS 源列表的子项缩进量）。
+const double _kAppleSidebarSubIndent = 14;
+
+/// macOS 26（Tahoe）源列表的行：行高 28、选中底圆角 8、13 号常规字重标签、
+/// 16 号强调色描线图标（SF Symbols 侧栏默认中号）。
+const double _kAppleSidebarRowHeight = 28;
+const double _kAppleSidebarRowRadius = 8;
+const double _kAppleSidebarIconSize = 16;
+const double _kAppleSidebarFontSize = 13;
+
+/// 分组标题：11 号半粗次要色（macOS 源列表 section header）。
+const double _kAppleSidebarSectionFontSize = 11;
 
 /// 顶部标签栏：胶囊高、离窗口顶、内边距、格高。
 const double _kAppleTabBarHeight = 44;
@@ -54,9 +63,12 @@ final SpringDescription _kAppleMorphSpring = SpringDescription.withDampingRatio(
 /// Apple 设计系统宽窗口的首页导航外壳（2026-10-23，照 iPadOS 18 的侧栏 ↔
 /// 标签栏）：
 ///
-/// - 侧栏模式：左侧 192 宽的实色悬浮面板（Apple 悬浮面一律实色，
-///   [fushiAppleSolidFloatingDecoration]），顶部品牌位 + 收起按钮、搜索框
-///   （按名称过滤目的地）、可折叠的分组、底部固定项（设置）。
+/// - 侧栏模式：macOS 27（Golden Gate）贴边侧栏（[AppleEdgeSidebarSurface]：
+///   紧贴窗口左 / 上 / 下缘、无外边距 / 圆角 / 投影，右缘发丝线，随「玻璃
+///   画质」档位：实色档实色面，其余档平面库玻璃；顶部伸到标题行底下），顶部品牌位 + 收起按钮、胶囊搜索框（按名称过滤目的地）、
+///   可折叠的分组（11 号次要色标题 + 折叠箭头）、底部固定项（设置）。行是
+///   源列表规格：行高 28、13 号字、16 号强调色图标，选中 = 中性色圆角底
+///   （secondarySystemFill，窗口失焦时减半、图标退次要灰）。
 /// - 标签栏模式：面板变形成顶部居中的 44 高胶囊，每个目的地从侧栏的行
 ///   飞到胶囊里对应的格（依次错开起飞），内容区同步变宽、往下让出胶囊。
 ///   胶囊放不下全部带字的格时退成纯图标格（名称进 tooltip 与语义）。
@@ -75,6 +87,7 @@ class AppleSidebarTabsShell extends StatefulWidget {
     required this.onToggle,
     required this.child,
     this.leading,
+    this.libraryHost,
   });
 
   final List<AdaptiveNavItem> items;
@@ -97,6 +110,11 @@ class AppleSidebarTabsShell extends StatefulWidget {
   /// 内容区。
   final Widget child;
 
+  /// 库页登记分区子项的宿主（2026-11-24 方案 A）：macOS 档侧栏形态下，当前
+  /// 模块的行下面展开它登记的分区行；本壳也把自己的形态报给它（收成标签栏时
+  /// 库页把分区画回内容区）。null = 不展开。
+  final AppleSidebarLibraryHost? libraryHost;
+
   @override
   State<AppleSidebarTabsShell> createState() => _AppleSidebarTabsShellState();
 }
@@ -108,18 +126,35 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     initial: widget.tabBar ? 1 : 0,
     spring: _kAppleMorphSpring,
   );
-  final TextEditingController _query = TextEditingController();
   final Set<int> _shutSections = <int>{};
+
+  /// 顶部标签栏选中 lens 的按住 / 拖动状态：只有 lens 层监听，拖动时目的地
+  /// 不重建。
+  final ValueNotifier<_AppleTabLensDrag> _lensDrag =
+      ValueNotifier<_AppleTabLensDrag>(const _AppleTabLensDrag());
+
+  /// lens 上一次对准的（目的地, 格矩形）：同一目的地只是格几何变了（窗口缩放
+  /// 重排）时 lens 直接跟到位，不弹簧追赶；换目的地才滑过去。
+  int? _lensIndex;
+  Rect? _lensCell;
 
   @override
   void initState() {
     super.initState();
-    _query.addListener(() => setState(() {}));
+    widget.libraryHost?.addListener(_onLibraryRows);
+  }
+
+  void _onLibraryRows() {
+    if (mounted) setState(() {});
   }
 
   @override
   void didUpdateWidget(covariant AppleSidebarTabsShell oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.libraryHost != widget.libraryHost) {
+      oldWidget.libraryHost?.removeListener(_onLibraryRows);
+      widget.libraryHost?.addListener(_onLibraryRows);
+    }
     if (oldWidget.tabBar != widget.tabBar) {
       _t.animateTo(
         widget.tabBar ? 1 : 0,
@@ -130,54 +165,82 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
 
   @override
   void dispose() {
+    widget.libraryHost?.removeListener(_onLibraryRows);
+    _lensDrag.dispose();
     _t.dispose();
-    _query.dispose();
     super.dispose();
   }
 
-  bool _matches(int index) {
-    return matchesMediaSearch(
-      query: _query.text,
-      titles: <String>[widget.items[index].label],
-    );
-  }
+  /// macOS 档放大系数（[fushiAppleMacScale]）：侧栏行高 / 字号 / 图标在
+  /// Windows / Linux 宽窗放大，Mac 与 iPad 1.0。标签栏形态不随它变。
+  double get _k => fushiAppleMacScale(context);
 
-  /// 侧栏模式下每个目的地行的矩形（shell 坐标）；被折叠 / 过滤掉的行给 null。
+  /// 侧栏模式下每个目的地行的矩形（shell 坐标）；被折叠的行给 null。
   /// 同时返回每个分组标题的纵向位置。
-  ({Map<int, Rect> rows, List<double> sectionTops}) _sidebarLayout(Size size) {
-    const double left = _kAppleSidebarMargin + _kAppleSidebarPadding;
+  ({
+    Map<int, Rect> rows,
+    List<double> sectionTops,
+    List<(AppleSidebarLibraryRow, Rect)> subRows,
+  })
+  _sidebarLayout(Size size, double topInset) {
+    const double left = _kAppleSidebarPadding;
     const double width = kGlassNavSidebarWidth - 2 * left;
+    final double k = _k;
+    final double rowHeight = _kAppleSidebarRowHeight * k;
+    final double rowGap = _kAppleSidebarRowGap * k;
     double y =
-        _kAppleSidebarMargin +
+        topInset +
         _kAppleSidebarPadding +
-        _kAppleSidebarHeaderHeight +
-        _kAppleSidebarSearchHeight +
-        8;
+        // 无搜索框：首节标题紧接窗口控件 / 品牌行下方（macOS 27 Finder / Music
+        // 侧栏）。
+        _kAppleSidebarHeaderHeight;
     final Map<int, Rect> rows = <int, Rect>{};
     final List<double> sectionTops = <double>[];
+    final List<AppleSidebarLibraryRow> library = _libraryRows;
+    final List<(AppleSidebarLibraryRow, Rect)> subRows =
+        <(AppleSidebarLibraryRow, Rect)>[];
     for (int s = 0; s < widget.sections.length; s++) {
       final AppleSidebarSection section = widget.sections[s];
       if (section.title != null) {
         sectionTops.add(y);
-        y += _kAppleSidebarSectionHeight;
+        y += _kAppleSidebarSectionHeight * k;
       } else {
         sectionTops.add(double.nan);
       }
       if (_shutSections.contains(s)) continue;
       for (final int i in section.indices) {
-        if (!_matches(i)) continue;
-        rows[i] = Rect.fromLTWH(left, y, width, _kGlassSidebarRowHeight);
-        y += _kGlassSidebarRowHeight + _kAppleSidebarRowGap;
+        rows[i] = Rect.fromLTWH(left, y, width, rowHeight);
+        y += rowHeight + rowGap;
+        // 当前模块下展开库页登记的分区行（缩进一级 / 两级）。
+        if (i == widget.currentIndex) {
+          for (final AppleSidebarLibraryRow sub in library) {
+            final double indent = _kAppleSidebarSubIndent * k * sub.depth;
+            subRows.add((
+              sub,
+              Rect.fromLTWH(left + indent, y, width - indent, rowHeight),
+            ));
+            y += rowHeight + rowGap;
+          }
+        }
       }
-      y += 6;
+      y += 6 * k;
     }
-    double bottom = size.height - _kAppleSidebarMargin - _kAppleSidebarPadding;
+    double bottom = size.height - _kAppleSidebarPadding;
     for (final int i in widget.footer.reversed) {
-      bottom -= _kGlassSidebarRowHeight;
-      rows[i] = Rect.fromLTWH(left, bottom, width, _kGlassSidebarRowHeight);
-      bottom -= _kAppleSidebarRowGap;
+      bottom -= rowHeight;
+      rows[i] = Rect.fromLTWH(left, bottom, width, rowHeight);
+      bottom -= rowGap;
     }
-    return (rows: rows, sectionTops: sectionTops);
+    return (rows: rows, sectionTops: sectionTops, subRows: subRows);
+  }
+
+  /// 此刻要在当前模块下展开的库页分区行：侧栏形态 + macOS 档度量才展开。
+  List<AppleSidebarLibraryRow> get _libraryRows {
+    final AppleSidebarLibraryHost? host = widget.libraryHost;
+    if (host == null || widget.tabBar || !fushiAppleUsesMacMetrics(context)) {
+      return const <AppleSidebarLibraryRow>[];
+    }
+    return host.rows;
   }
 
   /// 标签栏模式：胶囊矩形 + 每个目的地格的矩形（shell 坐标）。放不下带字格
@@ -185,6 +248,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   ({Rect capsule, Map<int, Rect> cells, bool iconOnly}) _tabLayout(
     Size size,
     TextStyle labelStyle,
+    double topInset,
   ) {
     final List<int> order = <int>[
       for (final AppleSidebarSection s in widget.sections) ...s.indices,
@@ -217,7 +281,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     }
     final Rect capsule = Rect.fromLTWH(
       ((size.width - width) / 2).clamp(8.0, double.infinity),
-      _kAppleTabBarTop,
+      topInset + _kAppleTabBarTop,
       width,
       _kAppleTabBarHeight,
     );
@@ -226,8 +290,10 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
         _kAppleTabBarPadding +
         _kAppleTabCellHeight +
         _kAppleSidebarRowGap;
-    const double top =
-        _kAppleTabBarTop + (_kAppleTabBarHeight - _kAppleTabCellHeight) / 2;
+    final double top =
+        topInset +
+        _kAppleTabBarTop +
+        (_kAppleTabBarHeight - _kAppleTabCellHeight) / 2;
     final Map<int, Rect> cells = <int, Rect>{};
     for (final int i in order) {
       final double w = cellWidth(i, iconOnly: iconOnly);
@@ -243,18 +309,42 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     final TextStyle tabLabel = context.fushiType.labelMedium.copyWith(
       fontWeight: FontWeight.w500,
     );
+    return _AppleWindowActiveBuilder(
+      builder: (BuildContext context, bool windowActive) =>
+          _buildShell(context, apple, tabLabel, windowActive: windowActive),
+    );
+  }
+
+  Widget _buildShell(
+    BuildContext context,
+    FushiAppleColors apple,
+    TextStyle tabLabel, {
+    required bool windowActive,
+  }) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final Size size = constraints.biggest;
-        final ({Map<int, Rect> rows, List<double> sectionTops}) side =
-            _sidebarLayout(size);
+        // 首页外壳不在外层吃顶部安全区（[navRailBleedsToTop]）：侧栏底从窗口
+        // 上沿铺起（伸到桌面自绘标题行 / 状态栏底下），侧栏内容、标签栏胶囊与
+        // 内容区各自让开这一段。
+        final double topInset = MediaQuery.paddingOf(context).top;
+        // 侧栏形态报给库页（收成标签栏时库页把分区画回内容区）；通知推迟到
+        // 帧末，构建期间调用安全。
+        widget.libraryHost?.reportSidebarMode(!widget.tabBar);
+        final ({
+          Map<int, Rect> rows,
+          List<double> sectionTops,
+          List<(AppleSidebarLibraryRow, Rect)> subRows,
+        })
+        side = _sidebarLayout(size, topInset);
         final ({Rect capsule, Map<int, Rect> cells, bool iconOnly}) tabs =
-            _tabLayout(size, tabLabel);
+            _tabLayout(size, tabLabel, topInset);
+        // macOS 27（Golden Gate）侧栏贴边：紧贴窗口左 / 上 / 下缘。
         final Rect sidePanel = Rect.fromLTWH(
-          _kAppleSidebarMargin,
-          _kAppleSidebarMargin,
-          kGlassNavSidebarWidth - 2 * _kAppleSidebarMargin,
-          size.height - 2 * _kAppleSidebarMargin,
+          0,
+          0,
+          kGlassNavSidebarWidth,
+          size.height,
         );
         return AnimatedBuilder(
           animation: _t.animation,
@@ -267,29 +357,47 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
             final double tabOnly = (settled * 2 - 1).clamp(0.0, 1.0);
             final Rect panel = Rect.lerp(sidePanel, tabs.capsule, t)!;
             final int count = widget.items.length;
+            // 落定在标签栏形态后，选中块交给液态玻璃 lens 层（与 Apple 分段
+            // 选择器同一套 [FushiAppleSelectionLens]）；形变途中仍由各目的地
+            // 自己的底色插值。
+            final bool lensActive =
+                t >= 0.999 && tabs.cells.containsKey(widget.currentIndex);
             return Stack(
               clipBehavior: Clip.none,
               children: <Widget>[
+                // 侧栏态：内容区与侧栏一样从窗口上沿铺起（macOS 27 统一的标题栏 +
+                // 工具栏，详情页的底色 / 二级侧栏一直画到窗口按钮那一行，不再在
+                // y = topInset 处切出一条接缝），顶部安全区（窗口按钮行 / 状态栏）
+                // 以 MediaQuery 顶部 padding 交给页面自己让；[AppleSidebarTopBleed]
+                // 标出这一段是让位。标签栏态：内容排在胶囊下面，不再有顶部 padding。
+                // 两态之间按形变进度插值，过渡连续。
                 Positioned(
                   left: kGlassNavSidebarWidth * (1 - settled),
-                  top: _kAppleTabBarInset * settled,
+                  top: (topInset + _kAppleTabBarInset) * settled,
                   right: 0,
                   bottom: 0,
-                  child: content!,
+                  child: MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      padding: MediaQuery.paddingOf(
+                        context,
+                      ).copyWith(top: topInset * (1 - settled)),
+                      viewPadding: MediaQuery.viewPaddingOf(
+                        context,
+                      ).copyWith(top: topInset * (1 - settled)),
+                    ),
+                    child: content!,
+                  ),
                 ),
+                // 侧栏静止时是贴边的平面侧栏底；一离开侧栏态就换成悬浮胶囊面，
+                // 从直角贴边形变到标签栏胶囊。
                 Positioned.fromRect(
                   rect: panel,
                   child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: fushiAppleSolidFloatingDecoration(
-                        context,
-                        shape: RoundedSuperellipseBorder(
-                          borderRadius: BorderRadius.circular(
-                            20 + (_kAppleTabBarHeight / 2 - 20) * settled,
+                    child: t <= 0
+                        ? const AppleEdgeSidebarSurface()
+                        : _AppleTabBarGlassSurface(
+                            radius: _kAppleTabBarHeight / 2 * settled,
                           ),
-                        ),
-                      ),
-                    ),
                   ),
                 ),
                 if (sideOnly > 0)
@@ -298,11 +406,24 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                     apple: apple,
                     opacity: sideOnly,
                     sectionTops: side.sectionTops,
+                    topInset: topInset,
                   ),
+                if (sideOnly > 0)
+                  for (int i = 0; i < side.subRows.length; i++)
+                    _buildLibraryRow(
+                      context,
+                      row: side.subRows[i].$1,
+                      rect: side.subRows[i].$2,
+                      index: i,
+                      apple: apple,
+                      opacity: sideOnly,
+                      windowActive: windowActive,
+                    ),
                 if (tabOnly > 0)
                   Positioned(
                     left: tabs.capsule.left + _kAppleTabBarPadding,
                     top:
+                        topInset +
                         _kAppleTabBarTop +
                         (_kAppleTabBarHeight - _kAppleTabCellHeight) / 2,
                     child: Opacity(
@@ -310,26 +431,220 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                       child: _toggleButton(apple, toTabBar: false),
                     ),
                   ),
-                for (int i = 0; i < count; i++)
-                  if (tabs.cells[i] case final Rect cell)
-                    _buildItem(
-                      context,
-                      index: i,
-                      apple: apple,
-                      from: side.rows[i],
-                      to: cell,
-                      // 依次起飞：越靠后的目的地越晚出发（两个方向同一顺序）。
-                      t: _stagger(t, i, count),
-                      tabLabel: tabLabel,
-                      iconOnly: tabs.iconOnly || widget.footer.contains(i),
+                // 目的地层夹在 lens 的实色底（下）与玻璃透镜（上）之间；整层
+                // 结构恒定，lens 动画只重建 lens 自己。
+                Positioned.fill(
+                  key: const ValueKey<String>('apple-tab-bar-items'),
+                  child: _buildTabLens(
+                    context,
+                    cells: tabs.cells,
+                    active: lensActive,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: <Widget>[
+                        for (int i = 0; i < count; i++)
+                          if (tabs.cells[i] case final Rect cell)
+                            _buildItem(
+                              context,
+                              index: i,
+                              apple: apple,
+                              from: side.rows[i],
+                              to: cell,
+                              // 依次起飞：越靠后的目的地越晚出发（两个方向同一
+                              // 顺序）。
+                              t: _stagger(t, i, count),
+                              tabLabel: tabLabel,
+                              iconOnly:
+                                  tabs.iconOnly || widget.footer.contains(i),
+                              windowActive: windowActive,
+                              lensOwnsSelection: lensActive,
+                            ),
+                      ],
                     ),
+                  ),
+                ),
+                Positioned.fromRect(
+                  key: const ValueKey<String>('apple-tab-bar-swipe'),
+                  rect: tabs.capsule,
+                  child: _buildTabSwipe(
+                    context,
+                    cells: tabs.cells,
+                    capsule: tabs.capsule,
+                    active: lensActive,
+                  ),
+                ),
               ],
             );
           },
-          child: widget.child,
+          child: AppleSidebarTopBleed(child: widget.child),
         );
       },
     );
+  }
+
+  /// 标签栏选中 lens：落定后实色底 + 按住 / 拖动 / 换项滑动时浮起的液态玻璃
+  /// 透镜（[FushiAppleSelectionLens]，与 Apple 分段选择器同一套）；[child] 是
+  /// 目的地层。拖动中 lens 跟手、宽度取手指下那一格。
+  Widget _buildTabLens(
+    BuildContext context, {
+    required Map<int, Rect> cells,
+    required bool active,
+    required Widget child,
+  }) {
+    final FushiSpringSpec slide = context.fushiMotion.spatialFast;
+    final Rect? selectedCell = cells[widget.currentIndex];
+    return ValueListenableBuilder<_AppleTabLensDrag>(
+      valueListenable: _lensDrag,
+      child: child,
+      builder: (BuildContext context, _AppleTabLensDrag drag, Widget? child) {
+        final Rect cell = selectedCell ?? Rect.zero;
+        double left = cell.left;
+        double width = cell.width;
+        final double? center = active ? drag.center : null;
+        if (center != null) {
+          width = (cells[_cellAt(cells, center)] ?? cell).width;
+          final ({double min, double max}) span = _cellSpan(cells);
+          left = (center - width / 2).clamp(
+            span.min,
+            math.max(span.min, span.max - width),
+          );
+        }
+        final bool geometryOnly =
+            _lensIndex == widget.currentIndex && _lensCell != cell;
+        _lensIndex = widget.currentIndex;
+        _lensCell = cell;
+        final double radius = cell.height / 2;
+        return FushiAppleSelectionLens(
+          left: left,
+          width: width,
+          top: cell.top,
+          height: cell.height,
+          radius: radius,
+          slideDuration: center != null || geometryOnly
+              ? Duration.zero
+              : slide.duration,
+          slideCurve: slide.curve,
+          held: active && (center != null || drag.held),
+          visible: active && selectedCell != null,
+          restDecoration: BoxDecoration(
+            color: appleNavLensRestColor(context),
+            borderRadius: BorderRadius.circular(radius),
+          ),
+          child: child!,
+        );
+      },
+    );
+  }
+
+  /// 标签栏上的按住 / 横拖：按住选中格时 lens 浮起；从选中格起手横拖时 lens
+  /// 跟手滑行，从别处起手则松手时选中指针所在格（lens 再滑过去）。层本身
+  /// translucent，不挡目的地的点按 / 焦点 / 悬停。
+  Widget _buildTabSwipe(
+    BuildContext context, {
+    required Map<int, Rect> cells,
+    required Rect capsule,
+    required bool active,
+  }) {
+    double shellX(Offset local) => local.dx + capsule.left;
+    bool onSelected(double x) {
+      final Rect? c = cells[widget.currentIndex];
+      return c != null && x >= c.left && x <= c.right;
+    }
+
+    void release() {
+      if (!_lensDrag.value.dragging) {
+        _lensDrag.value = const _AppleTabLensDrag();
+      }
+    }
+
+    void end() {
+      final _AppleTabLensDrag drag = _lensDrag.value;
+      final double? target = drag.center ?? drag.pointer;
+      _lensDrag.value = const _AppleTabLensDrag();
+      if (target == null || !active) return;
+      final int? index = _cellAt(cells, target);
+      if (index == null) return;
+      if (index != widget.currentIndex) fushiSelectionHaptic(context);
+      widget.onTap(index);
+    }
+
+    return IgnorePointer(
+      ignoring: !active,
+      child: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (PointerDownEvent event) {
+          if (onSelected(shellX(event.localPosition))) {
+            _lensDrag.value = const _AppleTabLensDrag(held: true);
+          }
+        },
+        onPointerUp: (PointerUpEvent _) => release(),
+        onPointerCancel: (PointerCancelEvent _) => release(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          excludeFromSemantics: true,
+          dragStartBehavior: DragStartBehavior.down,
+          onHorizontalDragStart: (DragStartDetails details) {
+            final double x = shellX(details.localPosition);
+            final ({double min, double max}) span = _cellSpan(cells);
+            if (x < span.min || x > span.max) return;
+            final Rect? selected = cells[widget.currentIndex];
+            if (selected != null && onSelected(x)) {
+              _lensDrag.value = _AppleTabLensDrag(
+                center: selected.center.dx,
+                grab: x - selected.center.dx,
+                held: true,
+              );
+            } else {
+              _lensDrag.value = _AppleTabLensDrag(pointer: x);
+            }
+          },
+          onHorizontalDragUpdate: (DragUpdateDetails details) {
+            final _AppleTabLensDrag drag = _lensDrag.value;
+            if (!drag.dragging) return;
+            final double x = shellX(details.localPosition);
+            _lensDrag.value = drag.center != null
+                ? _AppleTabLensDrag(
+                    center: x - drag.grab,
+                    grab: drag.grab,
+                    held: true,
+                  )
+                : _AppleTabLensDrag(pointer: x);
+          },
+          onHorizontalDragEnd: (DragEndDetails _) => end(),
+          onHorizontalDragCancel: () =>
+              _lensDrag.value = const _AppleTabLensDrag(),
+          child: const SizedBox.expand(),
+        ),
+      ),
+    );
+  }
+
+  /// 离横坐标 [x]（外壳坐标）最近的标签格；没有格时 null。
+  static int? _cellAt(Map<int, Rect> cells, double x) {
+    int? best;
+    double bestDistance = double.infinity;
+    for (final MapEntry<int, Rect> entry in cells.entries) {
+      final Rect r = entry.value;
+      final double d = x < r.left
+          ? r.left - x
+          : (x > r.right ? x - r.right : 0);
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = entry.key;
+      }
+    }
+    return best;
+  }
+
+  /// 全部标签格的横向跨度（外壳坐标）。
+  static ({double min, double max}) _cellSpan(Map<int, Rect> cells) {
+    double min = double.infinity;
+    double max = double.negativeInfinity;
+    for (final Rect r in cells.values) {
+      if (r.left < min) min = r.left;
+      if (r.right > max) max = r.right;
+    }
+    return min.isFinite ? (min: min, max: max) : (min: 0, max: 0);
   }
 
   static double _stagger(double t, int i, int count) {
@@ -372,10 +687,11 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     required FushiAppleColors apple,
     required double opacity,
     required List<double> sectionTops,
+    required double topInset,
   }) {
-    const double left = _kAppleSidebarMargin + _kAppleSidebarPadding;
+    const double left = _kAppleSidebarPadding;
     const double width = kGlassNavSidebarWidth - 2 * left;
-    final TextTheme text = Theme.of(context).textTheme;
+    final double k = _k;
     Widget fade(Widget child) => Opacity(
       opacity: opacity,
       child: IgnorePointer(ignoring: opacity < 1, child: child),
@@ -383,7 +699,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     return <Widget>[
       Positioned(
         left: left,
-        top: _kAppleSidebarMargin + _kAppleSidebarPadding,
+        top: topInset + _kAppleSidebarPadding,
         width: width,
         height: _kAppleSidebarHeaderHeight,
         child: fade(
@@ -397,68 +713,6 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
           ),
         ),
       ),
-      Positioned(
-        left: left,
-        top:
-            _kAppleSidebarMargin +
-            _kAppleSidebarPadding +
-            _kAppleSidebarHeaderHeight,
-        width: width,
-        height: _kAppleSidebarSearchHeight,
-        child: fade(
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: apple.tertiaryFill,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: <Widget>[
-                const SizedBox(width: 8),
-                FushiIcon(
-                  FushiIcons.search,
-                  size: 16,
-                  color: apple.secondaryLabel,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  // 胶囊（tertiaryFill 圆角 10 + 放大镜）由侧栏自己画，输入框
-                  // 走设计系统分派但不带装饰（decoration: null 在两套设计系统
-                  // 下都不加壳）；占位符随空值显隐，与原 collapsed 样式一致。
-                  child: Stack(
-                    alignment: AlignmentDirectional.centerStart,
-                    children: <Widget>[
-                      ValueListenableBuilder<TextEditingValue>(
-                        valueListenable: _query,
-                        builder:
-                            (
-                              BuildContext context,
-                              TextEditingValue value,
-                              Widget? hint,
-                            ) => value.text.isEmpty ? hint! : const SizedBox(),
-                        child: IgnorePointer(
-                          child: Text(
-                            t.search,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: text.bodyMedium?.copyWith(
-                              color: apple.secondaryLabel,
-                            ),
-                          ),
-                        ),
-                      ),
-                      FushiTextFieldControl(
-                        controller: _query,
-                        style: text.bodyMedium?.copyWith(color: apple.label),
-                        decoration: null,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
       for (int s = 0; s < widget.sections.length; s++)
         if (widget.sections[s].title case final String title)
           if (!sectionTops[s].isNaN)
@@ -466,12 +720,13 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
               left: left,
               top: sectionTops[s],
               width: width,
-              height: _kAppleSidebarSectionHeight,
+              height: _kAppleSidebarSectionHeight * k,
               child: fade(
                 _AppleSidebarSectionHeader(
                   title: title,
                   shut: _shutSections.contains(s),
                   color: apple.secondaryLabel,
+                  chevronColor: apple.tertiaryLabel,
                   onTap: () => setState(() {
                     if (!_shutSections.remove(s)) _shutSections.add(s);
                   }),
@@ -479,6 +734,107 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
               ),
             ),
     ];
+  }
+
+  /// 当前模块下展开的一行库页分区（与目的地行同一源列表规格：行高 28、选中
+  /// 中性色圆角底、图标强调色；缩进一级）。随侧栏独有部分一起淡出；首次出现
+  /// 时错峰淡入。
+  Widget _buildLibraryRow(
+    BuildContext context, {
+    required AppleSidebarLibraryRow row,
+    required Rect rect,
+    required int index,
+    required FushiAppleColors apple,
+    required double opacity,
+    required bool windowActive,
+  }) {
+    final double k = _k;
+    final Color sideFill = windowActive
+        ? apple.secondaryFill
+        : apple.secondaryFill.withValues(alpha: apple.secondaryFill.a * 0.5);
+    final IconData? icon = row.icon;
+    if (row.header) {
+      // 节标题（「标签」）：与侧栏分组标题同一字级，不可点、不进焦点序。
+      return Positioned.fromRect(
+        key: ValueKey<String>('apple-sidebar-library-${row.id}'),
+        rect: rect,
+        child: Opacity(
+          opacity: opacity,
+          child: ExcludeFocus(
+            child: Align(
+              alignment: AlignmentDirectional.bottomStart,
+              child: Padding(
+                padding: EdgeInsetsDirectional.only(
+                  start: 8 * k,
+                  bottom: 4 * k,
+                ),
+                child: Text(
+                  row.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.fade,
+                  softWrap: false,
+                  style: context.fushiType.labelSmall.copyWith(
+                    fontSize: (_kAppleSidebarFontSize - 2) * k,
+                    fontWeight: FontWeight.w600,
+                    color: apple.tertiaryLabel,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return Positioned.fromRect(
+      key: ValueKey<String>('apple-sidebar-library-${row.id}'),
+      rect: rect,
+      child: Opacity(
+        opacity: opacity,
+        child: IgnorePointer(
+          ignoring: opacity < 1,
+          child: FushiStaggeredEntrance(
+            index: index,
+            child: _AppleMorphDestination(
+              id: FushiFocusId('nav-rail-library-${row.id}'),
+              item: AdaptiveNavItem(
+                icon: icon ?? FushiIcons.chevronRight,
+                label: row.label,
+              ),
+              selected: row.selected,
+              onSelect: () {
+                if (!row.selected) fushiSelectionHaptic(context);
+                row.onTap();
+              },
+              fill: row.selected ? sideFill : Colors.transparent,
+              hover: apple.tertiaryFill.withValues(
+                alpha: apple.tertiaryFill.a * 0.6,
+              ),
+              radius: _kAppleSidebarRowRadius * k,
+              padding: 8 * k,
+              gap: 7 * k,
+              iconSize: (_kAppleSidebarIconSize - 1) * k,
+              iconColor:
+                  row.tint ??
+                  (windowActive ? apple.accent : apple.secondaryLabel),
+              fillDuration: fushiMotionDuration(context, FushiMotion.short),
+              label: Text(
+                row.label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.fade,
+                style: context.fushiType.bodyMedium.copyWith(
+                  fontSize: _kAppleSidebarFontSize * k,
+                  fontWeight: FontWeight.w400,
+                  height: 1.2,
+                  color: apple.label,
+                ),
+              ),
+              centerIcon: false,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildItem(
@@ -490,8 +846,10 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     required double t,
     required TextStyle tabLabel,
     required bool iconOnly,
+    required bool windowActive,
+    required bool lensOwnsSelection,
   }) {
-    // 侧栏里被折叠 / 过滤掉的行：侧栏模式下不画，标签栏模式下从胶囊格位置
+    // 侧栏里被折叠的行：侧栏模式下不画，标签栏模式下从胶囊格位置
     // 原地淡入。
     final Rect start = from ?? to;
     final double visible = from == null ? t.clamp(0.0, 1.0) : 1;
@@ -499,22 +857,36 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     final double s = t.clamp(0.0, 1.0);
     final bool selected = index == widget.currentIndex;
     final AdaptiveNavItem item = widget.items[index];
+    final double k = _k;
     final TextStyle sideLabel = context.fushiType.bodyMedium.copyWith(
+      fontSize: _kAppleSidebarFontSize * k,
       fontWeight: FontWeight.w400,
+      height: 1.2,
     );
     final TextStyle label = TextStyle.lerp(sideLabel, tabLabel, s)!;
-    // 选中态：侧栏是强调色实底 + onAccent；标签栏是灰色托盘 + 强调色字。
-    final Color fill = selected
-        ? Color.lerp(apple.accent, apple.secondaryFill, s)!
-        : Colors.transparent;
+    // 选中态（2026-11-24 用户「侧栏还不是 macOS 27」）：侧栏是 macOS 26 源列表
+    // 的中性色圆角底（secondarySystemFill，窗口失焦时减半），标签仍 label 色、
+    // 图标仍强调色——不再是强调色实心块。标签栏模式落定后选中块交给液态
+    // 玻璃 lens 层（[lensOwnsSelection]，目的地自己不再画底），形变途中插值到
+    // lens 的静止底色，交接无跳变。
+    final Color sideFill = windowActive
+        ? apple.secondaryFill
+        : apple.secondaryFill.withValues(alpha: apple.secondaryFill.a * 0.5);
+    final Color fill = !selected || lensOwnsSelection
+        ? Colors.transparent
+        : Color.lerp(sideFill, appleNavLensRestColor(context), s)!;
     final Color fg = selected
-        ? Color.lerp(apple.onAccent, apple.accent, s)!
+        ? Color.lerp(apple.label, apple.accent, s)!
         : apple.label;
-    final Color iconColor = selected ? fg : apple.accent;
+    // 失焦窗口的源列表图标退成次要灰（macOS 同）。
+    final Color sideIcon = windowActive ? apple.accent : apple.secondaryLabel;
+    final Color iconColor = Color.lerp(sideIcon, apple.accent, s)!;
     final double radius =
-        _kGlassSidebarRowRadius +
-        (_kAppleTabCellHeight / 2 - _kGlassSidebarRowRadius) * s;
+        _kAppleSidebarRowRadius * k +
+        (_kAppleTabCellHeight / 2 - _kAppleSidebarRowRadius * k) * s;
     final double labelOpacity = iconOnly ? (1 - s * 2).clamp(0.0, 1.0) : 1;
+    // 选中 / 悬停底色的补间只在两端静止时播；变形途中逐帧插值，不叠补间。
+    final bool settled = t <= 0 || t >= 1;
     return Positioned.fromRect(
       rect: rect,
       child: Opacity(
@@ -530,11 +902,21 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
               widget.onTap(index);
             },
             fill: fill,
-            hover: apple.tertiaryFill,
+            // 悬停：比选中浅一阶的中性底（quaternarySystemFill 量级）。
+            hover: apple.tertiaryFill.withValues(
+              alpha: apple.tertiaryFill.a * 0.6,
+            ),
             radius: radius,
-            padding: 10 + 2 * s,
-            iconSize: 19 - s,
+            // 侧栏端（s = 0）乘 macOS 档系数，标签栏端（s = 1）不变。
+            padding: 8 * k + (12 - 8 * k) * s,
+            gap: 7 * k + (6 - 7 * k) * s,
+            iconSize:
+                _kAppleSidebarIconSize * k +
+                (18 - _kAppleSidebarIconSize * k) * s,
             iconColor: iconColor,
+            fillDuration: settled
+                ? fushiMotionDuration(context, FushiMotion.short)
+                : Duration.zero,
             label: labelOpacity > 0
                 ? Opacity(
                     opacity: labelOpacity,
@@ -555,17 +937,119 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   }
 }
 
+/// macOS 27（Golden Gate）的贴边侧栏底：紧贴窗口边、无外边距 / 圆角 / 投影 /
+/// 抬起，末端（LTR 右缘）一条 0.5 px `separator` 发丝线与内容区分开。
+///
+/// 材质跟随「玻璃画质」（[glassMaterialOf]）：
+/// - 实色档：系统材质实色（[fushiGlassFill] 的 off 档，深 #1C1C1E / 浅
+///   #F9F9F9，即 secondarySystemBackground 量级），无模糊无着色器；
+/// - 其余档：自带一层的平面库玻璃（[GlassContainer] 直角、`shadowElevation: 0`，
+///   参数取 [fushiGlassSettings]，静态主表面按 prominent 口径取档）。库没有
+///   侧栏组件，这是最贴近的「平铺背景玻璃」。
+///
+/// 宽窗口侧栏（[AppleSidebarTabsShell]）与 medium 窄条（`_NavSurfaceBackdrop`）
+/// 共用这一块。
+class AppleEdgeSidebarSurface extends StatelessWidget {
+  const AppleEdgeSidebarSurface({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final Widget hairline = DecoratedBox(
+      decoration: BoxDecoration(
+        border: BorderDirectional(
+          end: BorderSide(color: apple.separator, width: 0.5),
+        ),
+      ),
+    );
+    if (glassMaterialOf(context) == FushiGlassMaterial.off) {
+      return DecoratedBox(
+        decoration: BoxDecoration(color: fushiGlassFill(context)),
+        child: hairline,
+      );
+    }
+    return Stack(
+      fit: StackFit.expand,
+      children: <Widget>[
+        GlassContainer(
+          // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
+          useOwnLayer: true,
+          shape: const LiquidRoundedSuperellipse(borderRadius: 0),
+          quality: fushiGlassQuality(context, prominent: true),
+          // macOS 27 侧栏是贴边的磨砂材质（vibrancy），不是一块悬浮玻璃：
+          // 没有镜面高光、菲涅尔亮边与边缘折射，只留模糊与底色。
+          settings: fushiGlassSettings(context).copyWith(
+            shadowElevation: 0,
+            thickness: 0,
+            lightIntensity: 0,
+            ambientRim: 0,
+            fresnelStrength: 0,
+            chromaticAberration: 0,
+          ),
+          child: const SizedBox.expand(),
+        ),
+        hairline,
+      ],
+    );
+  }
+}
+
+/// 窗口是否处于前台激活（桌面端失焦时引擎报 [AppLifecycleState.inactive]）：
+/// macOS 源列表在窗口失焦时把选中底与图标都退淡，侧栏照做。
+class _AppleWindowActiveBuilder extends StatefulWidget {
+  const _AppleWindowActiveBuilder({required this.builder});
+
+  final Widget Function(BuildContext context, bool active) builder;
+
+  @override
+  State<_AppleWindowActiveBuilder> createState() =>
+      _AppleWindowActiveBuilderState();
+}
+
+class _AppleWindowActiveBuilderState extends State<_AppleWindowActiveBuilder>
+    with WidgetsBindingObserver {
+  late bool _active = _isActive(WidgetsBinding.instance.lifecycleState);
+
+  static bool _isActive(AppLifecycleState? state) =>
+      state == null || state == AppLifecycleState.resumed;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final bool active = _isActive(state);
+    if (active != _active) setState(() => _active = active);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.builder(context, _active);
+}
+
 class _AppleSidebarSectionHeader extends StatelessWidget {
   const _AppleSidebarSectionHeader({
     required this.title,
     required this.shut,
     required this.color,
+    required this.chevronColor,
     required this.onTap,
   });
 
   final String title;
   final bool shut;
   final Color color;
+
+  /// 折叠箭头色（比标题再淡一阶）。
+  final Color chevronColor;
   final VoidCallback onTap;
 
   @override
@@ -580,13 +1064,19 @@ class _AppleSidebarSectionHeader extends StatelessWidget {
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
+            // 标题贴行的图标起点对齐，上方多留一点与上一组分开。
+            padding: const EdgeInsetsDirectional.only(start: 8, end: 6, top: 6),
             child: Row(
               children: <Widget>[
                 Expanded(
                   child: Text(
                     title,
-                    style: text.labelMedium?.copyWith(
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.labelSmall?.copyWith(
+                      fontSize:
+                          _kAppleSidebarSectionFontSize *
+                          fushiAppleMacScale(context),
                       color: color,
                       fontWeight: FontWeight.w600,
                     ),
@@ -598,8 +1088,8 @@ class _AppleSidebarSectionHeader extends StatelessWidget {
                   curve: FushiMotion.standard,
                   child: FushiIcon(
                     FushiIcons.expandMore,
-                    size: 16,
-                    color: color,
+                    size: 14,
+                    color: chevronColor,
                   ),
                 ),
               ],
@@ -623,8 +1113,10 @@ class _AppleMorphDestination extends StatefulWidget {
     required this.hover,
     required this.radius,
     required this.padding,
+    required this.gap,
     required this.iconSize,
     required this.iconColor,
+    required this.fillDuration,
     required this.label,
     required this.centerIcon,
   });
@@ -637,8 +1129,14 @@ class _AppleMorphDestination extends StatefulWidget {
   final Color hover;
   final double radius;
   final double padding;
+
+  /// 图标与标签之间的距离。
+  final double gap;
   final double iconSize;
   final Color iconColor;
+
+  /// 选中 / 悬停底色切换的补间时长（变形途中为零）。
+  final Duration fillDuration;
   final Widget? label;
   final bool centerIcon;
 
@@ -690,7 +1188,9 @@ class _AppleMorphDestinationState extends State<_AppleMorphDestination> {
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: widget.onSelect,
-                  child: DecoratedBox(
+                  child: AnimatedContainer(
+                    duration: widget.fillDuration,
+                    curve: FushiMotion.standard,
                     decoration: BoxDecoration(
                       color: background,
                       borderRadius: BorderRadius.circular(widget.radius),
@@ -704,7 +1204,7 @@ class _AppleMorphDestinationState extends State<_AppleMorphDestination> {
                             child: Row(
                               children: <Widget>[
                                 glyph,
-                                const SizedBox(width: 6),
+                                SizedBox(width: widget.gap),
                                 Expanded(child: label),
                               ],
                             ),
@@ -716,6 +1216,77 @@ class _AppleMorphDestinationState extends State<_AppleMorphDestination> {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 标记子树在 Apple 宽窗侧栏外壳（[AppleSidebarTabsShell]）的内容区里：内容区
+/// 从窗口上沿铺起，MediaQuery 顶部 padding 是窗口按钮行（桌面自绘标题行）的
+/// 让位，页面自己决定让不让（整页底色 / 侧栏底铺到顶、内容排在 padding 下）。
+/// 外壳里只为它画顶栏的页面（首页外壳的大标题条、各 tab）据此把让位还给自己。
+/// 纯布局标记，与设计系统分派无关。
+class AppleSidebarTopBleed extends InheritedWidget {
+  const AppleSidebarTopBleed({required super.child, super.key});
+
+  /// [context] 是否在侧栏外壳的内容区里。
+  static bool activeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<AppleSidebarTopBleed>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(AppleSidebarTopBleed oldWidget) => false;
+}
+
+/// 顶部标签栏选中 lens 的手势状态：[held] = 按住选中格；[center] = 正拖着
+/// lens（中心横坐标，[grab] 是起手点相对中心的偏移）；[pointer] = 从别的格
+/// 起手的横拖，松手时指针所在横坐标。坐标均为外壳坐标。
+@immutable
+class _AppleTabLensDrag {
+  const _AppleTabLensDrag({
+    this.center,
+    this.grab = 0,
+    this.pointer,
+    this.held = false,
+  });
+
+  final double? center;
+  final double grab;
+  final double? pointer;
+  final bool held;
+
+  bool get dragging => center != null || pointer != null;
+}
+
+/// Apple 宽窗顶部标签栏（及侧栏 ↔ 标签栏形变途中）的悬浮面：与底部标签栏
+/// 胶囊同一套无色透明栏玻璃（[fushiClearGlassSettings] 的 bar 档，自带一层），
+/// 静止不画常驻高光边（[fushiGlassButtonRestSettings]）；实色档（off）是系统
+/// 材质实色悬浮面，精简档走库的非着色器磨砂路径。
+class _AppleTabBarGlassSurface extends StatelessWidget {
+  const _AppleTabBarGlassSurface({required this.radius});
+
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    if (glassMaterialOf(context) == FushiGlassMaterial.off) {
+      return DecoratedBox(
+        decoration: fushiAppleSolidFloatingDecoration(
+          context,
+          shape: RoundedSuperellipseBorder(
+            borderRadius: BorderRadius.circular(radius),
+          ),
+        ),
+      );
+    }
+    return GlassContainer(
+      // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
+      useOwnLayer: true,
+      quality: fushiGlassQuality(context, prominent: true),
+      shape: LiquidRoundedSuperellipse(borderRadius: radius),
+      settings: fushiGlassButtonRestSettings(
+        fushiClearGlassSettings(context, bar: true),
+      ),
+      platformViewBackdrop: fushiGlassOverPlatformView(context),
     );
   }
 }

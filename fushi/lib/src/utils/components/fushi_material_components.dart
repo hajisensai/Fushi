@@ -61,6 +61,7 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
     show
         FushiMastheadActionGroup,
         FushiMastheadRole,
+        fushiMastheadCompact,
         fushiMastheadRoleOf,
         kFushiMastheadActionExtent,
         kFushiMastheadActionGap;
@@ -70,6 +71,8 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
+    show FushiAppleBarCluster;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -1046,7 +1049,7 @@ class _FushiListItemState extends State<FushiListItem> {
       ),
     );
     final BorderRadius radius = pill || inDialog
-        ? BorderRadius.circular(metrics.desktop ? 8 : 12)
+        ? BorderRadius.circular(metrics.desktop ? 8 * metrics.scale : 12)
         : BorderRadius.zero;
     return Padding(
       padding: pill
@@ -1066,6 +1069,12 @@ class _FushiListItemState extends State<FushiListItem> {
   }
 }
 
+/// 搜索框形态层（[FushiSearchBar] 的底）。
+///
+/// @design dual —— MD3：40 高填充胶囊（large 档 56 的 M3 SearchBar）；macOS 原生
+/// 平台：MacosTextField；Apple 设计系统：iOS 27 `tertiarySystemFill` 实色搜索
+/// 胶囊（高 36、无描边、灰放大镜 / 占位字、有内容时灰色 ⊗），macOS 27 宽窗
+/// 高 28、13pt（见 `FushiTextFieldControl` 的 Apple 分支）。
 class FushiSearchField extends StatelessWidget {
   const FushiSearchField({
     required this.controller,
@@ -1106,7 +1115,8 @@ class FushiSearchField extends StatelessWidget {
   /// 尺寸档：[FushiSearchFieldSize.regular] 是工具条 / 行内搜索胶囊（MD3 40、
   /// Apple 36）；[FushiSearchFieldSize.large] 是页面顶部的独立搜索栏——MD3 按
   /// M3 SearchBar（56 高全圆角、24 前置图标、48 触控的尾部动作、bodyLarge），
-  /// Apple 没有 56 的搜索栏，仍是 iOS 搜索胶囊（36），不拉伸。
+  /// Apple iOS 档是大标题下的独立搜索栏（44 高、20 放大镜，
+  /// [kFushiAppleSearchBarHeight]），macOS 档仍是 28 高的 NSSearchField。
   final FushiSearchFieldSize size;
 
   /// 尾部动作（排在清除 / 软键盘按钮之后），例如直达管理页的圆钮。large 档
@@ -1133,21 +1143,35 @@ class FushiSearchField extends StatelessWidget {
     final EdgeInsets padding = large
         ? const EdgeInsets.all(12)
         : const EdgeInsets.all(4);
+    // Apple（iOS 27 UISearchTextField / macOS 27 NSSearchField）：清除钮是灰色
+    // 实心 ⊗（xmark.circle.fill），屏幕键盘 / 粘贴辅助钮同为灰色小图标、排在
+    // 清除钮之后；macOS 宽窗的搜索框只有 28 高，图标再收一档。
+    final bool apple = isGlassDesign(context);
+    final bool appleDesktop = apple && FushiAppleMetrics.of(context).desktop;
+    final double appleIconSize = appleDesktop
+        ? 14 * fushiAppleMacScale(context)
+        : 16;
+    final Color? appleIconColor = apple
+        ? appleColorsOf(context).secondaryLabel
+        : null;
     final Widget? inputSuffix = _fushiTextFieldInputSuffix(
       context: context,
       controller: controller,
       onChanged: onChanged,
-      iconSize: iconSize,
-      padding: padding,
+      iconSize: apple ? appleIconSize : iconSize,
+      padding: apple ? const EdgeInsets.all(3) : padding,
+      color: appleIconColor,
+      revealOnFocus: focusNode,
     );
     return <Widget>[
       if (onClear != null && value.text.isNotEmpty)
         FushiIconButton(
           key: clearButtonKey,
-          icon: FushiIcons.close,
+          icon: apple ? CupertinoIcons.clear_circled_solid : FushiIcons.close,
           tooltip: t.clear,
-          size: iconSize,
-          padding: padding,
+          size: apple ? appleIconSize : iconSize,
+          padding: apple ? const EdgeInsets.all(3) : padding,
+          enabledColor: appleIconColor,
           padTouchTarget: true,
           onTap: () {
             onClear?.call();
@@ -1317,14 +1341,12 @@ class FushiSearchField extends StatelessWidget {
         valueListenable: controller,
         builder: (context, value, _) {
           final List<Widget> trailing = _trailing(context, value);
-          // 用户 2026-10-04「所有组件都要往液态玻璃靠」：搜索框是 iOS 26 的
-          // 玻璃搜索胶囊。胶囊形态（玻璃 bezel、深色下的静止底与细描边、
-          // 聚焦内环、降低透明度时回落实色）全由 FushiTextFieldControl 认出
-          // 前缀放大镜后给出，与库页搜索框同一实现——以前这里外包一层自己的
-          // GlassContainer、再把输入框填充压成近乎透明，聚焦光圈的 BoxShadow
-          // 会透过那层填充把整枚胶囊染成灰 / 白块。large 档在 Apple 下同为
-          // 36 的 iOS 搜索胶囊（Apple 没有 56 的搜索栏）。
-          return FushiTextFieldControl(
+          // iOS 27 搜索胶囊（tertiarySystemFill 实色、无描边、高 36）/ macOS 27
+          // 宽窗搜索框（高 28）：形态全由 FushiTextFieldControl 认出前缀放大镜
+          // 后给出（与设置页 / 库页页头的 CupertinoSearchTextField 同一套参数），
+          // 这里只装配放大镜、灰色 ⊗ 清除钮与输入辅助钮。large 档在 iOS 档是
+          // 大标题下的独立搜索栏（44 高，[FushiAppleLargeSearchScope]）。
+          final Widget field = FushiTextFieldControl(
             key: fieldKey,
             controller: controller,
             focusNode: focusNode,
@@ -1348,6 +1370,9 @@ class FushiSearchField extends StatelessWidget {
             onChanged: onChanged,
             onSubmitted: onSubmitted,
           );
+          return size == FushiSearchFieldSize.large
+              ? FushiAppleLargeSearchScope(child: field)
+              : field;
         },
       );
     } else if (isMacosPlatform(context)) {
@@ -1391,9 +1416,10 @@ class FushiSearchField extends StatelessWidget {
                   // 占位符与正文同字号、只换颜色（M3 规格；与 BUG-2973 对
                   // FushiTextField 的修法同一口径）：小一号的占位符在竖直居中的
                   // 单行里按基线对齐，会比正文偏下。
-                  hintStyle: tokens.type.listTitle.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                  hintStyle: fushiFieldTextStyle(tokens.type.listTitle)
+                      .copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
                   prefixIcon: leading == null
                       ? const FushiIcon(
                           FushiIcons.search,
@@ -1421,7 +1447,9 @@ class FushiSearchField extends StatelessWidget {
               controller: controller,
               focusNode: focusNode,
               autofocus: autofocus,
-              style: tokens.type.listTitle,
+              // 行距上下均分：bodyLarge 1.5 倍行高按比例分配时字形落在行盒
+              // 中线下方约 2px（见 [fushiFieldTextStyle]）。
+              style: fushiFieldTextStyle(tokens.type.listTitle),
               textAlignVertical: TextAlignVertical.center,
               decoration: decoration,
               keyboardType: keyboardType,
@@ -1660,7 +1688,8 @@ class _RenderFushiTouchTargetBox extends RenderShiftedBox {
 /// [FushiSearchField] 的尺寸档，见 [FushiSearchField.size]。
 enum FushiSearchFieldSize { regular, large }
 
-/// MD3 large 档（M3 SearchBar）的高度；Apple 下 large 仍是 36 的 iOS 搜索胶囊。
+/// MD3 large 档（M3 SearchBar）的高度；Apple iOS 档的 large 见
+/// [kFushiAppleSearchBarHeight]（44）。
 const double kFushiSearchFieldLargeHeight = 56;
 
 /// MD3 large 档的前置 / 尾部图标尺寸（M3 SearchBar 24dp）。
@@ -1671,7 +1700,7 @@ const double kFushiSearchFieldLargeIconSize = 24;
 /// 收窄 size 与 padding。
 const double kFushiSearchFieldIconSize = 18;
 
-class FushiTextField extends StatefulWidget {
+class FushiTextField extends StatefulWidget implements FushiAppleFormRowField {
   const FushiTextField({
     super.key,
     this.controller,
@@ -1808,6 +1837,9 @@ class _FushiTextFieldState extends State<FushiTextField> {
     if (widget.suffixIcon != null) return widget.suffixIcon;
     final TextEditingController? controller = widget.controller;
     final bool editable = !widget.readOnly && (widget.enabled ?? true);
+    if (isGlassDesign(context)) {
+      return _buildAppleSuffix(context, controller, editable);
+    }
     // 尺寸档下尾部钮收成紧凑尺寸（20 + 6 = 32），否则 48 的标准触控区会把
     // small（40）档撑高。
     final bool compact = widget.size != null;
@@ -1858,6 +1890,84 @@ class _FushiTextFieldState extends State<FushiTextField> {
       valueListenable: controller,
       builder: (BuildContext context, TextEditingValue value, Widget? _) =>
           row(value.text.isNotEmpty),
+    );
+  }
+
+  /// Apple（iOS 27 UITextField / macOS 27 NSTextField）的尾部件：清除钮是灰色
+  /// 实心 ⊗（`xmark.circle.fill`，tertiaryLabel），**编辑中**（字段聚焦且有内容）
+  /// 才出现（`clearButtonMode = .whileEditing`）；屏幕键盘 / 粘贴辅助钮同为
+  /// tertiaryLabel 小图标，也只在字段聚焦时出现。分组里的表单行
+  /// （[FushiAppleFormRowScope]）默认带清除钮。图标按 Apple 档收小，不撑高行。
+  Widget? _buildAppleSuffix(
+    BuildContext context,
+    TextEditingController? controller,
+    bool editable,
+  ) {
+    final bool desktop = FushiAppleMetrics.of(context).desktop;
+    final double iconSize = desktop ? 14 * fushiAppleMacScale(context) : 17;
+    const EdgeInsets padding = EdgeInsets.all(3);
+    final Color quiet = appleColorsOf(context).tertiaryLabel;
+    final bool toggle = widget.obscureText && widget.showObscureToggle;
+    final bool clear =
+        (widget.clearable || FushiAppleFormRowScope.of(context)) &&
+        editable &&
+        controller != null &&
+        !widget.obscureText;
+    final bool assist =
+        editable && widget.showInputAssist && controller != null;
+    if (!toggle && !clear && !assist) return null;
+    final Widget? assistButton = _fushiTextFieldInputSuffix(
+      context: context,
+      controller: assist ? controller : null,
+      onChanged: widget.onChanged,
+      iconSize: iconSize,
+      padding: padding,
+      padTouchTarget: false,
+      color: quiet,
+    );
+    Widget row(bool active, bool hasText) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (clear && active && hasText)
+          FushiIconButton(
+            icon: CupertinoIcons.clear_circled_solid,
+            tooltip: t.clear,
+            size: iconSize,
+            padding: padding,
+            padTouchTarget: false,
+            enabledColor: quiet,
+            onTap: () {
+              controller.clear();
+              widget.onChanged?.call('');
+              widget.onClear?.call();
+              _effectiveFocusNode.requestFocus();
+            },
+          ),
+        if (toggle)
+          FushiIconButton(
+            icon: _obscured ? FushiIcons.visibility : FushiIcons.visibilityOff,
+            tooltip: _obscured
+                ? t.text_field_password_show
+                : t.text_field_password_hide,
+            size: iconSize,
+            padding: padding,
+            padTouchTarget: false,
+            enabledColor: appleColorsOf(context).secondaryLabel,
+            onTap: () => setState(() => _obscured = !_obscured),
+          ),
+        if (assistButton != null && active) assistButton,
+      ],
+    );
+    return FushiFieldFocusReveal(
+      fieldFocus: _effectiveFocusNode,
+      builder: (BuildContext context, bool active) => controller == null
+          ? row(active, false)
+          : ValueListenableBuilder<TextEditingValue>(
+              valueListenable: controller,
+              builder:
+                  (BuildContext context, TextEditingValue value, Widget? _) =>
+                      row(active, value.text.isNotEmpty),
+            ),
     );
   }
 
@@ -2018,13 +2128,35 @@ Widget? _fushiTextFieldInputSuffix({
   double? iconSize,
   EdgeInsets? padding,
   bool padTouchTarget = true,
+  Color? color,
+  FocusNode? revealOnFocus,
 }) {
   if (controller == null) return null;
+  // Apple（iOS / macOS 没有常驻的输入辅助钮）：给了字段焦点节点就只在字段聚焦
+  // （或钮自己拿着焦点）时出现，不在每个框尾巴上常驻一枚键盘 / 粘贴图标。
+  if (revealOnFocus != null && isGlassDesign(context)) {
+    final Widget? button = _fushiTextFieldInputSuffix(
+      context: context,
+      controller: controller,
+      onChanged: onChanged,
+      iconSize: iconSize,
+      padding: padding,
+      padTouchTarget: padTouchTarget,
+      color: color,
+    );
+    if (button == null) return null;
+    return FushiFieldFocusReveal(
+      fieldFocus: revealOnFocus,
+      builder: (BuildContext context, bool active) =>
+          active ? button : const SizedBox.shrink(),
+    );
+  }
   // 彩色色块里的字段：尾部钮跟指示线 / 标题同一档压暗的块前景色；其余用
-  // IconButton 默认（M3 trailing icon = onSurfaceVariant）。
-  final Color? quiet = FushiFieldFillScope.foregroundOf(
-    context,
-  )?.withValues(alpha: 0.72);
+  // [color]（Apple 搜索框的灰色辅助钮）或 IconButton 默认（M3 trailing icon =
+  // onSurfaceVariant）。
+  final Color? quiet =
+      FushiFieldFillScope.foregroundOf(context)?.withValues(alpha: 0.72) ??
+      color;
   final TargetPlatform platform = Theme.of(context).platform;
   final bool isDesktop =
       platform == TargetPlatform.windows ||
@@ -2055,6 +2187,70 @@ Widget? _fushiTextFieldInputSuffix({
       }
     },
   );
+}
+
+/// 输入框尾部「只在编辑中出现」的件（Apple 的清除钮 / 输入辅助钮）：[builder]
+/// 的 `active` = 字段 [fieldFocus] 聚焦，或这组件里的按钮自己拿着焦点（键盘 /
+/// 手柄从字段 Tab 到按钮上时不消失）。整组挂在字段的 [TextFieldTapRegion] 里：
+/// 点按钮不算「点到字段外」，桌面上不会先失焦把按钮收掉、点击落空。
+///
+/// 与设计系统无关的行为原语（外观由 [builder] 给）；目前只有 Apple 分支用。
+class FushiFieldFocusReveal extends StatefulWidget {
+  const FushiFieldFocusReveal({
+    required this.fieldFocus,
+    required this.builder,
+    super.key,
+  });
+
+  final FocusNode fieldFocus;
+  final Widget Function(BuildContext context, bool active) builder;
+
+  @override
+  State<FushiFieldFocusReveal> createState() => _FushiFieldFocusRevealState();
+}
+
+class _FushiFieldFocusRevealState extends State<FushiFieldFocusReveal> {
+  bool _selfFocused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.fieldFocus.addListener(_onFieldFocus);
+  }
+
+  @override
+  void didUpdateWidget(FushiFieldFocusReveal oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fieldFocus != widget.fieldFocus) {
+      oldWidget.fieldFocus.removeListener(_onFieldFocus);
+      widget.fieldFocus.addListener(_onFieldFocus);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.fieldFocus.removeListener(_onFieldFocus);
+    super.dispose();
+  }
+
+  void _onFieldFocus() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextFieldTapRegion(
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onFocusChange: (bool focused) => setState(() => _selfFocused = focused),
+        child: widget.builder(
+          context,
+          widget.fieldFocus.hasFocus || _selfFocused,
+        ),
+      ),
+    );
+  }
 }
 
 class FushiSelectableChip extends StatelessWidget {
@@ -2823,8 +3019,9 @@ class FushiModalSheetFrame extends StatelessWidget {
   Widget _buildAppleHeader(BuildContext context, FushiDesignTokens tokens) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final TextTheme tt = Theme.of(context).textTheme;
-    final double pad = compact ? 20 : 24;
+    final double pad = compact ? 20 * macScale : 24;
     return Padding(
       padding: EdgeInsets.fromLTRB(pad, pad, pad, tokens.spacing.gap),
       child: Column(
@@ -2837,7 +3034,7 @@ class FushiModalSheetFrame extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: (tt.titleMedium ?? const TextStyle()).copyWith(
-                fontSize: compact ? 15 : 17,
+                fontSize: compact ? 15 * macScale : 17,
                 fontWeight: FontWeight.w600,
                 height: 1.3,
                 letterSpacing: 0,
@@ -4130,6 +4327,18 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
         ? widget.actionItems
         : const <Widget>[];
     final FushiHeaderSearchController? search = widget.search;
+    if (search != null && shellActions != null && isGlassDesign(context)) {
+      // Apple 库页外壳：搜索不进动作行，是大标题下常驻的整宽搜索框（iOS 27
+      // 图书），在本页的嵌套工具区里、随内容一起滚走。
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _buildRow(context, leading, actionItems),
+          _AppleHeaderSearchField(controller: search),
+        ],
+      );
+    }
     if (search != null && shellActions == null) {
       // 独立使用（不在库页外壳里）：展开搜索时整行换成搜索栏。
       return ListenableBuilder(
@@ -4268,6 +4477,7 @@ class _FushiPageHeaderRowState extends State<_FushiPageHeaderRow> {
                           )
                         : widget.appleActions
                         ? fushiAppleHeaderActionGroups(
+                            context,
                             resolvedItems,
                             expandLabels: expandLabels,
                           )
@@ -4374,22 +4584,27 @@ double _estimateHeaderActionsWidth(
   return total;
 }
 
-/// 页头动作行里一颗动作能否收进「⋯」：有点击回调的 [FushiIconButton]，且没标
-/// [FushiIconButton.alwaysVisible]、不在选中态（激活中的切换按钮收进菜单就看不出
-/// 它开着）。其它组件（文字按钮、自带菜单的按钮、装饰图标）恒外露——它们派生
-/// 不出菜单项。
+/// 页头动作行里一颗动作能否收进「⋯」：是动作的 [FushiIconButton]
+/// （[_isHeaderActionButton]），且没标 [FushiIconButton.alwaysVisible]、不在选中态
+/// （激活中的切换按钮收进菜单就看不出它开着）。其它组件（文字按钮、自带菜单的
+/// 按钮、装饰图标）恒外露——它们派生不出菜单项。
 bool fushiIsCollapsibleHeaderAction(Widget item) =>
-    item is FushiIconButton &&
-    item.onTap != null &&
-    !item.alwaysVisible &&
+    _isHeaderActionButton(item) &&
+    !(item as FushiIconButton).alwaysVisible &&
     item.selected != true;
 
-/// 标了 [FushiIconButton.alwaysVisible]、但派生得出菜单项的动作（有点击回调、
+/// 是不是一颗「动作」按钮：有点击回调，或显式禁用（`enabled: false`，回调常随
+/// 禁用一起置空）。禁用的动作照样参与收纳、在「⋯」里置灰——收不收只看宽度与
+/// 优先级，不看此刻能不能点；否则一颗按钮会随启用 / 禁用在动作行与「⋯」之间来回
+/// 跳（复习浏览页「撤销」写入完成一启用就被收走）。既没回调也没禁用的是装饰图标。
+bool _isHeaderActionButton(Widget item) =>
+    item is FushiIconButton && (item.onTap != null || !item.enabled);
+
+/// 标了 [FushiIconButton.alwaysVisible]、但派生得出菜单项的动作（是动作按钮、
 /// 不在选中态）：平时恒外露，只有 `collapsePinned` 的窄位才在最后收。
 bool _isPinnedHeaderAction(Widget item) =>
-    item is FushiIconButton &&
-    item.onTap != null &&
-    item.alwaysVisible &&
+    _isHeaderActionButton(item) &&
+    (item as FushiIconButton).alwaysVisible &&
     item.selected != true;
 
 /// [actions] 里可收纳动作的收纳顺序（最先收的在前）：
@@ -4488,8 +4703,37 @@ const ValueKey<String> kFushiHeaderOverflowMenuKey = ValueKey<String>(
 /// 一颗「⋯」），以及带 label 的动作是否展开成药丸。
 typedef FushiResolvedHeaderActions = ({List<Widget> items, bool expandLabels});
 
+/// 页面「⋯」（[FushiHeaderMoreButton]）里的项平铺成独立图标钮时的收纳优先级：
+/// 低于任何页面动作——宽度放不下时最先收回「⋯」。
+const int kFushiHeaderMoreEntryOverflowPriority = -1000;
+
+/// 「⋯」菜单项 → 平铺的图标钮：文案只进 tooltip（[FushiIconButton] 由它出
+/// Semantics），沿用菜单项的 key（测试 / 焦点驱动按同一个 key 定位，无论它此刻
+/// 平铺还是在菜单里）、同一个回调、同一个禁用态。
+FushiIconButton _headerActionOfMoreEntry(FushiHeaderMoreEntry entry) =>
+    FushiIconButton(
+      key: entry.key,
+      icon: entry.icon,
+      tooltip: entry.label,
+      enabled: entry.enabled,
+      overflowPriority: kFushiHeaderMoreEntryOverflowPriority,
+      onTap: entry.onSelected,
+    );
+
+/// Apple iOS 档（[fushiAppleUsesMacMetrics] 为 false）页头 / 顶栏最多平铺几颗
+/// 动作（iOS 27 导航栏尾部惯例，用户 2026-11-24 拍板），其余按收纳优先级收进
+/// 「⋯」。macOS 档与 M3E 不设上限（放得下就全平铺）。
+const int kFushiAppleIosHeaderMaxActions = 3;
+
+/// [fushiResolveHeaderActions] 在当前设计系统 / 档位下至少要收几颗：Apple iOS 档
+/// 超过 [kFushiAppleIosHeaderMaxActions] 的部分，其余 0。
+int fushiHeaderMinCollapsed(BuildContext context, int actionCount) =>
+    isGlassDesign(context) && !fushiAppleUsesMacMetrics(context)
+    ? math.max(0, actionCount - kFushiAppleIosHeaderMaxActions)
+    : 0;
+
 /// 页头 / 顶栏动作行的**唯一**自适应收纳判据（[FushiPageHeader]、外壳动作组
-/// [FushiShellHeaderActions]、自带 AppBar 的页面共用）。
+/// [FushiShellHeaderActions]、自带 AppBar 的页面共用；M3E 与 Apple 同一套）。
 ///
 /// 页面只声明动作与重要程度（[FushiIconButton.overflowPriority] /
 /// [FushiIconButton.alwaysVisible]），摆放在这里决定。[budget] 是动作区**实际**
@@ -4501,9 +4745,17 @@ typedef FushiResolvedHeaderActions = ({List<Widget> items, bool expandLabels});
 ///    至少收进一颗时出现，且它自身的宽度计入判定；
 /// 3. 全收也放不下：剩余外露动作交给调用方的横滑兜底。
 ///
+/// 页面自己挂的「⋯」（[FushiHeaderMoreButton]，库页的低频动作）也按这条走：
+/// 它的项先平铺成独立图标钮（[kFushiHeaderMoreEntryOverflowPriority]，最先收），
+/// 放不下才逐颗收回这颗「⋯」；一项都没收时「⋯」不出现（用户 2026-11-24「宽窗
+/// 有空间还是展开最好」，CLAUDE.md「工具栏默认平铺」）。
+///
 /// 收纳不改外露动作的相对顺序，「⋯」恒在最后——焦点遍历即「外露按钮 → ⋯」。
 /// 菜单项由被收纳动作的图标 + 文案（label 优先、回退 tooltip）派生，共用同一个
 /// onTap，禁用态同步置灰。[fit] 非空时展开方向带回差。
+///
+/// Apple iOS 档另有数量上限（[fushiHeaderMinCollapsed]）：宽度放得下也最多平铺
+/// [kFushiAppleIosHeaderMaxActions] 颗，不带字展开；M3E 判据不变。
 FushiResolvedHeaderActions fushiResolveHeaderActions(
   BuildContext context, {
   required List<Widget> actions,
@@ -4512,52 +4764,131 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
   bool collapsePinned = false,
   FushiHeaderOverflowFit? fit,
 }) {
-  if (actions.isEmpty || !budget.isFinite) {
-    return (items: actions, expandLabels: allowLabels);
+  // 页面自带的「⋯」：它的项展开进动作行（[flat]），记下每项在行里的位置与
+  // 「⋯」该落的位置（紧跟在它的项后面，即它原来的位置）。
+  final int pageMoreAt = actions.indexWhere(
+    (Widget item) => item is FushiHeaderMoreButton,
+  );
+  final FushiHeaderMoreButton? pageMore = pageMoreAt < 0
+      ? null
+      : actions[pageMoreAt] as FushiHeaderMoreButton;
+  final Map<int, FushiHeaderMoreEntry> entryAt = <int, FushiHeaderMoreEntry>{};
+  final List<Widget> flat = <Widget>[];
+  int moreSlot = -1;
+  for (int i = 0; i < actions.length; i++) {
+    if (i != pageMoreAt) {
+      flat.add(actions[i]);
+      continue;
+    }
+    // keepEntriesInMenu：页面的分节菜单不平铺，「⋯」恒在、项恒在菜单里。
+    if (!pageMore!.keepEntriesInMenu) {
+      for (final FushiHeaderMoreEntry entry in pageMore.entries) {
+        entryAt[flat.length] = entry;
+        flat.add(_headerActionOfMoreEntry(entry));
+      }
+    }
+    moreSlot = flat.length;
+  }
+
+  // 收掉 [hidden] 后的动作行：页面有「⋯」时被收的项回到它的菜单（页面原有项
+  // 在 entries，收进来的外露动作在分隔线上面的 leadingEntries，设计稿 11-20
+  // #16「不另生第二颗」），否则末尾另生一颗自适应「⋯」。
+  List<Widget> assemble(Set<int> hidden) {
+    final List<Widget> visible = <Widget>[];
+    if (pageMore == null) {
+      for (int i = 0; i < flat.length; i++) {
+        if (!hidden.contains(i)) visible.add(flat[i]);
+      }
+      if (hidden.isEmpty) return visible;
+      return <Widget>[
+        ...visible,
+        _headerOverflowMenuButton(<FushiIconButton>[
+          for (int i = 0; i < flat.length; i++)
+            if (hidden.contains(i)) flat[i] as FushiIconButton,
+        ]),
+      ];
+    }
+    final bool showMore =
+        hidden.isNotEmpty ||
+        pageMore.leadingEntries.isNotEmpty ||
+        pageMore.keepEntriesInMenu;
+    for (int i = 0; i <= flat.length; i++) {
+      if (i == moreSlot && showMore) {
+        visible.add(
+          FushiHeaderMoreButton(
+            key: pageMore.key,
+            buttonKey: pageMore.buttonKey,
+            keepEntriesInMenu: pageMore.keepEntriesInMenu,
+            entries: pageMore.keepEntriesInMenu
+                ? pageMore.entries
+                : <FushiHeaderMoreEntry>[
+                    for (int j = 0; j < flat.length; j++)
+                      if (hidden.contains(j) && entryAt[j] != null) entryAt[j]!,
+                  ],
+            leadingEntries: <FushiHeaderMoreEntry>[
+              for (int j = 0; j < flat.length; j++)
+                if (hidden.contains(j) && entryAt[j] == null)
+                  fushiHeaderMoreEntryOf(flat[j] as FushiIconButton, j),
+              ...pageMore.leadingEntries,
+            ],
+          ),
+        );
+      }
+      if (i < flat.length && !hidden.contains(i)) visible.add(flat[i]);
+    }
+    return visible;
+  }
+
+  final int minCollapsed = fushiHeaderMinCollapsed(context, flat.length);
+  if (flat.isEmpty || (!budget.isFinite && minCollapsed == 0)) {
+    return (items: assemble(const <int>{}), expandLabels: allowLabels);
   }
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final TextScaler textScaler = MediaQuery.textScalerOf(context);
-  if (allowLabels &&
+  if (minCollapsed == 0 &&
+      allowLabels &&
       _estimateHeaderActionsWidth(
             tokens,
-            actions,
+            assemble(const <int>{}),
             expandLabels: true,
             textScaler: textScaler,
           ) <=
           budget) {
     fit?.reset();
-    return (items: actions, expandLabels: true);
+    return (items: assemble(const <int>{}), expandLabels: true);
   }
   // [collapsePinned]：别的都收完还放不下时，标了 alwaysVisible 的按钮也收（排在
   // 收纳顺序最后）。给没有横滑余地的窄位用——页头大字顶栏窄窗下动作槽只有一颗
   // 按钮宽，「搜索 + ⋯」两颗排不下就只留「⋯」，不裁成半颗。
   final List<int> order = <int>[
-    ...fushiHeaderCollapseOrder(actions),
+    ...fushiHeaderCollapseOrder(flat),
     if (collapsePinned)
-      for (int i = actions.length - 1; i >= 0; i--)
-        if (_isPinnedHeaderAction(actions[i])) i,
+      for (int i = flat.length - 1; i >= 0; i--)
+        if (_isPinnedHeaderAction(flat[i])) i,
   ];
-  List<Widget> visibleWith(int collapsed) {
+
+  // 估算口径：外露动作 + 「⋯」（出现时）。页面「⋯」按它本身计宽，自适应「⋯」
+  // 用同形的探针按钮计宽。
+  double widthWith(int collapsed) {
     final Set<int> hidden = order.take(collapsed).toSet();
-    return <Widget>[
-      for (int i = 0; i < actions.length; i++)
-        if (!hidden.contains(i)) actions[i],
-    ];
+    final bool showMore =
+        hidden.isNotEmpty ||
+        (pageMore != null &&
+            (pageMore.leadingEntries.isNotEmpty || pageMore.keepEntriesInMenu));
+    return _estimateHeaderActionsWidth(tokens, <Widget>[
+      for (int i = 0; i < flat.length; i++)
+        if (!hidden.contains(i)) flat[i],
+      if (showMore) pageMore ?? _kHeaderOverflowProbe,
+    ], textScaler: textScaler);
   }
 
-  // 页面自己已挂了一颗「⋯」（[FushiHeaderMoreButton]）时，收纳的动作并进它的
-  // 菜单（分隔线隔开），不再另生一颗——否则窄位上就是并排两颗「⋯」（设计稿
-  // 11-20 #16）。它恒外露、不在收纳顺序里，宽度已计入，不再加探针宽。
-  final int pageMore = actions.indexWhere(
-    (Widget item) => item is FushiHeaderMoreButton,
-  );
-  double widthWith(int collapsed) =>
-      _estimateHeaderActionsWidth(tokens, <Widget>[
-        ...visibleWith(collapsed),
-        if (collapsed > 0 && pageMore < 0) _kHeaderOverflowProbe,
-      ], textScaler: textScaler);
-
-  final int collapsed = fit == null
+  if (!budget.isFinite) {
+    return (
+      items: assemble(order.take(math.min(minCollapsed, order.length)).toSet()),
+      expandLabels: false,
+    );
+  }
+  final int widthCollapsed = fit == null
       ? fushiHeaderCollapseCount(
           collapsible: order.length,
           widthWith: widthWith,
@@ -4568,9 +4899,10 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
           widthWith: widthWith,
           budget: budget,
           signature: Object.hashAll(<Object?>[
-            for (final Widget item in actions)
+            for (final Widget item in flat)
               item is FushiIconButton
                   ? Object.hash(
+                      item.key,
                       item.icon,
                       item.overflowPriority,
                       fushiIsCollapsibleHeaderAction(item),
@@ -4578,37 +4910,11 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
                   : (item.key ?? item.runtimeType),
           ]),
         );
-  if (collapsed == 0) return (items: actions, expandLabels: false);
-  final Set<int> hidden = order.take(collapsed).toSet();
-  if (pageMore >= 0) {
-    final FushiHeaderMoreButton more =
-        actions[pageMore] as FushiHeaderMoreButton;
-    final List<FushiHeaderMoreEntry> merged = <FushiHeaderMoreEntry>[
-      for (int i = 0; i < actions.length; i++)
-        if (hidden.contains(i))
-          fushiHeaderMoreEntryOf(actions[i] as FushiIconButton, i),
-    ];
-    return (
-      items: <Widget>[
-        for (int i = 0; i < actions.length; i++)
-          if (i == pageMore)
-            more.withLeadingEntries(merged)
-          else if (!hidden.contains(i))
-            actions[i],
-      ],
-      expandLabels: false,
-    );
-  }
-  return (
-    items: <Widget>[
-      ...visibleWith(collapsed),
-      _headerOverflowMenuButton(<FushiIconButton>[
-        for (int i = 0; i < actions.length; i++)
-          if (hidden.contains(i)) actions[i] as FushiIconButton,
-      ]),
-    ],
-    expandLabels: false,
+  final int collapsed = math.max(
+    widthCollapsed,
+    math.min(minCollapsed, order.length),
   );
+  return (items: assemble(order.take(collapsed).toSet()), expandLabels: false);
 }
 
 /// 页头标题位的保底宽（BUG-1184）：动作再多也给标题留几个字的宽度，随文字缩放
@@ -4705,15 +5011,21 @@ const double kFushiAppleNavBarSubtitleHeight = 52;
 /// 一枚 [FushiToolbar] 玻璃胶囊（单个按钮时收成正圆），文字动作
 /// （[fushiIsStandaloneHeaderAction]）不进胶囊，按 Apple 按钮自身形态排在旁边，
 /// 间距 10（与 [FushiToolbar] 的组间距同口径）。原顺序保留。
+///
+/// iOS 27 / macOS 27：图标动作的胶囊是库的共享玻璃胶囊（[FushiAppleBarCluster]：
+/// `GlassPinnedBarChrome` + `GlassBarItem.custom(background: shared)`，与库页
+/// 导航栏同一个），随画质档位，实色档是实色胶囊。
 Widget fushiAppleHeaderActionGroups(
+  BuildContext context,
   List<Widget> items, {
   bool expandLabels = false,
 }) {
   final List<Widget> segments = <Widget>[];
   List<Widget> run = <Widget>[];
+  final bool compact = fushiMastheadCompact(context);
   void flushRun() {
     if (run.isEmpty) return;
-    segments.add(FushiToolbar(children: run));
+    segments.add(FushiAppleBarCluster(items: run, compact: compact));
     run = <Widget>[];
   }
 
@@ -4742,10 +5054,12 @@ Widget fushiAppleHeaderActionGroups(
 /// Apple 导航栏的 leading：[FushiRouteBackButton] 自身就是玻璃圆钮，原样；
 /// 其它图标键（关闭 / 抽屉 / 自定义图标键）收进单按钮 [FushiToolbar]（正圆
 /// 玻璃钮，与返回键同一形态）；头像、品牌位等非按钮 leading 原样返回。
+///
+/// iOS 27：图标键是库的独立玻璃圆钮（[FushiAppleBarCircle]，`separate`）。
 Widget? fushiAppleNavLeading(Widget? leading) {
   if (leading == null || leading is FushiRouteBackButton) return leading;
   if (fushiIsChromeIconButton(leading)) {
-    return FushiToolbar(children: <Widget>[leading]);
+    return FushiAppleBarCircle(child: leading);
   }
   return leading;
 }
@@ -4753,14 +5067,11 @@ Widget? fushiAppleNavLeading(Widget? leading) {
 /// Apple 导航栏 inline 标题字阶：移动 17 semibold（iOS 26 导航栏）、桌面
 /// 20 bold（macOS 26 窗口工具栏标题），label 色。与 [FushiAppBar] 的 Apple
 /// 标题同一口径。
-TextStyle fushiAppleNavTitleStyle(BuildContext context) {
-  final bool desktop = fushiAppleCompact(context);
-  return (Theme.of(context).textTheme.titleLarge ?? const TextStyle()).copyWith(
-    fontSize: desktop ? 20 : 17,
-    fontWeight: desktop ? FontWeight.w700 : FontWeight.w600,
-    color: appleColorsOf(context).label,
-  );
-}
+///
+/// iOS 27 / macOS 27：移动 17 / 桌面 15 semibold（[fushiAppleInlineTitleStyle]，
+/// macOS 工具栏标题不再用 20 bold 的窗口大字）。
+TextStyle fushiAppleNavTitleStyle(BuildContext context) =>
+    fushiAppleInlineTitleStyle(context);
 
 /// Apple 导航栏的标题块：单行标题（+ 可选单行副标题，13pt secondaryLabel），
 /// 移动端居中、桌面靠前。
@@ -4934,8 +5245,16 @@ Widget _headerOverflowMenuButton(List<FushiIconButton> collapsed) {
   return Builder(
     key: kFushiHeaderOverflowMenuKey,
     builder: (BuildContext anchorContext) => FushiIconButton(
-      icon: FushiIcons.more,
+      // Apple：iOS 导航栏的「更多」是横向 ⋯。
+      icon: isGlassDesign(anchorContext)
+          ? FushiIcons.moreHoriz
+          : FushiIcons.more,
       tooltip: t.common_more_actions,
+      // Apple：收进来的动作带角标（如待确认身份数）时 ⋯ 也亮红点，不让提醒随
+      // 收起消失（设计稿 v5）。M3E 不变。
+      badge:
+          isGlassDesign(anchorContext) &&
+          collapsed.any((FushiIconButton action) => action.badge),
       onTap: () => _showHeaderOverflowMenu(anchorContext, collapsed),
     ),
   );
@@ -5047,7 +5366,14 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
         // −16：Apple 工具栏胶囊两端的内边距与 MD3 按钮组胶囊内边距的余量。
         final List<Widget> items = fushiResolveHeaderActions(
           context,
-          actions: widget.actions,
+          actions: masthead && apple && widget.search != null
+              ? <Widget>[
+                  for (final Widget action in widget.actions)
+                    if (action.key !=
+                        const ValueKey<String>('fushi-header-search-button'))
+                      action,
+                ]
+              : widget.actions,
           budget: masthead
               ? (constraints.maxWidth - 16) *
                     (44 /
@@ -5056,6 +5382,25 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
           collapsePinned: masthead,
           fit: _overflowFit,
         ).items;
+        if (masthead && apple) {
+          // Apple 库页导航栏：库的 bar button 渲染——每个动作一枚独立的中性
+          // 玻璃圆钮（GlassBarItemBackground.separate），跟随画质档位。🔍 不在
+          // 栏上：搜索是大标题下的整宽搜索框（见 [_AppleHeaderSearchField]）。
+          return FushiHeaderLabelScope(
+            expandLabels: false,
+            child: HorizontalDragScrollable(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                physics: const ClampingScrollPhysics(),
+                clipBehavior: Clip.none,
+                child: FushiAppleBarCluster(
+                  items: items,
+                  compact: fushiMastheadCompact(context),
+                ),
+              ),
+            ),
+          );
+        }
         if (masthead) {
           return FushiHeaderLabelScope(
             expandLabels: false,
@@ -5085,7 +5430,7 @@ class _FushiShellHeaderActionsState extends State<FushiShellHeaderActions> {
         // 带文字的动作自身就是一枚同高胶囊按钮，排在组旁（见
         // [fushiFloatingHeaderActionGroups]），不再被包进组胶囊。
         final Widget toolbar = apple
-            ? fushiAppleHeaderActionGroups(items)
+            ? fushiAppleHeaderActionGroups(context, items)
             : fushiFloatingHeaderActionGroups(
                 items,
                 (List<Widget> icons) => FushiToolbar(children: icons),
@@ -5258,6 +5603,12 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   /// 页头底下）：驱动顶部渐隐遮罩。
   final ValueNotifier<bool> _scrolledUnder = ValueNotifier<bool>(false);
 
+  /// Apple 导航栏形态下正文是否已滚到栏下面（驱动 soft scroll edge）。`late`：
+  /// 热重载时已存在的 State 也能建出来。
+  late final ValueNotifier<bool> _appleScrolledUnder = ValueNotifier<bool>(
+    false,
+  );
+
   /// [FushiPageScaffold.revealTitleAfterScroll]：标题是否已该显示。
   final ValueNotifier<bool> _titleRevealed = ValueNotifier<bool>(false);
 
@@ -5332,13 +5683,19 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     _chrome.dispose();
     _scrolledUnder.dispose();
     _titleRevealed.dispose();
+    _appleScrolledUnder.dispose();
     _mastheadRevealOffset.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (widget.mastheadEnabled && shellRedesignActive(context)) {
+    // Apple（Cupertino）的二级页默认是 iOS 27 / macOS 27 导航栏（下面的
+    // [FushiPageHeader] 导航行），不走页头大字；显式 `masthead: true`（库页等）
+    // 照旧。
+    final bool masthead =
+        widget.masthead ?? (widget.header == null && !isGlassDesign(context));
+    if (masthead && shellRedesignActive(context)) {
       return _buildMasthead(context);
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -5437,6 +5794,15 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
                           NotificationListener<Notification>(
                             onNotification: (Notification notification) {
                               _trackTitleReveal(notification);
+                              if (!floatingChrome) {
+                                final ScrollMetrics? m = _verticalScrollMetrics(
+                                  notification,
+                                );
+                                if (m != null) {
+                                  _appleScrolledUnder.value =
+                                      m.extentBefore > 0.5;
+                                }
+                              }
                               return floatingChrome &&
                                   _chrome.handleNotification(notification);
                             },
@@ -5468,6 +5834,26 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
                               ),
                             ),
                           ),
+                          // Apple（iOS 27）：正文滚到导航栏下面时，栏下沿是库的
+                          // soft scroll edge（GlassScrollEdgeEffect，不模糊）。
+                          if (!floatingChrome)
+                            Positioned(
+                              top: 0,
+                              left: 0,
+                              right: 0,
+                              child: ValueListenableBuilder<bool>(
+                                valueListenable: _appleScrolledUnder,
+                                builder:
+                                    (
+                                      BuildContext context,
+                                      bool under,
+                                      Widget? _,
+                                    ) => FushiAppleSoftScrollEdge(
+                                      visible: under,
+                                      color: tokens.surfaces.page,
+                                    ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -5761,6 +6147,7 @@ class FushiToolScaffold extends StatelessWidget {
                                     scrollDirection: Axis.horizontal,
                                     reverse: true,
                                     child: fushiAppleHeaderActionGroups(
+                                      context,
                                       actions,
                                     ),
                                   ),
@@ -7357,7 +7744,7 @@ class _ApplePopupGlassBackdrop extends StatelessWidget {
     // 背景快照组；液态玻璃着色器（liquid_glass_widgets）每个 GlassContainer 自带
     // 私有 BackdropGroup，进不了跨层的组。
     if (md3 ||
-        (realBlur && glassMaterialOf(context) == FushiGlassMaterial.frosted)) {
+        (realBlur && glassMaterialOf(context) == FushiGlassMaterial.minimal)) {
       return IgnorePointer(
         child: ClipRRect(
           borderRadius: borderRadius,
@@ -7551,6 +7938,7 @@ class FushiCompactSearchRow extends StatelessWidget {
       context: context,
       controller: controller,
       padTouchTarget: false,
+      revealOnFocus: focusNode,
     );
     // 与 [FushiSearchField] 同一形态语言：MD3 是 surfaceContainerHigh 填充胶囊。
     // Apple 复用 [FushiSearchField] 的 Apple 分支（[FushiTextFieldControl] 认出
@@ -7577,10 +7965,16 @@ class FushiCompactSearchRow extends StatelessWidget {
                 key: fieldKey,
                 controller: controller,
                 focusNode: focusNode,
-                style: tokens.type.listTitle,
+                // 正文行距上下均分（[fushiFieldTextStyle]）；占位符与正文同字号、
+                // 只换颜色——小一号的占位符按基线对齐到正文上，比框中线偏下
+                // （同 BUG-2973）。行盒在 44 高的行里竖直居中。
+                style: fushiFieldTextStyle(tokens.type.listTitle),
+                textAlignVertical: TextAlignVertical.center,
                 decoration: InputDecoration(
                   hintText: hintText,
-                  hintStyle: tokens.type.listSubtitle,
+                  hintStyle: fushiFieldTextStyle(
+                    tokens.type.listTitle,
+                  ).copyWith(color: tokens.type.listSubtitle.color),
                   isDense: true,
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                   // 嵌在卡片里的无框输入：不吃全局输入框主题的填充底。
@@ -7743,4 +8137,109 @@ class SchemeMiniUiPainter extends CustomPainter {
       old.backgroundColor != backgroundColor ||
       old.buttonColor != buttonColor ||
       old.barColor != barColor;
+}
+
+/// Apple 库页大标题下的整宽搜索框（iOS 27 图书：tertiarySystemFill 胶囊、灰
+/// 放大镜、无描边）——公共 [FushiSearchField] 的 Apple 分支。
+/// 绑定页头搜索的输入框与焦点（[FushiHeaderSearchController]），Ctrl+F / `/`
+/// 照旧落到这里；获得焦点时把本页主滚动区滚回顶部（大标题展开、搜索框露出）。
+/// Esc：有内容先清空，空框再按交还焦点。IME 组字期间不发查询。
+class _AppleHeaderSearchField extends StatefulWidget {
+  const _AppleHeaderSearchField({required this.controller});
+
+  final FushiHeaderSearchController controller;
+
+  @override
+  State<_AppleHeaderSearchField> createState() =>
+      _AppleHeaderSearchFieldState();
+}
+
+class _AppleHeaderSearchFieldState extends State<_AppleHeaderSearchField> {
+  FocusNode get _focus => widget.controller.fieldFocusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_onFocus);
+  }
+
+  @override
+  void didUpdateWidget(_AppleHeaderSearchField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.fieldFocusNode.removeListener(_onFocus);
+      _focus.addListener(_onFocus);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocus);
+    super.dispose();
+  }
+
+  void _onFocus() {
+    if (!_focus.hasFocus || !mounted) return;
+    final ScrollController? scroll = PrimaryScrollController.maybeOf(context);
+    if (scroll == null || !scroll.hasClients) return;
+    final ScrollPosition position = scroll.positions.first;
+    if (position.pixels <= position.minScrollExtent) return;
+    position.animateTo(
+      position.minScrollExtent,
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      curve: FushiMotion.standard,
+    );
+  }
+
+  bool get _composing {
+    final TextRange range = widget.controller.textController.value.composing;
+    return range.isValid && !range.isCollapsed;
+  }
+
+  KeyEventResult _onKey(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent ||
+        event.logicalKey != LogicalKeyboardKey.escape ||
+        _composing) {
+      return KeyEventResult.ignored;
+    }
+    if (widget.controller.hasQuery) {
+      widget.controller.clear();
+    } else {
+      _focus.unfocus();
+    }
+    return KeyEventResult.handled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool desktop = FushiAppleMetrics.of(context).desktop;
+    final double macScale = fushiAppleMacScale(context);
+    final FushiHeaderSearchController search = widget.controller;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        FushiDesignTokens.of(context).spacing.page,
+        desktop ? 4 * macScale : 2,
+        FushiDesignTokens.of(context).spacing.page,
+        desktop ? 8 * macScale : 10,
+      ),
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onKeyEvent: _onKey,
+        // 公共搜索框（[FushiSearchField] 的 Apple 分支：iOS 27 tertiaryFill
+        // 胶囊 / macOS 27 宽窗 28 高搜索框），与扩展页、库页工具条同一实现。
+        child: FushiSearchField(
+          fieldKey: search.fieldKey,
+          controller: search.textController,
+          focusNode: _focus,
+          hintText: search.hintText,
+          onChanged: (String query) {
+            if (!_composing) search.onQueryChanged(query);
+          },
+          onSubmitted: search.onQueryChanged,
+          onClear: search.clear,
+        ),
+      ),
+    );
+  }
 }

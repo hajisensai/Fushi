@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
@@ -781,19 +782,23 @@ class _VideoImportDialogState extends State<VideoImportDialog>
           title: t.video_import_title,
           body: _buildForm(context),
           actions: <Widget>[
-            FushiTextButton(
-              onPressed: importing ? null : () => Navigator.pop(context),
-              child: Text(t.dialog_cancel),
+            FushiSheetAction.cancel(
+              child: FushiTextButton(
+                onPressed: importing ? null : () => Navigator.pop(context),
+                child: Text(t.dialog_cancel),
+              ),
             ),
-            FushiFilledButton(
-              onPressed: _canImport ? _doImport : null,
-              child: importing
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: FushiCircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : Text(t.video_import_confirm),
+            FushiSheetAction.confirm(
+              child: FushiFilledButton(
+                onPressed: _canImport ? _doImport : null,
+                child: importing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(t.video_import_confirm),
+              ),
             ),
           ],
         ),
@@ -819,6 +824,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
           FushiStaggeredEntrance(
             index: 0,
             child: ImportPickBlock(
+              groupTitle: t.import_format_group_video,
               tone: ImportTone.cyan,
               icon: FushiIcons.video,
               title: video == null
@@ -839,6 +845,7 @@ class _VideoImportDialogState extends State<VideoImportDialog>
           FushiStaggeredEntrance(
             index: 1,
             child: ImportPickTileGrid(
+              groupTitle: t.import_format_group_subtitles,
               children: <Widget>[
                 ImportPickTile(
                   tone: ImportTone.cyan,

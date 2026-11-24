@@ -30,7 +30,7 @@ Future<_Counters> _pumpPopoverOverSeekBar(
       brightness: Brightness.dark,
     ),
     textTheme: Typography.material2021().white,
-    glass: apple ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: apple ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
     glassDesign: apple,
   );
   await tester.pumpWidget(

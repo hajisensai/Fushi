@@ -18,6 +18,8 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiVerticalDivider;
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/music_audio_effects.dart';
@@ -1216,7 +1218,7 @@ class _MusicAudioEffectsPanelState extends State<MusicAudioEffectsPanel>
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: SizedBox(
               height: height + 36,
-              child: VerticalDivider(width: 1, color: cs.outlineVariant),
+              child: const FushiVerticalDivider(width: 1),
             ),
           ),
           SizedBox(

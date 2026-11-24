@@ -31,6 +31,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/alist/alist_api_client.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
@@ -96,6 +97,8 @@ import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
+import 'package:fushi/src/media/import/apple/apple_import_sources.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/media/import/import_choice_dialog.dart';
 import 'package:fushi/src/media/import/import_dialog_blocks.dart';
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
@@ -114,7 +117,7 @@ enum MediaSourcesPresentation {
 
   /// 导入面拼贴的色块（导入稿 v2）：互联块 → 常驻来源块（拖动手柄重排）→
   /// 「添加来源」末块（兼空状态）→ 可选「连接服务器 ›」块。外层是
-  /// `ImportCollagePage`，它负责区头与模块色（`ImportToneScope`）。
+  /// `ImportPageLayout`，它负责区头与模块色（`ImportToneScope`）。
   blocks,
 }
 
@@ -123,7 +126,8 @@ enum MediaSourcesPresentation {
 /// 「添加来源」按钮**不在**本视图里——它由外层提供（对话框放页脚、页面放页头动作），
 /// 经 `GlobalKey<MediaSourcesViewState>` 调 [MediaSourcesViewState.addSource]。这样
 /// 两种语境各自遵守自己的 chrome 约定，而行为只有一份。
-class MediaSourcesView extends ConsumerStatefulWidget {
+class MediaSourcesView extends ConsumerStatefulWidget
+    implements AppleImportSourcesComposer {
   const MediaSourcesView({
     required this.mediaKind,
     super.key,
@@ -144,6 +148,12 @@ class MediaSourcesView extends ConsumerStatefulWidget {
 
   /// 画法（见 [MediaSourcesPresentation]），默认列表。
   final MediaSourcesPresentation presentation;
+
+  /// 色块呈现在 Cupertino 主题下不画色块，改把数据交给 Apple 导入布局
+  /// （[AppleImportScope]，2026-11-24 方案 A）。
+  @override
+  bool get composesAppleImport =>
+      presentation == MediaSourcesPresentation.blocks;
 
   /// 色块呈现下第一个块的错峰序号（`ImportSurfaceSpec.sourceEntranceIndex`）。
   final int entranceIndexOffset;
@@ -499,7 +509,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget body = widget.presentation == MediaSourcesPresentation.blocks
-        ? _buildBlocks()
+        ? (isGlassDesign(context) ? _buildApple(context) : _buildBlocks())
         : _buildBody(tokens);
     return widget.scrollable ? SingleChildScrollView(child: body) : body;
   }
@@ -608,6 +618,57 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
     );
   }
 
+  /// Cupertino 主题下的导入页来源区（方案 A）：与色块同一份 [_blockDataFor]、同一组
+  /// 动作，只交出数据，由外层 Apple 导入布局经 [AppleImportScope] 决定组放在哪一栏
+  /// （macOS 档宽窗双栏）；没有外层布局时按单栏自己画。
+  Widget _buildApple(BuildContext context) {
+    final List<SourceLibraryRow>? rows = _rows;
+    final bool? interconnectEnabled = _interconnectEnabled;
+    final bool loaded = rows != null && interconnectEnabled != null;
+    final bool busy = isBusy;
+    final AppleImportSourcesData data = AppleImportSourcesData(
+      sources: loaded
+          ? <ImportSourceBlockData>[
+              for (final SourceLibraryRow row in rows) _blockDataFor(row),
+            ]
+          : null,
+      interconnectEnabled: interconnectEnabled,
+      onInterconnectChanged: (bool value) =>
+          unawaited(_setInterconnectEnabled(value)),
+      onReorder: (int from, int to) {
+        final List<SourceLibraryRow>? current = _rows;
+        if (current == null) return;
+        setState(() {
+          final SourceLibraryRow item = current.removeAt(from);
+          current.insert(to, item);
+        });
+        _persistOrder();
+      },
+      onAddSource: busy ? null : () => unawaited(addSource()),
+      addSourceHint: rows == null || rows.isEmpty
+          ? t.media_source_list_empty
+          : (widget.addSourceHint ??
+                '${t.media_source_add_local_folder} · '
+                    '${t.media_source_add_network}'),
+      onBrowseInterconnect: widget.onBrowseInterconnect,
+      browseLabel: widget.interconnectBrowseLabel,
+      browseDisabledHint: widget.interconnectBrowseDisabledHint,
+      onConnectServer: widget.onConnectServer,
+      connectServerHint: widget.connectServerHint,
+    );
+    final AppleImportScope? scope = AppleImportScope.maybeOf(context);
+    if (scope != null) return scope.compose(context, data);
+    final List<Widget> network = appleImportNetworkRows(context, data);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        if (network.isNotEmpty) AdaptiveSettingsSection(children: network),
+        AppleImportSourcesSection(data: data),
+      ],
+    );
+  }
+
   /// 一个扫描根在色块上的数据：与列表行（[_buildRow] / [_buildStatusLine]）
   /// 同一批字段、同一组动作。
   ImportSourceBlockData _blockDataFor(SourceLibraryRow row) {
@@ -654,6 +715,7 @@ class MediaSourcesViewState extends ConsumerState<MediaSourcesView>
           ? null
           : t.media_source_last_scan(time: _formatTime(scannedAt)),
       isPrivate: row.isPrivate,
+      remote: row.transport != 'local',
       autoOwnerText: owner == null
           ? null
           : t.media_source_auto_added_from(source: owner),
@@ -3113,16 +3175,20 @@ class _NetworkSourceFormDialogState extends State<_NetworkSourceFormDialog> {
         ),
       ],
       actions: <Widget>[
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.pop(context),
-          child: Text(t.dialog_cancel),
+        FushiSheetAction.cancel(
+          child: adaptiveDialogAction(
+            context: context,
+            onPressed: () => Navigator.pop(context),
+            child: Text(t.dialog_cancel),
+          ),
         ),
-        adaptiveDialogAction(
-          context: context,
-          isDefaultAction: true,
-          onPressed: _submit,
-          child: Text(t.media_source_add),
+        FushiSheetAction.confirm(
+          child: adaptiveDialogAction(
+            context: context,
+            isDefaultAction: true,
+            onPressed: _submit,
+            child: Text(t.media_source_add),
+          ),
         ),
       ],
     );

@@ -8,7 +8,9 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 会话音轨面板（共享内容组件）：轨列表 + 逐轨试听 + 设为语音轨 + 排除 BGM/恢复。
 ///
@@ -146,6 +148,19 @@ class GalTrackTile extends StatelessWidget {
     // voice（SE、系统音、播完的旧语音都在环里），于是列表里永远挂着一堆点了没声音
     // 的轨。真正表达「此刻有没有响」的是时刻窗内片段数，见 [GalAudioTrack.isSilentAtCue]。
     final bool silent = track.isSilentAtCue;
+    final String subtitle = <String>[
+      '0x${track.sourcePtr.toRadixString(16)}',
+      '${t.game_track_clips} ${track.clipCount}',
+      // 能量只在真算得出来时显示。旧实现无条件打印，非 16-bit 轨和此刻
+      // 没响的轨都显示「能量 -1.0」——那是内部哨兵值，不是给用户看的。
+      if (track.avgEnergy >= 0)
+        '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
+      if (excluded) t.game_track_bgm,
+      if (silent) t.game_track_silent_at_cue,
+    ].join(' · ');
+    if (isGlassDesign(context)) {
+      return _buildApple(context, silent: silent, subtitle: subtitle);
+    }
     return IgnorePointer(
       ignoring: silent,
       child: Opacity(
@@ -159,27 +174,14 @@ class GalTrackTile extends StatelessWidget {
           title: Text(
             '${t.game_track_voice} ${track.orderIndex + 1} · ${format.sampleRate} Hz · ${format.channels} ch',
           ),
-          subtitle: Text(
-            <String>[
-              '0x${track.sourcePtr.toRadixString(16)}',
-              '${t.game_track_clips} ${track.clipCount}',
-              // 能量只在真算得出来时显示。旧实现无条件打印，非 16-bit 轨和此刻
-              // 没响的轨都显示「能量 -1.0」——那是内部哨兵值，不是给用户看的。
-              if (track.avgEnergy >= 0)
-                '${t.game_track_energy} ${track.avgEnergy.toStringAsFixed(1)}',
-              if (excluded) t.game_track_bgm,
-              if (silent) t.game_track_silent_at_cue,
-            ].join(' · '),
-          ),
+          subtitle: Text(subtitle),
           trailing: Wrap(
             spacing: 4,
             children: <Widget>[
               // BUG-1027：逐轨试听——抓该轨最近整句 PCM 播放，帮用户判断这条轨
               // 是语音还是 BGM，再决定选轨/排除。播放中变停止按钮。
               FushiIconButton(
-                icon: previewing
-                    ? Icons.stop_circle_outlined
-                    : Icons.play_circle_outline,
+                icon: previewing ? FushiIcons.stop : FushiIcons.playCircle,
                 tooltip: previewing
                     ? t.game_track_preview_stop
                     : t.game_track_preview,
@@ -200,6 +202,102 @@ class GalTrackTile extends StatelessWidget {
                 onTap: () => onToggleExcluded(!excluded),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Cupertino 行：行首试听圆钮、标题 / 副标题、选中行尾 ✓、行尾开关「参与配对」
+  /// （= 未排除为 BGM）。整行点 = 选为语音轨（可选且未排除时）。动作与 M3E 三个
+  /// 图标钮同一组回调。
+  Widget _buildApple(
+    BuildContext context, {
+    required bool silent,
+    required String subtitle,
+  }) {
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final PcmFormat format = track.format;
+    final bool canSelect = selectable && !excluded;
+    return IgnorePointer(
+      ignoring: silent,
+      child: Opacity(
+        opacity: silent ? 0.56 : 1,
+        child: Semantics(
+          selected: selected,
+          child: FushiAppleRow(
+            selected: selected,
+            onTap: canSelect ? onSelect : null,
+            child: Padding(
+              padding: EdgeInsetsDirectional.fromSTEB(
+                4,
+                metrics.rowVertical,
+                metrics.rowHorizontal,
+                metrics.rowVertical,
+              ),
+              child: Row(
+                children: <Widget>[
+                  FushiIconButton(
+                    icon: previewing ? FushiIcons.stop : FushiIcons.playCircle,
+                    tooltip: previewing
+                        ? t.game_track_preview_stop
+                        : t.game_track_preview,
+                    enabledColor: apple.accent,
+                    onTap: onPreview,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        FushiTooltip(
+                          message:
+                              selectTooltip ?? t.game_track_select_as_voice,
+                          child: Text(
+                            '${t.game_track_voice} ${track.orderIndex + 1} · ${format.sampleRate} Hz · ${format.channels} ch',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: metrics
+                                .titleStyle(context)
+                                .copyWith(
+                                  color: excluded
+                                      ? apple.tertiaryLabel
+                                      : apple.label,
+                                ),
+                          ),
+                        ),
+                        Text(
+                          subtitle,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: metrics
+                              .subtitleStyle(context)
+                              .copyWith(color: apple.secondaryLabel),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (selected) ...<Widget>[
+                    const SizedBox(width: 6),
+                    const FushiAppleCheckmark(),
+                  ],
+                  const SizedBox(width: 8),
+                  FushiTooltip(
+                    message: excluded
+                        ? t.game_track_restore
+                        : t.game_track_exclude_bgm,
+                    child: FushiSwitch(
+                      value: !excluded,
+                      onChanged: selectable
+                          ? (bool participate) => onToggleExcluded(!participate)
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),

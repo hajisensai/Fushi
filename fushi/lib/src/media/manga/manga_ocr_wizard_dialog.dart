@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:path/path.dart' as p;
@@ -830,6 +831,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     if (book != null) {
       // 已入库的书：只读的已选行（不能换书）。
       return ImportPickBlock(
+        groupTitle: t.import_group_source,
         tone: ImportTone.violet,
         icon: FushiIcons.books,
         title: book.title,
@@ -839,6 +841,7 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
     }
     final String? dir = _imageDir;
     return ImportPickBlock(
+      groupTitle: t.import_group_source,
       tone: ImportTone.violet,
       icon: FushiIcons.folderOpen,
       title: dir == null ? t.manga_ocr_wizard_pick_folder : p.basename(dir),
@@ -1075,24 +1078,35 @@ class _MangaOcrWizardDialogState extends ConsumerState<MangaOcrWizardDialog> {
   List<Widget> _buildActions(bool busy) {
     if (_stage == _WizardStage.running) {
       return <Widget>[
-        FushiTextButton(onPressed: _cancelRun, child: Text(t.dialog_cancel)),
+        FushiSheetAction.cancel(
+          child: FushiTextButton(
+            onPressed: _cancelRun,
+            child: Text(t.dialog_cancel),
+          ),
+        ),
       ];
     }
     return <Widget>[
-      FushiTextButton(
-        onPressed: busy ? null : () => Navigator.pop(context),
-        child: Text(t.dialog_cancel),
+      FushiSheetAction.cancel(
+        child: FushiTextButton(
+          onPressed: busy ? null : () => Navigator.pop(context),
+          child: Text(t.dialog_cancel),
+        ),
       ),
       if (widget.existingBook == null)
-        FushiOutlinedButton(
-          onPressed: _folderStatus == MangaOcrFolderStatus.valid && !busy
-              ? () => unawaited(_importWithoutOcr())
-              : null,
-          child: Text(t.manga_import_direct),
+        FushiSheetAction.other(
+          child: FushiOutlinedButton(
+            onPressed: _folderStatus == MangaOcrFolderStatus.valid && !busy
+                ? () => unawaited(_importWithoutOcr())
+                : null,
+            child: Text(t.manga_import_direct),
+          ),
         ),
-      FushiFilledButton(
-        onPressed: _canRun && !busy ? () => unawaited(_run()) : null,
-        child: Text(t.manga_ocr_wizard_run),
+      FushiSheetAction.confirm(
+        child: FushiFilledButton(
+          onPressed: _canRun && !busy ? () => unawaited(_run()) : null,
+          child: Text(t.manga_ocr_wizard_run),
+        ),
       ),
     ];
   }

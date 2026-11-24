@@ -131,6 +131,11 @@
 | [BUG-5421](bugs/BUG-5421-web-video-page-screenshot-noop.md) | 🚧 | 🚧 | 内置网页播放器页（WebVideoFushiPage）按 S / Shift+S 截图、识别画面文字静默无反应 |
 | [BUG-5420](bugs/BUG-5420-web-video-page-arrow-seek-noop.md) | 🚧 | 🚧 | 内置网页播放器页（WebVideoFushiPage）放 YouTube 时 ←/→ 快退快进没反应 |
 | [BUG-5417](bugs/BUG-5417-web-video-screenshot-shortcut-noop.md) | ✅ | ✅ | 网页档（YouTube 等站点视频）按 S 截图 / PageUp·PageDown 换章没反应 |
+> 共 4702 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5422](bugs/BUG-5422-video-cover-backfill-watch-in-initstate.md) | ✅ | ✅ | video-cover-backfill-watch-in-initstate |
 | [BUG-5402](bugs/BUG-5402-media-server-favorite-jump-dead-end.md) | ✅ | ✅ | 媒体服务器直接串流（未入库）的收藏句在收藏夹点了没反应 |
 | [BUG-5401](bugs/BUG-5401-anilist-cover-search-novels-only.md) | ✅ | ✅ | anilist-cover-search-novels-only |
 | [BUG-5400](bugs/BUG-5400-series-key-split-volume-parts.md) | ✅ | ✅ | series-key-split-volume-parts |
@@ -171,7 +176,9 @@
 | [BUG-5361](bugs/BUG-5361-overlay-handoff-stale-locate-reply.md) | ✅ | ✅ | 覆盖窗转交高级制卡：定位往返途中手动查别的词，旧回包仍开对话框 |
 | [BUG-5360](bugs/BUG-5360-jimaku-mixed-numbering-server-fallback.md) | ✅ | ✅ | Jimaku 混合编号：本地集号命中挡住服务端按集回退，要的语言 / 版本整个漏掉 |
 | [BUG-5359](bugs/BUG-5359-sync-compare-chaptered-manga-apply-throws.md) | ✅ | ✅ | 对比弹窗「应用」章节式互联漫画时书级进度抛 ArgumentError，并短路有声书断点 |
+| [BUG-5359](bugs/BUG-5359-media-server-add-row-dead-when-services-off.md) | ✅ | ✅ | 媒体服务器列表「去设置添加服务器」在线服务模块关着时点了没反应 |
 | [BUG-5358](bugs/BUG-5358-interconnect-manga-volume-progress-landing-not-atomic.md) | ✅ | ✅ | 单卷互联漫画同步落地书级 / 章级分两次写，夹着翻页时章级退回 host 旧页 |
+| [BUG-5358](bugs/BUG-5358-home-edit-jiggle-semantics-saturates-ui.md) | ✅ | ✅ | Cupertino 首页编辑态主线程被占满（「一进编辑首页就卡死」） |
 | [BUG-5357](bugs/BUG-5357-manga-novel-arrow-direction-parity.md) | ✅ | ✅ | 小说与漫画左右翻页方向判据不一致 |
 | [BUG-5356](bugs/BUG-5356-bluray-playall-episode-axis-anchors.md) | ✅ | ✅ | 原盘「全部播放」按集换库身份后，时间锚点仍在整条播放列表时间轴上 |
 | [BUG-5355](bugs/BUG-5355-music-visualizer-top-band-and-picker-clip.md) | ✅ | ✅ | music-visualizer-top-band-and-picker-clip |

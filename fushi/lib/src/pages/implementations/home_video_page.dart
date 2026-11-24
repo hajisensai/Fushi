@@ -170,7 +170,8 @@ import 'package:fushi/src/pages/implementations/video_library_drop_port.dart';
 import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
 import 'package:fushi/src/pages/implementations/library_view_options.dart';
 import 'package:fushi/src/models/library_grid_columns.dart'
-    show LibraryGridDomain;
+    show LibraryGridDomain, libraryGridColumnChoices;
+import 'package:fushi/src/pages/implementations/library_layout/library_grid_zoom.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -2151,86 +2152,91 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // BUG-5387：整轮回填登记成当前库的后台工作。关库 / 换库（备份恢复等）时被取消，
       // 取消后的 SQL 发不出去，关库等这一轮退出才真关——不会再有「旧库快照里的封面」
       // 打在已关闭或已换掉的库上。
-      await appModel.database.runBackgroundWork<void>('video.coverBackfill', (
-        DatabaseWorkToken work,
-      ) async {
-        final List<VideoBookRow> rows = await widget.repo.listAll();
-        for (final VideoBookRow row in rows) {
-          if (!mounted) return;
-          work.throwIfCancelled();
-          final String? cover = row.coverPath;
-          // 全部 async：回填循环跑在 UI isolate，视频 / 封面常在网络盘上，同步 stat
-          // 逐条冻结界面与同 isolate 的互联 host（BUG-3756）。
-          if (cover != null && cover.isNotEmpty && await File(cover).exists()) {
-            continue; // 已有封面。
-          }
-          final String path = row.videoPath;
-          if (!isLocalFrameExtractableVideoSource(path)) {
-            continue; // 空 / 流 URL / 播放列表清单：无本地帧可抽。
-          }
-          if (!await File(path).exists()) {
-            // 文件不在磁盘上（外接盘未挂载 / 已被移走 / 库里是陈旧路径）：抽不出帧，
-            // 而这条路径**整个 ffmpeg 子进程期间都占着进程级封面写锁**
-            // （VideoCoverMutationGate），白等一个必然失败的抽帧会把同期的删除、
-            // 手选封面、刮削一起堵在后面。判据必须在进闸门之前。
-            continue;
-          }
-          if (!await CoverBackfillLedger.instance.shouldAttempt(path)) {
-            continue; // 此前失败且文件未变：不再白烧 ffmpeg。
-          }
-          // 上面几次 async 文件判据期间页面可能已经销毁：不再进闸门读写库 / 起 ffmpeg。
-          if (!mounted) return;
-          bool admitted = false;
-          final String? extracted = await VideoCoverMutationGate.runExclusive(
-            () async {
-              // listAll 快照与真正拿到封面写锁之间，路径自愈、刮削或手选封面都可能已经
-              // 提交。临界区内重读当前行，已有可用封面或视频路径已变时不再拿旧快照覆盖。
-              final VideoBookRow? current = await widget.repo.getByBookUid(
-                row.bookUid,
-              );
-              if (current == null || current.videoPath != path) return null;
-              final String? currentCover = current.coverPath;
-              if (currentCover != null &&
-                  currentCover.isNotEmpty &&
-                  await File(currentCover).exists()) {
-                return null;
-              }
-              final CoverMetaStore? coverMetaStore =
-                  await _prepareAutoFrameCover(row.bookUid);
-              if (coverMetaStore == null) return null;
-              admitted = true;
-              final String? result = await extractVideoCover(
-                videoPath: path,
-                bookUid: row.bookUid,
-                // BUG-1867：回填是 best-effort 后台产线，「这文件给不出封面」（无视频流
-                // 的 BDMV 音轨 m2ts、seek 落在空洞区、torrent 还没下完）是预期内的正常
-                // 结果，不是 app 出错——书架显示占位图本身就是反馈。降级后这两段
-                // （内嵌封面 + 抽帧）的失败**不计入错误计数、不落盘**，转入日志页的
-                // 诊断/取证分节，证据照旧随复制/上传带走。ffmpeg 根本起不来仍是真错误。
-                diagnosticOnly: true,
-              );
-              if (result == null) return null;
-              await widget.repo.updateCover(row.bookUid, result);
-              return await _commitAutoFrameCover(coverMetaStore, row.bookUid)
-                  ? result
-                  : null;
-            },
-          );
-          if (!admitted) continue;
-          if (extracted == null) {
-            await CoverBackfillLedger.instance.recordFailure(
-              path,
-              reason: await File(path).exists()
-                  ? 'extract-failed'
-                  : 'file-missing',
+      // 本方法从 initState 同步进来（首个 await 之前就走到这里），只能用不订阅的
+      // appModelNoUpdate：appModel 是 ref.watch，initState 里调用即断言。
+      await appModelNoUpdate.database.runBackgroundWork<void>(
+        'video.coverBackfill',
+        (DatabaseWorkToken work) async {
+          final List<VideoBookRow> rows = await widget.repo.listAll();
+          for (final VideoBookRow row in rows) {
+            if (!mounted) return;
+            work.throwIfCancelled();
+            final String? cover = row.coverPath;
+            // 全部 async：回填循环跑在 UI isolate，视频 / 封面常在网络盘上，同步 stat
+            // 逐条冻结界面与同 isolate 的互联 host（BUG-3756）。
+            if (cover != null &&
+                cover.isNotEmpty &&
+                await File(cover).exists()) {
+              continue; // 已有封面。
+            }
+            final String path = row.videoPath;
+            if (!isLocalFrameExtractableVideoSource(path)) {
+              continue; // 空 / 流 URL / 播放列表清单：无本地帧可抽。
+            }
+            if (!await File(path).exists()) {
+              // 文件不在磁盘上（外接盘未挂载 / 已被移走 / 库里是陈旧路径）：抽不出帧，
+              // 而这条路径**整个 ffmpeg 子进程期间都占着进程级封面写锁**
+              // （VideoCoverMutationGate），白等一个必然失败的抽帧会把同期的删除、
+              // 手选封面、刮削一起堵在后面。判据必须在进闸门之前。
+              continue;
+            }
+            if (!await CoverBackfillLedger.instance.shouldAttempt(path)) {
+              continue; // 此前失败且文件未变：不再白烧 ffmpeg。
+            }
+            // 上面几次 async 文件判据期间页面可能已经销毁：不再进闸门读写库 / 起 ffmpeg。
+            if (!mounted) return;
+            bool admitted = false;
+            final String? extracted = await VideoCoverMutationGate.runExclusive(
+              () async {
+                // listAll 快照与真正拿到封面写锁之间，路径自愈、刮削或手选封面都可能已经
+                // 提交。临界区内重读当前行，已有可用封面或视频路径已变时不再拿旧快照覆盖。
+                final VideoBookRow? current = await widget.repo.getByBookUid(
+                  row.bookUid,
+                );
+                if (current == null || current.videoPath != path) return null;
+                final String? currentCover = current.coverPath;
+                if (currentCover != null &&
+                    currentCover.isNotEmpty &&
+                    await File(currentCover).exists()) {
+                  return null;
+                }
+                final CoverMetaStore? coverMetaStore =
+                    await _prepareAutoFrameCover(row.bookUid);
+                if (coverMetaStore == null) return null;
+                admitted = true;
+                final String? result = await extractVideoCover(
+                  videoPath: path,
+                  bookUid: row.bookUid,
+                  // BUG-1867：回填是 best-effort 后台产线，「这文件给不出封面」（无视频流
+                  // 的 BDMV 音轨 m2ts、seek 落在空洞区、torrent 还没下完）是预期内的正常
+                  // 结果，不是 app 出错——书架显示占位图本身就是反馈。降级后这两段
+                  // （内嵌封面 + 抽帧）的失败**不计入错误计数、不落盘**，转入日志页的
+                  // 诊断/取证分节，证据照旧随复制/上传带走。ffmpeg 根本起不来仍是真错误。
+                  diagnosticOnly: true,
+                );
+                if (result == null) return null;
+                await widget.repo.updateCover(row.bookUid, result);
+                return await _commitAutoFrameCover(coverMetaStore, row.bookUid)
+                    ? result
+                    : null;
+              },
             );
-            continue;
+            if (!admitted) continue;
+            if (extracted == null) {
+              await CoverBackfillLedger.instance.recordFailure(
+                path,
+                reason: await File(path).exists()
+                    ? 'extract-failed'
+                    : 'file-missing',
+              );
+              continue;
+            }
+            CoverBackfillLedger.instance.clear(path);
+            if (!mounted) return;
+            refreshShelfThrottled();
           }
-          CoverBackfillLedger.instance.clear(path);
-          if (!mounted) return;
-          refreshShelfThrottled();
-        }
-      });
+        },
+      );
     } on DatabaseWorkCancelledException {
       // 库要关了：剩下的下次进视频页再补。
     } finally {
@@ -5917,7 +5923,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   if (widget.section != VideoLibrarySection.home) ...<Widget>[
                     if (isCupertinoPlatform(context)) ...<Widget>[
                       _buildVideoSearchBar(allTags),
-                      _buildTagFilterBar(allTags),
+                      // Apple 下标签胶囊在搜索行下面的筛选行里（iOS 档）或侧栏
+                      // （macOS 档），这里不再另起一行。
+                      if (!isGlassDesign(context)) _buildTagFilterBar(allTags),
                     ] else ...<Widget>[
                       _buildTagFilterBar(
                         allTags,
@@ -5925,25 +5933,34 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                       ),
                     ],
                   ],
-                  VideoOnlineServicesBanner(
-                    preferences: ref.read(appProvider).prefsRepo,
-                    onRegister: () async {
-                      await Navigator.of(context).push<void>(
-                        MaterialPageRoute<void>(
-                          builder: (_) => const OnlineServicesOnboardingPage(),
-                        ),
-                      );
-                    },
-                    onOpenSettings: () async {
-                      await Navigator.of(context).push<void>(
-                        MaterialPageRoute<void>(
-                          builder: (_) => SettingsDetailPage(
-                            destination: buildServicesDestination(),
+                  // 提醒配的是刮削 / 字幕凭据（AniDB / Jimaku 等），属于「在线服务」
+                  // 模块；模块关着时那个设置分类不可达（推上去当帧自 pop），提醒
+                  // 整条不渲染。媒体服务器不在此列，见 openMediaServerSettings
+                  // （BUG-5359）。
+                  if (ref
+                      .read(appProvider)
+                      .moduleVisibility
+                      .isEnabled(ModuleId.services))
+                    VideoOnlineServicesBanner(
+                      preferences: ref.read(appProvider).prefsRepo,
+                      onRegister: () async {
+                        await Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) =>
+                                const OnlineServicesOnboardingPage(),
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                        );
+                      },
+                      onOpenSettings: () async {
+                        await Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) => SettingsDetailPage(
+                              destination: buildServicesDestination(),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   // 有作品刮不出身份时的常驻提醒（BUG-2201）。放在这里而不是正文
                   // sliver 里：正文按分区分三套 sliver，且会随列表滚走。
                   _buildPendingScrapeBanner(),
@@ -6276,127 +6293,123 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 // 取决于映射快慢。按「骨架 / 真墙」分代，真墙恒有一次完整进场。
                 return FushiEntranceScope(
                   replayKey: (widget.section, firstPaintPending),
-                  child: RefreshIndicator(
+                  child: FushiRefreshIndicator(
                     onRefresh: _pullToRefresh,
                     // 叠放工具区的高度（恒定，不随显隐变）：转圈从工具区下沿出来。
                     edgeOffset: FushiFloatingChromeInset.of(context),
-                    child: LayoutBuilder(
-                      builder:
-                          (BuildContext context, BoxConstraints constraints) {
-                            final FushiDesignTokens tokens =
-                                FushiDesignTokens.of(context);
-                            // 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏
-                            // （宽<600）用 150 → 至少 2 列，不再「1 列铺满整屏、卡片过大」；宽屏
-                            // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
-                            final double availableWallWidth =
-                                constraints.maxWidth - tokens.spacing.card * 2;
-                            // 「每行数量」（BUG-4219 / 2026-11-07）：系列墙与「全部
-                            // 视频」共用这一格设定，null = 自动按目标卡宽算。
-                            final int? fixedColumns = _gridFixedColumns;
-                            final ({int columns, double cardWidth}) cardLayout =
-                                unifiedShelfCardLayout(
-                                  availableWidth: availableWallWidth,
-                                  targetWidth: readerShelfGridExtentForWidth(
-                                    constraints.maxWidth,
-                                  ),
-                                  fixedColumns: fixedColumns,
+                    child: _gridZoom(
+                      LayoutBuilder(
+                        builder:
+                            (BuildContext context, BoxConstraints constraints) {
+                              final FushiDesignTokens tokens =
+                                  FushiDesignTokens.of(context);
+                              // 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏
+                              // （宽<600）用 150 → 至少 2 列，不再「1 列铺满整屏、卡片过大」；宽屏
+                              // 按断点收敛列数。此前硬编码 240 使手机可用宽≈380 时 floor 出 1 列。
+                              final double availableWallWidth =
+                                  constraints.maxWidth -
+                                  tokens.spacing.card * 2;
+                              final ({
+                                ({int columns, double cardWidth}) cardLayout,
+                                ({int columns, double cardWidth})
+                                allVideosCardLayout,
+                              })
+                              wall = _wallLayouts(constraints);
+                              final ({int columns, double cardWidth})
+                              cardLayout = wall.cardLayout;
+                              final ({int columns, double cardWidth})
+                              allVideosCardLayout = wall.allVideosCardLayout;
+                              final double chromeInset =
+                                  FushiFloatingChromeInset.of(context);
+                              // BUG-3235 首屏：分组 / 折叠 / 筛选要的映射还没到，此刻的
+                              // 一切分组都是拿空映射算的（全员散卡、系列筛选全判否），
+                              // 画出来就是「先铺散卡、再收拢成合集、再换海报」一块块地
+                              // 变。等映射，期间画与真实墙同几何的骨架。
+                              if (firstPaintPending) {
+                                return CustomScrollView(
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  slivers: <Widget>[
+                                    SliverToBoxAdapter(
+                                      child: SizedBox(height: chromeInset),
+                                    ),
+                                    ..._buildLibraryMapsPendingSlivers(
+                                      cardLayout: cardLayout,
+                                      allVideosCardLayout: allVideosCardLayout,
+                                      availableWidth: availableWallWidth,
+                                      homeHeroLikely:
+                                          loaded == null ||
+                                          all.any(_mayHaveContinueProgress) ||
+                                          remoteVideos.any(
+                                            (RemoteVideoInfo v) =>
+                                                v.positionMs > 0,
+                                          ),
+                                    ),
+                                  ],
                                 );
-                            final ({int columns, double cardWidth})
-                            allVideosCardLayout = unifiedShelfCardLayout(
-                              availableWidth: availableWallWidth,
-                              targetWidth: allVideoThumbnailTargetWidthForWidth(
-                                constraints.maxWidth,
-                              ),
-                              fixedColumns: fixedColumns,
-                            );
-                            final double chromeInset =
-                                FushiFloatingChromeInset.of(context);
-                            // BUG-3235 首屏：分组 / 折叠 / 筛选要的映射还没到，此刻的
-                            // 一切分组都是拿空映射算的（全员散卡、系列筛选全判否），
-                            // 画出来就是「先铺散卡、再收拢成合集、再换海报」一块块地
-                            // 变。等映射，期间画与真实墙同几何的骨架。
-                            if (firstPaintPending) {
+                              }
                               return CustomScrollView(
                                 physics: const AlwaysScrollableScrollPhysics(),
                                 slivers: <Widget>[
+                                  // 叠放工具区让出的顶部高度：内容从工具区下方开始、滚动时
+                                  // 滚到工具区底下。高度恒定，工具区收起 / 弹回不改版面。
+                                  // 恒在（不在外壳里时为 0）：不按条件插拔，免得后面的
+                                  // sliver 错位重建。
                                   SliverToBoxAdapter(
                                     child: SizedBox(height: chromeInset),
                                   ),
-                                  ..._buildLibraryMapsPendingSlivers(
-                                    cardLayout: cardLayout,
-                                    allVideosCardLayout: allVideosCardLayout,
-                                    availableWidth: availableWallWidth,
-                                    homeHeroLikely:
-                                        loaded == null ||
-                                        all.any(_mayHaveContinueProgress) ||
-                                        remoteVideos.any(
-                                          (RemoteVideoInfo v) =>
-                                              v.positionMs > 0,
-                                        ),
-                                  ),
+                                  // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
+                                  // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
+                                  // [all] 描述整库，不随标签筛选变。
+                                  // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
+                                  // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
+                                  if (widget.section ==
+                                          VideoLibrarySection.home &&
+                                      (all.isNotEmpty || homeRemote.isNotEmpty))
+                                    SliverToBoxAdapter(
+                                      child: _buildOverviewSection(
+                                        all,
+                                        homeRemote,
+                                        homeLocal,
+                                        constraints.maxWidth,
+                                      ),
+                                    ),
+                                  if (widget.section ==
+                                      VideoLibrarySection.series)
+                                    ..._buildLocalVideoSlivers(
+                                      all,
+                                      ordered,
+                                      remoteVideos,
+                                      cardLayout,
+                                    ),
+                                  if (widget.section ==
+                                      VideoLibrarySection.allVideos)
+                                    ..._buildAllVideoSlivers(
+                                      all,
+                                      ordered,
+                                      remoteVideos,
+                                      allVideosCardLayout,
+                                    ),
+                                  // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
+                                  // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
+                                  // 同一个 State，多选态下从「全部视频」切到首页时，可见序
+                                  // 若停在上一档，底栏计数与批量删除就作用于一批屏幕上根本
+                                  // 没有的条目（批量栏不按分区门控，切过来照样显示）。
+                                  if (widget.section ==
+                                      VideoLibrarySection.home)
+                                    ..._homeSectionSelectionReset(),
+                                  if (widget.section ==
+                                          VideoLibrarySection.home &&
+                                      all.isEmpty &&
+                                      homeRemote.isEmpty)
+                                    SliverFillRemaining(
+                                      hasScrollBody: false,
+                                      child: _buildEmpty(),
+                                    ),
                                 ],
                               );
-                            }
-                            return CustomScrollView(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              slivers: <Widget>[
-                                // 叠放工具区让出的顶部高度：内容从工具区下方开始、滚动时
-                                // 滚到工具区底下。高度恒定，工具区收起 / 弹回不改版面。
-                                // 恒在（不在外壳里时为 0）：不按条件插拔，免得后面的
-                                // sliver 错位重建。
-                                SliverToBoxAdapter(
-                                  child: SizedBox(height: chromeInset),
-                                ),
-                                // UI v2 Phase B：顶部「继续观看 hero + 媒体库概览」条（用户拍板：
-                                // mockup 顶排的收藏筛选换成统计）。空库隐藏；统计按未过滤全量
-                                // [all] 描述整库，不随标签筛选变。
-                                // BUG-995：只看互联远端视频（无本地视频）时也要显示概览+继续观看，
-                                // 故门控与数据都并入 remoteVideos（否则整块消失=用户实报「远端的没有」）。
-                                if (widget.section ==
-                                        VideoLibrarySection.home &&
-                                    (all.isNotEmpty || homeRemote.isNotEmpty))
-                                  SliverToBoxAdapter(
-                                    child: _buildOverviewSection(
-                                      all,
-                                      homeRemote,
-                                      homeLocal,
-                                      constraints.maxWidth,
-                                    ),
-                                  ),
-                                if (widget.section ==
-                                    VideoLibrarySection.series)
-                                  ..._buildLocalVideoSlivers(
-                                    all,
-                                    ordered,
-                                    remoteVideos,
-                                    cardLayout,
-                                  ),
-                                if (widget.section ==
-                                    VideoLibrarySection.allVideos)
-                                  ..._buildAllVideoSlivers(
-                                    all,
-                                    ordered,
-                                    remoteVideos,
-                                    allVideosCardLayout,
-                                  ),
-                                // 首页只有 hero + 横滚行，横滚行卡不参与勾选，所以这一帧
-                                // 没有任何可勾选的格。必须如实登记空可见序：三个分区共用
-                                // 同一个 State，多选态下从「全部视频」切到首页时，可见序
-                                // 若停在上一档，底栏计数与批量删除就作用于一批屏幕上根本
-                                // 没有的条目（批量栏不按分区门控，切过来照样显示）。
-                                if (widget.section == VideoLibrarySection.home)
-                                  ..._homeSectionSelectionReset(),
-                                if (widget.section ==
-                                        VideoLibrarySection.home &&
-                                    all.isEmpty &&
-                                    homeRemote.isEmpty)
-                                  SliverFillRemaining(
-                                    hasScrollBody: false,
-                                    child: _buildEmpty(),
-                                  ),
-                              ],
-                            );
-                          },
+                            },
+                      ),
                     ),
                   ),
                 );
@@ -9598,9 +9611,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
-  /// 页头（设计稿 #video V2，2026-11-15 所有者确认）：页头只留**搜索、筛选与
+  /// 页头（设计稿 #video V2，2026-11-15 所有者确认）：常驻**搜索、筛选与
   /// 排序、后台任务、添加**四样（搜索由 [_headerSearchForSection] 画，添加是外壳
-  /// 页头右端的导入主按钮），其余低频库管理动作收进「⋯」。
+  /// 页头右端的导入主按钮），其余低频库管理动作挂在「⋯」上——宽度够时由页头
+  /// 统一收纳（[fushiResolveHeaderActions]）平铺成独立图标钮，放不下才收回「⋯」
+  /// （用户 2026-11-24「有空间还是展开最好」）。
   ///
   /// * 筛选与排序合成一颗：点开同一个筛选面板，排序方式与每行数量排在最前。
   /// * 后台任务只在真有任务时出现（[VideoBackgroundTasksButton]：进度环 + 数量，
@@ -9765,6 +9780,78 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       ? null
       : _headerSearch;
 
+  /// 系列墙与「全部视频」两种卡的列数 / 卡宽（[constraints] 是墙的版面约束）。
+  ///
+  /// 卡目标宽与书架同源（[readerShelfGridExtentForWidth]）：手机窄屏（宽<600）
+  /// 用 150 → 至少 2 列；宽屏按断点收敛列数。「每行数量」（BUG-4219 /
+  /// 2026-11-07）：系列墙与「全部视频」共用这一格设定，null = 自动按目标卡宽算。
+  ({
+    ({int columns, double cardWidth}) cardLayout,
+    ({int columns, double cardWidth}) allVideosCardLayout,
+  })
+  _wallLayouts(BoxConstraints constraints) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double availableWallWidth =
+        constraints.maxWidth - tokens.spacing.card * 2;
+    final int? fixedColumns = _gridFixedColumns;
+    return (
+      cardLayout: unifiedShelfCardLayout(
+        availableWidth: availableWallWidth,
+        targetWidth: readerShelfGridExtentForWidth(constraints.maxWidth),
+        fixedColumns: fixedColumns,
+      ),
+      allVideosCardLayout: unifiedShelfCardLayout(
+        availableWidth: availableWallWidth,
+        targetWidth: allVideoThumbnailTargetWidthForWidth(constraints.maxWidth),
+        fixedColumns: fixedColumns,
+      ),
+    );
+  }
+
+  /// Apple 库页：双指 / 触控板捏合、⌘+ ⌘− 改每行个数（写回「每行数量」偏好，
+  /// 与「显示」菜单同一份值）；M3E 原样返回 [child]。列数按当前分区的墙取
+  /// （「全部视频」是缩略图墙，其余是海报墙）。
+  ///
+  /// 「全部视频」切到列表布局时没有「每行数量」可调：不登记缩放口，Apple 工具栏
+  /// 的「每行数量」钮（[AppleLibraryZoomButton]，网格图标）随之消失——否则它与
+  /// 「⋯」里平铺出来的「网格视图」切换钮是两枚同样的网格图标、做两件不同的事
+  /// （用户截图里的第 2 / 第 7 枚）。
+  Widget _gridZoom(Widget child) => LayoutBuilder(
+    builder: (BuildContext context, BoxConstraints constraints) {
+      final ({
+        ({int columns, double cardWidth}) cardLayout,
+        ({int columns, double cardWidth}) allVideosCardLayout,
+      })
+      wall = _wallLayouts(constraints);
+      return LibraryGridZoom(
+        columns: widget.section == VideoLibrarySection.allVideos
+            ? wall.allVideosCardLayout.columns
+            : wall.cardLayout.columns,
+        choices: libraryGridColumnChoices(libraryGridSizeClassOf(context)),
+        onColumnsChanged: _setGridColumns,
+        enabled:
+            widget.section != VideoLibrarySection.allVideos ||
+            _allVideosLayout != _AllVideosLayout.list,
+        child: child,
+      );
+    },
+  );
+
+  /// 写本页当前尺寸档的「每行数量」（null = 自动）并重建网格。
+  void _setGridColumns(int? columns) {
+    unawaited(
+      ref
+          .read(appProvider)
+          .prefsRepo
+          .setLibraryGridColumns(
+            LibraryGridDomain.video,
+            libraryGridSizeClassOf(context),
+            columns,
+          ),
+    );
+    setState(() {});
+  }
+
   /// 本页网格当前尺寸档下的「每行数量」，null = 自动。
   int? get _gridFixedColumns => ref
       .read(appProvider)
@@ -9780,19 +9867,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     return libraryGridColumnsSection(
       sizeClass: sizeClass,
       selected: _gridFixedColumns,
-      onSelected: (int? columns) {
-        unawaited(
-          ref
-              .read(appProvider)
-              .prefsRepo
-              .setLibraryGridColumns(
-                LibraryGridDomain.video,
-                sizeClass,
-                columns,
-              ),
-        );
-        setState(() {});
-      },
+      onSelected: _setGridColumns,
     );
   }
 
@@ -9933,6 +10008,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       clearLabel: t.library_filters_clear,
       clearKey: const ValueKey<String>('video_filter_panel_clear'),
       onClearAll: _clearPanelFilters,
+      canClear: () => _hasActivePanelFilter,
       sections: (BuildContext context, LibraryFilterPanelUpdate update) {
         final List<int> years = _airYearByUid.values.toSet().toList()
           ..sort((int a, int b) => b.compareTo(a));
@@ -9953,6 +10029,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
             allValue: ShelfSortMode.values.first,
             allLabel: _sortModeLabel(ShelfSortMode.values.first),
             labelOf: _sortModeLabel,
+            // Apple：Finder / 照片「排序方式」同款弹出菜单（当前项打勾）。
+            appleMenu: true,
             onSelected: (ShelfSortMode mode) =>
                 update(() => _setSortMode(mode)),
           ),
@@ -9968,6 +10046,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
               onSelected: (int i) =>
                   update(() => columns.options[i].onSelected()),
             ),
+          // Apple：排序 / 每行数量一组，筛选维度另起一组（M3E 零尺寸）。
+          const LibraryFilterGroupBreak(),
           LibraryFilterChoiceSection<VideoYearFilter>(
             key: const ValueKey<String>('video_filter_panel_year'),
             title: t.video_filter_year,
@@ -10078,21 +10158,28 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 多选态的页头动作：选中计数 + 退出多选（与返回键 / Esc 同一条
   /// [_exitSelectionMode] 路径）。计数随勾选变化，但两项的 key 不变，悬浮动作组
   /// 不会因为数字变了而重播切换动效。
+  ///
+  /// Apple（iOS 27 照片 / macOS Finder 的选择态）：顶栏只留退出多选的 ✕ 玻璃钮，
+  /// 选中计数只在底部浮动工具栏（批量栏）中央出现一次——顶栏再放一枚计数就是
+  /// 同一信息两处（用户截图），且纯文字不是 bar button，塞进玻璃钮簇里只会
+  /// 变成一枚不可点的空胶囊。
   List<Widget> _selectionHeaderActions() {
     final ThemeData theme = Theme.of(context);
+    final bool apple = isGlassDesign(context);
     return <Widget>[
-      Padding(
-        key: const ValueKey<String>('video-selection-count'),
-        padding: const EdgeInsetsDirectional.only(start: 12, end: 4),
-        child: Text(
-          t.batch_selected_count(
-            n: _selectedUids.length + _selectedCollectionIds.length,
-          ),
-          style: theme.textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w600,
+      if (!apple)
+        Padding(
+          key: const ValueKey<String>('video-selection-count'),
+          padding: const EdgeInsetsDirectional.only(start: 12, end: 4),
+          child: Text(
+            t.batch_selected_count(
+              n: _selectedUids.length + _selectedCollectionIds.length,
+            ),
+            style: theme.textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
-      ),
       FushiIconButton(
         key: const ValueKey<String>('video-selection-exit'),
         tooltip: t.action_exit,
@@ -10467,6 +10554,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ],
       ],
       trailing: _buildTagFilterBar(tags, part: FushiTagFilterBarPart.actions),
+      appleFilterRow: isGlassDesign(context)
+          ? _buildTagFilterBar(tags, part: FushiTagFilterBarPart.appleFilterRow)
+          : null,
     );
   }
 
@@ -10757,6 +10847,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     return FushiPlaceholderMessage(
       icon: FushiIcons.video,
       message: t.video_library_empty_source_hint,
+      // Apple ContentUnavailable 式说明行：也可以直接拖放（M3E 不变）。
+      detail: isGlassDesign(context) ? t.book_import_drop_hint : null,
       action: widget.onOpenSources == null
           ? null
           : FushiFilledButton.icon(

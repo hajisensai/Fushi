@@ -277,9 +277,13 @@ void main() {
     await pump(glass: true);
     expect(find.byType(GlassContainer), findsNothing);
     final Finder card = find.byKey(const ValueKey<String>(cardKey));
-    final Widget cardSurface = tester.widget(card);
-    expect(cardSurface, isA<DecoratedBox>());
-    final Decoration cardDecoration = (cardSurface as DecoratedBox).decoration;
+    // 卡片走共享的 Apple 悬浮面（[FushiAppleFloatingSurface]，按玻璃画质档位
+    // 切实色 / 库玻璃）；实色档下它画一层实色 DecoratedBox。
+    expect(tester.widget(card), isA<FushiAppleFloatingSurface>());
+    final DecoratedBox cardSurface = tester.widget<DecoratedBox>(
+      find.descendant(of: card, matching: find.byType(DecoratedBox)).first,
+    );
+    final Decoration cardDecoration = cardSurface.decoration;
     expect(cardDecoration, isA<ShapeDecoration>());
     expect(
       (cardDecoration as ShapeDecoration).color,

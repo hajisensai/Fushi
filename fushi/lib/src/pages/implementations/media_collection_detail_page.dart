@@ -13,6 +13,7 @@ import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_thumbnail_play_badge.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:path/path.dart' as p;
@@ -2717,11 +2718,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
                                 )
                               else
                                 const ColoredBox(color: Color(0x1FFFFFFF)),
-                              const Center(
-                                child: CircleAvatar(
-                                  child: FushiIcon(FushiIcons.play),
-                                ),
-                              ),
+                              const Center(child: FushiThumbnailPlayBadge()),
                             ],
                           ),
                         ),

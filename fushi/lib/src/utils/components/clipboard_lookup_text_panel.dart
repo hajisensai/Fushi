@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
+import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
 
 /// 查词弹窗 headword 的字号，单位逻辑像素。
 ///
@@ -246,8 +247,9 @@ class BoundedSourceLookupViewport extends StatelessWidget {
   Widget build(BuildContext context) {
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxHeight),
-      child: Scrollbar(
+      child: FushiScrollbar(
         controller: controller,
+        thumbVisibility: null,
         child: SingleChildScrollView(
           key: scrollKey,
           controller: controller,

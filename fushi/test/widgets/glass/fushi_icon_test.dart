@@ -11,7 +11,7 @@ Widget _host(Widget child, {required bool glass}) {
   return MaterialApp(
     theme: ThemeData(
       extensions: <ThemeExtension<dynamic>>[
-        FushiGlassTheme(FushiGlassMaterial.liquid, glassDesign: glass),
+        FushiGlassTheme(FushiGlassMaterial.premium, glassDesign: glass),
       ],
     ),
     home: Scaffold(body: Center(child: child)),

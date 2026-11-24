@@ -482,10 +482,15 @@ class _AiProviderSettingsSectionState
     final double rowInset = FushiDesignTokens.of(
       pageContext,
     ).spacing.rowHorizontal;
-    Widget field(Widget child) => Padding(
-      padding: EdgeInsets.fromLTRB(rowInset, 12, rowInset, 10),
-      child: child,
-    );
+    // Apple：直接是输入框的行交给分组排成表单行（[FushiAppleFormRowScope]），
+    // 不再自带内边距；其余（带开关 / 删除钮的组合行）照旧按行内边距排。
+    final bool glass = isGlassDesign(pageContext);
+    Widget field(Widget child) => glass && child is FushiAppleFormRowField
+        ? child
+        : Padding(
+            padding: EdgeInsets.fromLTRB(rowInset, 12, rowInset, 10),
+            child: child,
+          );
 
     return Column(
       key: ValueKey<String>('ai-provider-${draft.id}-editor'),

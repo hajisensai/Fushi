@@ -2683,7 +2683,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
   0xe5d1: (CupertinoIcons.fullscreen_exit, CupertinoIcons.fullscreen_exit),
   0xe5d2: (CupertinoIcons.line_horizontal_3, CupertinoIcons.line_horizontal_3),
   0xe5d3: (CupertinoIcons.ellipsis, CupertinoIcons.ellipsis),
-  0xe5d4: (CupertinoIcons.ellipsis_vertical, CupertinoIcons.ellipsis_vertical),
+  0xe5d4: (CupertinoIcons.ellipsis, CupertinoIcons.ellipsis),
   0xe5d5: (CupertinoIcons.arrow_clockwise, CupertinoIcons.arrow_clockwise),
   0xe5d8: (CupertinoIcons.arrow_up, CupertinoIcons.arrow_up),
   0xe5db: (CupertinoIcons.arrow_down, CupertinoIcons.arrow_down),

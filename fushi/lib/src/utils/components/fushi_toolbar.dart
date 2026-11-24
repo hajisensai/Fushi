@@ -2,9 +2,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show fushiAppleCompact;
+    show fushiAppleCompact, fushiAppleMacScale;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
-    show fushiAppleSolidFloatingDecoration;
+    show FushiAppleFloatingSurface;
 
 /// 告诉后代按钮「你已经在一枚 Apple 玻璃组胶囊里」：[FushiIconButton] 的
 /// 带文字形态与选中态据此不再自带一层玻璃（玻璃叠玻璃会出两圈折射边，
@@ -146,7 +146,10 @@ class FushiToolbar extends StatelessWidget {
   Widget _buildApple(BuildContext context, List<List<Widget>> groups) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
-    final double height = dense ? (compact ? 32 : 36) : (compact ? 36 : 44);
+    final double macScale = fushiAppleMacScale(context);
+    final double height = dense
+        ? (compact ? 32 * macScale : 36)
+        : (compact ? 36 * macScale : 44);
     final double groupGap = dense ? 8 : 10;
     final List<Widget> row = <Widget>[];
     for (int g = 0; g < groups.length; g++) {
@@ -159,9 +162,12 @@ class FushiToolbar extends StatelessWidget {
         constraints: BoxConstraints(minHeight: height, minWidth: height),
         child: Padding(
           // 胶囊两端留一点，让首尾按钮的悬停圆底不贴着胶囊边。
-          padding: EdgeInsets.symmetric(horizontal: compact ? 2 : 4),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 2 * macScale : 4),
           child: IconTheme.merge(
-            data: IconThemeData(color: apple.label, size: compact ? 18 : 20),
+            data: IconThemeData(
+              color: apple.label,
+              size: compact ? 18 * macScale : 20,
+            ),
             child: FushiToolbarScope(
               inGlassGroup: true,
               child: Row(
@@ -174,11 +180,8 @@ class FushiToolbar extends StatelessWidget {
         ),
       );
       if (floating) {
-        capsule = DecoratedBox(
-          decoration: fushiAppleSolidFloatingDecoration(
-            context,
-            shape: const StadiumBorder(),
-          ),
+        capsule = FushiAppleFloatingSurface(
+          shape: const StadiumBorder(),
           child: capsule,
         );
       }

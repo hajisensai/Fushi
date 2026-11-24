@@ -8,6 +8,8 @@ library;
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiVerticalDivider;
 
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
@@ -473,12 +475,7 @@ class _DiagramCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               for (int i = 0; i < zones.length; i++) ...<Widget>[
-                if (i > 0)
-                  VerticalDivider(
-                    width: 1,
-                    thickness: 1,
-                    color: cs.outlineVariant,
-                  ),
+                if (i > 0) const FushiVerticalDivider(width: 1, thickness: 1),
                 Expanded(
                   child: _TapZone(
                     key: ValueKey<String>(

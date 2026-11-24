@@ -557,7 +557,7 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.widgetWithText(TextButton, 'CLOSE'));
+    await tester.tap(find.widgetWithText(TextButton, 'Close'));
     await tester.pumpAndSettle();
     expect(find.text('Background tasks'), findsNothing);
     expect(controller.isRunning, isTrue);
@@ -776,7 +776,7 @@ void main() {
       await tester.tap(find.text('Scrape after scanning'));
       await tester.ensureVisible(find.text('Write image files'));
       await tester.tap(find.text('Write image files'));
-      await tester.tap(find.text('SAVE'));
+      await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
 
       final VideoSourceScrapeSettingRow settings = (await db
@@ -817,7 +817,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.ensureVisible(localeField());
     await tester.enterText(localeField(), '  ja  ');
-    await tester.tap(find.text('SAVE'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
     expect(
@@ -837,7 +837,7 @@ void main() {
       'ja',
     );
     await tester.enterText(localeField(), '   ');
-    await tester.tap(find.text('SAVE'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(
       (await db.getVideoSourceScrapeSettings(sourceId))!.metadataLocale,

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -282,9 +283,11 @@ class _MangaImportDialogState extends State<MangaImportDialog>
             ),
           ],
           actions: <Widget>[
-            FushiDialogAction(
-              label: t.dialog_cancel,
-              onPressed: importing ? null : () => Navigator.pop(context),
+            FushiSheetAction.cancel(
+              child: FushiDialogAction(
+                label: t.dialog_cancel,
+                onPressed: importing ? null : () => Navigator.pop(context),
+              ),
             ),
             buildImportAction(
               context,
@@ -346,6 +349,7 @@ class _MangaImportDialogState extends State<MangaImportDialog>
     final String? probing = _probingName;
     final String? name = _pathName;
     return ImportPickBlock(
+      groupTitle: t.import_group_manga_file,
       tone: ImportTone.violet,
       title: probing ?? name ?? t.manga_import_pick_file,
       subtitle: probing != null

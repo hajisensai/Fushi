@@ -71,6 +71,11 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/pages/implementations/games/galgame_play_status_style.dart';
+// 游玩状态文案挪到叶子文件（首页 Apple 版面要用、本文件在大 import 环里），
+// 详情 / 条目菜单等既有调用点照旧从这里拿。
+export 'package:fushi/src/pages/implementations/games/galgame_play_status_style.dart'
+    show galgamePlayStatusLabel;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
 import 'package:fushi/src/mining/galgame_library_query.dart';
@@ -105,7 +110,8 @@ import 'package:fushi/src/pages/implementations/library_filter_panel.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
 import 'package:fushi/src/pages/implementations/library_view_options.dart';
 import 'package:fushi/src/models/library_grid_columns.dart'
-    show LibraryGridDomain;
+    show LibraryGridDomain, libraryGridColumnChoices;
+import 'package:fushi/src/pages/implementations/library_layout/library_grid_zoom.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/utils/components/fushi_header_more_button.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
@@ -125,7 +131,6 @@ import 'package:fushi/src/utils/components/galgame_poster_card.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
@@ -1146,17 +1151,20 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     return libraryGridColumnsSection(
       sizeClass: sizeClass,
       selected: _gridFixedColumns,
-      onSelected: (int? columns) {
-        unawaited(
-          _appModel.prefsRepo.setLibraryGridColumns(
-            LibraryGridDomain.games,
-            sizeClass,
-            columns,
-          ),
-        );
-        setState(() {});
-      },
+      onSelected: _setGridColumns,
     );
+  }
+
+  /// 写回当前尺寸档的「每行数量」（null = 自动）：排序菜单 / 抽屉与网格缩放共用。
+  void _setGridColumns(int? columns) {
+    unawaited(
+      _appModel.prefsRepo.setLibraryGridColumns(
+        LibraryGridDomain.games,
+        libraryGridSizeClassOf(context),
+        columns,
+      ),
+    );
+    setState(() {});
   }
 
   /// 窄窗「排序与显示」底部抽屉：排序维度（再点当前维度 = 翻转方向，选中项带
@@ -1272,6 +1280,16 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           _buildCompactOverflowMenu(),
         ],
       ),
+      // Apple iOS 档：标签胶囊 + 「管理标签…」在工具行下面一行（方案 A 第 8 项）。
+      appleFilterRow: isGlassDesign(context)
+          ? FushiTagFilterBar(
+              tags: allTags,
+              part: FushiTagFilterBarPart.appleFilterRow,
+              onToggleFilter: _toggleTagFilter,
+              onReorder: _reorderTags,
+              onTagsChanged: () => ref.invalidate(gameTagMapProvider),
+            )
+          : null,
     );
   }
 
@@ -1437,6 +1455,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
       title: t.game_filter,
       clearLabel: t.game_filter_reset,
       onClearAll: _clearAllFilters,
+      canClear: () =>
+          _view.hasActiveFilter || ref.read(selectedTagIdsProvider).isNotEmpty,
       sections: (BuildContext ctx, LibraryFilterPanelUpdate update) {
         final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
         void apply(GalgameLibraryView next) => update(() => _setView(next));
@@ -1444,31 +1464,27 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
             ref.read(allTagsProvider).valueOrNull ?? const <BookTagRow>[];
         final Set<int> selectedUserTags = ref.read(selectedTagIdsProvider);
         return <Widget>[
-          // M3E：单选维度用 choice chip、多选维度（标签）用 filter chip；状态
-          // chip 带各自的语义图标（与封面角标同一套）。
-          LibraryFilterSection(
+          // 单选维度 / 多选维度走共享分组（M3E = choice / filter chip，Apple =
+          // 菜单 / 分段 / 对勾行）；状态带各自的语义图标（与封面角标同一套）。
+          LibraryFilterChoiceSection<GalgamePlayStatus?>(
             title: t.game_filter_status,
-            children: <Widget>[
-              FushiChoiceChip(
-                label: Text(t.game_filter_all),
-                selected: _view.status == null,
-                onSelected: (_) => apply(_view.copyWith(clearStatus: true)),
-              ),
-              for (final GalgamePlayStatus status in <GalgamePlayStatus>[
-                ...kGalgamePlayStatusMenuOrder,
-                GalgamePlayStatus.unset,
-              ])
-                FushiChoiceChip(
-                  avatar: FushiIcon(galgamePlayStatusIcon(status), size: 18),
-                  label: Text(galgamePlayStatusLabel(status)),
-                  selected: _view.status == status,
-                  onSelected: (bool selected) => apply(
-                    selected
-                        ? _view.copyWith(status: status)
-                        : _view.copyWith(clearStatus: true),
-                  ),
-                ),
+            values: const <GalgamePlayStatus?>[
+              null,
+              ...kGalgamePlayStatusMenuOrder,
+              GalgamePlayStatus.unset,
             ],
+            selected: _view.status,
+            allValue: null,
+            allLabel: t.game_filter_all,
+            labelOf: (GalgamePlayStatus? status) =>
+                galgamePlayStatusLabel(status!),
+            avatarOf: (GalgamePlayStatus? status) =>
+                status == null ? null : galgamePlayStatusIcon(status),
+            onSelected: (GalgamePlayStatus? status) => apply(
+              status == null
+                  ? _view.copyWith(clearStatus: true)
+                  : _view.copyWith(status: status),
+            ),
           ),
           LibraryFilterChoiceSection<GalgameLocalFilter>(
             title: t.game_filter_source,
@@ -1483,39 +1499,32 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
           // 用户标签（共享标签池，原库页标签 chip 行）：多选 = 取交集，与原
           // chip 行同一语义（[filteredGameIdsProvider]）。
           if (userTags.isNotEmpty)
-            LibraryFilterSection(
+            LibraryFilterMultiChoiceSection<int>(
               key: const ValueKey<String>('games_filter_user_tags'),
               title: t.game_user_tags_title,
-              children: <Widget>[
-                for (final BookTagRow tag in userTags)
-                  FushiFilterChip(
-                    key: ValueKey<String>('games_filter_user_tag_${tag.id}'),
-                    label: Text(tag.name),
-                    selected: selectedUserTags.contains(tag.id),
-                    onSelected: (bool _) =>
-                        update(() => _toggleTagFilter(tag.id)),
-                  ),
-              ],
+              values: <int>[for (final BookTagRow tag in userTags) tag.id],
+              selected: selectedUserTags,
+              labelOf: (int id) =>
+                  userTags.firstWhere((BookTagRow tag) => tag.id == id).name,
+              itemKeyOf: (int id) =>
+                  ValueKey<String>('games_filter_user_tag_$id'),
+              onChanged: (Set<int> next) => update(() {
+                for (final int id in next.difference(selectedUserTags)) {
+                  _toggleTagFilter(id);
+                }
+                for (final int id in selectedUserTags.difference(next)) {
+                  _toggleTagFilter(id);
+                }
+              }),
             ),
           if (allTags.isNotEmpty)
-            LibraryFilterSection(
+            LibraryFilterMultiChoiceSection<String>(
               title: t.game_filter_tags,
-              children: <Widget>[
-                for (final String tag in allTags)
-                  FushiFilterChip(
-                    label: Text(tag),
-                    selected: _view.tags.contains(tag),
-                    onSelected: (bool selected) {
-                      final Set<String> next = Set<String>.of(_view.tags);
-                      if (selected) {
-                        next.add(tag);
-                      } else {
-                        next.remove(tag);
-                      }
-                      apply(_view.copyWith(tags: next));
-                    },
-                  ),
-              ],
+              values: allTags,
+              selected: _view.tags,
+              labelOf: (String tag) => tag,
+              onChanged: (Set<String> next) =>
+                  apply(_view.copyWith(tags: Set<String>.of(next))),
             ),
           SizedBox(height: tokens.spacing.gap),
           AdaptiveSettingsSwitchRow(
@@ -1535,6 +1544,8 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     return FushiPlaceholderMessage(
       icon: FushiIcons.games,
       message: t.game_empty,
+      // Apple ContentUnavailable 式说明行：也可以直接拖放（M3E 不变）。
+      detail: isGlassDesign(context) ? t.book_import_drop_hint : null,
       // 嵌壳时空态引导去「导入」分段（唯一入库位置）；独立使用时直接选 exe。
       action: widget.embedded
           ? FushiFilledButton.icon(
@@ -1613,7 +1624,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
             visible,
             tagFilterActive: tagFilterActive,
           );
-          return MediaQuery.removePadding(
+          final Widget content = MediaQuery.removePadding(
             context: context,
             removeTop: true,
             child: CustomScrollView(
@@ -1638,6 +1649,14 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
                 ),
               ],
             ),
+          );
+          // 网格布局下双指捏合 / ⌘± 调每行个数（Apple 外壳，M3E 原样返回）。
+          if (_listLayout) return content;
+          return LibraryGridZoom(
+            columns: metrics.columns,
+            choices: libraryGridColumnChoices(libraryGridSizeClassOf(context)),
+            onColumnsChanged: _setGridColumns,
+            child: content,
           );
         },
       ),
@@ -2920,16 +2939,6 @@ MediaNsfwTarget? gameCollectionMemberNsfw({
   return MediaNsfwTarget.game(entryKey, adult: false);
 }
 
-/// 游玩状态的用户可读标签（枚举 `.name` 直接上屏是 17 语言用户的灾难）。
-String galgamePlayStatusLabel(GalgamePlayStatus status) => switch (status) {
-  GalgamePlayStatus.unset => t.game_status_unset,
-  GalgamePlayStatus.wantToPlay => t.game_status_want_to_play,
-  GalgamePlayStatus.played => t.game_status_played,
-  GalgamePlayStatus.playing => t.game_status_playing,
-  GalgamePlayStatus.onHold => t.game_status_on_hold,
-  GalgamePlayStatus.dropped => t.game_status_dropped,
-};
-
 /// 排序维度的用户可读标签。
 String galgameSortFieldLabel(GalgameSortField field) => switch (field) {
   GalgameSortField.added => t.game_sort_added,
@@ -3705,30 +3714,6 @@ String galgameBlockSemanticLabel(GalgameEntry game) {
     if (!played || game.playStatus != GalgamePlayStatus.unset)
       galgamePlayStatusLabel(game.playStatus),
   ].join(' · ');
-}
-
-/// 游玩状态色点（设计稿「6 档游玩状态 chip」表）：深色 / 浅色两套，在各自的
-/// 色块底上与 chip 文字一起都 ≥4.5:1。没有「已通关」这一档——[GalgamePlayStatus]
-/// 只有 6 档，「玩过」就是它。
-Color galgamePlayStatusDotColor(
-  GalgamePlayStatus status,
-  Brightness brightness,
-) {
-  final bool dark = brightness == Brightness.dark;
-  return switch (status) {
-    GalgamePlayStatus.unset =>
-      dark ? const Color(0xFF8F8B96) : const Color(0xFF6B6E7B),
-    GalgamePlayStatus.wantToPlay =>
-      dark ? const Color(0xFFA9C8FF) : const Color(0xFF2F62C9),
-    GalgamePlayStatus.playing =>
-      dark ? const Color(0xFF9BE0AB) : const Color(0xFF1D8A45),
-    GalgamePlayStatus.played =>
-      dark ? const Color(0xFFE7CF6F) : const Color(0xFF8A6A00),
-    GalgamePlayStatus.onHold =>
-      dark ? const Color(0xFFC9C6CF) : const Color(0xFF5D5A66),
-    GalgamePlayStatus.dropped =>
-      dark ? const Color(0xFFFF9B9B) : const Color(0xFFB3261E),
-  };
 }
 
 /// 色块里的游玩状态 chip（设计稿 `.chip.stc`）：底 = 状态色点 24% 叠在色块底色

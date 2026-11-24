@@ -44,6 +44,16 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeScope;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/media/import/apple/apple_import_rows.dart'
+    show AppleImportSectionAction;
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_shelf.dart';
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiAppleUsesMacMetrics;
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsSection;
+
+part 'apple/apple_manga_discovery.part.dart';
 
 /// 漫画库「发现」视图：**漫画唯一的发现入口**。
 ///
@@ -467,6 +477,8 @@ class _MangaDiscoveryPageState extends ConsumerState<MangaDiscoveryPage> {
     if (selected != kDiscoveryAllSourcesId) {
       return _buildSelectedSource(catalog, feeds, selected);
     }
+    // Cupertino：iOS 档来源行 / macOS 档货架流（part 里的 extension），M3E 原样。
+    if (isGlassDesign(context)) return _buildAppleAllSources(catalog, feeds);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) =>
           _buildAllSources(catalog, feeds, constraints.maxWidth),
@@ -804,6 +816,18 @@ class _FeedHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget? viewAll = _viewAllButton(feed);
+    // Apple：货架头字阶（标题 + 行尾转圈 /「查看全部 ›」）。
+    if (isGlassDesign(context)) {
+      final double page = appleDiscoveryPageInset(context);
+      return Padding(
+        padding: EdgeInsets.fromLTRB(page, 24, page, 4),
+        child: AppleDiscoveryShelfHeader(
+          title: t.manga_discovery_source_popular(source: feed.displayName),
+          loading: loading,
+          trailing: viewAll,
+        ),
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return FushiSectionTitle(
       t.manga_discovery_source_popular(source: feed.displayName),

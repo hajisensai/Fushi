@@ -96,6 +96,28 @@ void main() {
       expect(fushiHeaderCollapseOrder(actions), <int>[4, 3, 0, 1]);
     });
 
+    test('禁用的动作（回调随禁用置空）照样参与收纳：收纳顺序不随启用 / 禁用变', () {
+      List<Widget> actions({required bool undoEnabled}) => <Widget>[
+        FushiIconButton(
+          icon: Icons.undo,
+          tooltip: 'undo',
+          enabled: undoEnabled,
+          onTap: undoEnabled ? () {} : null,
+        ),
+        FushiIconButton(icon: Icons.add, tooltip: 'add', onTap: () {}),
+        const FushiIconButton(icon: Icons.info_outline, tooltip: 'deco'),
+      ];
+      expect(
+        fushiIsCollapsibleHeaderAction(actions(undoEnabled: false)[0]),
+        isTrue,
+      );
+      expect(
+        fushiHeaderCollapseOrder(actions(undoEnabled: false)),
+        fushiHeaderCollapseOrder(actions(undoEnabled: true)),
+      );
+      expect(fushiHeaderCollapseOrder(actions(undoEnabled: true)), <int>[1, 0]);
+    });
+
     test('收纳颗数：取放得下的最小值；全收仍放不下但更窄就全收，否则不收', () {
       double widthWith(int k) => <double>[200, 170, 140, 110][k];
       expect(

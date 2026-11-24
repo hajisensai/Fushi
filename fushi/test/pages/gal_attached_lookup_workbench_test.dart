@@ -8,6 +8,10 @@ import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import '../helpers/glass_unwrap.dart';
 
 const String _sha =
@@ -427,4 +431,127 @@ void main() {
       expect(find.byType(GalAttachedCalibrationDialog), findsNothing);
     },
   );
+
+  // Apple（Cupertino）：校准在 macOS 档是不可点外部关的窗口 sheet，iOS 档是整页
+  // （返回 = 取消，同走 cancelCalibration）。M3E 的对话框见上一条。
+  Future<(_CalibrationSurfacePort, GalAttachedTextController)>
+  openAppleCalibration(
+    WidgetTester tester, {
+    required Size size,
+    TargetPlatform platform = TargetPlatform.windows,
+  }) async {
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final _CalibrationSurfacePort port = _CalibrationSurfacePort();
+    final GalAttachedTextController controller = GalAttachedTextController(
+      preferenceReader: (_) => jsonEncode(
+        GalLookupSurfaceProfileV1(
+          exePath: r'c:\games\sample\game.exe',
+          exeSha256: _sha,
+          mode: GalLookupSurfaceMode.attachedOnly,
+          unsafeLeftClickAccepted: true,
+          variants: const <GalLookupSurfaceVariantV1>[],
+        ).toJson(),
+      ),
+      preferenceWriter: (_, __) async {},
+      surfacePort: port,
+      calibrationLog: (_) {},
+    );
+    await controller.syncSession(
+      active: true,
+      sessionEpoch: 1,
+      targetPid: 2,
+      targetHwnd: 3,
+      sourceText: 'テスト本文です',
+    );
+    addTearDown(() async {
+      await controller.detach();
+      controller.dispose();
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildFushiThemeData(
+          scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+          textTheme: Typography.material2021().black,
+          glassDesign: true,
+        ).copyWith(platform: platform),
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: GalAttachedLookupWorkbench(
+              controller: controller,
+              hasSelectedBodyThread: true,
+              bodyPreview: 'テスト本文です',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('game-attached-lookup-mode')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('game-attached-lookup-calibrate')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(GalAttachedCalibrationDialog), findsOneWidget);
+    return (port, controller);
+  }
+
+  testWidgets('Apple macOS 档：校准是不可点外部关的 sheet，取消即撤销校准', (
+    WidgetTester tester,
+  ) async {
+    final (_CalibrationSurfacePort port, GalAttachedTextController controller) =
+        await openAppleCalibration(tester, size: const Size(1400, 1000));
+    final Finder dialog = find.byType(GalAttachedCalibrationDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.byType(FushiModalSheetFrame)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: dialog, matching: find.byType(FushiAlertDialog)),
+      findsNothing,
+    );
+    expect(find.text(t.game_lookup_attached_calibration_title), findsOneWidget);
+    // barrierDismissible:false → 点 sheet 外不关。
+    await tester.tapAt(const Offset(4, 4));
+    await tester.pumpAndSettle();
+    expect(dialog, findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('game-attached-calibration-cancel')),
+    );
+    await tester.pumpAndSettle();
+    expect(dialog, findsNothing);
+    expect(port.cancelCalls, 1);
+    expect(controller.calibrationActive, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Apple iOS 档：校准是整页，返回 = 取消', (WidgetTester tester) async {
+    final (
+      _CalibrationSurfacePort port,
+      GalAttachedTextController controller,
+    ) = await openAppleCalibration(
+      tester,
+      size: const Size(430, 932),
+      platform: TargetPlatform.iOS,
+    );
+    final Finder dialog = find.byType(GalAttachedCalibrationDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.byType(FushiMastheadScaffold)),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('game-attached-calibration-commit')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.state<NavigatorState>(find.byType(Navigator)).maybePop();
+    await tester.pumpAndSettle();
+    expect(dialog, findsNothing);
+    expect(port.cancelCalls, 1);
+    expect(controller.calibrationActive, isFalse);
+  });
 }

@@ -24,9 +24,10 @@ import 'package:fushi/src/utils/components/fushi_header_search.dart'
     show fushiVisibleHeaderSearch;
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
-import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/pages/implementations/library_layout/library_chrome_spec.dart';
+import 'package:fushi/src/pages/implementations/library_layout/library_layout.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
 
@@ -354,11 +355,12 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
         ];
     // 顶栏只放两组（2026-10-30 用户拍板方案 D，见 [LibrarySectionGroup]）：
     // 媒体库 = 首页 / 系列 / 全部视频 / 媒体服务器，在线 = 发现 / 来源 / 扩展，
-    // 组内由顶栏下方的二级胶囊切换；导入是工具栏右端的按钮。每组页签的值就是
-    // 该组「当前 / 上次停留」的分区，点组页签即回到组内上次的位置，选中判据仍是
-    // `_section`，横滑顺序仍是上面的扁平分区表。
-    final List<LibrarySectionTab<VideoLibrarySection>> groupTabs =
-        <LibrarySectionTab<VideoLibrarySection>>[];
+    // 组内由二级分区切换；导入是工具栏右端的按钮。每组的代表值就是该组「当前 /
+    // 上次停留」的分区，点组即回到组内上次的位置，选中判据仍是 `_section`，横滑
+    // 顺序仍是上面的扁平分区表。外壳怎么画由 [LibraryLayout] 按设计系统分派。
+    final LibrarySectionGroup? currentGroup = _groupOf(_section);
+    final List<LibraryChromeGroup<VideoLibrarySection>> groups =
+        <LibraryChromeGroup<VideoLibrarySection>>[];
     for (final LibrarySectionGroup group in LibrarySectionGroup.values) {
       final List<LibrarySectionTab<VideoLibrarySection>> members =
           <LibrarySectionTab<VideoLibrarySection>>[
@@ -366,58 +368,53 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
               if (_groupOf(tab.value) == group) tab,
           ];
       if (members.isEmpty) continue;
-      groupTabs.add(
-        LibrarySectionTab<VideoLibrarySection>(
-          value: _groupOf(_section) == group
+      groups.add(
+        LibraryChromeGroup<VideoLibrarySection>(
+          group: group,
+          label: _groupLabel(group, members),
+          value: currentGroup == group
               ? _section
               : _activeSectionOf(group, members),
-          label: _groupLabel(group, members),
-          // 组页签的值随组内停留的分区变，顺序身份认组。
-          orderId: group.name,
+          members: members,
+          subFocusIdPrefix: 'video-library-subview',
+          // 反馈 ndQ5eXLcqp：自定义页签顺序落在组内的二级分区上（一级恒为两组）。
+          orderKey: 'video-${group.name}',
         ),
       );
     }
-    final LibrarySectionGroup? currentGroup = _groupOf(_section);
-    final List<LibrarySectionTab<VideoLibrarySection>> subTabs =
-        currentGroup == null
-        ? const <LibrarySectionTab<VideoLibrarySection>>[]
-        : <LibrarySectionTab<VideoLibrarySection>>[
-            for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
-              if (_groupOf(tab.value) == currentGroup) tab,
-          ];
-    // 一级只剩一组（iOS 合规门下没有在线分区）时不画胶囊、改放该组名的标题
-    // 胶囊（媒体库）；停在导入页时高亮「媒体库」组（导入管理的就是本地库）。
-    // 当前组的二级页签；组内不足两段时为 null。页头大字顶栏里交给大字行
-    // （[FushiFloatingChromeBar.secondary]），否则由下面嵌套的工具区画。
-    final Widget? subNavigation = subTabs.length < 2
-        ? null
-        : LibrarySectionTabs<VideoLibrarySection>(
-            // 换组即换一份页签（段数与段值都变），不复用旧 controller。
-            key: ValueKey<LibrarySectionGroup?>(currentGroup),
-            tabs: subTabs,
-            selected: _section,
-            onChanged: _select,
-            focusIdPrefix: 'video-library-subview',
-            secondary: true,
-            // 二级用 M3 secondary tabs（文字 + 横贯下划线），不再是第二枚浮动胶囊：
-            // 与一级按钮组胶囊拉开层级（2026-10-30 用户拍板方案 B）。
-            // 反馈 ndQ5eXLcqp：自定义页签顺序落在组内的二级胶囊上（一级恒为两组）。
-            orderKey: 'video-${currentGroup?.name}',
-          );
-    final Widget navigation = groupTabs.length < 2
-        ? FushiFloatingChromeSoloTitle(
-            title: groupTabs.isEmpty ? '' : groupTabs.single.label,
-          )
-        : LibrarySectionTabs<VideoLibrarySection>(
-            tabs: groupTabs,
-            selected: currentGroup == null ? groupTabs.first.value : _section,
-            // 停在导入页时「媒体库」高亮只是视觉锚点、不是当前视图：点它 / 方向键
-            // 落到它照常切回（BUG-4706）。
-            selectedIsCurrent: currentGroup != null,
-            onChanged: _select,
+    final LibraryChromeSpec<VideoLibrarySection> spec =
+        LibraryChromeSpec<VideoLibrarySection>(
+          title: FushiShellTitleScope.maybeTitleOf(context) ?? t.nav_video,
+          groups: groups,
+          selected: _section,
+          currentGroup: currentGroup,
+          // 停在导入页时「媒体库」高亮只是视觉锚点、不是当前视图：点它 / 方向键
+          // 落到它照常切回（BUG-4706）。
+          selectedIsCurrent: currentGroup != null,
+          onSelect: _select,
+          focusIdPrefix: 'video-library-view',
+          // 一级只剩一组（iOS 合规门下没有在线分区）时改放该组名的标题（媒体库）。
+          soloTitle: groups.isEmpty ? '' : groups.first.label,
+          import: LibraryChromeImport(
+            selected: _section == VideoLibrarySection.sources,
+            onTap: _toggleImport,
             focusIdPrefix: 'video-library-view',
-            floating: true,
-          );
+          ),
+          actionsSlot: _actionsSlot,
+          chrome: _chromeFor(_VideoShellPage.of(_section)),
+          // 导入不是页签，只在停在导入页时留在序里（从它滑回相邻分区）。
+          swipe: LibraryChromeSwipe<VideoLibrarySection>(
+            sections: <VideoLibrarySection>[
+              for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
+                if (tab.value != VideoLibrarySection.sources ||
+                    _section == VideoLibrarySection.sources)
+                  tab.value,
+            ],
+          ),
+          // M3E：横滑区域包住二级页签行（与改造前一致）。
+          swipeCoversSubNavigation: true,
+          iconOf: _iconOf,
+        );
     // 保留外壳给本 tab 的页面名（页头据它判断「标题已由外壳画出」），只把动作槽
     // 换成壳自己的，动作改由浮动动作组画。
     //
@@ -436,69 +433,26 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
           // Ctrl+F / `/` 展开当前视图的页头搜索，展开时 Esc 先清空再收起
           // （焦点在页签、动作或内容上都认）。
           resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
-          child: FushiFloatingChromeScope(
-            // 当前页面自己的工具栏状态（见 [_chromes]）。
-            controller: _chromeFor(_VideoShellPage.of(_section)),
-            // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（滚轮上下「回弹、
-            // 滚不动」的根因是收起改了视口高度，见 [FushiFloatingChromeOverlay]）。
-            child: FushiFloatingChromeOverlay(
-              // 重设计外壳下画成页头大字（`fushi_page_masthead.dart`）。
-              masthead: true,
-              chrome: FushiFloatingChromeBar(
-                tabs: navigation,
-                slot: _actionsSlot,
-                trailing: libraryImportChromeButton(
-                  selected: _section == VideoLibrarySection.sources,
-                  onTap: _toggleImport,
-                  focusIdPrefix: 'video-library-view',
-                ),
-                // 页头大字顶栏里二级页签由大字行画（放得下与页名同一行）。
-                secondary: subNavigation,
-              ),
-              // 滚动通知由各页面自己那一层喂给各自的 controller（[_chromeFeed]）。
-              child: SectionSwipeNavigator<VideoLibrarySection>(
-                // 导入不是页签，只在停在导入页时留在序里（从它滑回相邻分区）。
-                sections: <VideoLibrarySection>[
-                  for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
-                    if (tab.value != VideoLibrarySection.sources ||
-                        _section == VideoLibrarySection.sources)
-                      tab.value,
-                ],
-                selected: _section,
-                onSelect: _select,
-                // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
-                // [FushiFloatingChromeOverlay] 读同一个作用域，内层页面的顶部
-                // 让位自动累加两行），收放不改页面视口。
-                child: FushiFloatingChromeOverlay(
-                  // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
-                  nestedGap: 0,
-                  opaqueChrome: true,
-                  masthead: true,
-                  chrome: subNavigation == null
-                      ? const SizedBox.shrink()
-                      : Padding(
-                          // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12
-                          // 由嵌套层统一给（[kFushiFloatingChromeGap] + 顶栏
-                          // 底边 4），这里不再叠竖向留白。
-                          padding: EdgeInsets.symmetric(
-                            horizontal: FushiDesignTokens.of(
-                              context,
-                            ).spacing.page,
-                          ),
-                          child: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: subNavigation,
-                          ),
-                        ),
-                  child: _buildSections(navigation),
-                ),
-              ),
-            ),
+          child: LibraryLayout<VideoLibrarySection>(
+            spec: spec,
+            body: _buildSections(const SizedBox.shrink()),
           ),
         ),
       ),
     );
   }
+
+  /// 分区的侧栏图标（Apple macOS 档侧栏子项）。
+  static IconData _iconOf(VideoLibrarySection section) => switch (section) {
+    VideoLibrarySection.home => FushiIcons.home,
+    VideoLibrarySection.series => FushiIcons.collections,
+    VideoLibrarySection.allVideos => FushiIcons.video,
+    VideoLibrarySection.mediaServers => FushiIcons.server,
+    VideoLibrarySection.discover => FushiIcons.globe,
+    VideoLibrarySection.onlineSources => FushiIcons.cloud,
+    VideoLibrarySection.extensions => FushiIcons.apps,
+    VideoLibrarySection.sources => FushiIcons.libraryAdd,
+  };
 
   /// [MediaLibraryShellScope.select] 的落地：库页视图种类 → 本壳分区。只认本壳
   /// 声明进 `kinds` 的在线分区，其它种类静默忽略（与通用壳同一契约）。

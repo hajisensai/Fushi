@@ -1,8 +1,8 @@
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoSearchTextField;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -30,7 +30,7 @@ import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
-    show FushiAppleMetrics;
+    show FushiAppleFormScope, FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_section_anchor.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
@@ -52,6 +52,15 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         kFushiMastheadTrackedOffset;
 import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
     show FushiPageTitleTier;
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show
+        FushiAppleLargeTitle,
+        FushiAppleNavBar,
+        FushiAppleSoftScrollEdge,
+        FushiRouteBackButton,
+        fushiAppleInlineTitleOpacity,
+        fushiAppleLargeTitleBand,
+        fushiAppleLargeTitleOpacity;
 
 export 'package:fushi/src/utils/components/settings_section_anchor.dart'
     show SettingsSectionAnchor, SettingsSectionSpy, SettingsSectionSpyScope;
@@ -109,7 +118,9 @@ enum SettingsKitStyle {
 /// 整个设置 renderer——后者经 schema 连着各页面，会把这些页拖进 import 大环
 /// （import_cycle_guard_test）。
 double settingsGlassDetailHorizontalInset(BuildContext context) =>
-    FushiAppleMetrics.of(context).desktop ? 28 : 16;
+    FushiAppleMetrics.of(context).desktop
+    ? 28 * fushiAppleMacScale(context)
+    : 16;
 
 /// M3E 圆角分级：大容器 28 / 内卡 20 / 小件 12（Apple 走 iOS 的 12 / 10 / 8）。
 class SettingsKitRadii {
@@ -324,7 +335,10 @@ class SettingsShapeIcon extends StatelessWidget {
       // 玻璃：图标不垫底色块（用户 2026-10-04「图标不要填充底」），只用 iOS
       // 系统色给字形着色区分分类；占位宽度与 iOS 图标位一致，文字左缘对齐。
       final double extent =
-          size ?? (FushiAppleMetrics.of(context).desktop ? 22 : 30);
+          size ??
+          (FushiAppleMetrics.of(context).desktop
+              ? 22 * fushiAppleMacScale(context)
+              : 30);
       return SizedBox.square(
         dimension: extent,
         child: Center(
@@ -371,7 +385,7 @@ Color settingsToneGlyphColor(BuildContext context, SettingsIconTone tone) {
 ///
 /// - M3E：高 56 全圆角胶囊（M3 search bar），surfaceContainerHigh 填充；获得
 ///   焦点时填充提亮一档并画 2px primary 描边，清除钮弹簧放大出现。
-/// - Apple：液态玻璃胶囊里的 [CupertinoSearchTextField]（桌面 13 号、触屏 17 号）。
+/// - Apple：共享 [FushiSearchField] 的 Apple 分支（macOS 宽窗 13 号、触屏 17 号）。
 ///
 /// 键盘：↓ 调 [onArrowDown]（把焦点交给结果列表），回车调 [onSubmitted]
 /// （约定为「打开第一条结果」）。
@@ -473,34 +487,20 @@ class _SettingsSearchBarState extends State<SettingsSearchBar> {
     );
   }
 
+  /// iOS 27 / macOS 27 搜索框：共享 [FushiSearchField] 的 Apple 分支 large 档
+  /// （tertiarySystemFill 实色胶囊、无描边、灰放大镜 / 占位字、有内容时 ⊗；
+  /// iOS 档是大标题下的独立搜索栏，高 44 / 20 放大镜 / 17pt，macOS 宽窗高 28 /
+  /// 13pt）。
   Widget _buildApple(BuildContext context) {
-    final FushiAppleColors apple = appleColorsOf(context);
-    final bool desktop = FushiAppleMetrics.of(context).desktop;
-    final double radius = desktop ? 15 : 19;
-    return fushiClearGlassBezel(
-      context,
-      radius: radius,
-      child: CupertinoSearchTextField(
-        controller: widget.controller,
-        focusNode: _focusNode,
-        autofocus: widget.autofocus,
-        placeholder: widget.hintText ?? t.settings_search_hint,
-        backgroundColor: Colors.transparent,
-        borderRadius: BorderRadius.circular(radius),
-        itemColor: apple.secondaryLabel,
-        itemSize: desktop ? 15 : 18,
-        style: TextStyle(fontSize: desktop ? 13 : 17, color: apple.label),
-        placeholderStyle: TextStyle(
-          fontSize: desktop ? 13 : 17,
-          color: apple.secondaryLabel,
-        ),
-        padding: desktop
-            ? const EdgeInsetsDirectional.fromSTEB(4, 6, 6, 6)
-            : const EdgeInsetsDirectional.fromSTEB(5, 9, 6, 9),
-        onChanged: widget.onChanged,
-        onSubmitted: widget.onSubmitted,
-        onSuffixTap: _clear,
-      ),
+    return FushiSearchField(
+      controller: widget.controller,
+      focusNode: _focusNode,
+      autofocus: widget.autofocus,
+      hintText: widget.hintText ?? t.settings_search_hint,
+      size: FushiSearchFieldSize.large,
+      onChanged: widget.onChanged,
+      onSubmitted: widget.onSubmitted ?? (String _) {},
+      onClear: _clear,
     );
   }
 
@@ -1284,11 +1284,64 @@ class _JumpChip extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  /// Apple：macOS 27 系统设置 / iOS 27 的无底文字标签——未选中透明、label 色
+  /// regular；选中是中性灰（secondaryFill）圆角底 + semibold，不用强调色实心。
+  /// 字号随 [FushiAppleMetrics]（桌面宽窗 13 / 触屏与窄窗 15）。填色按设置弹簧
+  /// 过渡（[SettingsSpringValue]），按下缩放（[FushiPressScale]）。
+  Widget _buildApple(BuildContext context) {
+    final FushiAppleColors colors = appleColorsOf(context);
+    final bool desktop = FushiAppleMetrics.of(context).desktop;
+    final double macScale = fushiAppleMacScale(context);
+    final Color active = colors.secondaryFill;
+    final Color idle = active.withValues(alpha: 0);
+    return KeyedSubtree(
+      key: valueKey,
+      child: SettingsSpringValue(
+        value: selected ? 1 : 0,
+        builder: (BuildContext context, double t, Widget? _) {
+          final double c = t.clamp(0.0, 1.0);
+          return FushiPressScale(
+            child: Material(
+              color: Color.lerp(idle, active, c),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(desktop ? 6 * macScale : 8),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onTap,
+                splashFactory: NoSplash.splashFactory,
+                hoverColor: colors.tertiaryFill,
+                highlightColor: colors.fill,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: desktop ? 10 * macScale : 12,
+                    vertical: desktop ? 4 * macScale : 6,
+                  ),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: desktop ? 13 * macScale : 15,
+                      height: 1.25,
+                      color: colors.label,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool apple = SettingsKitStyle.of(context) == SettingsKitStyle.apple;
     final bool eink = isEinkTheme(context);
+    if (apple && !eink) return _buildApple(context);
     final Color idle = apple
         ? appleColorsOf(context).tertiaryFill
         : scheme.surfaceContainerHigh;
@@ -1664,7 +1717,15 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
   Widget build(BuildContext context) {
     final bool apple = SettingsKitStyle.of(context) == SettingsKitStyle.apple;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Color page = apple
+    final bool form = _appleForm(context);
+    // grouped form：详情窗格是 macOS 27 的窗口底（深 #1E1E1E / 浅 #F5F5F5），
+    // 外壳让内容区铺到窗口顶，这块底一直画到窗口按钮那一行，没有接缝。
+    final Color page = form
+        ? fushiPageBackgroundColorOr(
+            context,
+            FushiAppleMetrics.of(context).formBackground(context),
+          )
+        : apple
         ? fushiPageBackgroundColorOr(
             context,
             appleColorsOf(context).groupedBackground,
@@ -1737,18 +1798,18 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
         );
       },
     );
-    final Widget column = apple || isGlassDesign(context)
-        ? SafeArea(
-            bottom: false,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                header,
-                jumpBar,
-                Expanded(child: body),
-              ],
+    final Widget column = form
+        ? FushiAppleFormScope(
+            child: _buildApple(
+              context,
+              jumpBar: jumpBar,
+              body: body,
+              canPop: canPop,
+              form: true,
             ),
           )
+        : apple || isGlassDesign(context)
+        ? _buildApple(context, jumpBar: jumpBar, body: body, canPop: canPop)
         : _buildOverlaid(context, header: header, jumpBar: jumpBar, body: body);
     // 独立路由页用 Scaffold（SnackBar / 键盘避让都要它）；嵌在宽屏右窗格时
     // 只铺 Material，不再套第二层 Scaffold。
@@ -1776,6 +1837,257 @@ class _SettingsKitScaffoldState extends State<SettingsKitScaffold> {
             ),
     );
   }
+
+  /// Apple（Cupertino）= iOS 27 / macOS 27 的设置子页：最上面一行导航栏
+  /// （[FushiAppleNavBar]：透明栏、玻璃返回圆钮、动作进共享玻璃胶囊），下面是
+  /// 靠前的大标题（带分类形状图标）与分组跳转条。正文顶部让位 = 大标题行 + 跳转
+  /// 条；正文往下滚时大标题随内容上移、被导航栏下沿收走并淡出，栏里淡入居中的
+  /// 17pt 小标题（UIKit `prefersLargeTitles` 的两段式交叉淡变）；跳转条随之上移
+  /// 后吸在栏下。内容压到栏 / 跳转条下面时下沿是库的 soft scroll edge。
+  ///
+  /// 正文不自己消费顶部让位时（[SettingsKitScaffold.bodyConsumesTopPadding] 为
+  /// false），壳替它整体让开，大标题不随内容滚，只在滚离顶部后淡出。
+  Widget _buildApple(
+    BuildContext context, {
+    required Widget jumpBar,
+    required Widget body,
+    required bool canPop,
+    bool form = false,
+  }) {
+    // grouped form（macOS 27 系统设置的详情窗格）没有大标题行：标题常驻工具栏。
+    final double band = form ? 0 : fushiAppleLargeTitleBand(context);
+    final bool consumes = widget.bodyConsumesTopPadding;
+    double offset() =>
+        _controller.hasClients ? _controller.positions.first.pixels : 0;
+    // 大标题已收走的那段（0…band）；不随内容滚的正文恒为 0。
+    double slide() => consumes ? offset().clamp(0.0, band) : 0;
+    double progress() => form
+        ? 1.0
+        : consumes
+        ? (offset() / band).clamp(0.0, 1.0)
+        : (offset() > 12 ? 1.0 : 0.0);
+    final IconData? icon = widget.leadingIcon;
+    final Widget largeTitle = FushiAppleLargeTitle(
+      title: widget.title,
+      badge: icon == null
+          ? null
+          : SettingsShapeIcon(
+              icon: icon,
+              tone: widget.leadingTone,
+              size: fushiAppleCompact(context)
+                  ? 26 * fushiAppleMacScale(context)
+                  : 30,
+            ),
+    );
+    final double inset = settingsGlassDetailHorizontalInset(context);
+    return SafeArea(
+      bottom: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (form)
+            // macOS 27 窗口工具栏（紧贴窗口按钮行下方的一行，高
+            // [_kFormToolbarHeight]）：‹ 返回（只在能返回时）+ 13 号 bold 标题
+            // （左缘 = 内容左缘）、紧接分组跳转条（放不下横向滚动）、右侧动作
+            // （恢复默认圆钮）贴详情右缘，三者垂直居中。
+            Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: math.max(
+                  0,
+                  settingsGlassDetailHorizontalInset(context) - _kFormBarInset,
+                ),
+              ),
+              child: FushiAppleNavBar(
+                primary: false,
+                automaticallyImplyLeading: false,
+                toolbarHeight: _kFormToolbarHeight,
+                leading: canPop
+                    ? FushiRouteBackButton(
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      )
+                    : null,
+                centerTitle: false,
+                titleTextStyle: TextStyle(
+                  fontSize: context.fushiType.bodySmall.fontSize,
+                  fontWeight: FontWeight.w700,
+                  height: 1.2,
+                  color: appleColorsOf(context).label,
+                ),
+                title: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(widget.title),
+                    Flexible(child: _formJumpBar(context)),
+                  ],
+                ),
+                actions: widget.actions,
+              ),
+            )
+          else
+            FushiAppleNavBar(
+              // 已在 SafeArea 里，栏不再让位状态栏 / 窗口标题栏。
+              primary: false,
+              automaticallyImplyLeading: false,
+              leading: canPop
+                  ? FushiRouteBackButton(
+                      onPressed: () => Navigator.of(context).maybePop(),
+                    )
+                  : null,
+              title: ListenableBuilder(
+                listenable: _controller,
+                builder: (BuildContext context, Widget? child) {
+                  final double o = fushiAppleInlineTitleOpacity(progress());
+                  return ExcludeSemantics(
+                    excluding: o == 0,
+                    child: Opacity(opacity: o, child: child),
+                  );
+                },
+                child: Text(widget.title),
+              ),
+              actions: widget.actions,
+            ),
+          Expanded(
+            child: Builder(
+              builder: (BuildContext context) {
+                final MediaQueryData media = MediaQuery.of(context);
+                return Stack(
+                  children: <Widget>[
+                    Positioned.fill(
+                      child: ListenableBuilder(
+                        listenable: _jumpBarHeight,
+                        child: consumes
+                            ? body
+                            : SafeArea(bottom: false, child: body),
+                        builder: (BuildContext context, Widget? content) {
+                          // grouped form 的跳转条在工具栏行里，正文不让位。
+                          final double top = form
+                              ? 0
+                              : band + _jumpBarHeight.value;
+                          return MediaQuery(
+                            data: media.copyWith(
+                              padding: media.padding.copyWith(top: top),
+                              viewPadding: media.viewPadding.copyWith(top: top),
+                            ),
+                            child: content!,
+                          );
+                        },
+                      ),
+                    ),
+                    // 内容压到导航栏 / 吸顶跳转条下面：跳转条后面垫页面底色，
+                    // 下沿 soft 渐隐（库 GlassScrollEdgeEffect，不模糊）。
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: ListenableBuilder(
+                        listenable: Listenable.merge(<Listenable>[
+                          _controller,
+                          _jumpBarHeight,
+                        ]),
+                        builder: (BuildContext context, Widget? _) {
+                          final double jumpTop = band - slide();
+                          return FushiAppleSoftScrollEdge(
+                            visible: form
+                                ? offset() > 0
+                                : consumes
+                                ? offset() >= band - 0.5
+                                : offset() > 0,
+                            solidExtent: form
+                                ? 0
+                                : jumpTop + _jumpBarHeight.value,
+                          );
+                        },
+                      ),
+                    ),
+                    if (!form)
+                      ListenableBuilder(
+                        listenable: _controller,
+                        child: largeTitle,
+                        builder: (BuildContext context, Widget? title) {
+                          final double o = fushiAppleLargeTitleOpacity(
+                            progress(),
+                          );
+                          return Positioned(
+                            top: -slide(),
+                            left: inset,
+                            right: inset,
+                            height: band,
+                            child: ExcludeSemantics(
+                              excluding: o == 0,
+                              child: AnimatedOpacity(
+                                opacity: o,
+                                duration: consumes
+                                    ? Duration.zero
+                                    : fushiMotionDuration(
+                                        context,
+                                        FushiMotion.short,
+                                      ),
+                                child: Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: title,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    if (!form)
+                      ListenableBuilder(
+                        listenable: _controller,
+                        child: FushiHeightReporter(
+                          onHeight: _onJumpBarHeight,
+                          child: jumpBar,
+                        ),
+                        builder: (BuildContext context, Widget? bar) =>
+                            Positioned(
+                              top: band - slide(),
+                              left: 0,
+                              right: 0,
+                              child: bar!,
+                            ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 本页是否按 macOS 27 grouped form 排：Apple 设计系统、宽屏主从的详情窗格
+  /// （不画返回钮的那一种）、桌面档宽窗。
+  bool _appleForm(BuildContext context) =>
+      !widget.showBack &&
+      (SettingsKitStyle.of(context) == SettingsKitStyle.apple ||
+          isGlassDesign(context)) &&
+      FushiAppleMetrics.of(context).desktop;
+
+  /// grouped form 工具栏行里的分组跳转条（页内 ≥ 2 个带标题分组才有）：接在
+  /// 标题后、左边留 16，选中项中性灰圆角底（[_JumpChip] 的 Apple 形态）。
+  Widget _formJumpBar(BuildContext context) => ListenableBuilder(
+    listenable: _spy,
+    builder: (BuildContext context, Widget? _) {
+      final List<(String, String)> sections = _spy.sections;
+      if (sections.length < 2) return const SizedBox.shrink();
+      return SettingsSectionJumpBar(
+        padding: const EdgeInsetsDirectional.only(start: 16),
+        sections: sections,
+        activeId: _spy.activeId,
+        onSelected: (String id) => _spy.jumpTo(
+          id,
+          duration: fushiMotionDuration(context, FushiMotion.long),
+        ),
+      );
+    },
+  );
+
+  /// [FushiAppleNavBar] 桌面档自带的水平边距（抵掉后标题贴内容左缘）。
+  static const double _kFormBarInset = 12;
+
+  /// grouped form 工具栏行高（macOS 27 窗口工具栏 52）。
+  static const double _kFormToolbarHeight = 52;
 
   /// M3E 叠放形态（与 [FushiPageScaffold] 的 extendBodyBehindHeader 同一约定）：
   /// 正文占满整页，页头 + 跳转条浮在它上面；正文的 MediaQuery 顶部 padding =

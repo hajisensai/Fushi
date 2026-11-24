@@ -96,6 +96,7 @@ class ImportSourceBlockData {
     required this.menu,
     this.lastScanText,
     this.isPrivate = false,
+    this.remote = false,
     this.autoOwnerText,
     this.scanError = false,
     this.working = false,
@@ -123,6 +124,9 @@ class ImportSourceBlockData {
   /// 「上次扫描 …」；null = 从未扫描。
   final String? lastScanText;
   final bool isPrivate;
+
+  /// 网络来源（非本地文件夹）：Apple 导入页行首画云而不是文件夹。
+  final bool remote;
 
   /// 「由视频来源「X」自动添加」副行。
   final String? autoOwnerText;

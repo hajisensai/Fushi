@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_model
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_book.dart'
     show downloadAudiobookshelfSubtitle;
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/src/utils/own_route_exit.dart';
 import 'package:fushi/src/media/import/import_progress_card.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_subtitle_dialog.dart'
@@ -173,6 +174,7 @@ class SrtBookReimportDialogState extends State<SrtBookReimportDialog>
               FushiStaggeredEntrance(
                 index: 0,
                 child: ImportPickTileGrid(
+                  groupTitle: t.import_group_files,
                   children: <Widget>[
                     ImportPickTile(
                       tone: ImportTone.coral,
@@ -236,10 +238,12 @@ class SrtBookReimportDialogState extends State<SrtBookReimportDialog>
           ),
         ),
         actions: <Widget>[
-          adaptiveDialogAction(
-            context: context,
-            onPressed: _idle ? () => Navigator.pop(context) : null,
-            child: Text(t.dialog_cancel),
+          FushiSheetAction.cancel(
+            child: adaptiveDialogAction(
+              context: context,
+              onPressed: _idle ? () => Navigator.pop(context) : null,
+              child: Text(t.dialog_cancel),
+            ),
           ),
           buildImportAction(context, onImport: _doImport, enabled: _idle),
         ],

@@ -47,7 +47,7 @@ void main() {
     await tester.tap(find.text('By folder').last);
     await tester.pumpAndSettle();
     expect(find.text('Enable scraping for this source'), findsNothing);
-    await tester.tap(find.text('SAVE'));
+    await tester.tap(find.text('Save'));
     // BUG-4349 起改分组方式即按新方式重扫该来源：重扫是真 IO（扫描根目录），只在
     // runAsync 里推进；扫完通知一次媒体库，保存收尾再通知一次。
     await _pumpRealUntil(tester, () => libraryChanges >= 2);
@@ -62,7 +62,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('By folder'), findsWidgets);
     // Cancel must not overwrite the persisted mode.
-    await tester.tap(find.text('CANCEL'));
+    await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(
       (await db.getMediaSourceById(sourceId))!.videoGroupingMode,

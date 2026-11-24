@@ -198,6 +198,9 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
       );
     }
     final double gap = tokens.spacing.gap;
+    if (isGlassDesign(context)) {
+      return _continueHeroApple(tokens, appModel, entries);
+    }
     return HomeWidgetFrame(
       key: const ValueKey<String>('home-continue-card'),
       title: t.home_continue,
@@ -250,6 +253,75 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
       ),
     );
   }
+
+  /// Cupertino「继续」主角（TV app「接着看」式，用户 2026-11-24 拍板）：主卡单独
+  /// 占格、不套分区卡——剧照主卡铺满它那一段（按 cover 裁切），竖封面主卡本身
+  /// 就是一张卡；其余条目（格子够大时）是旁边 / 下面另一块无标题的分组卡。
+  Widget _continueHeroApple(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<_ContinueEntry> entries,
+  ) => KeyedSubtree(
+    key: const ValueKey<String>('home-continue-card'),
+    child: LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        Widget hero(double height) => FushiContinueOrientedEntry(
+          entry: _continueMainEntry(tokens, appModel, entries.first),
+          builder: (FushiContinueEntry main) {
+            if (main.still) {
+              return KeyedSubtree(
+                key: const ValueKey<String>('home-continue-apple-still'),
+                child: FushiContinueStillCard(entry: main),
+              );
+            }
+            final double cover = math.max(60, height - tokens.spacing.gap * 3);
+            return HomeWidgetOverflowClip(
+              child: FushiContinueSpotlight(
+                main: main,
+                heroCoverHeight: cover,
+                soloCoverHeight: cover,
+                staggerEntrance: false,
+              ),
+            );
+          },
+        );
+
+        final _ContinueSplit split = _continueSplitFor(
+          c.biggest,
+          entries.length,
+          minSide: _kContinueMiniSideMin,
+        );
+        if (split == _ContinueSplit.none) return hero(c.maxHeight);
+        final bool sideways = split == _ContinueSplit.side;
+        return _heroWithSide(
+          area: c.biggest,
+          sideways: sideways,
+          hero: hero,
+          side: (Size area) {
+            final double pad = homeWidgetFramePadding(dense: true);
+            return HomeWidgetFrame(
+              title: t.home_continue,
+              icon: FushiIcons.playCircle,
+              hueKey: HomeWidgetKind.continueHero.id,
+              poster: false,
+              dense: true,
+              showHeader: false,
+              child: _continueCardSide(
+                tokens,
+                appModel,
+                entries,
+                Size(
+                  math.max(0, area.width - pad * 2),
+                  math.max(0, area.height - pad * 2),
+                ),
+                sideways,
+              ),
+            );
+          },
+        );
+      },
+    ),
+  );
 
   /// 主卡 + 其余条目两段的分割：[sideways] 时左右（主卡占约 55%），否则上下（主卡占
   /// 约 60%）。[hero] 拿到主卡那段的高度，[side] 拿到其余条目那段的尺寸。
@@ -606,6 +678,59 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     );
     final List<_ContinueEntry> shown = entries.take(rows * columns).toList();
     final double width = (area.width - _kMiniGap * (columns - 1)) / columns;
+    if (isGlassDesign(context) && !_posterPanels) {
+      // Apple：inset grouped 列表口径——行与行之间一条 hairline，从文字起始处
+      // 缩进（封面列不画线），最后一行下面不画。分隔线占原行距那一段，不改行高。
+      final int lastRow = (shown.length - 1) ~/ columns;
+      return Wrap(
+        key: key,
+        spacing: _kMiniGap,
+        children: <Widget>[
+          for (int i = 0; i < shown.length; i++)
+            SizedBox(
+              width: width,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _widgetMiniTile(
+                    tokens: tokens,
+                    appModel: appModel,
+                    key: ValueKey<String>('$keyPrefix/${i + indexOffset}'),
+                    entry: shown[i],
+                    height: rowHeight,
+                    subtitle: subtitleOf(shown[i]),
+                  ),
+                  if (i ~/ columns < lastRow)
+                    SizedBox(
+                      height: _kMiniGap,
+                      child: Align(
+                        alignment: AlignmentDirectional.centerEnd,
+                        child: Padding(
+                          padding: EdgeInsetsDirectional.only(
+                            start:
+                                rowHeight *
+                                    homeContinuePortraitAspect(
+                                      _continueMaterial(shown[i]),
+                                    ) +
+                                10,
+                          ),
+                          child: SizedBox(
+                            height: 1 / MediaQuery.devicePixelRatioOf(context),
+                            width: double.infinity,
+                            child: ColoredBox(
+                              color: appleColorsOf(context).separator,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
     return Wrap(
       key: key,
       spacing: _kMiniGap,
@@ -657,10 +782,10 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
             ].join(' · '),
             onTap: open,
             excludeSemantics: true,
-            child: InkWell(
+            child: _miniTapTarget(
+              context,
               key: key,
               onTap: open,
-              borderRadius: FushiBorderRadius.card,
               child: SizedBox(
                 height: height,
                 child: Row(
@@ -680,10 +805,27 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
                     Expanded(
                       child: LayoutBuilder(
                         builder: (BuildContext context, BoxConstraints box) {
-                          final TextStyle titleStyle = tokens.type.listTitle
-                              .copyWith(color: fg);
-                          final TextStyle metaStyle = tokens.type.metadata
-                              .copyWith(color: muted);
+                          final FushiAppleMetrics? am =
+                              isGlassDesign(context) &&
+                                  !(style?.poster ?? false)
+                              ? FushiAppleMetrics.of(context)
+                              : null;
+                          final TextStyle titleStyle = am != null
+                              ? appleTextStyle(
+                                  context,
+                                  size: (am.desktop ? 13 : 15) * am.scale,
+                                  weight: FontWeight.w600,
+                                  color: fg,
+                                )
+                              : tokens.type.listTitle.copyWith(color: fg);
+                          final TextStyle metaStyle = am != null
+                              ? appleTextStyle(
+                                  context,
+                                  size: (am.desktop ? 11 : 13) * am.scale,
+                                  height: 1.3,
+                                  color: muted,
+                                )
+                              : tokens.type.metadata.copyWith(color: muted);
                           final TextStyle browStyle = context
                               .fushiType
                               .labelSmall
@@ -740,6 +882,31 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
           ),
         );
       },
+    );
+  }
+
+  /// 条目小行的点按面：Apple 是 [FushiPlainButton]（按下变淡、悬停 tertiaryFill、
+  /// 焦点强调色描边），M3E 是 [InkWell]。
+  Widget _miniTapTarget(
+    BuildContext context, {
+    required Key key,
+    required VoidCallback onTap,
+    required Widget child,
+  }) {
+    if (isGlassDesign(context) &&
+        HomeWidgetStyle.maybeOf(context)?.poster != true) {
+      return FushiPlainButton(
+        key: key,
+        onPressed: onTap,
+        borderRadius: FushiAppleRadii.of(context).highlightRadius,
+        child: child,
+      );
+    }
+    return InkWell(
+      key: key,
+      onTap: onTap,
+      borderRadius: FushiBorderRadius.card,
+      child: child,
     );
   }
 
@@ -939,7 +1106,9 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
       builder: (BuildContext context) {
         final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
         final Color strong =
-            style?.colors?.onContainer ?? tokens.surfaces.onSurface;
+            style?.colors?.onContainer ??
+            style?.foreground ??
+            tokens.surfaces.onSurface;
         return HomeTodayGoalPager(
           key: const ValueKey<String>('home-today-goal-pager'),
           count: goals.length,
@@ -988,7 +1157,10 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
         final FushiCoverBlockColors? colors = style?.colors;
         final Color muted = style?.muted ?? tokens.surfaces.onVariant;
-        final Color strong = colors?.onContainer ?? tokens.surfaces.onSurface;
+        final Color strong =
+            colors?.onContainer ??
+            style?.foreground ??
+            tokens.surfaces.onSurface;
         final TextStyle caption = tokens.type.metadata.copyWith(color: muted);
         final double ringSize = dense
             ? 40
@@ -1218,7 +1390,10 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
         final FushiCoverBlockColors? colors = style?.colors;
         final Color muted = style?.muted ?? tokens.surfaces.onVariant;
-        final Color strong = colors?.onContainer ?? tokens.surfaces.onSurface;
+        final Color strong =
+            colors?.onContainer ??
+            style?.foreground ??
+            tokens.surfaces.onSurface;
         final StudyGoalColors goalColors = studyGoalColorsOf(
           context,
           language: g.goal.language,
@@ -1463,12 +1638,16 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
             : time;
         // TinO49VcdQ：挂不挂副行、大字多大按内容区实际高度定（整格高度减掉卡头后
         // 更矮），副行完整画出，不再竖向居中裁掉下半截。
+        final FushiCoverBlockColors? colors = style?.colors;
         final Widget column = HomeWidgetFigureWithLine(
           figure: figure,
           line: line,
           lineStyle: caption,
+          // Apple 分区卡：大数字贴着小标题排（各卡「标题 → 数字」间距一致），不竖向居中。
+          alignment: isGlassDesign(context) && colors == null
+              ? AlignmentDirectional.topStart
+              : AlignmentDirectional.centerStart,
         );
-        final FushiCoverBlockColors? colors = style?.colors;
         if (!wide || colors == null) return column;
         return Row(
           children: <Widget>[
@@ -1660,7 +1839,10 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
         final HomeWidgetStyle? style = HomeWidgetStyle.maybeOf(context);
         final FushiCoverBlockColors? colors = style?.colors;
         final Color muted = style?.muted ?? tokens.surfaces.onVariant;
-        final Color strong = colors?.onContainer ?? tokens.surfaces.onSurface;
+        final Color strong =
+            colors?.onContainer ??
+            style?.foreground ??
+            tokens.surfaces.onSurface;
         final TextStyle caption = tokens.type.metadata.copyWith(color: muted);
         // 环色跟各自目标的语言（挑的目标可以混语言），带完成状态（[StudyGoalRing]）；
         // 环够大时环心写百分数。

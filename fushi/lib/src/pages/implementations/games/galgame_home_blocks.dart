@@ -3,22 +3,22 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/gestures.dart'
     show PointerDeviceKind, PointerEnterEvent;
-import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
-import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/pages/implementations/games/galgame_home_cover_art.dart'
+    show GalgameBlockPalette, galgameHomeCoverImage;
+import 'package:fushi/src/pages/implementations/games/galgame_home_model.dart';
+import 'package:fushi/src/pages/implementations/games/galgame_play_status_style.dart';
 import 'package:fushi/src/pages/implementations/games/galgame_detail_route.dart'
     show galgameCoverFlightShuttle, galgameCoverHeroTag;
 import 'package:fushi/src/pages/implementations/games_library_page.dart'
-    show galgamePlayStatusLabel, galgamePlayTimeFigure;
+    show galgamePlayTimeFigure;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/fushi_continue_card_row.dart'
-    show coverColorSchemeCache;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_fit_title.dart';
@@ -80,71 +80,7 @@ const double kGalgameHomeRandomHeight = 236;
 /// 统计块的基准高。
 const double kGalgameHomeStatHeight = 214;
 
-// ── 游玩状态色 ──────────────────────────────────────────────────────────────
-
-/// 6 档游玩状态的色点（设计稿第 6 节，深 / 浅两套；chip 底 = 色点 24% 叠在容器
-/// 色上，文字用容器 onColor，两套都 ≥4.5:1）。
-Color galgamePlayStatusDotColor(GalgamePlayStatus status, Brightness b) {
-  final bool dark = b == Brightness.dark;
-  return switch (status) {
-    GalgamePlayStatus.unset =>
-      dark ? const Color(0xFF8F8B96) : const Color(0xFF6B6E7B),
-    GalgamePlayStatus.wantToPlay =>
-      dark ? const Color(0xFFA9C8FF) : const Color(0xFF2F62C9),
-    GalgamePlayStatus.playing =>
-      dark ? const Color(0xFF9BE0AB) : const Color(0xFF1D8A45),
-    GalgamePlayStatus.played =>
-      dark ? const Color(0xFFE7CF6F) : const Color(0xFF8A6A00),
-    GalgamePlayStatus.onHold =>
-      dark ? const Color(0xFFC9C6CF) : const Color(0xFF5D5A66),
-    GalgamePlayStatus.dropped =>
-      dark ? const Color(0xFFFF9B9B) : const Color(0xFFB3261E),
-  };
-}
-
-/// 「游玩状态」块里各档的展示顺序（设计稿：在玩 → 玩过 → 想玩 → 搁置 → 弃坑 →
-/// 未设置）。
-const List<GalgamePlayStatus> kGalgameHomeStatusOrder = <GalgamePlayStatus>[
-  GalgamePlayStatus.playing,
-  GalgamePlayStatus.played,
-  GalgamePlayStatus.wantToPlay,
-  GalgamePlayStatus.onHold,
-  GalgamePlayStatus.dropped,
-  GalgamePlayStatus.unset,
-];
-
-/// 按游玩状态计数（6 档都有键，没有的为 0）。纯函数。
-Map<GalgamePlayStatus, int> countGalgamePlayStatuses(
-  Iterable<GalgameEntry> games,
-) {
-  final Map<GalgamePlayStatus, int> counts = <GalgamePlayStatus, int>{
-    for (final GalgamePlayStatus s in GalgamePlayStatus.values) s: 0,
-  };
-  for (final GalgameEntry g in games) {
-    counts[g.playStatus] = (counts[g.playStatus] ?? 0) + 1;
-  }
-  return counts;
-}
-
-/// 「平均通关约 n 小时」的 n：10 小时内保留一位小数，往上取整；没有或非正为 null。
-String? galgameAverageHoursLabel(double? hours) {
-  if (hours == null || hours <= 0 || !hours.isFinite) return null;
-  return hours < 10
-      ? hours.toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '')
-      : '${hours.round()}';
-}
-
 // ── 封面与取色 ──────────────────────────────────────────────────────────────
-
-/// 游戏封面图源（与游戏库同一条来源链）；没有封面为 null。
-ImageProvider? galgameHomeCoverImage(
-  GalgameEntry game, {
-  int decodeWidth = kLocalCoverDecodePixelWidth,
-}) => resolveMediaCoverImage(
-  kind: MediaKind.game,
-  localPath: game.coverPath,
-  decodeWidth: decodeWidth,
-);
 
 /// 首页块里的游戏封面：有图画图，没有或解码失败画按标题生成的封面
 /// （[FushiGeneratedCover]，首字 + 标题哈希取色）。
@@ -173,74 +109,6 @@ class GalgameHomeCover extends StatelessWidget {
       errorBuilder: (BuildContext context, Object error, StackTrace? stack) =>
           generated,
     );
-  }
-}
-
-/// 块配色：封面取色（[coverColorSchemeCache]，与库页色块同一份缓存）派生
-/// [FushiCoverBlockColors]；没封面按标题哈希色相（与生成封面同色）；墨水屏中性色。
-class GalgameBlockPalette extends StatefulWidget {
-  const GalgameBlockPalette({
-    required this.title,
-    required this.image,
-    required this.builder,
-    super.key,
-  });
-
-  final String title;
-  final ImageProvider? image;
-  final Widget Function(BuildContext context, FushiCoverBlockColors colors)
-  builder;
-
-  @override
-  State<GalgameBlockPalette> createState() => _GalgameBlockPaletteState();
-}
-
-class _GalgameBlockPaletteState extends State<GalgameBlockPalette> {
-  ColorScheme? _scheme;
-  ImageProvider? _for;
-  Brightness? _brightness;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _resolve();
-  }
-
-  @override
-  void didUpdateWidget(GalgameBlockPalette oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _resolve();
-  }
-
-  void _resolve() {
-    final ImageProvider? image = isEinkTheme(context) ? null : widget.image;
-    final Brightness brightness = Theme.of(context).brightness;
-    if (image == _for && brightness == _brightness) return;
-    _for = image;
-    _brightness = brightness;
-    if (image == null) {
-      _scheme = null;
-      return;
-    }
-    _scheme = coverColorSchemeCache.peek(image, brightness);
-    if (_scheme != null) return;
-    coverColorSchemeCache.resolve(image, brightness).then((ColorScheme? s) {
-      if (!mounted || _for != image || _brightness != brightness) return;
-      setState(() => _scheme = s);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final FushiCoverBlockColors colors =
-        _scheme == null && widget.image == null && !isEinkTheme(context)
-        ? FushiCoverBlockColors.fromHue(
-            theme,
-            fushiGeneratedCoverHue(widget.title),
-          )
-        : FushiCoverBlockColors.resolve(theme, _scheme);
-    return widget.builder(context, colors);
   }
 }
 

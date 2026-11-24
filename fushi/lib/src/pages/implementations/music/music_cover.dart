@@ -183,28 +183,33 @@ class MusicCover extends StatelessWidget {
     } else {
       child = placeholder;
     }
-    return ClipRRect(
-      borderRadius:
-          borderRadius ??
-          (shelfCoverMaterialOf(context) != null
-              ? shelfCoverRadius(context)
-              : FushiDesignTokens.of(context).radii.cardRadius),
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: AspectRatio(
-          aspectRatio: 1,
-          // NSFW 专辑的封面按图源认（拍板台 NCzkl6oLnf-adult-cover）：网格、详情、
-          // 曲目行、播放条、播放页、队列、艺人头像都经这里，不用逐处传专辑 uid。
-          child: MusicNsfwCover(
-            coverPath: file,
-            embeddedFromPath: embeddedFromPath,
-            // 列表行 / 播放条的小缩略图压不下「已隐藏」图标，只模糊。
-            showIcon: size == null || size! >= 64,
-            child: child,
-          ),
+    final Widget sized = SizedBox(
+      width: size,
+      height: size,
+      child: AspectRatio(
+        aspectRatio: 1,
+        // NSFW 专辑的封面按图源认（拍板台 NCzkl6oLnf-adult-cover）：网格、详情、
+        // 曲目行、播放条、播放页、队列、艺人头像都经这里，不用逐处传专辑 uid。
+        child: MusicNsfwCover(
+          coverPath: file,
+          embeddedFromPath: embeddedFromPath,
+          // 列表行 / 播放条的小缩略图压不下「已隐藏」图标，只模糊。
+          showIcon: size == null || size! >= 64,
+          child: child,
         ),
       ),
+    );
+    final BorderRadius? explicit = borderRadius;
+    if (explicit != null) {
+      return ClipRRect(borderRadius: explicit, child: sized);
+    }
+    // 材质封面框里：与框同一外形裁切（Cupertino 专辑是按尺寸取半径的连续曲率），
+    // 内外轮廓重合、角上不露衬底。
+    final ShelfCoverShape? shape = shelfCoverShapeOf(context);
+    if (shape != null) return shape.clip(child: sized);
+    return ClipRRect(
+      borderRadius: FushiDesignTokens.of(context).radii.cardRadius,
+      child: sized,
     );
   }
 }

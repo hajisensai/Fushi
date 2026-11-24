@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
@@ -84,6 +85,7 @@ import 'package:fushi/src/web_adblock/web_adblock_service.dart'
     show WebAdblockService, webAdblockServiceProvider;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_stack.dart';
@@ -358,6 +360,8 @@ import 'package:fushi/src/media/video/video_current_line_copy.dart';
 import 'package:fushi/src/media/video/video_simultaneous_cues.dart';
 import 'package:fushi/src/media/video/video_loop_cue_badge.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
+import 'package:fushi/src/media/video/video_apple_chrome_bar.dart';
+import 'package:fushi/src/media/video/video_apple_chrome_plan.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
@@ -607,8 +611,8 @@ import 'package:fushi/src/media/video/remote_subtitle_catalog.dart';
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_presence.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 part 'video_fushi/danmaku.part.dart';
@@ -620,6 +624,7 @@ part 'video_fushi/remote_disc_buffering.part.dart';
 part 'video_fushi/subtitle.part.dart';
 part 'video_fushi/controls_popover.part.dart';
 part 'video_fushi/volume_osd.part.dart';
+part 'video_fushi/apple_chrome.part.dart';
 part 'video_fushi/chapter.part.dart';
 part 'video_fushi/audio_track.part.dart';
 part 'video_fushi/quality.part.dart';
@@ -1770,8 +1775,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///
   /// M3E：轨道比底栏胶囊外缘（[_videoM3eFloatingSideInset]）再内缩
   /// [_videoM3eSeekLaneOverhang]，与左下 / 右下胶囊里第一个 / 最后一个按钮大致对齐。
+  ///
+  /// Apple 触屏（方案 C）：进度条一行两端是时间，轨道再让出时间标签的宽
+  /// （[_VideoAppleChrome._appleTouchTimeLabelReserve]）。Apple 桌面进度条在底部条
+  /// 行内，不读本值。
   double get _videoSeekBarSideInset => _appleChrome
-      ? kVideoAppleChromeEdgeInset + 16
+      ? _videoAppleButtonBarSideInset +
+            (_isDesktopVideoControls ? 0 : _appleTouchTimeLabelReserve)
       : _videoM3eFloatingSideInset + _videoM3eSeekLaneOverhang;
 
   /// M3E 进度条轨道相对底栏胶囊外缘的内缩量（随界面缩放）。
@@ -1814,6 +1824,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   double get _videoSeekBarTrackCenter {
     final double d = _controlsDensityScale;
     final bool desktop = _isDesktopVideoControls;
+    // Apple 桌面（方案 C）：进度条在底部单行条里，轨道中线 = 按钮行竖直正中。
+    if (_appleInlineSeekLane) {
+      return _floatingChromeBottomLift + _videoButtonBarHeight * d / 2;
+    }
     final double inContainer;
     if (_appleChrome) {
       inContainer = desktop
@@ -1850,32 +1864,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// Apple：底栏按钮行左右内缩（胶囊外边距 + 8）。
   double get _videoAppleButtonBarSideInset => kVideoAppleChromeEdgeInset + 8;
-
-  /// Apple：底栏玻璃胶囊的几何（[VideoAppleChromeBackdrop]）。与 theme 喂给 media_kit
-  /// 的同一组量推导：下沿 = 按钮行下沿 − [kVideoAppleCapsuleBottomPadding]，上沿 =
-  /// 进度条轨道中线 + [kVideoAppleCapsuleTopPadding]（没有进度条时 = 按钮行上沿）。
-  /// MD3 / mini 档返回 null。
-  VideoAppleCapsuleGeometry? _appleCapsuleGeometry() {
-    if (!_appleChrome || !_controlsDensity.showBottomButtonBar) return null;
-    final double d = _controlsDensityScale;
-    final double barHeight = _videoButtonBarHeight * d;
-    final double buttonBottom = _isDesktopVideoControls
-        ? _floatingChromeBottomLift
-        : _videoBottomChromeBaseline +
-              _videoBottomSystemInset() +
-              _floatingChromeBottomLift;
-    final double trackCenter = _videoSeekBarTrackCenter;
-    final double top = _controlsDensity.showSeekBar
-        ? trackCenter + kVideoAppleCapsuleTopPadding * d
-        : buttonBottom + barHeight + kVideoAppleCapsuleBottomPadding;
-    final double bottom = buttonBottom - kVideoAppleCapsuleBottomPadding;
-    return VideoAppleCapsuleGeometry(
-      left: kVideoAppleChromeEdgeInset,
-      right: kVideoAppleChromeEdgeInset,
-      bottom: bottom,
-      height: top - bottom,
-    );
-  }
 
   /// 移动控制条底部留白基线（BUG-184）：进度条 / 底部按钮条不贴屏幕物理底边。
   ///
@@ -2011,6 +1999,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   bool _controlsHoldMenuOpen = false;
   bool _controlsHoldJumpPanel = false;
   bool _controlsHoldPopoverPress = false;
+
+  /// Apple 桌面行内进度条拖动中（[_VideoAppleChrome._appleInlineSeekLaneContent]）：
+  /// 那条进度条不在 fork 控制条状态里，拖动期间由这里按住控制条。
+  bool _controlsHoldSeekDrag = false;
 
   static const double _volumeStep = 5.0;
 
@@ -10859,7 +10851,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _controlsHeld.value =
         _controlsHoldMenuOpen ||
         _controlsHoldJumpPanel ||
-        _controlsHoldPopoverPress;
+        _controlsHoldPopoverPress ||
+        _controlsHoldSeekDrag;
   }
 
   /// MD3 Expressive chrome 是否生效（Apple 设计系统之外的一切，含墨水屏）。
@@ -11109,20 +11102,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   Widget _topBarTitleText({required AlignmentGeometry alignment}) {
     if (_m3eChrome) return _m3eTopBarTitle(alignment: alignment);
-    return Align(
-      alignment: alignment,
-      child: ValueListenableBuilder<String?>(
-        valueListenable: _titleNotifier,
-        builder: (BuildContext _, String? title, __) => Text(
-          title ?? '',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: alignment == AlignmentDirectional.centerEnd
-              ? TextAlign.end
-              : alignment == AlignmentDirectional.center
-              ? TextAlign.center
-              : TextAlign.start,
-          style: _videoControlTitleStyle(),
+    // 标题不在玻璃里：Apple 控制条显隐时跟玻璃同一条进度淡（[FushiGlassPresenceFade]）。
+    return FushiGlassPresenceFade(
+      child: Align(
+        alignment: alignment,
+        child: ValueListenableBuilder<String?>(
+          valueListenable: _titleNotifier,
+          builder: (BuildContext _, String? title, __) => Text(
+            title ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: alignment == AlignmentDirectional.centerEnd
+                ? TextAlign.end
+                : alignment == AlignmentDirectional.center
+                ? TextAlign.center
+                : TextAlign.start,
+            style: _videoControlTitleStyle(),
+          ),
         ),
       ),
     );
@@ -12683,10 +12679,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // mini 档整条进度条被 theme 关掉（`displaySeekBar: false`，进度改由视频最下方
       // 那条细线承担），此时热区高必须按 0 算——否则字幕会为一条根本没画出来的
       // 进度条让出三四十像素，小窗里那是画面高度的一大截。
-      seekBarContainerHeight: _controlsDensity.showSeekBar
+      // Apple 桌面（方案 C）：进度条在底部单行条里，热区不高出按钮行，只让按钮行。
+      seekBarContainerHeight:
+          _controlsDensity.showSeekBar && !_appleInlineSeekLane
           ? _activeSeekBarContainerHeight * densityScale
           : 0,
-      seekBarBottomButtonBarOverlap: _controlsDensity.showSeekBar
+      seekBarBottomButtonBarOverlap:
+          _controlsDensity.showSeekBar && !_appleInlineSeekLane
           ? _activeSeekBarButtonBarOverlap * densityScale
           : 0,
       subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap * densityScale,

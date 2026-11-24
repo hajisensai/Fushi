@@ -1,4 +1,4 @@
-/// 导入面页面骨架（导入稿 v2「ImportCollagePage」）：书 / 漫画 / 视频 / 音乐 /
+/// 导入面页面骨架（导入稿 v2「ImportCollagePage」，现名 [MaterialImportLayout]）：书 / 漫画 / 视频 / 音乐 /
 /// 游戏的「导入」视图与查词「一本词典都没有」的空态共用。只接一份
 /// [ImportSurfaceSpec] 和一个可选的来源区（`MediaSourcesView` 的色块呈现）。
 ///
@@ -18,6 +18,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/media/import/import_collage_blocks.dart';
+import 'package:fushi/src/media/import/import_run_controller.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -104,14 +105,15 @@ class ImportCollageLayout {
   bool get compact => sizeClass == WindowSizeClass.compact;
 }
 
-/// 导入面页面骨架（见文件头）。
+/// 导入面页面骨架（见文件头）：M3E 拼贴版，经 `ImportPageLayout` 在非 Cupertino
+/// 主题下选用（2026-11-24 起 Cupertino 主题走 `AppleImportLayout`）。
 ///
 /// [sources] 是来源区（通常是 `MediaSourcesView(presentation: blocks)`）；为空时
 /// 没有来源区（查词空态）。[onAddSource] 非空时区头右侧有「＋ 添加来源」。
 /// [scrollable] = false 时不自带滚动与顶部浮动栏让位（嵌进别的滚动页，如查词
 /// 主页的空态）。
-class ImportCollagePage extends StatefulWidget {
-  const ImportCollagePage({
+class MaterialImportLayout extends StatefulWidget {
+  const MaterialImportLayout({
     required this.spec,
     this.sources,
     this.onAddSource,
@@ -127,32 +129,29 @@ class ImportCollagePage extends StatefulWidget {
   final bool scrollable;
 
   @override
-  State<ImportCollagePage> createState() => _ImportCollagePageState();
+  State<MaterialImportLayout> createState() => _MaterialImportLayoutState();
 }
 
-class _ImportCollagePageState extends State<ImportCollagePage> {
-  /// 正在跑的方式 id（任何方式在跑都挡住重复点击）。
-  String? _running;
+class _MaterialImportLayoutState extends State<MaterialImportLayout> {
+  /// 正在跑的方式（任何方式在跑都挡住重复点击；与 Apple 布局共用的状态）。
+  final ImportRunController _runs = ImportRunController();
 
-  /// 正在跑的方式是否要画进行中（不弹对话框的流程，IM14）。
-  bool _runningShowsProgress = false;
+  @override
+  void initState() {
+    super.initState();
+    _runs.addListener(_onRunsChanged);
+  }
 
-  Future<void> _run(ImportMethod method) async {
-    if (_running != null || !method.enabled) return;
-    setState(() {
-      _running = method.id;
-      _runningShowsProgress = method.reportsProgress;
-    });
-    try {
-      await method.onTap();
-    } finally {
-      if (mounted) {
-        setState(() {
-          _running = null;
-          _runningShowsProgress = false;
-        });
-      }
-    }
+  void _onRunsChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _runs
+      ..removeListener(_onRunsChanged)
+      ..dispose();
+    super.dispose();
   }
 
   bool get _dropEnabled => widget.spec.onDrop != null && isDesktopPlatform;
@@ -176,9 +175,9 @@ class _ImportCollagePageState extends State<ImportCollagePage> {
             spec: spec,
             layout: layout,
             dropEnabled: _dropEnabled,
-            runningId: _running,
-            runningShowsProgress: _runningShowsProgress,
-            onRun: (ImportMethod m) => unawaited(_run(m)),
+            runningId: _runs.runningId,
+            runningShowsProgress: _runs.runningShowsProgress,
+            onRun: (ImportMethod m) => unawaited(_runs.run(m)),
             sources: widget.sources,
             onAddSource: widget.onAddSource,
             addSourceEnabled: widget.addSourceEnabled,

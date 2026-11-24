@@ -475,15 +475,28 @@ void main() {
         for (final SrsDeckSummary d in decks.where(
           (SrsDeckSummary d) => d.depth == 0,
         )) {
-          final SrsDeckCountChips row = tester.widget<SrsDeckCountChips>(
-            find.descendant(
-              of: find.byKey(ValueKey<String>('srs-deck-${d.deck.id}')),
-              matching: find.byType(SrsDeckCountChips),
+          // Apple 牌组行是 SF Rounded 三色计数（方案 A），M3E 是计数胶囊。
+          final Finder counts = find.descendant(
+            of: find.byKey(ValueKey<String>('srs-deck-${d.deck.id}')),
+            matching: find.byType(
+              apple ? SrsAppleCountTriple : SrsDeckCountChips,
             ),
           );
-          sumNew += row.newCount;
-          sumLearn += row.learnCount;
-          sumReview += row.reviewCount;
+          if (apple) {
+            final SrsAppleCountTriple row = tester.widget<SrsAppleCountTriple>(
+              counts,
+            );
+            sumNew += row.newCount;
+            sumLearn += row.learnCount;
+            sumReview += row.reviewCount;
+          } else {
+            final SrsDeckCountChips row = tester.widget<SrsDeckCountChips>(
+              counts,
+            );
+            sumNew += row.newCount;
+            sumLearn += row.learnCount;
+            sumReview += row.reviewCount;
+          }
         }
         expect(sumNew, 3, reason: '三张新卡（其中一张在子牌组）');
         expect(home.newCount, sumNew);

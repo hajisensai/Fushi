@@ -1,0 +1,10 @@
+## BUG-5359 · 媒体服务器列表「去设置添加服务器」在线服务模块关着时点了没反应
+- **报告**：2026-11-24（用户：Cupertino 主题 Windows 宽窗，视频 › 媒体服务器，组下「去设置添加服务器」点了没反应，日志无异常）
+- **真实性**：✅ 真 bug，与设计系统 / 宽窗壳无关（M3E 同样中招）。点按确实触发（运行实例只读 hitTest：命中路径落到该行 `FushiAppleRow` 的 GestureDetector），`openMediaServerSettings` 也确实往根 Navigator push 了；但它推的是**整个**在线服务分类 `SettingsDetailPage(destination: buildServicesDestination())`，该分类受「在线服务」模块门控（`settings_schema_services.dart` `buildServicesDestination` 的 `visible`）。用户关着该模块（运行实例 `moduleVisibility.enabled` 不含 `services`），`SettingsDetailPage.build` 判不可见 → `_popInvisibleDestination()`（`fushi/lib/src/settings/settings_detail_page.dart:94`）当帧自 pop。根因：媒体服务器管理内容只寄居在受模块门控的分类里，没有不依赖分类可见性的入口页，`openMediaServerSettings`（`fushi/lib/src/pages/implementations/media_server/media_server_server_list_view.dart`）只能推整个分类。
+- **用户拍板（2026-11-24，方案 3）**：只要媒体服务器页签 / 入口在，就一定进得去服务器设置，不管「在线服务」模块开没开。（首版 `68f0914ef0b` 按模块门藏掉入口，已按拍板推翻。）
+- **[x] ① 已修复** — `settings_schema_services.dart` 把「媒体服务器」一节抽成 `buildMediaServersSection()`（在线服务分类照旧嵌它，`:530`），新增独立页 `buildMediaServersDestination()`（`:1015`，只含这一节、`visible` 留空、不挂模块门，与 `buildMusicServersDestination` 同为 `SettingsDetailPage.subPage` 子页）；`openMediaServerSettings`（`media_server_server_list_view.dart:431`）改推 `SettingsDetailPage.subPage(buildMediaServersDestination)`。选独立页而不是在分类里给这一节开例外：分类级门控同时管设置首页 / 搜索索引 / 主从详情三条路径，节级豁免会让模块关着时设置首页冒出一个只剩一节的「在线服务」，等于改了模块语义；独立子页不动分类门控，内容同一份。添加行 / 空态按钮恢复常显。同类入口逐个判：
+  - `home_page.dart` `MediaServerAcquisitionBackend.configure`（配置媒体服务器获取源）= 媒体服务器 → 改为 `openMediaServerSettings`。
+  - `home_video_page.dart` `VideoOnlineServicesBanner`：提醒配的是 AniDB / Jimaku 等刮削 / 字幕凭据，属在线服务、不是媒体服务器 → 不豁免，模块关着时整条提醒不渲染（同 `browse_page.dart` 下载设置、`discovery_manage_sources_action.dart` 的既有做法）。
+  - `music/music_sources_page.dart` `_openServerSettings`：推的是 `SettingsDetailPage.subPage(buildMusicServersDestination)`，该子页本来就不挂模块门，模块关着也进得去 → 无需改动。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/media_server/media_server_settings_entry_test.dart`：MD3 / Apple × 模块开 / 关，点击、Enter、空态按钮都停在媒体服务器管理页（正文渲染出 Kavita 行）；独立页只含 `services.media` 一节且无 `visible`；模块关着时推整个在线服务分类仍当帧自 pop（其余在线服务条目照旧门控）。
+- **备注**：媒体服务器独立页标题沿用 `video_library_media_servers`，未新增 i18n key。

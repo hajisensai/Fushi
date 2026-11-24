@@ -6,6 +6,8 @@ import 'package:flutter/gestures.dart'
     show PointerScrollEvent, PointerSignalEvent;
 import 'package:fushi_audio/fushi_audio_core.dart' show decodeTextBytes;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiDividerControl;
 
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart'
@@ -971,7 +973,7 @@ class WebBrowserSubtitlePanelState$ extends State<WebBrowserSubtitlePanel> {
               ],
             ),
           ),
-          const Divider(height: 1),
+          const FushiDividerControl(height: 1),
           Expanded(child: _buildList(scheme, text)),
         ],
       ),

@@ -622,7 +622,11 @@ class _FushiTiltGroupScope extends InheritedWidget {
 /// 倾斜时跟着指针走的镜面高光：一团径向柔光落在指针位置，越靠边越亮一点，
 /// 读作「光面封面在灯下转动」。画在封面裁切区内、点击穿透。
 class FushiTiltGlare extends StatelessWidget {
-  const FushiTiltGlare({super.key, this.clipRadius});
+  const FushiTiltGlare({super.key, this.clipRadius, this.clipShape})
+    : assert(
+        clipRadius == null || clipShape == null,
+        'clipRadius 与 clipShape 只给一个',
+      );
 
   /// 非空 = 高光自己按这个圆角裁切，且**只在可见时**裁切。
   ///
@@ -631,12 +635,16 @@ class FushiTiltGlare extends StatelessWidget {
   /// 按卡数线性的白开销。裁切放在 [AnimatedOpacity] 里面，透明度为 0 时整段不画。
   final BorderRadius? clipRadius;
 
+  /// 非空 = 按这个外形裁切（连续曲率等非圆弧角的封面），同样只在可见时裁切。
+  final ShapeBorder? clipShape;
+
   @override
   Widget build(BuildContext context) {
     final ValueListenable<Offset?>? tilt = FushiHoverLift.tiltOf(context);
     if (tilt == null) return const SizedBox.shrink();
     final bool dark = Theme.of(context).brightness == Brightness.dark;
     final BorderRadius? radius = clipRadius;
+    final ShapeBorder? shape = clipShape;
     return IgnorePointer(
       child: ValueListenableBuilder<Offset?>(
         valueListenable: tilt,
@@ -667,7 +675,12 @@ class FushiTiltGlare extends StatelessWidget {
               return AnimatedOpacity(
                 opacity: p == null ? 0 : 1,
                 duration: fushiTiltEaseDuration(context, p),
-                child: radius == null
+                child: shape != null
+                    ? ClipPath(
+                        clipper: ShapeBorderClipper(shape: shape),
+                        child: glow,
+                      )
+                    : radius == null
                     ? glow
                     : ClipRRect(borderRadius: radius, child: glow),
               );
