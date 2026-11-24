@@ -354,9 +354,11 @@ class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
         child: FushiAnimatedSize(
           duration: motion ? FushiMotion.medium : Duration.zero,
           curve: FushiMotion.standard,
+          // 卡片贴在起始侧（左下 / 视频左上，RTL 镜像）：展开 / 收起时起始边不动
+          // （反馈 RZpvO4Dl3y）。
           alignment: widget.anchor == MineNoticeStackAnchor.bottom
-              ? Alignment.bottomCenter
-              : Alignment.topCenter,
+              ? AlignmentDirectional.bottomStart
+              : AlignmentDirectional.topStart,
           child: content,
         ),
       ),
@@ -375,7 +377,9 @@ class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
       switchInCurve: FushiMotion.enter,
       switchOutCurve: FushiMotion.exit,
       layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
-        alignment: bottom ? Alignment.bottomCenter : Alignment.topCenter,
+        alignment: bottom
+            ? AlignmentDirectional.bottomStart
+            : AlignmentDirectional.topStart,
         children: <Widget>[...previous, ?current],
       ),
       child: _card(front),
@@ -520,6 +524,7 @@ class _FushiMineNoticeStackState extends State<FushiMineNoticeStack> {
     ];
     return Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: bottom
           ? <Widget>[header, ...cards.reversed]
           : <Widget>[header, ...cards],

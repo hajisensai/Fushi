@@ -23,7 +23,7 @@
 | 级别 | 判据 | 谁干 | 分支上的验证 |
 |---|---|---|---|
 | **S 琐碎** | 文档、注释、单行改动、纯重命名 | 主代理直接干，**不派子代理**（派发开销 > 收益） | `git diff --cached --check`；涉及 Dart 再加定向 analyze |
-| **A 小修** | 单文件或单模块，根因明确 | 主代理修核心；测试可拆一个子代理并行写 | 定向 `flutter test <目标...> --no-pub`（一次调用）+ push 前一次 `flutter analyze` 全量 |
+| **A 小修** | 单文件或单模块，根因明确 | 主代理修核心；测试可拆一个子代理并行写 | 定向 `flutter test <目标...> --no-pub`（一次调用）；全量 analyze 交合并任务 |
 | **B 功能 / 复杂 bug** | 跨模块、多文件、时序/状态/平台边界问题 | 主代理定根因和数据结构；机械面（样板、i18n、多文件同构、测试）拆子代理并行 | 定向 + 相邻功能测试；全量交 PR CI |
 | **C 大型 / 长周期** | 多阶段、需分批审查 | 按 claim 拆多 agent；integration owner 统一收口 | 定向 + 目录枚举型守卫整批；全量交 PR CI |
 
@@ -58,7 +58,7 @@ t=0   EnterWorktree → setup_worktree -SkipBootstrap（秒级，只搬密钥）
 t=0   ↳ 后台: powershell -File tool/bootstrap.ps1
 t=0   ↳ 并行: 主代理读代码定根因；≥2 个独立疑点 → 子代理并行定位
 t=3   根因确定 → 主代理写核心修改；同时子代理并行写测试/机械面
-t=8   bootstrap 已就绪 → dart format 改动文件 + 定向 test --no-pub（几个文件一次调用）；全量 analyze 留到 push 前
+t=8   bootstrap 已就绪 → dart format 改动文件 + 定向 test --no-pub（几个文件一次调用）；全量 analyze 不跑（合并时跑一次）
 t=8   ↳ 测试跑的同时: 子代理建 bug 文档 (dart run tool/bug.dart new)，
       主代理写 commit message / PR 描述
 t=12  测试绿 → commit → push → draft PR（CI 跑全量兜底）
@@ -76,8 +76,8 @@ S/A 级同理裁剪：S 级连 worktree bootstrap 都可 `-SkipBootstrap` 到底
     而**点名单个生产文件的守卫既不在那 51 条里、也不按功能域取名**，正好落在两道门的缝里。
     实测漏网：PR#764 收口弹窗复制入口，`test/dictionary/popup_touch_copy_actionmode_guard_test.dart`
     只被 `test/lookup` 的定向测试擦肩而过，红直接进了 develop（TODO-2745）。
-- **`flutter analyze` 全量在 push 前必跑一次，且只在最后跑一次**（含 test 目录）——CI 把 warning 当致命，省这一步只会在 CI 上浪费一轮；但它每次要 2–3 分钟（实测 125–171 s，不含排队）、一个 3.4–4 GB 的 analysis server，开发中改一处就全量跑一遍、批量合并时逐分支各跑一遍都是白烧（2026-10-25 用户拍板：开发中用 `dart analyze <改动文件>`，全量留到 push 前 / 集成结果上一次）。租约上 analyze 是轻量任务：不占测试槽位、不排队，只记 4.5 GB 内存预算（[heavy-lease.md](heavy-lease.md)）。
-- **分支 draft PR**：全量 analyze 绿即可 push（2026-10-02 起推送门只有 analyze；定向测试在开发中按需跑，不是推送前置条件）；守卫与受影响的测试由 PR CI 的快门跑（`Build Android APK` 的 `build` + `affected-tests`，2026-11-18 起 PR 上默认不跑全量；全量在合并后的 `develop` 上由 **Build Release APK 的 Run unit tests** 跑，按需在分支上跑见 [build.md](build.md#pr-主门分层快门每推必跑全量按需--合并后跑2026-11-18)）。**推完就结束会话，不等 PR CI**；快门结论由合并任务在合并前读一次（[等待与缓存](#等待与缓存)）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
+- **`flutter analyze` 全量只在合并时跑一次**（含 test 目录；2026-11-24 用户拍板：开 PR 前不跑，PR 上由 CI 快门跑，合并任务在合并结果上跑一次）——它每次要 2–3 分钟（实测 125–171 s，不含排队）、一个 3.4–4 GB 的 analysis server，开发中改一处就全量跑一遍、批量合并时逐分支各跑一遍都是白烧（2026-10-25 用户拍板：开发中用 `dart analyze <改动文件>`，全量留到合并 / 集成结果上一次）。租约上 analyze 是轻量任务：不占测试槽位、不排队，只记 4.5 GB 内存预算（[heavy-lease.md](heavy-lease.md)）。
+- **分支 draft PR**：`dart format` + 定向测试做完即可 push（2026-11-24 起开 PR 前不跑全量 analyze；定向测试在开发中按需跑）；守卫与受影响的测试由 PR CI 的快门跑（`Build Android APK` 的 `build` + `affected-tests`，2026-11-18 起 PR 上默认不跑全量；全量在合并后的 `develop` 上由 **Build Release APK 的 Run unit tests** 跑，按需在分支上跑见 [build.md](build.md#pr-主门分层快门每推必跑全量按需--合并后跑2026-11-18)）。**推完就结束会话，不等 PR CI**；快门结论由合并任务在合并前读一次（[等待与缓存](#等待与缓存)）。声明「修好了」的真机复测门槛**不变**（[integration-testing.md](integration-testing.md)）。
 - **合入 `develop`**：integration owner 本地全量 analyze + 定向 test + 「目录枚举型守卫」整批；**不再本地跑全量 test**（用户 2026-09-06 拍板：`dart run tool/flutter_test_failures.dart` 全量 / 裸 `flutter test` 全量一律不跑，全量只由 PR CI 兜底）。真要跑全量 / 成片目录时走跨机分流 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`（2026-10-27 用户拍板，见根 `CLAUDE.md`「验证」），不单机裸跑。别 `| tail` 吞退出码；重叠跑会互抢 `sqlite3.dll`，见下节。
 
 ## 并发伪红判别
@@ -370,7 +370,7 @@ dart run tool/flutter_test_failures.dart --no-pub \
   $(dart run tool/tests_for_changes.dart --base=origin/develop)
 ```
 
-> **推送前不需要跑这两条**：2026-10-02 起推送门只有全量 `flutter analyze`（CLAUDE.md「验证」节），守卫与测试交给 PR CI。想在本地先筛一遍时，`dart run tool/pre_push_check.dart`（可选，不是门）已经把它们、本节的目录枚举守卫整批、直接 import 受影响的测试、全量 analyze 与改动包测试合成一条命令，改动为空时直接退出、不会退化成跑全量。这里的手工串法留给只想看某棵树触发面的场合。
+> **推送前不需要跑这两条**：2026-11-24 起开 PR 前不跑全量，全量 `flutter analyze` 只在合并时跑一次（CLAUDE.md「验证」节），守卫与测试交给 PR CI。想在本地先筛一遍时，`dart run tool/pre_push_check.dart`（可选，不是门）已经把它们、本节的目录枚举守卫整批、直接 import 受影响的测试、全量 analyze 与改动包测试合成一条命令，改动为空时直接退出、不会退化成跑全量。这里的手工串法留给只想看某棵树触发面的场合。
 
 ⚠️ 最后那条里 `$( )` **展开为空时不是空跑**：`flutter_test_failures.dart` 不带目标就跑全量。`--base` 选错（比如指到自己这条分支的 tip、diff 为空）会白等十几分钟，而输出看起来完全正常。跑之前先单独执行一遍上面第一条，确认它真的吐出了路径。
 

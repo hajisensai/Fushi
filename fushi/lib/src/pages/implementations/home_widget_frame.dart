@@ -12,6 +12,8 @@
 /// 排版。内容里的文字配色经 [HomeWidgetStyle] 取，两套外观共用同一份内容代码。
 library;
 
+import 'dart:math' as math;
+
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -408,4 +410,75 @@ class HomeWidgetFigure extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 大字（[HomeWidgetFigure]）下面挂一行副行（今日时长 / 目标进度）时的排法：按自己
+/// **实际拿到的高度**排，不靠裁剪（TinO49VcdQ：此前按整格高度判断矮不矮、放不下就
+/// 竖向居中裁掉，窄窗口里副行被切掉下半截）。
+///
+/// - 副行按自然高度完整画出，大字收进剩下的高度（[HomeWidgetFigure] 自带等比缩小）；
+/// - 剩下的高度连 [minFigureHeight] 都不够时只画大字（大字是格子的核心，副行让位）；
+/// - 整组在高度方向居中、起始侧对齐。
+class HomeWidgetFigureWithLine extends StatelessWidget {
+  const HomeWidgetFigureWithLine({
+    super.key,
+    required this.figure,
+    required this.line,
+    required this.lineStyle,
+    this.gap = 4,
+    this.minFigureHeight = 24,
+  });
+
+  final Widget figure;
+
+  /// 副行；null = 只有大字。
+  final Widget? line;
+
+  /// 副行文字的样式，用来估副行占多高（见 [homeWidgetLineExtent]）。
+  final TextStyle lineStyle;
+
+  /// 大字与副行之间的间距。
+  final double gap;
+
+  /// 挂副行时大字至少留这么高，不够就不挂副行。
+  final double minFigureHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final Widget? l = line;
+        final bool showLine =
+            l != null &&
+            (!box.maxHeight.isFinite ||
+                box.maxHeight >=
+                    minFigureHeight +
+                        gap +
+                        homeWidgetLineExtent(context, lineStyle));
+        final Widget column = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (box.maxHeight.isFinite) Flexible(child: figure) else figure,
+            if (showLine) ...<Widget>[SizedBox(height: gap), l],
+          ],
+        );
+        if (!box.maxHeight.isFinite) return column;
+        return Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: column,
+        );
+      },
+    );
+  }
+}
+
+/// 一行 [style] 文字在当前文字缩放下最多占多高：给了行高倍数按它算，没给时按 1.5 倍
+/// 字号保守估（CJK 回退字体的自然行高约 1.3～1.45 倍），宁可多留也不让副行放不下。
+double homeWidgetLineExtent(BuildContext context, TextStyle style) {
+  final TextStyle resolved = DefaultTextStyle.of(context).style.merge(style);
+  return MediaQuery.textScalerOf(
+        context,
+      ).scale(resolved.fontSize ?? kDefaultFontSize) *
+      math.max(resolved.height ?? 1.5, 1.0);
 }

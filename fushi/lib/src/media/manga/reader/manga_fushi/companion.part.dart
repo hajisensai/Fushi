@@ -195,7 +195,7 @@ extension _MangaCompanion on _MangaFushiPageState {
     }
     final MangaOcrRunningJob? job = _observedOcrJob;
     if (job != null) {
-      job.focusPage(page);
+      _focusVolumeOcrOn(page, job: job);
       return const MangaCompanionOcrOutcome(MangaCompanionOcrResult.delegated);
     }
     final MangaStreamPageOcr? stream = _streamOcr;

@@ -31,7 +31,7 @@ class _LingeringJob implements MangaOcrVolumeJob {
   void cancel() => cancelRequested = true;
 
   @override
-  void focus(int pageIndex) {}
+  void focus(String pageId) {}
 
   /// isolate 退出（终局消息到达）。
   void exit() {
