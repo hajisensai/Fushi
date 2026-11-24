@@ -10353,6 +10353,8 @@
   "shortcut_action_home_tab_next": "Nächster Tab",
   "shortcut_action_home_tab_prev": "Vorheriger Tab",
   "shortcut_action_home_tab_settings": "Tab „Einstellungen“",
+  "shortcut_action_library_grid_zoom_in": "Library grid: larger covers (fewer per row)",
+  "shortcut_action_library_grid_zoom_out": "Library grid: smaller covers (more per row)",
   "shortcut_action_library_search": "In der Bibliothek suchen",
   "shortcut_action_manga_audio_next_line": "Manga audio: next line",
   "shortcut_action_manga_audio_play_pause": "Manga audio: play / pause",

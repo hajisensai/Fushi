@@ -94,6 +94,10 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_home_focus_search;
       case ShortcutAction.librarySearch:
         return t.shortcut_action_library_search;
+      case ShortcutAction.libraryGridZoomIn:
+        return t.shortcut_action_library_grid_zoom_in;
+      case ShortcutAction.libraryGridZoomOut:
+        return t.shortcut_action_library_grid_zoom_out;
       case ShortcutAction.globalBack:
         return t.shortcut_action_global_back;
       case ShortcutAction.globalScrollPageDown:

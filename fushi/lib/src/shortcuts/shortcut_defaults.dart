@@ -157,6 +157,15 @@ class ShortcutDefaults {
       _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl}),
       _key(LogicalKeyboardKey.slash),
     ]),
+    // 库页网格每行个数（Apple 外壳）：Ctrl + = / −（macOS ⌘），小键盘 + / − 同义。
+    ShortcutAction.libraryGridZoomIn: _kb([
+      _key(LogicalKeyboardKey.equal, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.numpadAdd, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.libraryGridZoomOut: _kb([
+      _key(LogicalKeyboardKey.minus, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.numpadSubtract, {ModifierKey.ctrl}),
+    ]),
     // 全 app 唯一的「返回上一级 / 退出当前界面」（universal scope）。
     //
     // 键盘 **Esc**（用户拍板：关词典 / 退书 / 退漫画 / 退视频 / 退设置页都是 Esc，

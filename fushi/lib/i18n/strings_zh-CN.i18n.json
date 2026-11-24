@@ -10353,6 +10353,8 @@
   "shortcut_action_home_tab_next": "下一个标签页",
   "shortcut_action_home_tab_prev": "上一个标签页",
   "shortcut_action_home_tab_settings": "设置标签",
+  "shortcut_action_library_grid_zoom_in": "库页网格：放大（每行更少）",
+  "shortcut_action_library_grid_zoom_out": "库页网格：缩小（每行更多）",
   "shortcut_action_library_search": "在书架 / 媒体库中搜索",
   "shortcut_action_manga_audio_next_line": "漫画有声：下一句",
   "shortcut_action_manga_audio_play_pause": "漫画有声：播放 / 暂停",

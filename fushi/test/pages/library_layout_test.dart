@@ -1,5 +1,18 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/media/collections/book_continue.dart';
+import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
+import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart'
+    show filterShelfEntriesByMangaSplit;
+import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/utils/components/batch_action_bar.dart';
+import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi_core/fushi_core.dart' show BookTagRow;
+import 'package:fushi_engine/media/collections/shelf_sort.dart';
 
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_layout.dart';
@@ -63,29 +76,32 @@ void main() {
     TargetPlatform platform = TargetPlatform.android,
     Size size = const Size(420, 860),
     AppleSidebarLibraryHost? host,
+    List<MediaLibraryViewSpec>? withViews,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     Widget shell = MediaLibraryShell(
       focusIdPrefix: 'test-library-view',
-      views: views,
+      views: withViews ?? views,
     );
     if (host != null) {
       shell = AppleSidebarLibraryScope(host: host, child: shell);
     }
     await tester.pumpWidget(
-      MaterialApp(
-        theme: buildFushiThemeData(
-          scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-          textTheme: Typography.material2021().black,
-          glassDesign: glass,
-        ).copyWith(platform: platform),
-        home: FushiGlassScope(
-          child: SectionTabOrderScope(
-            store: _MemoryStore(<String>[]),
-            child: Scaffold(
-              body: FushiShellTitleScope(title: 'Books', child: shell),
+      ProviderScope(
+        child: MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            textTheme: Typography.material2021().black,
+            glassDesign: glass,
+          ).copyWith(platform: platform),
+          home: FushiGlassScope(
+            child: SectionTabOrderScope(
+              store: _MemoryStore(<String>[]),
+              child: Scaffold(
+                body: FushiShellTitleScope(title: 'Books', child: shell),
+              ),
             ),
           ),
         ),
@@ -521,6 +537,256 @@ void main() {
         ),
         findsNothing,
       );
+    });
+  });
+  group('第 12 项：「继续」只收本库', () {
+    MediaItem item(String key, {bool manga = false}) => MediaItem(
+      mediaIdentifier: ReaderFushiSource.mediaIdentifierFor(key),
+      title: key,
+      mediaTypeIdentifier: ReaderFushiSource.instance.mediaType.uniqueKey,
+      mediaSourceIdentifier: manga
+          ? MangaFushiSource.kUniqueKey
+          : ReaderFushiSource.instance.uniqueKey,
+      position: 40,
+      duration: 100,
+      canDelete: false,
+      canEdit: true,
+    );
+    List<String> pick(
+      List<MediaItem> all, {
+      required bool mangaOnly,
+    }) => <String>[
+      for (final BookContinueCandidate<MediaItem> c
+          in selectMediaItemContinueCandidates(
+            // 与书架 `_pickShelfContinue` 同一输入口径：先按本库分架。
+            books: filterShelfEntriesByMangaSplit(all, mangaOnly: mangaOnly),
+            lastReadAtByUid: const <String, int>{'novel': 1, 'comic': 9},
+            epubUidByKey: const <String, String>{},
+            completedBookKeys: const <String>{},
+            primaryCollectionIdByEntry: const <String, int>{},
+            collectionIds: const <int>{},
+            memberSortIndex: const <String, int>{},
+          ))
+        c.item.title,
+    ];
+
+    test('书架不出漫画、漫画库不出书（漫画读得更近也一样）', () {
+      final List<MediaItem> all = <MediaItem>[
+        item('novel'),
+        item('comic', manga: true),
+      ];
+      expect(pick(all, mangaOnly: false), <String>['novel']);
+      expect(pick(all, mangaOnly: true), <String>['comic']);
+    });
+  });
+
+  group('26 项功能在 Apple 外壳里都在', () {
+    const BookTagRow tag = BookTagRow(
+      id: 7,
+      name: 'Favorites',
+      colorValue: 0xFF2196F3,
+      sortOrder: 0,
+      createdAt: 0,
+    );
+    final TextEditingController search = TextEditingController();
+    tearDownAll(search.dispose);
+
+    /// 书架视图的替身：真实的库页工具行（搜索 + 标签 / 排序 / 筛选 / 选择）、
+    /// 网格缩放、选择模式底栏与空状态，挂在真实的 [MediaLibraryShell] 下。
+    Widget shelfBody({required bool selecting}) => Column(
+      children: <Widget>[
+        LibraryToolbar(
+          search: LibrarySearchField(
+            fieldKey: const ValueKey<String>('shelf_search_field'),
+            controller: search,
+            hintText: 'Search books',
+            onChanged: (_) {},
+            onClear: () {},
+          ),
+          trailing: FushiTagFilterBar(
+            tags: const <BookTagRow>[tag],
+            part: FushiTagFilterBarPart.actions,
+            tagsInMenu: true,
+            onToggleFilter: (_) {},
+            onReorder: (_, __) async {},
+            selectionMode: selecting,
+            onToggleSelectionMode: () {},
+            sortMode: ShelfSortMode.recent,
+            sortModeLabel: (ShelfSortMode m) => 'sort-${m.name}',
+            onSortModeChanged: (_) {},
+            filterOptionsTitle: 'Status',
+            filterOptions: <LibraryViewOption>[
+              LibraryViewOption(
+                label: 'All',
+                selected: true,
+                onSelected: () {},
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: LibraryGridZoom(
+            columns: 4,
+            choices: const <int>[3, 4, 5],
+            onColumnsChanged: (_) {},
+            child: const FushiPlaceholderMessage(
+              icon: Icons.book,
+              message: 'Empty',
+              detail: 'Drop files here',
+            ),
+          ),
+        ),
+        if (selecting)
+          BatchActionBar(
+            selectedCount: 1,
+            onSelectAll: () {},
+            onInvertSelection: () {},
+            actions: const <Widget>[],
+          ),
+      ],
+    );
+
+    List<MediaLibraryViewSpec> featureViews({bool selecting = false}) =>
+        <MediaLibraryViewSpec>[
+          MediaLibraryViewSpec(
+            kind: MediaLibraryViewKind.library,
+            label: 'Shelf',
+            builder: (BuildContext context, Widget navigation) =>
+                shelfBody(selecting: selecting),
+          ),
+          ...views.skip(1),
+        ];
+
+    testWidgets('iOS 档：标题菜单 / 分区胶囊 / 横滑 / 导入 / 搜索 / 排序 / 筛选 / 缩放 / 空状态', (
+      WidgetTester tester,
+    ) async {
+      await pump(
+        tester,
+        glass: true,
+        platform: TargetPlatform.iOS,
+        withViews: featureViews(),
+      );
+      // 1 一级分组：标题下拉菜单。
+      expect(
+        find.byKey(const ValueKey<String>('test-library-view-title-menu')),
+        findsOneWidget,
+      );
+      // 2 二级分区：标题下胶囊行。
+      expect(
+        find.byType(AppleLibraryScopeBar<MediaLibraryViewKind>),
+        findsOneWidget,
+      );
+      // 4 横滑切分区。
+      expect(
+        find.byType(SectionSwipeNavigator<MediaLibraryViewKind>),
+        findsOneWidget,
+      );
+      // 5 导入。
+      expect(
+        find.byKey(const ValueKey<String>('test-library-view-import')),
+        findsOneWidget,
+      );
+      // 7 库内搜索（iOS 档在内容区）。
+      expect(
+        find.byKey(const ValueKey<String>('shelf_search_field')),
+        findsOneWidget,
+      );
+      // 9 / 10 排序与筛选是两个独立 pull-down。
+      expect(
+        find.byKey(const ValueKey<String>('library_sort_menu_button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('library_filter_menu_button')),
+        findsOneWidget,
+      );
+      // 8 标签：iOS 档在「筛选」菜单的标签节里。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('library_filter_menu_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('library_menu_tag_7')),
+        findsOneWidget,
+      );
+      await tester.tapAt(const Offset(5, 5));
+      await tester.pumpAndSettle();
+      // 8 管理标签（iOS 档常驻工具行）。
+      expect(
+        find.byKey(const ValueKey<String>('library_tag_settings')),
+        findsOneWidget,
+      );
+      // 11 显示：网格缩放（捏合 / ⌘±）。
+      expect(find.byType(LibraryGridZoom), findsOneWidget);
+      // 24 空状态：ContentUnavailable 式（图标 + 标题 + 说明）。
+      expect(find.text('Empty'), findsOneWidget);
+      expect(find.text('Drop files here'), findsOneWidget);
+      // 3 分区自定义顺序：标题菜单末尾「调整页签顺序…」。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('test-library-view-title-menu')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Reorder tabs'), findsOneWidget);
+    });
+
+    testWidgets('21 选择模式：底部玻璃工具栏纯图标、命中 ≥48', (WidgetTester tester) async {
+      await pump(
+        tester,
+        glass: true,
+        platform: TargetPlatform.iOS,
+        withViews: featureViews(selecting: true),
+      );
+      for (final String key in <String>[
+        'batch_select_all',
+        'batch_invert_selection',
+      ]) {
+        final Finder button = find.byKey(ValueKey<String>(key));
+        expect(button, findsOneWidget);
+        final Size size = tester.getSize(button);
+        expect(size.width, greaterThanOrEqualTo(48));
+        expect(size.height, greaterThanOrEqualTo(48));
+      }
+      expect(find.text('All'), findsNothing, reason: '文字只进 tooltip');
+    });
+
+    testWidgets('macOS 档：侧栏承载分区 + 标签节 + 搜索；工具行有缩放滑杆', (
+      WidgetTester tester,
+    ) async {
+      final AppleSidebarLibraryHost host = AppleSidebarLibraryHost();
+      addTearDown(host.dispose);
+      host.reportSidebarMode(true);
+      await pump(
+        tester,
+        glass: true,
+        platform: TargetPlatform.macOS,
+        size: const Size(1280, 800),
+        host: host,
+        withViews: featureViews(),
+      );
+      final List<String> ids = <String>[
+        for (final AppleSidebarLibraryRow r in host.rows) r.id,
+      ];
+      // 2 分区 + 「在线」进侧栏；8 标签节（标题 + 标签 + 管理标签…）。
+      expect(ids, contains('tags'));
+      expect(ids, contains('tag-7'));
+      expect(ids, contains('tags-manage'));
+      // 8 宽窗内容区不再画管理标签齿轮；菜单里也不再放标签。
+      expect(
+        find.byKey(const ValueKey<String>('library_tag_settings')),
+        findsNothing,
+      );
+      // 7 搜索并入侧栏顶部搜索框：内容区搜索框零尺寸，绑定交给侧栏。
+      expect(host.search?.controller, same(search));
+      expect(host.search?.hint, 'Search books');
+      // 11 macOS 工具栏缩放滑杆。
+      expect(
+        find.byKey(const ValueKey<String>('library-grid-zoom-slider')),
+        findsOneWidget,
+      );
+      // 标签行点一下 = 切换筛选（不抛）。
+      host.rows
+          .firstWhere((AppleSidebarLibraryRow r) => r.id == 'tag-7')
+          .onTap();
     });
   });
 }

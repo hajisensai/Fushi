@@ -1,5 +1,10 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-24 增补（库页网格缩放）：** home scope 新增 `libraryGridZoomIn` / `libraryGridZoomOut`
+> （`library_grid_zoom_in` / `_out`），默认 Ctrl + = / 小键盘 +、Ctrl + − / 小键盘 −（macOS ⌘），移动端无键盘绑定。
+> 执行体是库页网格外的 `LibraryGridZoom`（`library_layout/library_grid_zoom.dart`，只在 Apple 外壳生效，与双指 /
+> 触控板捏合、macOS 工具栏滑杆同一件事：写回 `library_grid_columns`）；挂在首页键事件节点之下、先于 home 页派发。
+
 > **2026-11-08 增补（Linux Wayland 全局热键）：**
 >
 > - `globalExternal` 三个动作的 OS 注册收口到 `GlobalHotKeyBackend`（`lib/src/shortcuts/global_hotkey_backend.dart`）：

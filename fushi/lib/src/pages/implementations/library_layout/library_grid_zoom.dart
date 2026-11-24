@@ -1,9 +1,16 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/scheduler.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show ShortcutBindingScope;
+import 'package:fushi/src/shortcuts/shortcut_registry.dart'
+    show FushiShortcutRegistry;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
@@ -306,36 +313,30 @@ class _LibraryGridZoomState extends State<LibraryGridZoom>
         hub.unregister(this);
       }
     }
-    // 修饰键跟真实操作系统走（Mac / iPad 键盘是 ⌘，其余 Ctrl），与设计系统无关。
-    final bool apple =
-        defaultTargetPlatform == TargetPlatform.macOS ||
-        defaultTargetPlatform == TargetPlatform.iOS;
-    return CallbackShortcuts(
-      bindings: <ShortcutActivator, VoidCallback>{
-        SingleActivator(
-          LogicalKeyboardKey.equal,
-          meta: apple,
-          control: !apple,
-        ): () =>
-            _step(zoomIn: true),
-        SingleActivator(
-          LogicalKeyboardKey.numpadAdd,
-          meta: apple,
-          control: !apple,
-        ): () =>
-            _step(zoomIn: true),
-        SingleActivator(
-          LogicalKeyboardKey.minus,
-          meta: apple,
-          control: !apple,
-        ): () =>
-            _step(zoomIn: false),
-        SingleActivator(
-          LogicalKeyboardKey.numpadSubtract,
-          meta: apple,
-          control: !apple,
-        ): () =>
-            _step(zoomIn: false),
+    // 键盘：全局快捷键表的 [ShortcutAction.libraryGridZoomIn] / `Out`（用户可在
+    // 快捷键设置里改键；默认 Ctrl + = / −，macOS ⌘）。
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onKeyEvent: (FocusNode node, KeyEvent event) {
+        if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+          return KeyEventResult.ignored;
+        }
+        for (final (ShortcutAction action, bool zoomIn)
+            in const <(ShortcutAction, bool)>[
+              (ShortcutAction.libraryGridZoomIn, true),
+              (ShortcutAction.libraryGridZoomOut, false),
+            ]) {
+          for (final InputBinding binding in _bindings(context, action)) {
+            if (binding
+                .toActivator(includeRepeats: true)
+                .accepts(event, HardwareKeyboard.instance)) {
+              _step(zoomIn: zoomIn);
+              return KeyEventResult.handled;
+            }
+          }
+        }
+        return KeyEventResult.ignored;
       },
       child: Listener(
         onPointerDown: _onPointerDown,
@@ -412,4 +413,17 @@ class LibraryGridZoomSlider extends StatelessWidget {
       ],
     );
   }
+}
+
+/// [action] 此刻生效的键盘绑定：子树上方有已装载的快捷键注册表（app 根部的
+/// [ShortcutBindingScope]）时读用户绑定，否则（组件测试、启动早期）回落平台默认。
+List<InputBinding> _bindings(BuildContext context, ShortcutAction action) {
+  final FushiShortcutRegistry? registry = ShortcutBindingScope.maybeOf(context);
+  if (registry != null && registry.isLoaded) {
+    return registry.bindingsFor(action).keyboardBindings;
+  }
+  return ShortcutDefaults.forPlatform(
+        defaultTargetPlatform,
+      )[action]?.keyboardBindings ??
+      const <InputBinding>[];
 }
