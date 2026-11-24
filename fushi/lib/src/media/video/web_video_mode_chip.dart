@@ -74,6 +74,8 @@ class WebVideoModeChip extends StatelessWidget {
         ? cs.onTertiaryContainer
         : cs.onSecondaryContainer;
     final String label = webVideoModeTitle(hosting);
+    final TextStyle labelStyle =
+        Theme.of(context).textTheme.labelLarge ?? const TextStyle();
     final Duration switchDuration = fushiMotionDuration(
       context,
       FushiMotion.short,
@@ -115,12 +117,11 @@ class WebVideoModeChip extends StatelessWidget {
                           label,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(
-                                color: foreground,
-                                fontSize: 14 * scale,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          style: labelStyle.copyWith(
+                            color: foreground,
+                            fontSize: (labelStyle.fontSize ?? 14) * scale,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
