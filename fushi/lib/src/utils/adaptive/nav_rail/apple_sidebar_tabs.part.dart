@@ -168,7 +168,18 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
   /// Windows / Linux 宽窗放大，Mac 与 iPad 1.0。标签栏形态不随它变。
   double get _k => fushiAppleMacScale(context);
 
+  /// 此刻看得见的库页交来的搜索绑定（侧栏形态 + macOS 档才接）：有它时侧栏顶部
+  /// 搜索框就是该库的搜索框（搜当前库），目的地不再按输入过滤。
+  AppleSidebarLibrarySearch? get _librarySearch {
+    final AppleSidebarLibraryHost? host = widget.libraryHost;
+    if (host == null || widget.tabBar || !fushiAppleUsesMacMetrics(context)) {
+      return null;
+    }
+    return host.search;
+  }
+
   bool _matches(int index) {
+    if (_librarySearch != null) return true;
     return matchesMediaSearch(
       query: _query.text,
       titles: <String>[widget.items[index].label],
@@ -500,6 +511,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
     const double width = kGlassNavSidebarWidth - 2 * left;
     final double k = _k;
     final TextTheme text = Theme.of(context).textTheme;
+    final AppleSidebarLibrarySearch? librarySearch = _librarySearch;
     Widget fade(Widget child) => Opacity(
       opacity: opacity,
       child: IgnorePointer(ignoring: opacity < 1, child: child),
@@ -552,7 +564,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                     alignment: AlignmentDirectional.centerStart,
                     children: <Widget>[
                       ValueListenableBuilder<TextEditingValue>(
-                        valueListenable: _query,
+                        valueListenable: librarySearch?.controller ?? _query,
                         builder:
                             (
                               BuildContext context,
@@ -561,7 +573,7 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                             ) => value.text.isEmpty ? hint! : const SizedBox(),
                         child: IgnorePointer(
                           child: Text(
-                            t.search,
+                            librarySearch?.hint ?? t.search,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: text.bodyMedium?.copyWith(
@@ -572,7 +584,12 @@ class _AppleSidebarTabsShellState extends State<AppleSidebarTabsShell>
                         ),
                       ),
                       FushiTextFieldControl(
-                        controller: _query,
+                        // 库页可见时借用库页自己的搜索控制器（搜当前库）。
+                        key: ValueKey<Object>(
+                          librarySearch?.controller ?? _query,
+                        ),
+                        controller: librarySearch?.controller ?? _query,
+                        onChanged: librarySearch?.onChanged,
                         style: text.bodyMedium?.copyWith(
                           fontSize: _kAppleSidebarFontSize * k,
                           color: apple.label,

@@ -56,6 +56,37 @@ class AppleSidebarLibraryRow {
       header == other.header;
 }
 
+/// 库页交给侧栏顶部搜索框的搜索绑定（方案 A 第 7 项：macOS 档库页的搜索就是
+/// 侧栏顶部那一个搜索框，搜当前库；内容区不再另画搜索框）。
+///
+/// [controller] 归库页所有（搜索词只影响本次会话），侧栏只借用它画输入框。
+@immutable
+class AppleSidebarLibrarySearch {
+  const AppleSidebarLibrarySearch({
+    required this.controller,
+    required this.hint,
+    required this.onChanged,
+    required this.onClear,
+  });
+
+  final TextEditingController controller;
+
+  /// 占位符（「搜索书架」等，库页搜索框原来的那句）。
+  final String hint;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  bool sameBinding(AppleSidebarLibrarySearch other) =>
+      identical(controller, other.controller) && hint == other.hint;
+}
+
+/// 侧栏是否承载库页的分区 / 标签 / 搜索（Apple 宽窗侧栏外壳在侧栏形态、macOS
+/// 档度量）。只在 Apple 设计系统下由调用方判（[host] 只在 Apple 外壳里有）。
+bool appleSidebarHostsLibraryChrome({
+  required AppleSidebarLibraryHost? host,
+  required bool macMetrics,
+}) => host != null && host.sidebarMode && macMetrics;
+
 /// 库页往侧栏登记分区行的宿主（首页外壳持有一个，经 [AppleSidebarLibraryScope]
 /// 下发到各 tab；侧栏外壳监听它）。
 ///
@@ -94,6 +125,31 @@ class AppleSidebarLibraryHost extends ChangeNotifier {
             : _tagEntries.values.last);
     if (tags.isEmpty) return sections;
     return <AppleSidebarLibraryRow>[...sections, ...tags];
+  }
+
+  final Map<Object, AppleSidebarLibrarySearch> _searchEntries =
+      <Object, AppleSidebarLibrarySearch>{};
+  Object? _visibleSearchOwner;
+
+  /// 看得见的库页交给侧栏搜索框的搜索绑定；没有时侧栏搜索框照旧过滤目的地。
+  AppleSidebarLibrarySearch? get search =>
+      _searchEntries[_visibleSearchOwner] ??
+      (_searchEntries.isEmpty ? null : _searchEntries.values.last);
+
+  /// 库页搜索框登记 / 更新搜索绑定；[search] 为 null = 撤回。约定同 [publish]。
+  void publishSearch(Object owner, AppleSidebarLibrarySearch? search) {
+    if (search == null) {
+      if (_searchEntries.remove(owner) == null) return;
+      if (_visibleSearchOwner == owner) _visibleSearchOwner = null;
+      _scheduleNotify();
+      return;
+    }
+    final AppleSidebarLibrarySearch? old = _searchEntries[owner];
+    _searchEntries[owner] = search;
+    final bool ownerChanged = _visibleSearchOwner != owner;
+    _visibleSearchOwner = owner;
+    if (!ownerChanged && old != null && old.sameBinding(search)) return;
+    _scheduleNotify();
   }
 
   /// 库页的标签栏登记 / 更新侧栏「标签」节（2026-11-24 方案 A 第 8 项：macOS 档
