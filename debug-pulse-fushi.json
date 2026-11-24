@@ -1,12 +1,52 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T13:51:22Z",
+ "generatedAt": "2026-11-24T15:29:39Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "2f7a39313315812c5780de138ddcef295a9bef54",
   "seq": 32272
  },
  "builds": [
+  {
+   "seq": 32272,
+   "version": "3.4.0",
+   "sha": "2f7a39313315812c5780de138ddcef295a9bef54",
+   "unknown": false,
+   "publishedAt": "2026-11-24T15:29:22Z",
+   "testflight": true,
+   "baseSeq": 32267,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "2f7a39313315812c5780de138ddcef295a9bef54",
+     "subject": "chore(bugs): reindex after merging #4373 #4375"
+    },
+    {
+     "sha": "d3c030cd418777a7d1db89939629c1f8b4861021",
+     "subject": "Merge #4375 (claude/fix-srs-close-anr) into develop"
+    },
+    {
+     "sha": "b0e0a8364b6969d67df4fcf3964ccca40d065445",
+     "subject": "Merge #4373 (claude/fix-srs4-migration-failed) into develop"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "queued",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45397292097"
+    },
+    "windows": {
+     "state": "ok"
+    },
+    "macos": {
+     "state": "ok"
+    },
+    "ios": {
+     "state": "ok"
+    }
+   }
+  },
   {
    "seq": 32267,
    "version": "3.4.0",
@@ -146,8 +186,8 @@
    "version": "3.4.0",
    "sha": "f8f2847179eda309f6667a38bc235426b82440c4",
    "unknown": false,
-   "publishedAt": "2026-11-24T08:06:26Z",
-   "testflight": true,
+   "publishedAt": "2026-11-24T07:40:26Z",
+   "testflight": false,
    "baseSeq": 32193,
    "prs": [],
    "direct": [
@@ -178,54 +218,20 @@
      "state": "ok"
     },
     "windows": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
     },
     "macos": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
     },
     "ios": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45344044917"
     }
    }
   }
  ],
- "pending": {
-  "headSha": "2f7a39313315812c5780de138ddcef295a9bef54",
-  "headSeq": 32272,
-  "prs": [],
-  "direct": [
-   {
-    "sha": "2f7a39313315812c5780de138ddcef295a9bef54",
-    "subject": "chore(bugs): reindex after merging #4373 #4375"
-   },
-   {
-    "sha": "d3c030cd418777a7d1db89939629c1f8b4861021",
-    "subject": "Merge #4375 (claude/fix-srs-close-anr) into develop"
-   },
-   {
-    "sha": "b0e0a8364b6969d67df4fcf3964ccca40d065445",
-    "subject": "Merge #4373 (claude/fix-srs4-migration-failed) into develop"
-   }
-  ],
-  "truncated": false,
-  "platforms": {
-   "android": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45397292097"
-   },
-   "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45397291809"
-   },
-   "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45397291809"
-   },
-   "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45397291809"
-   }
-  }
- },
+ "pending": null,
  "prs": {}
 }
