@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T19:19:49Z",
+ "generatedAt": "2026-11-24T21:00:21Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "073033d43c75b31fb022d3d5882ee498af9d8a87",
-  "seq": 32274
+  "sha": "0c3cc1ea736260806467974824ca2709f1e3682c",
+  "seq": 32530
  },
  "builds": [
   {
@@ -217,6 +217,167 @@
    }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "0c3cc1ea736260806467974824ca2709f1e3682c",
+  "headSeq": 32530,
+  "prs": [],
+  "direct": [
+   {
+    "sha": "0c3cc1ea736260806467974824ca2709f1e3682c",
+    "subject": "test(video): 遥控入口测试跟上页头统一收纳（宽度够时「⋯」项平铺）；下载登记测试在显示过落盘封面的用例里收尾读盘句柄（Windows 下一条删同名封面不再被占用）"
+   },
+   {
+    "sha": "072d0201b87e870dc35d4144ef6edd5772c349a1",
+    "subject": "chore(bugs): settle 撞号并重建索引（合并 #4374…#4389 #4376 这一批）"
+   },
+   {
+    "sha": "4a54969d84d151b69a02f0737f3f8639815d6110",
+    "subject": "fix(test-red/video): 视频库页封面回填在测试套件里默认不起，挂载视频库页的测试不再在 tearDown 关库时挂死；视频页 dispose 先停帧探针（BUG-5422 收尾）"
+   },
+   {
+    "sha": "0ce5e4fbb44999565aab652c0425b863c78e5fbc",
+    "subject": "fix(video): 换集取目标书后的 mounted 判据改查 context.mounted，删网页档快捷键测试里的多余 import（合并后 analyze）"
+   },
+   {
+    "sha": "8075309134e0747d860cb993aa354dff7e92628f",
+    "subject": "Merge #4376 (pr/cupertino-ios27-topbar) into develop"
+   },
+   {
+    "sha": "ff7d7e4b3d3c3fd2cf3d4f6667acfb9b0348b9da",
+    "subject": "Merge #4389 (claude/dec-lyrics-align) into develop"
+   },
+   {
+    "sha": "7472e8b216b573698784124e1360c63a0e47aa0d",
+    "subject": "Merge #4404 (claude/fb-web-screenshot-key) into develop"
+   },
+   {
+    "sha": "f183b48ed61e5ec069a02a9450707d4ab0f5069e",
+    "subject": "Merge #4395 (claude/docker-image-server-9f8c6b) into develop"
+   },
+   {
+    "sha": "5d732d09e351b636d35991595a4b376ac0cb52a2",
+    "subject": "Merge #4403 (pr/hanabi-gpu) into develop"
+   },
+   {
+    "sha": "6f95ba62375a39ba90326a0679e4e65efcb52950",
+    "subject": "Merge #4396 (pr/backdrop-frost) into develop"
+   },
+   {
+    "sha": "2850ddb26dae0db701adb00a02b57d6943e27f8c",
+    "subject": "Merge #4380 (pr/lumiere-crisp-atlas) into develop"
+   },
+   {
+    "sha": "9a55eebfeeeed7fe9aaa2e740d3285658bbd8fd6",
+    "subject": "Merge #4393 (claude/fb-android-native-callback-port) into develop"
+   },
+   {
+    "sha": "75957f1de9ebde78a530dbb527265702fb2e3afa",
+    "subject": "Merge #4384 (claude/dec-gal-overlay-mine-fail) into develop"
+   },
+   {
+    "sha": "a89cbdc3626dca9ffbe28754ecb90aa2f33339ec",
+    "subject": "Merge #4402 (claude/fb-browser-fullscreen-caption) into develop"
+   },
+   {
+    "sha": "e9252af8a60c5709ac1a1d95c7c0b1782869d0f6",
+    "subject": "Merge #4411 (claude/fb-lyrics-illust-rclick) into develop"
+   },
+   {
+    "sha": "0b41d1f7e1c4325506a449b762866f0c58836880",
+    "subject": "Merge #4406 (claude/fb-web-subtitle-gen) into develop"
+   },
+   {
+    "sha": "8f6e4b40fa05facadebb36f338bfc72eaf46a0e0",
+    "subject": "Merge #4401 (claude/dec-yt-playlist-episodes) into develop"
+   },
+   {
+    "sha": "0cae944ed3c97e3636a2c32f4f078b870366273e",
+    "subject": "Merge #4399 (claude/fb-seamless-anchor-skip) into develop"
+   },
+   {
+    "sha": "c61db59512fd23ec15e217e589989a243149a4ce",
+    "subject": "Merge #4394 (claude/fb-yt-chat-probe) into develop"
+   },
+   {
+    "sha": "f42b464e79f1edea6d1d2fabb268798136c68cd1",
+    "subject": "Merge #4392 (claude/fb-media-server-nested-root) into develop"
+   },
+   {
+    "sha": "d51f55bab4ab18e6857eebe7ee1fef490a49d6e1",
+    "subject": "Merge #4391 (claude/fb-dict-masthead) into develop"
+   },
+   {
+    "sha": "4ba4ec330e8b5cadbcb038bd9d0c6701aeaaf1f3",
+    "subject": "Merge #4390 (claude/dec-fav-jumpback) into develop"
+   },
+   {
+    "sha": "01d62cd5a2d4ac89d6010c9de77f504da021acaf",
+    "subject": "Merge #4388 (claude/fb-deck-settings-masthead) into develop"
+   },
+   {
+    "sha": "eece90e3e42f9340703b6f94a33660084345a924",
+    "subject": "Merge #4386 (claude/fb-lyrics-undecodable-illust) into develop"
+   },
+   {
+    "sha": "0ae26dab65d04953e20c5c426c9564ce28117bbb",
+    "subject": "Merge #4383 (claude/dec-epub-source-relocate) into develop"
+   },
+   {
+    "sha": "718fca57f42a811d87f18480ad176bc12f72cf2c",
+    "subject": "Merge #4385 (claude/dec-review-bg-split) into develop"
+   },
+   {
+    "sha": "28b586cc59403f6a648ea5c395a8ca3e2f59c2f4",
+    "subject": "Merge #4379 (claude/dec-library-anchor-db-witness) into develop"
+   },
+   {
+    "sha": "9a2a3bc8677f03b183d6b3597d6b8b857b8d1d5d",
+    "subject": "Merge #4378 (claude/dec-book-scrape-query-unify) into develop"
+   },
+   {
+    "sha": "95ddf801f55d036100dc031d2cf7d8188f49e77a",
+    "subject": "Merge #4381 (claude/dec-lyrics-galcard) into develop"
+   },
+   {
+    "sha": "c863c64a940f3109f600778f94d87964d8d6e404",
+    "subject": "Merge #4377 (claude/dec-srs-cancel) into develop"
+   },
+   {
+    "sha": "2901434c1c1f29c6ffbf3158d8c70bfc30484685",
+    "subject": "Merge #4369 (claude/image-name-selector-issues-c7f1c9) into develop"
+   },
+   {
+    "sha": "109d56bff2072867e43d8c5dfb3279d9c062cc3f",
+    "subject": "Merge #4367 (claude/fushi-shutdown-issue-d922e7) into develop"
+   },
+   {
+    "sha": "ff16c334da9625004e0cf2ea78ac9f2aae3f60db",
+    "subject": "Merge #4371 (claude/bangumi-search-author) into develop"
+   },
+   {
+    "sha": "0193147abde9cf7d3e14a7de3dd7e91f98d0df85",
+    "subject": "Merge #4374 (claude/jolly-haibt-9ea0b2) into develop"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45484783803"
+   },
+   "windows": {
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45484783537"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45484783537"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45484783537"
+   }
+  }
+ },
  "prs": {}
 }
