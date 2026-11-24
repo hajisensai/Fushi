@@ -65,6 +65,7 @@ extension _VideoLiveChat on _VideoFushiPageState {
         videoLiveChatOpensOnLoad(
           wasOpen: wasOpen,
           autoOpen: appModel.videoLiveChatAutoOpen,
+          probeFailed: next.probeFailed,
         )) {
       _openLiveChat();
     }

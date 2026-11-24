@@ -83,9 +83,49 @@ void main() {
   // 设置「自动打开聊天回放」的效果探针（settings_schema_coverage_test 的 kCoveredElsewhere
   // 指向这里）：视频页换上聊天回放后按它决定开不开栏（live_chat.part.dart）。
   test('videoLiveChatOpensOnLoad：设置开 → 自动开栏；关 → 不开，但换视频前开着的接着开', () {
-    expect(videoLiveChatOpensOnLoad(wasOpen: false, autoOpen: true), isTrue);
-    expect(videoLiveChatOpensOnLoad(wasOpen: false, autoOpen: false), isFalse);
-    expect(videoLiveChatOpensOnLoad(wasOpen: true, autoOpen: false), isTrue);
+    expect(
+      videoLiveChatOpensOnLoad(
+        wasOpen: false,
+        autoOpen: true,
+        probeFailed: false,
+      ),
+      isTrue,
+    );
+    expect(
+      videoLiveChatOpensOnLoad(
+        wasOpen: false,
+        autoOpen: false,
+        probeFailed: false,
+      ),
+      isFalse,
+    );
+    expect(
+      videoLiveChatOpensOnLoad(
+        wasOpen: true,
+        autoOpen: false,
+        probeFailed: false,
+      ),
+      isTrue,
+    );
+  });
+
+  test('videoLiveChatOpensOnLoad：探测失败占位不按自动打开开栏，换视频前开着的照旧开（BUG-5411）', () {
+    expect(
+      videoLiveChatOpensOnLoad(
+        wasOpen: false,
+        autoOpen: true,
+        probeFailed: true,
+      ),
+      isFalse,
+    );
+    expect(
+      videoLiveChatOpensOnLoad(
+        wasOpen: true,
+        autoOpen: true,
+        probeFailed: true,
+      ),
+      isTrue,
+    );
   });
 
   test('videoLiveChatShownUntilMs：跟随 = 播放头；冻结 = 两者取早', () {

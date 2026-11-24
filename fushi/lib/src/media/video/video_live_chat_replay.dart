@@ -136,7 +136,12 @@ class VideoLiveChatReplay extends ChangeNotifier {
 
 /// 换上新的聊天回放后要不要直接打开聊天栏：换源 / 换集前栏开着就接着开（不因为换视频把
 /// 用户开着的栏收掉），否则看设置「自动打开聊天回放」（`video.live_chat.auto_open`）。
+///
+/// [probeFailed]（换上的是「探测失败」占位，BUG-5411）时不按自动打开开栏：不知道这个视频
+/// 有没有聊天回放，绝大多数普通视频本来就没有，接口一出问题就每个视频都弹出一个失败栏
+/// 挤占画面；按钮照出，用户想看再点开重试。换视频前栏开着的照旧接着开。
 bool videoLiveChatOpensOnLoad({
   required bool wasOpen,
   required bool autoOpen,
-}) => wasOpen || autoOpen;
+  required bool probeFailed,
+}) => wasOpen || (autoOpen && !probeFailed);
