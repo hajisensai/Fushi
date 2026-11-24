@@ -11,6 +11,7 @@
 //     正在写的留言草稿与焦点在换卡后原样恢复；
 //   - 附件：把文件拖到卡片上、在留言框里粘贴截图、或点「上传附件」选文件，逐个 POST /dev/d/:id/files（multipart），
 //     传完换卡；
+//   - 附件分享：附件旁「分享 / 撤销分享」走 fetch 只换这张卡，分享成功把公开链接写进剪贴板；「复制链接」再复制一次；
 //   - 键盘：J/K 移动，1…6 做 / 方案，X 不做，L 以后，N 永远不做，E 没看懂，D 要设计图，Y 你定，C 写留言，U 撤销，
 //     Ctrl+Enter 只发留言，Esc 离开输入框。
 
@@ -43,7 +44,8 @@ export const DECISIONS_CLIENT_JS = String.raw`(function () {
     bad_file_type: '只收 html / md / txt / 图片',
     bad_file_name: '文件名太长',
     file_too_large: '单个文件不能超过 10 MB',
-    bad_upload: '上传格式不对'
+    bad_upload: '上传格式不对',
+    share_conflict: '分享状态刚被别人改了，请重试'
   };
   var UPLOAD_EXT = /\.(html?|md|markdown|txt|png|jpe?g|webp|gif|svg)$/i;
   var UPLOAD_MAX = 10 * 1024 * 1024;
@@ -262,6 +264,12 @@ export const DECISIONS_CLIENT_JS = String.raw`(function () {
   }
 
   list.addEventListener('submit', function (e) {
+    var sf = e.target.closest('form.dshare');
+    if (sf) {
+      e.preventDefault();
+      share(sf);
+      return;
+    }
     var form = e.target.closest('form.dform');
     if (!form) return;
     e.preventDefault();
@@ -275,6 +283,58 @@ export const DECISIONS_CLIENT_JS = String.raw`(function () {
       return;
     }
     send(form.closest('article.dcard'), v, text);
+  });
+
+  // ---- 附件分享 ----
+  function absUrl(href) { return new URL(href, location.href).href; }
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+    return Promise.reject(new Error('no clipboard'));
+  }
+  function copyLink(href, done) {
+    var url = absUrl(href);
+    copyText(url).then(function () {
+      toast(done || '链接已复制');
+    }, function () {
+      // 剪贴板被拒（非安全上下文 / 浏览器限制）：把链接放进提示里，手动复制。
+      toast((done ? done + '，' : '') + '没能自动复制：' + url, { ms: 12000 });
+    });
+  }
+  function share(form) {
+    var card = form.closest('article.dcard');
+    if (!card || card.classList.contains('busy')) return;
+    var unshare = /\/unshare$/.test(form.action);
+    var body = new URLSearchParams();
+    body.set('back', stage);
+    card.classList.add('busy');
+    fetch(form.action, {
+      method: 'POST',
+      body: body,
+      credentials: 'same-origin',
+      headers: { Accept: 'application/json' }
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) throw new Error(ERRORS[data.error] || ((unshare ? '撤销' : '分享') + '失败（' + (data.error || res.status) + '）'));
+        return data;
+      });
+    }).then(function (data) {
+      card.classList.remove('busy');
+      var el = swap(card, data.item);
+      if (data.sig) { sig = data.sig; list.setAttribute('data-sig', sig); }
+      applyFilter();
+      setCurrent(el, false);
+      if (unshare) toast('已撤销分享，原链接失效');
+      else if (data.path) copyLink(data.path, '已生成公开链接并复制');
+    }).catch(function (err) {
+      card.classList.remove('busy');
+      toast(err.message || '网络错误，没有提交成功', { error: true, ms: 6000 });
+    });
+  }
+  list.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button.v-copy');
+    if (!b) return;
+    e.preventDefault();
+    copyLink(b.getAttribute('data-href'));
   });
 
   // ---- 附件上传（拖放 / 粘贴 / 选文件） ----
