@@ -5677,6 +5677,7 @@
   "lyrics_illustration_cue_dot": "红点",
   "lyrics_illustration_cue_hint": "弹出停留：弹出插图卡，并按下面的「图片暂停」秒数暂停后继续；红点：只在封面缩略图上标红点",
   "lyrics_illustration_cue_popup": "弹出停留",
+  "lyrics_illustration_locked_hint": "还没听到 · 点一下揭开",
   "lyrics_illustration_next": "下一张插图",
   "lyrics_illustration_open": "查看插图",
   "lyrics_illustration_previous": "上一张插图",
