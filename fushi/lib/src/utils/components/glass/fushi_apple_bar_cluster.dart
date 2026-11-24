@@ -8,14 +8,22 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
     show FushiAppleFloatingSurface;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
-    show GlassBarItem, GlassBarItemBackground, GlassPinnedBarChrome;
+    show
+        DefaultButtonSettings,
+        GlassBodyMode,
+        GlassButtonGroup,
+        GlassButtonGroupItem,
+        GlassNavPinnedMetrics,
+        LiquidGlassSettings;
+import 'package:liquid_glass_widgets/theme/glass_theme_helpers.dart'
+    show GlassThemeHelpers;
 
-// Apple（Cupertino）导航栏的 bar button：直接用 liquid_glass_widgets 的
-// [GlassPinnedBarChrome] + [GlassBarItem] 渲染（与 `GlassAppBar.pinned` 同一套
-// 玻璃钮）。iOS 27：每个动作一枚独立的中性玻璃圆钮
+// Apple（Cupertino）导航栏的 bar button：用 liquid_glass_widgets 的玻璃钮渲染
+// （[FushiAppleGlassBarButton]：与 `GlassAppBar.pinned` / `GlassPinnedBarChrome`
+// 的 separate 钮同一个 [GlassButtonGroup.icons]）。iOS 27：每个动作一枚独立的中性玻璃圆钮
 // （`GlassBarItemBackground.separate`，不着强调色），钮间距 8
-// （[kFushiAppleBarItemGap]），带文字的动作是同高的玻璃胶囊。不注册到导航壳
-// （`enabled: false`，Fushi 没有 GlassNavigationShell），只取它的在路由内渲染。
+// （[kFushiAppleBarItemGap]），带文字的动作是同高的玻璃胶囊。Fushi 没有
+// GlassNavigationShell，也没有 iPhone Duo 竖条。
 //
 // 玻璃跟随画质档位（主题由 FushiGlassScope 下发）；实色档（含系统降低透明度 /
 // 增强对比度 / 墨水屏，见 [glassMaterialOf]）库没有实色钮，退回同形状的
@@ -74,24 +82,13 @@ class FushiAppleBarCluster extends StatelessWidget {
         ],
       );
     }
-    return GlassPinnedBarChrome(
-      enabled: false,
-      backButton: false,
-      // separate 钮的直径就是 buttonSize（单钮组 crossExtent = buttonSize，
-      // 圆角 = 一半，正圆）。
-      buttonSize: extent,
-      actions: <GlassBarItem>[
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      spacing: kFushiAppleBarItemGap,
+      children: <Widget>[
         for (final Widget item in items)
-          GlassBarItem.custom(
-            background: GlassBarItemBackground.separate,
-            child: wrap(item),
-          ),
+          FushiAppleGlassBarButton(extent: extent, child: wrap(item)),
       ],
-      builder: (BuildContext context, chrome) => Row(
-        mainAxisSize: MainAxisSize.min,
-        spacing: kFushiAppleBarItemGap,
-        children: chrome.actions,
-      ),
     );
   }
 }
@@ -185,19 +182,67 @@ class FushiAppleBarProminentButton extends StatelessWidget {
         child: content,
       );
     }
-    return GlassPinnedBarChrome(
-      enabled: false,
-      backButton: false,
-      buttonSize: extent,
-      actions: <GlassBarItem>[
-        GlassBarItem.custom(
-          background: GlassBarItemBackground.separate,
-          tintColor: tint,
-          child: content,
-        ),
-      ],
-      builder: (BuildContext context, chrome) =>
-          Row(mainAxisSize: MainAxisSize.min, children: chrome.actions),
+    return FushiAppleGlassBarButton(extent: extent, tint: tint, child: content);
+  }
+}
+
+/// 一枚独立的 liquid_glass 玻璃 bar button 底：`GlassBarItemBackground.separate`
+/// 的同一渲染——库的 [GlassButtonGroup.icons] 单项、高 = [extent]、圆角 = 一半
+/// （图标钮正圆、带字钮同高胶囊）；[tint] 非空时按库对 `tintColor` 的做法以
+/// [GlassBodyMode.clear] 直接着色。[child] 自己处理点击 / 焦点 / 语义（库这一项
+/// 不挂点击、不另立语义）。
+///
+/// 不经 `GlassPinnedBarChrome`（BUG-5358）：它无条件挂一个
+/// `OverlayPortal.overlayChildLayoutBuilder`（给 iPhone Duo 竖条用；没有竖条时
+/// 永远是 `SizedBox.shrink`）。框架让这种布局构建器**每一帧**都重新布局，布局又
+/// `markNeedsSemanticsUpdate`，而它挂在路由的 Overlay 里、到应用根之间没有已建的
+/// 语义边界——任何连续动画期间（首页编辑态抖动、加载圈……）每帧都从应用根重走
+/// 语义树；保活的各 tab 顶栏合计十几枚，debug 实例主线程被占满。Fushi 只要它画
+/// 玻璃钮，所以直接用它最终渲染的那个库组件。
+class FushiAppleGlassBarButton extends StatelessWidget {
+  const FushiAppleGlassBarButton({
+    required this.extent,
+    required this.child,
+    this.tint,
+    super.key,
+  });
+
+  /// 钮高（图标钮的直径）。
+  final double extent;
+  final Widget child;
+
+  /// 强调色玻璃（iOS `.tint()` 的 prominent bar button）；null = 中性玻璃。
+  final Color? tint;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextDirection ambient = Directionality.of(context);
+    final Color? tint = this.tint;
+    final LiquidGlassSettings? settings = tint == null
+        ? null
+        : GlassThemeHelpers.resolveSettings(
+            context,
+            explicit: DefaultButtonSettings.of(context),
+          ).copyWith(glassColor: tint, bodyMode: GlassBodyMode.clear);
+    // 与库一致：组内强制 LTR，钮内容恢复环境方向。
+    return Directionality(
+      textDirection: TextDirection.ltr,
+      child: GlassButtonGroup.icons(
+        settings: settings,
+        borderRadius: extent / 2,
+        iconSize: GlassNavPinnedMetrics.iconSize,
+        itemPadding: EdgeInsets.zero,
+        items: <GlassButtonGroupItem>[
+          GlassButtonGroupItem(
+            icon: SizedBox(
+              height: extent,
+              child: Center(
+                child: Directionality(textDirection: ambient, child: child),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

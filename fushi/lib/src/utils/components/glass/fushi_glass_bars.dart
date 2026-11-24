@@ -25,7 +25,7 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         kFushiMastheadActionExtent;
 import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
-    show fushiAppleBarCapsuleExtent;
+    show FushiAppleGlassBarButton, fushiAppleBarCapsuleExtent;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart'
@@ -39,12 +39,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart'
     show HorizontalDragScrollable;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
-    show
-        GlassAppBar,
-        GlassBarItem,
-        GlassBarItemBackground,
-        GlassPinnedBarChrome,
-        GlassPinnedBarChromeData;
+    show GlassAppBar;
 
 // 顶栏族（AppBar / SliverAppBar / TabBar）的「设计系统分派」包装：构造参数与
 // Material 原控件逐个同名同型，调用点只改类名。MD3 下原样构造原控件；玻璃下
@@ -95,9 +90,8 @@ double _appleBarSideInset(BuildContext context) =>
     fushiMastheadCompact(context) ? 16 : 12 * fushiAppleMacScale(context);
 
 /// iOS 27 / macOS 27 的独立 bar button：一枚自己的玻璃圆
-/// （liquid_glass_widgets 的 [GlassBarItem.custom] +
-/// [GlassBarItemBackground.separate]，经 [GlassPinnedBarChrome] 在路由内渲染，
-/// 与 `GlassAppBar.pinned` 的返回键同一形态）。玻璃随画质档位；实色档
+/// （liquid_glass_widgets 的 separate 玻璃钮，经 [FushiAppleGlassBarButton]
+/// 渲染，与 `GlassAppBar.pinned` 的返回键同一形态）。玻璃随画质档位；实色档
 /// （[glassMaterialOf] == off：系统降低透明度 / 增强对比度 / 墨水屏 / 用户选
 /// 实色）退回同形状的系统材质实色圆（[FushiAppleFloatingSurface]），无模糊无
 /// 着色器。[child] 自己处理点击 / 焦点 / 语义。
@@ -125,19 +119,7 @@ class FushiAppleBarCircle extends StatelessWidget {
         child: content,
       );
     }
-    return GlassPinnedBarChrome(
-      enabled: false,
-      backButton: false,
-      buttonSize: extent,
-      actions: <GlassBarItem>[
-        GlassBarItem.custom(
-          background: GlassBarItemBackground.separate,
-          child: content,
-        ),
-      ],
-      builder: (BuildContext context, GlassPinnedBarChromeData chrome) =>
-          Row(mainAxisSize: MainAxisSize.min, children: chrome.actions),
-    );
+    return FushiAppleGlassBarButton(extent: extent, child: content);
   }
 }
 

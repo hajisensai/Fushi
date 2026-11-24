@@ -26,6 +26,14 @@ import 'dart:math' as math;
 import 'dart:ui' show PathMetric;
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart'
+    show
+        LayerHandle,
+        PaintingContext,
+        PipelineOwner,
+        RenderBox,
+        RenderProxyBox,
+        TransformLayer;
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -853,16 +861,12 @@ class _GridTileState extends State<_GridTile> {
         ),
       );
       // Apple：iOS 主屏式轻微抖动（相邻两块反相）；控制器只在允许动效时转。
-      if (isGlassDesign(context) && !lifted) {
-        final double sign = widget.index.isEven ? 1 : -1;
-        final Widget still = content;
-        content = AnimatedBuilder(
+      // 只在绘制层转动（[HomeWidgetJiggle]），块内容烘成一层、逐帧只换变换矩阵。
+      if (isGlassDesign(context) && !lifted && motion) {
+        content = HomeWidgetJiggle(
           animation: widget.jiggle,
-          builder: (BuildContext context, Widget? child) => Transform.rotate(
-            angle: (widget.jiggle.value - 0.5) * 0.024 * sign,
-            child: child,
-          ),
-          child: still,
+          sign: widget.index.isEven ? 1 : -1,
+          child: RepaintBoundary(child: content),
         );
       }
       content = RawGestureDetector(
@@ -1258,4 +1262,129 @@ class _OutlinePainter extends CustomPainter {
       old.width != width ||
       old.dashed != dashed ||
       old.radius != radius;
+}
+
+/// Apple 编辑态的 iOS 主屏式抖动：**只在绘制层**绕中心转 [animation] 对应的小角度。
+///
+/// BUG-5358：先前是 `AnimatedBuilder` + `Transform.rotate`。[RenderTransform] 的变换
+/// 一变就 `markNeedsSemanticsUpdate`，抖动又是常驻的 `repeat`，于是编辑态下每一帧
+/// 每块组件的整棵语义子树都重算几何并整批下发（Windows 上有 UIA 客户端时语义常开），
+/// 块内容（虚线描边逐段 `extractPath`、封面烘焙面……）也逐帧整块重画，外加每帧经
+/// 网格的 LayoutBuilder 重建。debug 实例主线程因此 100% 占满、60 fps 连续出帧、
+/// 输入与热重载都挤不进来。
+///
+/// 这里的不变式：
+/// - 抖动是纯装饰。布局、命中测试、语义、`getTransformTo` 一律按静止姿态（不覆写
+///   [RenderObject.applyPaintTransform]），所以逐帧**不触发重建 / 布局 / 语义更新**；
+///   ±0.7° 的偏差在角上不到 2 px，命中与无障碍矩形都不受影响。
+/// - 本节点自身是 repaint boundary、直接监听 [animation] 只 `markNeedsPaint`，调用方
+///   再把内容包一层 [RepaintBoundary]：逐帧只重推一个变换层，内容层原样复用。
+class HomeWidgetJiggle extends SingleChildRenderObjectWidget {
+  const HomeWidgetJiggle({
+    super.key,
+    required this.animation,
+    required this.sign,
+    required super.child,
+  });
+
+  /// 0..1 往返的抖动相位（`repeat(reverse: true)`）。
+  final Animation<double> animation;
+
+  /// 相邻两块反相：1 或 -1。
+  final double sign;
+
+  /// 相位 [value] 对应的转角（弧度）：相位 0.5 时归零，两端各 ±0.012。
+  static double angleOf(double value, double sign) =>
+      (value - 0.5) * 0.024 * sign;
+
+  @override
+  RenderHomeWidgetJiggle createRenderObject(BuildContext context) =>
+      RenderHomeWidgetJiggle(animation: animation, sign: sign);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    RenderHomeWidgetJiggle renderObject,
+  ) {
+    renderObject
+      ..animation = animation
+      ..sign = sign;
+  }
+}
+
+/// [HomeWidgetJiggle] 的 render object：见其文档的不变式。
+class RenderHomeWidgetJiggle extends RenderProxyBox {
+  RenderHomeWidgetJiggle({
+    required Animation<double> animation,
+    required double sign,
+  }) : _animation = animation,
+       _sign = sign;
+
+  Animation<double> _animation;
+  Animation<double> get animation => _animation;
+  set animation(Animation<double> value) {
+    if (identical(value, _animation)) return;
+    if (attached) _animation.removeListener(markNeedsPaint);
+    _animation = value;
+    if (attached) _animation.addListener(markNeedsPaint);
+    markNeedsPaint();
+  }
+
+  double _sign;
+  set sign(double value) {
+    if (value == _sign) return;
+    _sign = value;
+    markNeedsPaint();
+  }
+
+  /// 当前绘制用的转角（弧度）。
+  double get angle => HomeWidgetJiggle.angleOf(_animation.value, _sign);
+
+  final LayerHandle<TransformLayer> _transformLayer =
+      LayerHandle<TransformLayer>();
+
+  @override
+  bool get isRepaintBoundary => true;
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _animation.addListener(markNeedsPaint);
+  }
+
+  @override
+  void detach() {
+    _animation.removeListener(markNeedsPaint);
+    super.detach();
+  }
+
+  @override
+  void dispose() {
+    _transformLayer.layer = null;
+    super.dispose();
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final RenderBox? child = this.child;
+    if (child == null) return;
+    final double a = angle;
+    if (a == 0) {
+      _transformLayer.layer = null;
+      context.paintChild(child, offset);
+      return;
+    }
+    final Offset center = size.center(Offset.zero);
+    final Matrix4 transform = Matrix4.translationValues(center.dx, center.dy, 0)
+      ..rotateZ(a)
+      ..translateByDouble(-center.dx, -center.dy, 0, 1);
+    _transformLayer.layer = context.pushTransform(
+      needsCompositing,
+      offset,
+      transform,
+      (PaintingContext context, Offset offset) =>
+          context.paintChild(child, offset),
+      oldLayer: _transformLayer.layer,
+    );
+  }
 }
