@@ -27,6 +27,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/library_section_tab.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 import '../../helpers/source_guard.dart';
@@ -323,6 +324,12 @@ void main() {
       );
     });
 
+    // Apple 下 [FushiIcon] 把 Material 字形换成 Apple 字形再交给 Icon，按 Material
+    // IconData 找 Icon 永远是 0 个；按语义源（FushiIcon 的 icon）找把手。
+    Finder dragHandle() => find.byWidgetPredicate(
+      (Widget w) => w is FushiIcon && w.icon == FushiIcons.dragHandle,
+    );
+
     testWidgets('edit mode: delete + reorder handle, done leaves it', (
       WidgetTester tester,
     ) async {
@@ -333,14 +340,18 @@ void main() {
         glass: true,
       );
       // 非编辑态没有常驻拖动手柄。
-      expect(find.byIcon(FushiIcons.dragHandle), findsNothing);
+      expect(dragHandle(), findsNothing);
       expect(find.text(t.dialog_edit), findsOneWidget);
       await tester.tap(
         find.byKey(const ValueKey<String>('import-sources-edit')),
       );
+      // 行尾 AnimatedSwitcher：点按后第一帧才建出新旧两件并起动画（ticker 从这帧
+      // 起算），再推进一段让旧件淡出结束，最后一帧把它摘出树。
+      await tester.pump();
       await tester.pump(const Duration(seconds: 1));
+      await tester.pump();
       expect(find.text(t.dialog_done), findsOneWidget);
-      expect(find.byIcon(FushiIcons.dragHandle), findsNWidgets(3));
+      expect(dragHandle(), findsNWidgets(3));
       expect(
         find.byKey(const ValueKey<String>('import-source-more-1')),
         findsNothing,
@@ -353,7 +364,7 @@ void main() {
       final Semantics handle = tester.widget<Semantics>(
         find
             .ancestor(
-              of: find.byIcon(FushiIcons.dragHandle).first,
+              of: dragHandle().first,
               matching: find.byWidgetPredicate(
                 (Widget w) =>
                     w is Semantics &&
@@ -367,8 +378,10 @@ void main() {
       await tester.tap(
         find.byKey(const ValueKey<String>('import-sources-edit')),
       );
+      await tester.pump();
       await tester.pump(const Duration(seconds: 1));
-      expect(find.byIcon(FushiIcons.dragHandle), findsNothing);
+      await tester.pump();
+      expect(dragHandle(), findsNothing);
     });
 
     testWidgets('macOS wide window lays out two columns', (

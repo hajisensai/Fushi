@@ -144,8 +144,17 @@ void main() {
     );
     expect(tester.takeException(), isNull);
     // 没有色块卡：主选择 / 次要选择 / 表单都是分组（主块 1 + 三行一组 1 + 表单 1）。
-    expect(find.byType(FushiCard), findsNothing);
+    // Apple 分组框本身由 [AdaptiveSettingsSection] 经 FushiCard 画（inset grouped
+    // 实色底），所以只认「每个分组一张」：分组之外不许再有色块 FushiCard。
     expect(find.byType(AdaptiveSettingsSection), findsNWidgets(3));
+    expect(find.byType(FushiCard), findsNWidgets(3));
+    expect(
+      find.descendant(
+        of: find.byType(AdaptiveSettingsSection),
+        matching: find.byType(FushiCard),
+      ),
+      findsNWidgets(3),
+    );
     // 拖放说明是组尾脚注；转录不可用的原因照常写出。
     expect(find.text('Drop files here'), findsOneWidget);
     expect(find.text('Pick audio first'), findsOneWidget);

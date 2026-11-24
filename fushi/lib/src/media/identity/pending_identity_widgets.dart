@@ -14,6 +14,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/identity/pending_identity_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -148,11 +149,16 @@ class PendingIdentityBanner extends StatelessWidget {
     final VoidCallback? open = onOpen;
     final FushiAppleColors apple = appleColorsOf(context);
     final FushiAppleMetrics m = FushiAppleMetrics.of(context);
-    final TextStyle body =
-        (Theme.of(context).textTheme.bodyLarge ?? const TextStyle()).copyWith(
-          fontSize: m.subtitleSize,
-          color: apple.label,
-        );
+    final TextStyle body = appleTextStyle(
+      context,
+      size: m.subtitleSize,
+      color: apple.label,
+    );
+    // xmark 关闭钮是正圆：半径 = 图标半宽 + 四周内边距（由度量推出，不另立圆角）。
+    const double dismissPadding = 8;
+    final BorderRadius dismissRadius = BorderRadius.all(
+      Radius.circular(m.chevronSize / 2 + dismissPadding),
+    );
     return Padding(
       key: ValueKey<String>(keyPrefix),
       padding: EdgeInsets.only(bottom: m.groupSpacing / 2),
@@ -189,9 +195,9 @@ class PendingIdentityBanner extends StatelessWidget {
                   onPressed: onDismiss,
                   semanticLabel:
                       dismissTooltip ?? t.identity_pending_banner_dismiss,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: dismissRadius,
                   child: Padding(
-                    padding: const EdgeInsets.all(8),
+                    padding: const EdgeInsets.all(dismissPadding),
                     child: FushiIcon(
                       FushiIcons.close,
                       size: m.chevronSize,

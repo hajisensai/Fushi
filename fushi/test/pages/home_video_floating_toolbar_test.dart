@@ -159,30 +159,33 @@ void main() {
     ).onChanged(VideoLibrarySection.allVideos);
     await tester.pumpAndSettle();
 
-    // 设计稿 #video V2：页头只留搜索 / 筛选与排序 / 后台任务 / 添加，低频动作
-    // （刷新、选择、管理标签…）收进「⋯」。
+    // 设计稿 #video V2：页头常驻搜索 / 筛选与排序 / 后台任务 / 添加，低频动作
+    // （刷新、选择、管理标签…）挂在页面「⋯」上；宽窗放得下时由页头统一收纳
+    // 平铺成独立图标钮（沿用菜单项 key），一项都没收时不出「⋯」（用户
+    // 2026-11-24「有空间还是展开最好」，fushiResolveHeaderActions）。
+    expect(
+      inPill(find.byKey(const ValueKey<String>('library_select_toggle'))),
+      findsOneWidget,
+      reason: '视频库页头的低频动作由浮动工具栏的悬浮动作组画出（宽窗平铺）',
+    );
     expect(
       inPill(find.byKey(const ValueKey<String>('video-library-more'))),
-      findsOneWidget,
-      reason: '视频库页头的「⋯」由浮动工具栏的悬浮动作组画出',
+      findsNothing,
+      reason: '1600 宽放得下全部平铺，不再收进「⋯」',
     );
     expect(
       find.byKey(const ValueKey<String>('video-library-refresh')),
       findsNothing,
-      reason: '刷新空闲时住在「⋯」里，不占页头按钮',
+      reason: '刷新空闲时是「⋯」项（此处平铺），不另画转圈刷新钮',
+    );
+    expect(
+      inPill(find.byKey(const ValueKey<String>('video-library-refresh-menu'))),
+      findsOneWidget,
     );
     expect(find.byType(BatchActionBar), findsNothing);
 
     await tester.tap(
-      inPill(find.byKey(const ValueKey<String>('video-library-more'))),
-    );
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey<String>('video-library-refresh-menu')),
-      findsOneWidget,
-    );
-    await tester.tap(
-      find.byKey(const ValueKey<String>('library_select_toggle')),
+      inPill(find.byKey(const ValueKey<String>('library_select_toggle'))),
     );
     await tester.pumpAndSettle();
 
@@ -192,7 +195,7 @@ void main() {
       reason: '多选态是浮动工具栏的上下文切换',
     );
     expect(
-      inPill(find.byKey(const ValueKey<String>('video-library-more'))),
+      inPill(find.byKey(const ValueKey<String>('library_select_toggle'))),
       findsNothing,
     );
     expect(inPill(find.text(t.batch_selected_count(n: 0))), findsOneWidget);
@@ -204,7 +207,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(BatchActionBar), findsNothing, reason: '批量栏沉下去后卸掉');
     expect(
-      inPill(find.byKey(const ValueKey<String>('video-library-more'))),
+      inPill(find.byKey(const ValueKey<String>('library_select_toggle'))),
       findsOneWidget,
     );
     debugDefaultTargetPlatformOverride = null; // 须在用例体内复位：不变量先于 tearDown 校验
@@ -229,12 +232,17 @@ void main() {
       find.byKey(const ValueKey<String>('video-library-refresh')),
       findsNothing,
     );
-    await tester.tap(find.byKey(const ValueKey<String>('video-library-more')));
-    await tester.pumpAndSettle();
+    // 宽窗下「⋯」的项平铺成独立图标钮（fushiResolveHeaderActions），刷新项
+    // 无论平铺还是收进「⋯」都沿用同一个 key。
+    expect(
+      find.byKey(const ValueKey<String>('library_select_toggle')),
+      findsOneWidget,
+      reason: '其余低频动作照常平铺，排除「整行没画」的假绿',
+    );
     expect(
       find.byKey(const ValueKey<String>('video-library-refresh-menu')),
       findsNothing,
-      reason: '触屏下拉即刷新入口，「⋯」里也不重复',
+      reason: '触屏下拉即刷新入口，「⋯」项里也不重复',
     );
     debugDefaultTargetPlatformOverride = null;
   });

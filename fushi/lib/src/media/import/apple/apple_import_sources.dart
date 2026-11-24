@@ -23,7 +23,7 @@ import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
-    show FushiLinearProgressIndicator;
+    show FushiLinearProgressIndicator, FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
@@ -406,9 +406,12 @@ class AppleImportSourceRow extends StatelessWidget {
                     ),
                     if (data.isPrivate) ...<Widget>[
                       const SizedBox(width: 6),
-                      _AppleSourceBadge(
-                        icon: FushiIcons.lock,
-                        label: t.media_source_privacy_badge,
+                      // 窄行里标题与徽标同为 Flexible 分宽，徽标文字截断、全文进 tooltip。
+                      Flexible(
+                        child: _AppleSourceBadge(
+                          icon: FushiIcons.lock,
+                          label: t.media_source_privacy_badge,
+                        ),
                       ),
                     ],
                   ],
@@ -606,7 +609,7 @@ class _AppleSourceBadge extends StatelessWidget {
     final TextStyle style = context.fushiType.labelSmall.copyWith(
       color: colors.secondaryLabel,
     );
-    return DecoratedBox(
+    final Widget badge = DecoratedBox(
       decoration: BoxDecoration(
         color: colors.fill,
         borderRadius: FushiBorderRadius.chip,
@@ -618,11 +621,19 @@ class _AppleSourceBadge extends StatelessWidget {
           spacing: 3,
           children: <Widget>[
             FushiIcon(icon, size: 10, color: colors.secondaryLabel),
-            Text(label, style: style),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            ),
           ],
         ),
       ),
     );
+    return FushiTooltip(message: label, child: badge);
   }
 }
 

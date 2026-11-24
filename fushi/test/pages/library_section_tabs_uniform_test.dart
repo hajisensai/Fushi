@@ -154,7 +154,7 @@ void main() {
               brightness: Brightness.dark,
             ),
             textTheme: Typography.material2021().white,
-            glass: FushiGlassMaterial.frosted,
+            glass: FushiGlassMaterial.minimal,
             glassDesign: true,
           ),
           themeAnimationDuration: Duration.zero,
@@ -394,12 +394,20 @@ void main() {
       // TabBarView，走 controlled 形态共用同一个 TabController）。
       '下载': 'lib/src/pages/implementations/browse_page.dart',
     };
+    const String materialLibraryLayout =
+        'lib/src/pages/implementations/library_layout/material/'
+        'material_library_layout.dart';
     for (final MapEntry<String, String> entry in topBarSources.entries) {
       final String src = File(entry.value).readAsStringSync();
       // 下载页的资源子页另有一个合法的 section 级内容域分段条；这里只检查
       // 顶层门头，防止把“顶层导航不得用分段按钮”误扩成整文件禁用。
+      // 书架 / 漫画 / 视频的库页外壳把顶栏交给共享的 [LibraryLayout]（按
+      // isGlassDesign 分派；M3E 分支原样搬进 MaterialLibraryLayout，Apple 分支
+      // 是方案 A 的分区胶囊行、不属 M3E 页签收敛）：这类外壳查它的 M3E 版面。
       final String topBarSource = entry.key == '下载'
           ? methodBody(src, 'Widget _buildHeader(')
+          : src.contains('LibraryLayout<')
+          ? '$src\n${File(materialLibraryLayout).readAsStringSync()}'
           : src;
       expect(
         topBarSource.contains('LibrarySectionTabs<'),

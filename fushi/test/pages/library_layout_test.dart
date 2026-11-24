@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi_core/fushi_core.dart' show BookTagRow;
 import 'package:fushi_engine/media/collections/shelf_sort.dart';
 
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_layout.dart';
 import 'package:fushi/src/pages/implementations/library_layout/apple/apple_library_scope_bar.dart';
@@ -31,6 +32,8 @@ import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiShellActionsSlot, FushiShellTitleScope;
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/section_swipe_navigator.dart';
@@ -92,18 +95,21 @@ void main() {
       shell = AppleSidebarLibraryScope(host: host, child: shell);
     }
     await tester.pumpWidget(
-      ProviderScope(
-        child: MaterialApp(
-          theme: buildFushiThemeData(
-            scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-            textTheme: Typography.material2021().black,
-            glassDesign: glass,
-          ).copyWith(platform: platform),
-          home: FushiGlassScope(
-            child: SectionTabOrderScope(
-              store: _MemoryStore(<String>[]),
-              child: Scaffold(
-                body: FushiShellTitleScope(title: 'Books', child: shell),
+      // 共享标签筛选栏（[FushiTagFilterBar]）经 Translations.of 取文案。
+      TranslationProvider(
+        child: ProviderScope(
+          child: MaterialApp(
+            theme: buildFushiThemeData(
+              scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+              textTheme: Typography.material2021().black,
+              glassDesign: glass,
+            ).copyWith(platform: platform),
+            home: FushiGlassScope(
+              child: SectionTabOrderScope(
+                store: _MemoryStore(<String>[]),
+                child: Scaffold(
+                  body: FushiShellTitleScope(title: 'Books', child: shell),
+                ),
               ),
             ),
           ),
@@ -443,7 +449,15 @@ void main() {
                 columns: 5,
                 choices: const <int>[4, 5, 6],
                 onColumnsChanged: changes.add,
-                child: const Focus(autofocus: true, child: SizedBox.expand()),
+                // 替身要像真实网格一样能被命中（空 SizedBox 不参与命中测试，
+                // 捏合事件到不了缩放层的 Listener）。
+                child: const Focus(
+                  autofocus: true,
+                  child: ColoredBox(
+                    color: Color(0x00000000),
+                    child: SizedBox.expand(),
+                  ),
+                ),
               ),
             ),
           ),
@@ -461,11 +475,14 @@ void main() {
         glass: true,
         platform: TargetPlatform.iOS,
       );
-      final Offset c = tester.getCenter(find.byType(SizedBox).last);
+      final Offset c = tester.getCenter(find.byType(LibraryGridZoom));
       final TestGesture a = await tester.startGesture(c - const Offset(40, 0));
       final TestGesture b = await tester.startGesture(c + const Offset(40, 0));
-      await a.moveTo(c - const Offset(80, 0));
-      await b.moveTo(c + const Offset(80, 0));
+      // 两指距 80 → 90（1.125，未到档）→ 100（1.25 ≥ kLibraryGridZoomInRatio）：
+      // 恰好换一档。捏合跨档后以当前距离为新基准、继续拉开会接着换档，所以
+      // 拉到 2 倍会连换两档；替身不回写列数，这里只拉一档的量。
+      await a.moveTo(c - const Offset(50, 0));
+      await b.moveTo(c + const Offset(50, 0));
       await a.up();
       await b.up();
       await tester.pumpAndSettle();
@@ -478,7 +495,7 @@ void main() {
         glass: false,
         platform: TargetPlatform.iOS,
       );
-      final Offset c = tester.getCenter(find.byType(SizedBox).last);
+      final Offset c = tester.getCenter(find.byType(LibraryGridZoom));
       final TestGesture a = await tester.startGesture(c - const Offset(40, 0));
       final TestGesture b = await tester.startGesture(c + const Offset(40, 0));
       await a.moveTo(c - const Offset(80, 0));
@@ -833,7 +850,14 @@ void main() {
       );
       expect(slider, findsNothing);
       expect(zoomButton, findsOneWidget);
-      expect(find.byTooltip('Items per row'), findsOneWidget);
+      // Apple 的提示气泡是 Tooltip(richMessage: 玻璃 WidgetSpan)，find.byTooltip
+      // 读不到纯文本，按设计系统分派的 [FushiTooltip] 消息找。
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) => w is FushiTooltip && w.message == 'Items per row',
+        ),
+        findsOneWidget,
+      );
       await tester.tap(zoomButton);
       await tester.pumpAndSettle();
       expect(slider, findsOneWidget);

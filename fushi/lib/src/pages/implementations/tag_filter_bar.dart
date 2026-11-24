@@ -17,6 +17,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/adaptive/apple_sidebar_library_host.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_divider.dart';
 import 'package:fushi/src/utils/components/fushi_header_menu_anchor.dart';
@@ -1277,6 +1278,8 @@ class _AppleTagCapsule extends StatelessWidget {
     final double fontSize = fushiAppleCompact(context)
         ? 13 * fushiAppleMacScale(context)
         : 15;
+    // 图标 / 色点与文字的间距取间距令牌（与标签胶囊之间的间隔同源）。
+    final double iconGap = FushiDesignTokens.of(context).spacing.gap * 0.75;
     return FushiPressScale(
       child: FushiPlainButton(
         onPressed: onTap,
@@ -1294,7 +1297,7 @@ class _AppleTagCapsule extends StatelessWidget {
             children: <Widget>[
               if (icon != null) ...<Widget>[
                 FushiIcon(icon!, size: fontSize, color: apple.secondaryLabel),
-                const SizedBox(width: 6),
+                SizedBox(width: iconGap),
               ] else if (tint != null && !selected) ...<Widget>[
                 DecoratedBox(
                   decoration: BoxDecoration(
@@ -1303,7 +1306,7 @@ class _AppleTagCapsule extends StatelessWidget {
                   ),
                   child: const SizedBox.square(dimension: 8),
                 ),
-                const SizedBox(width: 6),
+                SizedBox(width: iconGap),
               ],
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 180),
@@ -1311,9 +1314,10 @@ class _AppleTagCapsule extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: fontSize,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                  style: appleTextStyle(
+                    context,
+                    size: fontSize,
+                    weight: selected ? FontWeight.w600 : FontWeight.w400,
                     color: foreground,
                   ),
                 ),

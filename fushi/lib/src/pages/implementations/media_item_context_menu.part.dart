@@ -384,8 +384,7 @@ class _ItemMenuHeader extends StatelessWidget {
         : Theme.of(context).colorScheme.onSurface;
     // iOS 27 上下文菜单顶部的标题：13pt secondaryLabel（不抢菜单行的视觉）。
     final TextStyle? appleTitle = apple
-        ? TextStyle(
-            fontSize: context.fushiType.bodySmall.fontSize,
+        ? context.fushiType.bodySmall.copyWith(
             fontWeight: FontWeight.w600,
             color: titleColor,
             letterSpacing: 0,
@@ -433,8 +432,7 @@ class _ItemMenuHeader extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: apple
-                        ? TextStyle(
-                            fontSize: context.fushiType.bodySmall.fontSize,
+                        ? context.fushiType.bodySmall.copyWith(
                             color: appleColorsOf(context).tertiaryLabel,
                             letterSpacing: 0,
                           )
@@ -596,8 +594,7 @@ class _ItemPrimaryButton extends StatelessWidget {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: apple
-                    ? TextStyle(
-                        fontSize: context.fushiType.labelMedium.fontSize,
+                    ? context.fushiType.labelMedium.copyWith(
                         color: foreground,
                         letterSpacing: 0,
                       )

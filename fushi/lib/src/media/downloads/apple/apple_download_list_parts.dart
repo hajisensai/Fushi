@@ -453,6 +453,9 @@ class _AppleDownloadTaskSliceState extends State<AppleDownloadTaskSlice>
           Transform.translate(offset: Offset(_dx, 0), child: foreground),
         ],
       );
+      // 闭包只捕获这一层的不可变快照：直接读 `body` 会在 builder 运行时读到下面
+      // 重新赋值后的外层（Semantics → 本 LayoutBuilder），无限递归、栈溢出。
+      final Widget slidable = body;
       body = LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           _width = constraints.maxWidth.isFinite ? constraints.maxWidth : 1;
@@ -460,7 +463,7 @@ class _AppleDownloadTaskSliceState extends State<AppleDownloadTaskSlice>
             behavior: HitTestBehavior.translucent,
             onHorizontalDragUpdate: _onUpdate,
             onHorizontalDragEnd: _onEnd,
-            child: body,
+            child: slidable,
           );
         },
       );
