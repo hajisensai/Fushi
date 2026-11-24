@@ -32,8 +32,10 @@ enum TrackingMediaType {
   /// its episode number; also a do-not-track key covering those episodes.
   remoteSeries('remote_series'),
 
-  /// A book series collection (`media_collections.id`). Only a do-not-track
-  /// key: it covers every book of the collection, also ones added later.
+  /// A book series card (`media_collections.id`). As a do-not-track key it
+  /// covers every book of the card, also ones added later; as a link (a
+  /// series link) it counts every volume of the card, also ones added later
+  /// (see `book_series_link.dart`).
   bookCollection('book_collection');
 
   const TrackingMediaType(this.value);
@@ -744,6 +746,125 @@ class MediaTrackingRepository {
     return collections..sort(_compareBookSeries);
   }
 
+  /// The series card of book [bookKey]: its best collection when that is a
+  /// series ([bookSeriesRank] 0 or 1), null for a book in no series or only
+  /// in reading lists. What a series link (`book_collection`) is keyed by.
+  Future<MediaCollectionRow?> bookSeriesCard(String bookKey) async {
+    final MediaCollectionRow? best = (await bookSeriesCollections(
+      bookKey,
+    )).firstOrNull;
+    return best != null && bookSeriesRank(best) <= 1 ? best : null;
+  }
+
+  /// Collection [id]; null when it was deleted.
+  Future<MediaCollectionRow?> loadCollection(int id) => (_db.select(
+    _db.mediaCollections,
+  )..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  /// The books of collection [collectionId] in card order (videos and games
+  /// left out; members whose book is gone are skipped).
+  Future<List<EpubBookRow>> collectionBooks(int collectionId) async {
+    final List<String> entryKeys = <String>[
+      for (final MediaCollectionItemRow item in await _db.getCollectionItems(
+        collectionId,
+      ))
+        if (item.mediaType != MediaKind.video.dbValue &&
+            item.mediaType != MediaKind.game.dbValue)
+          item.entryKey,
+    ];
+    if (entryKeys.isEmpty) return const <EpubBookRow>[];
+    // Members are keyed by the book's uid (v82); older rows by its book key.
+    final List<EpubBookRow> rows = await (_db.select(
+      _db.epubBooks,
+    )..where((t) => t.uid.isIn(entryKeys) | t.bookKey.isIn(entryKeys))).get();
+    final Map<String, EpubBookRow> byEntry = <String, EpubBookRow>{
+      for (final EpubBookRow book in rows) ...<String, EpubBookRow>{
+        book.bookKey: book,
+        if (book.uid.isNotEmpty) book.uid: book,
+      },
+    };
+    final List<EpubBookRow> books = <EpubBookRow>[];
+    final Set<String> seen = <String>{};
+    for (final String entryKey in entryKeys) {
+      final EpubBookRow? book = byEntry[entryKey];
+      if (book != null && seen.add(book.bookKey)) books.add(book);
+    }
+    return books;
+  }
+
+  /// How far [book] is read, for a series link: [started] = a saved reader
+  /// position (or finished), [finished] as [isBookFinishedForTracking],
+  /// [evidenceAt] = newest local reading time (ms).
+  Future<({bool started, bool finished, int evidenceAt})> loadBookReadState(
+    EpubBookRow book, {
+    MangaReadProgressResolver? mangaProgress,
+  }) async {
+    final ReaderPositionRow? position = book.uid.isEmpty
+        ? null
+        : await _db.getReaderPosition(book.uid);
+    final MangaReadProgress? manga =
+        BookFormat.parseOrEpub(book.format) == BookFormat.manga
+        ? await mangaProgress?.call(book)
+        : null;
+    final DateTime? completedAt = book.completedAt;
+    final bool finished = manga != null ? manga.allRead : completedAt != null;
+    return (
+      started:
+          finished ||
+          position != null ||
+          (manga?.highestChapter ?? 0) > 0 ||
+          completedAt != null,
+      finished: finished,
+      evidenceAt: math.max(
+        math.max(
+          position?.updatedAt ?? 0,
+          completedAt?.millisecondsSinceEpoch ?? 0,
+        ),
+        manga?.lastReadAt ?? 0,
+      ),
+    );
+  }
+
+  /// Book keys covered by a series link (`book_collection`) of [provider]
+  /// (null = any site): the books of every linked series card.
+  Future<Set<String>> booksCoveredBySeriesLinks({String? provider}) async {
+    final List<int> collectionIds = <int>[
+      for (final MediaTrackingMappingRow row in await listMappings(
+        provider: provider,
+      ))
+        if (row.mediaType == TrackingMediaType.bookCollection.value)
+          ?int.tryParse(row.mediaKey),
+    ];
+    if (collectionIds.isEmpty) return const <String>{};
+    final String Function(String) bookKeyOf = await _bookKeyOfMember();
+    return <String>{
+      for (final MediaCollectionItemRow item in await (_db.select(
+        _db.mediaCollectionItems,
+      )..where((t) => t.collectionId.isIn(collectionIds))).get())
+        if (item.mediaType != MediaKind.video.dbValue &&
+            item.mediaType != MediaKind.game.dbValue)
+          bookKeyOf(item.entryKey),
+    };
+  }
+
+  /// Series links (`book_collection`) whose series card was deleted: kept,
+  /// shown as "Series card removed" with a remove action, never sent.
+  Future<Set<int>> orphanSeriesMappingIds() async {
+    final List<MediaTrackingMappingRow> series = <MediaTrackingMappingRow>[
+      for (final MediaTrackingMappingRow row in await listMappings())
+        if (row.mediaType == TrackingMediaType.bookCollection.value) row,
+    ];
+    if (series.isEmpty) return const <int>{};
+    final Set<String> existing = <String>{
+      for (final MediaCollectionRow row in await _db.getAllMediaCollections())
+        row.id.toString(),
+    };
+    return <int>{
+      for (final MediaTrackingMappingRow row in series)
+        if (!existing.contains(row.mediaKey)) row.id,
+    };
+  }
+
   /// The series of every book (best [bookSeriesRank], then oldest), video
   /// (oldest collection holding it) and remembered media server episode
   /// (its season): what "Don't track the series" ignores from a member's
@@ -904,8 +1025,13 @@ class MediaTrackingRepository {
       ))
         '${row.mediaType}|${row.mediaKey}',
     };
+    // A book of a linked series card is linked through the series link.
+    final Set<String> seriesBooks = await booksCoveredBySeriesLinks(
+      provider: provider,
+    );
     bool isMapped(TrackingMediaType type, String key) =>
-        mapped.contains('${type.value}|$key');
+        mapped.contains('${type.value}|$key') ||
+        (type == TrackingMediaType.book && seriesBooks.contains(key));
 
     final List<VideoBookRow> videos = await _db.allVideoBooks();
     final Map<String, int> durations = await loadKnownVideoDurationsMs(_db);
@@ -2703,6 +2829,67 @@ class MediaTrackingRepository {
               sentCompleted: Value<bool>(false),
             ),
           );
+
+  /// Replaces the volume links [volumeLinkIds] of series card
+  /// [collectionId] with its series link on [provider], in one transaction:
+  /// makes the series link when missing, removes the volume links and lets
+  /// the series link start from the highest progress sent so far
+  /// ([sentProgress] < 0 = none). Returns false and changes nothing when the
+  /// card's series link points to another site entry.
+  Future<bool> mergeBookSeriesLink({
+    required String provider,
+    required int collectionId,
+    required String collectionName,
+    required TrackingKind kind,
+    required int subjectId,
+    required String subjectName,
+    required String linkSource,
+    required List<int> volumeLinkIds,
+    required int sentProgress,
+    required bool sentCompleted,
+  }) => _db.transaction(() async {
+    final String key = collectionId.toString();
+    MediaTrackingMappingRow? series = await findMapping(
+      mediaType: TrackingMediaType.bookCollection,
+      mediaKey: key,
+      provider: provider,
+    );
+    if (series != null &&
+        (series.subjectId != subjectId || series.kind != kind.value)) {
+      return false;
+    }
+    if (series == null) {
+      await saveMapping(
+        mediaType: TrackingMediaType.bookCollection,
+        mediaKey: key,
+        mediaTitle: collectionName,
+        kind: kind,
+        subjectId: subjectId,
+        subjectName: subjectName,
+        progressMode: TrackingProgressMode.volume,
+        progressOffset: 0,
+        provider: provider,
+        linkSource: linkSource,
+      );
+      series = await findMapping(
+        mediaType: TrackingMediaType.bookCollection,
+        mediaKey: key,
+        provider: provider,
+      );
+    }
+    for (final int id in volumeLinkIds) {
+      await deleteMapping(id);
+    }
+    final int had = series?.sentProgress ?? -1;
+    if (series != null && sentProgress > had) {
+      await adoptSentProgress(
+        series.id,
+        progress: sentProgress,
+        completed: sentCompleted,
+      );
+    }
+    return true;
+  });
 
   /// Takes [progress] / [completed] as already sent for link [mappingId]
   /// (a link made before v152 whose progress the old catch-up had covered).

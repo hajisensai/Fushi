@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5371](bugs/BUG-5371-anidb-tag-tree-backtick.md) | ✅ | ✅ | anidb-tag-tree-backtick |
+| [BUG-5369](bugs/BUG-5369-lyric-visualizer-style-desc-truncated.md) | ✅ | ✅ | lyric-visualizer-style-desc-truncated |
 | [BUG-5367](bugs/BUG-5367-music-visualizer-tap-exits.md) | ✅ | ✅ | 全屏歌词动画单击任意位置就退出 |
 | [BUG-5366](bugs/BUG-5366-curator-book-scrape-ignores-series-playlists.md) | ✅ | ✅ | 库管家补刮只认 collection 型合集、系列（playlist）各卷按卷名查而认不出 |
 | [BUG-5365](bugs/BUG-5365-library-agent-review-full-loop.md) | ✅ | ✅ | AI 助手自动全库复查把整库灌进一场对话爆上下文、失败不记进度无限重跑 |

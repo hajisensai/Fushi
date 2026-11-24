@@ -3,7 +3,7 @@
 //!
 //! | 类别 | 格式 | 模块 |
 //! |---|---|---|
-//! | 行级 | LRC、SRT、WebVTT、SAMI、纯文本 | [lrc]、[subtitle] |
+//! | 行级 | LRC、SRT、WebVTT、SAMI、纯文本（正文「漢字(かな)」→ ruby） | [lrc]、[subtitle]、[inline_ruby] |
 //! | 字级 | 增强 LRC（A2）、ESLyric 逐字 LRC、WebVTT cue 内时间戳 | [lrc]、[subtitle] |
 //! | 音节级 | TTML（AMLL / Apple 方言）、Lyricify Syllable | [ttml]、[syllabic] |
 //! | 卡拉 OK 字幕 | ASS / SSA `\k` `\K` `\kf` `\ko` `\kt`（只结构化） | [ass] |
@@ -15,6 +15,7 @@ pub mod ass;
 pub mod embedded;
 pub mod export;
 pub mod ffi;
+pub mod inline_ruby;
 pub mod json;
 pub mod lrc;
 pub mod markup;
@@ -42,7 +43,8 @@ use model::*;
 /// 6：QRC `[kana:]` 注音轨对不上时标记 `ruby_dropped`（线格式 flags bit2），界面提示已隐藏。
 /// 7：接口十六进制密文认旧接口 XML 的 CDATA 包装（`<content><![CDATA[hex]]></content>`）。
 /// 8：TTML 读 `<div itunes:song-part>` 段落标注（线格式 flags bit3 + 尾部段落表）。
-pub const PARSER_VERSION: u32 = 8;
+/// 9：LRC / 纯文本正文里的「漢字(かな)」内联读音挂成音节 ruby（[inline_ruby]）。
+pub const PARSER_VERSION: u32 = 9;
 
 /// 按格式提示（扩展名或格式名，大小写不敏感，可空）+ 内容嗅探解析。`duration_ms` 是曲长
 /// （补最后一行终点），未知传 None。
@@ -159,7 +161,9 @@ pub fn plain(text: &str) -> Timeline {
     for l in text.lines() {
         let l = l.trim();
         if !l.is_empty() {
-            t.lines.push(Line::whole(l, 0, 0));
+            let mut line = Line::whole(l, 0, 0);
+            inline_ruby::apply(&mut line);
+            t.lines.push(line);
         }
     }
     t.finalize(None);
