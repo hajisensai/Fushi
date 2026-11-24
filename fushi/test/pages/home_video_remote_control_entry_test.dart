@@ -110,18 +110,24 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  // 设计稿 #video V2：遥控入口收进页头「⋯」菜单（独立使用的本页「⋯」里
-  // 恒有「管理来源」，所以「⋯」总在）。
+  // 设计稿 #video V2：遥控入口是页头「⋯」的一项；页头统一收纳——宽度够时「⋯」的项
+  // 平铺成独立图标钮（同一个 key），放不下才收回「⋯」菜单。
   final Finder remoteButton = find.byKey(
     const ValueKey<String>('video-library-remote-control'),
   );
+  final Finder moreButton = find.byKey(
+    const ValueKey<String>('video-library-more'),
+  );
 
+  /// 「⋯」在（有项收不下）就打开它；全部平铺时没有「⋯」，遥控钮直接在页头上。
   Future<void> openMore(WidgetTester tester) async {
-    await tester.tap(find.byKey(const ValueKey<String>('video-library-more')));
+    if (moreButton.evaluate().isEmpty) return;
+    await tester.tap(moreButton);
     await tester.pumpAndSettle();
   }
 
   Future<void> closeMenu(WidgetTester tester) async {
+    if (moreButton.evaluate().isEmpty) return;
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
   }

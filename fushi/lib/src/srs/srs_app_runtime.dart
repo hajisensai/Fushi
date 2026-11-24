@@ -449,6 +449,7 @@ class SrsAppRuntime {
         // 已配对设备的远程写入与本机写入一样：本机界面重读，互联推送照常发出。
         onWrite: (String _) => _bumpRevision(),
       ),
+      notifyLocalWrite: _bumpRevision,
     );
     fushiAnkiConnectCompatInstanceId = instanceId;
     final SrsAnkiConnectEndpoint endpoint = buildAnkiConnectEndpoint();

@@ -101,23 +101,37 @@ const List<CtlCommandGroup> libraryCommandGroups = <CtlCommandGroup>[
       ),
       CtlCommandSpec(
         name: 'organize-proposals',
-        summary: '列出 AI 整理产出的待确认建议（合并 / 改名你自己的合集）',
+        summary: '列出待确认建议（合并 / 改名你自己的合集、从你的合集移出成员）',
         configure: _configureOrganizeProposals,
         build: _buildOrganizeProposals,
         render: _renderOrganizeProposals,
       ),
       CtlCommandSpec(
         name: 'organize-accept',
-        summary: '接受一条待确认建议：以你的身份合并 / 改名合集（不进整理撤销）',
+        summary: '同意一条待确认建议：以你的身份执行（可用 organize-unaccept 撤销）',
         usage: '<建议 id>',
         build: _buildOrganizeAccept,
         render: _renderOrganizeResolve,
       ),
       CtlCommandSpec(
         name: 'organize-reject',
-        summary: '拒绝一条待确认建议（同样的建议以后不再提）',
+        summary: '永远不：拒绝一条待确认建议并钉住相关成员（各设备都不再提）',
         usage: '<建议 id>',
         build: _buildOrganizeReject,
+        render: _renderOrganizeResolve,
+      ),
+      CtlCommandSpec(
+        name: 'organize-defer',
+        summary: '这次不：本机暂缓一条待确认建议 7 天（到期后可能再提）',
+        usage: '<建议 id>',
+        build: _buildOrganizeDefer,
+        render: _renderOrganizeResolve,
+      ),
+      CtlCommandSpec(
+        name: 'organize-unaccept',
+        summary: '撤销一条已同意 / 已暂缓的建议（成员放回原位 / 拆回合并 / 改回原名），建议回到待确认',
+        usage: '<建议 id>',
+        build: _buildOrganizeUnaccept,
         render: _renderOrganizeResolve,
       ),
       CtlCommandSpec(
@@ -782,10 +796,16 @@ String _renderOrganizeProposals(Object? data) {
   final StringBuffer out = StringBuffer();
   for (final Object? p in list) {
     if (p is! Map) continue;
-    final String what = p['kind'] == 'rename'
-        ? '改名「${p['collection']}」→「${p['newName']}」'
-        : '把 ${((p['sources'] as List?) ?? const <Object?>[]).map((Object? s) => '「$s」').join('、')} '
-              '并进「${p['collection']}」';
+    final String what = switch (p['kind']) {
+      'rename' => '改名「${p['collection']}」→「${p['newName']}」',
+      'removeMembers' =>
+        '从「${p['collection']}」移出 '
+            '${((p['members'] as List?) ?? const <Object?>[]).map((Object? m) => '「${m is Map ? m['title'] : m}」').join('、')}'
+            '${p['reasonCode'] == null ? '' : ' [${p['reasonCode']}]'}',
+      _ =>
+        '把 ${((p['sources'] as List?) ?? const <Object?>[]).map((Object? s) => '「$s」').join('、')} '
+            '并进「${p['collection']}」',
+    };
     out.writeln(
       '#${p['id']} ${p['state']} · $what · ${p['confidence']}'
       '${p['reason'] == null ? '' : '（${p['reason']}）'}',
@@ -807,6 +827,12 @@ CtlRequestSpec _buildOrganizeAccept(CtlCommandContext context) =>
 
 CtlRequestSpec _buildOrganizeReject(CtlCommandContext context) =>
     _buildOrganizeResolve(context, 'reject');
+
+CtlRequestSpec _buildOrganizeDefer(CtlCommandContext context) =>
+    _buildOrganizeResolve(context, 'defer');
+
+CtlRequestSpec _buildOrganizeUnaccept(CtlCommandContext context) =>
+    _buildOrganizeResolve(context, 'undo');
 
 String _renderOrganizeResolve(Object? data) =>
     data is Map ? '建议 #${data['id']}：${data['state']}' : '$data';
@@ -1119,7 +1145,7 @@ String _renderCuratePending(Object? data) {
   if (proposals.isNotEmpty) {
     out.writeln(
       '合集建议 ${proposals.length} 条'
-      '（organize-proposals / organize-accept / organize-reject）',
+      '（organize-proposals / organize-accept / organize-defer / organize-reject）',
     );
   }
   for (final Object? i in items) {

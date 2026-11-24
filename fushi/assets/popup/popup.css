@@ -2601,7 +2601,7 @@ html.global-lookup[data-theme="dark"] body {
    M3E 形状变形：静息整圆，按下收成 10px 圆角方块并缩到 0.92，松手带轻过冲弹回。
    时长对齐 Flutter 共享动效 token（FushiMotion.micro 90ms 按下 / short 180ms 松手 +
    release 软过冲）；减弱动态效果由 JS 挂 .no-motion 归零，墨水屏走 html.eink 通配压平。
-   Apple 设计系统（html.fushi-glass-host.fushi-apple）在后面换成 Apple 胶囊口径。 */
+   Apple 设计系统（html.fushi-glass-host.fushi-apple）在后面换成裸字形按钮。 */
 .ctx-adjust-button {
     box-sizing: border-box;
     width: 32px;
@@ -2653,36 +2653,12 @@ html.global-lookup[data-theme="dark"] body {
     transform: none;
 }
 
-/* Apple 设计系统：系统灰填充胶囊 + 强调色图标；按下是 Apple 的「变暗高亮」而不是
-   形状变形（整圆保持），焦点环用强调色半透明粗环（macOS 键盘焦点环口径）。
-   html.fushi-glass-host 开头，生成器整条丢弃（扩展没有 Apple 设计系统）。 */
-html.fushi-glass-host.fushi-apple .ctx-adjust-button {
-    background-color: color-mix(in srgb, var(--text-color) 9%, transparent);
-    color: var(--md-primary, var(--primary-color));
-}
-
-html.fushi-glass-host.fushi-apple .ctx-adjust-button:hover {
-    background-color: color-mix(in srgb, var(--text-color) 14%, transparent);
-}
-
-html.fushi-glass-host.fushi-apple .ctx-adjust-button:focus-visible {
-    background-color: color-mix(in srgb, var(--text-color) 14%, transparent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-primary, var(--primary-color)) 55%, transparent);
-}
-
-html.fushi-glass-host.fushi-apple .ctx-adjust-button:active {
-    border-radius: 16px;
-    transform: none;
-    opacity: 0.55;
-    background-color: color-mix(in srgb, var(--text-color) 14%, transparent);
-}
-
 /* Fushi 复习（SRS）词状态标记（popup.js createSrsStatusBadge）：与「在 Anki 中打开」同一颗
    ↗ 图标按钮（用户 10-28：不要「新卡」文字），尺寸 / 形状跟其它词条头图标按钮走；状态文案
    （「复习中 · 3天后」/「新卡」/「已暂停」）只进提示与无障碍标签。复习模块关着时 popup.js
    根本不渲染它。按队列分色——到期复习用主色、学习中用三级色、新卡用次级色、暂停
    用中性灰；颜色全部走注入的色角色变量（亮 / 暗 / 自定义主题自动跟随），淡染半透明，
-   自定义卡面底色下同样成立。Apple 设计系统在下面换成系统灰底 + 强调色图标。
+   自定义卡面底色下同样成立。Apple 设计系统在下面换成裸字形按钮（保留队列强调色）。
    墨水屏由 html.eink 通配压平圆角 / 动效。 */
 .srs-status-badge {
     border: none;
@@ -2726,17 +2702,113 @@ html.fushi-glass-host.fushi-apple .ctx-adjust-button:active {
     opacity: 0.7;
 }
 
-html.fushi-glass-host.fushi-apple .srs-status-badge {
-    color: var(--md-primary, var(--primary-color));
-    background-color: color-mix(in srgb, var(--text-color) 9%, transparent);
+/* Apple 设计系统（iOS 27 / macOS 27 工具栏口径）：词条头的动作按钮（♪ / ☆ / + / ✓ /
+   ↗ / 复习徽标 / 清空草稿 / 调整上下文）一律是**裸字形按钮**——无底色、不染容器，静息
+   secondaryLabel（正文色 62%），悬停变 label 色并在字形下浮出一枚半透明圆，按下圆加深；
+   不做形状变形、不缩放。命中区统一 44×44（iOS HIG 最小触控区，macOS 档同样够大），用
+   上下 -6px 外边距把行高仍收在 32，不把词头行撑高；圆只画在 6px 内边距内的 32px 内容盒
+   （background-clip: content-box，内圆角随 border-radius 50% 自动成正圆）。
+   状态色：已收藏 = 系统黄实心星（与系统 App 的收藏同色）；已制卡 ✓ = label 色；最新可改
+   ✓↩ = 系统绿；复习徽标保留按队列的强调色（状态含义不能丢）；禁用 / 暂无发音照旧淡显。
+   焦点环 = 强调色半透明 3px 环（macOS 键盘焦点环），落在圆外缘。
+   html.fushi-glass-host 开头，生成器整条丢弃（扩展没有 Apple 设计系统）。 */
+html.fushi-glass-host.fushi-apple .header-buttons {
+    gap: 0;
 }
 
-html.fushi-glass-host.fushi-apple .srs-status-badge:hover {
-    background-color: color-mix(in srgb, var(--text-color) 14%, transparent);
+html.fushi-glass-host.fushi-apple .ctx-adjust-button,
+html.fushi-glass-host.fushi-apple .header-buttons > .inline-action-button {
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+    margin-block: -6px;
+    padding: 6px;
+    border: none;
+    border-radius: 50%;
+    font-size: 20px;
+    color: color-mix(in srgb, var(--text-color) 62%, transparent);
+    background-color: transparent;
+    background-image: none;
+    background-clip: content-box;
+    box-shadow: none;
+    opacity: 1;
+    outline: none;
+    transform: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-html.fushi-glass-host.fushi-apple .srs-status-badge.srs-status-suspended {
+html.fushi-glass-host.fushi-apple .ctx-adjust-button:where(:not(:disabled)):hover,
+html.fushi-glass-host.fushi-apple .header-buttons > .inline-action-button:where(:not(:disabled)):hover {
     color: var(--text-color);
+    background-color: color-mix(in srgb, var(--text-color) 8%, transparent);
+}
+
+html.fushi-glass-host.fushi-apple .ctx-adjust-button:focus-visible,
+html.fushi-glass-host.fushi-apple .header-buttons > .inline-action-button:focus-visible {
+    color: var(--text-color);
+    background-color: color-mix(in srgb, var(--text-color) 8%, transparent);
+    outline: 3px solid color-mix(in srgb, var(--md-primary, var(--primary-color)) 55%, transparent);
+    outline-offset: -6px;
+}
+
+html.fushi-glass-host.fushi-apple .ctx-adjust-button:where(:not(:disabled)):active,
+html.fushi-glass-host.fushi-apple .header-buttons > .inline-action-button:where(:not(:disabled)):active {
+    border-radius: 50%;
+    transform: none;
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--text-color) 15%, transparent);
+    transition-duration: 0s;
+}
+
+html.fushi-glass-host.fushi-apple .ctx-adjust-button:disabled,
+html.fushi-glass-host.fushi-apple .header-buttons > .inline-action-button:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .audio-button.audio-unavailable {
+    opacity: 0.4;
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .favorite-button.favorited {
+    color: #ffcc00;
+}
+
+html.fushi-glass-host.fushi-apple[data-theme="dark"] .header-buttons > .favorite-button.favorited {
+    color: #ffd60a;
+}
+
+/* 静息「+」由 ::before/::after 以 em 画十字（见 .mine-button:not(.duplicate)）：字号只决定
+   十字大小，33px → 臂长 15.4px，与同排 20px SVG 字形的可见轮廓等高。 */
+html.fushi-glass-host.fushi-apple .header-buttons > .mine-button:not(.duplicate) {
+    font-size: 33px;
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .mine-button.duplicate {
+    color: var(--text-color);
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .mine-button.latest {
+    font-size: 17px;
+    color: #34c759;
+}
+
+html.fushi-glass-host.fushi-apple[data-theme="dark"] .header-buttons > .mine-button.latest {
+    color: #30d158;
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .srs-status-badge {
+    color: var(--md-primary, var(--primary-color));
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .srs-status-badge.srs-status-suspended {
+    color: color-mix(in srgb, var(--text-color) 62%, transparent);
+}
+
+html.fushi-glass-host.fushi-apple.fushi-reduced-motion .header-buttons > .inline-action-button,
+html.fushi-glass-host.fushi-apple .ctx-adjust-button.no-motion {
+    transition: none;
 }
 
 /* =====================================================================

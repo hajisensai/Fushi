@@ -26,6 +26,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart'
 import 'package:fushi/src/utils/components/fushi_toolbar.dart'
     show FushiToolbar;
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_presence.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
     show
         FushiPageChromeTitle,
@@ -116,8 +117,21 @@ class FushiFloatingChromeController extends ChangeNotifier {
     super.dispose();
   }
 
-  /// 工具栏此刻应当显示。
-  bool get visible => _visible;
+  /// 工具栏此刻应当显示。钉住（[pinned]）时恒为 true。
+  bool get visible => _visible || _pinned;
+
+  /// 钉住：工具栏常驻、不随滚动收起（Apple / Cupertino 设计系统：iOS 大标题
+  /// 导航栏与 macOS 工具栏都不下滑隐藏，2026-11 用户拍板）。由
+  /// [FushiFloatingChromeOverlay] 按设计系统在依赖变化时写入；写入不通知
+  /// （发生在 build 期），[visible] 读取时立即生效。
+  bool get pinned => _pinned;
+  bool _pinned = false;
+  set pinned(bool value) {
+    if (_pinned == value) return;
+    _pinned = value;
+    _accumulated = 0;
+    if (value) _visible = true;
+  }
 
   void show() => _set(true);
 
@@ -753,6 +767,7 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
         FushiFloatingChromeScope.maybeOf(context);
     _controller = controller;
     if (controller == null) return;
+    controller.pinned = isGlassDesign(context);
     final FushiSpring? spring = _shown;
     if (spring == null) {
       final FushiSpring created = FushiSpring(
@@ -945,13 +960,24 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                 : null;
             // 底板渐入只认真实滚动；大字行收缩认生效进度（钉在收起态时恒为
             // 1，版面本就是收起态，collapse 归零）。
+            // Apple 宽窗是常驻工具栏（不收缩，进度钉 0）；Apple 的底板按「内容
+            // 是否滚到栏下」在头 24 px 内渐入（scroll edge），停在顶部时栏完全
+            // 透明。
+            final bool appleBar = geometry?.apple ?? false;
             final double scrollProgress = geometry == null
+                ? 0
+                : appleBar && !geometry.compact
                 ? 0
                 : fushiMastheadProgressOf(
                     compact: geometry.compact,
                     motionEnabled: fushiExpressiveMotionEnabled(context),
                     offset: controller.mastheadScrollOffset.value,
                   );
+            final double panelProgress = appleBar
+                ? (controller.mastheadScrollOffset.value /
+                          kFushiAppleScrollEdgeDistance)
+                      .clamp(0.0, 1.0)
+                : scrollProgress;
             final double collapse = geometry?.collapseAt(scrollProgress) ?? 0;
             // 页头底板向上铺进外壳吃掉的顶部安全区（桌面自绘标题行 / 手机
             // 状态栏），一直铺到窗口上沿：只扩绘制，不改版面与让位。
@@ -1023,7 +1049,13 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                   // 没有任何可见工具（MD3 库页的外壳标题条是收起态），这条纯色带
                   // 只会盖住页面背景装饰，成了「下滑后顶部一条白边」（2026-11
                   // 用户截图，反馈 03cff3908u / Sb7jHbNO43）。
-                  child: shown <= 0.001 || (nested && _chromeHeight <= 0)
+                  child:
+                      shown <= 0.001 ||
+                          (nested && _chromeHeight <= 0) ||
+                          // Apple：整摞只有最外层一条 scroll edge，从窗口顶一直
+                          // 渐隐到最深一行吸顶工具下沿再过缓冲；嵌套工具行（标签
+                          // 行等）背后透明，不再垫各自的底色条。
+                          (nested && appleBar)
                       ? const SizedBox.shrink()
                       : mastheadStack
                       // 页头大字：90% 页面底色 + 高斯模糊，按滚动进度渐入；
@@ -1031,8 +1063,11 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                       ? Opacity(
                           opacity: nested ? 1 : shown,
                           child: FushiMastheadPanel(
+                            // Apple：底从窗口顶铺到页头（含一级 / 二级分段）
+                            // 下沿，发丝线落在这里；页面自己的嵌套工具行（搜索
+                            // 框、标签行）随内容滚走，不在底里。
                             height: scrimSeam - scrimTop + bleed,
-                            progress: scrollProgress,
+                            progress: panelProgress,
                             // 页头与嵌套工具行（标签条）是同一块吸顶面（设计稿
                             // V3）：只有根层开背景模糊，嵌套层画不透明同色填充
                             // 接在下面，两块磨砂不在接缝处叠出分隔线。
@@ -1078,19 +1113,31 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                     child: IgnorePointer(
                       // 收起途中就不再接指针（正在离开的工具栏不该还能被点到）。
                       ignoring: hidden || !controller.visible,
-                      child: Opacity(
-                        opacity: hidden ? 0 : opacity,
-                        child: Transform.translate(
+                      // 玻璃安全的淡出（[fushiChromeFade]）：Apple 的玻璃栏
+                      // 不能压在 Opacity 下，否则采不到背景、淡出时成灰团。
+                      child: fushiChromeFade(
+                        context,
+                        hidden ? 0 : opacity,
+                        Transform.translate(
                           // 用未截断的弹簧值：MD3 的轻微回弹体现在位置上
                           // （Apple 弹簧临界阻尼，本就不越界）。
                           // 页头大字随滚动收短了 [collapse]：嵌套层自己画的工具行
                           // （浏览页的内容域页签）跟着上移同样多，贴在收短后的
                           // 页头底下——底板已经按 `scrimTop` 上移，工具行留在
                           // 原位就是悬在列表中间、和页头之间空出一截。
+                          // Apple 页头大字外壳里，页面自己的嵌套工具行（搜索
+                          // 框、标签行）不吸顶：跟内容一起滚走（iOS 27 图书：
+                          // 只有导航栏与分段吸顶），滚进页头底下被背板盖住。
                           offset: Offset(
                             0,
                             -(1 - value) * (travel - selfFloor) -
-                                (nested ? collapse : 0),
+                                (nested
+                                    ? (appleBar && !widget.masthead
+                                          ? controller
+                                                .mastheadScrollOffset
+                                                .value
+                                          : collapse)
+                                    : 0),
                           ),
                           child: chrome,
                         ),
@@ -1382,12 +1429,11 @@ class _FushiSpringRevealState extends State<FushiSpringReveal>
                     ? Alignment.bottomCenter
                     : Alignment.topCenter,
                 heightFactor: extent,
-                child: Opacity(
-                  opacity: hidden ? 0 : opacity,
-                  child: Transform.translate(
-                    offset: Offset(0, slide),
-                    child: child,
-                  ),
+                // 玻璃安全的淡出（[fushiChromeFade]）。
+                child: fushiChromeFade(
+                  context,
+                  hidden ? 0 : opacity,
+                  Transform.translate(offset: Offset(0, slide), child: child),
                 ),
               ),
             ),
@@ -1556,6 +1602,10 @@ class FushiFloatingActionsPill extends StatelessWidget {
         reverseDuration: motion.effectsFast.duration,
         switchInCurve: motion.effectsSlow.curve,
         switchOutCurve: motion.effectsFast.curve,
+        // 默认的 FadeTransition 会把 Opacity 压在玻璃胶囊上（采不到背景、交叉
+        // 淡变时一团灰），换玻璃安全版。
+        transitionBuilder: (Widget child, Animation<double> animation) =>
+            FushiChromeFadeTransition(opacity: animation, child: child),
         layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
           alignment: AlignmentDirectional.centerEnd,
           clipBehavior: Clip.none,
@@ -1723,11 +1773,18 @@ class FushiFloatingChromeBar extends StatefulWidget {
     this.leading,
     this.trailing,
     this.secondary,
+    this.titleWrapper,
     super.key,
   });
 
   final Widget tabs;
   final FushiShellActionsSlot slot;
+
+  /// 页头大字行里给页名包一层（Apple 库页的标题下拉菜单，见
+  /// `AppleLibraryTitleMenu`）：收到已按字阶画好的页名与字阶，返回替换它的
+  /// 控件（随大标题收起一起缩放）。null = 页名原样画。只在页头大字顶栏里生效。
+  final Widget Function(BuildContext context, Widget title, TextStyle style)?
+  titleWrapper;
 
   /// 二级页签（库页壳当前组的 [LibrarySectionTabs]，不带外层页边 / 对齐）。
   /// 只在页头大字顶栏里用：宽窗放得下时与页名同一行，否则排在大字行下方；
@@ -1798,6 +1855,9 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
         .dependOnInheritedWidgetOfExactType<_FushiMastheadHost>();
     _host = host;
     final bool compact = fushiMastheadCompact(context);
+    // Apple（Cupertino）：iOS 大标题导航栏 / macOS 常驻工具栏（见
+    // [FushiMastheadGeometry.apple]）。页名恒在、一级切换是分段控件，不顶替页名。
+    final bool apple = isGlassDesign(context);
     final Widget? leading = widget.leading;
     final String? shellTitle = leading == null
         ? FushiShellTitleScope.maybeTitleOf(context)
@@ -1809,16 +1869,15 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
     // 词念两遍还挤掉动作按钮的位置（2026-11-12 用户）；一级切换顶上来当这一行
     // 的标题（宽窗字号）。有没有切换看它上报的自然宽（[_onTabsWidthReported]）。
     final bool switchHeadline =
-        compact && !soloTabs && (_tabsNaturalWidth ?? 0) > 0;
+        !apple && compact && !soloTabs && (_tabsNaturalWidth ?? 0) > 0;
     final String? title =
         shellTitle != null && shellTitle.isNotEmpty && !switchHeadline
         ? shellTitle
         : null;
     final double page = FushiDesignTokens.of(context).spacing.page;
-    final TextStyle titleStyle = fushiMastheadTitleStyle(
-      context,
-      compact: compact,
-    );
+    final TextStyle titleStyle = apple
+        ? fushiAppleNavTitleStyle(context, compact: compact)
+        : fushiMastheadTitleStyle(context, compact: compact);
     // 标题形态的一级切换：盒高与基线由选中项（最大的那一项）决定。
     final TextStyle switchStyle = switchHeadline
         ? titleStyle
@@ -1839,7 +1898,7 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
     final double switchBaseline = soloTabs
         ? titleBaseline
         : fushiMastheadBaselineFromBottom(context, probe, switchStyle);
-    final RoundedPolygon? badgeShape = title == null
+    final RoundedPolygon? badgeShape = title == null || apple
         ? null
         : FushiMastheadBadgeScope.maybeOf(context);
     final Widget? secondary = widget.secondary;
@@ -1856,7 +1915,9 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
           return ListenableBuilder(
             listenable: search ?? _noSearch,
             builder: (BuildContext context, Widget? _) {
-              final bool expanded = search?.expanded ?? false;
+              // Apple：搜索是大标题下常驻的整宽搜索框（随内容滚动，见
+              // [FushiPageHeader]），动作行不换成搜索栏。
+              final bool expanded = !apple && (search?.expanded ?? false);
               // 展开的搜索栏占动作组的位置（设计稿 `.tb .sr.open`），页名与
               // 页签照常可用；高度与动作组一致，版面不跳。
               final Widget actions = AnimatedSwitcher(
@@ -1909,6 +1970,7 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
                       scrollOffset: host?.scrollOffset,
                       motionEnabled: fushiExpressiveMotionEnabled(context),
                       onGeometry: host == null ? null : _onMastheadGeometry,
+                      apple: apple,
                       children: <Widget>[
                         leading ?? const SizedBox.shrink(),
                         if (title != null)
@@ -1916,9 +1978,14 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
                             key: const ValueKey<String>(
                               'floating-chrome-shell-title',
                             ),
-                            child: FushiMastheadTitle(
-                              title: title,
-                              compact: compact,
+                            child: _wrapTitle(
+                              context,
+                              FushiMastheadTitle(
+                                title: title,
+                                compact: compact,
+                                style: apple ? titleStyle : null,
+                              ),
+                              titleStyle,
                             ),
                           )
                         else
@@ -1964,6 +2031,12 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
         },
       ),
     );
+  }
+
+  Widget _wrapTitle(BuildContext context, Widget title, TextStyle style) {
+    final Widget Function(BuildContext, Widget, TextStyle)? wrapper =
+        widget.titleWrapper;
+    return wrapper == null ? title : wrapper(context, title, style);
   }
 
   Widget _buildChrome(BuildContext context) {
@@ -2100,7 +2173,7 @@ class _FushiFloatingChromeBarState extends State<FushiFloatingChromeBar> {
               switchInCurve: FushiMotion.standard,
               switchOutCurve: FushiMotion.standard,
               transitionBuilder: (Widget child, Animation<double> animation) =>
-                  FadeTransition(
+                  FushiChromeFadeTransition(
                     opacity: animation,
                     child: ScaleTransition(
                       scale: Tween<double>(
@@ -2153,10 +2226,14 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
     required this.scrollOffset,
     required this.motionEnabled,
     required this.onGeometry,
+    this.apple = false,
     required super.children,
   }) : assert(children.length == _kMastheadSlots);
 
   final bool compact;
+
+  /// Apple（Cupertino）导航栏形态（见 [FushiMastheadGeometry.apple]）。
+  final bool apple;
 
   /// 第一行挤的时候动作槽至少要留的宽（有这么多就给这么多）。
   final double minActionsExtent;
@@ -2183,6 +2260,7 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
         scrollOffset: scrollOffset,
         motionEnabled: motionEnabled,
         onGeometry: onGeometry,
+        apple: apple,
       );
 
   @override
@@ -2199,7 +2277,8 @@ class _MastheadLayout extends MultiChildRenderObjectWidget {
       ..headlineNatural = headlineNatural
       ..scrollOffset = scrollOffset
       ..motionEnabled = motionEnabled
-      ..onGeometry = onGeometry;
+      ..onGeometry = onGeometry
+      ..apple = apple;
   }
 }
 
@@ -2234,7 +2313,9 @@ class _RenderMastheadLayout extends RenderBox
     required ValueListenable<double>? scrollOffset,
     required bool motionEnabled,
     required this.onGeometry,
-  }) : _compact = compact,
+    bool apple = false,
+  }) : _apple = apple,
+       _compact = compact,
        _minActionsExtent = minActionsExtent,
        _textDirection = textDirection,
        _titleBaseline = titleBaseline,
@@ -2244,6 +2325,24 @@ class _RenderMastheadLayout extends RenderBox
        _motionEnabled = motionEnabled;
 
   ValueChanged<FushiMastheadGeometry>? onGeometry;
+
+  bool get apple => _apple;
+  bool _apple;
+  set apple(bool value) {
+    if (value == _apple) return;
+    _apple = value;
+    markNeedsLayout();
+  }
+
+  /// Apple 窄窗：上次版面按收起态（小标题居中）分配了动作组的宽。
+  bool _appleLaidOutCollapsed = false;
+
+  /// Apple 窄窗一级分段随标题行滚走时的淡出层。
+  final LayerHandle<OpacityLayer> _switchOpacity = LayerHandle<OpacityLayer>();
+
+  /// Apple 窄窗一级分段此刻的不透明度（随标题行收起淡出）。
+  double _appleSwitchAlpha(double p) =>
+      _apple && _compact ? (1 - 2 * p).clamp(0.0, 1.0) : 1;
 
   bool get compact => _compact;
   bool _compact;
@@ -2327,6 +2426,8 @@ class _RenderMastheadLayout extends RenderBox
   double get _progress {
     final ValueListenable<double>? offset = _scrollOffset;
     if (offset == null) return 0;
+    // Apple 宽窗是常驻工具栏，不随滚动收缩。
+    if (_apple && !_compact) return 0;
     return fushiMastheadProgressOf(
       compact: _compact,
       motionEnabled: _motionEnabled,
@@ -2337,6 +2438,11 @@ class _RenderMastheadLayout extends RenderBox
   void _onScroll() {
     final double p = _progress;
     if (p == _paintedProgress) return;
+    // Apple 窄窗：收起后小标题占中间，动作组只剩右半边——跨过半程时按新的宽
+    // 重排一次（放不下的收进「⋯」），其余帧只重绘。
+    if (_apple && _compact && (p >= 0.5) != _appleLaidOutCollapsed) {
+      markNeedsLayout();
+    }
     markNeedsPaint();
     // 语义框只在收缩到两端时刷新（逐帧刷新整棵语义树太贵）。
     if (p == 0 || p == 1) markNeedsSemanticsUpdate();
@@ -2366,6 +2472,7 @@ class _RenderMastheadLayout extends RenderBox
     for (final LayerHandle<TransformLayer> layer in _layers) {
       layer.layer = null;
     }
+    _switchOpacity.layer = null;
     super.dispose();
   }
 
@@ -2407,6 +2514,10 @@ class _RenderMastheadLayout extends RenderBox
       _kSlotSecondary,
     ]) {
       c[slot].layout(loose, parentUsesSize: true);
+    }
+    if (_apple) {
+      _layoutApple(c, w);
+      return;
     }
     final FushiMastheadGeometry probe = _geometryFor(c, w);
     final Size lead = c[_kSlotLeading].size;
@@ -2539,6 +2650,72 @@ class _RenderMastheadLayout extends RenderBox
     _finishLayout(c, w);
   }
 
+  /// Apple 导航栏版面（见 [FushiMastheadGeometry.apple]）。
+  void _layoutApple(List<RenderBox> c, double w) {
+    const double gap = 8;
+    final Size lead = c[_kSlotLeading].size;
+    final Size primary = c[_kSlotPrimary].size;
+    final double leadSpace = lead.width > 0 ? lead.width + gap : 0;
+    final double primarySpace = primary.width > 0 ? primary.width + gap : 0;
+    final double switchW = c[_kSlotSwitch].size.width;
+    if (_compact) {
+      // 窄窗：第一行只有前导 / 动作组 / 主按钮；标题行是大标题 + 右侧一级分段。
+      _stacked = true;
+      final double switchSpace = switchW > 0 ? switchW + 12 : 0;
+      if (c[_kSlotTitle].size.width > w - switchSpace) {
+        c[_kSlotTitle].layout(
+          BoxConstraints(maxWidth: math.max(0.0, w - switchSpace)),
+          parentUsesSize: true,
+        );
+      }
+      double room = w - leadSpace - primarySpace;
+      final bool collapsed = _progress >= 0.5;
+      _appleLaidOutCollapsed = collapsed;
+      if (collapsed) {
+        // 收起态：小标题居中，动作组只用它右边的那半行。
+        final double inlineHalf =
+            c[_kSlotTitle].size.width *
+                FushiMastheadGeometry.appleInlineTitleFont /
+                FushiMastheadGeometry.appleLargeTitleFont /
+                2 +
+            gap;
+        room = math.min(room, w / 2 - inlineHalf - primarySpace);
+      }
+      c[_kSlotActions].layout(
+        BoxConstraints(maxWidth: math.max(_minActionsExtent, room)),
+        parentUsesSize: true,
+      );
+    } else {
+      // 宽窗：前导 / 标题 / 一级分段 / … / 动作组 / 主按钮同一行。
+      _stacked = false;
+      final double titleW = c[_kSlotTitle].size.width;
+      final double switchGap = titleW > 0 ? 18 : 0;
+      double room =
+          w -
+          leadSpace -
+          titleW -
+          (switchW > 0 ? switchGap + switchW : 0) -
+          16 -
+          primarySpace;
+      if (room < _minActionsExtent && switchW > 0) {
+        final double switchMax = math.max(
+          0.0,
+          switchW - (_minActionsExtent - room),
+        );
+        c[_kSlotSwitch].layout(
+          BoxConstraints(maxWidth: switchMax),
+          parentUsesSize: true,
+        );
+        room = _minActionsExtent;
+      }
+      c[_kSlotActions].layout(
+        BoxConstraints(maxWidth: math.max(0.0, room)),
+        parentUsesSize: true,
+      );
+    }
+    _finishLayout(c, w);
+  }
+
   void _finishLayout(List<RenderBox> c, double w) {
     final FushiMastheadGeometry geometry = _geometryFor(c, w);
     _geometry = geometry;
@@ -2568,6 +2745,7 @@ class _RenderMastheadLayout extends RenderBox
         actions: c[_kSlotActions].hasSize ? c[_kSlotActions].size : Size.zero,
         primary: c[_kSlotPrimary].size,
         secondary: c[_kSlotSecondary].size,
+        apple: _apple,
       );
 
   /// 进度 [p] 下每段的绘制变换（平移到位 + 以左上角缩放），按槽位排。
@@ -2606,6 +2784,10 @@ class _RenderMastheadLayout extends RenderBox
       );
     }
 
+    if (g.apple) {
+      _appleTransforms(g, p, w, place);
+      return out;
+    }
     final double rowBottom = g.topPadAt(p) + g.firstRowHeightAt(p);
     final double actionBottom = g.actionBottomAt(p);
     double cursor = 0;
@@ -2649,6 +2831,59 @@ class _RenderMastheadLayout extends RenderBox
     return out;
   }
 
+  /// Apple 导航栏各段的位置（[place] 同 [_transformsAt] 里的摆放）：动作行
+  /// 各段在第一行垂直居中；窄窗标题行随进度收起，大标题插值到动作行正中的
+  /// 17pt 小标题，一级分段随标题行上移（淡出在 [paint]）。
+  void _appleTransforms(
+    FushiMastheadGeometry g,
+    double p,
+    double w,
+    void Function(int slot, double x, double bottom, double scale) place,
+  ) {
+    const double gap = 8;
+    final double rowTop = g.topPadAt(p);
+    final double rowH = g.actionRowHeightAt(p);
+    double centered(Size s, double scale) =>
+        rowTop + (rowH + s.height * scale) / 2;
+    if (g.leading.width > 0) {
+      place(_kSlotLeading, 0, centered(g.leading, 1), 1);
+    }
+    final double primaryX = w - g.primary.width;
+    place(_kSlotPrimary, primaryX, centered(g.primary, 1), 1);
+    place(
+      _kSlotActions,
+      primaryX -
+          (g.primary.width > 0 && g.actions.width > 0 ? gap : 0) -
+          g.actions.width,
+      centered(g.actions, 1),
+      1,
+    );
+    if (g.compact) {
+      final double sT = g.titleScaleAt(p);
+      final double extent = g.appleTitleRowExtent;
+      final double rowBottom =
+          rowTop + rowH + (FushiMastheadGeometry.stackGap + extent) * (1 - p);
+      final double endX = (w - g.title.width * sT) / 2;
+      final double endBottom = centered(g.title, sT);
+      place(_kSlotTitle, endX * p, rowBottom + (endBottom - rowBottom) * p, sT);
+      place(
+        _kSlotSwitch,
+        w - g.switcher.width,
+        rowBottom - (extent - g.switcher.height) / 2,
+        1,
+      );
+    } else {
+      double x = g.leading.width > 0 ? g.leading.width + gap : 0;
+      place(_kSlotTitle, x, centered(g.title, 1), 1);
+      x += g.title.width;
+      if (g.switcher.width > 0) {
+        if (g.title.width > 0) x += 18;
+        place(_kSlotSwitch, x, centered(g.switcher, 1), 1);
+      }
+    }
+    place(_kSlotSecondary, 0, g.secondaryTopAt(p) + g.secondary.height, 1);
+  }
+
   @override
   void paint(PaintingContext context, Offset offset) {
     if (_geometry == null) return;
@@ -2656,6 +2891,7 @@ class _RenderMastheadLayout extends RenderBox
     _paintedProgress = p;
     final List<Matrix4> transforms = _transformsAt(p);
     final List<RenderBox> c = _slots;
+    final double switchAlpha = _appleSwitchAlpha(p);
     for (int i = 0; i < _kMastheadSlots; i++) {
       final RenderBox child = c[i];
       if (child.size.isEmpty) {
@@ -2663,21 +2899,41 @@ class _RenderMastheadLayout extends RenderBox
         continue;
       }
       final Matrix4 m = transforms[i];
-      if (m.storage[0] == 1) {
-        _layers[i].layer = null;
-        context.paintChild(
-          child,
-          offset + Offset(m.storage[12], m.storage[13]),
+      final int index = i;
+      void paintSlot(PaintingContext context, Offset offset) {
+        if (m.storage[0] == 1) {
+          _layers[index].layer = null;
+          context.paintChild(
+            child,
+            offset + Offset(m.storage[12], m.storage[13]),
+          );
+        } else {
+          _layers[index].layer = context.pushTransform(
+            needsCompositing,
+            offset,
+            m,
+            (PaintingContext context, Offset offset) =>
+                context.paintChild(child, offset),
+            oldLayer: _layers[index].layer,
+          );
+        }
+      }
+
+      if (i == _kSlotSwitch && switchAlpha < 1) {
+        if (switchAlpha <= 0) {
+          _layers[i].layer = null;
+          _switchOpacity.layer = null;
+          continue;
+        }
+        _switchOpacity.layer = context.pushOpacity(
+          offset,
+          (switchAlpha * 255).round(),
+          paintSlot,
+          oldLayer: _switchOpacity.layer,
         );
       } else {
-        _layers[i].layer = context.pushTransform(
-          needsCompositing,
-          offset,
-          m,
-          (PaintingContext context, Offset offset) =>
-              context.paintChild(child, offset),
-          oldLayer: _layers[i].layer,
-        );
+        if (i == _kSlotSwitch) _switchOpacity.layer = null;
+        paintSlot(context, offset);
       }
     }
   }
@@ -2687,9 +2943,12 @@ class _RenderMastheadLayout extends RenderBox
     if (_geometry == null) return false;
     final List<Matrix4> transforms = _transformsAt(_progress);
     final List<RenderBox> c = _slots;
+    final double switchAlpha = _appleSwitchAlpha(_progress);
     for (int i = _kMastheadSlots - 1; i >= 0; i--) {
       final RenderBox child = c[i];
       if (child.size.isEmpty) continue;
+      // 已随标题行滚走淡出的一级分段不再接指针。
+      if (i == _kSlotSwitch && switchAlpha < 0.5) continue;
       final bool hit = result.addWithPaintTransform(
         transform: transforms[i],
         position: position,

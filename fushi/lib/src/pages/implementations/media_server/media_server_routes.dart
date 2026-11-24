@@ -9,10 +9,10 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 
-/// 分区内三层视图之间的跳转全走这里。`Navigator.of(context)` 在浏览页里解析到的是
-/// 分区自己的嵌套 Navigator（见 `MediaServerBrowsePage`），所以这些 push 只在分区
-/// 内叠层，页签、返回键都还归分区管；**播放页**不在此列——它要压在整个 app 之上，
-/// 由 [MediaServerSession.play] 走根 Navigator。
+/// 服务器首页之下各视图之间的跳转全走这里。调用方（服务器首页 / 聚合搜索）本身
+/// 就是 push 到根 Navigator 的二级页面，所以 `Navigator.of(context)` 解析到的是
+/// 根 Navigator，网格叠在那一页之上、自带返回；分区内的嵌套栈只有服务器列表这一个
+/// 根页（见 `mediaServerNestedRootRoute`）。
 void openMediaServerGrid(
   BuildContext context,
   MediaServerSession session, {

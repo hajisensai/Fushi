@@ -357,6 +357,9 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
 # 旧 Material 图标在 Apple 映射表里没有、或映射不合适时，直接指定 CupertinoIcons 名
 # （线框, 实心）。
 APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
+    # Apple 设计系统的「更多」一律横向 ⋯（iOS / macOS 惯例），竖向工具栏里也是横的
+    # （用户 2026-11-24 拍板）。与 moreHoriz 同字形，码位不同不冲突。
+    "more": ("ellipsis", "ellipsis"),
     "pageBackdrop": ("rectangle_stack", "rectangle_stack_fill"),
     # 旧映射表里没有 flash_on（只有 bolt 系列），SF 风格对应字形就是 bolt。
     "flash": ("bolt", "bolt_fill"),

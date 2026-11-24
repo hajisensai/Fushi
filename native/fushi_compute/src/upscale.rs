@@ -2,9 +2,10 @@
 //!
 //! Rust 持有全部状态：ORT 运行时、按档加载的模型会话、按「离当前页多远」排序的任务队列（含往后预取）、
 //! 磁盘 LRU 缓存、一个后台工作线程。Dart 只发粗粒度命令（启动 / 配置档位 / 提交一页 / 换当前页 /
-//! 清队列 / 查缓存）并经一个回调收事件（`NativeCallable.listener`，任意线程可调），不存镜像状态。
+//! 清队列 / 查缓存）并经一个 Dart 原生端口收事件（[crate::dart_port]，任意线程可发；接收的 isolate 没了也
+//! 只是丢消息），不存镜像状态。
 //!
-//! 事件：`callback(kind, token)`，kind 见 [EVENT_DONE] 等；`token` 是提交时调用方给的值。
+//! 事件：每条消息 `[kind, token]`，kind 见 [EVENT_DONE] 等；`token` 是提交时调用方给的值。
 
 mod cache;
 mod pipeline;
@@ -18,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread;
 
+use crate::dart_port::{DartPort, PostCObjectFn};
 use crate::{guard, hand_over_bytes, status};
 use cache::{DiskCache, PendingPut};
 use pipeline::{Nets, Outcome, Tier};
@@ -76,7 +78,8 @@ const SWIN_ALIGN: usize = 64;
 const ARTCNN_SPEC: TileSpec = TileSpec { tile: 512, ctx: 16 };
 const ARTCNN_ALIGN: usize = 1;
 
-type Callback = extern "C" fn(i32, u64);
+/// 事件发往的 Dart 端口：每条消息是 `[kind, token]`（见 [crate::dart_port]，BUG-5413）。
+type Callback = DartPort;
 
 /// 这一档在这个后端上能不能跑（设计文档 §4.2 实测）：
 /// - 轻量档（ArtCNN）各后端都行；
@@ -127,6 +130,19 @@ impl State {
             settled: HashMap::new(),
             models_failed: None,
         }
+    }
+
+    /// 登记事件端口。换了端口 = 先前登记的 isolate 已经没了（BUG-5413）：丢掉它排队的页，返回旧端口与被丢
+    /// 页的令牌（取消事件发回旧端口）。同一端口重复登记什么也不动。
+    fn register(&mut self, callback: Option<Callback>) -> (Option<Callback>, Vec<u64>) {
+        let previous = self.callback;
+        let retired = match (previous, callback) {
+            (Some(old), Some(new)) if old.port() == new.port() => Vec::new(),
+            (Some(_), _) => self.queue.clear(),
+            (None, _) => Vec::new(),
+        };
+        self.callback = callback;
+        (previous, retired)
     }
 
     /// 配置好了、缓存开了、且这代配置的模型没加载失败过。
@@ -180,8 +196,9 @@ fn engine() -> &'static Arc<Engine> {
 }
 
 fn emit(callback: Option<Callback>, kind: i32, token: u64) {
-    if let Some(cb) = callback {
-        cb(kind, token);
+    if let Some(port) = callback {
+        // 接收的 isolate 没了（引擎被销毁）时发不出去，消息丢掉即可。
+        port.post_ints(&[kind as i64, token as i64]);
     }
 }
 
@@ -264,19 +281,22 @@ fn run_worker(engine: &Engine, load: impl Fn(&Config) -> Result<Nets, String>) {
                     // 失败归属发起加载的那一代配置：只有它仍是当前代时才记「这代不可用」、清队列（队列里
                     // 全是这代的任务）。加载期间调用方已经换了配置的话，队列里是新一代的任务、新一代还
                     // 没加载过，一个都不能动。先落状态再发事件：调用方收到事件时查到的已经是新状态。
-                    let dropped = {
+                    // 这页的结论发给提交它的 isolate（出队时的端口 `callback`）；代际与队列的事件发给
+                    // 当前登记的端口——登记端口换过的话队列里只有新 isolate 的任务（BUG-5413）。
+                    let (dropped, current) = {
                         let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
                         state.running = None;
-                        if state.generation == generation {
+                        let dropped = if state.generation == generation {
                             state.models_failed = Some(generation);
                             state.queue.clear()
                         } else {
                             Vec::new()
-                        }
+                        };
+                        (dropped, state.callback)
                     };
-                    emit(callback, EVENT_MODELS_FAILED, generation);
+                    emit(current, EVENT_MODELS_FAILED, generation);
                     emit(callback, EVENT_FAILED, job.token);
-                    emit_all(callback, EVENT_CANCELLED, dropped);
+                    emit_all(current, EVENT_CANCELLED, dropped);
                     continue;
                 }
             }
@@ -315,8 +335,9 @@ fn run_worker(engine: &Engine, load: impl Fn(&Config) -> Result<Nets, String>) {
                 _ => {}
             }
         }
-        let callback = state.callback;
         drop(state);
+        // 发给提交这页的 isolate（出队时登记的端口），不是此刻登记的：算的过程中换了端口（旧 isolate
+        // 没了、新 isolate 的令牌从头数），这页的结论不能落到新 isolate 上（BUG-5413）。
         emit(callback, kind, job.token);
     }
 }
@@ -438,17 +459,24 @@ unsafe fn opt_str<'a>(p: *const c_char) -> Result<Option<&'a str>, i32> {
 }
 
 /// 启动（或更新）引擎：接上 ORT（`ort_path` 为空 = 从本进程符号找，只在 Apple 上可用），打开缓存目录
-/// （`cache_bytes` 上限），登记事件回调。可重复调用；ORT 只接第一次。
+/// （`cache_bytes` 上限），登记事件端口（`port` = `SendPort.nativePort`，`post` = `NativeApi.postCObject`；
+/// `post` 为空 = 不发事件）。可重复调用；ORT 只接第一次。
+///
+/// 换了端口 = 先前登记的 isolate 已经没了（引擎只给一个 isolate 用；Android 上引擎被销毁、进程留着，下次
+/// 打开起的是新 isolate，BUG-5413）：它排队的页丢掉（取消事件发回旧端口，即丢弃），正在算的那页算完照常
+/// 进缓存、结论只发旧端口。新 isolate 的令牌从头数，不能收到旧 isolate 的事件。
 ///
 /// # Safety
-/// 字符串为 NUL 结尾 UTF-8；`callback` 在引擎存活期间一直可调（`NativeCallable.listener`）。
+/// 字符串为 NUL 结尾 UTF-8；`post` 为空或是 `Dart_PostCObject`。
 #[no_mangle]
 pub unsafe extern "C" fn ffc_upscale_start(
     ort_path: *const c_char,
     cache_dir: *const c_char,
     cache_bytes: u64,
-    callback: Option<Callback>,
+    post: Option<PostCObjectFn>,
+    port: i64,
 ) -> i32 {
+    let callback = DartPort::new(post, port);
     guard(|| {
         let Ok(ort_path) = opt_str(ort_path) else {
             return status::INVALID_ARGUMENT;
@@ -479,7 +507,7 @@ pub unsafe extern "C" fn ffc_upscale_start(
         } else {
             None
         };
-        let victims = {
+        let (victims, previous, retired) = {
             let mut state = engine.state.lock().unwrap_or_else(|e| e.into_inner());
             let victims = match (state.cache.as_mut(), opened) {
                 (Some(cache), _) => cache.set_limit(cache_bytes),
@@ -489,11 +517,12 @@ pub unsafe extern "C" fn ffc_upscale_start(
                 }
                 (None, None) => Vec::new(),
             };
-            state.callback = callback;
-            victims
+            let (previous, retired) = state.register(callback);
+            (victims, previous, retired)
         };
         cache::remove_files(&victims);
         engine.wake.notify_all();
+        emit_all(previous, EVENT_CANCELLED, retired);
         status::OK
     })
 }
@@ -1095,14 +1124,16 @@ mod tests {
     }
 
     /// 只有 [old_generation_model_failure_cannot_disable_the_new_configuration] 用这个回调。
-    static EVENTS: Mutex<Vec<(i32, u64)>> = Mutex::new(Vec::new());
-
-    extern "C" fn record_event(kind: i32, token: u64) {
-        EVENTS.lock().unwrap().push((kind, token));
-    }
+    const EVENT_PORT: i64 = 8001;
 
     fn events() -> Vec<(i32, u64)> {
-        EVENTS.lock().unwrap().clone()
+        crate::dart_port::testing::received(EVENT_PORT)
+            .into_iter()
+            .map(|m| {
+                assert_eq!(m.len(), 2, "[kind, token]");
+                (m[0] as i32, m[1] as u64)
+            })
+            .collect()
     }
 
     /// HBK-AUDIT-006：模型加载失败归属发起加载的那一代配置。旧档在加载中、调用方换了新档并提交了新页，
@@ -1112,7 +1143,10 @@ mod tests {
     fn old_generation_model_failure_cannot_disable_the_new_configuration() {
         use std::sync::mpsc;
         use std::time::Duration;
-        let (engine, dir) = test_engine("generation", Some(record_event));
+        let (engine, dir) = test_engine(
+            "generation",
+            Some(crate::dart_port::testing::port(EVENT_PORT)),
+        );
 
         // 换代丢掉旧一代排队的任务；同配置重复启用不换代、不丢。
         let g0 = engine.configure(config(Tier::Light, "light.onnx"));
@@ -1178,6 +1212,71 @@ mod tests {
             thread::yield_now();
         }
         assert!(!engine.state.lock().unwrap().ready());
+        drop(release_tx);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// BUG-5413：登记端口换了（旧 isolate 没了，新 isolate 的令牌从头数）。旧 isolate 排队的页丢掉、取消事件
+    /// 只发旧端口；正在加载 / 算的那页的结论发给提交它的旧端口，代际事件发给当前端口——新 isolate 绝不会收到
+    /// 一个它没提交过、却和它的令牌撞号的结论。
+    #[test]
+    fn events_follow_the_isolate_that_submitted_the_page() {
+        use crate::dart_port::testing::{port, received};
+        use std::sync::mpsc;
+        use std::time::Duration;
+        const OLD: i64 = 8101;
+        const NEW: i64 = 8102;
+        let (engine, dir) = test_engine("owner", Some(port(OLD)));
+        let g = engine.configure(config(Tier::Light, "light.onnx"));
+        assert_eq!(engine.submit(test_job(1, "l|p0")), status::OK);
+        let (called_tx, called_rx) = mpsc::channel::<()>();
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let worker = Arc::clone(&engine);
+        thread::spawn(move || {
+            run_worker(&worker, move |_: &Config| {
+                let _ = called_tx.send(());
+                let _ = release_rx.recv();
+                Err("injected load failure".into())
+            })
+        });
+        let wait = Duration::from_secs(10);
+        called_rx.recv_timeout(wait).unwrap();
+        // 页 1 已出队、正在加载模型；页 2 还在排队。
+        assert_eq!(engine.submit(test_job(2, "l|p1")), status::OK);
+
+        // 同一端口重复登记什么也不动。
+        {
+            let mut state = engine.state.lock().unwrap();
+            let (previous, retired) = state.register(Some(port(OLD)));
+            assert_eq!(previous.map(|p| p.port()), Some(OLD));
+            assert!(retired.is_empty());
+        }
+        // 新 isolate 登记：旧 isolate 排队的页丢掉，令牌交回旧端口。
+        let (previous, retired) = engine.state.lock().unwrap().register(Some(port(NEW)));
+        assert_eq!(previous.map(|p| p.port()), Some(OLD));
+        assert_eq!(retired, vec![2]);
+        assert_eq!(engine.state.lock().unwrap().query("l|p1"), QUERY_UNKNOWN);
+
+        // 新 isolate 提交一页，令牌与旧 isolate 正在算的那页撞号（都是 1）。旧页的加载随后失败。
+        assert_eq!(engine.submit(test_job(1, "l|p9")), status::OK);
+        release_tx.send(()).unwrap();
+        let deadline = Instant::now() + wait;
+        while !received(NEW).contains(&vec![EVENT_MODELS_FAILED as i64, g as i64]) {
+            assert!(
+                Instant::now() < deadline,
+                "generation failure never reported"
+            );
+            thread::yield_now();
+        }
+        assert!(received(OLD).contains(&vec![EVENT_FAILED as i64, 1]));
+        // 新 isolate 只收到代际失败与它自己那页的取消（这代不可用、队列清空），没有旧页的结论。
+        assert_eq!(
+            received(NEW),
+            vec![
+                vec![EVENT_MODELS_FAILED as i64, g as i64],
+                vec![EVENT_CANCELLED as i64, 1],
+            ]
+        );
         drop(release_tx);
         let _ = std::fs::remove_dir_all(&dir);
     }

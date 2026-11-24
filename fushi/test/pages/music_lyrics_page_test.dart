@@ -544,6 +544,68 @@ void main() {
     await unmountPage(tester);
   });
 
+  // #4365 审查遗留：面板开着时切歌，置灰状态必须跟着新歌词走。原先面板拿的是打开那一刻
+  // 算好的 MusicLyricsExtras 快照，切到没翻译的歌后「翻译」仍可点，关掉重开才对。
+  testWidgets('「歌词显示」面板开着时切歌：置灰状态跟着新歌词刷新', (WidgetTester tester) async {
+    File(
+      '${dir.path}${Platform.pathSeparator}song.lrc',
+    ).writeAsStringSync('[00:01.00]夜に駆ける\n[00:01.00]奔向夜晚\n[00:04.00]沈むように\n');
+    // 第二首：只有原文，没有翻译。
+    File(
+      '${dir.path}${Platform.pathSeparator}plain.flac',
+    ).writeAsBytesSync(<int>[0]);
+    File(
+      '${dir.path}${Platform.pathSeparator}plain.lrc',
+    ).writeAsStringSync('[00:01.00]群青\n[00:04.00]嗚呼\n');
+
+    await pumpPage(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music_lyrics_display')),
+    );
+    await tester.pumpAndSettle();
+    FushiSwitch switchOf(String key) => tester.widget<FushiSwitch>(
+      find.descendant(
+        of: find.byKey(ValueKey<String>(key)),
+        matching: find.byType(FushiSwitch),
+      ),
+    );
+    expect(switchOf('music_lyrics_display_translation').onChanged, isNotNull);
+
+    await tester.runAsync(() async {
+      await app.musicSession.engine.playQueue(<MusicPlayItem>[
+        MusicPlayItem(
+          trackUid: 'uid-2',
+          path: '${dir.path}${Platform.pathSeparator}plain.flac',
+          title: 'Gunjo',
+          artist: 'YOASOBI',
+          durationMs: 60000,
+        ),
+      ]);
+      await app.musicSession.engine.pause();
+    });
+    final State<StatefulWidget> state = tester.state(
+      find.byType(MusicLyricsPage),
+    );
+    bool settled() => (state as dynamic).lyricsLoadSettled as bool;
+    for (int i = 0; i < 10 || !settled(); i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump();
+    }
+
+    // 面板没关：同一个面板里「翻译」已经置灰并换成缺失说明。
+    expect(find.byType(MusicLyricsDisplaySheet), findsOneWidget);
+    expect(switchOf('music_lyrics_display_translation').onChanged, isNull);
+    expect(find.text(t.music_lyrics_show_translation_missing), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music_lyrics_display_close')),
+    );
+    await tester.pumpAndSettle();
+    await unmountPage(tester);
+  });
+
   test('MusicLyricsExtras：按时间轴里实际有的翻译 / 罗马音 / 注音判定', () {
     const LyricTimeline plain = LyricTimeline(
       format: 'lrc',

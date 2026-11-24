@@ -1,6 +1,9 @@
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
 import 'package:fushi_engine/media/collections/collection_merge.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 
 /// 整理收敛（AI 整理库 spec `docs/specs/2026-10-20-ai-library-organize-design.md` §8）。
@@ -20,8 +23,14 @@ import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 /// 合并本身走普通的「加成员 + 删合集」，经现有合集同步（成员并集 + 墓碑）传播。
 /// 旧对端把败方复活了也没关系：下一轮收敛照样并回来。
 ///
-/// 用户的合集（`origin == user`）永远不当败方；只有它带着同一个分组键时才参与，
-/// 并且当胜方（整理器合集并进用户合集，与用户手动「加入合集」同构）。
+/// 用户的合集（`origin == user`）只有带着同一个分组键（主键）时才参与，并且胜方序
+/// 里排最前（整理器合集并进用户合集，与用户手动「加入合集」同构）。同一组里胜方之外
+/// 的用户合集**不直接并掉**，而是产出待确认的合并建议（[ConvergencePlan.proposals]，
+/// 记进库管家的待确认列表，用户逐条「同意 / 这次不 / 永远不」）——用户 2026-11-24
+/// 拍板取消「用户合集永不当败方」的硬禁令：「用户的合集整理器永远不能往外移成员
+/// 取消这个设定吧，我觉得让用户显式同意就行了吧，用户可以永远拒绝」。「永远不」
+/// 把败方成员全钉住（`pinned_by_user`，随同步各端一致）；成员全被钉住的用户合集
+/// 不再当败方提，所以拒绝在每台设备上都生效、规划仍是各端同一结果的纯函数。
 
 /// 收敛规划的一个输入（只含跨端可见的字段）。
 class ConvergenceCollection {
@@ -33,6 +42,7 @@ class ConvergenceCollection {
     required this.organizeKey,
     required this.organizeAliases,
     required this.memberWireKeys,
+    this.pinnedMemberWireKeys = const <String>{},
   });
 
   final int id;
@@ -44,6 +54,13 @@ class ConvergenceCollection {
 
   /// 成员 wire 键（`mediaType NUL wireEntryKey`）。
   final Set<String> memberWireKeys;
+
+  /// 被用户钉住（`pinned_by_user`）的成员 wire 键，[memberWireKeys] 的子集。
+  final Set<String> pinnedMemberWireKeys;
+
+  /// 用户合集当败方的前提：还有没被钉住的成员（全钉住 = 用户否决过这次合并）。
+  bool get hasUnpinnedMember =>
+      memberWireKeys.any((String k) => !pinnedMemberWireKeys.contains(k));
 
   Set<String> get identityKeys => <String>{
     if (organizeKey != null) organizeKey!,
@@ -77,6 +94,26 @@ class ConvergenceMerge {
   String toString() => 'ConvergenceMerge($targetId <- $sourceIds)';
 }
 
+/// 一条待确认的合并建议：同组的用户合集 [sourceIds] 并进 [targetId]（用户同意才执行）。
+class ConvergenceProposal {
+  const ConvergenceProposal({required this.targetId, required this.sourceIds});
+
+  final int targetId;
+  final List<int> sourceIds;
+
+  @override
+  String toString() => 'ConvergenceProposal($targetId <- $sourceIds)';
+}
+
+/// 收敛规划的结果：直接执行的合并（败方都是整理器合集）与待确认的合并建议（败方是
+/// 用户合集）。
+class ConvergencePlan {
+  const ConvergencePlan({required this.merges, required this.proposals});
+
+  final List<ConvergenceMerge> merges;
+  final List<ConvergenceProposal> proposals;
+}
+
 /// 成员种类 → 粗粒度域。书与漫画同为 `epub`，在这一层不分（区分它们要读本机书格式，
 /// 各端不一致）；标题键里带着 `<domain>`，重叠又要求共享成员，所以不会错并。
 String wireDomainOfMediaType(String mediaType) {
@@ -88,9 +125,14 @@ String wireDomainOfMediaType(String mediaType) {
 /// 两个整理器合集的成员重叠到这个比例（相对小的一方）就视为同一个系列。
 const double kConvergenceOverlapRatio = 0.5;
 
-/// 纯函数：从全部合集算出要做的合并。与输入顺序无关、幂等（对输出执行后再跑一遍
-/// 得到空计划）。
+/// [planOrganizeConvergenceWithProposals] 里直接执行的那部分合并。
 List<ConvergenceMerge> planOrganizeConvergence(
+  List<ConvergenceCollection> collections,
+) => planOrganizeConvergenceWithProposals(collections).merges;
+
+/// 纯函数：从全部合集算出要做的合并与待确认的合并建议。与输入顺序无关、幂等（对
+/// 合并执行后再跑一遍合并为空；建议在用户决定前每次都同样产出，由记账去重）。
+ConvergencePlan planOrganizeConvergenceWithProposals(
   List<ConvergenceCollection> collections,
 ) {
   final List<ConvergenceCollection> parts = <ConvergenceCollection>[
@@ -173,24 +215,56 @@ List<ConvergenceMerge> planOrganizeConvergence(
     (components[find(i)] ??= <ConvergenceCollection>[]).add(parts[i]);
   }
   final List<ConvergenceMerge> plan = <ConvergenceMerge>[];
+  final List<ConvergenceProposal> proposals = <ConvergenceProposal>[];
   for (final List<ConvergenceCollection> group in components.values) {
     if (group.length < 2) continue;
     group.sort(_winnerOrder);
     final ConvergenceCollection winner = group.first;
     final List<int> sources = <int>[
       for (final ConvergenceCollection c in group.skip(1))
-        // 用户合集永不当败方。
         if (c.origin.isOrganizerManaged) c.id,
     ];
-    if (sources.isEmpty) continue;
-    plan.add(ConvergenceMerge(targetId: winner.id, sourceIds: sources));
+    // 用户合集当败方只出建议（等用户同意）；成员全被钉住的（用户否决过）不再提。
+    final List<int> userSources = <int>[
+      for (final ConvergenceCollection c in group.skip(1))
+        if (c.origin == CollectionOrigin.user && c.hasUnpinnedMember) c.id,
+    ];
+    if (sources.isNotEmpty) {
+      plan.add(ConvergenceMerge(targetId: winner.id, sourceIds: sources));
+    }
+    if (userSources.isNotEmpty) {
+      proposals.add(
+        ConvergenceProposal(targetId: winner.id, sourceIds: userSources),
+      );
+    }
   }
   plan.sort(
     (ConvergenceMerge a, ConvergenceMerge b) =>
         a.targetId.compareTo(b.targetId),
   );
-  return plan;
+  proposals.sort(
+    (ConvergenceProposal a, ConvergenceProposal b) =>
+        a.targetId.compareTo(b.targetId),
+  );
+  return ConvergencePlan(merges: plan, proposals: proposals);
 }
+
+/// 收敛建议 → 待确认的合并建议（[recordOrganizeProposals] 的输入）。
+List<OrganizeProposal> convergenceOrganizeProposals(
+  List<ConvergenceProposal> proposals,
+) => <OrganizeProposal>[
+  for (final ConvergenceProposal p in proposals)
+    OrganizeProposal(
+      kind: OrganizeProposalKind.merge,
+      targetCollectionId: p.targetId,
+      sourceCollectionIds: p.sourceIds,
+      confidence: AiOrganizeConfidence.high,
+      source: 'rule',
+    ),
+];
+
+/// [OrganizeProposal]s 的记账 trigger：同步后的收敛。
+const String kOrganizeConvergenceTrigger = 'convergence';
 
 bool _sameDomain(ConvergenceCollection a, ConvergenceCollection b) =>
     a.wireDomains.intersection(b.wireDomains).isNotEmpty;
@@ -262,7 +336,7 @@ Future<void> rehomeDissolvedOrganizerCollections(
     // 同一个分组、用户删的：拒绝。成员回到散条目，不转给任何持有者——否则等于把
     // 用户删掉的分组部分复活。
     if (sameGroup && !d.deadMerged) continue;
-    MediaCollectionRow? target = await _collectionHoldingKey(db, key);
+    MediaCollectionRow? target = await collectionHoldingOrganizeKey(db, key);
     if (target == null) {
       final String name = disambiguatedOrganizeName(d.row.name, key);
       final int id = await db.createMediaCollection(
@@ -297,8 +371,9 @@ Future<void> rehomeDissolvedOrganizerCollections(
   }
 }
 
-/// 键或别名里带 [key] 的活合集（多个时取胜方序最前的，与收敛同口径）。
-Future<MediaCollectionRow?> _collectionHoldingKey(
+/// 键或别名里带 [key] 的活合集（多个时取胜方序最前的，与收敛同口径：整理器合集认
+/// 主键与别名，用户合集只认主键）。原盘入库按确定性分组键认回自己的合集也走这里。
+Future<MediaCollectionRow?> collectionHoldingOrganizeKey(
   FushiDatabase db,
   String key,
 ) async {
@@ -317,11 +392,15 @@ Future<List<ConvergenceCollection>> loadConvergenceCollections(
   final CollectionBookIdentityIndex identities =
       await CollectionBookIdentityIndex.load(db);
   final Map<int, Set<String>> membersById = <int, Set<String>>{};
+  final Map<int, Set<String>> pinnedById = <int, Set<String>>{};
   for (final MediaCollectionItemRow item in await db.getAllCollectionItems()) {
-    (membersById[item.collectionId] ??= <String>{}).add(
-      '${item.mediaType}\u0000'
-      '${identities.wireKey(item.mediaType, item.entryKey)}',
-    );
+    final String wire =
+        '${item.mediaType}\u0000'
+        '${identities.wireKey(item.mediaType, item.entryKey)}';
+    (membersById[item.collectionId] ??= <String>{}).add(wire);
+    if (item.pinnedByUser) {
+      (pinnedById[item.collectionId] ??= <String>{}).add(wire);
+    }
   }
   return <ConvergenceCollection>[
     for (final MediaCollectionRow row in await db.getAllMediaCollections())
@@ -333,11 +412,14 @@ Future<List<ConvergenceCollection>> loadConvergenceCollections(
         organizeKey: row.organizeKey,
         organizeAliases: decodeOrganizeAliases(row.organizeAliases),
         memberWireKeys: membersById[row.id] ?? const <String>{},
+        pinnedMemberWireKeys: pinnedById[row.id] ?? const <String>{},
       ),
   ];
 }
 
-/// 在本机执行收敛。返回被并掉的合集数。
+/// 在本机执行收敛。返回被并掉的合集数。用户合集当败方的那部分不并，记成待确认的
+/// 合并建议（自建 trigger 为 [kOrganizeConvergenceTrigger] 的整理运行，同签名已在等确认
+/// / 被拒绝的不重复记）。
 ///
 /// 合并走 [mergeMediaCollectionsInto]（`userIntent: false`：不把胜方转成用户的；
 /// 跳过胜方里用户移出过的成员）。[notBeforeMs]：败方删除墓碑时刻至少取它（同步后
@@ -346,9 +428,17 @@ Future<int> convergeOrganizedCollections(
   FushiDatabase db, {
   int? notBeforeMs,
 }) async {
-  final List<ConvergenceMerge> plan = planOrganizeConvergence(
+  final ConvergencePlan full = planOrganizeConvergenceWithProposals(
     await loadConvergenceCollections(db),
   );
+  if (full.proposals.isNotEmpty) {
+    await recordOrganizeProposalsInNewRun(
+      db,
+      trigger: kOrganizeConvergenceTrigger,
+      proposals: convergenceOrganizeProposals(full.proposals),
+    );
+  }
+  final List<ConvergenceMerge> plan = full.merges;
   if (plan.isEmpty) return 0;
   final int now = DateTime.now().millisecondsSinceEpoch;
   final int stamp = notBeforeMs != null && notBeforeMs > now

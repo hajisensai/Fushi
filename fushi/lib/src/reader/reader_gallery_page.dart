@@ -43,6 +43,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
+import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
 
 /// 某一卷的插图表 + 文件解析（兄弟卷由页面层在 isolate 解析后提供）。
 class ReaderGalleryVolumeImages {
@@ -1432,8 +1433,9 @@ class _ReaderGalleryPageState extends State<ReaderGalleryPage> {
           spanOf: _spanOf,
         );
         _layout = layout;
-        return Scrollbar(
+        return FushiScrollbar(
           controller: _scrollController,
+          thumbVisibility: null,
           child: CustomScrollView(
             controller: _scrollController,
             slivers: <Widget>[

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Smoke-test a fushi_server image: first-start init as a non-root --user, health
 # check, /api/ping, admin API, bundled tools. Used by server-docker.yml (PR CI)
-# and server-docker-publish.yml (before any push), and by hand:
+# and release-server.yml's docker job (before any push), and by hand:
 #
 #   bash packages/fushi_server/docker/smoke_test.sh <image> [--language en|zh]
 #

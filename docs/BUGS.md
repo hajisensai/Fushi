@@ -33,10 +33,33 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4699 条。点号进各自文件。
+> 共 4727 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |
+| [BUG-5447](bugs/BUG-5447-lumiere-glyph-atlas-blurry.md) | ✅ | ✅ | 绘光大字发虚 |
+| [BUG-5446](bugs/BUG-5446-hanabi-visualizer-gpu-cost.md) | ✅ | ✅ | 花火歌词动画 GPU 占用超高 |
+| [BUG-5445](bugs/BUG-5445-media-server-add-row-dead-when-services-off.md) | ✅ | ✅ | 媒体服务器列表「去设置添加服务器」在线服务模块关着时点了没反应 |
+| [BUG-5444](bugs/BUG-5444-home-edit-jiggle-semantics-saturates-ui.md) | ✅ | ✅ | Cupertino 首页编辑态主线程被占满（「一进编辑首页就卡死」） |
+| [BUG-5424](bugs/BUG-5424-lyrics-illustration-viewer-right-click.md) | ✅ | ✅ | lyrics-illustration-viewer-right-click |
+| [BUG-5422](bugs/BUG-5422-video-cover-backfill-watch-in-initstate.md) | ✅ | ✅ | video-cover-backfill-watch-in-initstate |
+| [BUG-5421](bugs/BUG-5421-web-video-page-screenshot-noop.md) | 🚧 | 🚧 | 内置网页播放器页（WebVideoFushiPage）按 S / Shift+S 截图、识别画面文字静默无反应 |
+| [BUG-5420](bugs/BUG-5420-web-video-page-arrow-seek-noop.md) | 🚧 | 🚧 | 内置网页播放器页（WebVideoFushiPage）放 YouTube 时 ←/→ 快退快进没反应 |
+| [BUG-5419](bugs/BUG-5419-web-video-builtin-no-subtitle-generate.md) | ✅ | ✅ | Windows 上 YouTube 默认的内置网页播放器页没有「生成字幕」入口，在线视频转录不了 |
+| [BUG-5417](bugs/BUG-5417-web-video-screenshot-shortcut-noop.md) | ✅ | ✅ | 网页档（YouTube 等站点视频）按 S 截图 / PageUp·PageDown 换章没反应 |
+| [BUG-5416](bugs/BUG-5416-seamless-promote-anchor-lost-skips-chapter.md) | ✅ | ✅ | 连续模式无缝衔接：章节交界慢拖时一下跳过整章（晋升时视口锚点落在被移除的宿主上，不补偿） |
+| [BUG-5414](bugs/BUG-5414-browser-page-fullscreen-caption-buttons.md) | ✅ | ✅ | browser-page-fullscreen-caption-buttons |
+| [BUG-5413](bugs/BUG-5413-android-engine-destroy-native-callback-abort.md) | ✅ | ✅ | Android 引擎被销毁、进程留在后台时，原生线程回调已删的 NativeCallable，VM abort 整个进程 |
+| [BUG-5412](bugs/BUG-5412-media-server-nested-root-backdrop.md) | ✅ | ✅ | 视频库「媒体服务器」分区：Apple 设计下白底遮住壁纸，Material 下缩放闪动 |
+| [BUG-5411](bugs/BUG-5411-youtube-chat-replay-probe-isolate-capture.md) | ✅ | ✅ | youtube-chat-replay-probe-isolate-capture |
+| [BUG-5410](bugs/BUG-5410-dict-manager-profile-subtitle-capsule.md) | ✅ | ✅ | dict-manager-profile-subtitle-capsule |
+| [BUG-5409](bugs/BUG-5409-deck-settings-masthead-two-pane-flicker.md) | ✅ | ✅ | 牌组设置页宽窗滚动时页头在大字和小字之间来回切换 |
+| [BUG-5408](bugs/BUG-5408-lyrics-illustration-undecodable-image.md) | ✅ | ✅ | 歌词模式插图把文件头认不出的图（加扰 PNG / SVG）当插图，大图浏览显示坏图 |
+| [BUG-5406](bugs/BUG-5406-backdrop-image-text-frost.md) | ✅ | ✅ | backdrop-image-text-frost |
+| [BUG-5405](bugs/BUG-5405-gal-overlay-background-mine-failure-invisible.md) | ✅ | ✅ | gal 查词卡后台写卡失败在全屏游戏里看不到，再点 ✓ 一直说「还在写入」 |
+| [BUG-5404](bugs/BUG-5404-gal-write-abort-reported-as-capture-failed.md) | ✅ | ✅ | gal 写卡阶段被引擎中止时提示说成窗口截图失败 |
+| [BUG-5403](bugs/BUG-5403-lyrics-display-sheet-stale-on-track-change.md) | ✅ | ✅ | 歌词显示面板开着时切歌置灰状态不刷新 |
 | [BUG-5402](bugs/BUG-5402-media-server-favorite-jump-dead-end.md) | ✅ | ✅ | 媒体服务器直接串流（未入库）的收藏句在收藏夹点了没反应 |
 | [BUG-5401](bugs/BUG-5401-anilist-cover-search-novels-only.md) | ✅ | ✅ | anilist-cover-search-novels-only |
 | [BUG-5400](bugs/BUG-5400-series-key-split-volume-parts.md) | ✅ | ✅ | series-key-split-volume-parts |
@@ -46,7 +69,12 @@
 | [BUG-5396](bugs/BUG-5396-collection-art-scrape-uid-members.md) | ✅ | ✅ | 合集「获取各卷封面与横幅」对按 uid 存的成员一本都认不出 |
 | [BUG-5395](bugs/BUG-5395-mangabaka-search-volume-suffix.md) | ✅ | ✅ | mangabaka-search-volume-suffix |
 | [BUG-5394](bugs/BUG-5394-srs-close-blocks-ui-thread-anr.md) | ✅ | ✅ | 关复习库在 UI 线程等在途命令，Android 主线程 ANR |
+| [BUG-5393](bugs/BUG-5393-merged-user-collection-resurrected-by-sync.md) | ✅ | ✅ | 用户合集被合并掉后，下一次合集同步按对端旧副本原样重建 |
 | [BUG-5392](bugs/BUG-5392-backup-merge-source-id-cross-db.md) | ✅ | ✅ | 备份合并导入把书 / 视频的 source_id（备份库来源自增 id）原样搬进本机，挂到不相干的来源上 |
+| [BUG-5391](bugs/BUG-5391-bluray-episodic-disc-bonus-takes-episode-number.md) | ✅ | ✅ | bluray-episodic-disc-bonus-takes-episode-number |
+| [BUG-5390](bugs/BUG-5390-curator-book-scrape-no-author-marked-done.md) | ✅ | ✅ | 库管家认对了只缺作者的漫画却写不进作者（Bangumi 候选不带作者），还把这些卷标成做完、从待确认里消失 |
+| [BUG-5389](bugs/BUG-5389-update-install-ui-freeze-rm-getlist.md) | ✅ | ✅ | 更新下载完成后交给安装器前窗口「未响应」：Restart Manager 查询在主 isolate 同步跑 |
+| [BUG-5388](bugs/BUG-5388-windows-silent-process-vanish.md) | 🚧 | 🚧 | Windows 阅读中进程无声消失：无 dump、无 WER、无 exitReason |
 | [BUG-5387](bugs/BUG-5387-restore-quiesce-media-background-writers.md) | ✅ | ✅ | restore-quiesce-media-background-writers |
 | [BUG-5386](bugs/BUG-5386-gal-lookup-mine-blocks-until-card-written.md) | ✅ | ✅ | 游戏内查词制卡要等写卡结束（约 10 秒）才能挖下一句 |
 | [BUG-5385](bugs/BUG-5385-lyrics-illustration-viewer-stale-reached.md) | ✅ | ✅ | 有声书插图大图浏览打开期间新走过的插图看不到（只列已听到的、且不随播放刷新） |

@@ -4864,7 +4864,20 @@ class ReaderSelectionActionBar extends StatelessWidget {
     );
   }
 
-  Widget _iconButton(ReaderSelectionActionItem item) {
+  /// 窄条图标键：MD3 原样是 SDK [IconButton]（像素不变）；Apple 走
+  /// [FushiIconButtonControl] 的 plain 形态（无底、按下变淡、桌面悬停 tertiaryFill）。
+  Widget _iconButton(BuildContext context, ReaderSelectionActionItem item) {
+    if (isGlassDesign(context)) {
+      return FushiIconButtonControl(
+        icon: Icon(item.icon, size: 20),
+        tooltip: item.label,
+        constraints: const BoxConstraints(
+          minWidth: kMinInteractiveDimension,
+          minHeight: kMinInteractiveDimension,
+        ),
+        onPressed: item.onPressed,
+      );
+    }
     return IconButton(
       icon: Icon(item.icon, size: 20),
       tooltip: item.label,
@@ -4890,7 +4903,8 @@ class ReaderSelectionActionBar extends StatelessWidget {
         } else if (items.length * kMinInteractiveDimension <= maxWidth ||
             items.length <= pinnedCount) {
           children = <Widget>[
-            for (final ReaderSelectionActionItem i in items) _iconButton(i),
+            for (final ReaderSelectionActionItem i in items)
+              _iconButton(context, i),
           ];
         } else {
           final List<ReaderSelectionActionItem> overflow = items.sublist(
@@ -4898,7 +4912,7 @@ class ReaderSelectionActionBar extends StatelessWidget {
           );
           children = <Widget>[
             for (final ReaderSelectionActionItem i in items.take(pinnedCount))
-              _iconButton(i),
+              _iconButton(context, i),
             PopupMenuButton<int>(
               key: const ValueKey<String>('reader_selection_action_more'),
               icon: const Icon(FushiIcons.more),

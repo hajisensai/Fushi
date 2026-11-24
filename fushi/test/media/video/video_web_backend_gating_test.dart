@@ -16,6 +16,7 @@ void main() {
     const Set<VideoControlItem> unsupported = <VideoControlItem>{
       VideoControlItem.frameBackward,
       VideoControlItem.frameForward,
+      // 截图 / 识别画面文字只在站点画面能截帧时画（见下一条测试）。
       VideoControlItem.screenshot,
       VideoControlItem.ocrFrame,
       VideoControlItem.clipExport,
@@ -45,22 +46,32 @@ void main() {
     }
   });
 
-  test('截图 / 识别画面文字按钮：站点画面截得到帧（非 DRM 站，或「制卡优先」档）才画', () {
-    for (final VideoControlItem item in <VideoControlItem>[
-      VideoControlItem.screenshot,
-      VideoControlItem.ocrFrame,
-    ]) {
-      expect(
-        videoWebBackendSupportsControlItem(item, canCaptureFrame: true),
-        isTrue,
-        reason: '$item',
-      );
-      expect(
-        videoWebBackendSupportsControlItem(item),
-        isFalse,
-        reason: '$item',
-      );
-    }
+  test('截图按钮（BUG-5417）：站点画面能截帧（非 DRM）就画，与识别画面文字同一判据', () {
+    expect(
+      videoWebBackendSupportsControlItem(
+        VideoControlItem.screenshot,
+        canCaptureFrame: true,
+      ),
+      isTrue,
+    );
+    expect(
+      videoWebBackendSupportsControlItem(VideoControlItem.screenshot),
+      isFalse,
+    );
+  });
+
+  test('识别画面文字按钮：站点画面能截帧（非 DRM）才画', () {
+    expect(
+      videoWebBackendSupportsControlItem(
+        VideoControlItem.ocrFrame,
+        canCaptureFrame: true,
+      ),
+      isTrue,
+    );
+    expect(
+      videoWebBackendSupportsControlItem(VideoControlItem.ocrFrame),
+      isFalse,
+    );
   });
 
   test('音轨按钮跟着站点音轨走；章节按钮交给通用门控（站点给了片头片尾标记才有章节）', () {

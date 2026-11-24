@@ -119,9 +119,25 @@ class FushiDesktopTitleBar extends StatefulWidget {
         ? _contentFullscreenOwners.add(owner)
         : _contentFullscreenOwners.remove(owner);
     if (!changed) return;
-    _contentFullscreen.value = _contentFullscreenOwners.isNotEmpty;
-    reassertMacTrafficLights();
+    // 声明式入口（[FushiTitleBarContentFullscreenScope]）在 build 里上报，而
+    // 顶栏是页面的祖先：构建期改 notifier 会在构建中标脏祖先，推到帧尾（与
+    // [setCaptionPassthrough] / [setCaptionRevealed] 同一做法）。命令式调用方
+    // （视频全屏回调、小窗）不在构建期，照旧同步生效。
+    void publish() {
+      _contentFullscreen.value = _contentFullscreenOwners.isNotEmpty;
+      reassertMacTrafficLights();
+    }
+
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => publish());
+    } else {
+      publish();
+    }
   }
+
+  /// 内容全屏此刻是否收起了自绘顶栏（测试读）。
+  static ValueListenable<bool> get contentFullscreen => _contentFullscreen;
 
   /// 沉浸页的标题行此刻是否隐去（悬停才浮出，见 [_ImmersiveCaptionReveal]）。
   /// macOS 的系统红绿灯不在 Flutter 树里、跟不上标题行的淡出，按它同步显隐。
@@ -1930,6 +1946,41 @@ class _FushiTitleBarDragBandScopeState
   @override
   void publish({required bool covered}) =>
       FushiDesktopTitleBar.setCaptionDragBand(owner: this, enabled: !covered);
+
+  @override
+  Widget get child => widget.child;
+}
+
+/// 页内全屏声明「此刻整窗归内容，收起自绘顶栏」：[enabled] 为真且本页没被别的
+/// 整页盖住时登记 [FushiDesktopTitleBar.setContentFullscreen]，被盖住 / dispose
+/// 时撤回（同 [FushiTitleBarRevealScope] 的撤回语义）。
+///
+/// 给不经窗口全屏、只在页面里铺满的全屏用（内置浏览器的网页全屏：站点全屏键被
+/// 截成页内伪全屏）。不登记的话页面收起了自己的 chrome，窗口按钮组却还常驻在
+/// 画面右上角（反馈 WtYMwfPjpe）。未挂自绘顶栏（移动端、Linux）时无人消费。
+class FushiTitleBarContentFullscreenScope extends StatefulWidget {
+  const FushiTitleBarContentFullscreenScope({
+    required this.enabled,
+    required this.child,
+    super.key,
+  });
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<FushiTitleBarContentFullscreenScope> createState() =>
+      _FushiTitleBarContentFullscreenScopeState();
+}
+
+class _FushiTitleBarContentFullscreenScopeState
+    extends _CoverAwareTitleBarScopeState<FushiTitleBarContentFullscreenScope> {
+  @override
+  void publish({required bool covered}) =>
+      FushiDesktopTitleBar.setContentFullscreen(
+        owner: this,
+        enabled: widget.enabled && !covered,
+      );
 
   @override
   Widget get child => widget.child;

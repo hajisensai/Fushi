@@ -327,6 +327,68 @@ void main() {
       expect(UiActivityProbe.probe(), isNot(contains('req=')));
     });
 
+    testWidgets('已知具体调用点的回调逐帧以非续排身份重注册：不再抓栈、仍按首个调用点归账', (
+      WidgetTester tester,
+    ) async {
+      // BUG-5444：OverlayPortal.overlayChildLayoutBuilder 每次布局都以
+      // rescheduling: false 重新注册同一个回调。
+      UiActivityProbe.resetFrames();
+      UiActivityProbe.beginFrameCallbackRegistration(
+        tick,
+        rescheduling: false,
+        stack: started,
+      );
+      UiActivityProbe.endFrameCallbackRegistration();
+      for (int i = 0; i < 4; i++) {
+        UiActivityProbe.beginFrameCallbackRegistration(
+          tick,
+          rescheduling: false,
+          // 生产里这里会抓当前栈；已知调用点时不该被解析。
+          stack: st(
+            '#0      _Other.layout (package:fushi/src/foo/other.dart:9:1)\n',
+          ),
+        );
+        UiActivityProbe.endFrameCallbackRegistration();
+      }
+      expect(
+        UiActivityProbe.probe(),
+        contains('fcb=[_OrphanState._resume@orphan.dart:77×5]'),
+      );
+    });
+
+    testWidgets('只知 `~` 调用点的回调：节流窗内首个具体注册仍能补上，之后不再逐帧抓栈', (
+      WidgetTester tester,
+    ) async {
+      UiActivityProbe.resetFrames();
+      // 先被纯框架路径注册（解除静音），只记得到 `~`。
+      UiActivityProbe.beginFrameCallbackRegistration(
+        tick,
+        rescheduling: false,
+        stack: frameworkOnly,
+      );
+      UiActivityProbe.endFrameCallbackRegistration();
+      // 应用代码启动：补成具体调用点。
+      UiActivityProbe.beginFrameCallbackRegistration(
+        tick,
+        rescheduling: false,
+        stack: started,
+      );
+      UiActivityProbe.endFrameCallbackRegistration();
+      // 之后的纯框架重注册沿用具体调用点。
+      for (int i = 0; i < 3; i++) {
+        UiActivityProbe.beginFrameCallbackRegistration(
+          tick,
+          rescheduling: false,
+          stack: frameworkOnly,
+        );
+        UiActivityProbe.endFrameCallbackRegistration();
+      }
+      expect(
+        UiActivityProbe.probe(),
+        contains('_OrphanState._resume@orphan.dart:77×4'),
+      );
+    });
+
     testWidgets('3.47 Ticker 顺序（先要帧、后注册且不再要帧）：仍按启动点逐帧计入 fcb', (
       WidgetTester tester,
     ) async {

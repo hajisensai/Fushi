@@ -7,6 +7,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_library_query.dart';
 import 'package:fushi/src/pages/implementations/games/galgame_home_blocks.dart';
+import 'package:fushi/src/pages/implementations/games/galgame_home_model.dart';
 import 'package:fushi/src/pages/implementations/games/galgame_item_menu.dart';
 import 'package:fushi/src/pages/implementations/games/galgame_library_view_request.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'

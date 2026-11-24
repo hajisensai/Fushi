@@ -36,9 +36,18 @@ import 'package:fushi/src/media/video/video_watch_tracker.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/stats/study_clock_run_gate.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
+import 'package:fushi/src/media/video/web_video_host_fullscreen.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_session.dart';
 import 'package:fushi/src/media/video/web_video_track_selection.dart';
+import 'package:fushi/src/media/video/web_video_subtitle_generation.dart';
+import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
+    show
+        kWebVideoGeneratedTrackLang,
+        webVideoGeneratedSubtitleLanguage,
+        webVideoGeneratedTrackKey;
+import 'package:fushi_engine/media/video/video_subtitle_source.dart'
+    show isExternalSubtitleFilePathForMenu;
 import 'package:fushi/src/web_adblock/web_adblock_service.dart'
     show WebAdblockService, webAdblockServiceProvider;
 import 'package:fushi/src/media/video/web_video_shaders.dart';
@@ -77,10 +86,17 @@ import 'package:fushi/src/pages/implementations/stat_activity.dart'
     show statTodayKey;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
     show
+        RemoteFavoriteVideoPage,
         VideoFushiPage,
+        favoriteSourceUnavailableException,
         miningClipTimeMs,
+        resolveRemoteFavoriteVideoPage,
         resolveVideoLookupAnchorCue,
         subtitleLookupTerm;
+import 'package:fushi/src/media/favorites/favorite_video_origin_failure.dart';
+import 'package:fushi/src/media/video/remote_client_teardown.dart'
+    show closeOwnedRemoteVideoClient;
+import 'package:fushi/src/sync/remote_video_client.dart' show RemoteVideoClient;
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart'
     show AppSubtitleWorkbenchHost;
 import 'package:fushi/src/media/video/subtitle/remote_online_subtitle_search.dart';
@@ -139,8 +155,15 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     this.mineReturnState,
     this.closeAfterMining = false,
     this.returnToBrowser = false,
+    this.playlistCollectionId,
+    this.youtubePlaylistId,
     super.key,
   });
+
+  /// 选集面板的列表上下文（拍板台 zGXhhMAglH，与 `VideoFushiPage` 同名入参同义）：本集所在的
+  /// 合集 / 打开它的 YouTube 播放列表。每集一本流媒体书，换集 = 换到那一本的播放页。
+  final int? playlistCollectionId;
+  final String? youtubePlaylistId;
 
   /// 交接来源是浏览器交接过来的播放器层（`VideoFushiPage.webBackToBrowser`）：换回原生播放器页
   /// 时原样带回，那边离开观看页才知道该回到下面那个浏览器标签页、而不是再压一个浏览器。
@@ -198,6 +221,8 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     WebMineReturnState? mineReturnState,
     bool closeAfterMining = false,
     bool returnToBrowser = false,
+    int? playlistCollectionId,
+    String? youtubePlaylistId,
   }) => FushiAppUiScaleNeutralizer(
     child: WebVideoFushiPage(
       bookUid: bookUid,
@@ -208,6 +233,8 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
       mineReturnState: mineReturnState,
       closeAfterMining: closeAfterMining,
       returnToBrowser: returnToBrowser,
+      playlistCollectionId: playlistCollectionId,
+      youtubePlaylistId: youtubePlaylistId,
     ),
   );
 
@@ -377,6 +404,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// [WebVideoTrackSelection]）。
   final WebVideoTrackSelection _trackSel = WebVideoTrackSelection();
 
+  /// 用户（或手机遥控）这次会话里亲手选过轨：读回的生成字幕不再抢着选中。
+  bool _trackUserChosen = false;
+
+  /// 这本书登记的生成字幕（原生播放器页「生成字幕」管线产物，`video_books.subtitleSource`）：
+  /// 打开时读回后挂到这一集的视频 key 下（[_installGeneratedTrack]）；站点换视频 key 时重挂。
+  ({String path, List<AudioCue> cues})? _generatedSubtitle;
+
   /// 手机遥控绑定（[_registerRemote]）；null = 没登记（制卡交接页 / 已离页）。
   VideoRemotePlaybackBinding? _remoteBinding;
   final VideoRemoteCueCache _remoteCueCache = VideoRemoteCueCache();
@@ -410,9 +444,12 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       GlobalKey<PopupMenuButtonState<String>>();
 
   bool _listVisible = false;
+
   bool _hideNativeSubtitles = true;
   bool _overlayHidden = false;
-  bool _fullscreen = false;
+
+  /// 窗口全屏（Fushi 切的）与站点 DOM 全屏分开记（[WebVideoHostFullscreen]，BUG-5414 备注）。
+  final WebVideoHostFullscreen _fullscreen = WebVideoHostFullscreen();
 
   bool _pausedForLookup = false;
   AudioCue? _lastLookupCue;
@@ -753,7 +790,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       removeAndDisposeOwnedOverlayEntry(entry);
       _popupOverlayEntry = null;
     }
-    if (_fullscreen && Platform.isWindows) {
+    if (_fullscreen.window && Platform.isWindows) {
       // 全屏中退页：runner 拥有的窗口全屏态不随路由消失，这里必须亲手退出，
       // 否则回到书架的是一扇没有标题栏、盖着任务栏的巨窗。
       unawaited(WindowCaptionChannel.setFullscreen(false));
@@ -830,6 +867,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     });
     if (Platform.isWindows) _startIdleScheduler();
     _registerRemote();
+    unawaited(_restoreGeneratedSubtitle(row));
     // 被制卡交接换回来的这一页：画面就绪后把重放前的集 / 轨 / 位置还原。
     if (widget.returnHostingAfterMining == null) {
       _beginRestore(widget.mineReturnState);
@@ -915,12 +953,21 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   void _onState(WebVideoPlaybackState state) {
     final bool videoChanged = state.videoKey != _trackSel.videoKey;
-    final bool fullscreenChanged = state.fullscreen != _fullscreen;
     _state = state;
     if (videoChanged) {
+      final bool generatedWasActive =
+          _trackSel.activeKey != null &&
+          _trackSel.activeKey == webVideoGeneratedTrackKey(_trackSel.videoKey);
       _dropSeekTarget(); // 上一个视频的跳转目标对这一个没有意义
       _trackSel.beginVideo(state.videoKey);
       _reselectTrack();
+      _installGeneratedTrack(
+        select: webVideoGeneratedTrackReselectOnVideoChange(
+          generatedWasActive: generatedWasActive,
+          userChosen: _trackUserChosen,
+          subtitlesOff: _trackSel.subtitlesOff,
+        ),
+      );
     }
     final int? pos = state.positionMs;
     final int? previewEnd = _remotePreviewEndMs;
@@ -942,10 +989,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         _syncWatchTracker();
       }
     }
-    if (fullscreenChanged) {
-      _fullscreen = state.fullscreen;
-      if (mounted) setState(() {});
-    }
+    // 站点自己的全屏只改「站点全屏」那一位：不覆盖 Fushi 切的窗口全屏（否则全屏键进窗口全屏
+    // 后下一拍快照 fs=false 就把它改回「没全屏」）。
+    if (_fullscreen.reportSite(state.fullscreen) && mounted) setState(() {});
     if (!_duckResidueChecked &&
         state.isPlaying &&
         !_mineRunning &&
@@ -2163,6 +2209,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           webReturnState: mineReturnState,
           webBackToBrowser: widget.returnToBrowser,
           webHosting: hosting,
+          playlistCollectionId: widget.playlistCollectionId,
+          youtubePlaylistId: widget.youtubePlaylistId,
         ),
       ),
     );
@@ -2437,8 +2485,11 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   void _onEscape() {
     if (_popup.hasVisiblePopup) {
       _popNestedPopupAt(_popup.lastVisibleIndex);
-    } else if (_fullscreen) {
+    } else if (_fullscreen.window) {
       unawaited(_toggleFullscreen());
+    } else if (_fullscreen.site) {
+      // 站点自己的全屏由页面退（Fushi 没有切窗口全屏，不碰 runner）。
+      unawaited(_js('document.exitFullscreen && document.exitFullscreen()'));
     } else if (_listVisible) {
       _toggleList();
     } else {
@@ -2464,8 +2515,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   /// macOS / Linux 保留 media_kit 默认回调。
   Future<void> _toggleFullscreen() async {
     if (!Platform.isWindows && !Platform.isMacOS && !Platform.isLinux) return;
-    final bool enter = !_fullscreen;
-    setState(() => _fullscreen = enter);
+    final bool enter = _fullscreen.toggleWindow();
+    setState(() {});
     if (Platform.isWindows) {
       if (enter) {
         FushiDesktopTitleBar.setContentFullscreen(owner: this, enabled: true);
@@ -2489,8 +2540,84 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   }
 
   void _selectTrack(String? key) {
+    _trackUserChosen = true;
     _trackSel.choose(key);
     _reselectTrack();
+  }
+
+  /// 字幕轨在菜单 / 手机里的名字：live 轨与生成字幕用固定文案，其余是站点给的语言。
+  String _trackLabel(WebVideoTrack track) {
+    if (track.isLive) return t.web_video_track_live;
+    if (track.lang == kWebVideoGeneratedTrackLang) {
+      return t.web_video_track_generated;
+    }
+    return track.lang;
+  }
+
+  // ── 生成字幕（只读回）──────────────────────────────────────────────────────
+  //
+  // 「生成字幕」入口在原生播放器页的网页档（两档都给，拍板 cbKi3PN0G7-r2）；本页是机器驱动的
+  // 制卡重放宿主，不给入口，只把这本书登记的生成字幕读回挂成一条轨，与用户在播放器里看到的
+  // 字幕一致。
+
+  /// 页面此刻所在的这一集（[webVideoBookSubtitleEpisode]）；站内点去了别的视频时 null。
+  WebVideoSubtitleEpisode? get _subtitleEpisode {
+    final VideoBookRow? row = _row;
+    final WebVideoPlaybackState? state = _state;
+    if (row == null || state == null) return null;
+    return webVideoBookSubtitleEpisode(
+      bookUid: widget.bookUid,
+      bookVideoPath: row.videoPath,
+      title: row.title,
+      href: state.href,
+      audioTrack: state.siteAudioTrackCurrent,
+    );
+  }
+
+  /// 重进时读回这本书登记的生成字幕（`subtitleSource`，由管线落点写）：文件还在就作为生成
+  /// 字幕轨装上（站点视频 key 还没到时，到了再挂）。
+  Future<void> _restoreGeneratedSubtitle(VideoBookRow row) async {
+    final String? source = row.subtitleSource;
+    if (source == null ||
+        !isExternalSubtitleFilePathForMenu(source) ||
+        !await File(source).exists()) {
+      return;
+    }
+    final List<AudioCue> cues = await loadVideoRemoteSubtitleFile(
+      source,
+      widget.bookUid,
+    );
+    if (!mounted || cues.isEmpty || _generatedSubtitle != null) return;
+    _generatedSubtitle = (path: source, cues: cues);
+    _installGeneratedTrack(
+      select: !_trackUserChosen && !_trackSel.subtitlesOff,
+    );
+  }
+
+  /// 把这本书的生成字幕挂到当前站点视频 key 下：只在页面还停在这本书那一集上时挂（站内点去
+  /// 别的视频不挂）；[select] 时钉住它（撤掉还在途的站点轨请求，免得后到的站点轨抢走）。
+  void _installGeneratedTrack({required bool select}) {
+    final ({String path, List<AudioCue> cues})? generated = _generatedSubtitle;
+    if (generated == null ||
+        _trackSel.videoKey.isEmpty ||
+        _subtitleEpisode == null) {
+      return;
+    }
+    final String key = webVideoGeneratedTrackKey(_trackSel.videoKey);
+    _trackSel.tracks[key] = WebVideoTrack(
+      key: key,
+      videoKey: _trackSel.videoKey,
+      lang: kWebVideoGeneratedTrackLang,
+      cues: generated.cues,
+      languageCode: webVideoGeneratedSubtitleLanguage(generated.path),
+    );
+    if (select) {
+      _trackSel.subtitlesOff = false;
+      _trackSel.pendingKey = null;
+      _trackSel.pinnedKey = key;
+    }
+    _reselectTrack();
+    if (mounted) setState(() {});
   }
 
   // ── 手机遥控 ───────────────────────────────────────────────────────────
@@ -2649,7 +2776,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         for (final WebVideoTrack track in _currentVideoTracks())
           VideoRemoteSubtitleOption(
             id: videoRemoteSubtitleOptionId(track.key),
-            label: track.isLive ? t.web_video_track_live : track.lang,
+            label: _trackLabel(track),
             kind: track.key.contains('|download:') ? 'external' : 'embedded',
             selected: track.key == _trackSel.activeKey,
             selectable: true,
@@ -2702,11 +2829,14 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
   }
 
   /// 手机点开收藏：本书的收藏就地跳到那句并播放；别的书交给视频页打开（与原生播放器页
-  /// 同一入口，它按书的片源自己分流到本地 / 远端 / 网页档）。
+  /// 同一入口，它按书的片源自己分流到本地 / 远端 / 网页档）；没有本机库行的（在远端
+  /// 条目上收藏的）按收藏时记下的来源回去（[resolveRemoteFavoriteVideoPage]）。
   Future<void> _openRemoteFavorite(FavoriteSentence favorite) async {
     final String? uid = favorite.bookKey;
     if (uid == null || uid.isEmpty) {
-      throw const VideoRemoteException(404, 'favorite_source_unavailable');
+      throw favoriteSourceUnavailableException(
+        FavoriteVideoOriginFailure.noLink,
+      );
     }
     if (uid == widget.bookUid) {
       _requireRemoteControllable();
@@ -2723,8 +2853,33 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       return;
     }
     final VideoBookRow? row = await widget.repo.getByBookUid(uid);
-    if (row == null || await isLocalVideoResourceMissing(row.videoPath)) {
-      throw const VideoRemoteException(404, 'favorite_source_unavailable');
+    if (row == null) {
+      final RemoteFavoriteVideoPage page = await resolveRemoteFavoriteVideoPage(
+        appModel: _appModel,
+        ref: ref,
+        repo: widget.repo,
+        favorite: favorite,
+      );
+      if (!context.mounted) {
+        final RemoteVideoClient? owned = page.ownedClient;
+        if (owned != null) closeOwnedRemoteVideoClient(owned);
+        throw const VideoRemoteException(409, 'no_video');
+      }
+      _unregisterRemote();
+      unawaited(
+        Navigator.of(context).pushReplacement(
+          adaptivePageRoute<void>(
+            context: context,
+            builder: (_) => page.build(false),
+          ),
+        ),
+      );
+      return;
+    }
+    if (await isLocalVideoResourceMissing(row.videoPath)) {
+      throw favoriteSourceUnavailableException(
+        FavoriteVideoOriginFailure.localFileMissing,
+      );
     }
     if (!context.mounted) throw const VideoRemoteException(409, 'no_video');
     _unregisterRemote();
@@ -2878,7 +3033,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
           // 浅色主题下黑字压黑底看不见）。M3E：顶栏是与原生播放器同一套深色浮动
           // 胶囊，整页黑底，胶囊浮在画面上方的黑带里。
           backgroundColor: m3e ? Colors.black : cs.surface,
-          appBar: _fullscreen ? null : _buildChromeBar(row: row, cs: cs),
+          appBar: _fullscreen.chromeHidden
+              ? null
+              : _buildChromeBar(row: row, cs: cs),
           body: Row(
             children: <Widget>[
               Expanded(
@@ -2928,7 +3085,14 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         ),
       ),
     );
-    return WindowFullscreenHost(child: page);
+    // 站点自己进 DOM 全屏时同样收起桌面自绘顶栏（窗口按钮组不浮在全屏画面上，与浏览页
+    // BUG-5414 同一个声明式 scope）；Fushi 的窗口全屏由 [_toggleFullscreen] 命令式收起。
+    return WindowFullscreenHost(
+      child: FushiTitleBarContentFullscreenScope(
+        enabled: _fullscreen.site,
+        child: page,
+      ),
+    );
   }
 
   // ── 顶栏 chrome ───────────────────────────────────────────────────────
@@ -2991,7 +3155,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         CheckedPopupMenuItem<String>(
           value: track.key,
           checked: track.key == _trackSel.activeKey,
-          child: Text(track.isLive ? t.web_video_track_live : track.lang),
+          child: Text(_trackLabel(track)),
         ),
     ];
   }

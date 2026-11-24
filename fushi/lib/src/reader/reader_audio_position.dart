@@ -81,6 +81,62 @@ class ReaderAudioPositionIndex {
     return (offset: start, length: _studyEnds[matchableEnd - 1] - start);
   }
 
+  /// 本章归一化后的全文（匹配坐标系：`AudioTextNormalizer` 白名单 + 值折叠，下标即
+  /// JS `getMatchableOffset` 的计数）。
+  String get matchableText => _text;
+
+  /// [needle]（已按 `AudioTextNormalizer.normalize` 归一化）在本章的全部出现起点（匹配
+  /// 坐标，允许重叠），升序。空串返回空表。
+  List<int> matchableOccurrences(String needle) {
+    if (needle.isEmpty) return const <int>[];
+    final List<int> out = <int>[];
+    for (
+      int at = _text.indexOf(needle);
+      at >= 0;
+      at = _text.indexOf(needle, at + 1)
+    ) {
+      out.add(at);
+    }
+    return out;
+  }
+
+  /// 学习单位区间 `[offset, offset + length)` 覆盖的归一化文本（[studyRangeForFragment]
+  /// 的逆）。区间首尾不恰好落在某个可匹配字符的学习单位边界上（越界、落在标点 / 词中）
+  /// 时返回 null。
+  String? matchableTextForStudySpan(int offset, int length) {
+    if (offset < 0 || length <= 0 || _studyEnds.isEmpty) return null;
+    final int end = offset + length;
+    // 第一个学习单位起点 >= offset 的码元（起点单调不减）。
+    int lo = 0;
+    int hi = _studyEnds.length;
+    while (lo < hi) {
+      final int mid = (lo + hi) >> 1;
+      if (_studyOffsets[mid] < offset) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    final int start = lo;
+    if (start >= _studyEnds.length || _studyOffsets[start] != offset) {
+      return null;
+    }
+    // 最后一个学习单位终点 <= end 的码元之后（终点单调不减）。
+    lo = start;
+    hi = _studyEnds.length;
+    while (lo < hi) {
+      final int mid = (lo + hi) >> 1;
+      if (_studyEnds[mid] <= end) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    final int stop = lo;
+    if (stop <= start || _studyEnds[stop - 1] != end) return null;
+    return _text.substring(start, stop);
+  }
+
   bool _isCodePointBoundary(int offset) =>
       offset == _text.length ||
       _text.codeUnitAt(offset) < 0xdc00 ||

@@ -26,6 +26,7 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         FushiMastheadRole,
         FushiMastheadSegmentedTabs,
         FushiMastheadSwitch,
+        fushiMastheadCompact,
         fushiMastheadRoleOf;
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -284,7 +285,21 @@ class LibrarySectionTabs<T extends Object> extends StatelessWidget {
     T selectedValue,
     ValueChanged<T> onSelect,
   ) {
-    return switch (fushiMastheadRoleOf(context)) {
+    final FushiMastheadRole? role = fushiMastheadRoleOf(context);
+    if (role != null && isGlassDesign(context)) {
+      // Apple（Cupertino）导航栏：一级「媒体库 | 在线」与二级视图都是分段控件
+      // （设计稿 video_topbar_cupertino_design/v5.html）；窄窗二级铺满整行。
+      return _AppleSectionSegments<T>(
+        tabs: shownTabs,
+        selected: selectedValue,
+        onChanged: onSelect,
+        fill:
+            role == FushiMastheadRole.secondary &&
+            fushiMastheadCompact(context),
+        selectedIsCurrent: selectedIsCurrent,
+      );
+    }
+    return switch (role) {
       FushiMastheadRole.primary => FushiMastheadSwitch<T>(
         tabs: shownTabs,
         selected: selectedValue,
@@ -494,9 +509,10 @@ class _AppleSectionSegments<T extends Object> extends StatelessWidget {
   /// 等宽段的格宽：最宽文案 + 两侧 14（同 [FushiSegmentedButton] 的口径）。
   double _cellWidth(BuildContext context) {
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final TextStyle style =
         (Theme.of(context).textTheme.labelLarge ?? const TextStyle()).copyWith(
-          fontSize: compact ? 13 : 15,
+          fontSize: compact ? 13 * macScale : 15,
           fontWeight: FontWeight.w600,
         );
     final TextScaler scaler = MediaQuery.textScalerOf(context);
@@ -1645,7 +1661,7 @@ class _SectionTabMoreButton extends StatelessWidget {
     final Color color = apple
         ? appleColorsOf(context).secondaryLabel
         : Theme.of(context).colorScheme.onSurfaceVariant;
-    return Tooltip(
+    return FushiTooltip(
       message: t.common_more_actions,
       child: Semantics(
         button: true,

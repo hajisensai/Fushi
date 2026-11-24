@@ -624,6 +624,37 @@ void main() {
       expect(fileOf(data, 'short1')['source'], 'pinnedEpisode');
     });
 
+    test('切了集的原盘：分集进第 1 季、同盘整条标题进 PV·特典，与详情页同一判据（BUG-5391）', () async {
+      const String playlists = 'Show/vol.1/BD/BDMV/PLAYLIST';
+      for (final (String uid, String name) in <(String, String)>[
+        ('bd_e1', '00001.p01.mpls'),
+        ('bd_e2', '00001.p02.mpls'),
+        ('bd_bonus', '00005.mpls'),
+      ]) {
+        await addVideo(uid, '$playlists/$name');
+        await db.addToCollection(collectionId, MediaKind.video, uid);
+      }
+      final Map<Object?, Object?> data = await sections();
+      expect(fileOf(data, 'bd_e1')['section'], 's1');
+      expect(fileOf(data, 'bd_e2')['section'], 's1');
+      expect(fileOf(data, 'bd_bonus')['section'], 'extras');
+
+      // 改回自动后回报的分栏也按整批判据派生。
+      final Map<Object?, Object?> result = await setSection(<String, Object?>{
+        'items': <String>['bd_e1', 'bd_bonus'],
+        'section': 'auto',
+      });
+      expect(
+        <Object?, Object?>{
+          for (final Map<Object?, Object?> item
+              in (result['items']! as List<Object?>)
+                  .cast<Map<Object?, Object?>>())
+            item['uid']: item['section'],
+        },
+        <Object?, Object?>{'bd_e1': 's1', 'bd_bonus': 'extras'},
+      );
+    });
+
     test('参数不对 400、未知视频 404，都不写库', () async {
       for (final Map<String, Object?> body in <Map<String, Object?>>[
         <String, Object?>{

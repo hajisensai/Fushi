@@ -4,7 +4,15 @@ import 'dart:convert';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart'
-    show OrganizeProposalKind;
+    show
+        OrganizeProposalKind,
+        kMemberRemovalReasonDiscExtra,
+        kMemberRemovalReasonDiscStale,
+        kMemberRemovalReasonDiscSuperseded;
+import 'package:fushi_engine/media/collections/library_organize/organize_convergence.dart'
+    show kOrganizeConvergenceTrigger;
+import 'package:fushi_engine/media/video/disc/disc_library_import.dart'
+    show kDiscImportOrganizeTrigger;
 import 'package:fushi_engine/media/library_agent/library_changeset.dart'
     show kLibraryChangesetTrigger;
 import 'package:material_ui/material_ui.dart';
@@ -241,6 +249,8 @@ class _LibraryOrganizeHistoryPageState
       trigger: switch (run.run.trigger) {
         'auto' => t.library_organize_trigger_auto,
         kLibraryChangesetTrigger => t.library_organize_trigger_agent,
+        kOrganizeConvergenceTrigger => t.library_organize_trigger_convergence,
+        kDiscImportOrganizeTrigger => t.library_organize_trigger_disc_import,
         _ => t.library_organize_trigger_manual,
       },
       n: run.changes.length,
@@ -323,11 +333,16 @@ class _LibraryOrganizeHistoryPageState
     );
   }
 
-  /// 待确认建议的确认卡（AI 库管家设计稿 §8）：AI 对用户自己的合集提的合并 / 改名
-  /// 不直接生效，等用户在这里接受（以用户身份执行）或不用。
+  /// 待确认建议的确认卡（AI 库管家设计稿 §8）：动用户自己合集的合并 / 改名 / 移出
+  /// 成员不直接生效，等用户在这里同意（以用户身份执行，可撤销）、这次不（本机暂缓）
+  /// 或永远不（钉住相关成员，各设备都不再提）。用户 2026-11-24 拍板。
   Widget _proposalCard(LibraryOrganizeProposalView p) {
     final ThemeData theme = Theme.of(context);
     final String? reason = p.reason?.trim();
+    final String? reasonCodeText = libraryOrganizeProposalReasonText(
+      p.reasonCode,
+    );
+    final bool removal = p.kind == OrganizeProposalKind.removeMembers;
     return FushiCard(
       key: ValueKey<String>('library_organize_proposal_${p.id}'),
       variant: FushiCardVariant.outlined,
@@ -342,9 +357,11 @@ class _LibraryOrganizeHistoryPageState
               Padding(
                 padding: const EdgeInsetsDirectional.only(end: 12, top: 2),
                 child: Icon(
-                  p.kind == OrganizeProposalKind.merge
-                      ? FushiIcons.merge
-                      : FushiIcons.edit,
+                  switch (p.kind) {
+                    OrganizeProposalKind.merge => FushiIcons.merge,
+                    OrganizeProposalKind.rename => FushiIcons.edit,
+                    OrganizeProposalKind.removeMembers => FushiIcons.remove,
+                  },
                   size: 20,
                   color: theme.colorScheme.primary,
                 ),
@@ -357,6 +374,34 @@ class _LibraryOrganizeHistoryPageState
                       libraryOrganizeProposalTitle(p),
                       style: theme.textTheme.titleSmall,
                     ),
+                    if (removal && p.members.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 4),
+                      Text(
+                        key: ValueKey<String>(
+                          'library_organize_proposal_members_${p.id}',
+                        ),
+                        p.members
+                            .map(
+                              (OrganizeProposalMember m) =>
+                                  t.library_organize_proposal_quoted(
+                                    name: m.title,
+                                  ),
+                            )
+                            .join(t.library_organize_proposal_separator),
+                        style: theme.textTheme.bodyMedium,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (reasonCodeText != null) ...<Widget>[
+                      const SizedBox(height: 4),
+                      Text(
+                        reasonCodeText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                     if (reason != null && reason.isNotEmpty) ...<Widget>[
                       const SizedBox(height: 4),
                       Text(
@@ -376,14 +421,32 @@ class _LibraryOrganizeHistoryPageState
             alignment: WrapAlignment.end,
             spacing: 8,
             children: <Widget>[
+              // 「永远不」：记为拒绝并钉住相关成员（跨端生效）。
               FushiTextButton(
                 key: ValueKey<String>(
                   'library_organize_proposal_decline_${p.id}',
                 ),
                 onPressed: _busy
                     ? null
-                    : () => unawaited(_resolveProposal(p, accept: false)),
-                child: Text(t.library_organize_proposal_decline),
+                    : () => unawaited(
+                        _resolveProposal(
+                          p,
+                          OrganizeProposalDecision.rejectForever,
+                        ),
+                      ),
+                child: Text(t.library_organize_proposal_never),
+              ),
+              // 「这次不」：本机暂缓 [kOrganizeProposalDeferDuration]。
+              FushiTextButton(
+                key: ValueKey<String>(
+                  'library_organize_proposal_defer_${p.id}',
+                ),
+                onPressed: _busy
+                    ? null
+                    : () => unawaited(
+                        _resolveProposal(p, OrganizeProposalDecision.defer),
+                      ),
+                child: Text(t.library_organize_proposal_defer),
               ),
               FushiFilledButton(
                 key: ValueKey<String>(
@@ -391,8 +454,14 @@ class _LibraryOrganizeHistoryPageState
                 ),
                 onPressed: _busy
                     ? null
-                    : () => unawaited(_resolveProposal(p, accept: true)),
-                child: Text(t.library_organize_proposal_accept),
+                    : () => unawaited(
+                        _resolveProposal(p, OrganizeProposalDecision.accept),
+                      ),
+                child: Text(
+                  removal
+                      ? t.library_organize_proposal_remove
+                      : t.library_organize_proposal_accept,
+                ),
               ),
             ],
           ),
@@ -402,19 +471,50 @@ class _LibraryOrganizeHistoryPageState
   }
 
   Future<void> _resolveProposal(
-    LibraryOrganizeProposalView p, {
-    required bool accept,
-  }) => _guard(() async {
+    LibraryOrganizeProposalView p,
+    OrganizeProposalDecision decision,
+  ) => _guard(() async {
     final OrganizeProposalState? state = await resolveLibraryOrganizeProposal(
       widget.db,
       p.id,
-      accept: accept,
+      decision: decision,
+    );
+    if (!mounted) return;
+    final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(
+      context,
     );
     // stale 的建议已被引擎标成非待确认，重新加载后卡片自然消失；这里只说明为什么
     // 没执行。
-    if (state == OrganizeProposalState.stale && mounted) {
-      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+    // 新结果顶掉上一条提示（例如刚同意的「撤销」条），不排在它后面等。
+    if (state == OrganizeProposalState.stale ||
+        state == OrganizeProposalState.accepted) {
+      messenger?.removeCurrentSnackBar();
+    }
+    if (state == OrganizeProposalState.stale) {
+      messenger?.showSnackBar(
         FushiSnackBar(content: Text(t.library_organize_proposal_stale)),
+      );
+    } else if (state == OrganizeProposalState.accepted) {
+      // 同意后给「撤销」：成员放回原位 / 拆回合并 / 改回原名，建议回到待确认。
+      messenger?.showSnackBar(
+        FushiSnackBar(
+          key: ValueKey<String>('library_organize_proposal_applied_${p.id}'),
+          content: Text(t.library_organize_proposal_applied),
+          persist: false,
+          action: SnackBarAction(
+            label: t.library_organize_undo,
+            onPressed: () => unawaited(_undoProposal(p.id)),
+          ),
+        ),
+      );
+    }
+  });
+
+  Future<void> _undoProposal(int id) => _guard(() async {
+    final bool undone = await undoLibraryOrganizeProposal(widget.db, id);
+    if (!undone && mounted) {
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        FushiSnackBar(content: Text(t.library_organize_proposal_undo_failed)),
       );
     }
   });
@@ -484,9 +584,26 @@ IconData libraryOrganizeChangeIcon(String kind) => switch (kind) {
   _ => FushiIcons.tag,
 };
 
-/// 一条待确认建议的标题：「把 X、Y 并进 Z」/「把 X 改名为 Y」。
+/// removeMembers 建议的原因码 → 本地化说明；认不出的码返回 null（不显示）。
+String? libraryOrganizeProposalReasonText(String? reasonCode) =>
+    switch (reasonCode) {
+      kMemberRemovalReasonDiscExtra =>
+        t.library_organize_proposal_reason_disc_extra,
+      kMemberRemovalReasonDiscStale =>
+        t.library_organize_proposal_reason_disc_stale,
+      kMemberRemovalReasonDiscSuperseded =>
+        t.library_organize_proposal_reason_disc_superseded,
+      _ => null,
+    };
+
+/// 一条待确认建议的标题：「把 X、Y 并进 Z」/「把 X 改名为 Y」/「从 X 移出 N 项」。
 String libraryOrganizeProposalTitle(LibraryOrganizeProposalView p) =>
     switch (p.kind) {
+      OrganizeProposalKind.removeMembers =>
+        t.library_organize_proposal_remove_members(
+          name: p.targetName,
+          n: p.members.length,
+        ),
       OrganizeProposalKind.merge => t.library_organize_proposal_merge(
         sources: p.sourceNames
             .map((String s) => t.library_organize_proposal_quoted(name: s))

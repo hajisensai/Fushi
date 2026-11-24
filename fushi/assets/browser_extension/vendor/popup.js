@@ -289,6 +289,68 @@ async function refreshRenderedMineStates(target) {
 }
 window.fushiRefreshMineStates = refreshRenderedMineStates;
 
+// review-gal-overlay-mine-fail —— 宿主推来的「后台写卡结局」。
+//
+// gal 查词制卡（反馈 y90oiVojic / BUG-5386）采样完就回 queued，按钮画成「已加入」的
+// ✓ 并解锁，写卡在宿主后台完成。以前结局只走主窗 toast：游戏全屏时主窗在后台，写卡
+// 失败（Anki 没开等）用户一个字也看不到，等于回退了 BUG-1908「失败要在弹窗就地说」；
+// 「已加入」也永远撤不掉——再点 ✓ 只会一直说「还在写入」。现在宿主在落地时推来
+// settlement = {expression, reading, outcome: 'landed'|'failed'|'duplicate',
+// noteId?, message?}，交给每颗同词按钮挂着的 __fushiSettleQueuedMine 闭包：只有本弹窗
+// 排过队的那颗才撤「已加入」、才就地说原因（同词的别的按钮只在落地时跟着重问一次）。
+//
+// 认领凭 settlement.token（宿主随 queued 回包发的 queuedToken，一次后台写卡一个）对号，
+// 不凭「同词 + 本按钮排过队」猜：同一个词先后排了两次队，旧那次的结局不能撤掉新那次的
+// 「已加入」。结局与 queued 回包走的是两条各自异步的宿主出口，写卡失败得够快时结局可能
+// **先于** queued 回包到达——那一刻还没有按钮认领它，先按 token 暂存进
+// __fushiEarlyQueuedSettlements，queued 回包一到就由排队的那颗按钮当场取走兑现
+// （takeEarlyQueuedSettlement），否则这颗按钮会永远挂着「已加入」。
+//
+// 返回认领了这次结局的按钮数（诊断与测试用；暂存不算认领）。
+const __fushiEarlyQueuedSettlements = new Map();
+const FUSHI_EARLY_QUEUED_SETTLEMENT_CAP = 32;
+
+function takeEarlyQueuedSettlement(token) {
+    if (typeof token !== 'number') return null;
+    const early = __fushiEarlyQueuedSettlements.get(token);
+    if (early === undefined) return null;
+    __fushiEarlyQueuedSettlements.delete(token);
+    return early;
+}
+
+async function settleQueuedMine(settlement) {
+    if (!settlement || typeof settlement.expression !== 'string') return 0;
+    const wantedExpression = settlement.expression.trim();
+    if (!wantedExpression) return 0;
+    const wantedReading = typeof settlement.reading === 'string'
+        ? settlement.reading.trim()
+        : '';
+    const pending = [];
+    for (const button of __fushiRootNode().querySelectorAll('.mine-button')) {
+        const settle = button.__fushiSettleQueuedMine;
+        if (typeof settle !== 'function') continue;
+        if ((button.__fushiMineExpression || '').trim() !== wantedExpression) continue;
+        if (wantedReading &&
+            (button.__fushiMineReading || '').trim() !== wantedReading) {
+            continue;
+        }
+        pending.push(settle(settlement));
+    }
+    const claimed = (await Promise.all(pending))
+        .filter((value) => value === true).length;
+    if (claimed === 0 && typeof settlement.token === 'number') {
+        // 没有按钮认领：要么排队的那颗还没收到 queued 回包（见上），要么它已经不在了
+        // （换词 / 关卡，主窗 toast 已说过）。前者等回包来取；后者留着也只占一格，满了丢最早的。
+        __fushiEarlyQueuedSettlements.set(settlement.token, settlement);
+        while (__fushiEarlyQueuedSettlements.size > FUSHI_EARLY_QUEUED_SETTLEMENT_CAP) {
+            __fushiEarlyQueuedSettlements.delete(
+                __fushiEarlyQueuedSettlements.keys().next().value);
+        }
+    }
+    return claimed;
+}
+window.fushiSettleQueuedMine = settleQueuedMine;
+
 // Fushi 复习（SRS）词状态小标记（「复习中 · 3天后」/「新卡」/「已暂停」）。
 //
 // 与「已制卡 ✓ / 可制卡 +」是两件独立的事：✓ 问的是 Anki（duplicateCheck，bool
@@ -609,6 +671,9 @@ function parseMineResult(reply) {
             message,
             duplicate: reply.duplicate === true,
             queued: reply.queued === true,
+            // review-gal-overlay-mine-fail：这次后台写卡的凭据，宿主落地推结局时带同一个
+            // token（fushiSettleQueuedMine 凭它对号认领）。不是后台写卡的 queued 没有。
+            queuedToken: typeof reply.queuedToken === 'number' ? reply.queuedToken : null,
             // 拍板 EuOLprw_dV：用户在截屏识字的框选页点了「×」，自己放弃了这张卡。
             cancelled: reply.cancelled === true,
             // BUG-3652 续：宿主发现发起制卡的弹窗已不在屏上，已自己 toast 过这次失败
@@ -6404,6 +6469,11 @@ function createEntryHeader(entry, idx) {
     //   word, or re-querying, supersedes it back to an ordinary ✓ (only the most
     //   recent card stays editable). AnkiDroid returns no id → never green ✓⤺.
     let queuedLocally = false;
+    // 本按钮那次后台写卡的凭据（宿主 queued 回包的 queuedToken），结局推来时凭它认领。
+    let queuedToken = null;
+    // 后台写卡失败、宿主还留着那张卡做好的画面与句音（结局带 retryable）时记着它的
+    // token：下一次点 + 不重新制卡（那会重抓已经换掉的游戏画面），而是请宿主原样重写。
+    let retryToken = null;
     const hostOwnsQueue = () => typeof window.fushiIsEntryQueued === 'function';
     const isEntryQueued = () => hostOwnsQueue()
         ? window.fushiIsEntryQueued({ expression, reading }) === true
@@ -6411,7 +6481,10 @@ function createEntryHeader(entry, idx) {
     const setMineState = (isMined) => {
         // BUG-3492：Anki 里已经有这张卡 = 后台那次制卡已经落地，本弹窗记的「已加入」
         // 标记就此作废（宿主落地后推来的刷新、点击时的回问都经这里）。
-        if (isMined) queuedLocally = false;
+        if (isMined) {
+            queuedLocally = false;
+            retryToken = null;
+        }
         // 本按钮的制卡态至少有过一次真值（lookup-time 探测，或点按钮后的回问）。
         // 「范围未知」的宿主刷新只重问这类按钮，见 refreshRenderedMineStates。
         mineButton.__fushiMineStateKnown = true;
@@ -6514,6 +6587,28 @@ function createEntryHeader(entry, idx) {
                 // setMineState(true) 撤掉标记，落到下面已制卡的正常路径（操作单 / 覆盖）；
                 // 还没落地 → 把这次覆盖交给宿主排队（所有者拍板的方案 B：写入落地后自动
                 // 覆盖、同词只留最后一次）；宿主不收（没有后台写入这条路）就就地说明。
+                // review-gal-overlay-mine-fail：后台写卡失败、宿主说还能重写 → 这一下就是
+                // 重试（与主窗 toast 的「重试」共用宿主同一个一次性入口）。先画回「已加入」，
+                // 结局照常推来；宿主说入口已失效（toast 上已点过 / 被挤出）就撤回并就地说明。
+                if (retryToken !== null && !openChooser) {
+                    const token = retryToken;
+                    retryToken = null;
+                    queuedLocally = true;
+                    queuedToken = token;
+                    setMineState(false);
+                    const reply = await window.flutter_inappwebview.callHandler(
+                        'retryQueuedMine', token);
+                    // 结局可能已先于这份回包推到并认领过（queuedToken 已变）：那就不动。
+                    if (!(reply && reply.accepted === true) &&
+                        queuedLocally && queuedToken === token) {
+                        queuedLocally = false;
+                        queuedToken = null;
+                        setMineState(false);
+                        showInlineHint(mineButton, window.i18nMineRetryUnavailable ||
+                            '这张卡已无法重试，请重新查词制卡。');
+                    }
+                    return;
+                }
                 if (queuedLocally && !hostOwnsQueue()) {
                     const landed = await window.flutter_inappwebview.callHandler(
                         'duplicateCheck', { expression, reading });
@@ -6665,7 +6760,14 @@ function createEntryHeader(entry, idx) {
 
                 if (result.queued) {
                     queuedLocally = true;
-                    setMineState(false);
+                    queuedToken = result.queuedToken;
+                    // 结局可能先于这份回包到了（见 settleQueuedMine）：当场兑现，不挂「已加入」。
+                    const early = takeEarlyQueuedSettlement(queuedToken);
+                    if (early && typeof mineButton.__fushiSettleQueuedMine === 'function') {
+                        await mineButton.__fushiSettleQueuedMine(early);
+                    } else {
+                        setMineState(false);
+                    }
                 } else if (result.cancelled) {
                     // 拍板 EuOLprw_dV：用户自己在框选页放弃了这次制卡——不是失败，不说
                     // 「制卡失败」，也不回查 Anki（TODO-448），按钮放回可点的 '+'。
@@ -6814,6 +6916,59 @@ function createEntryHeader(entry, idx) {
                 // 用户再制一张重复卡，比不刷新更糟）。
                 console.error('refreshMineState failed', e);
             }
+        };
+        // 宿主推来的后台写卡结局（window.fushiSettleQueuedMine → 本闭包）。返回本按钮
+        // 是否认领了它（= 本弹窗排过这张卡的队）。
+        mineButton.__fushiSettleQueuedMine = async (settlement) => {
+            const outcome = settlement?.outcome;
+            const token = settlement?.token;
+            // 带 token 的结局只认那一次排队（同词排过两次时旧结局不撤新「已加入」）；
+            // 失败后留着重试入口的按钮也认同一个 token（主窗 toast 上点的重试推来 requeued）。
+            const mine = (queuedLocally &&
+                (typeof token !== 'number' || token === queuedToken)) ||
+                (typeof token === 'number' && token === retryToken);
+            if (!mine) {
+                // 不是本按钮排的队：只在卡真的进了 Anki 时，让已经探测过的同词按钮
+                // 跟着重问一次（失败 / 重复对它没有新信息，不动）。
+                if (outcome === 'landed' && mineButton.__fushiMineStateKnown === true) {
+                    await mineButton.__fushiRefreshMineState();
+                }
+                return false;
+            }
+            if (outcome === 'requeued') {
+                // 失败后点了重试：同一张卡又在后台写了，画回「已加入」等下一条结局。
+                retryToken = null;
+                queuedLocally = true;
+                queuedToken = token;
+                setMineState(false);
+                return true;
+            }
+            queuedLocally = false;
+            queuedToken = null;
+            retryToken = null;
+            if (outcome === 'landed') {
+                // 与陪等路径的成功分支同口径：带回真 note id 的这张卡成为「最新可改」✓↩。
+                rememberLatestMined(expression, reading,
+                    typeof settlement.noteId === 'number' ? settlement.noteId : null);
+                await mineButton.__fushiRefreshMineState();
+                return true;
+            }
+            // 失败 / 重复：与陪等路径的失败分支同口径（TODO-448）——不回查 Anki，按宿主
+            // 给的确定事实画（重复 = 卡确实在 Anki 里 → ✓；失败 → 可点的 +，用户可重挖）。
+            setMineState(outcome === 'duplicate');
+            // 宿主还留着画面与句音：+ 成了「重试」，提示里跟着说一句。
+            const retryable = outcome === 'failed' && settlement.retryable === true &&
+                typeof token === 'number';
+            if (retryable) retryToken = token;
+            let message = typeof settlement.message === 'string' ? settlement.message : '';
+            if (retryable) {
+                const retryHint = window.i18nMineRetryHint || '点 + 用同一张截图和音频重试。';
+                message = message ? `${message} ${retryHint}` : retryHint;
+            }
+            if (message && mineButton.isConnected !== false) {
+                showInlineHint(mineButton, message);
+            }
+            return true;
         };
         scheduleEntryStateCheck(
             mineButton,

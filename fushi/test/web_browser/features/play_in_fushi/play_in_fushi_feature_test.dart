@@ -61,6 +61,42 @@ void main() {
     });
   });
 
+  group('youtubeWatchPlaylistIdOf（拍板台 zGXhhMAglH）', () {
+    test('播放列表里点开的观看页带出列表 id', () {
+      expect(
+        youtubeWatchPlaylistIdOf(
+          Uri.parse(
+            'https://www.youtube.com/watch?v=IlcLjQJMpLN&list=PLUTT4hYd1R1VSKigOsW5YTvaLJWfI_2ed&index=8',
+          ),
+        ),
+        'PLUTT4hYd1R1VSKigOsW5YTvaLJWfI_2ed',
+      );
+      expect(
+        youtubeWatchPlaylistIdOf(
+          Uri.parse(
+            'https://m.youtube.com/watch?list=OLAK5uy_abc-12&v=IlcLjQJMpLN',
+          ),
+        ),
+        'OLAK5uy_abc-12',
+      );
+    });
+
+    test('不是观看页 / 没有列表 / 形状不对时为 null', () {
+      for (final String url in <String>[
+        // 播放列表总览页不是观看页：交接的是单条视频。
+        'https://www.youtube.com/playlist?list=PLUTT4hYd1R1VSKigOsW5YT',
+        'https://www.youtube.com/watch?v=IlcLjQJMpLN',
+        'https://www.youtube.com/watch?v=IlcLjQJMpLN&list=',
+        'https://www.youtube.com/watch?v=IlcLjQJMpLN&list=P',
+        'https://www.youtube.com/watch?v=IlcLjQJMpLN&list=PL%3Cscript%3E',
+        'https://example.com/watch?v=IlcLjQJMpLN&list=PLabc',
+      ]) {
+        expect(youtubeWatchPlaylistIdOf(Uri.parse(url)), isNull, reason: url);
+      }
+      expect(youtubeWatchPlaylistIdOf(null), isNull);
+    });
+  });
+
   group('PlayInFushiFeature.actions', () {
     PlayInFushiFeature feature() => PlayInFushiFeature(
       repository: () => throw StateError('not used'),

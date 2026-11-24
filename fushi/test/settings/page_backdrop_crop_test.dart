@@ -86,10 +86,7 @@ void main() {
       ),
     );
     expect(source, contains('pageBackdropSettings.value.portraitImagePath'));
-    expect(
-      source,
-      contains('pageBackdropModuleOverrides.value[module]?.portraitImagePath'),
-    );
+    expect(source, contains('layer.own?.portraitImagePath'));
   });
 
   group('pageBackdropCropMaxDimension', () {
@@ -129,10 +126,12 @@ void main() {
     final int crop = body.indexOf('showCropImageDialog(');
     final int importGlobal = body.indexOf('importPageBackdropImage(');
     final int importModule = body.indexOf('importPageBackdropModuleImage(');
+    final int importPage = body.indexOf('importPageBackdropPageImage(');
     expect(pick, isNonNegative);
     expect(crop, greaterThan(pick), reason: '选完图要先弹裁剪框');
     expect(importGlobal, greaterThan(crop));
     expect(importModule, greaterThan(crop));
+    expect(importPage, greaterThan(crop));
     expect(body, contains('if (cropped == null) return;'));
     expect(body, contains('importPageBackdropImage(cropped,'));
     expect(body, contains('        cropped,\n'));

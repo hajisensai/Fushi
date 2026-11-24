@@ -113,36 +113,45 @@ void main() {
   Finder heroPlay() =>
       find.byKey(const ValueKey<String>('collection-hero-play'));
 
-  testWidgets('multi-disc box: play disc, play main title, choose disc', (
-    WidgetTester tester,
-  ) async {
-    useSurface(tester);
-    await addMember('d1', mpls('Disc 1'), playedAt: 100);
-    await addMember('d2', mpls('Disc 2'), playedAt: 500);
-    await tester.pumpWidget(buildApp());
-    await tester.pumpAndSettle();
+  testWidgets(
+    'multi-disc box: play disc asks which disc, no separate chooser',
+    (WidgetTester tester) async {
+      useSurface(tester);
+      await addMember('d1', mpls('Disc 1'), playedAt: 100);
+      await addMember('d2', mpls('Disc 2'), playedAt: 500);
+      await tester.pumpWidget(buildApp());
+      await tester.pumpAndSettle();
 
-    expect(
-      find.descendant(of: heroPlay(), matching: find.text(t.video_disc_play)),
-      findsOneWidget,
-    );
-    // 主按钮开最近看过的那张。
-    expect(find.text('${t.video_disc_play}  ·  Disc 2'), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('collection-disc-choose')),
-      findsOneWidget,
-    );
-    // 选集标题上方那排「进入原盘菜单 · 盘名」描边按钮已删除。
-    expect(find.text('${t.video_disc_open_menu} · Disc 1'), findsNothing);
+      expect(
+        find.descendant(of: heroPlay(), matching: find.text(t.video_disc_play)),
+        findsOneWidget,
+      );
+      // 选盘并进「播放原盘」：没有单独的「选盘」按钮，也不再写「播放原盘 · 盘名」。
+      expect(
+        find.byKey(const ValueKey<String>('collection-disc-choose')),
+        findsNothing,
+      );
+      expect(find.text('${t.video_disc_play}  ·  Disc 2'), findsNothing);
+      await tester.tap(heroPlay());
+      await tester.pumpAndSettle();
+      expect(find.text(t.video_disc_choose_disc), findsOneWidget);
+      expect(find.text('Disc 1'), findsOneWidget);
+      expect(find.text('Disc 2'), findsOneWidget);
+      Navigator.of(tester.element(find.text('Disc 1'))).pop();
+      await tester.pumpAndSettle();
+      expect(opened, isEmpty, reason: '取消选盘什么也不开');
+      // 选集标题上方那排「进入原盘菜单 · 盘名」描边按钮已删除。
+      expect(find.text('${t.video_disc_open_menu} · Disc 1'), findsNothing);
 
-    final Finder mainTitle = find.byKey(
-      const ValueKey<String>('collection-disc-main-title'),
-    );
-    expect(mainTitle, findsOneWidget);
-    await tester.tap(mainTitle);
-    await tester.pumpAndSettle();
-    expect(opened, hasLength(1), reason: '「直接播放正片」走普通播放');
-  });
+      final Finder mainTitle = find.byKey(
+        const ValueKey<String>('collection-disc-main-title'),
+      );
+      expect(mainTitle, findsOneWidget);
+      await tester.tap(mainTitle);
+      await tester.pumpAndSettle();
+      expect(opened, hasLength(1), reason: '「直接播放正片」走普通播放');
+    },
+  );
 
   testWidgets('started disc offers "continue watching xx:xx"', (
     WidgetTester tester,

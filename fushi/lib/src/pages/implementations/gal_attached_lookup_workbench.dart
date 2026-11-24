@@ -11,6 +11,10 @@ import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/pages/implementations/gal_lookup_samples_dialog.dart';
 import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/fushi_apple_surface.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
@@ -78,6 +82,19 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                   : t.game_lookup_attached_risk_safe}',
         ].join('\n');
 
+        if (isGlassDesign(context)) {
+          return _buildApple(
+            context,
+            profile: profile,
+            mode: mode,
+            riskRequest: riskRequest,
+            calibrationExposed: calibrationExposed,
+            canOpenCalibration: canOpenCalibration,
+            showThreadRequiredPill: showThreadRequiredPill,
+            profileValue: profileValue,
+            detailsMessage: detailsMessage,
+          );
+        }
         // 2026-11 拼贴改版：「游戏内查词」从一行混杂的灰标签改成一组能力小卡——
         // 分区标题（+ 技术细节信息钮 / 风险确认）下面是等宽小卡：查词模式（点开
         // 模式菜单）、启用状态（语义色状态签）、校准档案（可校准时点卡直接校准）、
@@ -167,7 +184,7 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
                             ),
                         ],
                     child: GalWorkbenchCapabilityFace(
-                      icon: Icons.tune_outlined,
+                      icon: FushiIcons.filter,
                       label: t.game_lookup_attached_mode,
                       value: Text(_modeLabel(mode)),
                       trailingIcon: FushiIcons.expandMore,
@@ -265,6 +282,215 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
     );
   }
 
+  /// Cupertino 外观：同一组数据与动作摆成 inset grouped 行——查词模式是 Apple
+  /// 下拉（各模式行首 ✓、校准 / 清除档案），状态是系统色文字，校准档案与对话校准
+  /// 是可点的去往行。不经 Material（无 PopupMenuItem / Material 透明层）。
+  Widget _buildApple(
+    BuildContext context, {
+    required GalLookupSurfaceProfileV1? profile,
+    required GalLookupSurfaceMode mode,
+    required GalAttachedUnsafeRiskAcceptanceRequest? riskRequest,
+    required bool calibrationExposed,
+    required bool canOpenCalibration,
+    required bool showThreadRequiredPill,
+    required String profileValue,
+    required String detailsMessage,
+  }) {
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool samplesEnabled =
+        hasSelectedBodyThread &&
+        controller.executableSha256 != null &&
+        controller.currentClient != null;
+    final bool calibrateEnabled = calibrationExposed && canOpenCalibration;
+    final TextStyle valueStyle = metrics
+        .subtitleStyle(context)
+        .copyWith(color: apple.secondaryLabel);
+    final int count = calibrationExposed ? 4 : 3;
+    Widget row({
+      required int index,
+      required IconData icon,
+      required String label,
+      required Widget value,
+      VoidCallback? onTap,
+      FushiFocusId? focusId,
+      Key? key,
+      bool chevron = false,
+    }) => FushiGroupedListItem(
+      key: key,
+      index: index,
+      count: count,
+      onTap: onTap,
+      focusId: focusId,
+      child: FushiListItem(
+        density: FushiListDensity.compact,
+        leading: FushiIcon(
+          icon,
+          size: metrics.leadingIconSize,
+          color: apple.accent,
+        ),
+        title: Text(label),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 140),
+              child: DefaultTextStyle.merge(
+                style: valueStyle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                child: value,
+              ),
+            ),
+            if (chevron) ...<Widget>[
+              const SizedBox(width: 4),
+              const FushiAppleChevron(),
+            ],
+          ],
+        ),
+      ),
+    );
+    final Color statusColor = switch (galAttachedTextStatusTone(
+      controller.status,
+    )) {
+      FushiTagTone.success => apple.success,
+      FushiTagTone.warning => apple.warning,
+      FushiTagTone.error => apple.destructive,
+      FushiTagTone.accent => apple.accent,
+      _ => apple.secondaryLabel,
+    };
+    return Column(
+      key: const ValueKey<String>('game-attached-lookup-workbench'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: <Widget>[
+            if (riskRequest != null)
+              FushiTextButton.icon(
+                key: const ValueKey<String>('game-attached-lookup-accept-risk'),
+                onPressed: () => _acceptRisk(context, riskRequest),
+                icon: const FushiIcon(FushiIcons.warning, size: 18),
+                label: Text(t.game_lookup_attached_risk_accept),
+              ),
+            FushiTooltip(
+              message: '${t.game_lookup_attached_no_ocr}\n$detailsMessage',
+              child: Padding(
+                key: const ValueKey<String>('game-attached-lookup-details'),
+                padding: const EdgeInsets.all(6),
+                child: FushiIcon(
+                  FushiIcons.info,
+                  size: metrics.leadingIconSize,
+                  color: apple.secondaryLabel,
+                ),
+              ),
+            ),
+          ],
+        ),
+        FushiMenuAnchor(
+          menuChildren: <Widget>[
+            for (final GalLookupSurfaceMode value
+                in GalLookupSurfaceMode.values)
+              RadioMenuButton<GalLookupSurfaceMode>(
+                value: value,
+                groupValue: mode,
+                onChanged: controller.target == null
+                    ? null
+                    : (GalLookupSurfaceMode? picked) {
+                        if (picked != null) {
+                          unawaited(controller.setMode(picked));
+                        }
+                      },
+                child: Text(_modeLabel(value)),
+              ),
+            if (calibrationExposed)
+              MenuItemButton(
+                key: const ValueKey<String>('game-attached-lookup-calibrate'),
+                onPressed: canOpenCalibration
+                    ? () => unawaited(_openCalibration(context))
+                    : null,
+                child: Text(t.game_lookup_attached_calibrate),
+              ),
+            if (profile != null)
+              MenuItemButton(
+                key: const ValueKey<String>(
+                  'game-attached-lookup-clear-profile',
+                ),
+                onPressed: () => unawaited(_clearProfile(context)),
+                child: Text(t.game_lookup_attached_profile_clear),
+              ),
+          ],
+          builder: (BuildContext context, MenuController menu, Widget? child) =>
+              row(
+                key: const ValueKey<String>('game-attached-lookup-mode'),
+                index: 0,
+                icon: FushiIcons.filter,
+                label: t.game_lookup_attached_mode,
+                value: Text(_modeLabel(mode)),
+                focusId: const FushiFocusId('game-attached-lookup-mode'),
+                onTap: () => menu.isOpen ? menu.close() : menu.open(),
+                chevron: true,
+              ),
+        ),
+        row(
+          index: 1,
+          icon: galAttachedTextStatusIcon(controller.status),
+          label: t.game_lookup_attached_status,
+          value: Text(
+            galAttachedTextStatusLabel(controller.status),
+            key: const ValueKey<String>('game-attached-lookup-status'),
+            style: valueStyle.copyWith(color: statusColor),
+          ),
+        ),
+        row(
+          index: 2,
+          icon: Icons.straighten_outlined,
+          label: t.game_lookup_attached_profile,
+          value: Text(profileValue),
+          focusId: const FushiFocusId('game-attached-lookup-profile-tile'),
+          onTap: calibrateEnabled
+              ? () => unawaited(_openCalibration(context))
+              : null,
+          chevron: calibrateEnabled,
+        ),
+        if (calibrationExposed)
+          row(
+            key: const ValueKey<String>(
+              'game-attached-lookup-dialogue-samples',
+            ),
+            index: 3,
+            icon: FushiIcons.quote,
+            label: t.game_lookup_samples_dialogue,
+            value: Text(t.game_lookup_attached_calibrate),
+            focusId: const FushiFocusId(
+              'game-attached-lookup-dialogue-samples',
+            ),
+            onTap: samplesEnabled
+                ? () => unawaited(
+                    _openSamples(
+                      context,
+                      slot: GalLookupCalibrationSlotV1.dialogue,
+                    ),
+                  )
+                : null,
+            chevron: true,
+          ),
+        if (showThreadRequiredPill)
+          Padding(
+            padding: EdgeInsets.fromLTRB(metrics.rowHorizontal, 6, 8, 0),
+            child: Text(
+              '${t.game_lookup_attached_calibrate}: '
+              '${t.game_lookup_attached_thread_required}',
+              style: metrics
+                  .footnoteStyle(context)
+                  .copyWith(color: apple.warning),
+            ),
+          ),
+      ],
+    );
+  }
+
   Future<bool> _confirmRisk(BuildContext context) async {
     final bool? accepted = await showAppDialog<bool>(
       context: context,
@@ -321,7 +547,9 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
       final GalLookupSurfaceVariantV1? seed = controller.profile
           ?.nearestVariantForClient(client, slot: activeSlot);
       GalLookupCalibrationSlotV1? requestedSlot;
-      draft = await showAppDialog<GalLookupCalibrationDraft>(
+      // M3E 全屏对话框；Apple 下 macOS 档窗口 sheet、iOS 档整页（返回 = 关闭，
+      // 走同一条 _finish 保存出口）。
+      draft = await showAdaptiveDialogSurface<GalLookupCalibrationDraft>(
         context: hostContext,
         barrierDismissible: false,
         builder: (BuildContext dialogContext) => GalLookupSamplesDialog(
@@ -461,7 +689,9 @@ class GalAttachedLookupWorkbench extends StatelessWidget {
 
     bool? committed;
     try {
-      committed = await showAppDialog<bool>(
+      // Apple 下 macOS 档 sheet（不能点外部关）/ iOS 档整页（返回 = 取消，返回
+      // null，与「取消」同走下面的 cancelCalibration）。
+      committed = await showAdaptiveDialogSurface<bool>(
         context: context,
         barrierDismissible: false,
         builder: (BuildContext context) => GalAttachedCalibrationDialog(
@@ -906,344 +1136,368 @@ class _GalAttachedCalibrationDialogState
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  /// 状态卡：校准状态是这张对话框的「现在在哪一步」。M3E 铺饱和色块（失败 /
+  /// 文本已变 = error，其余 secondary），色块随状态切换；Apple 是系统提示横幅。
+  Widget _statusCard(BuildContext context, {required bool apple}) {
     final bool statusFailed =
         !_previewCurrent ||
         widget.controller.calibrationStatus ==
             GalAttachedCalibrationStatus.failed;
     // 状态卡前景：主题字阶自带 onSurface，色块上要显式换成 on 色。
-    final Color? statusForeground = fushiCardToneColors(
+    final Color? statusForeground = apple
+        ? null
+        : fushiCardToneColors(
+            context,
+            statusFailed ? FushiCardTone.error : FushiCardTone.secondary,
+          )?.onContainer;
+    final Widget statusText = Semantics(
+      liveRegion: true,
+      child: Text(
+        _calibrationStatusText(),
+        key: const ValueKey<String>('game-attached-calibration-status'),
+        style: apple
+            ? null
+            : context.fushiType.bodyMediumEmphasized.copyWith(
+                color: statusForeground,
+              ),
+      ),
+    );
+    if (apple) {
+      return FushiInlineNotice(
+        severity: statusFailed
+            ? FushiNoticeSeverity.error
+            : FushiNoticeSeverity.info,
+        icon: statusFailed ? FushiIcons.warning : FushiIcons.settings,
+        message: statusText,
+      );
+    }
+    return FushiCard(
+      tone: statusFailed ? FushiCardTone.error : FushiCardTone.secondary,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      child: Row(
+        children: <Widget>[
+          FushiIcon(
+            statusFailed ? FushiIcons.warning : FushiIcons.settings,
+            size: 20,
+            color: statusForeground,
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: statusText),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // Apple：macOS 档窗口 sheet / iOS 档整页（showAdaptiveDialogSurface 推出来时
+    // 才有这个 scope）；M3E 仍是对话框。内容体与状态只有这一份。
+    final FushiAppleSurfaceForm? appleForm = FushiAppleSurfaceScope.maybeFormOf(
       context,
-      statusFailed ? FushiCardTone.error : FushiCardTone.secondary,
-    )?.onContainer;
-    return FushiAlertDialog(
-      title: Text(t.game_lookup_attached_calibration_title),
-      content: SizedBox(
-        width: 620,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            // M3E 状态卡：校准状态是这张对话框的「现在在哪一步」，铺饱和色块
-            // （失败 / 文本已变 = error，其余 secondary），色块随状态切换。
-            FushiCard(
-              tone: statusFailed
-                  ? FushiCardTone.error
-                  : FushiCardTone.secondary,
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-              child: Row(
-                children: <Widget>[
-                  FushiIcon(
-                    statusFailed ? FushiIcons.warning : FushiIcons.settings,
-                    size: 20,
-                    color: statusForeground,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Semantics(
-                      liveRegion: true,
-                      child: Text(
-                        _calibrationStatusText(),
-                        key: const ValueKey<String>(
-                          'game-attached-calibration-status',
-                        ),
-                        style: context.fushiType.bodyMediumEmphasized.copyWith(
-                          color: statusForeground,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+    );
+    final bool apple = appleForm != null;
+    final TextStyle sectionStyle = apple
+        ? appleTextStyle(
+            context,
+            size: FushiAppleMetrics.of(context).titleSize,
+            weight: FontWeight.w600,
+          )
+        : context.fushiType.labelLargeEmphasized;
+    final Widget body = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _statusCard(context, apple: apple),
+        const SizedBox(height: 16),
+        Text(t.game_lookup_attached_preview, style: sectionStyle),
+        const SizedBox(height: 6),
+        FushiCard(
+          padding: EdgeInsets.all(tokens.spacing.rowVertical),
+          child: SelectableText(widget.previewText),
+        ),
+        const SizedBox(height: 16),
+        if (_layout.cellGrid != null) ...[
+          Text(t.game_lookup_samples_auto_grid),
+          Text(t.game_lookup_samples_auto_success),
+        ] else ...[
+          Text(
+            t.game_lookup_attached_body_rect,
+            style: apple
+                ? sectionStyle
+                : context.fushiType.titleSmallEmphasized,
+          ),
+          Text(t.game_lookup_attached_calibration_region_help),
+          _RatioSlider(
+            label: t.game_lookup_attached_left,
+            value: _rect.left,
+            min: 0,
+            max: 1 - _rect.width,
+            onChanged: (double value) => _setRect(
+              GalLookupNormalizedRectV1(
+                left: value,
+                top: _rect.top,
+                width: _rect.width,
+                height: _rect.height,
               ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              t.game_lookup_attached_preview,
-              style: context.fushiType.labelLargeEmphasized,
+            onChangeEnd: (_) => _queueDraftPush(),
+          ),
+          _RatioSlider(
+            label: t.game_lookup_attached_top,
+            value: _rect.top,
+            min: 0,
+            max: 1 - _rect.height,
+            onChanged: (double value) => _setRect(
+              GalLookupNormalizedRectV1(
+                left: _rect.left,
+                top: value,
+                width: _rect.width,
+                height: _rect.height,
+              ),
             ),
-            const SizedBox(height: 6),
-            FushiCard(
-              padding: EdgeInsets.all(tokens.spacing.rowVertical),
-              child: SelectableText(widget.previewText),
+            onChangeEnd: (_) => _queueDraftPush(),
+          ),
+          _RatioSlider(
+            label: t.game_lookup_attached_width,
+            value: _rect.width,
+            min: 0.02,
+            max: 1 - _rect.left,
+            onChanged: (double value) => _setRect(
+              GalLookupNormalizedRectV1(
+                left: _rect.left,
+                top: _rect.top,
+                width: value,
+                height: _rect.height,
+              ),
             ),
-            const SizedBox(height: 16),
-            if (_layout.cellGrid != null) ...[
-              Text(t.game_lookup_samples_auto_grid),
-              Text(t.game_lookup_samples_auto_success),
-            ] else ...[
-              Text(
-                t.game_lookup_attached_body_rect,
-                style: context.fushiType.titleSmallEmphasized,
+            onChangeEnd: (_) => _queueDraftPush(),
+          ),
+          _RatioSlider(
+            label: t.game_lookup_attached_height,
+            value: _rect.height,
+            min: 0.02,
+            max: 1 - _rect.top,
+            onChanged: (double value) => _setRect(
+              GalLookupNormalizedRectV1(
+                left: _rect.left,
+                top: _rect.top,
+                width: _rect.width,
+                height: value,
               ),
-              Text(t.game_lookup_attached_calibration_region_help),
-              _RatioSlider(
-                label: t.game_lookup_attached_left,
-                value: _rect.left,
-                min: 0,
-                max: 1 - _rect.width,
-                onChanged: (double value) => _setRect(
-                  GalLookupNormalizedRectV1(
-                    left: value,
-                    top: _rect.top,
-                    width: _rect.width,
-                    height: _rect.height,
-                  ),
-                ),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              _RatioSlider(
-                label: t.game_lookup_attached_top,
-                value: _rect.top,
-                min: 0,
-                max: 1 - _rect.height,
-                onChanged: (double value) => _setRect(
-                  GalLookupNormalizedRectV1(
-                    left: _rect.left,
-                    top: value,
-                    width: _rect.width,
-                    height: _rect.height,
-                  ),
-                ),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              _RatioSlider(
-                label: t.game_lookup_attached_width,
-                value: _rect.width,
-                min: 0.02,
-                max: 1 - _rect.left,
-                onChanged: (double value) => _setRect(
-                  GalLookupNormalizedRectV1(
-                    left: _rect.left,
-                    top: _rect.top,
-                    width: value,
-                    height: _rect.height,
-                  ),
-                ),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              _RatioSlider(
-                label: t.game_lookup_attached_height,
-                value: _rect.height,
-                min: 0.02,
-                max: 1 - _rect.top,
-                onChanged: (double value) => _setRect(
-                  GalLookupNormalizedRectV1(
-                    left: _rect.left,
-                    top: _rect.top,
-                    width: _rect.width,
-                    height: value,
-                  ),
-                ),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              const SizedBox(height: 8),
-              FushiTextFormFieldControl(
+            ),
+            onChangeEnd: (_) => _queueDraftPush(),
+          ),
+          const SizedBox(height: 8),
+          FushiTextFormFieldControl(
+            key: const ValueKey<String>(
+              'game-attached-calibration-font-family',
+            ),
+            controller: _fontController,
+            decoration: InputDecoration(
+              labelText: t.game_lookup_attached_font_family,
+              border: const OutlineInputBorder(),
+            ),
+            onFieldSubmitted: (String value) {
+              _setLayout(_copyLayout(fontFamily: value.trim()));
+              _queueDraftPush();
+            },
+          ),
+          const SizedBox(height: 8),
+          _RatioSlider(
+            label: t.game_lookup_attached_font_size,
+            value: _layout.fontSizePerClientHeight,
+            min: 0.01,
+            max: 0.12,
+            fractionDigits: 3,
+            onChanged: (double value) =>
+                _setLayout(_copyLayout(fontSizePerClientHeight: value)),
+            onChangeEnd: (_) => _queueDraftPush(),
+          ),
+          _RatioSlider(
+            label: t.game_lookup_attached_letter_spacing,
+            value: _layout.letterSpacingPerClientHeight.clamp(-0.02, 0.05),
+            min: -0.02,
+            max: 0.05,
+            fractionDigits: 3,
+            onChanged: (double value) =>
+                _setLayout(_copyLayout(letterSpacing: value)),
+            onChangeEnd: (_) => _queueDraftPush(),
+          ),
+          _RatioSlider(
+            label: t.game_lookup_attached_line_height,
+            value: _layout.lineHeight.clamp(0.5, 2.5),
+            min: 0.5,
+            max: 2.5,
+            fractionDigits: 2,
+            onChanged: (double value) =>
+                _setLayout(_copyLayout(lineHeight: value)),
+            onChangeEnd: (_) => _queueDraftPush(),
+          ),
+          const SizedBox(height: 10),
+          // 对齐方式是三选一的小枚举：M3E 连接式按钮组（Apple 分段控件）
+          // 一眼看全，比下拉少一次点开。值域与旧下拉一致（left / center /
+          // right、top / center / bottom）。
+          Wrap(
+            spacing: 16,
+            runSpacing: 12,
+            children: <Widget>[
+              _AlignSegments(
                 key: const ValueKey<String>(
-                  'game-attached-calibration-font-family',
+                  'game-attached-calibration-text-align',
                 ),
-                controller: _fontController,
-                decoration: InputDecoration(
-                  labelText: t.game_lookup_attached_font_family,
-                  border: const OutlineInputBorder(),
-                ),
-                onFieldSubmitted: (String value) {
-                  _setLayout(_copyLayout(fontFamily: value.trim()));
+                label: t.game_lookup_attached_text_align,
+                value: _layout.textAlign,
+                options: <(String, String)>[
+                  ('left', t.game_lookup_attached_align_left),
+                  ('center', t.game_lookup_attached_align_center),
+                  ('right', t.game_lookup_attached_align_right),
+                ],
+                onChanged: (String value) {
+                  _setLayout(_copyLayout(textAlign: value));
                   _queueDraftPush();
                 },
               ),
-              const SizedBox(height: 8),
-              _RatioSlider(
-                label: t.game_lookup_attached_font_size,
-                value: _layout.fontSizePerClientHeight,
-                min: 0.01,
-                max: 0.12,
-                fractionDigits: 3,
-                onChanged: (double value) =>
-                    _setLayout(_copyLayout(fontSizePerClientHeight: value)),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              _RatioSlider(
-                label: t.game_lookup_attached_letter_spacing,
-                value: _layout.letterSpacingPerClientHeight.clamp(-0.02, 0.05),
-                min: -0.02,
-                max: 0.05,
-                fractionDigits: 3,
-                onChanged: (double value) =>
-                    _setLayout(_copyLayout(letterSpacing: value)),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              _RatioSlider(
-                label: t.game_lookup_attached_line_height,
-                value: _layout.lineHeight.clamp(0.5, 2.5),
-                min: 0.5,
-                max: 2.5,
-                fractionDigits: 2,
-                onChanged: (double value) =>
-                    _setLayout(_copyLayout(lineHeight: value)),
-                onChangeEnd: (_) => _queueDraftPush(),
-              ),
-              const SizedBox(height: 10),
-              // 对齐方式是三选一的小枚举：M3E 连接式按钮组（Apple 分段控件）
-              // 一眼看全，比下拉少一次点开。值域与旧下拉一致（left / center /
-              // right、top / center / bottom）。
-              Wrap(
-                spacing: 16,
-                runSpacing: 12,
-                children: <Widget>[
-                  _AlignSegments(
-                    key: const ValueKey<String>(
-                      'game-attached-calibration-text-align',
-                    ),
-                    label: t.game_lookup_attached_text_align,
-                    value: _layout.textAlign,
-                    options: <(String, String)>[
-                      ('left', t.game_lookup_attached_align_left),
-                      ('center', t.game_lookup_attached_align_center),
-                      ('right', t.game_lookup_attached_align_right),
-                    ],
-                    onChanged: (String value) {
-                      _setLayout(_copyLayout(textAlign: value));
-                      _queueDraftPush();
-                    },
-                  ),
-                  _AlignSegments(
-                    key: const ValueKey<String>(
-                      'game-attached-calibration-vertical-align',
-                    ),
-                    label: t.game_lookup_attached_vertical_align,
-                    value: _layout.verticalAlign,
-                    options: <(String, String)>[
-                      ('top', t.game_lookup_attached_align_top),
-                      ('center', t.game_lookup_attached_align_center),
-                      ('bottom', t.game_lookup_attached_align_bottom),
-                    ],
-                    onChanged: (String value) {
-                      _setLayout(_copyLayout(verticalAlign: value));
-                      _queueDraftPush();
-                    },
-                  ),
+              _AlignSegments(
+                key: const ValueKey<String>(
+                  'game-attached-calibration-vertical-align',
+                ),
+                label: t.game_lookup_attached_vertical_align,
+                value: _layout.verticalAlign,
+                options: <(String, String)>[
+                  ('top', t.game_lookup_attached_align_top),
+                  ('center', t.game_lookup_attached_align_center),
+                  ('bottom', t.game_lookup_attached_align_bottom),
                 ],
+                onChanged: (String value) {
+                  _setLayout(_copyLayout(verticalAlign: value));
+                  _queueDraftPush();
+                },
               ),
-              const SizedBox(height: 16),
             ],
-            if (_previewCurrent &&
-                widget.controller.calibrationStatus ==
-                    GalAttachedCalibrationStatus.ready) ...<Widget>[
-              Text(t.game_lookup_attached_probes_hint),
-              const SizedBox(height: 8),
-            ],
-            FushiGroupedListItem(
-              index: 0,
-              count: 3,
-              selected: _startConfirmed && _startObserved,
-              child: FushiListItem(
-                key: const ValueKey<String>(
-                  'game-attached-calibration-probe-start',
-                ),
-                density: FushiListDensity.compact,
-                padding: EdgeInsets.symmetric(
-                  horizontal: tokens.spacing.gap,
-                  vertical: tokens.spacing.gap / 2,
-                ),
-                leading: FushiCheckbox(
-                  value: _startConfirmed,
-                  onChanged: _startObserved ? _setStartConfirmed : null,
-                ),
-                onTap: _startObserved
-                    ? () => _setStartConfirmed(!_startConfirmed)
-                    : null,
-                title: Text(
-                  '${t.game_lookup_attached_probe_start}: '
-                  '${widget.probePlan.startText}'
-                  '${_startObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
-                ),
-              ),
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (_previewCurrent &&
+            widget.controller.calibrationStatus ==
+                GalAttachedCalibrationStatus.ready) ...<Widget>[
+          Text(t.game_lookup_attached_probes_hint),
+          const SizedBox(height: 8),
+        ],
+        FushiGroupedListItem(
+          index: 0,
+          count: 3,
+          selected: _startConfirmed && _startObserved,
+          child: FushiListItem(
+            key: const ValueKey<String>(
+              'game-attached-calibration-probe-start',
             ),
-            FushiGroupedListItem(
-              index: 1,
-              count: 3,
-              selected: _middleConfirmed && _middleObserved,
-              child: FushiListItem(
-                key: const ValueKey<String>(
-                  'game-attached-calibration-probe-middle',
-                ),
-                density: FushiListDensity.compact,
-                padding: EdgeInsets.symmetric(
-                  horizontal: tokens.spacing.gap,
-                  vertical: tokens.spacing.gap / 2,
-                ),
-                leading: FushiCheckbox(
-                  value: _middleConfirmed,
-                  onChanged: _middleObserved ? _setMiddleConfirmed : null,
-                ),
-                onTap: _middleObserved
-                    ? () => _setMiddleConfirmed(!_middleConfirmed)
-                    : null,
-                title: Text(
-                  '${t.game_lookup_attached_probe_middle}: '
-                  '${widget.probePlan.middleText}'
-                  '${_middleObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
-                ),
-              ),
+            density: FushiListDensity.compact,
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.gap,
+              vertical: tokens.spacing.gap / 2,
             ),
-            FushiGroupedListItem(
-              index: 2,
-              count: 3,
-              selected: _endConfirmed && _endObserved,
-              child: FushiListItem(
-                key: const ValueKey<String>(
-                  'game-attached-calibration-probe-end',
-                ),
-                density: FushiListDensity.compact,
-                padding: EdgeInsets.symmetric(
-                  horizontal: tokens.spacing.gap,
-                  vertical: tokens.spacing.gap / 2,
-                ),
-                leading: FushiCheckbox(
-                  value: _endConfirmed,
-                  onChanged: _endObserved ? _setEndConfirmed : null,
-                ),
-                onTap: _endObserved
-                    ? () => _setEndConfirmed(!_endConfirmed)
-                    : null,
-                title: Text(
-                  '${t.game_lookup_attached_probe_end}: '
-                  '${widget.probePlan.endText}'
-                  '${_endObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
-                ),
-              ),
+            leading: FushiCheckbox(
+              value: _startConfirmed,
+              onChanged: _startObserved ? _setStartConfirmed : null,
             ),
-            if (_error != null)
-              Text(
-                _error!,
-                style: TextStyle(
-                  color: fushiStatusColor(context, FushiStatusTone.error),
-                ),
-              ),
-          ],
+            onTap: _startObserved
+                ? () => _setStartConfirmed(!_startConfirmed)
+                : null,
+            title: Text(
+              '${t.game_lookup_attached_probe_start}: '
+              '${widget.probePlan.startText}'
+              '${_startObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
+            ),
+          ),
         ),
-      ),
-      actions: <Widget>[
-        FushiTextButton(
-          key: const ValueKey<String>('game-attached-calibration-cancel'),
-          onPressed: _committing
-              ? null
-              : () => Navigator.of(context).pop(false),
-          child: Text(t.dialog_cancel),
+        FushiGroupedListItem(
+          index: 1,
+          count: 3,
+          selected: _middleConfirmed && _middleObserved,
+          child: FushiListItem(
+            key: const ValueKey<String>(
+              'game-attached-calibration-probe-middle',
+            ),
+            density: FushiListDensity.compact,
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.gap,
+              vertical: tokens.spacing.gap / 2,
+            ),
+            leading: FushiCheckbox(
+              value: _middleConfirmed,
+              onChanged: _middleObserved ? _setMiddleConfirmed : null,
+            ),
+            onTap: _middleObserved
+                ? () => _setMiddleConfirmed(!_middleConfirmed)
+                : null,
+            title: Text(
+              '${t.game_lookup_attached_probe_middle}: '
+              '${widget.probePlan.middleText}'
+              '${_middleObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
+            ),
+          ),
         ),
-        FushiFilledButton(
-          key: const ValueKey<String>('game-attached-calibration-commit'),
-          onPressed: _allConfirmed && !_committing ? _commit : null,
-          child: _committing
-              ? const SizedBox.square(
-                  dimension: 18,
-                  child: FushiCircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(t.game_lookup_attached_calibration_commit),
+        FushiGroupedListItem(
+          index: 2,
+          count: 3,
+          selected: _endConfirmed && _endObserved,
+          child: FushiListItem(
+            key: const ValueKey<String>('game-attached-calibration-probe-end'),
+            density: FushiListDensity.compact,
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.gap,
+              vertical: tokens.spacing.gap / 2,
+            ),
+            leading: FushiCheckbox(
+              value: _endConfirmed,
+              onChanged: _endObserved ? _setEndConfirmed : null,
+            ),
+            onTap: _endObserved ? () => _setEndConfirmed(!_endConfirmed) : null,
+            title: Text(
+              '${t.game_lookup_attached_probe_end}: '
+              '${widget.probePlan.endText}'
+              '${_endObserved ? '' : ' · ${t.game_lookup_attached_probe_waiting}'}',
+            ),
+          ),
         ),
+        if (_error != null)
+          Text(
+            _error!,
+            style: TextStyle(
+              color: fushiStatusColor(context, FushiStatusTone.error),
+            ),
+          ),
       ],
+    );
+    final List<Widget> actions = <Widget>[
+      FushiTextButton(
+        key: const ValueKey<String>('game-attached-calibration-cancel'),
+        onPressed: _committing ? null : () => Navigator.of(context).pop(false),
+        child: Text(t.dialog_cancel),
+      ),
+      FushiFilledButton(
+        key: const ValueKey<String>('game-attached-calibration-commit'),
+        onPressed: _allConfirmed && !_committing ? _commit : null,
+        child: _committing
+            ? const SizedBox.square(
+                dimension: 18,
+                child: FushiCircularProgressIndicator(strokeWidth: 2),
+              )
+            : Text(t.game_lookup_attached_calibration_commit),
+      ),
+    ];
+    if (apple) {
+      return FushiAppleSurfaceFrame(
+        title: t.game_lookup_attached_calibration_title,
+        actions: actions,
+        body: body,
+      );
+    }
+    return FushiAlertDialog(
+      title: Text(t.game_lookup_attached_calibration_title),
+      content: SizedBox(width: 620, child: body),
+      actions: actions,
     );
   }
 
@@ -1307,7 +1561,11 @@ class _RatioSlider extends StatelessWidget {
             safeValue.toStringAsFixed(fractionDigits),
             textAlign: TextAlign.end,
             // 等宽数字：拖动时数值不左右抖。
-            style: context.fushiType.labelLarge.tabular,
+            style:
+                (isGlassDesign(context)
+                        ? FushiAppleMetrics.of(context).subtitleStyle(context)
+                        : context.fushiType.labelLarge)
+                    .tabular,
           ),
         ),
       ],
@@ -1339,7 +1597,16 @@ class _AlignSegments extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        Text(label, style: context.fushiType.labelLargeEmphasized),
+        Text(
+          label,
+          style: isGlassDesign(context)
+              ? appleTextStyle(
+                  context,
+                  size: FushiAppleMetrics.of(context).subtitleSize,
+                  weight: FontWeight.w600,
+                )
+              : context.fushiType.labelLargeEmphasized,
+        ),
         const SizedBox(height: 6),
         FushiSegmentedButton<String>(
           showSelectedIcon: false,

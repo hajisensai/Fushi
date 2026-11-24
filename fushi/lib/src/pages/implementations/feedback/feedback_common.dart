@@ -41,6 +41,8 @@ import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:image/image.dart' as img;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiVerticalDivider;
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -658,7 +660,7 @@ class FeedbackSplitLayout extends StatelessWidget {
               width: kFeedbackSplitListWidth,
               child: listBuilder(context, true, base),
             ),
-            const VerticalDivider(width: 1),
+            const FushiVerticalDivider(width: 1),
             Expanded(
               child: id == null
                   ? FushiPlaceholderMessage(

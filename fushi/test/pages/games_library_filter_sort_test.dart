@@ -293,12 +293,17 @@ void main() {
     navKey.currentState!.pop();
     await tester.pumpAndSettle();
     expect(cardTitle('贝塔物语'), findsNothing);
-    // 设计稿「游戏 · 库」GA9：「管理合集」收进页头恒外露的「⋯」。
-    await tester.tap(find.byKey(const ValueKey<String>('games-library-more')));
-    await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('library_collection_manage')),
+    // 「管理合集」是页头「⋯」的项：宽度够时平铺成独立图标钮（同一个 key，
+    // ce67e5539f2「有空间就展开」），放不下才在「⋯」菜单里。1600 宽下应已平铺。
+    final Finder manage = find.byKey(
+      const ValueKey<String>('library_collection_manage'),
     );
+    expect(manage, findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('games-library-more')),
+      findsNothing,
+    );
+    await tester.tap(manage);
     await tester.pumpAndSettle();
 
     final Finder row = find.byKey(

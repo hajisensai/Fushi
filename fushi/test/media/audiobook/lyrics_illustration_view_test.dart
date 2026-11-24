@@ -2,13 +2,18 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryMouseButton;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 import 'package:fushi/src/reader/image_actions_sheet.dart';
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
+    show MouseBindingDispatch;
 
 /// 歌词模式插图的交互（2026-10-07）：横屏封面位换图 / 点掉回封面 / 左右切换 /
 /// 点中间看大图；竖屏小封面入口；大图浏览翻页与关闭回封面。
@@ -25,6 +30,21 @@ LyricsIllustration _item(String key, int chapter) => LyricsIllustration(
 LyricsIllustrationController _controller() =>
     LyricsIllustrationController()..load(
       <LyricsIllustration>[_item('a', 1), _item('b', 2), _item('c', 3)],
+      position: const LyricsBookPosition(0, 0),
+      audioPosition: Duration.zero,
+    );
+
+/// 一张带磁盘文件的插图（图片动作入口只对有文件的插图挂）。
+LyricsIllustrationController _fileController() =>
+    LyricsIllustrationController()..load(
+      <LyricsIllustration>[
+        LyricsIllustration(
+          key: 'a',
+          position: const LyricsBookPosition(1, 0),
+          image: MemoryImage(_png),
+          file: File('/books/OEBPS/a.png'),
+        ),
+      ],
       position: const LyricsBookPosition(0, 0),
       audioPosition: Duration.zero,
     );
@@ -364,19 +384,10 @@ void main() {
   });
 
   testWidgets('长按插图卡 / 大图：弹全局图片动作面板（有磁盘文件才挂）', (WidgetTester tester) async {
-    final LyricsIllustrationController c = LyricsIllustrationController()
-      ..load(
-        <LyricsIllustration>[
-          LyricsIllustration(
-            key: 'a',
-            position: const LyricsBookPosition(1, 0),
-            image: MemoryImage(_png),
-            file: File('/books/OEBPS/a.png'),
-          ),
-        ],
-        position: const LyricsBookPosition(0, 0),
-        audioPosition: Duration.zero,
-      );
+    // 长按这条腿是非 Windows 平台的；Windows 走右键（见下一条用例）。
+    debugHostPlatformOverride = HostPlatform.android;
+    addTearDown(() => debugHostPlatformOverride = null);
+    final LyricsIllustrationController c = _fileController();
     c.observe(
       const LyricsBookPosition(2, 10),
       audioPosition: const Duration(seconds: 5),
@@ -394,6 +405,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(ImageActionsSheet), findsNothing);
 
+    // 非 Windows 不挂右键菜单（复制走 Windows 原生剪贴板通道，与阅读器看图一致）。
+    await tester.tap(
+      find.byKey(_cardKey),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.reader_copy_image), findsNothing);
+    expect(find.byType(ImageActionsSheet), findsNothing);
+
     // 测试里的内存图源（file == null）不挂长按。
     final LyricsIllustrationController noFile = _controller();
     _playPastTwo(noFile);
@@ -407,6 +428,73 @@ void main() {
     expect(c.cardVisible, isFalse);
     expect(noFile.cardVisible, isFalse);
   });
+  // BUG-5424（反馈 oYQN9hgT9G）：Windows 上插图卡 / 插图大图只挂了长按，右键没有任何
+  // 反应。现在与阅读器正文看图同一套：右键（绑定表决定的唤出键）弹「保存 / 复制」菜单。
+  testWidgets('Windows：右键插图卡 / 插图大图弹保存 / 复制菜单', (WidgetTester tester) async {
+    debugHostPlatformOverride = HostPlatform.windows;
+    addTearDown(() {
+      debugHostPlatformOverride = null;
+      MouseBindingDispatch.resetForTest();
+    });
+    final LyricsIllustrationController c = _fileController();
+    c.observe(
+      const LyricsBookPosition(2, 10),
+      audioPosition: const Duration(seconds: 5),
+    );
+    await tester.pumpWidget(_slotApp(c, onOpen: (int index) {}));
+    await tester.pumpAndSettle();
+
+    Future<void> rightClick(Finder target) async {
+      MouseBindingDispatch.resetForTest();
+      await tester.tap(
+        target,
+        buttons: kSecondaryMouseButton,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> expectMenuThenDismiss() async {
+      expect(find.text(t.reader_image_save), findsOneWidget);
+      expect(find.text(t.reader_copy_image), findsOneWidget);
+      expect(find.byType(ImageActionsSheet), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text(t.reader_copy_image), findsNothing);
+    }
+
+    // 插图卡。
+    await rightClick(find.byKey(_cardKey));
+    await expectMenuThenDismiss();
+    // Windows 不挂长按（与阅读器正文看图一致）。
+    await tester.longPress(find.byKey(_cardKey));
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageActionsSheet), findsNothing);
+
+    // 插图大图浏览。
+    late BuildContext hostContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) {
+            hostContext = context;
+            return const SizedBox.expand();
+          },
+        ),
+      ),
+    );
+    unawaited(
+      showLyricsIllustrationViewer(hostContext, controller: c, index: 0),
+    );
+    await tester.pumpAndSettle();
+    await rightClick(
+      find.byKey(const ValueKey<String>('lyrics_illustration_viewer_pages')),
+    );
+    await expectMenuThenDismiss();
+
+    await tester.pump(lyricsIllustrationCardDisplayDuration(0));
+  });
+
   testWidgets('插图卡没进停留时按「图片暂停」秒数自动收起', (WidgetTester tester) async {
     final ValueNotifier<int> pause = ValueNotifier<int>(9);
     addTearDown(pause.dispose);

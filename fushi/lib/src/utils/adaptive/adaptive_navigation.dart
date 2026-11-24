@@ -6,10 +6,16 @@ import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
-    show FushiBadgeControl, FushiGroupedListItem;
+    show
+        FushiBadgeControl,
+        FushiGroupedListItem,
+        fushiAppleMacScale,
+        fushiAppleUsesMacMetrics;
+import 'package:fushi/src/utils/adaptive/apple_sidebar_library_host.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/gestures.dart' show DragStartBehavior;
 import 'package:flutter/rendering.dart' show OverflowBoxFit, RenderFlex;
 import 'package:flutter/services.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -31,7 +37,6 @@ import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
 import 'package:fushi/src/utils/components/fushi_haptics.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
-import 'package:fushi/src/media/media_search_text.dart' show matchesMediaSearch;
 import 'package:fushi/src/utils/components/fushi_cover_block.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -55,8 +60,13 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
     show
         AnimatedGlassIndicator,
+        GlassButton,
         GlassContainer,
+        GlassExtraButtonPosition,
         GlassQuality,
+        GlassTab,
+        GlassTabBar,
+        GlassTabBarExtraButton,
         GlassSpring,
         LiquidGlassSettings,
         LiquidOval,
@@ -64,9 +74,13 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
         SpringBuilder,
         VelocitySpringBuilder;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show FushiFilledButton, FushiTextButton, fushiClearGlassSettings;
-import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart'
-    show FushiTextFieldControl;
+    show
+        FushiFilledButton,
+        FushiTextButton,
+        fushiClearGlassSettings,
+        fushiGlassButtonRestSettings;
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiAppleSelectionLens;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -344,15 +358,11 @@ bool adaptiveNavRailExtended(
 double _glassNavBarBottomMargin(BuildContext context) =>
     math.max(16, MediaQuery.paddingOf(context).bottom - 12);
 
-/// 「玻璃」设计系统（macOS 26）展开态悬浮侧栏占的总宽（含四周 8 的悬浮边距）。
-/// 窄窗口（medium 尺寸档）收成只有图标的窄条，总宽回到 [kAdaptiveNavRailWidth]。
+/// 「玻璃」设计系统展开态侧栏的总宽。macOS 27（Golden Gate）侧栏贴边
+/// （edge-to-edge，紧贴窗口左 / 上 / 下缘、无外边距 / 圆角 / 投影，见
+/// [AppleEdgeSidebarSurface]），这就是面板本身的宽。窄窗口（medium 尺寸档）
+/// 收成只有图标的窄条，总宽回到 [kAdaptiveNavRailWidth]。
 const double kGlassNavSidebarWidth = 208;
-
-/// 悬浮侧栏离窗口左 / 上 / 下边的距离。
-const double _kGlassSidebarMargin = 8;
-
-/// 悬浮侧栏面板的圆角（macOS 26 Finder / 设置侧栏实测 ≈ 20）。
-const double _kGlassSidebarRadius = 20;
 
 /// 侧栏行 / 选中填充的圆角与行高（macOS 26 源列表：行高 32–36、圆角 8–10）。
 const double _kGlassSidebarRowRadius = 9;
@@ -569,6 +579,20 @@ class _MaterialNavCluster extends StatelessWidget {
       for (int i = 0; i < items.length; i++)
         if (i != search) i,
     ];
+    // 平铺样式直接用库的 iOS 27 标签栏；拇指转盘 / 相机模式条库里没有对应
+    // 组件，仍走下面的自绘胶囊 + `nav_overflow/` 原型（2026-10-30 拍板）。
+    if (!barStyle.isOverflowVariant || capsuleIndices.isEmpty) {
+      return _AppleLibraryTabBar(
+        items: items,
+        currentIndex: currentIndex,
+        onTap: onTap,
+        search: search,
+        tabIndices: capsuleIndices,
+        minimized: minimized,
+        onExpand: onGlassExpand,
+        searchLeading: searchLeading,
+      );
+    }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double searchSpace = search == null
@@ -1193,7 +1217,8 @@ class _MaterialNavCluster extends StatelessWidget {
         : (glassDesign
               ? kAdaptiveNavRailWidth
               : kMaterialNavRailCollapsedWidth);
-    const double glassInset = _kGlassSidebarMargin + 8;
+    // 贴边侧栏的内容内边距（面板本身不再离窗口留边）。
+    const double glassInset = 8;
     // 重设计侧栏（镂空脊 / 色脊，见 nav_rail_look.part.dart）；null = 原悬浮面板。
     final _RailLook? look = glassDesign ? null : _RailLook.resolve(context);
     final bool notchRail = look?.notch ?? false;
@@ -1246,10 +1271,6 @@ class _MaterialNavCluster extends StatelessWidget {
     }
     return _NavSurfaceBackdrop(
       baseColor: colors.surface,
-      glassMargin: glassDesign
-          ? const EdgeInsets.all(_kGlassSidebarMargin)
-          : null,
-      glassRadius: _kGlassSidebarRadius,
       child: Material(
         key: fushiMaterialNavKey,
         // 悬浮面板之外透明；底色 / 阴影 / eink 描边画在 [_FloatingNavSurface]。
@@ -1285,7 +1306,6 @@ class _MaterialNavCluster extends StatelessWidget {
                               horizontal: railExtended
                                   ? glassInset
                                   : (kAdaptiveNavRailWidth -
-                                            2 * _kGlassSidebarMargin -
                                             _kGlassSidebarCollapsedCellWidth) /
                                         2,
                               vertical: glassInset,
@@ -1348,6 +1368,289 @@ class _MaterialNavCluster extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Apple 平铺底栏胶囊里最多几格（iOS `UITabBarController`：超过 5 个 tab 时
+/// 前 4 个平铺、第 5 格是「更多」）。查词圆钮在胶囊外，不计入。
+const int _kAppleTabBarMaxSlots = 5;
+
+/// Apple 设计系统平铺底栏（2026-11-24 用户「底部栏也不太像 iOS 27」）：库的
+/// [GlassTabBar.minimizable]（iOS 27 `UITabBar` + `.tabBarMinimizeBehavior`，
+/// 选中透镜用库默认的 1.20 indicatorJelly），查词 / 搜索目的地是库的
+/// [GlassTabBarExtraButton]（`selected` 时库隐藏胶囊里的选中 pill，只这一颗
+/// 宣告选中），钉在末端、最小化时不收起（`Tab(role: .search)` 圆钮）。
+///
+/// - 「更多」（用户 2026-11-24）：胶囊里的目的地超过 [_kAppleTabBarMaxSlots]
+///   个时只平铺前 4 个（按用户在「导航与首页」排的顺序），第 5 格是「更多」，
+///   点开 Apple 玻璃菜单（[showFushiMenu] 的 Apple 分支）列出其余目的地，当前
+///   所在项打勾；当前目的地在菜单里时透镜停在「更多」上。宽屏同样最多 5 格；
+/// - 玻璃画质：栏按 [fushiGlassQuality] 的 prominent 口径取档，材质（含实色档的
+///   不透明零模糊）来自 [FushiGlassScope] 映射的库主题，不另传 settings；
+/// - 最小化：仍由宿主的 [FushiAppleScrollChrome] 决定，点最小化圆走
+///   [onExpand]；搜索项选中时不收起（调用方已判）；
+/// - 焦点：整条栏是一个 [GamepadNavCluster] 焦点站（与 iOS 原生 tab bar 同一
+///   写法），方向键 / 手柄左右在全部目的地（含收进「更多」的和查词钮）间逐个
+///   切换；Enter / A 打开「更多」菜单（菜单内方向键 + Enter 选、Esc 关）。鼠标 /
+///   触摸照常点库的格。名称进 tooltip 与库的 Semantics，「更多」的语义带上
+///   收进去的目的地名；
+/// - 反转底栏方向（[searchLeading]）：库的额外按钮在可最小化形态里只能排在
+///   末端，起始侧的搜索圆钮改用库的 [GlassButton]，胶囊 pill 选中 lens 在搜索
+///   选中时用 `showIndicator: false` 隐去。
+class _AppleLibraryTabBar extends StatefulWidget {
+  const _AppleLibraryTabBar({
+    required this.items,
+    required this.currentIndex,
+    required this.onTap,
+    required this.search,
+    required this.tabIndices,
+    required this.minimized,
+    required this.onExpand,
+    required this.searchLeading,
+  });
+
+  final List<AdaptiveNavItem> items;
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+
+  /// 拆成独立圆钮的查词目的地；null = 没有。
+  final int? search;
+
+  /// 进胶囊的目的地（视觉序，不含 [search]）。
+  final List<int> tabIndices;
+  final bool minimized;
+  final VoidCallback? onExpand;
+  final bool searchLeading;
+
+  @override
+  State<_AppleLibraryTabBar> createState() => _AppleLibraryTabBarState();
+}
+
+class _AppleLibraryTabBarState extends State<_AppleLibraryTabBar> {
+  /// 整条底栏（胶囊 + 查词钮）：「更多」格的位置按库的布局从它推出来。不给
+  /// 「更多」的图标挂 GlobalKey——库会同时挂出未选中行与透镜下的选中行，同一
+  /// 图标两份，GlobalKey 会重复。
+  final GlobalKey _barKey = GlobalKey(debugLabel: 'apple-tab-bar');
+
+  List<int> get _shown => widget.tabIndices.length > _kAppleTabBarMaxSlots
+      ? widget.tabIndices.sublist(0, _kAppleTabBarMaxSlots - 1)
+      : widget.tabIndices;
+
+  List<int> get _overflow => widget.tabIndices.length > _kAppleTabBarMaxSlots
+      ? widget.tabIndices.sublist(_kAppleTabBarMaxSlots - 1)
+      : const <int>[];
+
+  void _select(int i) {
+    if (i != widget.currentIndex) fushiSelectionHaptic(context);
+    widget.onTap(i);
+  }
+
+  Future<void> _openMore() async {
+    final List<int> overflow = _overflow;
+    if (overflow.isEmpty) return;
+    final RenderObject? overlay = Overlay.of(
+      context,
+    ).context.findRenderObject();
+    final RenderObject? box = _barKey.currentContext?.findRenderObject();
+    if (box is! RenderBox || overlay is! RenderBox) return;
+    // 锚在「更多」整格：库的胶囊从起始边铺到查词钮前（末端查词钮占一个栏高
+    // + 库默认间距 8；起始侧查词钮占一个栏高 + [_kGlassNavBarTrailingGap]），
+    // 格宽等分，「更多」是最后一格。菜单从格上方展开。
+    final Rect bar =
+        box.localToGlobal(Offset.zero, ancestor: overlay) & box.size;
+    final bool hasSearch = widget.search != null;
+    final double pillStart = hasSearch && widget.searchLeading
+        ? kGlassNavBarCapsuleHeight + _kGlassNavBarTrailingGap
+        : 0;
+    final double pillEnd = hasSearch && !widget.searchLeading
+        ? bar.width - kGlassNavBarCapsuleHeight - 8
+        : bar.width;
+    final double cellWidth = (pillEnd - pillStart) / (_shown.length + 1);
+    final Rect cell = Rect.fromLTWH(
+      bar.left + pillEnd - cellWidth,
+      bar.top,
+      cellWidth,
+      bar.height,
+    );
+    final int? picked = await showFushiMenu<int>(
+      context: context,
+      position: RelativeRect.fromRect(cell, Offset.zero & overlay.size),
+      semanticLabel: t.home_nav_more,
+      // Apple 菜单给 initialValue 对应项画行尾对勾。
+      initialValue: overflow.contains(widget.currentIndex)
+          ? widget.currentIndex
+          : null,
+      items: <PopupMenuEntry<int>>[
+        for (final int i in overflow)
+          PopupMenuItem<int>(
+            value: i,
+            // iOS 27 菜单行：文字在前、图标（带徽标）在行尾；当前项的行首
+            // 对勾由 Apple 菜单按 initialValue 画。
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    widget.items[i].label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _maybeBadge(
+                  item: widget.items[i],
+                  child: FushiIcon(
+                    i == widget.currentIndex
+                        ? (widget.items[i].selectedIcon ?? widget.items[i].icon)
+                        : widget.items[i].icon,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (picked == null || !mounted) return;
+    _select(picked);
+  }
+
+  Widget _glyph(AdaptiveNavItem item, {required bool selected}) => FushiTooltip(
+    message: item.label,
+    excludeFromSemantics: true,
+    child: _maybeBadge(
+      item: item,
+      child: FushiIcon(selected ? (item.selectedIcon ?? item.icon) : item.icon),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final List<AdaptiveNavItem> items = widget.items;
+    final int currentIndex = widget.currentIndex;
+    final int? search = widget.search;
+    final List<int> shown = _shown;
+    final List<int> overflow = _overflow;
+    final bool searchSelected = search != null && currentIndex == search;
+    final bool moreSelected = overflow.contains(currentIndex);
+    final bool minimizedShowsCurrent = widget.minimized && moreSelected;
+    final int selectedPos = moreSelected
+        ? shown.length
+        : math.max(0, shown.indexOf(currentIndex));
+    final GlassQuality quality = fushiGlassQuality(context, prominent: true);
+    final bool overPlatformView = fushiGlassOverPlatformView(context);
+
+    final AdaptiveNavItem moreItem = AdaptiveNavItem(
+      icon: FushiIcons.moreHoriz,
+      label: t.home_nav_more,
+      experimentalBadge: overflow.any((int i) => items[i].experimentalBadge),
+    );
+    // 「更多」的读屏语义带上收进去的目的地名（也就交代了还有几项）。
+    final String moreSemantics = <String>[
+      t.home_nav_more,
+      for (final int i in overflow) items[i].label,
+    ].join('，');
+
+    Widget tabBar({GlassTabBarExtraButton? extraButton}) =>
+        GlassTabBar.minimizable(
+          tabs: <GlassTab>[
+            for (final int i in shown)
+              GlassTab(
+                icon: _glyph(items[i], selected: false),
+                activeIcon: _glyph(items[i], selected: true),
+                // 主导航底栏纯图标（CLAUDE.md UI 硬规则）：名称只进 tooltip
+                // 与 Semantics。
+                semanticLabel: items[i].label,
+              ),
+            if (overflow.isNotEmpty)
+              // 缩起态（用户 2026-11-24）：库的最小化圆只画被选中那一格
+              // （`GlassTabBar.minimizable` 没有自定义最小化内容的参数，
+              // `collapsedLogoBuilder` 只在 searchable 形态的 searchConfig
+              // 里），当前目的地收在「更多」里时圆里会是「⋯」。缩起期间把
+              // 这一格换成当前目的地自己的图标 / 徽标 / 语义，展开后恢复「更多」。
+              if (minimizedShowsCurrent)
+                GlassTab(
+                  icon: _glyph(items[currentIndex], selected: true),
+                  activeIcon: _glyph(items[currentIndex], selected: true),
+                  semanticLabel: items[currentIndex].label,
+                )
+              else
+                GlassTab(
+                  icon: _glyph(moreItem, selected: false),
+                  activeIcon: _glyph(moreItem, selected: true),
+                  semanticLabel: moreSemantics,
+                ),
+          ],
+          selectedIndex: selectedPos,
+          onTabSelected: (int pos) {
+            if (pos >= shown.length) {
+              unawaited(_openMore());
+            } else {
+              _select(shown[pos]);
+            }
+          },
+          minimized: widget.minimized,
+          onMinimizedTabTap: widget.onExpand,
+          extraButton: extraButton,
+          horizontalPadding: 0,
+          verticalPadding: 0,
+          barHeight: kGlassNavBarCapsuleHeight,
+          showIndicator: !searchSelected,
+          selectedIconColor: apple.accent,
+          quality: quality,
+          platformViewBackdrop: overPlatformView,
+        );
+
+    final Widget bar;
+    if (search == null) {
+      bar = tabBar();
+    } else if (!widget.searchLeading) {
+      bar = tabBar(
+        extraButton: GlassTabBarExtraButton(
+          icon: _glyph(items[search], selected: searchSelected),
+          onTap: () => _select(search),
+          label: items[search].label,
+          size: kGlassNavBarCapsuleHeight,
+          position: GlassExtraButtonPosition.afterSearch,
+          collapseOnSearchFocus: false,
+          selected: searchSelected,
+        ),
+      );
+    } else {
+      bar = Row(
+        children: <Widget>[
+          GlassButton(
+            icon: _glyph(items[search], selected: searchSelected),
+            onTap: () => _select(search),
+            label: items[search].label,
+            width: kGlassNavBarCapsuleHeight,
+            height: kGlassNavBarCapsuleHeight,
+            iconColor: searchSelected ? apple.accent : null,
+            isSelected: searchSelected,
+            // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
+            useOwnLayer: true,
+            quality: quality,
+            platformViewBackdrop: overPlatformView,
+          ),
+          const SizedBox(width: _kGlassNavBarTrailingGap),
+          Expanded(child: tabBar()),
+        ],
+      );
+    }
+    return SizedBox(
+      key: _barKey,
+      height: kGlassNavBarCapsuleHeight,
+      child: GamepadNavCluster(
+        axis: Axis.horizontal,
+        count: items.length,
+        currentIndex: currentIndex,
+        onSelect: _select,
+        // 缩起时 Enter / A 是展开（与点最小化圆同一动作），展开时打开「更多」。
+        onActivate: widget.minimized
+            ? widget.onExpand
+            : (overflow.isEmpty ? null : () => unawaited(_openMore())),
+        child: bar,
       ),
     );
   }
@@ -3037,6 +3340,19 @@ class _NavRailMenuButton extends StatelessWidget {
   }
 }
 
+/// Apple 主导航静止的选中 lens 底色（底部标签栏胶囊与宽窗顶部标签栏共用）：
+/// 比胶囊更亮一阶的透明 pill（iOS 26 Music 演示 indicatorColor = label@20%；
+/// 这里玻璃本身更透，深色白@10%——再高在深色栏上就是一块灰白雾——浅色
+/// 黑@7%）。实色档换高一阶的分组底色。
+Color appleNavLensRestColor(BuildContext context) {
+  if (glassMaterialOf(context) == FushiGlassMaterial.off) {
+    return appleColorsOf(context).tertiaryGroupedBackground;
+  }
+  return Theme.of(context).colorScheme.brightness == Brightness.dark
+      ? Colors.white.withValues(alpha: 0.10)
+      : Colors.black.withValues(alpha: 0.07);
+}
+
 /// Apple 设计系统（iOS 26）标签栏的玻璃胶囊本体：无色透明玻璃（
 /// [fushiClearGlassSettings] 的 bar 档）+ 选中项下一枚更亮的透明 lens。
 ///
@@ -3150,7 +3466,6 @@ class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
 
   @override
   Widget build(BuildContext context) {
-    final FushiAppleColors apple = appleColorsOf(context);
     final bool dark =
         Theme.of(context).colorScheme.brightness == Brightness.dark;
     final bool solid = glassMaterialOf(context) == FushiGlassMaterial.off;
@@ -3158,14 +3473,7 @@ class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
     final bool morph = !solid && !reduceMotion;
     final GlassQuality quality = fushiGlassQuality(context, prominent: true);
     const double radius = kGlassNavBarCapsuleHeight / 2;
-    // 静止的选中 lens：比胶囊更亮一阶的透明 pill（iOS 26 Music 演示
-    // indicatorColor = label@20%；这里玻璃本身更透，深色白@10%——再高在深色
-    // 栏上就是一块灰白雾——浅色黑@7%）。实色档换高一阶的分组底色。
-    final Color restColor = solid
-        ? apple.tertiaryGroupedBackground
-        : (dark
-              ? Colors.white.withValues(alpha: 0.10)
-              : Colors.black.withValues(alpha: 0.07));
+    final Color restColor = appleNavLensRestColor(context);
     // 透镜：几乎无色、一圈细亮边 + 折射。深色收低光照与 rim，避免拖动时
     // 整颗透镜泛白。
     final LiquidGlassSettings lensSettings = LiquidGlassSettings(
@@ -3332,16 +3640,14 @@ class _GlassTabCapsuleState extends State<_GlassTabCapsule> {
 }
 
 /// 导航面的背衬：一个恒定的 passthrough [Stack]，背景槽按设计系统 / 材质换成
-/// 玻璃设计系统的悬浮 [GlassContainer]（按 [glassMargin] 内缩、[glassRadius]
-/// 圆角：侧栏面板 / 底部胶囊）、MD3 毛玻璃的 [FushiGlassSurface]（同色阶半透明 +
+/// 玻璃设计系统的贴边侧栏底（[AppleEdgeSidebarSurface]，侧栏 / 窄条）或
+/// 底栏的 scroll edge 带（[glassBackground]）、MD3 毛玻璃的 [FushiGlassSurface]（同色阶半透明 +
 /// 背景模糊），或 MD3 实心时的空盒；[child]（带 [fushiMaterialNavKey] 的
 /// Material）恒在第二个槽位，几何与不包时一字不差。
 class _NavSurfaceBackdrop extends StatelessWidget {
   const _NavSurfaceBackdrop({
     required this.baseColor,
     required this.child,
-    this.glassMargin,
-    this.glassRadius = 0,
     this.glassBackground,
   });
 
@@ -3349,12 +3655,8 @@ class _NavSurfaceBackdrop extends StatelessWidget {
   final Widget child;
 
   /// 玻璃设计系统下整个替换背景槽（底栏：胶囊在前景里画，背景槽只放
-  /// scroll edge 带）；null = 按 [glassMargin] / [glassRadius] 画玻璃面板。
+  /// scroll edge 带）；null = 侧栏的 [AppleEdgeSidebarSurface]。
   final Widget? glassBackground;
-
-  /// 玻璃面板相对导航区的内缩；null = 铺满。
-  final EdgeInsets? glassMargin;
-  final double glassRadius;
 
   @override
   Widget build(BuildContext context) {
@@ -3363,18 +3665,8 @@ class _NavSurfaceBackdrop extends StatelessWidget {
     if (isGlassDesign(context) && glassOverride != null) {
       background = glassOverride;
     } else if (isGlassDesign(context)) {
-      // 中性玻璃（iOS 26 实测填充色），不拿 MD3 表面色去染。
-      background = Padding(
-        padding: glassMargin ?? EdgeInsets.zero,
-        child: GlassContainer(
-          // premium 档必须自带 LiquidGlassLayer（BUG-2957）。
-          useOwnLayer: true,
-          shape: LiquidRoundedSuperellipse(borderRadius: glassRadius),
-          quality: fushiGlassQuality(context, prominent: true),
-          settings: fushiGlassSettings(context),
-          child: const SizedBox.expand(),
-        ),
-      );
+      // 侧栏 / 窄条：macOS 27 贴边侧栏底（铺满导航区，右缘发丝线）。
+      background = const AppleEdgeSidebarSurface();
     } else {
       // MD3 导航是悬浮胶囊 / 面板，毛玻璃画在 [_FloatingNavSurface] 里，
       // 胶囊之外不铺底。
@@ -3759,12 +4051,13 @@ class _FushiNavTile extends StatelessWidget {
     final FushiAppleColors apple = appleColorsOf(context);
     final TextTheme textTheme = Theme.of(context).textTheme;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    // 选中态走强调色（用户 2026-10-04）：强调色实底 + 其前景色，与设置页
-    // 侧栏同一套；默认单色主题即黑底白字 / 白底黑字。
-    final Color fg = selected ? apple.onAccent : apple.label;
+    // 侧栏 / 窄条选中态改成 macOS 26 源列表的中性色圆角底（用户 2026-11-24
+    // 「侧栏还不是 macOS 27」，取代 2026-10-04 的强调色实底）：标签 label 色，
+    // 图标强调色，与宽窗口的 [AppleSidebarTabsShell] 同一套。
+    final Color fg = apple.label;
     final Color fill = selected
-        ? apple.accent
-        : apple.accent.withValues(alpha: 0);
+        ? apple.secondaryFill
+        : apple.secondaryFill.withValues(alpha: 0);
     // 底栏的选中气泡是玻璃里一枚更亮的无色透明 lens（iOS 26 标签栏 / Music
     // 演示 indicatorColor = label@20%，参照 Niratan 的选中 pill 不着强调色）+
     // 一圈细高光边 + 柔和投影；强调色只落在选中项的图标与文字上。系统降低透明度
@@ -3867,7 +4160,7 @@ class _FushiNavTile extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              glyph(20),
+              glyph(20, color: apple.accent),
               const SizedBox(height: 2),
               Text(
                 item.label,
@@ -3896,7 +4189,7 @@ class _FushiNavTile extends StatelessWidget {
       decoration: rowDecoration,
       child: Row(
         children: <Widget>[
-          glyph(19),
+          glyph(19, color: apple.accent),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -4297,8 +4590,13 @@ class GamepadNavCluster extends StatefulWidget {
     required this.currentIndex,
     required this.onSelect,
     required this.child,
+    this.onActivate,
     super.key,
   });
+
+  /// Enter / 手柄 A 落在整条栏上时的动作（Apple 平铺底栏：打开「更多」菜单）。
+  /// null = 不处理，按键照常交给祖先。
+  final VoidCallback? onActivate;
 
   /// The cluster's main axis: [Axis.horizontal] (bottom bar) switches on D-pad
   /// Left/Right; [Axis.vertical] (side rail) switches on D-pad Up/Down.
@@ -4356,6 +4654,11 @@ class _GamepadNavClusterState extends State<GamepadNavCluster> {
               _step(-1);
               return true;
             }
+            final VoidCallback? activate = widget.onActivate;
+            if (button == GamepadButton.a && activate != null) {
+              activate();
+              return true;
+            }
             return false;
           },
         ),
@@ -4386,6 +4689,13 @@ class _GamepadNavClusterState extends State<GamepadNavCluster> {
                 return null;
               },
             ),
+            if (widget.onActivate case final VoidCallback activate)
+              ActivateIntent: CallbackAction<ActivateIntent>(
+                onInvoke: (ActivateIntent intent) {
+                  activate();
+                  return null;
+                },
+              ),
           },
           child: FushiFocusTarget(
             id: _focusId,

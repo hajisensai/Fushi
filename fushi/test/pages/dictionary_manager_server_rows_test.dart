@@ -13,6 +13,8 @@ import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
 import 'package:fushi/src/utils/components/content_language_picker.dart'
     show contentLanguageLabelOf;
 import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadHeader;
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/models/theme_notifier.dart';
@@ -736,6 +738,35 @@ void main() {
       _goneKey,
     ]);
   });
+
+  // BUG-5410：配置名是异步读到的；以前读到后标题换成「页名 + 副标题」组件，通用
+  // 顶栏拿不到纯文字页名，整页从页头大字退回旧胶囊。宽屏（分栏）与窄屏（设置壳）
+  // 两条脚手架路径都要在配置名出现后仍是页头大字，副标题画在页头里。
+  for (final (String label, Size size) in <(String, Size)>[
+    ('split', const Size(1280, 800)),
+    ('narrow', const Size(420, 800)),
+  ]) {
+    testWidgets('$label: profile subtitle keeps the masthead header', (
+      WidgetTester tester,
+    ) async {
+      await _pumpPage(tester, size: size);
+      expect(tester.takeException(), isNull);
+      final Finder header = find.byType(FushiMastheadHeader);
+      expect(header, findsOneWidget);
+      expect(
+        find.descendant(of: header, matching: find.text('Dictionaries')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: header,
+          matching: find.byKey(const ValueKey<String>('dict-profile-subtitle')),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Profile · Default'), findsOneWidget);
+    });
+  }
 
   testWidgets('app bar names the active profile; Enter opens profiles', (
     WidgetTester tester,

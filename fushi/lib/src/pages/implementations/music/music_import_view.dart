@@ -1,5 +1,5 @@
 /// 音乐「导入」视图（导入稿 v2 第二节 4，IM12 / IM20 已拍板）：导入钮不再弹菜单，
-/// 与书 / 漫画 / 视频 / 游戏一样切到导入视图，套同一个 [ImportCollagePage]。
+/// 与书 / 漫画 / 视频 / 游戏一样切到导入视图，套同一个 [ImportPageLayout]。
 ///
 /// - 原导入菜单的动作全部变成方式块，不删入口：添加音乐文件夹（主方式）· 添加音频
 ///   文件 · 添加光盘（光盘文件夹 / 光盘镜像二选一）· 读取音频 CD（仅桌面三端，
@@ -21,7 +21,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart'
     show FileDropCallback;
 import 'package:fushi/src/media/import/import_choice_dialog.dart';
-import 'package:fushi/src/media/import/import_collage_page.dart';
+import 'package:fushi/src/media/import/import_page_layout.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -211,7 +211,7 @@ class MusicImportView extends StatelessWidget {
       enabled: !busy,
       onDrop: onDrop,
     );
-    return ImportCollagePage(
+    return ImportPageLayout(
       spec: spec,
       sources: MediaSourcesView(
         key: sourcesKey,

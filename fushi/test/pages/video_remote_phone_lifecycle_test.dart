@@ -653,6 +653,37 @@ void main() {
       ),
       t.video_remote_error_favorite_source_unavailable,
     );
+    // 新版电脑附上的细分原因按原因说清；不认识的原因（更新版本电脑）退回笼统文案。
+    expect(
+      videoRemoteErrorText(
+        const VideoRemoteError(
+          'favorite_source_unavailable',
+          statusCode: 404,
+          reason: 'peer_offline',
+        ),
+      ),
+      t.video_favorite_peer_offline,
+    );
+    expect(
+      videoRemoteErrorText(
+        const VideoRemoteError(
+          'favorite_source_unavailable',
+          statusCode: 404,
+          reason: 'online_source_missing',
+        ),
+      ),
+      t.video_favorite_online_source_missing,
+    );
+    expect(
+      videoRemoteErrorText(
+        const VideoRemoteError(
+          'favorite_source_unavailable',
+          statusCode: 404,
+          reason: 'from_the_future',
+        ),
+      ),
+      t.video_remote_error_favorite_source_unavailable,
+    );
     expect(
       videoRemoteErrorText(
         const VideoRemoteError('paired_peer_required', statusCode: 403),

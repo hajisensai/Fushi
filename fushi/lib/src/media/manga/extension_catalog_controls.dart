@@ -219,16 +219,18 @@ class ExtensionCatalogActions extends StatelessWidget {
 
   Widget _button(ExtensionCatalogAction action) {
     if (_emphasized(action)) {
-      return FushiFilledButton.icon(
-        key: action.key,
-        size: FushiButtonSize.s,
-        onPressed: action.onPressed,
-        icon: FushiBadgeControl.count(
-          key: ValueKey<String>('${keyPrefix}_update_count'),
-          count: updateCount,
-          child: FushiIcon(action.icon),
+      // 数量角标挂在整颗按钮的右上角外侧（iOS 的按钮角标位置），不挂在图标上
+      // ——挂图标时红色角标会压住紧挨着的按钮文字。
+      return FushiBadgeControl.count(
+        key: ValueKey<String>('${keyPrefix}_update_count'),
+        count: updateCount,
+        child: FushiFilledButton.icon(
+          key: action.key,
+          size: FushiButtonSize.s,
+          onPressed: action.onPressed,
+          icon: FushiIcon(action.icon),
+          label: Text(action.label),
         ),
-        label: Text(action.label),
       );
     }
     return FushiFilledButton.tonalIcon(

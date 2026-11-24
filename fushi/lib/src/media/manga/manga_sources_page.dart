@@ -9,7 +9,7 @@ import 'package:fushi/src/media/drag_drop/reader_shelf_drop_router.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/import/import_carrier.dart'
     show kMangaCarrierFileExtensions;
-import 'package:fushi/src/media/import/import_collage_page.dart';
+import 'package:fushi/src/media/import/import_page_layout.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/import/import_inbox_text.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
@@ -210,9 +210,9 @@ class _MangaSourcesPageState extends ConsumerState<MangaSourcesPage> {
       kind: DesktopContentKind.readerShelf,
       child: Column(
         children: <Widget>[
-          if (!isCupertinoPlatform(context)) _buildHeader(),
+          if (!isGlassDesign(context)) _buildHeader(),
           Expanded(
-            child: ImportCollagePage(
+            child: ImportPageLayout(
               spec: spec,
               onAddSource: () =>
                   unawaited(_localSourcesKey.currentState?.addSource()),

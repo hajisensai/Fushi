@@ -283,7 +283,13 @@ class PlayInFushiFeature extends WebBrowserFeature {
   }) {
     final String? youtubeId = youtubeWatchVideoIdOf(url);
     if (youtubeId != null) {
-      return _play(context, tab, youtubeId, leaveWatchPage: leaveWatchPage);
+      return _play(
+        context,
+        tab,
+        youtubeId,
+        playlistId: youtubeWatchPlaylistIdOf(url),
+        leaveWatchPage: leaveWatchPage,
+      );
     }
     return _openPage(
       context,
@@ -352,7 +358,14 @@ class PlayInFushiFeature extends WebBrowserFeature {
         kind: WebPageContentKind.video,
         primary: true,
         busy: _launching.contains(tab.id),
-        onPressed: () => unawaited(_play(context, tab, videoId)),
+        onPressed: () => unawaited(
+          _play(
+            context,
+            tab,
+            videoId,
+            playlistId: youtubeWatchPlaylistIdOf(tab.url),
+          ),
+        ),
       ),
     ];
   }
@@ -427,10 +440,14 @@ class PlayInFushiFeature extends WebBrowserFeature {
     }
   }
 
+  /// [playlistId]：观看页地址里的 `list`（从 YouTube 播放列表里点开的视频）——播放器的选集
+  /// 面板列出整份播放列表，换集 / 连播在列表里走（拍板台 zGXhhMAglH）。无痕标签页不落书，
+  /// 也就没有「每集一本书」的选集，只播这一条。
   Future<void> _play(
     BuildContext context,
     WebBrowserTab tab,
     String videoId, {
+    String? playlistId,
     bool leaveWatchPage = false,
   }) async {
     if (!_launching.add(tab.id)) return;
@@ -483,6 +500,7 @@ class PlayInFushiFeature extends WebBrowserFeature {
         page = VideoFushiPage.neutralized(
           bookUid: row.bookUid,
           repo: repo,
+          youtubePlaylistId: playlistId,
           webBackToBrowser: true,
         );
       }

@@ -1,0 +1,11 @@
+## BUG-5416 · 连续模式无缝衔接：章节交界慢拖时一下跳过整章（晋升时视口锚点落在被移除的宿主上，不补偿）
+- **报告**：2026-11-24（应用内反馈 cdWxWwe-iz，Android 3.3.0-debug.26834，Xiaomi 2407FRK8EC：「无缝切换勾上，缓慢章节滑动会跳转章节」。录屏逐帧：停在「第二章末 | 第三章标题」慢拖，一下变成「第三章末 | 第四章标题」，进度 63.9% → 80.1%；再慢拖又跳到「第四章末 | 终章」94.2%。）分诊初判为 BUG-4363 残留，实为另一个根因：BUG-4363 修的是「两个换章所有者叠加」，这里只有无缝晋升一个所有者，是晋升本身把视口甩到了章末。
+- **真实性**：✅ 真 bug。真 Chromium 复现（CDP 真触摸慢拖 + 滚轮各一遍，章首标题带 `margin-top` 时必现）。根因 `fushi/lib/src/reader/reader_seamless_chapters_script.dart`（修前行号）：
+  - `:198` `fallbackAnchor` 在视口中心落在空白处时返回 **body 的直接子元素**；`:214` `captureAnchor` 的 `deepElementAt` 在宿主 padding 区也会直接返回宿主。章首标题上方的外边距 / 宿主的 `padding-block` 正好是越过迟滞带（24px）那一刻视口中心所在的位置，于是锚点 = 将要被晋升的那个 `<fushi-seamless-chapter>` 宿主本身。
+  - `S.promote` 在 `preserveViewport` 里 `host.remove()`，并用 `unmountFarSync` 卸掉不再相邻的上上章宿主（视口上方一整章的高度）。`:224` `restoreAnchor` 见锚点已脱离文档就直接 return，不补偿：上上章高度整段丢失，`scrollTop` 被钳到新文档尽头 = 刚晋升那章的章末（下一章还没挂上）。下一章挂上后用户接着慢拖，视口中心又越过下一道章界，再晋升、再跳——录屏里的「第三章 → 第四章 → 终章」。
+  - 修前真 Chromium 实测：生产脚本 + 真 shadow DOM，晋升瞬间章 2 末段位移 −1513px（应为 0）；完整引擎 + CDP 真触摸慢拖 120px，章 1 末段被甩出 −3720px。
+- **[x] ① 已修复** — 锚点只取章节正文：新增 `isContentAnchor`（活动章 light DOM 里不属于宿主 / 引擎节点的元素，或宿主 shadow body 里、不是包装层本身的元素）与 `nearestContentAnchor`（按阅读序遍历活动章正文与各宿主 shadow body 的子元素，取覆盖或最靠近视口中心的那个）；`captureAnchor` 命中的不是正文时改用后者。晋升只给正文节点换父节点、不丢弃它们，所以锚点始终连在文档上，补偿必定执行。同一修复覆盖挂载 / 卸载邻章的 `preserveViewport`（锚点也可能命中引擎的高亮窄条层，现在一并排除）。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/reader/seamless_promote_anchor_test.dart` + `seamless_promote_anchor_harness.mjs`：生产安装脚本放进真 Chrome，活动章 2、邻章 1 / 3 挂好，章 3 宿主顶端放在视口中心上方 40px（中心落在宿主 padding 与标题 200px 外边距里），按用户滚动晋升。断言晋升一次、章 1 被卸载、章 2 末段位移 < 1px。修前同一跑手红在该断言（`markDelta:-1513`），修后 PASS。
+  - `tool/reader_pitch_headless/continuous_seamless_chapters_probe.mjs` 新增 `runTitleMarginSlowDrag`：完整引擎 + CDP 真触摸慢拖越过带大段标题外边距的章界，视口跟手不跳。修前 FAIL（`after.top:-3719`），修后全部 OK（引擎产物是本机 systemTemp 的 dump 按本次改动打补丁）。
+- **备注**：没有在 Android 真机 / 模拟器上复测（本次没有连着的真机，模拟器 + debug 包构建未跑），待验：连续模式开「章节无缝衔接」，停在某章章首标题附近来回慢拖越过章界，确认只换一章、视口不跳。只在 continuous 模式生效：paginated / vn 不装无缝模块，本次改动不触及它们的代码路径。

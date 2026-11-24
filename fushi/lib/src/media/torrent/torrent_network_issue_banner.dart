@@ -4,6 +4,11 @@ import 'package:fushi_engine/media/torrent/torrent_network_diagnosis.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics;
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// BUG-2950：会话级网络问题对应的用户文案；[TorrentNetworkIssue.none] 返回 null。
 String? torrentNetworkIssueMessage(TorrentNetworkIssue issue) {
@@ -33,6 +38,7 @@ class TorrentNetworkIssueBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final String? message = torrentNetworkIssueMessage(issue);
     if (message == null) return const SizedBox.shrink();
+    if (isGlassDesign(context)) return _buildApple(context, message);
     final ThemeData theme = Theme.of(context);
     final bool eink = isEinkTheme(context);
     // 卡片底色 / 圆角 / eink 描边走共享 FushiCard（MD3 令牌），本组件不再自定。
@@ -60,6 +66,39 @@ class TorrentNetworkIssueBanner extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Apple（下载页方案 A）：列表最上方一行说明——橙色（systemOrange = warning）
+  /// 警示图标 + 次级色文字，坐在分组底色的圆角条上，不画红色卡片。
+  Widget _buildApple(BuildContext context, String message) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final TextStyle style = metrics.footnoteStyle(context);
+    return Padding(
+      key: ValueKey<String>('torrent-network-issue-${issue.name}'),
+      padding: margin,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: apple.secondaryGroupedBackground,
+          borderRadius: BorderRadius.circular(metrics.desktop ? 10 : 14),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              FushiIcon(
+                FushiIcons.warning,
+                size: (style.fontSize ?? 13) + 2,
+                color: apple.warning,
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: Text(message, style: style)),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -19,7 +19,7 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_add_flow.dart';
 import 'package:fushi/src/mining/galgame_repository.dart'
     show GalgameRepository;
-import 'package:fushi/src/media/import/import_collage_page.dart';
+import 'package:fushi/src/media/import/import_page_layout.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
 import 'package:fushi/src/pages/implementations/discovery_manage_sources_action.dart';
@@ -28,10 +28,12 @@ import 'package:fushi/src/pages/implementations/game_diagnostics_page.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/game_stream_library_page.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
+import 'package:fushi/src/pages/implementations/library_layout/library_chrome_spec.dart';
+import 'package:fushi/src/pages/implementations/library_layout/library_layout.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart'
-    show LibrarySectionGroup, libraryImportChromeButton;
+    show LibrarySectionGroup;
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
 import 'package:fushi/src/pages/shared/fushi_header_search_keys.dart';
@@ -298,12 +300,26 @@ class _HomeGamePageState extends State<HomeGamePage> {
         child: _streamVisited ? _buildStream() : const SizedBox.shrink(),
       ),
     };
-    // 顶部与视频 / 书 / 漫画库同一套 M3E 浮动工具栏（2026-10-06「库页顶部结构
-    // 统一」）：外壳大标题下一行是贴合内容宽的分区页签胶囊 + 右侧动作组；各子区
-    // 页头里的那份页签在 [GameSectionTabsHostScope] 下留空，动作登记进外壳的
-    // [_actionsSlot] 由动作组画出。
-    final Widget navigation = GameSectionTabs(
-      selected: _section,
+    // 顶部与视频 / 书 / 漫画库同一套库页外壳（[LibraryLayout]：M3E 浮动工具栏 /
+    // Apple 方案 A）：各子区页头里的那份页签在 [GameSectionTabsHostScope] 下留空，
+    // 动作登记进外壳的 [_actionsSlot] 由动作组画出。
+    //
+    // 诊断不设页签（从捕获工作台 / 全局设置进入），停在诊断时高亮「工作台」；
+    // 这时与停在导入页一样，高亮只是视觉锚点，点它照常回到工作台（BUG-4706）。
+    final GameSection shown = _section == GameSection.diagnostics
+        ? GameSection.monitor
+        : _section;
+    final LibrarySectionGroup? shownGroup = gameSectionGroupOf(shown);
+    final LibraryChromeSpec<GameSection> spec = LibraryChromeSpec<GameSection>(
+      title: FushiShellTitleScope.maybeTitleOf(context) ?? '',
+      groups: gameLibraryChromeGroups(
+        shown: shown,
+        lastLibrarySection: _lastLibrarySection,
+      ),
+      selected: shown,
+      currentGroup: shownGroup,
+      selectedIsCurrent: shownGroup != null && shown == _section,
+      onSelect: _showSection,
       // 焦点 id 沿用各子区原来那份页签的稳定 id（`game-library-tab-sections`
       // 等）：键盘 / 手柄 / 集成测试按它定位，换成外壳统一画也不能变。
       focusIdPrefix: switch (_section) {
@@ -315,26 +331,15 @@ class _HomeGamePageState extends State<HomeGamePage> {
         GameSection.diagnostics => 'game-diagnostics-tab',
         GameSection.stream => 'game-stream-tab',
       },
-      floating: true,
-      lastLibrarySection: _lastLibrarySection,
-      onSelectDashboard: _showDashboard,
-      onSelectLibrary: _showLibrary,
-      onSelectMonitor: _showMonitor,
+      actionsSlot: _actionsSlot,
+      chrome: _chrome,
+      import: LibraryChromeImport(
+        selected: _section == GameSection.importGames,
+        onTap: _toggleImport,
+        focusIdPrefix: 'game-library-view',
+      ),
+      iconOf: gameSectionIcon,
     );
-    // 当前组的二级胶囊（首页 / 库 / 工作台 / 串流）；组内只有一段或停在导入 /
-    // 发现时为空，不占高度。
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final Widget subNavigation = GameSectionTabs(
-      selected: _section,
-      focusIdPrefix: 'game-subsection-tab',
-      floating: true,
-      secondary: true,
-      onSelectDashboard: _showDashboard,
-      onSelectLibrary: _showLibrary,
-      onSelectMonitor: _showMonitor,
-    );
-    final bool hasSubNavigation =
-        gameSectionGroupOf(_section) == LibrarySectionGroup.library;
     final Widget body = LibrarySectionFollowScope(
       current: gameSectionNotifier,
       // 触屏横滑按页签**视觉序**（[kGameSectionTabOrder]）切相邻子区；诊断不在
@@ -382,57 +387,12 @@ class _HomeGamePageState extends State<HomeGamePage> {
           // Ctrl+F / `/` 展开当前视图的页头搜索，展开时 Esc 先清空再收起
           // （焦点在页签、动作或内容上都认）。
           resolve: () => fushiVisibleHeaderSearch(_actionsSlot),
-          child: FushiFloatingChromeScope(
-            controller: _chrome,
-            // 工具栏叠在内容上，收起只滑出画面、不改内容视口高度（BUG-2975）。
-            child: FushiFloatingChromeOverlay(
-              // 重设计外壳下画成页头大字（`fushi_page_masthead.dart`）。
-              masthead: true,
-              // 浮动工具区 = 顶栏 + 同步进度条（常规同步 / 复习同步在跑时才有高度），
-              // 子区按整个工具区的高度让位，进度条不压内容。
-              chrome: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  FushiFloatingChromeBar(
-                    tabs: navigation,
-                    slot: _actionsSlot,
-                    trailing: libraryImportChromeButton(
-                      selected: _section == GameSection.importGames,
-                      onTap: _toggleImport,
-                      focusIdPrefix: 'game-library-view',
-                    ),
-                    // 页头大字顶栏里二级页签由大字行画（放得下与页名同一行）。
-                    secondary: hasSubNavigation ? subNavigation : null,
-                  ),
-                ],
-              ),
-              child: NotificationListener<ScrollNotification>(
-                onNotification: _onScroll,
-                // 二级胶囊行叠在页面上、与顶栏同一份显隐（嵌套的
-                // [FushiFloatingChromeOverlay] 读同一个作用域，子区的顶部让位
-                // 自动累加两行）。
-                child: FushiFloatingChromeOverlay(
-                  // 二级下划线页签贴着顶栏，不再隔 8（见 nestedGap）。
-                  nestedGap: 0,
-                  opaqueChrome: true,
-                  masthead: true,
-                  chrome: !hasSubNavigation
-                      ? const SizedBox.shrink()
-                      : Padding(
-                          // 与顶栏胶囊、页面内容同一条页边；两级页签之间的 12
-                          // 由嵌套层统一给，这里不再叠竖向留白。
-                          padding: EdgeInsets.symmetric(
-                            horizontal: tokens.spacing.page,
-                          ),
-                          child: Align(
-                            alignment: AlignmentDirectional.centerStart,
-                            child: subNavigation,
-                          ),
-                        ),
-                  child: GameSectionTabsHostScope(child: body),
-                ),
-              ),
+          child: LibraryLayout<GameSection>(
+            spec: spec,
+            // 子区滚动驱动工具栏显隐（与视频 / 书 / 漫画库同构）。
+            body: NotificationListener<ScrollNotification>(
+              onNotification: _onScroll,
+              child: GameSectionTabsHostScope(child: body),
             ),
           ),
         ),
@@ -455,7 +415,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
   Widget _chromeInsetFor(GameSection section, {required Widget child}) =>
       switch (section) {
         GameSection.dashboard => FushiFloatingChromeScrollInset(child: child),
-        // [ImportCollagePage] 自己读 [FushiFloatingChromeInset] 加进滚动内边距
+        // [ImportPageLayout] 自己读 [FushiFloatingChromeInset] 加进滚动内边距
         // （内容从工具区下方起排、往下滚到工具区底下），不能先被 ScrollInset 归零。
         GameSection.importGames ||
         GameSection.library ||
@@ -524,12 +484,12 @@ class _HomeGamePageState extends State<HomeGamePage> {
   }
 
   /// 游戏「导入」视图（导入稿 v2 第二节 5）：与书 / 漫画 / 视频 / 音乐同一套
-  /// [ImportCollagePage]——引导首块 + 两个方式块（添加游戏 / 扫描文件夹），其下
+  /// [ImportPageLayout]——引导首块 + 两个方式块（添加游戏 / 扫描文件夹），其下
   /// 「常驻来源」色块区（互联块照旧保留，IM21；扫描根；添加来源直接选目录）。
   ///
   /// 拖放只认 .exe（[addGamesFromPaths] → `filterOutDuplicateGameExes` 丢弃文件夹），
   /// 所以引导首块只说 .exe、格式只有 EXE；「扫描文件夹」只在方式块与添加来源里。
-  /// 整页落点由 [ImportCollagePage] 按 spec.onDrop 装（此前另写的拖放卡与虚线
+  /// 整页落点由 [ImportPageLayout] 按 spec.onDrop 装（此前另写的拖放卡与虚线
   /// 画笔删掉，IM11），外层仍是本页 IndexedStack 的 `DropSurfaceScope` 门。
   Widget _buildImport(BuildContext context) {
     // IndexedStack 急切构建全部子区，本视图在无 ProviderScope 的 widget 测试里
@@ -587,7 +547,7 @@ class _HomeGamePageState extends State<HomeGamePage> {
     );
     return DesktopContentLayout(
       kind: DesktopContentKind.readerShelf,
-      child: ImportCollagePage(
+      child: ImportPageLayout(
         spec: spec,
         // 来源列表一挂载就查来源表与各来源计数：访问过导入页才构建。
         sources: _importVisited

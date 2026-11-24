@@ -39,12 +39,15 @@ import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/video/online/anime_source_book_spec.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/online/anime_source_launch.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteDownloadCancelled;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+
+export 'package:fushi/src/media/video/online/anime_source_launch.dart';
 
 /// 一集的可读标签（`videoPath` 末段 / 下载文件名）：作品名 - E03。
 String animeSourceEpisodeLabel(MihonAnime anime, MihonEpisode episode) {
@@ -441,65 +444,13 @@ buildAnimeSourceLaunch({
       ..clear()
       ..add((bookUid: row.bookUid, episode: spec.episode));
   }
-  // 起播只要本地已装的扩展与源行：只读库（reload），不走 initialise()——那条会
-  // 联网刷新仓库索引（慢网 / 仓库站点不通时一挂就是几十秒），扩展装没装跟它无关。
-  // 真实 app 里 manager 首次取用时已在后台跑 initialise，这里不等它。
-  await manager.reload();
-  MangaOnlineSourceRow? sourceRow;
-  for (final MangaOnlineSourceRow candidate in manager.sources) {
-    if (candidate.extensionPackage == spec.extensionPackage &&
-        candidate.sourceId == spec.sourceId &&
-        candidate.enabled) {
-      sourceRow = candidate;
-      break;
-    }
-  }
-  if (sourceRow == null) {
-    throw AnimeSourceLaunchUnavailable(
-      'extension ${spec.extensionPackage} / source ${spec.sourceId} '
-      'is not installed or enabled',
-    );
-  }
-  final MihonSourceContext context;
-  try {
-    context = await manager.contextForSource(sourceRow);
-  } on Object catch (error) {
-    throw AnimeSourceLaunchUnavailable('$error');
-  }
-  final AnimeSourceVideoClient client = AnimeSourceVideoClient(
+  return launchAnimeSourceMembers(
+    spec: spec,
+    members: members,
+    startBookUid: row.bookUid,
     manager: manager,
-    context: context,
-    anime: spec.anime,
-    episodes: <MihonEpisode>[
-      for (final ({String bookUid, MihonEpisode episode}) m in members)
-        m.episode,
-    ],
-    episodeIds: <String>[
-      for (final ({String bookUid, MihonEpisode episode}) m in members)
-        m.bookUid,
-    ],
     subtitleLanguageResolver: subtitleLanguageResolver,
   );
-  final List<RemoteVideoInfo> infos = client.remoteVideos;
-  final int startIndex = infos.indexWhere(
-    (RemoteVideoInfo info) => info.id == row.bookUid,
-  );
-  return (
-    client: client,
-    info: infos[startIndex < 0 ? 0 : startIndex],
-    members: infos,
-    startIndex: startIndex < 0 ? 0 : startIndex,
-  );
-}
-
-/// 在线行重开不了：扩展被卸载 / 停用，或行上的规格坏了。
-class AnimeSourceLaunchUnavailable implements Exception {
-  const AnimeSourceLaunchUnavailable(this.message);
-
-  final String message;
-
-  @override
-  String toString() => 'AnimeSourceLaunchUnavailable: $message';
 }
 
 /// 下载落点文件名：可读标签 + 集 id 的哈希（与互联下载同一命名口径：标题只为好认，

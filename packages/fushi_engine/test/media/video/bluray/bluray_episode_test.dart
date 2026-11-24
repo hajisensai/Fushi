@@ -11,6 +11,8 @@ import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart';
 import 'package:fushi_engine/media/video/disc/disc_format.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_filename_parser.dart'
+    show parsedEpisodeNumbersOf;
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
@@ -165,6 +167,32 @@ void main() {
     );
   });
 
+  test('BUG-5391：展示集号不从分集文件名差分（每卷 p01 / p02 不是第 1、2 集）', () {
+    final List<String> paths = <String>[
+      for (int volume = 1; volume <= 3; volume++)
+        for (int item = 1; item <= 2; item++)
+          p.join(
+            'D:',
+            'Show [BDMV]',
+            'Show vol.$volume',
+            'BD',
+            'BDMV',
+            'PLAYLIST',
+            '00001.p0$item.mpls',
+          ),
+    ];
+    // 解不出 → 调用方回落顺位号，与刮削按合集顺序编的集号同一口径。
+    expect(parsedEpisodeNumbersOf(paths), List<int?>.filled(6, null));
+    // 普通文件的兄弟差分照旧。
+    expect(
+      parsedEpisodeNumbersOf(<String>[
+        'D:/Show/Show 1.mkv',
+        'D:/Show/Show 2.mkv',
+      ]),
+      <int?>[1, 2],
+    );
+  });
+
   test('分集路径：仍是蓝光成员路径，能反推盘根与背后的 .mpls', () {
     const String path = r'D:\bd\Disc 1\BDMV\PLAYLIST\00001.p03.mpls';
     expect(isBlurayPlaylistPath(path), isTrue);
@@ -221,6 +249,65 @@ void main() {
       expect(disc.titles.first.sourcePlaylistId, '00001');
       expect(disc.extras.map((BlurayTitle t) => t.playlist.id), <String>[
         '00002',
+      ]);
+    });
+
+    test('BUG-5391：切成集的盘上，没被全部播放串进去的长特典降为特典、不占标题序号', () async {
+      // 《ぼっち・ざ・ろっく！》BD 实测形状：`00001` 串着两集；采访 / Live 是各自一条
+      // 整播放列表，时长 9～95 分钟（vol.5 那条 23.6 分钟与单集只差几秒），都过得了
+      // 相对时长下限，修前被选成第 3、4 个标题、按合集顺序编成正片集号。
+      writeFixturePlaylist(root, '00001', const <(String, int)>[
+        ('00003', 1421),
+        ('00004', 1421),
+        ('00005', 8),
+      ]);
+      writeFixturePlaylist(root, '00003', const <(String, int)>[
+        ('00008', 270),
+        ('00009', 234),
+        ('00010', 269),
+        ('00011', 255),
+        ('00012', 370),
+        ('00013', 338),
+      ]);
+      writeFixturePlaylist(root, '00004', const <(String, int)>[
+        ('00014', 1416),
+      ]);
+      writeFixturePlaylist(root, '00005', const <(String, int)>[
+        ('00015', 1970),
+      ]);
+      final BlurayDisc disc = (await readBlurayDisc(root))!;
+      expect(disc.titles.map((BlurayTitle t) => t.playlistPath), <String>[
+        episodePath(root, 1),
+        episodePath(root, 2),
+      ]);
+      expect(disc.titles.map((BlurayTitle t) => t.name), <String>[
+        'Disc 1 - 01',
+        'Disc 1 - 02',
+      ]);
+      expect(disc.titles.every((BlurayTitle t) => t.isMainFeature), isTrue);
+      expect(disc.extras.map((BlurayTitle t) => t.name), <String>[
+        'Disc 1 - 00003',
+        'Disc 1 - 00004',
+        'Disc 1 - 00005',
+      ]);
+    });
+
+    test('没有切集的盘：与正片同量级的整条标题照旧是标题', () async {
+      // 7b 只在盘上真有被切成集的播放列表时生效：逐集播放列表的盘不受影响。
+      writeFixturePlaylist(root, '00001', const <(String, int)>[
+        ('00003', 1421),
+      ]);
+      writeFixturePlaylist(root, '00002', const <(String, int)>[
+        ('00004', 1421),
+      ]);
+      writeFixturePlaylist(root, '00005', const <(String, int)>[
+        ('00015', 1970),
+      ]);
+      final BlurayDisc disc = (await readBlurayDisc(root))!;
+      expect(disc.titles.map((BlurayTitle t) => t.playlist.id), <String>[
+        '00001',
+        '00002',
+        '00005',
       ]);
     });
 

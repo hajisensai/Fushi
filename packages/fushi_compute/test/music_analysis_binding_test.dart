@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -146,4 +147,72 @@ void main() {
     expect(readResult(out).beats, greaterThanOrEqualTo(10));
     expect(engine.cancel(987654), FfcManaStatus.unknownToken);
   });
+
+  // BUG-5413（反馈 Wgbo462Sfc）：引擎是进程级的，登记事件出口的 isolate 却可能先没（Android 上
+  // audio_service 销毁 FlutterEngine、进程留在后台）。出口曾是 NativeCallable.listener：isolate 一没
+  // VM 就删掉它，工作线程再报事件时 VM 以「Callback invoked after it has been deleted」abort 整个测试
+  // 进程。改成端口后，发往已关端口的事件只是丢掉；下一个 isolate 再 start 就把事件接到自己这里。
+  test(
+    'events after the registering isolate died are dropped, not fatal',
+    () async {
+      final String deadPcm = synthPcm('dead_isolate', 6);
+      final String deadOut = '${dir.path}/dead_isolate.fma';
+      final ReceivePort reply = ReceivePort();
+      await Isolate.spawn<List<Object>>(_submitFromShortLivedIsolate, <Object>[
+        reply.sendPort,
+        deadPcm,
+        deadOut,
+      ]);
+      expect(await reply.first, FfcStatus.ok);
+      // 子 isolate 已退出；等工作线程做出第一步结果（STARTED / PROGRESS 已经发往已关端口）。
+      final Stopwatch waited = Stopwatch()..start();
+      while (!File(deadOut).existsSync()) {
+        expect(waited.elapsed, lessThan(const Duration(seconds: 60)));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      // 进程还活着；本 isolate 重新登记后照常收到下一首的事件。
+      expect(engine.start(), FfcStatus.ok);
+      final String pcm = synthPcm('after_dead_isolate', 4);
+      final Completer<FfcManaEvent> done = Completer<FfcManaEvent>();
+      final StreamSubscription<FfcManaEvent> sub = engine.events.listen((
+        FfcManaEvent e,
+      ) {
+        if (e.token == 5151 &&
+            (e.kind == FfcManaEventKind.done ||
+                e.kind == FfcManaEventKind.failed) &&
+            !done.isCompleted) {
+          done.complete(e);
+        }
+      });
+      addTearDown(sub.cancel);
+      expect(
+        engine.submit(
+          token: 5151,
+          pcmPath: pcm,
+          outPath: '${dir.path}/after_dead_isolate.fma',
+        ),
+        FfcStatus.ok,
+      );
+      final FfcManaEvent last = await done.future.timeout(
+        const Duration(seconds: 60),
+      );
+      expect(last.kind, FfcManaEventKind.done, reason: engine.takeLastError());
+    },
+  );
+}
+
+/// 在一个短命 isolate 里登记事件出口并提交一首，然后带着提交结果立即退出（之后的事件都发往已关端口）。
+void _submitFromShortLivedIsolate(List<Object> args) {
+  final SendPort reply = args[0] as SendPort;
+  final FushiComputeMusicAnalysis child = FushiComputeMusicAnalysis.instance;
+  int status = child.start();
+  if (status == FfcStatus.ok) {
+    status = child.submit(
+      token: 5150,
+      pcmPath: args[1] as String,
+      outPath: args[2] as String,
+      flags: FfcManaSubmitFlags.urgent,
+    );
+  }
+  Isolate.exit(reply, status);
 }

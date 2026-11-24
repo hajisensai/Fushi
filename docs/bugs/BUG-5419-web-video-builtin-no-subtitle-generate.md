@@ -1,0 +1,13 @@
+## BUG-5419 · Windows 上 YouTube 默认的内置网页播放器页没有「生成字幕」入口，在线视频转录不了
+- **报告**：2026-11-24（用户：应用内反馈 lXyoHX1wtr，PC 端「在 Fushi 观看」YouTube 时找不到能转录的地方，只能先下载到本地再转录）
+- **真实性**：✅ 真 bug（沿真实代码路径确认，未在真机点 UI）。分诊初判以为 YouTube 走 mpv 流（`video_stream_subtitle_audio.dart` `videoStreamSubtitleAudioAvailable`），但 Windows 上 YouTube 根本不走那条：
+  - `fushi/lib/src/media/video/web_video_bridge.dart:29-38` `shouldOpenInWebVideoPlayer`：Windows 上 `youtube.com` 是已知网页视频站（`url_stream_video.dart:48` `kKnownWebPageVideoHosts`），书架 / 浏览器「用 Fushi 播放」打开的 YouTube 书一律在 `video_fushi_page.dart` `_initVideo` 分流到 `_openWebSource`（网页档）。
+  - `fushi/lib/src/media/video/web_video_hosting_default.dart:108-143` `resolveWebVideoHosting`：YouTube 不是 DRM 站，没有手动选择 / 实测结论时默认 `WebVideoHosting.builtin`（「Fushi 播放」），于是 `web_source.part.dart` `_openWebSource` 把页面换成 `WebVideoFushiPage`（内置网页播放器页）。
+  - `fushi/lib/src/pages/implementations/web_video_fushi_page.dart`（修前）顶栏只有画质 / 超分 / 制卡队列 / 字幕轨 / 隐藏原生字幕 / 字幕列表 / 计时，**没有任何生成字幕 / 转录入口**。网页档的整集音频拉取 + 字幕管线（5ff5a683f1）只接在原生播放器页的网页档（窗口宿主档 `_initWebSource`）上，默认的内置档页用不到——两种播放方式对同一站点的能力不一致，用户在默认路径上永远找不到。
+- **[x] ① 已修复** —
+  - 抽出共用模块 `fushi/lib/src/media/video/web_video_subtitle_generation.dart`：这一集的身份 `WebVideoSubtitleEpisode`（键派生与原来逐字一致，已拉好的副本两页通用）、开拉 / 现取输入、管线目标（产物登记到书的 `subtitleSource`）、任务结果认领、入口判据；进度对话框抽成 `subtitle/video_stream_subtitle_audio_dialog.dart`。原生播放器页网页档改用这两份，行为不变。
+  - `WebVideoFushiPage` 顶栏加「生成字幕」钮（`FushiIcons.transcribe`，平铺、放不下进「⋯」）：点了先按播放态说明拿不到的原因（没有视频 / EME 加密 / 站内已点去别的视频），能跑就拉整集音频（YouTube 现取 audio-only 流）→ 与本机视频同一个管线面板（ASR + 可选 AI 校对，站点字幕交给 AI 当参考）→ 产物作为「生成的字幕」轨挂进站点轨并选中；重进时按书的 `subtitleSource` 读回、站点换视频 key 时重挂。
+  - 窗口宿主档的内置页不给：那一档的字幕层是页面 DOM，只认站点 store 里的轨，Dart 侧装的生成轨画不出来（引擎能做底层合成时窗口档本来就交给原生播放器页，那边有字幕工作台）；制卡宿主页（机器驱动重放）也不给。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/web_video_subtitle_generation_test.dart`：YouTube 书在 Windows 走网页播放器且默认 builtin（钉住入口必须在这一页的前提）；入口判据（ASR / 窗口档 / 制卡宿主页）；点击前的拦截原因；「这本书那一集」身份（带跟踪参数也认、站内换片 / 非观看页不认）；键与原网页档派生一致；内置页顶栏接线的源码守卫。
+- **备注**：没在 Windows 真机上点过新钮跑完整条管线（需要构建带 WebView2 的 Windows 包 + 真实 YouTube 播放）；拉取 / 管线 / 结果认领全部复用原生播放器页网页档已在用的实现。内置页的 DOM 字幕层（窗口宿主档）挂不上 Dart 侧轨是既有限制，手机下载的字幕轨同样受影响，未在本次处理。
+  - 2026-11-25 PR #4400（拍板 cbKi3PN0G7-r2）：网页视频两档都改在原生播放器页里播，`WebVideoFushiPage` 只当制卡重放宿主。生成字幕入口随之只在原生播放器页网页档（字幕工作台「生成字幕」，`_canRunWebSubtitlePipeline` 不分档，「制卡优先」/「画质优先」都给，两档字幕都是 Flutter 叠层、生成轨都画得出来）；宿主页的顶栏钮与 `webVideoSubtitleGenerationOffered` 删除，只保留读回书上登记的生成字幕。测试改为钉住「入口不看宿主档」与「宿主页无入口、仍读回」。

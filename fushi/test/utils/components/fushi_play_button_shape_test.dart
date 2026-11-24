@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_apple_glyph_button.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -13,7 +14,8 @@ import 'package:material_ui/material_ui.dart';
 
 // 主播放 / 暂停键的外形契约：MD3 下视频、有声书、音乐的主播放键一律是同一个
 // M3E 多边形（[fushiPlayButtonPolygon]，12 瓣饼干），形状只在
-// fushi_m3e_player.dart 定义一次；Apple（glass）设计系统保持原外形。
+// fushi_m3e_player.dart 定义一次。Apple（glass）设计系统下 FushiExpressivePlayButton
+// 是 Apple Music 式裸字形（用户 2026-11-24 拍板）：无底、无着色、label 色字形。
 void main() {
   late bool Function() originalShaderSupport;
   setUp(() {
@@ -25,7 +27,7 @@ void main() {
   ThemeData theme({bool glass = false}) => buildFushiThemeData(
     scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
     textTheme: Typography.material2021().black,
-    glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: glass ? FushiGlassMaterial.minimal : FushiGlassMaterial.off,
     glassDesign: glass,
     eink: false,
   );
@@ -90,19 +92,64 @@ void main() {
     });
   }
 
-  testWidgets('FushiExpressivePlayButton keeps the Apple shape under glass', (
-    WidgetTester tester,
-  ) async {
-    await pump(
-      tester,
-      FushiExpressivePlayButton(isPlaying: false, size: 64, onPressed: () {}),
-      glass: true,
-    );
-    expect(
-      shapesUnder(tester, find.byType(FushiExpressivePlayButton)),
-      isNot(contains(predicate<ShapeBorder?>(isPlayPolygon))),
-    );
-  });
+  for (final bool playing in <bool>[false, true]) {
+    testWidgets('FushiExpressivePlayButton is a bare label glyph under Apple '
+        '(playing: $playing)', (WidgetTester tester) async {
+      await pump(
+        tester,
+        FushiExpressivePlayButton(
+          isPlaying: playing,
+          size: 48,
+          onPressed: () {},
+        ),
+        glass: true,
+      );
+      final Finder root = find.byType(FushiExpressivePlayButton);
+      // 与音乐正在播放页同一份实现。
+      expect(
+        find.descendant(
+          of: root,
+          matching: find.byType(FushiApplePlayPauseButton),
+        ),
+        findsOneWidget,
+      );
+      // 没有 M3E 多边形，也没有任何可见底色（按下高亮静止时 opacity 为 0）。
+      expect(
+        shapesUnder(tester, root),
+        isNot(contains(predicate<ShapeBorder?>(isPlayPolygon))),
+      );
+      for (final Material m in tester.widgetList<Material>(
+        find.descendant(of: root, matching: find.byType(Material)),
+      )) {
+        expect(
+          m.type == MaterialType.transparency || (m.color?.a ?? 0) == 0,
+          isTrue,
+        );
+      }
+      final Iterable<AnimatedOpacity> highlights = tester
+          .widgetList<AnimatedOpacity>(
+            find.descendant(of: root, matching: find.byType(AnimatedOpacity)),
+          );
+      expect(highlights, isNotEmpty);
+      for (final AnimatedOpacity o in highlights) {
+        expect(o.opacity, 0);
+      }
+      // 字形：label 色实心 play / pause，按尺寸比例推导，命中区沿用 size。
+      final Icon icon = tester.widget<Icon>(
+        find.descendant(of: root, matching: find.byType(Icon)),
+      );
+      final BuildContext ctx = tester.element(root);
+      expect(icon.color, appleColorsOf(ctx).label);
+      expect(
+        icon.icon,
+        fushiAppleIcon(
+          FushiIcons.filled(playing ? FushiIcons.pause : FushiIcons.play),
+        ),
+      );
+      expect(icon.size, 48 * kFushiApplePlayGlyphRatio);
+      expect(tester.getSize(root), const Size.square(48));
+    });
+  }
 
   testWidgets('video VideoM3ePlayPauseButton is the play polygon', (
     WidgetTester tester,

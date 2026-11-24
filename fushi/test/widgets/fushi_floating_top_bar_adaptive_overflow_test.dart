@@ -6,6 +6,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
     show FushiExpressiveLoadingIndicator;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
 /// 顶部悬浮条按宽度自适应溢出（2026-10-06）：宽时全部平铺、不画「⋯」；骤缩到
@@ -461,13 +463,14 @@ void main() {
       String title = 'Fushi',
       bool apple = false,
     }) => MaterialApp(
+      // Apple 宽窗按 macOS 档测（iOS 档另有最多平铺 3 颗的上限，见末尾分组）。
       theme: apple
           ? buildFushiThemeData(
               scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
               textTheme: Typography.material2021().black,
               glass: FushiGlassMaterial.off,
               glassDesign: true,
-            )
+            ).copyWith(platform: TargetPlatform.macOS)
           : null,
       builder: apple
           ? (BuildContext context, Widget? child) =>
@@ -805,6 +808,83 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey<String>('ocr')));
       expect(hits, 1);
+    });
+  });
+
+  group('Apple iOS 档顶栏最多平铺 3 颗（用户 2026-11-24）', () {
+    final List<FushiToolbarItem> five = actions.take(5).toList();
+
+    // Apple 档 FushiTooltip 的内层 Tooltip 只带玻璃气泡 WidgetSpan（message 为空），
+    // find.byTooltip 认不出，按 FushiTooltip.message 找。
+    Finder tip(String message) => find.byWidgetPredicate(
+      (Widget w) => w is FushiTooltip && w.message == message,
+    );
+
+    Widget bar({required bool apple, required TargetPlatform platform}) =>
+        MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            textTheme: Typography.material2021().black,
+            designSystem: apple
+                ? FushiDesignSystem.cupertino
+                : FushiDesignSystem.material,
+            glass: FushiGlassMaterial.off,
+            glassDesign: apple,
+          ).copyWith(platform: platform),
+          builder: (BuildContext context, Widget? child) =>
+              FushiGlassScope(child: child!),
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: _outerWidth(1000),
+                child: FushiFloatingTopBar(
+                  title: 'Home',
+                  actions: <List<FushiToolbarItem>>[five],
+                ),
+              ),
+            ),
+          ),
+        );
+
+    void wide(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1600, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    testWidgets('iOS 档：宽度够也只平铺前 3 颗，其余进 ⋯', (WidgetTester tester) async {
+      wide(tester);
+      await tester.pumpWidget(bar(apple: true, platform: TargetPlatform.iOS));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      for (int i = 0; i < 3; i++) {
+        expect(tip('Action $i'), findsOneWidget);
+      }
+      expect(tip('Action 3'), findsNothing);
+      expect(tip('Action 4'), findsNothing);
+      expect(more, findsOneWidget);
+    });
+
+    testWidgets('macOS 档：放得下就全平铺', (WidgetTester tester) async {
+      wide(tester);
+      await tester.pumpWidget(bar(apple: true, platform: TargetPlatform.macOS));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      for (int i = 0; i < 5; i++) {
+        expect(tip('Action $i'), findsOneWidget);
+      }
+      expect(more, findsNothing);
+    });
+
+    testWidgets('M3E（同为 iOS 平台）：不设上限，全平铺', (WidgetTester tester) async {
+      wide(tester);
+      await tester.pumpWidget(bar(apple: false, platform: TargetPlatform.iOS));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      for (int i = 0; i < 5; i++) {
+        expect(find.byTooltip('Action $i'), findsOneWidget);
+      }
+      expect(more, findsNothing);
     });
   });
 }

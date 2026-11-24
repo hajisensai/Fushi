@@ -32,7 +32,7 @@ Future<void> _pump(
     textTheme: Typography.material2021(
       platform: TargetPlatform.iOS,
     ).englishLike.merge(Typography.material2021().white),
-    glass: apple ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: apple ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
     glassDesign: apple,
   );
   await tester.pumpWidget(

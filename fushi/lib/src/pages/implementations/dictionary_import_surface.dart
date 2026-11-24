@@ -1,5 +1,5 @@
 /// 查词「一本词典都没有」的导入面（导入稿 v2 第二节 6，IM23）：查词主页与词典管理页
-/// 的空态共用这一块，换成和库页导入面同一套引导首块 + 方式块（[ImportCollagePage]），
+/// 的空态共用这一块，换成和库页导入面同一套引导首块 + 方式块（[ImportPageLayout]），
 /// 不再是居中占位 + 两个按钮。
 ///
 /// - 引导首块文案全用现有 key：`dictionaries_menu_empty`、`dict_empty_hint`，桌面三端
@@ -19,7 +19,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/drag_drop/drop_classification.dart'
     show kDictionarySurfaceDropExtensions;
-import 'package:fushi/src/media/import/import_collage_page.dart';
+import 'package:fushi/src/media/import/import_page_layout.dart';
 import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/pages/implementations/dictionary_import_action.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -113,7 +113,7 @@ class DictionaryImportEmptySurface extends StatelessWidget {
   final bool scrollable;
 
   @override
-  Widget build(BuildContext context) => ImportCollagePage(
+  Widget build(BuildContext context) => ImportPageLayout(
     spec: dictionaryImportSurfaceSpec(
       onAction: onAction,
       folderImportAvailable: dictionaryFolderImportAvailable,

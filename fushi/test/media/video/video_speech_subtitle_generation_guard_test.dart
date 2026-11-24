@@ -428,9 +428,19 @@ void main() {
     final String dialog = source
         .split('Future<File?> _stageStreamWholeAudioWithDialog()')[1]
         .split('Future<AppVideoSubtitleTarget?> _streamSubtitleTarget(')[0];
-    expect(dialog, contains('showFushiProgressDialog('));
-    expect(dialog, contains('onCancel: staging.cancel'));
+    expect(dialog, contains('_stageWholeAudioWithDialog('));
+    expect(dialog, contains('start: _startStreamWholeAudio'));
     expect(dialog, contains("'video.streamSubtitleAudio'"));
+    // 进度对话框本体（可取消）抽成在线流与网页档共用的一份（BUG-5419）。
+    final String sharedDialog = File(
+      'lib/src/media/video/subtitle/video_stream_subtitle_audio_dialog.dart',
+    ).readAsStringSync();
+    expect(sharedDialog, contains('showFushiProgressDialog('));
+    expect(sharedDialog, contains('onCancel: staging.cancel'));
+    expect(
+      source.split('Future<File?> _stageWholeAudioWithDialog(')[1],
+      contains('}) => stageVideoStreamSubtitleAudioWithDialog('),
+    );
 
     final String target = source
         .split('Future<AppVideoSubtitleTarget?> _streamSubtitleTarget(')[1]
@@ -521,30 +531,48 @@ void main() {
     expect(rows, contains('_subtitleStudioAvailable(controller)'));
     expect(rows, contains('_openSubtitleStudio(controller)'));
 
-    // 取地址：页面回执 + cookie；拿不到时以说明原因的失败结束。
-    final String prepare = web
+    // 取地址：页面回执 + cookie；拿不到时以说明原因的失败结束。这一集的身份 / 开拉 / 管线目标
+    // 抽成原生播放器页网页档与制卡重放宿主共用的 web_video_subtitle_generation.dart（BUG-5419）。
+    final String shared = File(
+      'lib/src/media/video/web_video_subtitle_generation.dart',
+    ).readAsStringSync();
+    final String prepare = shared
         .split(
-          'Future<VideoStreamSubtitleAudioInput> _prepareWebWholeAudio(',
+          'Future<VideoStreamSubtitleAudioInput> prepareWebVideoSessionSubtitleAudio(',
         )[1]
-        .split('VideoStreamSubtitleAudioStaging? _startWebWholeAudio()')[0];
+        .split(
+          'VideoStreamSubtitleAudioStaging startWebVideoSubtitleAudio(',
+        )[0];
     expect(prepare, contains('prepareWebVideoSubtitleAudio('));
     expect(prepare, contains("'window.__fushiWebVideo.mediaSource()'"));
     expect(prepare, contains('cookieHeader: session.cookieHeaderFor'));
     expect(prepare, contains('throw VideoStreamSubtitleAudioUnavailable('));
     expect(
-      web.split('VideoStreamSubtitleAudioStaging? _startWebWholeAudio()')[1],
+      shared.split(
+        'VideoStreamSubtitleAudioStaging startWebVideoSubtitleAudio(',
+      )[1],
       contains('appVideoStreamSubtitleAudioStager.start('),
     );
+    expect(
+      web.split('VideoStreamSubtitleAudioStaging? _startWebWholeAudio()')[1],
+      contains('startWebVideoSubtitleAudio('),
+    );
 
-    final String target = web
-        .split('Future<AppVideoSubtitleTarget?> _webSubtitleTarget(')[1]
-        .split('Future<void> _openWebSubtitlePipeline(')[0];
+    final String target = shared
+        .split('Future<AppVideoSubtitleTarget?> webVideoSubtitleTarget(')[1]
+        .split('VideoSubtitleEpisodeResult? webVideoSubtitleJobEpisode(')[0];
     expect(target, contains('.resolveStream('));
     expect(
       target,
       contains('repo.updateSubtitleSource(bookUid, subtitlePath)'),
     );
     expect(target, contains('videoStreamSubtitleFrameSource('));
+    expect(
+      web
+          .split('Future<AppVideoSubtitleTarget?> _webSubtitleTarget(')[1]
+          .split('Future<void> _openWebSubtitlePipeline(')[0],
+      contains('webVideoSubtitleTarget('),
+    );
 
     final String open = web
         .split('Future<void> _openWebSubtitlePipeline(')[1]

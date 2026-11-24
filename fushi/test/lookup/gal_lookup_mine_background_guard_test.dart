@@ -30,7 +30,7 @@ void main() {
     );
     final int start = body.indexOf('_miningCoordinator.startMineLine(');
     final int queued = body.indexOf(
-      'returnGalHookMiningResult.queuedPopupReply;',
+      'returnqueued.queuedPopupReply(GalHookMiningResult.queuedPopupReply);',
     );
     final int awaitFull = body.indexOf('awaitticket.result');
     expect(start, greaterThanOrEqualTo(0));

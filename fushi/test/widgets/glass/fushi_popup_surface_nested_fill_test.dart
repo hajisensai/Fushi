@@ -37,7 +37,7 @@ void main() {
       textTheme: Typography.material2021().black,
       glass:
           material ??
-          (glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off),
+          (glass ? FushiGlassMaterial.premium : FushiGlassMaterial.off),
       glassDesign: glass,
       eink: eink,
     );
@@ -101,7 +101,7 @@ void main() {
           ? buildFushiThemeData(
               scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
               textTheme: Typography.material2021().black,
-              glass: FushiGlassMaterial.frosted,
+              glass: FushiGlassMaterial.minimal,
               glassDesign: true,
             ).copyWith(platform: TargetPlatform.windows)
           : theme(glass: false);

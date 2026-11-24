@@ -680,7 +680,8 @@ class WebBrowserVideoRemote extends ChangeNotifier {
   // ── 收藏句 ─────────────────────────────────────────────────────────
 
   /// 手机点收藏句：本视频的句子在页面里跳过去播放；别的视频 / 书的收藏网页里打不开，回
-  /// 404 `favorite_source_unavailable`（与原生页「来源打不开」同一个码）。
+  /// 404 `favorite_source_unavailable`（与原生页「来源打不开」同一个码），`reason` 为
+  /// `other_video`（新版手机据此说明「网页里只能跳本视频的收藏」）。
   Future<void> _openFavorite(
     _WebVideoRemoteSession session,
     FavoriteSentence favorite,
@@ -688,7 +689,11 @@ class WebBrowserVideoRemote extends ChangeNotifier {
     _live(session);
     if (favorite.bookKey != 'web:${session.videoKey}' ||
         (favorite.sectionIndex ?? 0) != 0) {
-      throw const VideoRemoteException(404, 'favorite_source_unavailable');
+      throw const VideoRemoteException(
+        404,
+        videoRemoteFavoriteSourceUnavailable,
+        reason: 'other_video',
+      );
     }
     final VideoRemoteCue cue = matchVideoRemoteFavoriteCue(
       session.rows(),

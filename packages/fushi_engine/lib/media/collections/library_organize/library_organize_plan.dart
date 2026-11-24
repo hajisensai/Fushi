@@ -219,9 +219,44 @@ class OrganizeAction {
   final String? reason;
 }
 
-/// 合集级改动的待确认建议（AI 库管家设计稿 §8）。AI 管库 v3（§2.2）起裁决不再产出
-/// 建议（合并 / 改名直接执行）；类型留给整理记录里存量的待确认建议（接受 / 拒绝）。
-enum OrganizeProposalKind { merge, rename }
+/// 合集级改动的待确认建议（AI 库管家设计稿 §8）。AI 管库 v3（§2.2）起 AI 裁决不再
+/// 产出建议（合并 / 改名直接执行）；建议只剩动**用户合集**（`origin == user`）的路径：
+/// 收敛想把同键的用户合集并掉（[merge]）、导入器想从用户合集移出成员
+/// （[removeMembers]，见 [MemberRemovalProposal]）。用户 2026-11-24 拍板：「用户的合集
+/// 整理器永远不能往外移成员 取消这个设定吧，我觉得让用户显式同意就行了吧，用户可以
+/// 永远拒绝」——这些改动一律等用户逐条同意 / 这次不 / 永远不。
+enum OrganizeProposalKind { merge, rename, removeMembers }
+
+/// 从用户合集移出成员的待确认建议（导入器 / 整理器给出，[recordMemberRemovalProposals]
+/// 记账）。成员按 `(mediaType, entryKey)` 指认。
+class MemberRemovalProposal {
+  const MemberRemovalProposal({
+    required this.collectionId,
+    required this.members,
+    required this.reasonCode,
+    this.reason,
+  });
+
+  final int collectionId;
+  final List<CollectionMemberKey> members;
+
+  /// 机器可读的原因码（如 [kMemberRemovalReasonDiscExtra]），界面按码出本地化说明。
+  final String reasonCode;
+
+  /// 可选的原文补充（不本地化，原样显示）。
+  final String? reason;
+}
+
+/// [MemberRemovalProposal.reasonCode]：原盘特典不是正片的一集。
+const String kMemberRemovalReasonDiscExtra = 'disc_extra';
+
+/// [MemberRemovalProposal.reasonCode]：原盘重扫后这一条不再是正片标题（整卷已切成
+/// 分集、或分集又改回了整卷）。
+const String kMemberRemovalReasonDiscStale = 'disc_stale';
+
+/// [MemberRemovalProposal.reasonCode]：这张盘的各集已并进同一发布的合集，这个单盘
+/// 合集不再需要（全部移出后合集自删）。
+const String kMemberRemovalReasonDiscSuperseded = 'disc_superseded';
 
 class OrganizeProposal {
   const OrganizeProposal({
@@ -231,9 +266,13 @@ class OrganizeProposal {
     this.sourceCollectionIds = const <int>[],
     this.newName,
     this.reason,
+    this.source = 'ai',
   });
 
   final OrganizeProposalKind kind;
+
+  /// 谁提的：`ai`（AI 整理）/ `rule`（收敛等确定性规则）。整理记录的 source 列。
+  final String source;
 
   /// merge：胜方；rename：要改名的合集。
   final int targetCollectionId;

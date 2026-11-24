@@ -18,6 +18,8 @@ const String _hostPagePath =
     'lib/src/pages/implementations/web_video_fushi_page.dart';
 const String _playerPagePath =
     'lib/src/pages/implementations/video_fushi_page.dart';
+const String _appleChromePath =
+    'lib/src/pages/implementations/video_fushi/apple_chrome.part.dart';
 const String _clipExportPath =
     'lib/src/pages/implementations/video_fushi/clip_export.part.dart';
 
@@ -152,11 +154,17 @@ void main() {
     test('顶栏档位标识对两档都画，换档按站点记手动选择并原地重开本页', () {
       final String chip = _slice(
         webSource,
-        'Widget? _webHostingTopBarButton(',
+        'Widget? _webHostingButton(',
         'bool _webHostingAvailable(',
       );
       expect(chip, isNot(contains('widget.webSite != null')));
       expect(chip, contains('WebVideoModeChip('));
+      // M3E 顶栏与 Apple 右上玻璃胶囊都挂同一枚档位标识。
+      expect(chip, contains('Widget? _webHostingTopBarButton('));
+      expect(
+        maskComments(File(_appleChromePath).readAsStringSync()),
+        contains('_webHostingButton(desktop: desktop)'),
+      );
       final String sw = _slice(
         webSource,
         'Future<void> _switchWebHosting(',
@@ -166,6 +174,51 @@ void main() {
       expect(sw, contains('VideoFushiPage.neutralized('));
       expect(sw, contains('webHosting: target,'));
       expect(sw, isNot(contains('WebVideoFushiPage')));
+      // 选集面板的列表上下文（拍板台 zGXhhMAglH）随换档带过去。
+      expect(
+        sw,
+        contains('playlistCollectionId: widget.playlistCollectionId,'),
+      );
+      expect(sw, contains('youtubePlaylistId: _streamBookYoutubePlaylistId,'));
+    });
+
+    test('选集列表上下文一路随制卡交接带过去、跑完带回原生播放器页', () {
+      final String run = _slice(
+        webSource,
+        'Future<void> _runWebMineQueue(',
+        'void _applyWebPendingRestore(',
+      );
+      expect(
+        run,
+        contains('playlistCollectionId: widget.playlistCollectionId,'),
+      );
+      expect(run, contains('youtubePlaylistId: _streamBookYoutubePlaylistId,'));
+      final String back = _slice(
+        hostPage,
+        'Future<void> _returnToPlayer(',
+        'Future<void> _applyShaderTier(',
+      );
+      expect(back, contains('webHosting: hosting,'));
+      expect(
+        back,
+        contains('playlistCollectionId: widget.playlistCollectionId,'),
+      );
+      expect(back, contains('youtubePlaylistId: widget.youtubePlaylistId,'));
+    });
+
+    test('选集面板只在原生播放器页：网页档两档都在分流前建列表，宿主页不再有自己的选集 UI', () {
+      final String player = maskComments(
+        File(_playerPagePath).readAsStringSync(),
+      );
+      final int load = player.indexOf('await _loadStreamBookEpisodes();');
+      expect(load, greaterThan(-1));
+      expect(
+        player.indexOf('shouldOpenInWebVideoPlayer(row.videoPath)'),
+        greaterThan(load),
+      );
+      expect(hostPage, isNot(contains('VideoEpisodePanel(')));
+      expect(hostPage, isNot(contains('_switchEpisode(')));
+      expect(hostPage, isNot(contains('ensureStreamBookEpisode(')));
     });
 
     test('内置网页播放器页只当制卡重放宿主：打开它的地方都是制卡交接', () {
@@ -197,6 +250,60 @@ void main() {
     });
   });
 
+  group('网页档快捷键两档同路（BUG-5417 / #4404）', () {
+    late String webSource;
+    late String playerPage;
+
+    setUpAll(() {
+      webSource = maskComments(File(_webSourcePath).readAsStringSync());
+      playerPage = maskComments(File(_playerPagePath).readAsStringSync());
+    });
+
+    test('WebView 持焦的键盘桥两档都接，走与 Flutter 持焦同一张动作表', () {
+      final String init = _slice(
+        webSource,
+        'Future<void> _initWebSource(',
+        'Future<void> _persistWebPosition(',
+      );
+      expect(init, contains('onKeyToken: _onWebKeyToken,'));
+      final String token = _slice(
+        webSource,
+        'void _onWebKeyToken(String token)',
+        'Future<void> _toggleWebWindowFullscreen(',
+      );
+      expect(token, contains('_buildVideoShortcutActions(controller)'));
+      expect(token, isNot(contains('_webHosting')));
+    });
+
+    test('网页档动作门控只认 videoWebBackendSupportsShortcutAction，不分档', () {
+      final String actions = _slice(
+        playerPage,
+        'VideoPlayerShortcutActions _buildVideoShortcutActions(',
+        'ocrFrame:',
+      );
+      expect(
+        actions,
+        contains('videoWebBackendSupportsShortcutAction(action)'),
+      );
+      expect(actions, isNot(contains('_webHosting')));
+      for (final String gated in <String>[
+        'ShortcutAction.videoScreenshot,',
+        'ShortcutAction.videoScreenshotSubtitled,',
+      ]) {
+        expect(actions, contains(gated));
+      }
+      final String all = _slice(
+        playerPage,
+        'VideoPlayerShortcutActions _buildVideoShortcutActions(',
+        'void _handleVideoEscapeAction() {',
+      );
+      expect(all, contains('ShortcutAction.videoPreviousChapter,'));
+      expect(all, contains('ShortcutAction.videoNextChapter,'));
+      expect(all, contains('seekBackward:'));
+      expect(all, contains('seekForward:'));
+    });
+  });
+
   group('制卡优先档的能力真的接上（审查补丁）', () {
     late String webSource;
     late String playerPage;
@@ -214,8 +321,13 @@ void main() {
         'VideoPlayerShortcutActions _buildVideoShortcutActions(',
         'ocrFrame:',
       );
-      expect(actions, isNot(contains('screenshot: web')));
-      expect(actions, isNot(contains('screenshotSubtitled: web')));
+      // 不再一刀切 `screenshot: web ? unsupported : …`；只过单一门控 webGated。
+      expect(
+        actions,
+        isNot(matches(RegExp(r'screenshot(Subtitled)?: web\s*\?'))),
+      );
+      expect(actions, contains('screenshot: webGated('));
+      expect(actions, contains('screenshotSubtitled: webGated('));
       expect(actions, contains('_saveScreenshot(withSubtitles: false)'));
       expect(actions, contains('_saveScreenshot(withSubtitles: true)'));
       final String save = _slice(

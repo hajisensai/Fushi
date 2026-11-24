@@ -10,6 +10,7 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/components/glass/fushi_apple_sheet_header.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/import/import_dialog_blocks.dart';
@@ -111,10 +112,12 @@ class ImportChoiceDialog<T> extends StatelessWidget {
         ),
       ),
       actions: <Widget>[
-        adaptiveDialogAction(
-          context: context,
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(t.cancel),
+        FushiSheetAction.cancel(
+          child: adaptiveDialogAction(
+            context: context,
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(t.cancel),
+          ),
         ),
       ],
     );

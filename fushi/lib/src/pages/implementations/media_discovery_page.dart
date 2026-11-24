@@ -50,6 +50,14 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
 import 'package:fushi/src/media/discovery/sources/nyaa_discovery_source.dart';
+import 'package:fushi/src/media/import/apple/apple_import_rows.dart'
+    show AppleImportSectionAction;
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_shelf.dart';
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_widgets.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsSection;
+
+part 'discovery/apple/apple_media_discovery.part.dart';
 
 /// 统一发现页：书（小说/有声书）与 galgame 共用的多源在线资源发现视图。
 ///
@@ -164,6 +172,12 @@ enum _GameTypeFilter {
 }
 
 class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
+  /// Apple macOS 档「来源」货架是否展开成网格（「查看全部」）。
+  bool _appleSourcesExpanded = false;
+
+  /// Apple 画法（part 里的 extension）改页内状态用。
+  void _updateState(VoidCallback fn) => setState(fn);
+
   late DiscoveryMediaKind _kind = widget.kinds.first;
   String _sourceId = kDiscoveryAllSourcesId;
   final TextEditingController _queryCtrl = TextEditingController();
@@ -837,6 +851,8 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
       },
       trailing: actionsInShell ? const <Widget>[] : _buildActions(),
       leading: _buildHeaderLeading(),
+      // Apple：第三层筛选是搜索框右边的 pull-down（M3E 不读）。
+      appleFilters: isGlassDesign(context) ? _appleFilters() : const <Widget>[],
     );
   }
 
@@ -927,6 +943,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
 
   /// 资源文件名（装盒取字号、完整换行）+ trusted 绿 / remake 红徽标。
   Widget _buildResourceTitle(BuildContext context, DiscoveryResourceItem item) {
+    if (isGlassDesign(context)) return _buildAppleResourceTitle(item);
     final Widget title = DiscoveryFitFileName(text: item.title);
     if (!item.trusted && !item.remake) return title;
     return Row(
@@ -1262,7 +1279,9 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
           SliverSafeArea(
             top: false,
             sliver: SliverToBoxAdapter(
-              child: _buildSourcePicker(context, service),
+              child: isGlassDesign(context)
+                  ? _buildAppleSourcePicker(context, service)
+                  : _buildSourcePicker(context, service),
             ),
           ),
         ];
@@ -1350,7 +1369,26 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
             displayNameFor: (String id) => _sourceDisplayName(service, id),
           ),
         ),
-      if (title != null)
+      if (title != null && isGlassDesign(context))
+        // Apple：结果头 = 货架头字阶（标题 + 「n 个来源 · m 条」副行）。
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              appleDiscoveryPageInset(context),
+              16,
+              appleDiscoveryPageInset(context),
+              4,
+            ),
+            child: AppleDiscoveryShelfHeader(
+              title: title,
+              subtitle: t.discovery_results_summary(
+                sources: sourceCount,
+                n: visible.entries.length,
+              ),
+            ),
+          ),
+        )
+      else if (title != null)
         SliverToBoxAdapter(
           child: FushiSectionTitle(
             title,
@@ -1527,6 +1565,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     DiscoveryFolder entry,
     MediaDiscoveryService service,
   ) {
+    if (isGlassDesign(context)) return _buildAppleFolderLeading(entry, service);
     return DiscoverySourceColorsBuilder(
       sourceId: entry.sourceId,
       name: _sourceDisplayName(service, entry.sourceId),
@@ -1554,6 +1593,7 @@ class _MediaDiscoveryPageState extends State<MediaDiscoveryPage> {
     DiscoveryResourceItem item,
     MediaDiscoveryService service,
   ) {
+    if (isGlassDesign(context)) return _buildAppleResourceMeta(item, service);
     final ({Color background, Color foreground}) tag = fushiNeutralTagColors(
       context,
     );

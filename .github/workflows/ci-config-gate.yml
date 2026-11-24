@@ -64,6 +64,9 @@ jobs:
       # 调试版流水线生成器（发布 run 里 continue-on-error 地调用，红了不会在那里暴露）。
       - name: Debug pulse generator unit tests
         run: python3 tool/gen_debug_pulse_test.py
+      # 服务端自动发布的轮询规划（release-server.yml 的 plan job；红了在 fushi-server 那边才暴露）。
+      - name: Server release plan unit tests
+        run: python3 tool/server_release_plan_test.py
       # 符号索引（tool/symindex）：改动文件判定 / 自动降级 / Rust hover 解析。
       - name: Symbol index unit tests
         run: python3 tool/symindex/symdb_test.py

@@ -392,9 +392,11 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
                           ),
                           // M3E 进场（与底部 FushiToast 同一手感）：淡入 + 从左上角
                           // 锚点由 0.86 弹到 1（spatialFast 带一点过冲）；退场反向。
+                          // Apple 的通知是玻璃 HUD：淡入淡出走玻璃安全通道（不让
+                          // Opacity 压在玻璃上），缩放声明成自缩放（背景不随之缩）。
                           transitionBuilder:
                               (Widget child, Animation<double> animation) {
-                                return FadeTransition(
+                                return FushiChromeFadeTransition(
                                   opacity: CurvedAnimation(
                                     parent: animation,
                                     curve: FushiMotion.enter,
@@ -410,7 +412,11 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
                                             reverseCurve: FushiMotion.exit,
                                           ),
                                         ),
-                                    child: child,
+                                    child: fushiGlassSelfScale(
+                                      context,
+                                      scaling: true,
+                                      child: child,
+                                    ),
                                   ),
                                 );
                               },

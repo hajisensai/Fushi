@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.d
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/video/online/anime_episode_downloader.dart';
+import 'package:fushi/src/media/video/online/anime_source_book_spec.dart';
 import 'package:fushi/src/media/video/online/anime_source_mpv_args.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime.dart';
@@ -47,7 +48,8 @@ class AnimeSourceVideoClient
         RemoteVideoStreamVariants,
         RemoteVideoEpisodeNumber,
         RemoteVideoCollectionIsWork,
-        RemoteVideoSubtitleAudioRefresh {
+        RemoteVideoSubtitleAudioRefresh,
+        RemoteVideoReopenSpec {
   AnimeSourceVideoClient({
     required this.manager,
     required this.context,
@@ -204,6 +206,20 @@ class AnimeSourceVideoClient
   String episodeVideoId(MihonEpisode episode) {
     final int index = episodes.indexOf(episode);
     return index >= 0 ? _episodeIds[index] : _baseEpisodeId(episode);
+  }
+
+  /// 收藏时记下的重开规格（[RemoteVideoReopenSpec]）：与入库在线行的
+  /// `streamSpecJson` 同形，跳回时由 `buildAnimeSourceEpisodeLaunch` 重建本客户端。
+  @override
+  String? reopenSpecFor(String videoId) {
+    final int index = _episodeIds.indexOf(videoId);
+    if (index < 0) return null;
+    return AnimeSourceBookSpec(
+      extensionPackage: context.source.extensionPackage,
+      sourceId: context.source.id,
+      anime: anime,
+      episode: episodes[index],
+    ).encode();
   }
 
   String _baseEpisodeId(MihonEpisode episode) =>

@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
@@ -99,11 +100,20 @@ class FushiSectionTitle extends StatelessWidget {
         (group
             ? const EdgeInsets.only(top: 16, bottom: 6)
             : const EdgeInsets.only(top: 24, bottom: 8));
-    final Widget title = Text(
-      text,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: styleOf(context, level),
+    // 自定义背景图上垫毛玻璃底（[FushiBackdropFrost]，只画不占位）：标题收成
+    // 自身宽度的胶囊，行尾控件另垫一枚，不连成一整条横幅。
+    final Widget title = Align(
+      alignment: AlignmentDirectional.centerStart,
+      widthFactor: 1,
+      heightFactor: 1,
+      child: FushiBackdropFrost(
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: styleOf(context, level),
+        ),
+      ),
     );
     return Padding(
       padding: resolvedPadding,
@@ -115,7 +125,10 @@ class FushiSectionTitle extends StatelessWidget {
                 children: <Widget>[
                   Expanded(flex: shrinkTrailing ? 2 : 1, child: title),
                   const SizedBox(width: 8),
-                  if (shrinkTrailing) Flexible(child: trailing!) else trailing!,
+                  if (shrinkTrailing)
+                    Flexible(child: FushiBackdropFrost(child: trailing!))
+                  else
+                    FushiBackdropFrost(child: trailing!),
                 ],
               ),
       ),

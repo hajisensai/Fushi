@@ -211,13 +211,19 @@ void main() {
       // their 25s execution deadline and 35s enclosing test timeout.
       probe = await _compileProbe();
     });
-    for (final String mode in <String>['kill', 'dispose', 'quiesce']) {
-      final String name = mode == 'quiesce'
-          // H6Vou-6uYX: the release NativeCallable backend, quiesced the way
-          // every exit chain does first, then its isolate torn down without
-          // Player.dispose (macOS NSApp terminate shuts the engine down).
-          ? 'H6Vou-6uYX: release callback quiesced before its isolate dies'
-          : 'BUG-3003: native wakeup/quit survives owner $mode';
+    for (final String mode in <String>['kill', 'dispose', 'quiesce', 'port']) {
+      final String name = switch (mode) {
+        // H6Vou-6uYX: the release NativeCallable backend, quiesced the way
+        // every exit chain does first, then its isolate torn down without
+        // Player.dispose (macOS NSApp terminate shuts the engine down).
+        'quiesce' =>
+          'H6Vou-6uYX: release callback quiesced before its isolate dies',
+        // BUG-5413: the release backend with the app's port wakeup; the owner
+        // dies with nothing quiesced or disposed (Android engine destroy with
+        // the process left cached).
+        'port' => 'BUG-5413: port wakeup survives its isolate without quiesce',
+        _ => 'BUG-3003: native wakeup/quit survives owner $mode',
+      };
       test(name, () async {
         final ProcessResult result = await _runBoundedProcess(
           probe.dart,
@@ -245,6 +251,14 @@ void main() {
         }
         if (mode == 'quiesce') {
           expect(result.stdout, contains('QUIESCE RETURNED'), reason: evidence);
+        }
+        if (mode == 'port') {
+          expect(
+            result.stdout,
+            contains('PORT WAKEUP INSTALLED'),
+            reason: evidence,
+          );
+          expect(result.stdout, isNot(contains('QUIESCE RETURNED')));
         }
       }, timeout: const Timeout(Duration(seconds: 35)));
     }

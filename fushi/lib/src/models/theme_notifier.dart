@@ -948,7 +948,9 @@ class ThemeNotifier extends ChangeNotifier {
     'app_theme_key',
     'brightness_mode',
     'design_system',
+    // 旧材质键：冻结不读（2026-11 起由 glass_quality 取代），仍随配置留存原值。
     'glass_material',
+    'glass_quality',
     'pure_black_dark',
     // 阅读器纸色（拍板台 vJSj4RsKFt）：以前纸色随 app_theme_key 走配置，拆成独立
     // 偏好后照旧随配置 / 作品走，否则在书里改纸色会写穿到全局。
@@ -1319,16 +1321,30 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// 各模块单独设的背景（[kPageBackdropModulePresetsPrefKey] +
   /// [kPageBackdropModuleImagesPrefKey]），图片路径按与全局同一份存在性核对过滤。
-  Map<HomeTab, PageBackdropModuleOverride> _readPageBackdropModuleOverrides() {
-    final Map<HomeTab, PageBackdropPreset> presets =
+  Map<HomeTab, PageBackdropModuleOverride> _readPageBackdropModuleOverrides() =>
+      _readPageBackdropOverrides<HomeTab>(
         decodePageBackdropModulePresets(
           _get(kPageBackdropModulePresetsPrefKey),
-        );
-    final Map<HomeTab, PageBackdropModuleImages> images =
-        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
-    return Map<HomeTab, PageBackdropModuleOverride>.unmodifiable(
-      <HomeTab, PageBackdropModuleOverride>{
-        for (final MapEntry<HomeTab, PageBackdropPreset> e in presets.entries)
+        ),
+        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey)),
+      );
+
+  /// 各页面单独设的背景（与模块同存在两个模块键里，键名是页面 wire）。
+  Map<PageBackdropPage, PageBackdropModuleOverride>
+  _readPageBackdropPageOverrides() =>
+      _readPageBackdropOverrides<PageBackdropPage>(
+        decodePageBackdropPagePresets(_get(kPageBackdropModulePresetsPrefKey)),
+        decodePageBackdropPageImages(_get(kPageBackdropModuleImagesPrefKey)),
+      );
+
+  /// 模块 / 页面两层共用：预设 + 图片拼成覆盖，图片按存在性核对过滤。
+  Map<K, PageBackdropModuleOverride> _readPageBackdropOverrides<K>(
+    Map<K, PageBackdropPreset> presets,
+    Map<K, PageBackdropModuleImages> images,
+  ) {
+    return Map<K, PageBackdropModuleOverride>.unmodifiable(
+      <K, PageBackdropModuleOverride>{
+        for (final MapEntry<K, PageBackdropPreset> e in presets.entries)
           e.key: PageBackdropModuleOverride(
             preset: e.value,
             landscapeImagePath: existingPageBackdropImagePath(
@@ -1355,7 +1371,7 @@ class ThemeNotifier extends ChangeNotifier {
       }
     }
     for (final PageBackdropModuleImages images
-        in decodePageBackdropModuleImages(
+        in decodePageBackdropScopedImages(
           _get(kPageBackdropModuleImagesPrefKey),
         ).values) {
       if (_resolvePageBackdropImage(images.landscape) case final String path) {
@@ -1386,6 +1402,7 @@ class ThemeNotifier extends ChangeNotifier {
     final Color? before = pageBackdropAccentSeed;
     pageBackdropSettings.value = _readPageBackdropSettings();
     pageBackdropModuleOverrides.value = _readPageBackdropModuleOverrides();
+    pageBackdropPageOverrides.value = _readPageBackdropPageOverrides();
     if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
   }
 
@@ -1438,7 +1455,7 @@ class ThemeNotifier extends ChangeNotifier {
       final Object? raw = _get(key);
       if (raw is String && raw.isNotEmpty) return true;
     }
-    return decodePageBackdropModuleImages(
+    return decodePageBackdropScopedImages(
       _get(kPageBackdropModuleImagesPrefKey),
     ).isNotEmpty;
   }
@@ -1602,49 +1619,29 @@ class ThemeNotifier extends ChangeNotifier {
     return fileName;
   }
 
-  // ── 按模块单独设置背景（反馈 DYI1IOZxSM）──────────────────────────────
+  // ── 按模块 / 页面单独设置背景（反馈 DYI1IOZxSM、拍板台 xxbbL0j15l）──────────
 
   /// [tab] 单独设的背景；null = 跟随全局。
   PageBackdropModuleOverride? pageBackdropModuleOverride(HomeTab tab) =>
       pageBackdropModuleOverrides.value[tab];
+
+  /// [page] 单独设的背景；null = 继承所属模块。
+  PageBackdropModuleOverride? pageBackdropPageOverride(PageBackdropPage page) =>
+      pageBackdropPageOverrides.value[page];
 
   /// 给 [tab] 单独设预设；[preset] 为 null = 恢复跟随全局（连同本模块的图片一起删）。
   /// 选「自定义图片」但本模块还没有图时由调用方先走 [importPageBackdropModuleImage]。
   Future<void> setPageBackdropModulePreset(
     HomeTab tab,
     PageBackdropPreset? preset,
-  ) => _serializePageBackdropImageMutation(() async {
-    final Map<HomeTab, PageBackdropPreset> presets =
-        decodePageBackdropModulePresets(
-          _get(kPageBackdropModulePresetsPrefKey),
-        );
-    if (preset == null) {
-      presets.remove(tab);
-      final Map<HomeTab, PageBackdropModuleImages> images =
-          decodePageBackdropModuleImages(
-            _get(kPageBackdropModuleImagesPrefKey),
-          );
-      final PageBackdropModuleImages? removed = images.remove(tab);
-      await _set(
-        kPageBackdropModulePresetsPrefKey,
-        encodePageBackdropModulePresets(presets),
-      );
-      if (removed != null) {
-        await _set(
-          kPageBackdropModuleImagesPrefKey,
-          encodePageBackdropModuleImages(images),
-        );
-        await _sweepUnreferencedPageBackdropImages();
-      }
-    } else {
-      presets[tab] = preset;
-      await _set(
-        kPageBackdropModulePresetsPrefKey,
-        encodePageBackdropModulePresets(presets),
-      );
-    }
-    _publishPageBackdrop();
-  });
+  ) => _setScopedPageBackdropPreset(pageBackdropModuleWire(tab), preset);
+
+  /// 给 [page] 单独设预设；[preset] 为 null = 恢复继承所属模块（连同本页的图片一起删），
+  /// [PageBackdropPreset.plain] = 在这一页关掉背景装饰。
+  Future<void> setPageBackdropPagePreset(
+    PageBackdropPage page,
+    PageBackdropPreset? preset,
+  ) => _setScopedPageBackdropPreset(page.wire, preset);
 
   /// 把用户选的图片复制进 app 数据目录当 [tab] 的背景（[portrait] = 竖屏单独用的
   /// 那张）。换横屏图同时把这个模块切到「自定义图片」。模块图片不参与取色。
@@ -1652,53 +1649,122 @@ class ThemeNotifier extends ChangeNotifier {
     HomeTab tab,
     File source, {
     required bool portrait,
+  }) => _importScopedPageBackdropImage(
+    pageBackdropModuleWire(tab),
+    'module',
+    source,
+    portrait: portrait,
+  );
+
+  /// [importPageBackdropModuleImage] 的页面版：换横屏图同时把 [page] 切到「自定义图片」。
+  Future<void> importPageBackdropPageImage(
+    PageBackdropPage page,
+    File source, {
+    required bool portrait,
+  }) => _importScopedPageBackdropImage(
+    page.wire,
+    'page',
+    source,
+    portrait: portrait,
+  );
+
+  /// 去掉 [tab] 竖屏单独的那张图（竖屏回到与本模块横屏图共用）。
+  Future<void> clearPageBackdropModulePortraitImage(HomeTab tab) =>
+      _clearScopedPageBackdropPortraitImage(pageBackdropModuleWire(tab));
+
+  /// 去掉 [page] 竖屏单独的那张图（竖屏回到与本页横屏图共用）。
+  Future<void> clearPageBackdropPagePortraitImage(PageBackdropPage page) =>
+      _clearScopedPageBackdropPortraitImage(page.wire);
+
+  /// 模块 / 页面两层共用的写入：两层存在同一对 JSON 键里，按 wire 整体读改写，
+  /// 改一层不会丢掉另一层的设置。
+  Future<void> _setScopedPageBackdropPreset(
+    String wire,
+    PageBackdropPreset? preset,
+  ) => _serializePageBackdropImageMutation(() async {
+    final Map<String, PageBackdropPreset> presets =
+        decodePageBackdropScopedPresets(
+          _get(kPageBackdropModulePresetsPrefKey),
+        );
+    if (preset == null) {
+      presets.remove(wire);
+      final Map<String, PageBackdropModuleImages> images =
+          decodePageBackdropScopedImages(
+            _get(kPageBackdropModuleImagesPrefKey),
+          );
+      final PageBackdropModuleImages? removed = images.remove(wire);
+      await _set(
+        kPageBackdropModulePresetsPrefKey,
+        encodePageBackdropScopedPresets(presets),
+      );
+      if (removed != null) {
+        await _set(
+          kPageBackdropModuleImagesPrefKey,
+          encodePageBackdropScopedImages(images),
+        );
+        await _sweepUnreferencedPageBackdropImages();
+      }
+    } else {
+      presets[wire] = preset;
+      await _set(
+        kPageBackdropModulePresetsPrefKey,
+        encodePageBackdropScopedPresets(presets),
+      );
+    }
+    _publishPageBackdrop();
+  });
+
+  /// [slot] 只进复制件的文件名（`<slot>-<wire>-<朝向>-<毫秒>`），便于排查。
+  Future<void> _importScopedPageBackdropImage(
+    String wire,
+    String slot,
+    File source, {
+    required bool portrait,
   }) => _serializePageBackdropImageMutation(() async {
     final Directory dir = await _resolvePageBackdropImageDirectory();
-    final String wire = pageBackdropModuleWire(tab);
     final String name = await _copyPageBackdropImage(
       source,
       dir,
-      'module-$wire-${portrait ? 'portrait' : 'landscape'}',
+      '$slot-$wire-${portrait ? 'portrait' : 'landscape'}',
     );
-    final Map<HomeTab, PageBackdropModuleImages> images =
-        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
+    final Map<String, PageBackdropModuleImages> images =
+        decodePageBackdropScopedImages(_get(kPageBackdropModuleImagesPrefKey));
     final PageBackdropModuleImages current =
-        images[tab] ?? (landscape: null, portrait: null);
-    images[tab] = portrait
+        images[wire] ?? (landscape: null, portrait: null);
+    images[wire] = portrait
         ? (landscape: current.landscape, portrait: name)
         : (landscape: name, portrait: current.portrait);
     await _set(
       kPageBackdropModuleImagesPrefKey,
-      encodePageBackdropModuleImages(images),
+      encodePageBackdropScopedImages(images),
     );
     if (!portrait) {
-      final Map<HomeTab, PageBackdropPreset> presets =
-          decodePageBackdropModulePresets(
+      final Map<String, PageBackdropPreset> presets =
+          decodePageBackdropScopedPresets(
             _get(kPageBackdropModulePresetsPrefKey),
           );
-      presets[tab] = PageBackdropPreset.custom;
+      presets[wire] = PageBackdropPreset.custom;
       await _set(
         kPageBackdropModulePresetsPrefKey,
-        encodePageBackdropModulePresets(presets),
+        encodePageBackdropScopedPresets(presets),
       );
     }
     await _sweepUnreferencedPageBackdropImages();
     _publishPageBackdrop();
   });
 
-  /// 去掉 [tab] 竖屏单独的那张图（竖屏回到与本模块横屏图共用）。
-  Future<void> clearPageBackdropModulePortraitImage(HomeTab tab) =>
+  Future<void> _clearScopedPageBackdropPortraitImage(String wire) =>
       _serializePageBackdropImageMutation(() async {
-        final Map<HomeTab, PageBackdropModuleImages> images =
-            decodePageBackdropModuleImages(
+        final Map<String, PageBackdropModuleImages> images =
+            decodePageBackdropScopedImages(
               _get(kPageBackdropModuleImagesPrefKey),
             );
-        final PageBackdropModuleImages? current = images[tab];
+        final PageBackdropModuleImages? current = images[wire];
         if (current == null || current.portrait == null) return;
-        images[tab] = (landscape: current.landscape, portrait: null);
+        images[wire] = (landscape: current.landscape, portrait: null);
         await _set(
           kPageBackdropModuleImagesPrefKey,
-          encodePageBackdropModuleImages(images),
+          encodePageBackdropScopedImages(images),
         );
         await _sweepUnreferencedPageBackdropImages();
         _publishPageBackdrop();
@@ -2488,11 +2554,10 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 功能层表面材质（与颜色主题正交）。随 Profile 走，与主题键一致；墨水屏 /
-  /// 增强对比度下的回退在消费端 [glassMaterialOf] 判，这里只存用户的选择。
-  /// 生效的玻璃材质：只有设计系统选「玻璃」时才非 off；当前 Apple（Cupertino）
-  /// 组件悬浮面恒为实色（[glassMaterialTier] 钉成 off）。窗口级 Mica / vibrancy
-  /// 不读这里，见 [windowBackdropRequestedOf]。
+  /// 生效的玻璃画质档位（与颜色主题正交）：只有设计系统选「玻璃」（Apple /
+  /// Cupertino）时才非 off；系统「降低透明度」下回退 off。墨水屏 / 增强对比度
+  /// / 引擎能力的回退在消费端唯一判据 [glassMaterialOf] 里判。窗口级 Mica /
+  /// vibrancy 不读这里，见 [windowBackdropRequestedOf]。
   FushiGlassMaterial get glassMaterial {
     if (designSystem != 'glass') return FushiGlassMaterial.off;
     // 系统开了「降低透明度 / 关闭透明效果」：整套玻璃回退实心（主题层半透明
@@ -2503,19 +2568,19 @@ class ThemeNotifier extends ChangeNotifier {
     return glassMaterialTier;
   }
 
-  /// 玻璃设计系统下的材质档位（不看设计系统，供设置页显示选中项）。
+  /// 用户选的玻璃画质档位（不看设计系统，供设置页显示选中项）。偏好键
+  /// `glass_quality`（存枚举名），缺省 [FushiGlassMaterial.defaultTier]（精简）。
   ///
-  /// 2026-10-12 用户拍板：Apple 设计系统去掉玻璃特效，直接原生 Cupertino 实色
-  /// 材质（「白边那些也改掉吧，有点掉帧」「其实特效都去掉，直接原生
-  /// Cupertino」）——这里恒为 off，各组件走既有的「关闭 = 实色」分支（与系统
-  /// 「降低透明度」同一条路径）。此前 2026-10-06 是固定毛玻璃。**不读也不改写**
-  /// `glass_material` 偏好，存储值原样保留（入口在设置页同步隐藏，见
-  /// settings_schema_appearance.dart 的 `appearance.glass_material`）。恢复档位
-  /// 选择时还原为：偏好 == frosted ? frosted : liquid（缺省 liquid）。
-  FushiGlassMaterial get glassMaterialTier => FushiGlassMaterial.off;
+  /// 历史：2026-10-12 用户拍板 Apple 外观去掉玻璃、全部实色（每颗悬浮胶囊一层
+  /// 实时模糊掉帧）；2026-11 改为由用户在「玻璃画质」四档里自己权衡，「实色」档
+  /// 即原先的观感。旧键 `glass_material`（frosted / liquid）冻结，不读不改写。
+  FushiGlassMaterial get glassMaterialTier => FushiGlassMaterial.fromPrefValue(
+    _get('glass_quality', defaultValue: FushiGlassMaterial.defaultTier.name)
+        as String?,
+  );
 
   Future<void> setGlassMaterial(FushiGlassMaterial value) async {
-    await _set('glass_material', value.name);
+    await _set('glass_quality', value.name);
     notifyListeners();
   }
 

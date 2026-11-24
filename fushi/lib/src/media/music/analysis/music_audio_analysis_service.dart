@@ -454,6 +454,14 @@ class MusicAudioAnalysisService {
   final ListQueue<_Request> _pending = ListQueue<_Request>();
   _Request? _active;
   int _nextToken = 1;
+
+  /// 临时 PCM 文件名里的本实例标记。分析引擎是进程级的、活得比 isolate 久：Android 上引擎被销毁、
+  /// 进程留着，下次打开的新 isolate 令牌又从 1 数，而旧 isolate 那首还在收尾、做完会删掉它的输入
+  /// （`deleteInput`）。只用令牌命名时两边撞成同一个 `mana_1.s16le`，新 isolate 刚解码好的输入会被
+  /// 旧任务删掉（BUG-5413）。
+  final String _tempTag = DateTime.now().microsecondsSinceEpoch.toRadixString(
+    36,
+  );
   bool _cacheTrimmed = false;
 
   final ValueNotifier<MusicAnalysisModelState> _models =
@@ -747,7 +755,7 @@ class MusicAudioAnalysisService {
       final Directory tmp = await _tempDir();
       if (!tmp.existsSync()) await tmp.create(recursive: true);
       final int token = _nextToken++;
-      final String pcm = p.join(tmp.path, 'mana_$token.s16le');
+      final String pcm = p.join(tmp.path, 'mana_${_tempTag}_$token.s16le');
       req.pcmPath = pcm;
       await _decoder.decode(
         input: req.target.path,

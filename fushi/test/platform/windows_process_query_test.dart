@@ -7,6 +7,7 @@
 //
 // 只在 Windows 上有意义；其它平台断言「一律返回空/null」这条契约。
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -28,15 +29,15 @@ final Object? _skipOffRealWindows = Platform.isWindows
 
 void main() {
   group('非 Windows 平台契约', () {
-    test('全部返回空/null，调用方无需自己 gate', () {
+    test('全部返回空/null，调用方无需自己 gate', () async {
       if (Platform.isWindows) return;
       expect(enumerateWindowsProcesses(), isEmpty);
       expect(windowsProcessImagePath(1), isNull);
       expect(windowsProcessById(1), isNull);
       expect(windowsProcessesByNames(<String>{'x.exe'}), isEmpty);
       expect(windowsProcessesByIds(<int>[1]), isEmpty);
-      expect(windowsProcessesHoldingFile('/tmp/x'), isEmpty);
-      expect(windowsProcessesHoldingFiles(<String>['/tmp/x']), isEmpty);
+      expect(await windowsProcessesHoldingFile('/tmp/x'), isEmpty);
+      expect(await windowsProcessesHoldingFiles(<String>['/tmp/x']), isEmpty);
       expect(
         readWindowsRegistryString(
           WindowsRegistryRoot.localMachine,
@@ -169,13 +170,13 @@ void main() {
   }, skip: _skipOffRealWindows);
 
   group('文件占用者查询 / Restart Manager（真实系统）', () {
-    test('当前进程必然被报为自己 exe 文件的占用者', () {
+    test('当前进程必然被报为自己 exe 文件的占用者', () async {
       // 这是本组的核心断言：RM_PROCESS_INFO 的字段顺序 / 定长数组尺寸写错，
       // 不会抛异常，只会读出垃圾 PID 或空列表。运行中的进程一定持有自己的
-      // image 文件，是唯一不依赖环境的已知真值。
-      final List<WindowsProcessEntry> holders = windowsProcessesHoldingFile(
-        Platform.resolvedExecutable,
-      );
+      // image 文件，是唯一不依赖环境的已知真值。查询跑在后台 isolate 里，
+      // 那里的 RM 会话照样以本进程身份报出占用者。
+      final List<WindowsProcessEntry> holders =
+          await windowsProcessesHoldingFile(Platform.resolvedExecutable);
       expect(
         holders.map((WindowsProcessEntry e) => e.pid),
         contains(pid),
@@ -185,10 +186,10 @@ void main() {
       );
     });
 
-    test('报出的占用者带正确的 image 名与路径', () {
-      final WindowsProcessEntry me = windowsProcessesHoldingFile(
+    test('报出的占用者带正确的 image 名与路径', () async {
+      final WindowsProcessEntry me = (await windowsProcessesHoldingFile(
         Platform.resolvedExecutable,
-      ).firstWhere((WindowsProcessEntry e) => e.pid == pid);
+      )).firstWhere((WindowsProcessEntry e) => e.pid == pid);
       expect(me.name.toLowerCase(), _ownExeName().toLowerCase());
       expect(
         me.path!.toLowerCase().replaceAll('/', r'\'),
@@ -196,28 +197,28 @@ void main() {
       );
     });
 
-    test('无人占用的普通文件 → 空列表', () {
+    test('无人占用的普通文件 → 空列表', () async {
       final Directory tmp = Directory.systemTemp.createTempSync(
         'fushi_rm_probe_',
       );
       try {
         final File idle = File('${tmp.path}\\idle.bin')
           ..writeAsBytesSync(<int>[1, 2, 3]);
-        expect(windowsProcessesHoldingFile(idle.path), isEmpty);
+        expect(await windowsProcessesHoldingFile(idle.path), isEmpty);
       } finally {
         tmp.deleteSync(recursive: true);
       }
     });
 
-    test('不存在的文件 / 空路径 → 空列表，不抛异常', () {
+    test('不存在的文件 / 空路径 → 空列表，不抛异常', () async {
       expect(
-        windowsProcessesHoldingFile(r'C:\NoSuchDir\NoSuchFile.dll'),
+        await windowsProcessesHoldingFile(r'C:\NoSuchDir\NoSuchFile.dll'),
         isEmpty,
       );
-      expect(windowsProcessesHoldingFile(''), isEmpty);
+      expect(await windowsProcessesHoldingFile(''), isEmpty);
     });
 
-    test('多文件一次会话：并集命中、同一占用者只报一次、空路径被滤掉', () {
+    test('多文件一次会话：并集命中、同一占用者只报一次、空路径被滤掉', () async {
       // 更新退出前对 galgame helper 整目录查占用者走这一条（单会话），曾逐文件
       // 开会话实测 ~1 s。这里拿「自己 exe 重复两次 + 无人占用文件 + 空串」
       // 验证：RM 注册数组拼对了（否则报不出自己）、按 PID 去重生效。
@@ -228,7 +229,7 @@ void main() {
         final File idle = File('${tmp.path}\\idle.bin')
           ..writeAsBytesSync(<int>[1, 2, 3]);
         final List<WindowsProcessEntry> holders =
-            windowsProcessesHoldingFiles(<String>[
+            await windowsProcessesHoldingFiles(<String>[
               Platform.resolvedExecutable,
               '',
               idle.path,
@@ -242,8 +243,21 @@ void main() {
       } finally {
         tmp.deleteSync(recursive: true);
       }
-      expect(windowsProcessesHoldingFiles(<String>[]), isEmpty);
-      expect(windowsProcessesHoldingFiles(<String>['', '']), isEmpty);
+      expect(await windowsProcessesHoldingFiles(<String>[]), isEmpty);
+      expect(await windowsProcessesHoldingFiles(<String>['', '']), isEmpty);
+    });
+
+    test('BUG-5389：查询不在调用方 isolate 上同步执行', () async {
+      // RmGetList 要扫全机进程，曾在主 isolate 同步跑了 96 s，窗口「未响应」。
+      // 后台 isolate 化之后，调用方 isolate 在查询进行中仍能处理事件：用一个
+      // 先排进事件队列的 Timer 证明——同步 FFI 的话它要等查询返回后才轮到。
+      bool ranWhileQuerying = false;
+      final Future<List<WindowsProcessEntry>> query =
+          windowsProcessesHoldingFiles(<String>[Platform.resolvedExecutable]);
+      Timer.run(() => ranWhileQuerying = true);
+      final List<WindowsProcessEntry> holders = await query;
+      expect(ranWhileQuerying, isTrue);
+      expect(holders.map((WindowsProcessEntry e) => e.pid), contains(pid));
     });
   }, skip: _skipOffRealWindows);
 

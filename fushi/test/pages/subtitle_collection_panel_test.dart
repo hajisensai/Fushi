@@ -10,7 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
-    show CollectionSeasonSection;
+    show CollectionSeasonSection, kCollectionExtrasGroupKey;
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
@@ -1604,6 +1604,39 @@ void main() {
         ),
         isNull,
       );
+    });
+
+    test('原盘合集整批分季：切集盘的分集进第 1 季、同盘整条标题进 PV·特典 (BUG-5391)', () async {
+      String mpls(int vol, String name) =>
+          'D:/video/Bocchi [BDMV]/Bocchi vol.$vol/BD/BDMV/PLAYLIST/$name.mpls';
+      final List<VideoBookRow> members = <VideoBookRow>[
+        await upsertBook(
+          bookUid: 'v1e1',
+          title: 'Bocchi 1 - 01',
+          videoPath: mpls(1, '00001.p01'),
+        ),
+        await upsertBook(
+          bookUid: 'v1e2',
+          title: 'Bocchi 1 - 02',
+          videoPath: mpls(1, '00001.p02'),
+        ),
+        await upsertBook(
+          bookUid: 'v1x',
+          title: 'Bocchi 1 - 03',
+          videoPath: mpls(1, '00005'),
+        ),
+        await upsertBook(
+          bookUid: 'v2e1',
+          title: 'Bocchi 2 - 01',
+          videoPath: mpls(2, '00001.p01'),
+        ),
+      ];
+      expect(subtitleCollectionDerivedSeasonKeys(members), <String, String>{
+        'v1e1': 's1',
+        'v1e2': 's1',
+        'v1x': kCollectionExtrasGroupKey,
+        'v2e1': 's1',
+      }, reason: '标题里的「- 03」不能把同盘特典拉回正片季');
     });
 
     testWidgets('多季合集逐季搜索与下载：预绑 S1 的 anilistId 也不把第 1 季字幕套到第 2 季', (

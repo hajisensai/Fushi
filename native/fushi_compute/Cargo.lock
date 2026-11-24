@@ -539,7 +539,7 @@ dependencies = [
 [[package]]
 name = "fushi_asr_cue_post"
 version = "0.1.0"
-source = "git+https://github.com/hajisensai/fushi-subtitles?rev=a5a9a90aacc1ea484f27c53d850104bf499d9225#a5a9a90aacc1ea484f27c53d850104bf499d9225"
+source = "git+https://github.com/hajisensai/fushi-subtitles?rev=5284dbf0f607a0b4a7b8f4f7733072795d2233fb#5284dbf0f607a0b4a7b8f4f7733072795d2233fb"
 
 [[package]]
 name = "fushi_compute"

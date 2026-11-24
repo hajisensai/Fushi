@@ -1,0 +1,8 @@
+## BUG-5393 · 用户合集被合并掉后，下一次合集同步按对端旧副本原样重建
+- **报告**：2026-11-24（用户：AI 管家复查后视频库出现重复卡片，同一批原盘分卷同时挂在两个合集里）
+- **真实性**：✅ 真 bug。本机库实测（`fushi.db` 只读）：2026-11-24 15:21:24 会话 `aimwub397hnkmehu` 的 `library.changes.apply` 把 C139～C142、C137（「BOCCHI THE ROCK! 2～6」，`origin = user`）并进 C138，把 C144 并进 C143；15:21:33～34 出现 C152～C157，名字、成员与被并掉的源合集一致，`origin = user`、`organize_key` 为空、`sort_order` 连号，`ai_agent_actions` 无记账——正是合集同步按清单 `createMediaCollection` 落库的形态（本机 googleDrive / host / fushiServer 三条合集同步基线都在推进）。不是视频分组协调器（它建的合集 `origin = rule` 且带 `organize_key`）。
+  - 根因 `packages/fushi_engine/lib/media/collections/collection_merge.dart:66`（修前）：`mergeMediaCollectionsInto` 对**任何**源合集都写 `organizeMerged: true` 的删除哨兵，包括用户合集。
+  - 同步裁决 `packages/fushi_engine/lib/sync/collection_sync_engine.dart:261`（`l.organizeMerged && _isUserOwned(r)` → 对端活胜，`:243` 对称）的本意是「这边整理器把它并掉的同时，那边用户接手了它」——用户合集永不当败方。源合集合并前**本来就**归用户时，对端那份旧副本也是 `origin = user`，被当成「接手」，于是死的这边输掉，下一轮同步按对端清单原样重建，`createMediaCollection` 还顺手清了删除墓碑。用户自己在书架 / 视频库里批量合并两个用户合集同样会被同步复活。
+- **[x] ① 已修复** — `mergeMediaCollectionsInto` 只在源合集合并时归整理器管（`CollectionOrigin.isOrganizerManaged`）才记 `organizeMerged`；用户合集被并（用户批量合并、AI 库管家合并）写普通删除墓碑，走同步的「删除是否新闻」裁决。源合集的分组键已被 `absorbOrganizeIdentity` 吸收进目标别名、随同一份清单同步，不会被 `getRejectedOrganizeGroups` 当成拒绝。整理器合集的并掉语义（§8.5 成员转交吸收者、并发接手时用户胜）不变。
+- **[x] ② 已加自动化测试** — `fushi/test/sync/collection_organize_convergence_test.dart`「用户合集被并掉（userIntent=false/true）后同步不按对端旧副本重建」：两台真实内存库经共享清单同步，A 合并用户合集后任意顺序同步收敛，各端只剩目标合集、成员齐全、无被拒分组键。修前两条均红（各端多出被并掉的「Vol 2」）。
+- **备注**：已被复活的重复合集（本机 C152～C157）不自动清理，用户 / AI 再合并一次即可生效；别的设备上修前写下的 `organizeMerged = true` 用户合集哨兵若尚未同步出去，仍可能复活一次。

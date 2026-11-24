@@ -16,6 +16,15 @@ import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/models/theme_notifier.dart' show buildFushiThemeData;
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_sources_layout.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart'
+    show FushiReorderableDragHandle;
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsSection;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
@@ -29,6 +38,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../helpers/cover_block_title_finder.dart';
@@ -151,18 +161,26 @@ Future<_Env> _env(WidgetTester tester, {bool gatedPrefs = false}) async {
   return (app: app, prefs: prefs);
 }
 
-Widget _host(AppModel app, Widget home) {
+Widget _host(AppModel app, Widget home, {bool glass = false}) {
   LocaleSettings.setLocale(AppLocale.en);
   return ProviderScope(
     overrides: [appProvider.overrideWith((Ref ref) => app)],
     child: TranslationProvider(
       child: MaterialApp(
-        theme: ThemeData(useMaterial3: true),
+        theme: glass
+            ? buildFushiThemeData(
+                scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+                textTheme: Typography.material2021().black,
+                glassDesign: true,
+              ).copyWith(platform: TargetPlatform.macOS)
+            : ThemeData(useMaterial3: true),
         builder: (BuildContext context, Widget? child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(disableAnimations: true),
           child: child!,
         ),
-        home: Scaffold(body: home),
+        home: glass
+            ? FushiGlassScope(child: Scaffold(body: home))
+            : Scaffold(body: home),
       ),
     ),
   );
@@ -564,4 +582,99 @@ void main() {
     expect(find.text('Band · 2020'), findsNWidgets(3));
     await _teardown(tester);
   });
+
+  testWidgets(
+    '来源页 Cupertino：Apple 分组（组头 / 组脚 / 开关行 / + 添加行），编辑态 ≡ 把手 Alt+↓ 重排写回',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1400, 1600);
+      addTearDown(tester.view.reset);
+      final _Env env = await _env(tester);
+      await tester.runAsync(() async {
+        await env.prefs.setMusicSubsonicServers(<SubsonicServerConfig>[
+          _subsonic('a'),
+          _subsonic('c'),
+        ]);
+      });
+      await tester.pumpWidget(
+        _host(env.app, const MusicOnlineSourcesView(), glass: true),
+      );
+      await _settle(tester);
+
+      expect(find.byType(AppleMusicSourcesLayout), findsOneWidget);
+      expect(find.text(t.music_sources_section_title), findsOneWidget);
+      expect(find.text(t.music_sources_online_hint), findsOneWidget);
+      // 行尾只有开关：没有 M3E 的 ↑↓ 键与常驻拖把。
+      expect(
+        find.byKey(
+          const ValueKey<String>('music-source-toggle-server:subsonic-a'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('music-source-down-server:subsonic-a'),
+        ),
+        findsNothing,
+      );
+      expect(find.byType(FushiReorderableDragHandle), findsNothing);
+      // 「添加来源…」是组内强调色动作行（与歌单页「新建歌单…」同款），不是胶囊按钮；
+      // 行是歌单同款列表行，不是「设置」式 inset grouped 卡片。
+      expect(find.text('${t.music_sources_add}…'), findsOneWidget);
+      expect(find.byType(AppleMusicListActionRow), findsWidgets);
+      expect(find.byType(FushiOutlinedButton), findsNothing);
+      expect(find.byType(FushiFilledButton), findsNothing);
+      expect(find.byType(AdaptiveSettingsSection), findsNothing);
+      expect(find.byType(AppleMusicListSectionHeader), findsWidgets);
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w is AppleMusicListRow &&
+              w.key ==
+                  const ValueKey<String>(
+                    'music-source-toggle-server:subsonic-a',
+                  ),
+        ),
+        findsOneWidget,
+      );
+      // macOS 档内容限宽。
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey<String>('music-sources-group')))
+            .width,
+        lessThanOrEqualTo(kAppleMusicSourcesMaxWidth * 1.15 + 0.5),
+      );
+
+      // 编辑：行尾换 ≡ 把手；Alt+↓ 把 a 移到 c 后面并写回偏好。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('music-sources-edit')),
+      );
+      await _settle(tester);
+      final Finder handle = find.byKey(
+        const ValueKey<String>('music-source-handle-server:subsonic-a'),
+      );
+      expect(handle, findsOneWidget);
+      Focus.of(
+        tester.element(
+          find.descendant(
+            of: handle,
+            matching: find.byType(FushiReorderableDragHandle),
+          ),
+        ),
+      ).requestFocus();
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await _settle(tester);
+      final List<String> order = _stored(
+        env.prefs,
+      ).map((LyricsProviderEntry e) => e.id).toList();
+      expect(
+        order.indexOf('server:subsonic-a'),
+        greaterThan(order.indexOf('server:subsonic-c')),
+      );
+      await _teardown(tester);
+    },
+  );
 }

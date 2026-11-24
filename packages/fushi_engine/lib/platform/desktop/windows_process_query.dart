@@ -36,6 +36,7 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:ffi/ffi.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -143,8 +144,9 @@ Map<int, WindowsProcessEntry> windowsProcessesByIds(Iterable<int> pids) {
 /// 等安装器判占用时用的 API，属于安装场景里最正常不过的调用。
 ///
 /// 文件不存在 / 无人占用 / 会话建不起来 → 空列表（与「没有占用者」同义）。
-List<WindowsProcessEntry> windowsProcessesHoldingFile(String filePath) =>
-    windowsProcessesHoldingFiles(<String>[filePath]);
+Future<List<WindowsProcessEntry>> windowsProcessesHoldingFile(
+  String filePath,
+) => windowsProcessesHoldingFiles(<String>[filePath]);
 
 /// 谁正占用着 [filePaths] 里**任意一个**文件（同一个 Restart Manager 会话）。
 ///
@@ -152,17 +154,26 @@ List<WindowsProcessEntry> windowsProcessesHoldingFile(String filePath) =>
 /// 去重。逐文件开会话的代价是线性的：安装前查 `voice_hook/` 下 28 个 helper 二进制
 /// 实测 ~1 s 同步 FFI（每个会话 15–150 ms），而调用方要的本来就是「占用者集合」，
 /// 不需要知道每个文件各被谁占。空路径被忽略；全空 → 空列表。
-List<WindowsProcessEntry> windowsProcessesHoldingFiles(
+///
+/// **一律在后台 isolate 里跑**（BUG-5389）：`RmGetList` 内部要
+/// `NtQuerySystemInformation` 扫全机进程，耗时不受我们控制——实测一次卡了 96 s。
+/// Windows 上 Flutter 的 UI 线程就是平台线程，在主 isolate 同步调用会让整个窗口
+/// 「未响应」。所以这里只暴露异步入口，不留同步版本。
+Future<List<WindowsProcessEntry>> windowsProcessesHoldingFiles(
   Iterable<String> filePaths,
-) {
+) async {
   final List<String> paths = filePaths
       .where((String p) => p.isNotEmpty)
       .toList(growable: false);
   if (!Platform.isWindows || paths.isEmpty) {
     return const <WindowsProcessEntry>[];
   }
-  return _Win32.instance?.processesHoldingFiles(paths) ??
-      const <WindowsProcessEntry>[];
+  return Isolate.run<List<WindowsProcessEntry>>(
+    () =>
+        _Win32.instance?.processesHoldingFiles(paths) ??
+        const <WindowsProcessEntry>[],
+    debugName: 'windowsProcessesHoldingFiles',
+  );
 }
 
 /// 读注册表字符串值（`REG_SZ` / `REG_EXPAND_SZ`）；不存在或类型不符返回 null。

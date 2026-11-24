@@ -275,7 +275,7 @@ class FushiSurfaceColors {
 /// FushiCard 的真实外圆角（拖拽浮层 / 预览框要与卡片同形时用它，别用
 /// [FushiRadii.cardRadius]——那是小件档 12，和卡片实际圆角对不上）：
 /// MD3 = [kFushiMd3CardRadius]（M3E 卡档 20）；Apple = inset grouped 分组圆角
-/// （[FushiAppleMetrics.groupBorderRadius]，iOS 24 / 桌面 12）。
+/// （[FushiAppleMetrics.groupBorderRadius]，iOS 26 / macOS 10，再乘 macOS 档缩放）。
 BorderRadius fushiCardBorderRadius(BuildContext context) {
   if (isGlassDesign(context)) {
     return FushiAppleMetrics.of(context).groupBorderRadius;

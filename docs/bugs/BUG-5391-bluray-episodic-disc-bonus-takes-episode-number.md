@@ -1,0 +1,21 @@
+## BUG-5391 · bluray-episodic-disc-bonus-takes-episode-number
+- **报告**：2026-11-24（用户：ぼっち・ざ・ろっく！ 蓝光六卷合集「选集」16 项，标题与剧照每 3 项循环「転がるぼっち / また明日 / 馳せサンズ」，第 6/9/12 项实际是真人采访特典，很多集没有图）
+- **真实性**：✅ 真 bug。只读核对用户库与真实盘（`D:\video\播放列表合集\ぼっち・ざ・ろっく！ [BDMV] (2022)\…vol.N\BD`）：每卷 `00001.mpls` 串着两集（1421 s × 2 + 8 s），被按 PlayItem 切成 `00001.p01/p02`；另有一条整播放列表的特典——vol.1 `00005` 32.8 分钟（1 段）、vol.2 `00003` 28.9 分钟（6 段）、vol.3 `00003` 94.5 分钟、vol.4 `00003` 35.9 分钟、vol.5 `00003` 9.2 分钟与 `00004` 23.6 分钟（1 段，与单集只差 5 秒）、vol.6 `00002` 95.4 分钟。三处根因：
+  1. `packages/fushi_engine/lib/media/video/bluray/bluray_disc.dart` `selectBlurayTitles` 第 6 步相对下限（最长者 × 0.15）只挡几分钟的花絮，这些特典全过，第 7 步把它们与切出来的各集并列成标题（`<盘名> - 03`）→ 进盘合集；刮削协调器 `discOrdinalEpisodeOverrides`（`video_source_scrape_coordinator.dart`）按合集成员顺序编集号，第 3 集成了 vol.1 的采访、之后每集错位。修 BUG-5251 之前每卷各一个合集、各自从 1 编，于是每卷都是「1 2 3」，即用户看到的三项循环。
+  2. 展示侧 `video_filename_parser.dart` `_acceptedSiblingNumbering` 对 `00001.p01.mpls` / `00001.p02.mpls` 做兄弟差分，按 PlayItem 序号定成第 1、2 集——特典降级后六卷会显示成「1 2 1 2 …」（合集详情页 `_episodeDisplayNumber`、选集面板都走 `parsedEpisodeNumbersOf`）。
+  3. 存量：已被当成正片的特典行名字仍是 `… - 03`，身上挂着刮来的「第 3 集 馳せサンズ」集级刮削行与分集绑定；特典不进刮削计划，重刮永远不会再碰它们。
+- **[x] ① 已修复** —
+  - `bluray_disc.dart` `selectBlurayTitles` 新增 7b：盘上有被切成集的播放列表时，没被它串进去的其余整条标题降为特典（`selectBlurayExtras` 接住，名为 `<盘名> - <MPLS 号>`），不进盘合集、不占集号；没有切集的盘不受影响。真实六卷只读重跑：每卷标题只剩 `p01/p02`，特典 1～5 条。
+  - `video_filename_parser.dart` `_acceptedSiblingNumbering`：原盘成员（`isDiscMemberPath`）不做兄弟差分，解析不出交给调用方回落顺位号，与刮削按合集顺序编的集号同一口径。
+  - `disc_library_import.dart` `_syncAutoDiscTitleNames`：每轮把盘上标题 / 特典行的自动名（`_isAutoDiscTitle` 形状）对齐到本轮结论，`… 1 - 03` 改回 `… 1 - 00005`；用户改过的名字不动。
+  - `video_source_metadata_indexer.dart` `_dropStaleDiscExtraEpisode`：索引器把原盘特典挂到正片作品下时，删掉它身上的刮削行、解开分集绑定（用户手动钉死的绑定除外）。
+  - 存量库用用户库快照（只读拷贝）跑「导入 → 计划 → 索引」：发布组合集 12 集按卷序排，刮削计划集号 (1,1)…(1,12)，特典行改名、残留「馳せサンズ」刮削行清掉；用户真实库需重扫该来源后再重刮一次，集名 / 剧照才按新集号落到各集。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/media/video/bluray/bluray_episode_test.dart`「BUG-5391：切成集的盘上…长特典降为特典」「没有切集的盘：…照旧是标题」「BUG-5391：展示集号不从分集文件名差分」；`packages/fushi_engine/test/media/video/disc/disc_release_set_import_test.dart`「BUG-5391：长特典不进合集、不占集号；存量「- 03」行改回特典名，残留的集号刮削行清掉」（导入 + 刮削计划集号 + 索引清理一条链）。
+- **[x] 身份层与用户合集（2026-11-24 续，用户拍板）** — 备注里那个 138（`BOCCHI THE ROCK! Blu-ray`，实为 AI 合并的胜方，`origin=user`）说明导入器按合集名当身份是错的：
+  - 原盘合集接入整理身份层：`disc_library_import.dart` 给发布组 / 单盘合集确定性分组键（`blurayReleaseSetOrganizeKey` = `d:video:set:<发布目录名>/<作品名>`、`discOrganizeKey` = `d:video:disc:<发布目录名>/<盘目录名>`，各段 `foldMediaTitle`，不含本机路径前缀）；新建合集 `origin=rule` + 键（`importSplitPlaylist` 新增 `origin` / `organizeKey`）；找回走 `collectionHoldingOrganizeKey`（原 `organize_convergence.dart` 私有的 `_collectionHoldingKey` 公开复用，同收敛判据）→ 别名里带键且成员确是这组盘的合集；修前的无键 `playlist` 合集按成员重叠（≥ `kConvergenceOverlapRatio`、含本轮标题、多盘组要跨 ≥2 张盘）认领一次挂键、`origin` 不变。按名字认合集的 `_playlistCollections` / `_collectionBelongsToDisc` / `existingCollectionIds` 删除；单盘合集对账也改按完整路径、只动这张盘上的原盘成员（不再走 `reconcileSplitPlaylist`）。
+  - 移出成员按用户 2026-11-24 拍板（「用户的合集整理器永远不能往外移成员 取消这个设定吧，我觉得让用户显式同意就行了吧，用户可以永远拒绝」）：`_retire` 对 `rule` / `ai` 合集直接 `removeFromCollectionAutomatically`（钉住的拒移），其余记成库管家「移出成员」待确认建议（trigger `disc_import`，原因码 `disc_extra` / `disc_stale` / `disc_superseded`，界面有本地化说明与触发来源名）。
+  - 混进普通视频（用户 2026-11-24：「塞普通视频无所谓吧，你优化优化」）：不提议移出；刮削计划 `discOrdinalEpisodeOverrides` 只在原盘成员之间编号，`video_source_work_planner.dart` 有原盘成员就按合集顺序排、不当「不同作品的清单」拆；导入排序把文件名解出第 1 季第 N 集的普通视频排到原盘第 N 集后面（撞号两个都留、相邻，原盘在前；超出原盘集数的排在最后一集后），解不出集号的留原位。
+  - 展示：`collection_season_groups.dart` 新增 `collectionGroupKeysForPaths`（切了集的盘上分集 → 第 1 季、同盘整条标题 → PV·特典）与 `discEpisodeOrdinalsOf`（原盘分集跨盘顺位）；合集详情页分栏与集卡序号、选集面板集号、`loadCollectionGroupKeysForVideos`（播放器 / tracking）、互联 host 下发分栏都改用整批派生。普通视频照旧按文件名定号。
+  - 真实库快照（只读备份拷贝）跑两轮导入：138 认领挂键 `d:video:set:ぼっちざろっくbdmv2022/bocchitherock`、`origin` 仍 `user`，不再另建合集，两轮 `imported=0`；138 记一条 `disc_extra` 建议（17 条特典），152–156 各记一条 `disc_superseded` 建议，第二轮不重复记；138 分栏：12 集进第 1 季、顺位 1…12，特典进 PV·特典；刮削计划集号 (1,1)…(1,12)。
+  - 测试：`disc_release_set_import_test.dart` 新增「新建的发布组合集 origin=rule 带键；改名后重扫按键认回」「被 AI 并进别的合集（键进别名）：重扫认回」「用户加进来的普通视频不动；用户合集里的特典只记建议」「混进普通视频…撞号相邻排」「几个修前的无键合集：认领本轮标题最多的那个」，并把三条存量迁移用例改成「记建议 → 用户同意后移空自删」。
+- **备注**：`fushi_core/lib/src/database/tables.dart` 与 `collection_sync_engine.dart` 里「用户合集永不被整理器移出」的旧注释未改（后者归 BUG-5393 那边，前者改注释要重跑代码生成）。

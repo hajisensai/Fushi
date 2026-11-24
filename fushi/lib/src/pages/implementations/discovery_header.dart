@@ -13,6 +13,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_horizontal_edge_fade.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/pages/implementations/discovery/apple/apple_discovery_header.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
@@ -62,7 +64,12 @@ class DiscoveryHeaderControls extends StatelessWidget {
     this.onSearchChanged,
     this.onSearchCleared,
     this.searchFocusId = const FushiFocusId('discovery-search'),
+    this.appleFilters = const <Widget>[],
   });
+
+  /// Apple（Cupertino）下搜索框右边的第三层 pull-down（取代 [leading] 的筛选 chip
+  /// 行，见 `AppleDiscoveryHeaderControls`）；M3E 不读它。
+  final List<Widget> appleFilters;
 
   /// 可选来源（不含「全部来源」，本组件自己在最前面补）。
   final List<DiscoverySourceOption> sources;
@@ -100,6 +107,28 @@ class DiscoveryHeaderControls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      String? token;
+      if (selectedSourceId != kDiscoveryAllSourcesId) {
+        token = selectedSourceId;
+        for (final DiscoverySourceOption source in sources) {
+          if (source.id == selectedSourceId) token = source.label;
+        }
+      }
+      return AppleDiscoveryHeaderControls(
+        selectedSourceLabel: token,
+        onClearSource: () => onSourceSelected(kDiscoveryAllSourcesId),
+        searchController: searchController,
+        searchFocusNode: searchFocusNode,
+        searchHintText: searchHintText,
+        onSearchSubmitted: onSearchSubmitted,
+        onSearchChanged: onSearchChanged,
+        onSearchCleared: onSearchCleared,
+        searchFocusId: searchFocusId,
+        filters: appleFilters,
+        trailing: trailing,
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget? filterRow = leading;
     return Padding(

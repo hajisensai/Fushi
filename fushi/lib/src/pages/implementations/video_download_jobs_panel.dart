@@ -1293,7 +1293,9 @@ class _VideoDownloadJobCard extends StatelessWidget {
         leading: FushiIcon(_kindIcon),
         metrics: _compactMetrics,
         quickAction: _quickAction,
-        menuActions: _menuActions,
+        menuActions: isGlassDesign(context)
+            ? _appleMenuActions(context)
+            : _menuActions,
         details: _buildCompactDetails(context),
       );
     }
@@ -1952,6 +1954,42 @@ class _VideoDownloadJobCard extends StatelessWidget {
           onSelected: onDelete!,
           destructive: true,
         ),
+    ];
+  }
+
+  /// Apple（方案 A）的长按 / 右键菜单：在「⋯」菜单各项之外，把详情区里的
+  /// 优先级三档与「查看并复制错误」也提到菜单里（M3E 仍只在展开详情里）。
+  List<DownloadTaskMenuAction> _appleMenuActions(BuildContext context) {
+    final List<DownloadTaskMenuAction> base = _menuActions;
+    if (busy) return base;
+    final void Function(int priority)? setPriority = onSetPriority;
+    final bool hasError = job.lastError?.trim().isNotEmpty ?? false;
+    final int deleteAt = base.indexWhere(
+      (DownloadTaskMenuAction action) => action.id == 'delete',
+    );
+    final List<DownloadTaskMenuAction> extra = <DownloadTaskMenuAction>[
+      if (_canSetPriority && setPriority != null)
+        for (final int priority in const <int>[1, 0, -1])
+          if (priority != job.priority)
+            DownloadTaskMenuAction(
+              id: 'priority-$priority',
+              icon: FushiIcons.flag,
+              label:
+                  '${t.download_task_priority} · ${_priorityLabel(priority)}',
+              onSelected: () => setPriority(priority),
+            ),
+      if (hasError)
+        DownloadTaskMenuAction(
+          id: 'error-detail',
+          icon: FushiIcons.error,
+          label: t.download_task_error_detail_title,
+          onSelected: () => unawaited(_showErrorDetail(context)),
+        ),
+    ];
+    return <DownloadTaskMenuAction>[
+      ...base.take(deleteAt < 0 ? base.length : deleteAt),
+      ...extra,
+      if (deleteAt >= 0) ...base.skip(deleteAt),
     ];
   }
 

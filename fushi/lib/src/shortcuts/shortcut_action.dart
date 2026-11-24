@@ -446,6 +446,19 @@ enum ShortcutAction {
   // 声明序先命中 homeFocusSearch，跳查词照旧。
   librarySearch(ShortcutScope.home, 'library_search'),
 
+  // 库页网格「每行数量」缩放（2026-11-24 方案 C，Apple 外壳的捏合同一件事）：
+  // 默认 Ctrl + = / −（macOS ⌘）。执行体是库页网格的 `LibraryGridZoom`（挂在
+  // home 键事件节点之下，先读本动作绑定命中即调列数），不经 home 页派发；M3E
+  // 外壳不接（列数在「排序与显示」里选）。
+  libraryGridZoomIn(ShortcutScope.home, 'library_grid_zoom_in'),
+  libraryGridZoomOut(ShortcutScope.home, 'library_grid_zoom_out'),
+
+  // 音乐「推荐」（在线）重载全部来源（2026-11-24 Apple 方案 A 拍板 Q7）：默认
+  // Ctrl + R（macOS ⌘R）。执行体是推荐页 Apple 布局的键事件节点（挂在 home 键事件
+  // 节点之下，焦点在推荐页内时先读本动作绑定命中即刷新），不经 home 页派发；M3E 版
+  // 推荐页刷新在各来源段头，不接。
+  musicRecommendRefresh(ShortcutScope.home, 'music_recommend_refresh'),
+
   // Universal —— 全 app 唯一的「返回上一级 / 退出当前界面」。
   //
   // 一个配置项覆盖全部退出语义（用户拍板）：关词典弹窗、退出书籍、退出漫画、

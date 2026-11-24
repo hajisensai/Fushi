@@ -34,7 +34,7 @@ class _Clock implements LyricsPlayerClock {
 ThemeData _rootTheme({required bool apple}) => buildFushiThemeData(
   scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1E3A8A)),
   textTheme: Typography.material2021().black,
-  glass: apple ? FushiGlassMaterial.frosted : FushiGlassMaterial.off,
+  glass: apple ? FushiGlassMaterial.minimal : FushiGlassMaterial.off,
   glassDesign: apple,
 ).copyWith(platform: TargetPlatform.windows);
 
@@ -297,7 +297,7 @@ void main() {
           buildColorScheme: (Brightness b) => root.colorScheme,
           textTheme: root.textTheme,
           glassDesign: true,
-          glass: FushiGlassMaterial.frosted,
+          glass: FushiGlassMaterial.minimal,
           lyricsMode: lyricsMode,
         );
     final DictionaryPopupTheme original = resolve(lyricsMode: false);

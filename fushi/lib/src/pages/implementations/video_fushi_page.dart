@@ -1,3 +1,4 @@
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async';
@@ -84,6 +85,7 @@ import 'package:fushi/src/web_adblock/web_adblock_service.dart'
     show WebAdblockService, webAdblockServiceProvider;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_card.dart';
 import 'package:fushi/src/utils/components/fushi_mine_notice_stack.dart';
@@ -119,6 +121,9 @@ import 'package:fushi/src/media/video/media_server/media_server_route_failover.d
 import 'package:fushi_engine/media/video/media_server/media_server_route_failover.dart'
     show MediaServerStreamInterrupted;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
+import 'package:fushi/src/media/favorites/favorite_video_origin.dart';
+import 'package:fushi/src/sync/remote_library_cache.dart'
+    show remoteLibraryCacheProvider;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/video_source_fingerprint.dart';
@@ -129,7 +134,13 @@ import 'package:fushi/src/media/video/remote_client_teardown.dart';
 import 'package:fushi/src/media/video/source_review_remote_report_gate.dart';
 import 'package:fushi/src/media/video/stream_url_resolver.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
-import 'package:fushi_engine/media/video/strm_file.dart' show isStrmPath;
+import 'package:fushi/src/media/video/stream_book_episodes.dart';
+import 'package:fushi_engine/media/video/strm_file.dart'
+    show isNetworkStreamUrl, isStrmPath;
+import 'package:fushi_engine/media/video/youtube_playlist.dart'
+    show YoutubePlaylistEntry;
+import 'package:fushi/src/web_browser/features/play_in_fushi/youtube_watch_page.dart'
+    show youtubeWatchPlaylistIdOf;
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
     show MangaAiOcrContext, MangaAiOcrRefiner, MangaAiOcrSource;
 import 'package:fushi_engine/media/video/bluray/bluray_encryption.dart'
@@ -164,7 +175,6 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_pipeline_gate.dart
     show canRunLocalVideoSubtitlePipeline, localVideoSubtitlePipelineMediaPath;
 import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio.dart'
     show
-        VideoStreamSubtitleAudioCancelled,
         VideoStreamSubtitleAudioInput,
         VideoStreamSubtitleAudioStaging,
         VideoStreamSubtitleAudioUnavailable,
@@ -298,14 +308,20 @@ import 'package:fushi/src/mining/galgame_audio_source.dart'
     show LoopbackGalAudioSource;
 import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
     show
-        WebVideoSubtitleMediaBlock,
-        WebVideoSubtitleMediaBlocked,
         kWebVideoGeneratedTrackLang,
-        prepareWebVideoSubtitleAudio,
         webVideoGeneratedSubtitleLanguage,
         webVideoGeneratedTrackKey,
         webVideoSubtitleFrameInput,
         webVideoSubtitlePipelineAvailable;
+import 'package:fushi/src/media/video/web_video_subtitle_generation.dart'
+    show
+        WebVideoSubtitleEpisode,
+        startWebVideoSubtitleAudio,
+        webVideoSubtitleJobEpisode,
+        webVideoSubtitlePageUrl,
+        webVideoSubtitleTarget;
+import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio_dialog.dart'
+    show stageVideoStreamSubtitleAudioWithDialog;
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
@@ -331,7 +347,13 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
         youtubeVideoIdOrNull,
         YoutubeManifestException;
 import 'package:fushi_engine/media/video/youtube_live_chat_replay.dart'
-    show YoutubeChatMessage, fetchYoutubeChatReplayEntry;
+    show
+        YoutubeChatMessage,
+        YoutubeChatReplayAbsent,
+        YoutubeChatReplayAvailable,
+        YoutubeChatReplayProbe,
+        YoutubeChatReplayProbeFailed,
+        probeYoutubeChatReplay;
 import 'package:fushi/src/media/video/video_live_chat_panel.dart';
 import 'package:fushi/src/media/video/video_live_chat_replay.dart';
 import 'package:fushi/src/media/video/video_resource_check.dart';
@@ -349,6 +371,8 @@ import 'package:fushi/src/media/video/video_current_line_copy.dart';
 import 'package:fushi/src/media/video/video_simultaneous_cues.dart';
 import 'package:fushi/src/media/video/video_loop_cue_badge.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
+import 'package:fushi/src/media/video/video_apple_chrome_bar.dart';
+import 'package:fushi/src/media/video/video_apple_chrome_plan.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
@@ -541,7 +565,7 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart'
-    show VideoRemoteException;
+    show VideoRemoteException, videoRemoteFavoriteSourceUnavailable;
 import 'package:fushi/src/sync/sync_backend.dart'
     show SyncAuthError, SyncPeerUnreachableError;
 import 'package:fushi/src/sync/sync_error_messages.dart'
@@ -573,12 +597,7 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
         fushiFloatingToolbarPalette,
         kFushiFloatingToolbarEdgeMargin;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
-    show
-        FushiChoiceOption,
-        FushiProgressDialogHandle,
-        showFushiChoiceDialog,
-        showFushiProgressDialog,
-        showFushiTextInputDialog;
+    show FushiChoiceOption, showFushiChoiceDialog, showFushiTextInputDialog;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/platform/screen_brightness_controller.dart';
@@ -603,8 +622,8 @@ import 'package:fushi/src/media/video/remote_subtitle_catalog.dart';
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_presence.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 part 'video_fushi/danmaku.part.dart';
@@ -616,6 +635,7 @@ part 'video_fushi/remote_disc_buffering.part.dart';
 part 'video_fushi/subtitle.part.dart';
 part 'video_fushi/controls_popover.part.dart';
 part 'video_fushi/volume_osd.part.dart';
+part 'video_fushi/apple_chrome.part.dart';
 part 'video_fushi/chapter.part.dart';
 part 'video_fushi/audio_track.part.dart';
 part 'video_fushi/quality.part.dart';
@@ -957,6 +977,7 @@ class _PlaylistEpisodeRef {
     this.progress,
     this.sectionKey,
     this.positionMs = 0,
+    this.episodeNumber,
   });
   final String? bookUid;
   final String title;
@@ -996,6 +1017,10 @@ class _PlaylistEpisodeRef {
   /// 本地集的续播点（`video_books.lastPositionMs`；远端集恒 0）。一文件多集时据此
   /// 挑「续播点所在那一集」的剧照（`videoFileEpisodeStillImage`，与合集选集页同口径）。
   final int positionMs;
+
+  /// 卡片角标集号的显式值：播放列表是列表顺位（标题里的数字不是集号）。null = 按
+  /// [path] / [title] 解析（BUG-1544）。
+  final int? episodeNumber;
 }
 
 class VideoFushiPage extends ConsumerStatefulWidget {
@@ -1003,6 +1028,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required this.bookUid,
     required this.repo,
     this.playlistCollectionId,
+    this.youtubePlaylistId,
     this.initialCueStartMs,
     this.initialRemoteFavorite,
     this.sourceReview,
@@ -1051,7 +1077,8 @@ class VideoFushiPage extends ConsumerStatefulWidget {
        webReturnState = null,
        webHosting = null,
        remoteDisc = null,
-       playlistCollectionId = null;
+       playlistCollectionId = null,
+       youtubePlaylistId = null;
 
   final String bookUid;
   final VideoBookRepository repo;
@@ -1074,6 +1101,11 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// player 据此建兄弟集列表 + 剧集面板 + 上下集 + 自动连播；null = 独立单视频打开）。
   /// 本地专用；远端播放列表走 host 驱动的 episodeIndex，不用此字段。
   final int? playlistCollectionId;
+
+  /// 本集是从这份 YouTube 播放列表里打开的（浏览器 `watch?v=…&list=…` 交接过来，拍板台
+  /// zGXhhMAglH）：选集面板列出整份播放列表，每一集是一本独立的流媒体书，换集 = 换到那
+  /// 一本的播放页（与 [playlistCollectionId] 同一套换页语义，见 `stream_book_episodes.dart`）。
+  final String? youtubePlaylistId;
   final int? initialCueStartMs;
 
   /// Remote favorite keeps its subtitle identity until both tracks are loaded.
@@ -1141,6 +1173,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
     required String bookUid,
     required VideoBookRepository repo,
     int? playlistCollectionId,
+    String? youtubePlaylistId,
     int? initialCueStartMs,
     FavoriteSentence? initialRemoteFavorite,
     CardSourceLink? sourceReview,
@@ -1161,6 +1194,7 @@ class VideoFushiPage extends ConsumerStatefulWidget {
       bookUid: bookUid,
       repo: repo,
       playlistCollectionId: playlistCollectionId,
+      youtubePlaylistId: youtubePlaylistId,
       initialCueStartMs: initialCueStartMs,
       initialRemoteFavorite: initialRemoteFavorite,
       sourceReview: sourceReview,
@@ -1761,8 +1795,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   ///
   /// M3E：轨道比底栏胶囊外缘（[_videoM3eFloatingSideInset]）再内缩
   /// [_videoM3eSeekLaneOverhang]，与左下 / 右下胶囊里第一个 / 最后一个按钮大致对齐。
+  ///
+  /// Apple 触屏（方案 C）：进度条一行两端是时间，轨道再让出时间标签的宽
+  /// （[_VideoAppleChrome._appleTouchTimeLabelReserve]）。Apple 桌面进度条在底部条
+  /// 行内，不读本值。
   double get _videoSeekBarSideInset => _appleChrome
-      ? kVideoAppleChromeEdgeInset + 16
+      ? _videoAppleButtonBarSideInset +
+            (_isDesktopVideoControls ? 0 : _appleTouchTimeLabelReserve)
       : _videoM3eFloatingSideInset + _videoM3eSeekLaneOverhang;
 
   /// M3E 进度条轨道相对底栏胶囊外缘的内缩量（随界面缩放）。
@@ -1805,6 +1844,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   double get _videoSeekBarTrackCenter {
     final double d = _controlsDensityScale;
     final bool desktop = _isDesktopVideoControls;
+    // Apple 桌面（方案 C）：进度条在底部单行条里，轨道中线 = 按钮行竖直正中。
+    if (_appleInlineSeekLane) {
+      return _floatingChromeBottomLift + _videoButtonBarHeight * d / 2;
+    }
     final double inContainer;
     if (_appleChrome) {
       inContainer = desktop
@@ -1841,32 +1884,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// Apple：底栏按钮行左右内缩（胶囊外边距 + 8）。
   double get _videoAppleButtonBarSideInset => kVideoAppleChromeEdgeInset + 8;
-
-  /// Apple：底栏玻璃胶囊的几何（[VideoAppleChromeBackdrop]）。与 theme 喂给 media_kit
-  /// 的同一组量推导：下沿 = 按钮行下沿 − [kVideoAppleCapsuleBottomPadding]，上沿 =
-  /// 进度条轨道中线 + [kVideoAppleCapsuleTopPadding]（没有进度条时 = 按钮行上沿）。
-  /// MD3 / mini 档返回 null。
-  VideoAppleCapsuleGeometry? _appleCapsuleGeometry() {
-    if (!_appleChrome || !_controlsDensity.showBottomButtonBar) return null;
-    final double d = _controlsDensityScale;
-    final double barHeight = _videoButtonBarHeight * d;
-    final double buttonBottom = _isDesktopVideoControls
-        ? _floatingChromeBottomLift
-        : _videoBottomChromeBaseline +
-              _videoBottomSystemInset() +
-              _floatingChromeBottomLift;
-    final double trackCenter = _videoSeekBarTrackCenter;
-    final double top = _controlsDensity.showSeekBar
-        ? trackCenter + kVideoAppleCapsuleTopPadding * d
-        : buttonBottom + barHeight + kVideoAppleCapsuleBottomPadding;
-    final double bottom = buttonBottom - kVideoAppleCapsuleBottomPadding;
-    return VideoAppleCapsuleGeometry(
-      left: kVideoAppleChromeEdgeInset,
-      right: kVideoAppleChromeEdgeInset,
-      bottom: bottom,
-      height: top - bottom,
-    );
-  }
 
   /// 移动控制条底部留白基线（BUG-184）：进度条 / 底部按钮条不贴屏幕物理底边。
   ///
@@ -2002,6 +2019,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   bool _controlsHoldMenuOpen = false;
   bool _controlsHoldJumpPanel = false;
   bool _controlsHoldPopoverPress = false;
+
+  /// Apple 桌面行内进度条拖动中（[_VideoAppleChrome._appleInlineSeekLaneContent]）：
+  /// 那条进度条不在 fork 控制条状态里，拖动期间由这里按住控制条。
+  bool _controlsHoldSeekDrag = false;
 
   static const double _volumeStep = 5.0;
 
@@ -3798,6 +3819,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 单视频（本地 pushReplacement 换集，_activeBookUid 恒为当前集）。
   List<_PlaylistEpisodeRef> _episodes = const <_PlaylistEpisodeRef>[];
 
+  /// [_episodes] 的每一集都是一本独立的流媒体书（合集里的流媒体书 / 从 YouTube 播放列表
+  /// 打开，拍板台 zGXhhMAglH）：换集 = 换到那一本的播放页（与本地合集同一条换页路径，
+  /// 见 [_VideoEpisode._switchEpisode]），不是在本页向同一个远端换流。本页只播它自己那本书，
+  /// [_currentEpisode] 只是它在列表里的位置，远端键不随它变（[_remotePositionKeyForIndex]）。
+  bool _streamBookEpisodes = false;
+
+  /// 正在播的这一集在**它所属的书 / 流**里的集下标：单视频 / 本地合集 / 远端合集 / host
+  /// 播放列表就是 [_currentEpisode]；每集一本书的列表里恒 0——那里 [_currentEpisode]
+  /// 只是选集列表里的位置，列表晚到（长播放列表的后几批）、刷新重排、站内点出列表收起
+  /// 都会动它，播的却还是同一集。
+  int get _playingEpisodeIndex => _streamBookEpisodes ? 0 : _currentEpisode;
+
+  /// 「还是不是同一集」的判据（书 + 集下标）：制卡排队 / 重试、跳转记录据此判换没换集。
+  /// 网页档站内原地换集只换书（[_activeBookUid]）不换播放器，光比集下标看不出来。
+  String get _playingEpisodeScope => '$_activeBookUid#$_playingEpisodeIndex';
+
+  /// 流媒体书合集的合集名（制卡「系列名 - 剧集名」，见 [_initRemote]）。
+  String? _streamBookSeriesTitle;
+
+  /// 本页跟着的 YouTube 播放列表（条目按页增量到达，[_onYoutubePlaylistChanged]）。
+  YoutubePlaylistEpisodes? _youtubePlaylist;
+
+  /// 换页 / 换宿主档时交给下一页的播放列表（网页档里站内点进的列表优先于入参）。
+  String? get _streamBookYoutubePlaylistId =>
+      _youtubePlaylist?.playlistId ?? widget.youtubePlaylistId;
+
   /// 播放中合集的附加图组（v68）：剧集面板封面回退链的合集段（本集无封面 →
   /// titleCard → backdrop）。仅本地合集连播路径填充；单视频/远端恒空。
   List<MediaImageRow> _playlistCollectionImages = const <MediaImageRow>[];
@@ -4252,7 +4299,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 收藏/制卡是否按集区分：本地每集是独立 VideoBooks 行（bookKey 已唯一定位集，单视频
   /// 语义）→ false；远端多集是 host 单 id → 需按 episodeIndex 区分 → true（统一合集 Phase 3）。
-  bool get _favoriteIsPlaylist => _isRemote && _episodes.length > 1;
+  /// 每集一本书的列表（[_streamBookEpisodes]）同本地：书已唯一定位集。
+  bool get _favoriteIsPlaylist =>
+      _isRemote && !_streamBookEpisodes && _episodes.length > 1;
 
   /// 收藏/制卡的集下标锚点：[_favoriteIsPlaylist] 时为当前集，否则 null（单视频语义）。
   int? get _favoriteSectionIndex =>
@@ -4280,6 +4329,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 用到远端客户端的退出收尾（断点落库、停止上报）在途登记，见 [RemoteClientTeardown]。
   final RemoteClientTeardown _remoteTeardown = RemoteClientTeardown();
+
+  /// 手机跳收藏打开的本页没能起播：错误码 `favorite_source_unavailable` 不变（旧版
+  /// 手机只认它），[failure] 作 `errorReason` 细分。
+  void _reportRemoteFavoriteUnavailable(FavoriteVideoOriginFailure failure) {
+    appModel.videoRemoteHost.reportError(
+      videoRemoteFavoriteSourceUnavailable,
+      reason: failure.wireReason,
+    );
+  }
 
   /// 在线视频源（Aniyomi）入库集重开时，同一作品合集里的在线行（连播成员）与起播
   /// 下标（见 `buildAnimeSourceLaunch`）。其它流媒体书恒 null。
@@ -4344,7 +4402,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// id，键 = `(成员 id, 0)`，天然按成员隔离，且与 host 按成员带回的 positionMs 对齐；
   /// **host-playlist / 单视频模式**：`(_activeBookUid, index)`（旧行为，index==0 时兼容旧单
   /// 视频 prefs）。[index] 是目标集下标（读某集断点时传目标；写当前集传 [_currentEpisode]）。
+  ///
+  /// **每集一本流媒体书的列表**（[_streamBookEpisodes]）：本页只播它自己那本书（换集是
+  /// 换页），[_currentEpisode] 只是它在选集列表里的位置——键恒为 `(_activeBookUid, 0)`，
+  /// 与这本书单独打开时逐字相同，断点 / 字幕 / 调轴不因列表到没到、排第几而换键。
   (String uid, int episodeIndex) _remotePositionKeyForIndex(int index) {
+    if (_streamBookEpisodes) return (_activeBookUid, 0);
     if (_isRemoteCollection) {
       final int i = index.clamp(0, _remoteMembers.length - 1);
       return (_remoteMembers[i].id, 0);
@@ -4854,7 +4917,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _failReason = t.video_load_failed_not_opened;
         });
         if (widget.initialRemoteFavorite != null) {
-          appModel.videoRemoteHost.reportError('favorite_source_unavailable');
+          _reportRemoteFavoriteUnavailable(
+            FavoriteVideoOriginFailure.playbackFailed,
+          );
         }
       },
     );
@@ -4895,7 +4960,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _failReason = t.video_load_failed_not_opened;
         });
         if (widget.initialRemoteFavorite != null) {
-          appModel.videoRemoteHost.reportError('favorite_source_unavailable');
+          _reportRemoteFavoriteUnavailable(
+            FavoriteVideoOriginFailure.playbackFailed,
+          );
         }
       },
     );
@@ -4986,7 +5053,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     } finally {
       if (widget.initialRemoteFavorite != null &&
           (_failed || _missingResource)) {
-        appModel.videoRemoteHost.reportError('favorite_source_unavailable');
+        _reportRemoteFavoriteUnavailable(
+          _missingResource
+              ? FavoriteVideoOriginFailure.localFileMissing
+              : FavoriteVideoOriginFailure.playbackFailed,
+        );
       }
     }
   }
@@ -5127,6 +5198,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         await _initRemote();
         return;
       }
+      // 有列表上下文的流媒体书（合集里的流媒体书 / 从 YouTube 播放列表打开）：选集面板
+      // 列出整份列表，每集一本书、换集换页（拍板台 zGXhhMAglH）。网页档 / 内置网页播放器 /
+      // 内核播放三条路都用这同一份列表，所以在分流之前建。
+      await _loadStreamBookEpisodes();
+      if (!mounted) return;
       // 网页视频站（Netflix / YouTube 页 / TVer……）在 Windows 上由站点自己的播放器播：
       // 引擎能做底层合成时**就在本页**播（站点画面垫在原生控件下面，控件 / 字幕 / 查词
       // 与本地视频同一套），否则交给内置网页播放器页。在这里分流而非各 push 点：书架 /
@@ -5273,33 +5349,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 角标。作品名作集名判据（集名缺失时集级刮削会把作品名回填进 title，那不是
       // 集名——与合集详情页 `_scrapedEpisodeTitle` 同判据）。
       _playlistCollectionImages = snapshot.images;
-      final String? workTitle = snapshot.collectionMeta?.title.trim();
-      final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
-      // 季分栏与合集详情页同一个入口（手动分栏 / 手动季集指定优先，拍板台
-      // iR6ccUys9H）：一次批量查齐。
-      final Map<String, String> sectionKeys = snapshot.sectionKeys;
-      // 非视频成员与孤儿成员（集行已删）已在快照里按读取期过滤掉。
-      for (final VideoBookRow er in snapshot.episodes) {
-        String? scrapedName;
-        final VideoScrapeMetaRow? em = snapshot.episodeMeta[er.bookUid];
-        if (em != null && em.episodeNumber != null) {
-          final String t = em.title.trim();
-          if (t.isNotEmpty && t != workTitle) scrapedName = t;
-        }
-        refs.add(
-          _PlaylistEpisodeRef(
-            bookUid: er.bookUid,
-            title: er.title,
-            displayTitle: scrapedName,
-            path: er.videoPath,
-            coverPath: er.coverPath,
-            completed: er.completedAt != null,
-            started: er.lastPositionMs > 0,
-            sectionKey: sectionKeys[er.bookUid],
-            positionMs: er.lastPositionMs,
-          ),
-        );
-      }
+      final List<_PlaylistEpisodeRef> refs = _collectionEpisodeRefs(snapshot);
       _episodes = refs;
       // 选集面板的剧照与封面来源后台读，不挡首帧（拍板
       // design-player-episode-rail-stills）。
@@ -5401,8 +5451,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final RemoteVideoInfo info = _effectiveRemoteInfo!;
     // BUG-3332：远端 / 在线视频的作品名（合集名）进同一个槽位，制卡的作品名标签与
     // 「系列名 - 剧集名」documentTitle 才有作品名；此前远端恒 null，扩展在线看的卡只剩
-    // 「Episode 2」这种几乎无用的标签。
-    _playlistTitle = remoteVideoWorkTitle(info);
+    // 「Episode 2」这种几乎无用的标签。流媒体书合集没有远端作品名，用合集名。
+    _playlistTitle = remoteVideoWorkTitle(info) ?? _streamBookSeriesTitle;
     _currentSubtitleSource = null;
     _currentSecondarySubtitleSource = null;
     // 远端音轨恢复（BUG-1636 → 播放偏好同步泛化批）：本地带戳选择与 host 下发值
@@ -5907,7 +5957,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         }
       }
       if (seq != _episodeLoadSeq || !mounted) return;
-      _currentEpisode = index;
+      // 每集一本书的列表：[_currentEpisode] 是本书在选集列表里的位置，由列表维护（列表
+      // 可能在取流途中才到），取流的集下标恒 0，不能拿它覆盖。
+      if (!_streamBookEpisodes) _currentEpisode = index;
       _separatedAudioFallbackUrl = separatedAudioFallbackStreamUrl(urls);
       await _separatedAudio.runLoad<void>(
         () => _applyLoad(
@@ -6491,7 +6543,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }) {
     final RemoteVideoInfo? info = _effectiveRemoteInfo;
     final RemoteVideoClient? client = _effectiveRemoteClient;
-    final int episode = _currentEpisode < 0 ? 0 : _currentEpisode;
+    final int episode = _playingEpisodeIndex < 0 ? 0 : _playingEpisodeIndex;
     return reloadRemoteEpisodeInSession(
       generation: generation,
       currentGeneration: () => _remotePlaybackGeneration,
@@ -7431,11 +7483,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           await _openRemoteVideoFavorite(widget.initialRemoteFavorite!);
         } catch (error, stack) {
           // 可预期的失败（歧义 / 字幕缺失 / 来源不可用）带自己的稳定码报回手机。
-          appModel.videoRemoteHost.reportError(
-            error is VideoRemoteException
-                ? error.code
-                : 'favorite_source_unavailable',
-          );
+          if (error is VideoRemoteException) {
+            appModel.videoRemoteHost.reportError(
+              error.code,
+              reason: error.reason,
+            );
+          } else {
+            _reportRemoteFavoriteUnavailable(
+              FavoriteVideoOriginFailure.playbackFailed,
+            );
+          }
           ErrorLogService.instance.log(
             'VideoFushi.remoteFavorite',
             error,
@@ -7996,7 +8053,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final int? next = _autoAdvanceTargetEpisode();
     if (next == null) return;
     final String path = _episodes[next].path;
-    if (path.isEmpty || path == _lastPrewarmedEpisodePath) return;
+    // 只有本机文件有内嵌字幕可预热：流媒体书（直链 / 网页站地址）、网页档剧集都没有。
+    if (_webMode ||
+        path.isEmpty ||
+        path == _lastPrewarmedEpisodePath ||
+        isNetworkStreamUrl(path)) {
+      return;
+    }
     _lastPrewarmedEpisodePath = path;
     // 下一集的预热排在同一块盘上当前集的读盘之后（background）：两个整片顺序读同时压
     // 一块慢盘，当前集的字幕更晚出来、播放也跟着卡。换集时还没开始的预热随取消信号撤掉。
@@ -8196,10 +8259,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   @override
   void dispose() {
-    _playlistStillExists.dispose();
     // 先停帧探针：它会把残留的最后一窗打掉。退页前那一秒往往正是要看的那一窗（卡死
     // / 黑闪就发生在退出之前），丢掉它等于丢掉现场。必须排在任何拆页步骤之前。
     _frameProbe.stop();
+    _playlistStillExists.dispose();
+    // 播放列表是进程内共享的（换页后的新页接着用），只摘本页的监听。
+    _youtubePlaylist?.removeListener(_onYoutubePlaylistChanged);
     // 拍板台 42UUu_kcwD-media：离页即让出系统媒体会话（已被别的页面 / 有声书 /
     // 音乐接手时只拆自己的监听）。
     _backgroundMediaSession?.dispose();
@@ -9939,9 +10004,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   VideoPlayerShortcutActions _buildVideoShortcutActions(
     VideoPlayerController controller,
   ) {
-    // 网页档（站点视频）：逐帧 / 小窗 / 着色器对比 / 章节都要 libmpv，诚实 no-op（截图看能否截帧）。
+    // 网页档（站点视频）：要 libmpv 的动作（逐帧 / 小窗 / 着色器对比）诚实 no-op，判据只在
+    // [videoWebBackendSupportsShortcutAction] 写一次；截图与上 / 下一章站点能服务，照常执行
+    // （BUG-5417）。
     final bool web = controller.isWebBackend;
     void unsupported() {}
+    VoidCallback webGated(ShortcutAction action, VoidCallback run) =>
+        web && !videoWebBackendSupportsShortcutAction(action)
+        ? unsupported
+        : run;
     return VideoPlayerShortcutActions(
       togglePlayPause: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(controller.playOrPause()),
@@ -9989,11 +10060,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _keepControlsAliveIfVisible();
         unawaited(controller.seekRelative(_asbSeekMs));
       }),
-      toggleShaderCompare: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(_toggleShaderCompare()),
-            ),
+      toggleShaderCompare: webGated(
+        ShortcutAction.videoToggleShaderCompare,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(_toggleShaderCompare()),
+        ),
+      ),
       volumeUp: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_adjustVolume(_volumeStep)),
       ),
@@ -10014,23 +10086,32 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 开 / 再按恢复。键盘（_handleHoldSpeedKey）与手柄（_handleHoldSpeedGamepadEdge）
       // 有松开沿，都不经此表（BUG-3330）。
       toggleHoldSpeed: () => _runWhenImmersiveAllowsShortcuts(_toggleHoldSpeed),
-      previousFrame: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(controller.frameStep(forward: false)),
-            ),
-      nextFrame: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(controller.frameStep(forward: true)),
-            ),
-      // 网页档截图与控制条截图钮同一条门（[VideoPlayerController.canCaptureFrame]，「制卡优先」档 /
-      // 非 DRM 站截得到）：按下那一刻判，截不到由 [_saveScreenshot] 给 OSD 说明，不静默 no-op。
-      screenshot: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_saveScreenshot(withSubtitles: false)),
+      previousFrame: webGated(
+        ShortcutAction.videoPreviousFrame,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(controller.frameStep(forward: false)),
+        ),
       ),
-      screenshotSubtitled: () => _runWhenImmersiveAllowsShortcuts(
-        () => unawaited(_saveScreenshot(withSubtitles: true)),
+      nextFrame: webGated(
+        ShortcutAction.videoNextFrame,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(controller.frameStep(forward: true)),
+        ),
+      ),
+      // 网页档也走 [_saveScreenshot]：非 DRM 站点（YouTube 等）的帧由页面 canvas 截，与暂停
+      // OCR 同一条链路；截不到（Netflix DRM）时它给 OSD 说明，而不是静默 no-op（BUG-5417）。
+      // 同样过 [webGated]：网页档能不能截图只认 [videoWebBackendSupportsShortcutAction] 一处。
+      screenshot: webGated(
+        ShortcutAction.videoScreenshot,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(_saveScreenshot(withSubtitles: false)),
+        ),
+      ),
+      screenshotSubtitled: webGated(
+        ShortcutAction.videoScreenshotSubtitled,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(_saveScreenshot(withSubtitles: true)),
+        ),
       ),
       // 网页档也走 [_ocrCurrentFrame]：它会给 OSD 说明不可用，而不是静默 no-op。
       ocrFrame: () => _runWhenImmersiveAllowsShortcuts(_ocrCurrentFrame),
@@ -10042,11 +10123,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       }),
       // 'W' = 进/出小窗模式（桌面无边框置顶小窗 / Android 系统画中画）。沉浸锁下
       // 与其它视频键同待遇（锁着就不响应），见 [_runWhenImmersiveAllowsShortcuts]。
-      toggleMiniWindow: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(
-              () => unawaited(_toggleVideoMiniWindow()),
-            ),
+      toggleMiniWindow: webGated(
+        ShortcutAction.videoToggleMiniWindow,
+        () => _runWhenImmersiveAllowsShortcuts(
+          () => unawaited(_toggleVideoMiniWindow()),
+        ),
+      ),
       // 'Shift+M' = 小窗里唤出 / 收起那套自绘 chrome（顶部拖动带 + 退出钮、居中三键）。
       // 非小窗档 [_toggleMiniChrome] 自己早退，不需要在这里再判一次。
       toggleMiniChrome: () =>
@@ -10106,28 +10188,30 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 内封章节上/下一章（TODO-424，默认 PageUp/PageDown）：seek 到相邻章起点，
       // 无章节时 controller no-op。与跳句同范式（BUG-2030）：只续命、不唤起；章节**面板**
       // 里点条目仍 poke（那是指针交互，见 [_buildChapterSidePanel]）。
-      previousChapter: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(() {
-              _keepControlsAliveIfVisible();
-              unawaited(
-                _recordVideoJumpAround(
-                  controller.previousChapter,
-                  source: JumpSource.chapter,
-                ),
-              );
-            }),
-      nextChapter: web
-          ? unsupported
-          : () => _runWhenImmersiveAllowsShortcuts(() {
-              _keepControlsAliveIfVisible();
-              unawaited(
-                _recordVideoJumpAround(
-                  controller.nextChapter,
-                  source: JumpSource.chapter,
-                ),
-              );
-            }),
+      previousChapter: webGated(
+        ShortcutAction.videoPreviousChapter,
+        () => _runWhenImmersiveAllowsShortcuts(() {
+          _keepControlsAliveIfVisible();
+          unawaited(
+            _recordVideoJumpAround(
+              controller.previousChapter,
+              source: JumpSource.chapter,
+            ),
+          );
+        }),
+      ),
+      nextChapter: webGated(
+        ShortcutAction.videoNextChapter,
+        () => _runWhenImmersiveAllowsShortcuts(() {
+          _keepControlsAliveIfVisible();
+          unawaited(
+            _recordVideoJumpAround(
+              controller.nextChapter,
+              source: JumpSource.chapter,
+            ),
+          );
+        }),
+      ),
       // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
       // ±_kSubtitleDelayNudgeMs（走 _setDelayMs 写穿 delayMs 落盘 + OSD）。都过沉浸门控，
       // 与顶部快速设置面板同源、零第二套状态。TODO-2837：z/x 保持只调**主字幕轨**；
@@ -10804,7 +10888,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _controlsHeld.value =
         _controlsHoldMenuOpen ||
         _controlsHoldJumpPanel ||
-        _controlsHoldPopoverPress;
+        _controlsHoldPopoverPress ||
+        _controlsHoldSeekDrag;
   }
 
   /// MD3 Expressive chrome 是否生效（Apple 设计系统之外的一切，含墨水屏）。
@@ -11054,20 +11139,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   Widget _topBarTitleText({required AlignmentGeometry alignment}) {
     if (_m3eChrome) return _m3eTopBarTitle(alignment: alignment);
-    return Align(
-      alignment: alignment,
-      child: ValueListenableBuilder<String?>(
-        valueListenable: _titleNotifier,
-        builder: (BuildContext _, String? title, __) => Text(
-          title ?? '',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          textAlign: alignment == AlignmentDirectional.centerEnd
-              ? TextAlign.end
-              : alignment == AlignmentDirectional.center
-              ? TextAlign.center
-              : TextAlign.start,
-          style: _videoControlTitleStyle(),
+    // 标题不在玻璃里：Apple 控制条显隐时跟玻璃同一条进度淡（[FushiGlassPresenceFade]）。
+    return FushiGlassPresenceFade(
+      child: Align(
+        alignment: alignment,
+        child: ValueListenableBuilder<String?>(
+          valueListenable: _titleNotifier,
+          builder: (BuildContext _, String? title, __) => Text(
+            title ?? '',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: alignment == AlignmentDirectional.centerEnd
+                ? TextAlign.end
+                : alignment == AlignmentDirectional.center
+                ? TextAlign.center
+                : TextAlign.start,
+            style: _videoControlTitleStyle(),
+          ),
         ),
       ),
     );
@@ -12628,10 +12716,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // mini 档整条进度条被 theme 关掉（`displaySeekBar: false`，进度改由视频最下方
       // 那条细线承担），此时热区高必须按 0 算——否则字幕会为一条根本没画出来的
       // 进度条让出三四十像素，小窗里那是画面高度的一大截。
-      seekBarContainerHeight: _controlsDensity.showSeekBar
+      // Apple 桌面（方案 C）：进度条在底部单行条里，热区不高出按钮行，只让按钮行。
+      seekBarContainerHeight:
+          _controlsDensity.showSeekBar && !_appleInlineSeekLane
           ? _activeSeekBarContainerHeight * densityScale
           : 0,
-      seekBarBottomButtonBarOverlap: _controlsDensity.showSeekBar
+      seekBarBottomButtonBarOverlap:
+          _controlsDensity.showSeekBar && !_appleInlineSeekLane
           ? _activeSeekBarButtonBarOverlap * densityScale
           : 0,
       subtitleBreathingGap: _videoSubtitleSeekBarBreathingGap * densityScale,

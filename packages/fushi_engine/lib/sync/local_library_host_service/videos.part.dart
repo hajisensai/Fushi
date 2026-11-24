@@ -71,10 +71,15 @@ mixin _LocalLibraryHostVideos
     // （[loadCollectionSections]：手动分栏 → 手动季集指定 → 文件名派生），派生键用
     // host 的完整路径（季号可能只写在父目录上，client 只拿得到 basename）。两次批量
     // 查询，与清单行数无关。
+    // 整批派生（[collectionGroupKeysForPaths]）：切了集的原盘上，分集进第 1 季、
+    // 整条标题进 PV·特典（BUG-5391）。
+    final List<String> derivedSections = collectionGroupKeysForPaths(<String>[
+      for (final VideoBookRow row in rows) row.videoPath,
+    ]);
     final Map<String, CollectionSectionResolution> sections =
         await loadCollectionSections(_db, <String, String>{
-          for (final VideoBookRow row in rows)
-            row.bookUid: collectionGroupKeyForFilename(row.videoPath),
+          for (int i = 0; i < rows.length; i++)
+            rows[i].bookUid: derivedSections[i],
         });
     // 文件系统事实（体积 / sidecar 字幕 / 封面存在性）一律走 async IO 预取：host 跑在
     // app 主 isolate 上，同步 stat 一个在网络盘（rclone / SMB / WinFsp 挂载）上的视频，
