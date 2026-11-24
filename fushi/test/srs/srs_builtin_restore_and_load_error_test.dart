@@ -130,7 +130,7 @@ void main() {
       ))!;
       addTearDown(() => tester.runAsync(db.close));
       // 关掉内核（库被并发关闭 / 作废）：之后每条查询都抛 store is closed。
-      store.core.close();
+      await tester.runAsync(store.core.close);
       await _pump(
         tester,
         store: () async => store,

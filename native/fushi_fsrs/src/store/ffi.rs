@@ -83,6 +83,14 @@ fn handles() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<G4Core>>> {
     HANDLES.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+/// 已经摘下、还没关完的库（[ffsrs_store_close_begin] 放进来，[ffsrs_store_close] 取走关掉）。不在 [HANDLES] 里，
+/// 经编号的调用一律查不到、报「已关闭」。锁序：先 [HANDLES] 后它，两处都只做增删。
+static DETACHED: Mutex<BTreeMap<usize, Arc<G4Core>>> = Mutex::new(BTreeMap::new());
+
+fn detached() -> std::sync::MutexGuard<'static, BTreeMap<usize, Arc<G4Core>>> {
+    DETACHED.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn register(core: G4Core) -> *mut SrsCoreHandle {
     let id = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
     handles().insert(id, Arc::new(core));
@@ -236,8 +244,29 @@ fn open_error(dir: &Path, e: OpenError) -> (i32, String) {
     }
 }
 
-/// 关闭（NULL 无操作，重复关闭无操作）：把句柄从句柄表里摘掉，等在途命令跑完再关两条连接；之后经这个
-/// 句柄的命令一律报「已关闭」。结构体在最后一个在途调用放掉引用时释放（通常就在这里）。
+/// 开始关闭（NULL / 已关 / 已开始关的无操作）：只把句柄从句柄表里摘下来，**不等任何东西**（句柄表的锁只在增删查
+/// 的一瞬间持有，命令不在锁里跑），可以在 UI 线程上调。返回之后经这个编号的新调用（任何线程、任何 isolate）一律报
+/// 「已关闭」；已经在途的照常跑完。连接要等 [ffsrs_store_close] 才关——它会等在途命令，**必须在后台线程调**（Android /
+/// iOS 上 UI isolate 就是平台主线程，在那里等在途的长命令就是 ANR，反馈 3he3GEoqcU）。开始了就必须收尾，否则连接
+/// 一直开着。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_close_begin(core: *mut SrsCoreHandle) {
+    if core.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        let id = core as usize;
+        let mut table = handles();
+        if let Some(c) = table.remove(&id) {
+            detached().insert(id, c);
+        }
+    }));
+}
+
+/// 关闭（NULL 无操作，重复关闭无操作）：句柄还在表里的先摘掉（同 [ffsrs_store_close_begin]），再等在途命令跑完、
+/// 关两条连接；之后经这个句柄的命令一律报「已关闭」。结构体在最后一个在途调用放掉引用时释放（通常就在这里）。
+/// 会等在途命令（可能是几十秒的整层重建），**不要在 UI 线程上调**：UI 线程先调 [ffsrs_store_close_begin]，
+/// 再把这一步交给后台线程（Dart 的 `SrsCore.close`）。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_close(core: *mut SrsCoreHandle) {
     if core.is_null() {
@@ -245,7 +274,11 @@ pub extern "C" fn ffsrs_store_close(core: *mut SrsCoreHandle) {
     }
     let _ = catch_unwind(AssertUnwindSafe(|| {
         // 先摘再关（摘的时候不等连接锁）：摘掉之后新来的调用查不到编号，close 只需等已经在途的那些。
-        let removed = handles().remove(&(core as usize));
+        let id = core as usize;
+        let removed = {
+            let mut table = handles();
+            table.remove(&id).or_else(|| detached().remove(&id))
+        };
         if let Some(c) = removed {
             c.close();
         }
@@ -1216,6 +1249,54 @@ mod tests {
             !alive(&weak),
             "the core must be freed once the last in-flight call returns"
         );
+        std::fs::remove_dir_all(&p).unwrap();
+    }
+
+    /// 反馈 3he3GEoqcU（Android 主线程 ANR，栈在 `ffsrs_store_close`）：UI 线程上的「开始关闭」只摘句柄、不等在途
+    /// 命令——在途的照常跑完（连接还没关），经编号的新调用立刻报「已关闭」；后台的 `ffsrs_store_close` 收尾后结构体
+    /// 释放、摘下表里不留东西。重复开始 / 收尾都无操作。
+    #[test]
+    fn close_begin_detaches_without_waiting_for_an_in_flight_command() {
+        let p = temp("begin");
+        let h = open(&p);
+        let id = h as usize;
+        let weak = Arc::downgrade(&resolve(h).unwrap());
+        let entered = Arc::new(Barrier::new(2));
+        let begun = Arc::new(Barrier::new(2));
+        let worker = {
+            let (entered, begun) = (Arc::clone(&entered), Arc::clone(&begun));
+            std::thread::spawn(move || {
+                let mut err: *mut c_char = null_mut();
+                let rc = run_core(id as *const SrsCoreHandle, &mut err, |c| {
+                    entered.wait();
+                    begun.wait();
+                    // 已经开始关：在途命令手上的库连接还在，照常跑完。
+                    c.debug_query("SELECT 1", &[]).map(|_| ())
+                });
+                (rc, err.is_null())
+            })
+        };
+        entered.wait();
+        // 在途命令卡在屏障上：这一步要是等它就会死锁，测试挂住。
+        ffsrs_store_close_begin(h);
+        ffsrs_store_close_begin(h);
+        let mut err: *mut c_char = null_mut();
+        let mut flag = 0;
+        assert_eq!(
+            ffsrs_store_in_transaction(h, &mut flag, &mut err),
+            STORE_ERROR
+        );
+        assert_eq!(take(err), CLOSED);
+        assert!(
+            alive(&weak),
+            "detached, not freed, before the close finishes"
+        );
+        begun.wait();
+        assert_eq!(worker.join().unwrap(), (STORE_OK, true));
+        ffsrs_store_close(h);
+        assert!(!alive(&weak), "finishing the close must free the core");
+        assert!(!detached().contains_key(&id));
+        ffsrs_store_close(h);
         std::fs::remove_dir_all(&p).unwrap();
     }
 
