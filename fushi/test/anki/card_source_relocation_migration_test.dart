@@ -75,33 +75,39 @@ void main() {
   });
 
   group('runCardSourceRelocationScope', () {
-    CardSourceRelocationItem item(String? book, int offset, List<int> sink) =>
-        CardSourceRelocationItem(
-          bookGroup: book,
-          request: ReaderSourceRelocationRequest(
-            chapterIndex: 0,
-            offset: offset,
-            length: 9,
-            texts: const <String>['もとから鼻白む話だ。'],
-          ),
-          write: (int o, int l) async {
-            sink.add(o);
-            return true;
-          },
-        );
+    CardSourceRelocationItem item(
+      String? book,
+      int offset,
+      List<int> sink, {
+      bool Function()? interrupted,
+    }) => CardSourceRelocationItem(
+      bookGroup: book,
+      request: ReaderSourceRelocationRequest(
+        chapterIndex: 0,
+        offset: offset,
+        length: 9,
+        texts: const <String>['もとから鼻白む話だ。'],
+      ),
+      write: (int o, int l) async {
+        if (interrupted?.call() ?? false) throw StateError('interrupted');
+        sink.add(o);
+        return true;
+      },
+    );
 
     test('resumes after the last finished book and then stays done', () async {
       final CardSourceRelocationStateFile state = _stateFile();
       final List<int> writes = <int>[];
       final List<String> asked = <String>[];
+      bool interrupt = true;
       List<CardSourceRelocationItem> items() => <CardSourceRelocationItem>[
-        item('/b', 4, writes),
+        item('/b', 4, writes, interrupted: () => interrupt),
         item('/a', 4, writes),
         item('/a', 2, writes),
         item(null, 4, writes),
       ];
 
-      // 第一次在 /b 上中断（进程被杀 / 解析异常）。
+      // 第一次在 /b 的写回上中断（库被关 / 进程被杀）。
       await expectLater(
         runCardSourceRelocationScope(
           scope: 's',
@@ -109,12 +115,12 @@ void main() {
           loadItems: () async => items(),
           relocate: (String dir, List<ReaderSourceRelocationRequest> r) {
             asked.add(dir);
-            if (dir == '/b') throw StateError('interrupted');
             return _relocate(dir, r);
           },
         ),
         throwsStateError,
       );
+      interrupt = false;
       expect(asked, <String>['/a', '/b']);
       expect(writes, <int>[2]);
 
@@ -157,6 +163,48 @@ void main() {
       // 别的范围（另一个 profile）各记各的。
       expect((await state.read('other')).done, isFalse);
     });
+
+    test(
+      'a book that fails to parse is skipped for good, not retried forever',
+      () async {
+        final CardSourceRelocationStateFile state = _stateFile();
+        final List<int> writes = <int>[];
+        final List<String> asked = <String>[];
+        final List<String> failed = <String>[];
+        Future<CardSourceRelocationReport?> run() =>
+            runCardSourceRelocationScope(
+              scope: 's',
+              stateFile: state,
+              loadItems: () async => <CardSourceRelocationItem>[
+                item('/a', 4, writes),
+                item('/b', 4, writes),
+                item('/c', 4, writes),
+              ],
+              relocate: (String dir, List<ReaderSourceRelocationRequest> r) {
+                asked.add(dir);
+                if (dir == '/b') {
+                  throw const FileSystemException('chapter file missing');
+                }
+                return _relocate(dir, r);
+              },
+              onBookError: (String book, Object e, StackTrace _) =>
+                  failed.add(book),
+            );
+
+        // 坏掉的 /b 不挡住排在它后面的 /c。
+        expect(
+          await run(),
+          const CardSourceRelocationReport(relocated: 2, notLocated: 1),
+        );
+        expect(asked, <String>['/a', '/b', '/c']);
+        expect(failed, <String>['/b']);
+        expect(writes, <int>[2, 2]);
+        // 记为做完：下次启动不再重新解析它。
+        asked.clear();
+        expect(await run(), isNull);
+        expect(asked, isEmpty);
+      },
+    );
 
     test(
       'a write refused by a concurrent edit counts as not located',

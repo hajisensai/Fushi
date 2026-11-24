@@ -45,6 +45,9 @@ Future<void> _run(FushiDatabase db) async {
     return dir.isNotEmpty && await EpubStorage.bookDirExists(dir) ? dir : null;
   }
 
+  void onBookError(String book, Object e, StackTrace stack) =>
+      ErrorLogService.instance.log('CardSourceRelocation.book', e, stack);
+
   CardSourceRelocationReport report = const CardSourceRelocationReport();
   final CardSourceRelocationReport? history =
       await runCardSourceRelocationScope(
@@ -56,6 +59,7 @@ Future<void> _run(FushiDatabase db) async {
               extractDirOfRow(await db.getEpubBook(bookKey)),
         ),
         relocate: relocateInBackgroundIsolate,
+        onBookError: onBookError,
       );
   if (history != null) report = report + history;
 
@@ -70,8 +74,13 @@ Future<void> _run(FushiDatabase db) async {
             extractDirOfRow(await resolveCardSourceBook(db, link)),
       ),
       relocate: relocateInBackgroundIsolate,
+      onBookError: onBookError,
     );
-    if (srs != null) report = report + srs;
+    if (srs != null) {
+      report = report + srs;
+      // 改了库：复习界面重读、推给别的设备（与复习页内的写入同一条通路）。
+      if (srs.relocated > 0) SrsAppHost.current?.notifyLocalWrite?.call();
+    }
   }
 
   debugPrint('[CardSourceRelocation] $report');

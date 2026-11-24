@@ -208,13 +208,19 @@ Future<List<ReaderSourceRelocation>> relocateInBackgroundIsolate(
 /// 「书不在本机」这一组在状态文件里的键。
 const String _kMissingBookGroup = '';
 
-/// 跑一个范围的迁移（已做完的直接返回 null；做完返回这个范围累计的报告）。中途抛出的
-/// 异常原样抛给调用方，已完成的书已落进状态文件，下次从下一本接着做。
+/// 跑一个范围的迁移（已做完的直接返回 null；做完返回这个范围累计的报告）。
+///
+/// 一本书核对失败（书坏了 / 文件缺了，解析或建索引抛异常）只算这本书的条目「定位不到」、
+/// 交给 [onBookError] 记一笔，照样把这本书记为已做、接着做下一本：同一本书每次启动都会
+/// 同样失败，若整个迁移随之中止，排在它后面的书永远轮不到、每次启动都重新解析它一遍。
+/// 写回与状态文件抛出的异常（库关了 / 磁盘满）原样抛给调用方，已完成的书已落进状态文件，
+/// 下次从下一本接着做。
 Future<CardSourceRelocationReport?> runCardSourceRelocationScope({
   required String scope,
   required CardSourceRelocationStateFile stateFile,
   required Future<List<CardSourceRelocationItem>> Function() loadItems,
   required CardSourceBookRelocator relocate,
+  void Function(String book, Object error, StackTrace stack)? onBookError,
 }) async {
   CardSourceRelocationScopeState state = await stateFile.read(scope);
   if (state.done) return null;
@@ -229,14 +235,20 @@ Future<CardSourceRelocationReport?> runCardSourceRelocationScope({
   for (final String book in books) {
     if (state.doneBooks.contains(book)) continue;
     final List<CardSourceRelocationItem> items = byBook[book]!;
-    final List<ReaderSourceRelocation> results = book == _kMissingBookGroup
-        ? <ReaderSourceRelocation>[
-            for (final CardSourceRelocationItem _ in items)
-              const ReaderSourceRelocation.notLocated(),
-          ]
-        : await relocate(book, <ReaderSourceRelocationRequest>[
-            for (final CardSourceRelocationItem i in items) i.request,
-          ]);
+    final List<ReaderSourceRelocation> unresolved = <ReaderSourceRelocation>[
+      for (final CardSourceRelocationItem _ in items)
+        const ReaderSourceRelocation.notLocated(),
+    ];
+    List<ReaderSourceRelocation> results = unresolved;
+    if (book != _kMissingBookGroup) {
+      try {
+        results = await relocate(book, <ReaderSourceRelocationRequest>[
+          for (final CardSourceRelocationItem i in items) i.request,
+        ]);
+      } catch (e, stack) {
+        onBookError?.call(book, e, stack);
+      }
+    }
     int relocated = 0;
     int verified = 0;
     int notLocated = 0;
