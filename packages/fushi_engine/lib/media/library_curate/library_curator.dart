@@ -1314,6 +1314,9 @@ class LibraryCurator {
         continue;
       }
       bool unitFailed = false;
+      // 认出了作品、资料源却给不出这一卷缺的任何字段（BUG-5390：Bangumi 搜索结果
+      // 曾经不带作者）：不算做完——标成做完会让它从待确认里消失，资料却还缺着。
+      bool nothingToWrite = false;
       for (final LibraryCurateBookVolume volume in unit.volumes) {
         if (ctx.isCancelled()) {
           unitFailed = true;
@@ -1367,8 +1370,10 @@ class LibraryCurator {
           }
         }
         bool volumeFailed = false;
+        bool attempted = false;
         for (final (Map<String, Object?> c, List<String> fields) in writes) {
           if (fields.isEmpty) continue;
+          attempted = true;
           final _Write w = await _write(
             ctx,
             LibraryCurateOps.bookScrapeApply,
@@ -1406,6 +1411,8 @@ class LibraryCurator {
         }
         if (volumeFailed) {
           unitFailed = true;
+        } else if (!attempted) {
+          nothingToWrite = true;
         } else {
           ctx.state.seen.add(_bookDoneKey(volume));
         }
@@ -1414,6 +1421,23 @@ class LibraryCurator {
         incomplete = true;
       } else {
         progress.add(unit.id);
+      }
+      if (!unitFailed && nothingToWrite) {
+        pending++;
+        ctx.state.seen.add('scrape.books:${unit.id}');
+        ctx.run.pendingItems.add(
+          LibraryCuratePendingItem(
+            stage: stage,
+            kind: 'book_scrape_pending',
+            title: unit.title,
+            ref: unit.volumes.length == 1
+                ? unit.volumes.single.shelfKey
+                : unit.id,
+            reason: 'no_fields',
+            candidates: candidates.length,
+            ai: ai.wire,
+          ),
+        );
       }
     }
     return LibraryCurateStageResult(
