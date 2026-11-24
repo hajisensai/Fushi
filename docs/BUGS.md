@@ -58,6 +58,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5376](bugs/BUG-5376-series-key-digit-name-dash-title.md) | ✅ | ✅ | series-key-digit-name-dash-title |
+> 共 4674 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5377](bugs/BUG-5377-series-key-split-volume-parts.md) | ✅ | ✅ | series-key-split-volume-parts |
 | [BUG-5371](bugs/BUG-5371-anidb-tag-tree-backtick.md) | ✅ | ✅ | anidb-tag-tree-backtick |
 | [BUG-5370](bugs/BUG-5370-page-backdrop-image-lost-after-ios-update.md) | ✅ | ✅ | page-backdrop-image-lost-after-ios-update |
 | [BUG-5369](bugs/BUG-5369-lyric-visualizer-style-desc-truncated.md) | ✅ | ✅ | lyric-visualizer-style-desc-truncated |
