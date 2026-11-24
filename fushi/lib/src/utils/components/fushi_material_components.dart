@@ -4527,8 +4527,25 @@ const ValueKey<String> kFushiHeaderOverflowMenuKey = ValueKey<String>(
 /// 一颗「⋯」），以及带 label 的动作是否展开成药丸。
 typedef FushiResolvedHeaderActions = ({List<Widget> items, bool expandLabels});
 
+/// 页面「⋯」（[FushiHeaderMoreButton]）里的项平铺成独立图标钮时的收纳优先级：
+/// 低于任何页面动作——宽度放不下时最先收回「⋯」。
+const int kFushiHeaderMoreEntryOverflowPriority = -1000;
+
+/// 「⋯」菜单项 → 平铺的图标钮：文案只进 tooltip（[FushiIconButton] 由它出
+/// Semantics），沿用菜单项的 key（测试 / 焦点驱动按同一个 key 定位，无论它此刻
+/// 平铺还是在菜单里）、同一个回调、同一个禁用态。
+FushiIconButton _headerActionOfMoreEntry(FushiHeaderMoreEntry entry) =>
+    FushiIconButton(
+      key: entry.key,
+      icon: entry.icon,
+      tooltip: entry.label,
+      enabled: entry.enabled,
+      overflowPriority: kFushiHeaderMoreEntryOverflowPriority,
+      onTap: entry.onSelected,
+    );
+
 /// 页头 / 顶栏动作行的**唯一**自适应收纳判据（[FushiPageHeader]、外壳动作组
-/// [FushiShellHeaderActions]、自带 AppBar 的页面共用）。
+/// [FushiShellHeaderActions]、自带 AppBar 的页面共用；M3E 与 Apple 同一套）。
 ///
 /// 页面只声明动作与重要程度（[FushiIconButton.overflowPriority] /
 /// [FushiIconButton.alwaysVisible]），摆放在这里决定。[budget] 是动作区**实际**
@@ -4539,6 +4556,11 @@ typedef FushiResolvedHeaderActions = ({List<Widget> items, bool expandLabels});
 /// 2. 否则纯图标；仍放不下就从最低优先级起**逐颗**收进末尾的「⋯」，「⋯」只在
 ///    至少收进一颗时出现，且它自身的宽度计入判定；
 /// 3. 全收也放不下：剩余外露动作交给调用方的横滑兜底。
+///
+/// 页面自己挂的「⋯」（[FushiHeaderMoreButton]，库页的低频动作）也按这条走：
+/// 它的项先平铺成独立图标钮（[kFushiHeaderMoreEntryOverflowPriority]，最先收），
+/// 放不下才逐颗收回这颗「⋯」；一项都没收时「⋯」不出现（用户 2026-11-24「宽窗
+/// 有空间还是展开最好」，CLAUDE.md「工具栏默认平铺」）。
 ///
 /// 收纳不改外露动作的相对顺序，「⋯」恒在最后——焦点遍历即「外露按钮 → ⋯」。
 /// 菜单项由被收纳动作的图标 + 文案（label 优先、回退 tooltip）派生，共用同一个
@@ -4551,50 +4573,112 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
   bool collapsePinned = false,
   FushiHeaderOverflowFit? fit,
 }) {
-  if (actions.isEmpty || !budget.isFinite) {
-    return (items: actions, expandLabels: allowLabels);
+  // 页面自带的「⋯」：它的项展开进动作行（[flat]），记下每项在行里的位置与
+  // 「⋯」该落的位置（紧跟在它的项后面，即它原来的位置）。
+  final int pageMoreAt = actions.indexWhere(
+    (Widget item) => item is FushiHeaderMoreButton,
+  );
+  final FushiHeaderMoreButton? pageMore = pageMoreAt < 0
+      ? null
+      : actions[pageMoreAt] as FushiHeaderMoreButton;
+  final Map<int, FushiHeaderMoreEntry> entryAt = <int, FushiHeaderMoreEntry>{};
+  final List<Widget> flat = <Widget>[];
+  int moreSlot = -1;
+  for (int i = 0; i < actions.length; i++) {
+    if (i != pageMoreAt) {
+      flat.add(actions[i]);
+      continue;
+    }
+    for (final FushiHeaderMoreEntry entry in pageMore!.entries) {
+      entryAt[flat.length] = entry;
+      flat.add(_headerActionOfMoreEntry(entry));
+    }
+    moreSlot = flat.length;
+  }
+
+  // 收掉 [hidden] 后的动作行：页面有「⋯」时被收的项回到它的菜单（页面原有项
+  // 在 entries，收进来的外露动作在分隔线上面的 leadingEntries，设计稿 11-20
+  // #16「不另生第二颗」），否则末尾另生一颗自适应「⋯」。
+  List<Widget> assemble(Set<int> hidden) {
+    final List<Widget> visible = <Widget>[];
+    if (pageMore == null) {
+      for (int i = 0; i < flat.length; i++) {
+        if (!hidden.contains(i)) visible.add(flat[i]);
+      }
+      if (hidden.isEmpty) return visible;
+      return <Widget>[
+        ...visible,
+        _headerOverflowMenuButton(<FushiIconButton>[
+          for (int i = 0; i < flat.length; i++)
+            if (hidden.contains(i)) flat[i] as FushiIconButton,
+        ]),
+      ];
+    }
+    final bool showMore =
+        hidden.isNotEmpty || pageMore.leadingEntries.isNotEmpty;
+    for (int i = 0; i <= flat.length; i++) {
+      if (i == moreSlot && showMore) {
+        visible.add(
+          FushiHeaderMoreButton(
+            key: pageMore.key,
+            buttonKey: pageMore.buttonKey,
+            entries: <FushiHeaderMoreEntry>[
+              for (int j = 0; j < flat.length; j++)
+                if (hidden.contains(j) && entryAt[j] != null) entryAt[j]!,
+            ],
+            leadingEntries: <FushiHeaderMoreEntry>[
+              for (int j = 0; j < flat.length; j++)
+                if (hidden.contains(j) && entryAt[j] == null)
+                  fushiHeaderMoreEntryOf(flat[j] as FushiIconButton, j),
+              ...pageMore.leadingEntries,
+            ],
+          ),
+        );
+      }
+      if (i < flat.length && !hidden.contains(i)) visible.add(flat[i]);
+    }
+    return visible;
+  }
+
+  if (flat.isEmpty || !budget.isFinite) {
+    return (items: assemble(const <int>{}), expandLabels: allowLabels);
   }
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final TextScaler textScaler = MediaQuery.textScalerOf(context);
   if (allowLabels &&
       _estimateHeaderActionsWidth(
             tokens,
-            actions,
+            assemble(const <int>{}),
             expandLabels: true,
             textScaler: textScaler,
           ) <=
           budget) {
     fit?.reset();
-    return (items: actions, expandLabels: true);
+    return (items: assemble(const <int>{}), expandLabels: true);
   }
   // [collapsePinned]：别的都收完还放不下时，标了 alwaysVisible 的按钮也收（排在
   // 收纳顺序最后）。给没有横滑余地的窄位用——页头大字顶栏窄窗下动作槽只有一颗
   // 按钮宽，「搜索 + ⋯」两颗排不下就只留「⋯」，不裁成半颗。
   final List<int> order = <int>[
-    ...fushiHeaderCollapseOrder(actions),
+    ...fushiHeaderCollapseOrder(flat),
     if (collapsePinned)
-      for (int i = actions.length - 1; i >= 0; i--)
-        if (_isPinnedHeaderAction(actions[i])) i,
+      for (int i = flat.length - 1; i >= 0; i--)
+        if (_isPinnedHeaderAction(flat[i])) i,
   ];
-  List<Widget> visibleWith(int collapsed) {
-    final Set<int> hidden = order.take(collapsed).toSet();
-    return <Widget>[
-      for (int i = 0; i < actions.length; i++)
-        if (!hidden.contains(i)) actions[i],
-    ];
-  }
 
-  // 页面自己已挂了一颗「⋯」（[FushiHeaderMoreButton]）时，收纳的动作并进它的
-  // 菜单（分隔线隔开），不再另生一颗——否则窄位上就是并排两颗「⋯」（设计稿
-  // 11-20 #16）。它恒外露、不在收纳顺序里，宽度已计入，不再加探针宽。
-  final int pageMore = actions.indexWhere(
-    (Widget item) => item is FushiHeaderMoreButton,
-  );
-  double widthWith(int collapsed) =>
-      _estimateHeaderActionsWidth(tokens, <Widget>[
-        ...visibleWith(collapsed),
-        if (collapsed > 0 && pageMore < 0) _kHeaderOverflowProbe,
-      ], textScaler: textScaler);
+  // 估算口径：外露动作 + 「⋯」（出现时）。页面「⋯」按它本身计宽，自适应「⋯」
+  // 用同形的探针按钮计宽。
+  double widthWith(int collapsed) {
+    final Set<int> hidden = order.take(collapsed).toSet();
+    final bool showMore =
+        hidden.isNotEmpty ||
+        (pageMore != null && pageMore.leadingEntries.isNotEmpty);
+    return _estimateHeaderActionsWidth(tokens, <Widget>[
+      for (int i = 0; i < flat.length; i++)
+        if (!hidden.contains(i)) flat[i],
+      if (showMore) pageMore ?? _kHeaderOverflowProbe,
+    ], textScaler: textScaler);
+  }
 
   final int collapsed = fit == null
       ? fushiHeaderCollapseCount(
@@ -4607,9 +4691,10 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
           widthWith: widthWith,
           budget: budget,
           signature: Object.hashAll(<Object?>[
-            for (final Widget item in actions)
+            for (final Widget item in flat)
               item is FushiIconButton
                   ? Object.hash(
+                      item.key,
                       item.icon,
                       item.overflowPriority,
                       fushiIsCollapsibleHeaderAction(item),
@@ -4617,37 +4702,7 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
                   : (item.key ?? item.runtimeType),
           ]),
         );
-  if (collapsed == 0) return (items: actions, expandLabels: false);
-  final Set<int> hidden = order.take(collapsed).toSet();
-  if (pageMore >= 0) {
-    final FushiHeaderMoreButton more =
-        actions[pageMore] as FushiHeaderMoreButton;
-    final List<FushiHeaderMoreEntry> merged = <FushiHeaderMoreEntry>[
-      for (int i = 0; i < actions.length; i++)
-        if (hidden.contains(i))
-          fushiHeaderMoreEntryOf(actions[i] as FushiIconButton, i),
-    ];
-    return (
-      items: <Widget>[
-        for (int i = 0; i < actions.length; i++)
-          if (i == pageMore)
-            more.withLeadingEntries(merged)
-          else if (!hidden.contains(i))
-            actions[i],
-      ],
-      expandLabels: false,
-    );
-  }
-  return (
-    items: <Widget>[
-      ...visibleWith(collapsed),
-      _headerOverflowMenuButton(<FushiIconButton>[
-        for (int i = 0; i < actions.length; i++)
-          if (hidden.contains(i)) actions[i] as FushiIconButton,
-      ]),
-    ],
-    expandLabels: false,
-  );
+  return (items: assemble(order.take(collapsed).toSet()), expandLabels: false);
 }
 
 /// 页头标题位的保底宽（BUG-1184）：动作再多也给标题留几个字的宽度，随文字缩放

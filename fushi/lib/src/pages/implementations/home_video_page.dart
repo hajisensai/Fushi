@@ -9599,9 +9599,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
   }
 
-  /// 页头（设计稿 #video V2，2026-11-15 所有者确认）：页头只留**搜索、筛选与
+  /// 页头（设计稿 #video V2，2026-11-15 所有者确认）：常驻**搜索、筛选与
   /// 排序、后台任务、添加**四样（搜索由 [_headerSearchForSection] 画，添加是外壳
-  /// 页头右端的导入主按钮），其余低频库管理动作收进「⋯」。
+  /// 页头右端的导入主按钮），其余低频库管理动作挂在「⋯」上——宽度够时由页头
+  /// 统一收纳（[fushiResolveHeaderActions]）平铺成独立图标钮，放不下才收回「⋯」
+  /// （用户 2026-11-24「有空间还是展开最好」）。
   ///
   /// * 筛选与排序合成一颗：点开同一个筛选面板，排序方式与每行数量排在最前。
   /// * 后台任务只在真有任务时出现（[VideoBackgroundTasksButton]：进度环 + 数量，
