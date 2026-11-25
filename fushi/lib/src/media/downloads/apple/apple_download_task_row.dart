@@ -39,6 +39,8 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiPopupMenuItem;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/apple/apple_radii.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show ContextMenuTrigger;
 
 /// 行菜单里「展开详情」的保留 id（来源自己没给 `details` 动作时补这一项）。
 const String kAppleDownloadInlineDetailsMenuId = '__apple-inline-details';
@@ -538,10 +540,9 @@ class _AppleDownloadTaskRowState extends State<AppleDownloadTaskRow> {
       },
       child: Semantics(
         expanded: widget.expanded,
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onSecondaryTapUp: (TapUpDetails details) =>
-              unawaited(_openMenu(at: details.globalPosition)),
+        // 右键走绑定表（ContextMenuTrigger），不硬绑次按钮：右键被改绑给别的动作时不双触发。
+        child: ContextMenuTrigger(
+          onInvoke: (Offset position) => unawaited(_openMenu(at: position)),
           child: FushiPressScale(
             child: FushiAppleRow(
               key: ValueKey<String>('download-task-toggle-${widget.taskId}'),

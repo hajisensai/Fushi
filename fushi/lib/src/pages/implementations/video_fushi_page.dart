@@ -169,8 +169,9 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
         AppVideoSubtitleJobStatus,
         AppVideoSubtitleService,
         AppVideoSubtitleTarget,
-        AppVideoSubtitleTargetNotFound,
-        appVideoSubtitleService;
+        AppVideoSubtitleTargetNotFound;
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service_entry.dart'
+    show appVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_pipeline_gate.dart'
     show canRunLocalVideoSubtitlePipeline, localVideoSubtitlePipelineMediaPath;
 import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_audio.dart'

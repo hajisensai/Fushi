@@ -24,6 +24,7 @@ import 'package:fushi/src/pages/implementations/confirm_mine_round_trip.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart'
     show kPopupSearchingPlaceholderResult;
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_queued_overwrite.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
@@ -61,6 +62,9 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/webview_asset_url.dart';
 import 'package:fushi/src/utils/popup_theme_css.dart';
 import 'package:fushi/src/webview/webview_menu_dismiss_bridge.dart';
+
+export 'package:fushi/src/pages/implementations/dictionary_popup_queued_overwrite.dart'
+    show QueuedOverwriteReply, QueuedOverwriteSettled;
 
 /// TODO-426：暂时砍掉查词弹窗的「上 N 句 / 下 N 句」句子上下文选择器（用户要求暂时移除，
 /// 后面想到好方案再弄回来）。整条后端链路（[MiningSentenceDraft]、reader/video 的
@@ -268,42 +272,6 @@ class MinePopupResult {
   /// 这次制卡被收下了：成功落卡（[MinePopupResult.mined] 恒带 `ankiConnect: true`，
   /// AnkiDroid 也一样），或进了待发队列（[queued]）。失败 / 重复 / 未知结局都不算。
   bool get accepted => ankiConnect || queued;
-}
-
-/// BUG-3492：排队覆盖（`queueOverwrite` 桥）的回执。
-///
-/// [accepted] = 宿主收下了这次覆盖，会在后台写入落地后执行；[message] 是给弹窗就地
-/// 提示的文案（收下时说「写入后自动覆盖」，不收时说为什么）。null 时 popup.js 用
-/// 通用的「还没写进 Anki」文案。
-class QueuedOverwriteReply {
-  const QueuedOverwriteReply({
-    this.accepted = false,
-    this.message,
-    this.settled,
-  });
-
-  final bool accepted;
-  final String? message;
-
-  /// 宿主没收下、因为这次后台写入**已经结束**了（弹窗问 Anki 与请求到达宿主之间
-  /// 落地 / 失败）：popup.js 据此走已制卡的正常覆盖路径（[QueuedOverwriteSettled.landed]）
-  /// 或撤掉「已加入」（[QueuedOverwriteSettled.failed]），而不是说「还在写入」。
-  final QueuedOverwriteSettled? settled;
-
-  Map<String, Object?> toJson() => <String, Object?>{
-    'accepted': accepted,
-    if (message != null) 'message': message,
-    if (settled != null) 'settled': settled!.name,
-  };
-}
-
-/// [QueuedOverwriteReply.settled]：那次后台写入的结局。
-enum QueuedOverwriteSettled {
-  /// 写进了 Anki。
-  landed,
-
-  /// 没写进去。
-  failed,
 }
 
 /// 「制卡后行为」（拍板台 8ldy3d8XFA，按模块存，见 [AfterMiningPopupAction]）。
