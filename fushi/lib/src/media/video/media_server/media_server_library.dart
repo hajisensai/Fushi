@@ -193,6 +193,36 @@ class MediaServerVideoLibrary {
     MediaServerItem work,
   ) async => (await addMissing(browser, work, userIntent: true)).length;
 
+  /// 按服务器**叶子** id（集 / 电影）把它们所属的作品加入媒体库（BUG-5459）。
+  ///
+  /// 合集详情页里「只在服务器上、本机没有行」的远端成员只带叶子 id（清单条目
+  /// [RemoteVideoInfo] 不含剧 id），入库却以作品为单位（[addToLibrary]：整部剧
+  /// 全部季的集、剧名合集、剧海报——与服务器详情页的「加入媒体库」同一条路径）。
+  /// 所以逐个叶子回溯作品：集 → [MediaServerItem.seriesId] 那部剧，电影 / 没有剧的
+  /// 叶子 → 自身。一部剧加完，它的其余集已有行，后面同剧的叶子直接跳过、不再联网
+  /// ——同一部剧只问两次详情（叶子 + 剧）。返回新加的条数。
+  Future<int> addWorksOfItems(
+    MediaServerBrowser browser,
+    Iterable<String> itemIds,
+  ) async {
+    int added = 0;
+    final Set<String> seen = <String>{};
+    for (final String itemId in itemIds) {
+      if (!seen.add(itemId)) continue;
+      if (await repository.getByBookUid(itemId) != null) continue;
+      final MediaServerItem item = await browser.itemDetail(itemId);
+      final String? seriesId = item.seriesId;
+      final MediaServerItem work =
+          item.type == MediaServerItemType.episode &&
+              seriesId != null &&
+              seriesId.isNotEmpty
+          ? await browser.itemDetail(seriesId)
+          : item;
+      added += await addToLibrary(browser, work);
+    }
+    return added;
+  }
+
   /// [addToLibrary] 的本体：返回这次新加的条目（探针据此投递新集提醒）。探针是
   /// 被动刷新，[userIntent] 保持 false——用户删掉的合集不被它复活。
   ///

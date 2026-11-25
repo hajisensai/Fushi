@@ -1,6 +1,8 @@
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
     show CollectionMemberVisibility;
 import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
+import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
+    show MediaServerBrowser;
 import 'package:fushi_engine/media/collections/collection_season_groups.dart'
     show collectionGroupKeyForFilename;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -333,7 +335,14 @@ class CollectionRemoteContext {
     this.discActions,
     this.playedMark,
     this.onPlayedMarked,
+    this.mediaServer,
   });
+
+  /// 当前远端来源是媒体服务器（Jellyfin / Emby / Plex）时的浏览能力；null = 互联
+  /// host / 云盘。详情页据它给「只在服务器上」的远端集出「加入媒体库」（BUG-5459）：
+  /// 远端成员只带叶子 id，要经它回溯所属作品再走 `MediaServerVideoLibrary` 入库，
+  /// 与服务器详情页同一条路径。
+  final MediaServerBrowser? mediaServer;
 
   /// 当前远端来源的「已播放」协议（媒体服务器 Jellyfin / Emby）。null = 该来源
   /// 不支持（互联 / 云盘的看完状态归对端），详情页不给纯远端集出标记菜单项。

@@ -395,6 +395,59 @@ void main() {
     expect(await library.seriesWorksInLibrary(), isEmpty);
   });
 
+  group('BUG-5459：按叶子 id 加入所属作品（合集详情页的远端成员）', () {
+    test('集回溯到剧、整部剧入库进剧名合集；同剧其余叶子不再联网', () async {
+      browser.details['e1'] = _episode('e1', 1, 1);
+      browser.details['e3'] = _episode('e3', 2, 1);
+
+      expect(
+        await library.addWorksOfItems(browser, <String>['e1', 'e3', 'e1']),
+        3,
+      );
+      // 叶子 e1 + 剧 show；e3 加完剧后已有行，跳过、不问详情。
+      expect(browser.itemDetailCalls, 2);
+      expect((await library.statusOf(browser, series)).online, <String>{
+        'e1',
+        'e2',
+        'e3',
+      });
+      final VideoBookRow row = (await repository.getByBookUid('e3'))!;
+      expect(mediaServerWorkOfRow(row), (
+        serverId: browser.serverId,
+        workId: 'show',
+      ));
+      final MediaCollectionRow collection = (await database
+          .getMediaCollectionByNaturalKey('The Show', 'playlist'))!;
+      expect(await database.getCollectionItems(collection.id), hasLength(3));
+
+      // 再点一次：都已在库，不联网、不重复加。
+      expect(await library.addWorksOfItems(browser, <String>['e1', 'e3']), 0);
+      expect(browser.itemDetailCalls, 2);
+    });
+
+    test('电影叶子按自身入库，不去找剧', () async {
+      browser.details['m1'] = const MediaServerItem(
+        id: 'm1',
+        name: 'A Movie',
+        type: MediaServerItemType.movie,
+      );
+      expect(await library.addWorksOfItems(browser, <String>['m1']), 1);
+      expect(browser.itemDetailCalls, 1);
+      expect(mediaServerWorkOfRow((await repository.getByBookUid('m1'))!), (
+        serverId: browser.serverId,
+        workId: 'm1',
+      ));
+    });
+
+    test('服务器取不到叶子详情时抛出、不落半截行', () async {
+      await expectLater(
+        library.addWorksOfItems(browser, <String>['gone']),
+        throwsA(isA<StateError>()),
+      );
+      expect(await database.allVideoBooks(), isEmpty);
+    });
+  });
+
   test('launch rebuilds the client from the signed-in server and uses the '
       'series rows in the playlist as members', () async {
     await library.addToLibrary(browser, series);
