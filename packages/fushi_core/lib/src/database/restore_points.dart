@@ -156,6 +156,8 @@ class RestorePoint {
     this.excludedCategories,
     this.includesSrsMedia,
     this.fullDatabase,
+    this.deviceId,
+    this.deviceName,
   });
 
   /// 目录名。
@@ -193,6 +195,13 @@ class RestorePoint {
   /// [categories] / [excludedCategories] 只说明哪些**文件树**随包，库里的数据一律都在。
   /// 老的定时点为 null（按类别剥过行）。
   final bool? fullDatabase;
+
+  /// 用户文件夹里的副本（第三期）：哪台设备写的（同步 / 设备本地的设备 id）。文件夹可能被几台设备
+  /// 共用（同步盘），保留规则只修剪本机写的副本；本地存储里的点为 null。
+  final String? deviceId;
+
+  /// [deviceId] 那台设备的显示名（还原点页标「来自另一台设备」用）。
+  final String? deviceName;
 
   DateTime get createdAt =>
       DateTime.fromMillisecondsSinceEpoch(createdAtMs, isUtc: true);
@@ -232,6 +241,8 @@ class RestorePoint {
     if (excludedCategories != null) 'excludedCategories': excludedCategories,
     if (includesSrsMedia != null) 'srsMedia': includesSrsMedia,
     if (fullDatabase != null) 'fullDatabase': fullDatabase,
+    if (deviceId != null) 'deviceId': deviceId,
+    if (deviceName != null) 'deviceName': deviceName,
   };
 
   /// 解析 [directory] 里的元数据；缺字段 / 不认识的种类 / 读不了返回 null（当作不完整）。
@@ -239,7 +250,26 @@ class RestorePoint {
     try {
       final File meta = File(p.join(directory, kRestorePointMetaFileName));
       if (!meta.existsSync()) return null;
-      final Object? raw = jsonDecode(meta.readAsStringSync());
+      return tryParse(
+        meta.readAsStringSync(),
+        id: p.basename(directory),
+        directory: directory,
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  /// 解析元数据正文 [text]（[tryRead] 与用户文件夹里的副本共用：Android 的 SAF 文件夹没有
+  /// 文件路径，元数据由原生读成文本交回）。[directory] 是这份点的位置（本地路径，或文件夹副本的
+  /// 句柄）。缺字段 / 不认识的种类返回 null。
+  static RestorePoint? tryParse(
+    String text, {
+    required String id,
+    required String directory,
+  }) {
+    try {
+      final Object? raw = jsonDecode(text);
       if (raw is! Map<String, Object?>) return null;
       final RestorePointKind? kind = RestorePointKind.fromWire(raw['kind']);
       final RestorePointDatabase? db = RestorePointDatabase.fromWire(
@@ -261,6 +291,21 @@ class RestorePoint {
       final Object? reason = raw['reason'];
       final Object? srsMedia = raw['srsMedia'];
       final Object? fullDb = raw['fullDatabase'];
+      // 文件名只能是目录里的一个文件（用户文件夹里的副本元数据不完全可信：取回本机时按这些名字
+      // 拼路径，`../` 之类会写到目录外面）。有一个不合格就整份当作不完整。
+      for (final Object? f in files) {
+        final Object? name = f is Map<String, Object?> ? f['name'] : null;
+        if (name is String &&
+            (name.isEmpty ||
+                name == '.' ||
+                name == '..' ||
+                name.contains('/') ||
+                name.contains(r'\'))) {
+          return null;
+        }
+      }
+      final Object? device = raw['deviceId'];
+      final Object? deviceName = raw['deviceName'];
       List<String>? strings(Object? v) => v is List<Object?>
           ? <String>[
               for (final Object? e in v)
@@ -268,7 +313,7 @@ class RestorePoint {
             ]
           : null;
       return RestorePoint(
-        id: p.basename(directory),
+        id: id,
         directory: directory,
         kind: kind,
         database: db,
@@ -291,6 +336,10 @@ class RestorePoint {
         excludedCategories: strings(raw['excludedCategories']),
         includesSrsMedia: srsMedia is bool ? srsMedia : null,
         fullDatabase: fullDb is bool ? fullDb : null,
+        deviceId: device is String && device.isNotEmpty ? device : null,
+        deviceName: deviceName is String && deviceName.isNotEmpty
+            ? deviceName
+            : null,
       );
     } on Object {
       return null;
