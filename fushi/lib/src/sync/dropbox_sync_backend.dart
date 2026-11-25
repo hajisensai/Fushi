@@ -401,8 +401,9 @@ class DropboxSyncBackend extends SyncBackend
   /// 单个 session 请求遇到瞬时失败（429 / 5xx / 网络断开）的最多尝试次数。
   static const int _uploadSessionMaxAttempts = 5;
 
-  /// 一次上传里按服务端 `correct_offset` 重新对齐偏移的最多次数（防服务端与本端
-  /// 互相纠正成死循环）。
+  /// 按服务端 `correct_offset` 重新对齐偏移的最多连续次数（防服务端与本端互相纠正成
+  /// 死循环）。按块算：一块被收下就清零，几 GB 的文件在不稳的网络上偶尔对齐几次不会
+  /// 累计到上限；finish 另有一份同样的上限（它把偏移往回拨后，补传成功也不清零）。
   static const int _uploadSessionMaxOffsetResyncs = 8;
 
   /// 无 `Retry-After` 时的退避基数（第 n 次重试等 base * 2^(n-1)），以及服务端给的
@@ -471,16 +472,17 @@ class DropboxSyncBackend extends SyncBackend
 
     final int chunkBytes = _uploadSessionChunkBytes;
     int offset = 0;
-    int resyncs = 0;
-    int resync(http.Response resp, String step) {
+    // 当前这块（从上一次被收下之后）连续对齐了几次；finish 往回拨偏移了几次。
+    int chunkResyncs = 0;
+    int finishResyncs = 0;
+    int resync(http.Response resp, String step, int done) {
       final int? correct = _incorrectOffsetOf(resp);
       if (correct == null ||
           correct < 0 ||
           correct > total ||
-          resyncs >= _uploadSessionMaxOffsetResyncs) {
+          done >= _uploadSessionMaxOffsetResyncs) {
         throw _uploadSessionError(step, resp);
       }
-      resyncs++;
       return correct;
     }
 
@@ -504,8 +506,9 @@ class DropboxSyncBackend extends SyncBackend
         );
         if (resp.statusCode == 200) {
           offset += length;
+          chunkResyncs = 0;
         } else {
-          offset = resync(resp, 'append_v2');
+          offset = resync(resp, 'append_v2', chunkResyncs++);
         }
         report(offset);
       }
@@ -520,7 +523,7 @@ class DropboxSyncBackend extends SyncBackend
         length: 0,
       );
       if (finishResp.statusCode == 200) return;
-      final int correct = resync(finishResp, 'finish');
+      final int correct = resync(finishResp, 'finish', finishResyncs++);
       if (correct == offset) throw _uploadSessionError('finish', finishResp);
       offset = correct;
     }
@@ -648,10 +651,20 @@ class DropboxSyncBackend extends SyncBackend
 
   static bool _isTransientUploadResponse(http.Response resp) {
     if (resp.statusCode == 429 || resp.statusCode >= 500) return true;
-    // finish 的 UploadSessionFinishError.too_many_write_operations（同命名空间并发
-    // 写冲突）文档建议重试。
-    return resp.statusCode == 409 &&
-        _dropboxErrorTag(resp) == 'too_many_write_operations';
+    // `too_many_write_operations`（同命名空间并发写冲突）文档建议重试：finish 的
+    // UploadSessionFinishError 里可能直接是这个 tag，也可能包在 `path`（WriteError）里。
+    return resp.statusCode == 409 && _isTooManyWriteOperations(resp);
+  }
+
+  static bool _isTooManyWriteOperations(http.Response resp) {
+    final Map<String, dynamic>? error = _dropboxErrorOf(resp);
+    if (error == null) return false;
+    const String tag = 'too_many_write_operations';
+    if (error['.tag'] == tag) return true;
+    final Object? path = error['path'];
+    return error['.tag'] == 'path' &&
+        path is Map<String, dynamic> &&
+        path['.tag'] == tag;
   }
 
   /// 服务端给了 `Retry-After`（秒数或 HTTP 日期）就照办（封顶
@@ -692,9 +705,6 @@ class DropboxSyncBackend extends SyncBackend
       return null;
     }
   }
-
-  static String? _dropboxErrorTag(http.Response resp) =>
-      _dropboxErrorOf(resp)?['.tag'] as String?;
 
   /// 409 `incorrect_offset` 里的 `correct_offset`：append_v2 直接是
   /// `{".tag": "incorrect_offset", "correct_offset": N}`，finish 包在

@@ -2,7 +2,8 @@
 // 改成 `upload_session/start` → 逐块 `append_v2` → `finish`。这里用测试注入把门槛与
 // 块大小调到几个字节，钉住：小文件仍是一次 `files/upload`；大文件的偏移 / 块大小 /
 // commit 字段；`incorrect_offset` 按 `correct_offset` 续传（append 与 finish 两种
-// 形状）；瞬时 5xx 重试同一块并采信 `Retry-After`；持续 5xx 有界放弃。
+// 形状）；对齐上限按块算；瞬时 5xx / `too_many_write_operations`（顶层或包在 `path`
+// 里）重试并采信 `Retry-After`；持续 5xx 有界放弃。
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -262,5 +263,102 @@ void main() {
     expect(appendCalls, 5);
     expect(sleeps.length, 4);
     expect(calls.any((_Call c) => c.endpoint.endsWith('finish')), isFalse);
+  });
+
+  test('对齐上限按块算：每块都对齐一次的长文件照样传完', () async {
+    // 每块第一次发都被说「其实还在本块开头」（服务端没收下），第二次才收下：12 块共
+    // 对齐 12 次，超过整份上传 8 次的旧上限，但每块只连续对齐 1 次。
+    final Set<int> bounced = <int>{};
+    install((_Call c, int i) {
+      final int? offset = c.offset;
+      if (c.endpoint.endsWith('append_v2') &&
+          offset != null &&
+          bounced.add(offset)) {
+        return _incorrectOffset(offset);
+      }
+      return null;
+    });
+    final File file = await writeFile(8 * 12);
+    await upload(file);
+    final List<_Call> appends = calls
+        .where((_Call c) => c.endpoint.endsWith('append_v2'))
+        .toList();
+    expect(appends.length, 24);
+    expect(calls.last.endpoint, 'files/upload_session/finish');
+    expect(calls.last.offset, 96);
+  });
+
+  test('同一块连续对齐超过上限：放弃，不进 finish', () async {
+    install((_Call c, int i) {
+      if (c.endpoint.endsWith('append_v2') && c.offset == 8) {
+        return _incorrectOffset(8);
+      }
+      return null;
+    });
+    final File file = await writeFile(22);
+    await expectLater(upload(file), throwsA(isA<SyncBackendError>()));
+    final int stuck = calls
+        .where((_Call c) => c.endpoint.endsWith('append_v2') && c.offset == 8)
+        .length;
+    expect(stuck, 9);
+    expect(calls.any((_Call c) => c.endpoint.endsWith('finish')), isFalse);
+  });
+
+  for (final ({String shape, Map<String, Object> error}) tooMany
+      in <({String shape, Map<String, Object> error})>[
+        (
+          shape: '顶层',
+          error: <String, Object>{'.tag': 'too_many_write_operations'},
+        ),
+        (
+          shape: '包在 path 里',
+          error: <String, Object>{
+            '.tag': 'path',
+            'path': <String, Object>{'.tag': 'too_many_write_operations'},
+          },
+        ),
+      ]) {
+    test(
+      'finish 报 too_many_write_operations（${tooMany.shape}）：当瞬时错误重试 finish',
+      () async {
+        bool failed = false;
+        install((_Call c, int i) {
+          if (c.endpoint.endsWith('finish') && !failed) {
+            failed = true;
+            return _json(<String, Object>{
+              'error_summary': 'too_many_write_operations/..',
+              'error': tooMany.error,
+            }, status: 409);
+          }
+          return null;
+        });
+        final File file = await writeFile(22);
+        await upload(file);
+        final List<String> finishes = <String>[
+          for (final _Call c in calls)
+            if (c.endpoint.endsWith('finish')) '${c.offset}',
+        ];
+        expect(finishes, <String>['22', '22']);
+        expect(sleeps.length, 1);
+      },
+    );
+  }
+
+  test('finish 报别的 path 错误（如 insufficient_space）：不重试，直接抛', () async {
+    install((_Call c, int i) {
+      if (c.endpoint.endsWith('finish')) {
+        return _json(<String, Object>{
+          'error': <String, Object>{
+            '.tag': 'path',
+            'path': <String, Object>{'.tag': 'insufficient_space'},
+          },
+        }, status: 409);
+      }
+      return null;
+    });
+    final File file = await writeFile(22);
+    await expectLater(upload(file), throwsA(isA<SyncBackendError>()));
+    expect(calls.where((_Call c) => c.endpoint.endsWith('finish')).length, 1);
+    expect(sleeps, isEmpty);
   });
 }
