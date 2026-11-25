@@ -21,6 +21,7 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteCollectionMembership, RemoteVideoInfo;
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
+import 'package:fushi/src/sync/remote_video_list_store.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -78,12 +79,17 @@ void main() {
     storeDir = Directory.systemTemp.createTempSync('fushi_collection_gate');
     platformServices = testPlatformServices();
     ankiRepository = FakeAnkiRepository();
+    // 本文件只测闸门：媒体服务器清单不落盘（落盘与冷启动见
+    // home_video_persisted_remote_list_test.dart）。
+    RemoteVideoListStore.debugReset();
+    RemoteVideoListStore.debugSetDirResolver(() async => null);
     appModel = AppModel(platformServices)
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
   });
 
   tearDown(() async {
+    RemoteVideoListStore.debugSetDirResolver(null);
     await db.close();
     if (storeDir.existsSync()) {
       storeDir.deleteSync(recursive: true);
@@ -318,6 +324,10 @@ class _CountingJellyfinClient implements JellyfinVideoClient {
 
   @override
   String get coverCacheNamespace => 'jellyfin-test';
+
+  /// 不出变更戳：每次重验都整库拉（本文件数的就是整库请求）。
+  @override
+  Future<String?> takeRemoteLibraryStamp() async => null;
 
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() {

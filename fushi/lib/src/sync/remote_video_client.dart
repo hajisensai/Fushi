@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
     show RemoteAnimeEpisode;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/remote_library_source.dart';
+import 'package:fushi/src/sync/server_url_credentials.dart';
 
 /// **任何**远端视频来源都具备的能力：列清单 + 按 id 把整片下载到本地。
 ///
@@ -63,6 +64,29 @@ abstract interface class RemoteVideoLookup {
   /// 查 [ids] 对应的远端视频，按 [ids] 的顺序返回；服务器上已不存在、或不是可播
   /// 视频的 id 直接略去（不抛错）。网络 / 鉴权失败照常抛出。
   Future<List<RemoteVideoInfo>> remoteVideosByIds(List<String> ids);
+}
+
+/// 清单能落盘、能廉价地问「库变了没」的远端视频来源（Jellyfin / Emby）。
+///
+/// 只有媒体服务器实现：它的整库枚举是几十个分页重查询（BUG-1891），冷启动 / TTL
+/// 过期时让用户干等它是视频页最慢的一步。互联 host 与云盘目录的清单是一次性下发
+/// 的单个请求，不需要也不实现。
+abstract interface class PersistableRemoteVideoSource
+    implements RemoteVideoSource {
+  /// 清单内容的作用域：同一来源（服务器 + 账号）下决定「枚举的是哪些库」的设置。
+  /// 落盘清单只在作用域相同时才拿出来用（改了媒体库勾选，旧清单作废）。不得含凭据。
+  String get remoteVideoListScope;
+
+  /// 此刻的线路 + 令牌。落盘前用它把清单里的地址去掉凭据，读回来再补上。
+  ServerUrlCredentials get remoteVideoUrlCredentials;
+
+  /// 在整库枚举**之前**取一个库变更戳（不透明字符串，可落盘，不含凭据）；拿不到
+  /// 可信的戳时返回 null（之后每次都整库枚举）。
+  Future<String?> takeRemoteLibraryStamp();
+
+  /// 自 [stamp] 取得以来，服务器上这份清单是否一条都没变（增 / 删 / 元数据 /
+  /// 已播放与断点）。判不准一律回 false。网络失败照常抛出。
+  Future<bool> remoteLibraryUnchangedSince(String stamp);
 }
 
 /// [RemoteVideoSource.downloadRemoteVideo] 被 `cancelSignal` 取消。
