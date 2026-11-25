@@ -1887,10 +1887,144 @@ fn anki_copies_across_a_lineage_whose_salted_and_canonical_order_differ_migrate_
     assert_eq!(p["verdict"], "pass", "{p:#}");
     assert_eq!(p["parity"], json!([]), "{p:#}");
     assert_eq!(p["canonical"], json!([]), "{p:#}");
-    // 正是「代表选得不同」这一格被认出来：新卡的统计行与卡行各一处。
+    // 两侧选的是同一份副本（新代按原值日志 ID 选代表，BUG-5457），没有「代表选得不同」要认。
     let k = &p["knownDifferences"];
-    assert_eq!(k["cacheStatRepresentativeSwaps"], json!(1), "{p:#}");
-    assert_eq!(k["cacheCardRepresentativeSwaps"], json!(1), "{p:#}");
+    assert_eq!(k["cacheStatRepresentativeSwaps"], json!(0), "{p:#}");
+    assert_eq!(k["cacheCardRepresentativeSwaps"], json!(0), "{p:#}");
+}
+
+/// BUG-5457（反馈 iNWSgqE7_Z）：同一条 Anki 复习落在血统里两张带盐卡上的两份副本，结果不一样（两次导入之间 Anki 那边
+/// 重排过：记忆状态相同、间隔与到期日不同）。同一事件只算一份、代表取日志 ID 最小的那份——协议 3 比原值 ID；新代的
+/// 投影行把日志 ID 归一成规范 ID，代表若按规范 ID 选，带盐与规范先后相反时两侧就挑了不同的那份，卡的 `due_day` /
+/// `scheduled_days` 不同、之后的复习按不同的前一间隔分「年轻 / 成熟」（统计行 `kind` / `maturity_delta`），对拍判失败、
+/// 整次撤回。用户报告就是这个签名（稳定度相同、间隔有大有小）。
+///
+/// 两条血统：第一条只有两份副本（卡行的签名），第二条之后还有一次本机作答（统计行的签名）。迁移判 committed、对拍
+/// 无差异，新代的卡行与协议 3 逐格相同（按原值 ID 选中的那份副本的到期日）。
+#[test]
+fn anki_copies_with_different_results_keep_the_protocol_3_representative() {
+    use crate::gen4_ids::rules::{self, CANONICAL};
+    use crate::store::sync2::config::default_deck_id;
+    use crate::store::sync2::tests::{DAY, deck_entity, edit};
+
+    const ANKI_NT: i64 = 1_700_000_000_557;
+    const RID: i64 = T0 + 5_000;
+    let card_of = |salt: Option<&str>, guid: &str| -> Id {
+        let nt = rules::note_type(salt, ANKI_NT);
+        rules::card(&rules::note(salt, guid), &rules::template(&nt, 0), 0)
+    };
+    let log_of = |salt: Option<&str>, guid: &str| -> String {
+        rules::imported_revlog(&card_of(salt, guid), RID).text()
+    };
+    // 带盐的两份日志 ID 与规范的两份先后相反的两对 guid。
+    let flipped: Vec<(String, String)> = (0..)
+        .map(|i| (format!("bug5457-old-{i}"), format!("bug5457-new-{i}")))
+        .filter(|(a, b)| {
+            (log_of(Some(P), a) < log_of(Some(P), b))
+                != (log_of(CANONICAL, a) < log_of(CANONICAL, b))
+        })
+        .take(2)
+        .collect();
+    let nt = rules::note_type(Some(P), ANKI_NT);
+    let (field, tmpl) = (rules::field(&nt, 0), rules::template(&nt, 0));
+    let note = |g: &str| rules::note(Some(P), g).text();
+    // 记忆状态相同、间隔不同（15 天年轻、30 天成熟）的两份副本结果。
+    let anki = |card: &str, id: &str, ivl: i64| -> Value {
+        json!({"t": "log", "x": {
+            "id": id, "p": P, "card": card, "kind": "review", "rating": 3, "hlc": format!("{RID}:0:anki"),
+            "at": RID, "ts": "wall", "origin": "anki", "ankiId": RID, "rtype": "review", "dur": 5000, "utcOff": 0,
+            "rollover": 4, "alg": "anki",
+            "res": {"queue": "review", "ivl": ivl, "step": 0, "reps": 1, "lapses": 0, "scheduler": "fushi",
+                    "dueDay": T0 / DAY + ivl, "lastReviewedAt": RID, "mem": {"s": 20.5, "d": 5.25}}
+        }})
+    };
+
+    let d = Device::new("bug5457");
+    d.core.sync2_identity(P, T0).unwrap();
+    while d.core.sync2_migrate(P, T0, None).unwrap()["done"] != json!(true) {}
+    let mut events = vec![
+        deck_entity(&default_deck_id(P)),
+        json!({"t": "entity", "x": {"id": nt.text(), "p": P, "k": "notetype",
+               "d": {"createdAt": 1, "ntKind": "standard", "ankiNum": ANKI_NT}}}),
+        edit(
+            "notetype",
+            &nt.text(),
+            &format!("fieldDef/{}", field.text()),
+            json!({"ankiNum": 0, "name": "E", "ord": 0}),
+        ),
+        edit(
+            "notetype",
+            &nt.text(),
+            &format!("tmplDef/{}", tmpl.text()),
+            json!({"ankiNum": 0, "name": "A", "ord": 0, "front": "{{E}}"}),
+        ),
+    ];
+    for (old_g, new_g) in &flipped {
+        for g in [old_g, new_g] {
+            events.push(
+                json!({"t": "entity", "x": {"id": note(g), "p": P, "k": "note",
+                               "d": {"createdAt": 1, "guid": g, "noteTypeId": nt.text()}}}),
+            );
+            events.push(edit(
+                "note",
+                &note(g),
+                &format!("f/{}", field.text()),
+                json!("猫"),
+            ));
+        }
+    }
+    d.apply(T0, events);
+    let mut new_cards: Vec<String> = Vec::new();
+    for (i, (old_g, new_g)) in flipped.iter().enumerate() {
+        let (c_old, c_new) = (
+            card_of(Some(P), old_g).text(),
+            card_of(Some(P), new_g).text(),
+        );
+        let t = T0 + 10 * (i as i64 + 1);
+        d.apply(t, vec![anki(&c_old, &log_of(Some(P), old_g), 15)]);
+        d.apply(
+            t + 1,
+            vec![
+                edit("note", &note(old_g), "deleted", json!(t + 1)),
+                edit("card", &c_new, &format!("historyFrom/{c_old}"), json!(true)),
+            ],
+        );
+        d.apply(t + 2, vec![anki(&c_new, &log_of(Some(P), new_g), 30)]);
+        new_cards.push(c_new);
+    }
+    // 第二条血统之后本机作答一次：它在统计里算「年轻」还是「成熟」，看的是代表那份副本的间隔。
+    let answer_at = RID + 20 * DAY;
+    d.apply(
+        answer_at,
+        vec![json!({"t": "log", "x": {
+            "id": Id::new_v7(answer_at as u64).text(), "p": P, "card": new_cards[1], "kind": "review", "rating": 3,
+            "hlc": format!("{answer_at}:0:dart"), "at": answer_at, "ts": "wall", "origin": "fushi",
+            "rtype": "review", "dur": 4000, "utcOff": 0, "rollover": 4,
+            "res": {"queue": "review", "ivl": 1, "step": 0, "reps": 2, "lapses": 0, "scheduler": "fushi",
+                    "dueDay": answer_at / DAY + 1, "lastReviewedAt": answer_at}
+        }})],
+    );
+    let Device { core, _dir: dir } = d;
+    core.close();
+    drop(core);
+
+    let canonical = BTreeMap::from([(
+        P.to_owned(),
+        json!({"defaultDeck": rules::builtin_default_deck(CANONICAL).text()}).to_string(),
+    )]);
+    let out = migrate_with(&dir.0, &canonical, &Stop::new(), &mut Vec::new());
+    let Outcome::Committed { report } = &out else {
+        panic!("{out:?}")
+    };
+    let p = &report["profiles"][0];
+    assert_eq!(p["verdict"], "pass", "{p:#}");
+    assert_eq!(p["parity"], json!([]), "{p:#}");
+    assert_eq!(p["canonical"], json!([]), "{p:#}");
+    let k = &p["knownDifferences"];
+    assert_eq!(k["cacheStatRepresentativeSwaps"], json!(0), "{p:#}");
+    assert_eq!(k["cacheCardRepresentativeSwaps"], json!(0), "{p:#}");
+    // 缓存层真的比过（卡行、统计行逐格）。
+    assert_eq!(p["cacheBaseline"], "rebuilt", "{p:#}");
 }
 
 /// BUG-5190（反馈 eZJEGqEt7K）：一张卡有两个前身（并入重复笔记、删光重导……），两个前身记着不同的卡片标志

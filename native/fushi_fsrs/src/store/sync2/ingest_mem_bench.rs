@@ -112,6 +112,7 @@ fn answers(
                 .iter()
                 .map(|t| Row {
                     seed_card: None,
+                    raw_id: None,
                     json: t,
                     server_time: None,
                     intent: Intent::Answer,

@@ -57,11 +57,12 @@ pub fn preview(
         };
         let input: Vec<Row<'_>> = rows
             .iter()
-            .map(|(j, s, i, c)| Row {
+            .map(|(j, s, i, c, id)| Row {
                 json: j,
                 server_time: *s,
                 intent: i.clone(),
                 seed_card: Some(c),
+                raw_id: Some(id),
             })
             .collect();
         let day = Day {

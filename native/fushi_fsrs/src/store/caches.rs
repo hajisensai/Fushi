@@ -901,6 +901,19 @@ impl Material {
             state: history::state_from_stored(logs)?,
         })
     }
+
+    /// [Material::of]，同一事件的副本按 [ranks]（逐条的原值日志 ID）选代表：协议 4 的投影行 ID 已归一成规范 ID，代表仍要按
+    /// 原值选才与协议 3 同一份（`history::Log::rank`，BUG-5457）。
+    pub(crate) fn of_ranked(
+        flags: Value,
+        logs: &[history::StoredLog<'_>],
+        ranks: &[Option<&str>],
+    ) -> Result<Material, String> {
+        Ok(Material {
+            flags,
+            state: history::state_from_stored_ranked(logs, ranks)?,
+        })
+    }
 }
 
 /// 卡片缓存行里由原料算出来的列（[write_card] 与协议 4 的 `store/gen4/cache.rs` 共用；卡 / 笔记 / 模板 / 序号 /
@@ -948,7 +961,7 @@ fn card_materials(
     for ((card, _), (lineage, flags)) in want.iter().zip(lineages) {
         let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
         for id in &lineage {
-            for (j, s, cols) in logs.get(id).unwrap_or(&empty) {
+            for (j, s, cols, _) in logs.get(id).unwrap_or(&empty) {
                 stored.push((j, *s, cols.as_ref()));
             }
         }
@@ -1541,7 +1554,7 @@ fn refresh_stats(
         for (k, (o, g)) in owners.iter().zip(&batch).enumerate() {
             let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
             for id in g {
-                for (j, s, cols) in logs.get(id).unwrap_or(&empty) {
+                for (j, s, cols, _) in logs.get(id).unwrap_or(&empty) {
                     stored.push((j, *s, cols.as_ref()));
                 }
             }

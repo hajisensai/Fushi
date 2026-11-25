@@ -36,6 +36,10 @@ pub struct Row<'a> {
     /// 新代的投影行已归一成规范卡（`store/gen4/cache.rs` `log_at`），带盐的存量日志在那里看到的是规范卡 ID；种子要是
     /// 跟着换，迁移就会改掉卡的到期日（文件头「迁移也因此不改任何一张卡的到期日」），所以新代把原值卡放在这里。
     pub seed_card: Option<&'a str>,
+    /// 同一事件的副本里选代表比的 ID：作者记下的原值日志 ID（`history::Log::rank`）。`None` = [json] 里的 `id`（协议 3：
+    /// 投影行里就是原值）。新代的投影行 ID 已归一成规范 ID，带盐的原值与规范值先后可以相反；按规范 ID 选的话，结果不同的
+    /// 两份副本里两侧挑的不是同一份，迁移就会改掉卡的到期日（BUG-5457），所以新代把原值放在这里（同 [seed_card]）。
+    pub raw_id: Option<&'a str>,
 }
 
 /// 重放结果：每行一个新 JSON（`None` = 与输入相同，不用写回）、重放后的卡片状态（`None` = 新卡）。
@@ -325,7 +329,9 @@ fn fold(rows: &[Row<'_>]) -> Result<Folded, String> {
             return Err("bad review log: not an object".into());
         };
         values.push(m);
-        parsed.push(crate::history::parse_full(r.json, r.server_time)?);
+        let mut p = crate::history::parse_full(r.json, r.server_time)?;
+        p.0.rank = r.raw_id.map(std::borrow::Cow::Borrowed);
+        parsed.push(p);
     }
     let logs: Vec<_> = parsed.iter().map(|p| p.0.clone()).collect();
     let sel = select(&logs);
@@ -510,6 +516,7 @@ pub(crate) mod tests {
             .zip(rows)
             .map(|(t, v)| Row {
                 seed_card: None,
+                raw_id: None,
                 json: t,
                 server_time: None,
                 intent: infer_intent(v),
@@ -558,6 +565,7 @@ pub(crate) mod tests {
             .iter()
             .map(|t| Row {
                 seed_card: None,
+                raw_id: None,
                 json: t,
                 server_time: None,
                 intent: Intent::Answer,
@@ -610,6 +618,7 @@ pub(crate) mod tests {
                     server_time: None,
                     intent: infer_intent(v),
                     seed_card: seed,
+                    raw_id: None,
                 })
                 .collect();
             let r = replay(&input).unwrap();
@@ -698,6 +707,7 @@ pub(crate) mod tests {
             .zip(rows)
             .map(|(t, v)| Row {
                 seed_card: None,
+                raw_id: None,
                 json: t,
                 server_time: None,
                 intent: infer_intent(v),

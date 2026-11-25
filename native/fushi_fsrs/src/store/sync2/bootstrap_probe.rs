@@ -763,6 +763,7 @@ fn probe_finish_floor() {
             .iter()
             .map(|(_, s, _, json, code, arg)| Row {
                 seed_card: None,
+                raw_id: None,
                 json,
                 server_time: *s,
                 intent: match code {

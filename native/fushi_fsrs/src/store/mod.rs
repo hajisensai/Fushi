@@ -1217,12 +1217,14 @@ pub(crate) fn history_states_of(
     let mut states = Vec::with_capacity(groups.len());
     for g in groups {
         let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
+        let mut ranks: Vec<Option<&str>> = Vec::new();
         for c in g {
-            for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
+            for (j, s, cols, rank) in logs.get(c).unwrap_or(&empty) {
                 stored.push((j, *s, cols.as_ref()));
+                ranks.push(rank.as_deref());
             }
         }
-        states.push(crate::history::state_from_stored(&stored)?);
+        states.push(crate::history::state_from_stored_ranked(&stored, &ranks)?);
     }
     Ok(crate::history::encode_states(&states))
 }
@@ -1240,12 +1242,14 @@ pub(crate) fn stat_projection_of(
     let opt = |v: Option<i64>| v.map_or(Value::Null, Value::Integer);
     for (gi, g) in groups.iter().enumerate() {
         let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
+        let mut ranks: Vec<Option<&str>> = Vec::new();
         for c in g {
-            for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
+            for (j, s, cols, rank) in logs.get(c).unwrap_or(&empty) {
                 stored.push((j, *s, cols.as_ref()));
+                ranks.push(rank.as_deref());
             }
         }
-        for r in crate::history::stats_from_stored(&stored)? {
+        for r in crate::history::stats_from_stored_ranked(&stored, &ranks)? {
             out.push(vec![
                 Value::Integer(gi as i64),
                 Value::Text(r.log_id),
@@ -1329,7 +1333,14 @@ impl SrsCore {
 /// 这些组里全部卡的日志原文 + 服务器时刻（[conn] 上一条 JOIN 按块取）。
 /// [logs_of] 的一条：(存储值, 服务器时刻, 瘦存时的列)。读 `jslim` + 列（store/slim.rs `LOG_READ`），不经逐行
 /// 拼回的 `json`。
-pub(crate) type LogRow = (String, Option<i64>, Option<crate::history::LogCols>);
+/// 一条日志行：(存储值, 服务器时刻, 列, 选副本代表用的原值日志 ID)。最后一格协议 3 是 `None`（落库行里就是原值）；新代
+/// （`store/gen4/cmd/training.rs`）的行 ID 已归一，给原值（`history::Log::rank`，BUG-5457）。
+pub(crate) type LogRow = (
+    String,
+    Option<i64>,
+    Option<crate::history::LogCols>,
+    Option<String>,
+);
 
 pub(crate) fn logs_of(
     conn: &rusqlite::Connection,
@@ -1360,7 +1371,7 @@ pub(crate) fn logs_of(
             let card: String = row.get(0).map_err(|e| e.to_string())?;
             let st: Option<i64> = row.get(1).map_err(|e| e.to_string())?;
             let (json, cols) = slim::log_row(row, 2).map_err(|e| e.to_string())?;
-            logs.entry(card).or_default().push((json, st, cols));
+            logs.entry(card).or_default().push((json, st, cols, None));
         }
     }
     Ok(logs)

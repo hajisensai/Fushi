@@ -448,10 +448,13 @@ pub(super) struct LogIn {
     /// 日志上记的卡（原值，未归一）：重放的 fuzz 种子（`sync2/replay.rs` [Row::seed_card]）。[json] 里的 `card` 已归一成
     /// 规范卡；种子跟着换的话，带盐的存量日志迁移后到期日会变。
     pub(super) seed_card: String,
+    /// 日志 ID 的原值（未归一）：同一事件的副本按它选代表（`history::Log::rank`、`sync2/replay.rs` [Row::raw_id]）。[json]
+    /// 里的 `id` 已归一成规范 ID；代表跟着按规范 ID 选的话，结果不同的两份副本两侧挑的不是同一份，迁移后到期日会变（BUG-5457）。
+    pub(super) raw_id: String,
 }
 
-/// 归属组的一行重放输入（[Index::group_rows]）：(投影行 JSON, server_time, 意图, fuzz 种子用的原值卡)。
-pub(super) type GroupRow = (String, Option<i64>, Intent, String);
+/// 归属组的一行重放输入（[Index::group_rows]）：(投影行 JSON, server_time, 意图, fuzz 种子用的原值卡, 原值日志 ID)。
+pub(super) type GroupRow = (String, Option<i64>, Intent, String, String);
 
 /// 统计去重要跨批看的东西（全量重建时一批一个或几个连通分量）。
 #[derive(Default)]
@@ -1034,6 +1037,7 @@ impl<'t, 'c> Index<'t, 'c> {
         let (server_time, intent) = (l.server_time, l.intent.clone());
         let note = l.note.as_ref().map(Ref::of);
         let seed_card = Ref::of(&l.card).text();
+        let raw_id = Ref::of(&l.id).text();
         let device = e.id.device;
         // 投影行里的 profile 只是协议 3 的分区列，读侧不用；集合内取常量。
         let row = log_json("", &log_body(l, wall), || {
@@ -1048,6 +1052,7 @@ impl<'t, 'c> Index<'t, 'c> {
             k,
             note,
             seed_card,
+            raw_id,
         })
     }
 
@@ -1758,7 +1763,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 if l.note.is_some() && (note.is_none() || *c == tail_text) {
                     note = l.note.clone();
                 }
-                out.push((l.json, l.server_time, l.intent, l.seed_card));
+                out.push((l.json, l.server_time, l.intent, l.seed_card, l.raw_id));
             }
         }
         let note = note.map(|n| self.canon(&n).map(|c| c.text())).transpose()?;
@@ -1813,6 +1818,7 @@ impl<'t, 'c> Index<'t, 'c> {
                         server_time: l.server_time,
                         intent: l.intent.clone(),
                         seed_card: Some(&l.seed_card),
+                        raw_id: Some(&l.raw_id),
                     });
                 }
             }
@@ -1856,14 +1862,17 @@ impl<'t, 'c> Index<'t, 'c> {
             preds,
             succs,
         } = l;
-        let stored_of = |lineage: &[String]| -> Vec<StoredLog<'_>> {
+        // 日志（落库形态）与逐条的原值日志 ID（同一事件的副本按它选代表，[LogIn::raw_id]）。
+        let stored_of = |lineage: &[String]| -> (Vec<StoredLog<'_>>, Vec<Option<&str>>) {
             let mut s: Vec<StoredLog<'_>> = Vec::new();
+            let mut ranks: Vec<Option<&str>> = Vec::new();
             for c in lineage {
                 for l in logs.get(c).into_iter().flatten() {
                     s.push((l.json.as_str(), l.server_time, None));
+                    ranks.push(Some(l.raw_id.as_str()));
                 }
             }
-            s
+            (s, ranks)
         };
         let card_edits: Vec<(String, Vec<StoredEdit<'_>>)> = lines
             .iter()
@@ -1968,7 +1977,8 @@ impl<'t, 'c> Index<'t, 'c> {
         let mut visible: HashSet<String> = HashSet::new();
         let mut note_of: HashMap<String, String> = HashMap::new();
         for (t, (lineage, flags)) in targets.iter().zip(flags) {
-            let m = Material::of(flags, &stored_of(&lineage))?;
+            let (stored, ranks) = stored_of(&lineage);
+            let m = Material::of_ranked(flags, &stored, &ranks)?;
             let r = card_row(&m)?;
             let s = r.state;
             let card = t.card.text();
@@ -2049,7 +2059,8 @@ impl<'t, 'c> Index<'t, 'c> {
         let base = acc.owners.len();
         for (k, o) in order.iter().enumerate() {
             let owner = ref_of(o);
-            for r in history::stats_from_stored(&stored_of(&groups[o]))? {
+            let (stored, ranks) = stored_of(&groups[o]);
+            for r in history::stats_from_stored_ranked(&stored, &ranks)? {
                 let log = r.log_id.clone();
                 self.t
                     .conn()

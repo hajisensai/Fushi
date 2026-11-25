@@ -75,6 +75,8 @@ fn rwkv_divergence(
 struct ScanLog {
     rowid: i64,
     id: ScanId,
+    /// 选副本代表用的原值日志 ID（`history::Log::rank`）；`None` = [ScanLog::id]（协议 3）。
+    rank: Option<ScanId>,
     revokes: Option<ScanId>,
     physical: i64,
     counter: i64,
@@ -183,6 +185,7 @@ impl ScanLog {
             occurred_at: self.at,
             revokes: self.revokes.as_ref().map(ScanId::text),
             has_result: self.has_result,
+            rank: self.rank.as_ref().map(ScanId::text),
         }
     }
 
@@ -215,7 +218,8 @@ pub(crate) struct LogsByCard {
 }
 
 impl LogsByCard {
-    /// 解析一条读出的日志（瘦存 + 列，或原文；与 [crate::history::parse_full] 同一套坏数据判据）并收下。
+    /// 解析一条读出的日志（瘦存 + 列，或原文；与 [crate::history::parse_full] 同一套坏数据判据）并收下。[rank] 是选
+    /// 副本代表用的原值日志 ID（新代给，协议 3 给 `None`，`history::Log::rank`）。
     pub(crate) fn push(
         &mut self,
         card: String,
@@ -223,6 +227,7 @@ impl LogsByCard {
         stored: &str,
         server_time: Option<i64>,
         cols: Option<&LogCols>,
+        rank: Option<&str>,
     ) -> Result<(), String> {
         let (log, res, extra) = parse_stored(stored, server_time, cols)?;
         let writer = match self.writer_ix.get(&*log.writer) {
@@ -238,6 +243,7 @@ impl LogsByCard {
         let scan = ScanLog {
             rowid,
             id: ScanId::of(&log.id),
+            rank: rank.map(ScanId::of),
             revokes: log.revokes.as_deref().map(ScanId::of),
             writer,
             physical: log.physical,
@@ -300,7 +306,7 @@ fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
             let card: String = row.get(1).map_err(|e| e.to_string())?;
             let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
             let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
-            logs.push(card, rowid, &stored, st, cols.as_ref())?;
+            logs.push(card, rowid, &stored, st, cols.as_ref(), None)?;
         }
     }
     Ok(logs)
@@ -573,7 +579,8 @@ pub(crate) fn rwkv_scan_on(
         }
         let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
         let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
-        scan.logs.push(card, rowid, &stored, st, cols.as_ref())?;
+        scan.logs
+            .push(card, rowid, &stored, st, cols.as_ref(), None)?;
     }
     Ok(scan)
 }

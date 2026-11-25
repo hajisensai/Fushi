@@ -14,7 +14,8 @@
 //! - 同一份历史里同 ID 的日志只留最后一条（Dart `Map` 去重语义）；
 //! - 同一事件的多份副本只算一份（[EventKey]，BUG-4218）：同卡、同 kind、同 HLC（physical, counter, writerId）、
 //!   同发生时刻 / 来源 / 评分 / Anki revlog 时刻的日志是同一次真实事件换了 ID 的副本（profile 合并在 BUG-4217
-//!   修好前会把一次复习写成两个 ID，事件只追加、永远删不掉）。组里 ID 最小（UTF-16 序）的一条是代表，其余标
+//!   修好前会把一次复习写成两个 ID，事件只追加、永远删不掉）。组里 ID 最小（UTF-16 序；新代按作者记下的原值 ID，
+//!   [Log::rank]，BUG-5457）的一条是代表，其余标
 //!   [STATUS_DUPLICATE]、不算有效；组里任何一份被撤销，整组（每一份）算撤销。undo 与不认识的 kind 不成组。依据：HLC 每次写日志都由写入者时钟
 //!   tick 出来，同写入者内唯一；Anki 导入的 HLC 由 revlog id / 锚点时刻派生；合并 / 跨 profile 导入原样保留 HLC；
 //!   恢复备份的重放副本取新 HLC，不与原日志成组；
@@ -108,9 +109,19 @@ pub struct Log<'a> {
     pub occurred_at: i64,
     pub revokes: Option<Cow<'a, str>>,
     pub has_result: bool,
+    /// 同一事件的副本里选代表时比的 ID（[select]、[Log::rank_id]）：作者记下的原值日志 ID。`None` = [Log::id]（协议 3 与
+    /// Dart：落库行里就是原值）。新代的投影行把日志 ID 归一成规范 ID（`store/gen4/cache.rs` `log_at`），带盐的原值与规范值
+    /// 先后可以相反；代表要是按规范 ID 选，两份副本结果不同（两次导入之间 Anki 那边重排过）时迁移就会换掉卡的结果、改到期日
+    /// （BUG-5457），所以新代在这里给原值。
+    pub rank: Option<Cow<'a, str>>,
 }
 
 impl Log<'_> {
+    /// 选副本代表时比的 ID（[Log::rank]，没有就是 [Log::id]）。
+    fn rank_id(&self) -> &str {
+        self.rank.as_deref().unwrap_or(&self.id)
+    }
+
     fn is_rating_review(&self) -> bool {
         self.kind == Kind::Review && self.rating_type
     }
@@ -262,7 +273,7 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
         if is_revoked(l) {
             group_revoked[r] = true;
         }
-        if r != k && cmp_utf16(&l.id, &logs[kept[best[r]]].id) == Ordering::Less {
+        if r != k && cmp_utf16(l.rank_id(), logs[kept[best[r]]].rank_id()) == Ordering::Less {
             best[r] = k;
         }
     }
@@ -670,6 +681,7 @@ fn parse_wire<'a>(
             occurred_at: at,
             revokes: w.revokes,
             has_result: res.is_some(),
+            rank: None,
         },
         res,
         extra,
@@ -762,6 +774,17 @@ pub fn state_from_stored(stored: &[StoredLog<'_>]) -> Result<State, String> {
     state_of(sel, logs, results)
 }
 
+/// [state_from_stored]，副本选代表按 [ranks]（与 [stored] 逐条对应的原值日志 ID，[Log::rank]；`None` = 落库行里的 ID）：
+/// 新代的投影行 ID 已归一。
+pub fn state_from_stored_ranked(
+    stored: &[StoredLog<'_>],
+    ranks: &[Option<&str>],
+) -> Result<State, String> {
+    let (logs, results, _) = parse_ranked(stored, ranks)?;
+    let sel = select(&logs);
+    state_of(sel, logs, results)
+}
+
 /// 「成熟」的间隔下限（统计页的「成熟」口径，stats.rs 同用）。
 pub const MATURE_INTERVAL_DAYS: i64 = 21;
 
@@ -822,6 +845,16 @@ pub fn stats_from_stored(stored: &[StoredLog<'_>]) -> Result<Vec<StatRow>, Strin
     Ok(stat_rows(&sel, &logs, &results, &extras))
 }
 
+/// [stats_from_stored]，副本选代表按 [ranks]（同 [state_from_stored_ranked]）。
+pub fn stats_from_stored_ranked(
+    stored: &[StoredLog<'_>],
+    ranks: &[Option<&str>],
+) -> Result<Vec<StatRow>, String> {
+    let (logs, results, extras) = parse_ranked(stored, ranks)?;
+    let sel = select(&logs);
+    Ok(stat_rows(&sel, &logs, &results, &extras))
+}
+
 type ParsedAll<'a> = (Vec<Log<'a>>, Vec<Option<WireResult<'a>>>, Vec<Extra<'a>>);
 
 fn parse_all<'a>(stored: &[StoredLog<'a>]) -> Result<ParsedAll<'a>, String> {
@@ -835,6 +868,21 @@ fn parse_all<'a>(stored: &[StoredLog<'a>]) -> Result<ParsedAll<'a>, String> {
         extras.push(extra);
     }
     Ok((logs, results, extras))
+}
+
+/// [parse_all]，每条日志带上选副本代表用的原值 ID（[Log::rank]）。
+fn parse_ranked<'a>(
+    stored: &[StoredLog<'a>],
+    ranks: &[Option<&'a str>],
+) -> Result<ParsedAll<'a>, String> {
+    if ranks.len() != stored.len() {
+        return Err("history: one rank per stored log".to_owned());
+    }
+    let mut all = parse_all(stored)?;
+    for (l, r) in all.0.iter_mut().zip(ranks) {
+        l.rank = r.map(Cow::Borrowed);
+    }
+    Ok(all)
 }
 
 fn stat_rows(
@@ -1134,6 +1182,7 @@ pub fn select_columns(
                 .then(|| slice(COLUMN_STRINGS * i + 2).map(Cow::Borrowed))
                 .transpose()?,
             has_result: bits & (1 << 6) != 0,
+            rank: None,
         });
     }
     let n_groups = groups.len() - 1;
@@ -1423,6 +1472,33 @@ mod tests {
         assert_eq!(status_of(&jsons, "b-old"), Some(STATUS_DUPLICATE));
         let rows = stats_from_json(&jsons, &[None, None, None]).unwrap();
         assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn copies_pick_their_representative_by_the_raw_id_when_one_is_given() {
+        // BUG-5457：新代的投影行 ID 归一过（这里 `a-…` / `b-…`），原值是 `z-…` / `y-…`，先后相反。两份副本结果不同
+        // （到期日 5 / 9）：代表按原值选（`y-new`），状态与统计都取那一份；不给原值时照旧按行里的 ID。
+        let on_old = anki_on("lapis", "a-old", 1000, 3, 5);
+        let on_new = anki_on("fushi", "b-new", 1000, 3, 9);
+        let jsons = [on_old.as_str(), on_new.as_str()];
+        let stored: Vec<StoredLog<'_>> = jsons.iter().map(|j| (*j, None, None)).collect();
+        assert_eq!(state_from_stored(&stored).unwrap().due_day, Some(5));
+        let ranks = [Some("z-old"), Some("y-new")];
+        let s = state_from_stored_ranked(&stored, &ranks).unwrap();
+        assert_eq!(
+            (s.due_day, s.last_log_id.as_deref()),
+            (Some(9), Some("b-new"))
+        );
+        let rows = stats_from_stored_ranked(&stored, &ranks).unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.log_id.as_str()).collect::<Vec<_>>(),
+            ["b-new"]
+        );
+        assert_eq!(
+            state_from_stored_ranked(&stored, &[None, None]).unwrap(),
+            state_from_stored(&stored).unwrap()
+        );
+        assert!(state_from_stored_ranked(&stored, &[None]).is_err());
     }
 
     #[test]

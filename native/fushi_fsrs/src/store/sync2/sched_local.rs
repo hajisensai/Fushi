@@ -217,6 +217,7 @@ pub(crate) fn sched_local_on(
             .iter()
             .map(|(_, j, s, i, _)| Row {
                 seed_card: None,
+                raw_id: None,
                 json: j,
                 server_time: *s,
                 intent: i.clone(),
