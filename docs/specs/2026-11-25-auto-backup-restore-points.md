@@ -55,26 +55,60 @@ Differences from the design text below, and details the design left open:
 
 - **Store.** Same `restore_points/` store. `RestorePointKind.forced` became `preOperation`
   (`pre_operation`, meta `reason`: `replace` / `sync_download` / `srs_migration`). Scheduled points are
-  `<id>-fushi-scheduled/backup.zip` (same zip format as a manual export, entries native-deflated up to
-  512 MB each, larger ones stored) plus meta `categories`, `excludedCategories`, `srsMedia`. A pre-operation
-  point holds `fushi.db` (`VACUUM INTO` on a separate read-only connection while the app is running) and,
-  when the review DB is open, `srs4.db` (kernel `snapshotInto`); `RestorePointRollbackPlan.database`
-  picks which file of a point to swap. Points being written are registered in-process so a concurrent
-  `prune` never deletes them. A desktop custom folder is just another store root (scheduled points only).
+  `<id>-fushi-scheduled/backup.zip` (same zip format as a manual export; entries native-deflated up to
+  512 MB each, larger ones stored; entries over 16 MB deflate into a temp file, so memory stays bounded)
+  plus meta `categories`, `excludedCategories`, `srsMedia`, `fullDatabase`. A pre-operation point holds
+  `fushi.db` (`VACUUM INTO` on a separate read-only connection while the app is running) and, when the
+  review DB is open, `srs4.db` (kernel `snapshotInto`); `RestorePointRollbackPlan.database` picks which
+  file of a point to swap. Points being written are registered in-process so a concurrent `prune` never
+  deletes them. A desktop custom folder is just another store root (scheduled points only).
+- **Full database, pick files (user decision 2026-11-25, after review).** Every scheduled point is
+  `createBackup(fullDatabase: true)`: the zip's `fushi.db` is the whole DB with no category row stripping
+  (library rows of every media kind, progress, statistics, settings, profiles, music, collections, search
+  history) plus review notes / history. Only the credential / device-local strip stays (the overwrite
+  import re-applies those from this device, as before). The settings checklist only picks file trees
+  (`kBackupFileCategories`: dictionary, books, audiobooks, videos, local audio, fonts, game covers) plus the
+  review-media switch (D2); default = fonts only, review media off. Old stored category lists drop data
+  categories on read. `BackupMeta.fullDatabase` marks the zip; its `excludedCategories` then lists only the
+  file categories whose files are not in the zip. Manual export (`fullDatabase: false`) is unchanged.
+- **Replace from a full-database point** (overwrite import, `importSettings: true`) is driven by that marker,
+  not by guesses: the whole DB is swapped in, no category strip runs (books / videos / audiobooks / games /
+  music / progress / statistics rows all stay), data categories restore regardless of the selection; only
+  file trees the zip carries are replaced. Trees the zip does not carry, and this device's files, are left
+  untouched. Registries that describe files on disk follow the files: dictionary rows (BUG-454 path),
+  font catalog and local-audio list are re-seated from this device when their files were not restored.
+  Same device, so path rebasing is a no-op (tested). The import confirm dialog / ctl preset only offer file
+  toggles for such a zip in overwrite mode. Fill in missing runs on the extracted full DB unchanged.
 - **Retention** is one pure function, `planBackupRetention` (`fushi_core/lib/src/utils/backup_retention.dart`),
   shared with the Lapis template backups (`keepMinimum: 10, keepAllWithin: 90 days`, unchanged behaviour).
   Scheduled: newest always kept, 48 h all, then newest per age-bucket day (7), week (4), month (30-day
   buckets, 3), then a 5 GB cap trimming oldest first; the point just written is protected. Every kept
-  point claims its buckets. Pre-operation: newest 5. Pre-update / pre-rollback: unchanged (3 each).
+  point claims its buckets; `pruneScheduled` also removes half-written scheduled dirs in its own root (the
+  custom folder is not covered by `prune`). Pre-operation: newest 5 **per reason** (so sync-compare runs
+  never push out the Anki-migration point, D6). `createPreOperationPoint(protectIds:)` and
+  `RestorePointStore.hold(dir)` keep the Replace / Fill target out of every prune while it is restored.
+  Pre-update / pre-rollback: unchanged (3 each).
 - **Schedule** (`fushi/lib/src/sync/auto_backup/`): due rule in `auto_backup_schedule.dart`. With a
   preferred time T and interval N: due when the last *satisfied* run (success, or skipped because nothing
-  changed) is before `latestSlot(T) - (N-1) days`; without T the slot is local midnight, i.e. calendar days (daily = first launch / resume of each day; a strict `>= N x 24 h` rule would skip every other day for someone who opens the app a little earlier each day). The
-  overdue warning also uses "last satisfied" (a skipped run means the newest point is still current).
-  Checks: first idle task after the home page is up (`AppModel.startUpdateChecks`), app resume, and every
-  15 min on desktop. Status (`restore_points/auto_backup_status.json`, a file so it survives a DB replace)
-  keeps the last result, error and a size+mtime fingerprint of the DB files and the ticked content trees.
-  One run at a time; it shares `AppModel.backupExportActive` with manual exports and shows in the
-  background-tasks indicator. Failures: toast once + warning row, next attempt at the next due check.
+  changed) is before `latestSlot(T) - (N-1) days`; without T the slot is local midnight, i.e. calendar days
+  (daily = first launch / resume of each day; a strict `>= N x 24 h` rule would skip every other day for
+  someone who opens the app a little earlier each day). A last-satisfied time in the future (clock moved
+  back) is due once. The overdue warning also uses "last satisfied" (a skipped run means the newest point
+  is still current). Checks: first idle task after the home page is up (`AppModel.startUpdateChecks`),
+  app resume, and every 15 min on desktop. Status (`restore_points/auto_backup_status.json`, a file so it
+  survives a DB replace) keeps the last result, error and a size+mtime fingerprint of the DB files, the
+  ticked file trees and the store root. "Skipped, no changes" needs the same fingerprint **and** the last
+  successful point still present in the current store (deleted on the page / ctl undo, or another
+  folder, means a new point).
+- **Locking.** The export lock is owner-token based (`beginBackupExport()` returns a token,
+  `endBackupExport(token)` only releases its own). An auto backup takes it on entering `_run`, before
+  the fingerprint. Backup import, Replace and Fill check the lock and take `AppModel.beginRestoreFlow()`
+  in the same synchronous step; while a restore flow, an import phase or a data-root migration is active
+  (or the DB is not initialised) the auto backup returns busy instead of running against a closed DB.
+- **Interrupted runs.** The status gets a `runningSinceMs` marker when a point starts. If it is still
+  there on the next `start()`, the run is recorded as failed (`interrupted`), the one-time notice shows,
+  half-written dirs are cleaned, and the due rule waits for the next slot (no tight kill loop). A custom
+  folder that does not exist (unmounted drive) fails with "folder unavailable" instead of being created.
 - **Review media (D2)** is split by `createBackup(includeSrsMedia:)`, not by a new category: a backup
   without `srs_media/` entries leaves the local media tree untouched on replace.
 - **Forced points**: before Replace on the Restore points page / ctl (abort if the point fails), before
@@ -83,17 +117,23 @@ Differences from the design text below, and details the design left open:
   (`runSrsAnkiMigration(beforeImport:)`). For the last two a failed point is reported and the operation
   continues. Overwrite-import snapshot and DB-check backups stay as they were and are listed.
 - **Restore points page** replaces "Recover library" (same route, orphan-folder recovery kept below the
-  list). Fill in missing works for any raw main-DB copy and for the DB extracted from a scheduled zip.
-  Replace: raw-DB points use the phase-1 swap (current DBs become `pre_rollback` points), scheduled zips
-  use the overwrite import (`importSettings: true`). Legacy copies (pre-overwrite, DB check) offer Fill in
-  / Export / Delete but not Replace (the rollback journal addresses store ids).
-- **Known gap:** replacing from a scheduled point whose categories exclude content (books, videos,
-  dictionaries…) uses the overwrite-import semantics, which drop those library rows (files stay on disk
-  and show up as orphan folders). The page says so before confirming; a "keep what the backup does not
-  carry" replace mode needs a change in `restoreBackup`.
+  list). Fill in missing works for any raw main-DB copy and for the DB extracted from a scheduled zip
+  (an unzip failure is shown, the app stays usable). Replace: raw-DB points use the phase-1 swap (current
+  DBs become `pre_rollback` points), scheduled zips use the overwrite import. The Replace panel of a
+  full-database point says everything comes back and lists the file categories that stay as they are on
+  this device; the old "removed from your data" line only shows for scheduled points from before this
+  change. Legacy copies (pre-overwrite, DB check) offer Fill in / Export / Delete but not Replace (the
+  rollback journal addresses store ids).
 - **ctl**: `GET /api/admin/restore-points`, `GET /api/admin/auto-backup/status`,
-  `POST /api/admin/auto-backup/run` (undo deletes the point), `POST /api/admin/restore-points/restore`
-  (`mode` fill / replace, needs `confirm: true`).
+  `POST /api/admin/auto-backup/run` (undo deletes the point; busy = 409),
+  `POST /api/admin/restore-points/restore` (`mode` fill / replace, needs `confirm: true`; replace takes the
+  pre-operation point synchronously via `prepareRestorePointReplace`). Op ids `backup.restore-point.list` /
+  `.restore`, `backup.auto.status` / `.run`; CLI `fushi ctl backup points` / `point-restore <id> --fill|--replace --yes`
+  / `auto` / `auto-run`.
+- **Left for phase 3:** macOS security-scoped bookmark for the custom folder (stored as a plain path now);
+  the non-en/zh translations of the renamed `restore_points_fill_*` keys still say "snapshot"; an exported
+  full-database point imported on another device brings library rows whose files were not packed (they show
+  as missing there).
 
 ## Design: three layers
 
@@ -162,20 +202,23 @@ sync backend gets list / delete for stored archives.
 
 | # | Question | Options | Chosen |
 |---|---|---|---|
-| D1 | Scheduled backups on by default? | on / off | **On, daily, small set.** Layer 1 is always on, no setting. |
+| D1 | Scheduled backups on by default? | on / off | **On, daily, whole database + small file set (fonts).** Layer 1 is always on, no setting. *Revised by the user 2026-11-25 after review: "Full DB, pick files" (was: small category set, which stripped library rows).* |
 | D2 | Review media (card images / audio) in scheduled backups? | include / exclude / incremental by hash | **Notes + history included; media off by default with a switch.** |
 | D3 | Retention | flat keep-N / tiered / age-based | **Tiered: 48 h all, 7 daily, 4 weekly, 3 monthly, 5 GB cap. Pre-update: newest 3 per DB.** |
 | D4 | Off-device copies via cloud backend | now / later | **Later (phase 3).** User folder first. |
 | D5 | Downgrade-screen rollback | replace with newest compatible snapshot / reverse-migrate ("Downgrade & Quit") | **Replace**, keep the newer DB as a `pre_rollback` point, state what is lost. |
 | D6 | Misleading Anki-migration text | fix now separately / re-point with phase 2 | **Re-point at the Restore points page in phase 2** (forced backup before the migration makes it true again). |
-| D7 | What to back up / when | fixed / user choice | **User choice:** category checklist + interval + optional preferred time (user request). |
+| D7 | What to back up / when | fixed / user choice | **User choice:** file-tree checklist (books, audiobooks, videos, dictionaries, fonts, local audio, game covers) + review-media switch + interval + optional preferred time; library, progress, statistics, settings and review notes are always included. *Revised by the user 2026-11-25 after review (was: the full category checklist).* |
 
 ## 决策摘要（中文）
 
-用户 2026-11-25 按提案建议拍板，维护者可改：D1 定时备份默认开、每日、小集合（更新前快照常开、无开关）；
+用户 2026-11-25 按提案建议拍板，维护者可改：D1 定时备份默认开、每日，每份都是整库、文件只默认带字体（更新前快照常开、无开关；
+审查后用户 2026-11-25 改为「整库 + 挑文件」，原为按类别的小集合、会剥掉书库行）；
 D2 复习笔记与记录进备份，卡片媒体默认不进、可开；D3 分层保留（48 小时全留、7 日 4 周 3 月、5 GB 上限），
 更新前快照每库留最近 3 份；D4 云端异地副本放第三期；D5 降级屏回滚 = 换回最新兼容快照、当前库另存为
-`pre_rollback` 还原点；D6 Anki 迁移提示随第二期改指向还原点页；D7 备份内容、频率与偏好时间由用户选。
+`pre_rollback` 还原点；D6 Anki 迁移提示随第二期改指向还原点页；D7 频率与偏好时间由用户选，内容只挑带哪些大文件
+（书、有声书、视频、词典、字体、本地音频、游戏封面）与复习媒体开关，书库、进度、统计、设置与复习笔记每次都在（同日审查后
+用户改定，原为完整类别勾选）。从整库定时点「替换」：整库换回，包里带着的文件换回，没带的文件在本机原样不动、书库条目照样保留。
 
 ## Naming
 
