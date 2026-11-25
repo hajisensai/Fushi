@@ -721,13 +721,12 @@ class _Executor {
     final Set<String> targetVetoes = target == null || target.id < 0
         ? const <String>{}
         : await db.collectionMemberTombstoneKeysFor(target.name, target.type);
-    // 权威作品身份（BUG-5460）：去处的剧身份闸门（新建的从空开始，同一批里先放进去的
-    // 也算），来处的成员身份按需读一次。
-    final OrganizeSeriesGate? gate = target != null
-        ? OrganizeSeriesGate((await _identitiesOf(target)).values)
-        : newName != null
-        ? OrganizeSeriesGate()
-        : null;
+    // 权威作品身份（BUG-5460）：去处现有成员的身份（剧身份闸门的起点、归拢判据），
+    // 来处的成员身份按需读一次。
+    final List<OrganizeWorkIdentity> targetIdentities = target == null
+        ? const <OrganizeWorkIdentity>[]
+        : (await _identitiesOf(target)).values.toList(growable: false);
+    final bool gated = target != null || newName != null;
     final Map<int, Map<String, OrganizeWorkIdentity>> sourceIdentities =
         <int, Map<String, OrganizeWorkIdentity>>{};
 
@@ -735,9 +734,9 @@ class _Executor {
     final List<Map<String, Object?>> itemSkips = <Map<String, Object?>>[];
     void skipItem(String ref, String reason) =>
         itemSkips.add(<String, Object?>{'ref': ref, 'reason': reason});
-    // 通过校验的条目 → 要移出的来处。
-    final List<({String ref, OrganizeEntry entry, List<_Coll> sources})> ok =
-        <({String ref, OrganizeEntry entry, List<_Coll> sources})>[];
+    // 通过逐条校验的条目 → 要移出的来处（作品身份按整批再判一次，见循环后）。
+    final List<({String ref, OrganizeEntry entry, List<_Coll> sources})>
+    passed = <({String ref, OrganizeEntry entry, List<_Coll> sources})>[];
     final Set<String> seen = <String>{};
     for (final String ref in c.items) {
       final _Resolved? r = await _resolveItemRef(ref);
@@ -791,23 +790,58 @@ class _Executor {
         skipItem(ref, LibraryChangeSkip.exists);
         continue;
       }
-      // 来处里另有同一部作品的成员：不拆散；去处是另一部来源剧：不放进去。
-      bool splitsWork = false;
-      for (final _Coll s in sources) {
-        if (organizeIdentityForbidsRelease(
-          sourceIdentities[s.id] ??= await _identitiesOf(s),
-          key,
-        )) {
-          splitsWork = true;
-          break;
-        }
+      for (final _Coll k in sources) {
+        sourceIdentities[k.id] ??= await _identitiesOf(k);
       }
-      if (splitsWork ||
-          (gate != null && !inTarget && !gate.admit(r.entry.identity))) {
-        skipItem(ref, LibraryChangeSkip.workIdentity);
-        continue;
-      }
-      ok.add((ref: ref, entry: r.entry, sources: sources));
+      passed.add((ref: ref, entry: r.entry, sources: sources));
+    }
+    // 作品身份（BUG-5460）按整批判：同一条 move 里一起离开同一个来处的同一部作品不算
+    // 拆散；去处是另一部来源剧的不放进去。被剔掉的条目留在原处，又可能让同批别的条目
+    // 变成「拆散」，所以两步交替到不变为止。
+    final Map<String, OrganizeWorkIdentity> movingIdentity =
+        <String, OrganizeWorkIdentity>{
+          for (final ({String ref, OrganizeEntry entry, List<_Coll> sources}) o
+              in passed)
+            o.entry.memberKey: o.entry.identity,
+        };
+    List<({String ref, OrganizeEntry entry, List<_Coll> sources})> ok = passed;
+    while (true) {
+      ok = organizeReleasableTogether(
+        ok,
+        (({String ref, OrganizeEntry entry, List<_Coll> sources}) o) =>
+            o.entry.memberKey,
+        (
+          ({String ref, OrganizeEntry entry, List<_Coll> sources}) o,
+          Set<String> leaving,
+        ) => o.sources.every(
+          (_Coll k) => !organizeIdentityForbidsRelease(
+            sourceIdentities[k.id]!,
+            o.entry.memberKey,
+            leaving: leaving,
+            destination: <OrganizeWorkIdentity>[
+              ...targetIdentities,
+              for (final String other in leaving)
+                if (!k.members.containsKey(other)) movingIdentity[other]!,
+            ],
+          ),
+        ),
+      );
+      final OrganizeSeriesGate gate = OrganizeSeriesGate(targetIdentities);
+      final List<({String ref, OrganizeEntry entry, List<_Coll> sources})>
+      admitted = <({String ref, OrganizeEntry entry, List<_Coll> sources})>[
+        for (final ({String ref, OrganizeEntry entry, List<_Coll> sources}) o
+            in ok)
+          if (!gated ||
+              (target?.members.containsKey(o.entry.memberKey) ?? false) ||
+              gate.admit(o.entry.identity))
+            o,
+      ];
+      if (admitted.length == ok.length) break;
+      ok = admitted;
+    }
+    for (final ({String ref, OrganizeEntry entry, List<_Coll> sources}) o
+        in passed) {
+      if (!ok.contains(o)) skipItem(o.ref, LibraryChangeSkip.workIdentity);
     }
     if (ok.isEmpty) return _allItemsSkipped(itemSkips);
 
@@ -1171,30 +1205,33 @@ class _Executor {
       return const _Result.skipped(LibraryChangeSkip.exists, 'empty');
     }
     // 每一行成员各自移出（配对的 SRT 有声书行也在合集里，各是一行）；钉住的留下，
-    // 合集里另有同一部作品的成员的也留下（BUG-5460：拆散来源给的一部剧不行）。
+    // 与权威作品身份矛盾的也留下（BUG-5460，[organizeIdentityForbidsRelease]）。
     final Map<String, OrganizeWorkIdentity> identities = await _identitiesOf(
       col,
     );
+    final List<String> unpinned = <String>[
+      for (final MapEntry<String, bool> e in col.members.entries)
+        if (!e.value) e.key,
+    ];
+    final int pinned = col.members.length - unpinned.length;
+    // 一起移出的成员按整批判（拆散 / 把一部剧从它自己的合集里移空都不行）。
+    final List<String> released = organizeReleasableTogether(
+      unpinned,
+      (String k) => k,
+      (String k, Set<String> leaving) =>
+          !organizeIdentityForbidsRelease(identities, k, leaving: leaving),
+    );
+    final int sameWork = unpinned.length - released.length;
     final List<OrganizeEntry> evict = <OrganizeEntry>[];
-    int pinned = 0;
-    int sameWork = 0;
-    for (final MapEntry<String, bool> e in col.members.entries) {
-      if (e.value) {
-        pinned++;
-        continue;
-      }
-      if (organizeIdentityForbidsRelease(identities, e.key)) {
-        sameWork++;
-        continue;
-      }
-      final int sep = e.key.indexOf('\u0000');
-      final String mediaType = e.key.substring(0, sep);
-      final String entryKey = e.key.substring(sep + 1);
+    for (final String key in released) {
+      final int sep = key.indexOf('\u0000');
+      final String mediaType = key.substring(0, sep);
+      final String entryKey = key.substring(sep + 1);
       evict.add(
         OrganizeEntry(
           mediaType: mediaType,
           entryKey: entryKey,
-          tombstoneKey: e.key,
+          tombstoneKey: key,
           item: AiOrganizeItem(title: entryKey),
         ),
       );

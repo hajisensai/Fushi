@@ -14,9 +14,11 @@
 ///
 /// 两条否决规则，只拦 AI 写入（规则成组、收敛、用户操作不经过这里）：
 ///
-/// 1. **不拆散同一部作品**（[organizeIdentityForbidsRelease]）：合集里另有成员与它是同一部
-///    作品时，AI 不能把它移出这个合集。把一部剧的 13 集从它自己的合集里全部移出、移空
-///    删掉，就是这条要拦的。
+/// 1. **不拆散、不移空同一部作品**（[organizeIdentityForbidsRelease]）：移完后合集里还留着
+///    同一部作品的成员时，AI 不能把它移出；一整部作品一起离开时，只有合集里还留着可比的
+///    另一部作品（它是混进来的）或去处就是这部作品的合集（归拢）才放行——把一部剧的
+///    13 集从它自己的合集里全部移出、移空删掉，就是这条要拦的；而被塞进别的剧合集里的
+///    一整部剧要能挪回去。
 /// 2. **不塞进另一部剧**（[OrganizeSeriesGate]）：目标合集里已有同一来源、但不是同一部剧
 ///    的集，而没有这部剧的集时，AI 不能把这一集放进去（新建合集同理：一个新合集里不能
 ///    混两部来源剧）。只看来源的剧身份，不看刮削 id——AniList / AniDB 的 id 按季 / 按篇
@@ -52,6 +54,19 @@ class OrganizeWorkIdentity {
   bool sameWorkAs(OrganizeWorkIdentity other) =>
       (externalWorkKey != null && externalWorkKey == other.externalWorkKey) ||
       (seriesKey != null && seriesKey == other.seriesKey);
+
+  /// 两条可比且确定不是同一部作品：同一来源命名空间里的两部剧，或刮到两个不同的作品。
+  /// 不同来源 / 一边没有身份的不可比（同一部剧在两台服务器上名字可能不一样）。
+  bool distinctWorkFrom(OrganizeWorkIdentity other) {
+    if (sameWorkAs(other)) return false;
+    final bool series =
+        seriesKey != null &&
+        other.seriesKey != null &&
+        seriesNamespace == other.seriesNamespace;
+    final bool scraped =
+        externalWorkKey != null && other.externalWorkKey != null;
+    return series || scraped;
+  }
 }
 
 /// 媒体服务器入库条目的 spec 类型标记（app `MediaServerBookSpec.kind`）。
@@ -103,19 +118,59 @@ String? remoteSeriesKeyOfStreamSpec(String? specJson) {
   return null;
 }
 
-/// 规则 1：合集里另有成员与 [memberKey] 是同一部作品时为 true（AI 不能把它移出）。
+/// 规则 1：AI 能不能把 [memberKey] 从合集里移出。true = 不能（与权威作品身份矛盾）。
 ///
 /// [members]：合集成员行键（`mediaType NUL entryKey`）→ 身份，只需带有身份的成员。
+/// [leaving]：同一处改动里一起离开这个合集的成员行键（一起挪走的一整部剧不算「拆散」）。
+/// [destination]：去处里已有（或同一处改动里一起去）的成员身份；单独放 = 空。
+///
+/// - **拆散**：移完后合集里还留着同一部作品的成员 → 不能。
+/// - 整部作品一起离开：
+///   - 合集里留着同一来源的另一部剧 / 另一个刮削作品 → 它是混进来的那一部，可以移出
+///     （包括这个 bug 自己造成的「13 集被塞进另一部剧的合集」，要能挪回去）；
+///   - 去处已经是这部作品的合集 → 归拢，可以；
+///   - 否则这就是它自己的合集（合集里没有可比的别的作品），移出 = 把一部剧从自己的
+///     合集里移空 → 不能。
+/// 没有身份的条目不受这条限制。
 bool organizeIdentityForbidsRelease(
   Map<String, OrganizeWorkIdentity> members,
-  String memberKey,
-) {
+  String memberKey, {
+  Set<String> leaving = const <String>{},
+  Iterable<OrganizeWorkIdentity> destination = const <OrganizeWorkIdentity>[],
+}) {
   final OrganizeWorkIdentity? own = members[memberKey];
   if (own == null || own.isEmpty) return false;
+  bool otherWorkStays = false;
   for (final MapEntry<String, OrganizeWorkIdentity> m in members.entries) {
-    if (m.key != memberKey && m.value.sameWorkAs(own)) return true;
+    if (m.key == memberKey || leaving.contains(m.key)) continue;
+    if (m.value.sameWorkAs(own)) return true;
+    if (m.value.distinctWorkFrom(own)) otherWorkStays = true;
   }
-  return false;
+  if (otherWorkStays) return false;
+  for (final OrganizeWorkIdentity d in destination) {
+    if (d.sameWorkAs(own)) return false;
+  }
+  return true;
+}
+
+/// 一批要一起离开同一个合集的条目里，按规则 1 真能离开的那些：逐轮把不能离开的剔掉、
+/// 剩下的再按「一起离开」重判，直到不变（剔掉一条只会让别的更难离开，必然收敛）。
+/// [ok]：给定这一轮一起离开的行键集合，[T] 能不能离开。
+List<T> organizeReleasableTogether<T>(
+  List<T> candidates,
+  String Function(T) keyOf,
+  bool Function(T item, Set<String> leaving) ok,
+) {
+  List<T> current = candidates;
+  while (true) {
+    final Set<String> leaving = <String>{for (final T c in current) keyOf(c)};
+    final List<T> next = <T>[
+      for (final T c in current)
+        if (ok(c, leaving)) c,
+    ];
+    if (next.length == current.length) return next;
+    current = next;
+  }
 }
 
 /// 规则 2：往一个合集里放条目时的剧身份闸门。以合集现有成员的剧身份起头，每放行
@@ -153,12 +208,18 @@ class OrganizeSeriesGate {
     return true;
   }
 
+  /// 一份独立的副本（试放用，不影响本闸门的账）。
+  OrganizeSeriesGate copy() {
+    final OrganizeSeriesGate out = OrganizeSeriesGate();
+    _series.forEach(
+      (String ns, Set<String> keys) => out._series[ns] = <String>{...keys},
+    );
+    return out;
+  }
+
   /// 一批（如合并时败方的全部成员）要么全放行并记账，要么一条都不记。
   bool admitAll(Iterable<OrganizeWorkIdentity> identities) {
-    final OrganizeSeriesGate trial = OrganizeSeriesGate();
-    _series.forEach(
-      (String ns, Set<String> keys) => trial._series[ns] = <String>{...keys},
-    );
+    final OrganizeSeriesGate trial = copy();
     for (final OrganizeWorkIdentity i in identities) {
       if (!trial.admit(i)) return false;
     }

@@ -157,6 +157,56 @@ void main() {
         }, 'x'),
         isTrue,
       );
+      // 整部作品一起离开：合集里留着同一来源的另一部剧 → 它是混进来的，放行。
+      expect(
+        organizeIdentityForbidsRelease(
+          <String, OrganizeWorkIdentity>{'x': w, 'y': w, 'z': f},
+          'x',
+          leaving: <String>{'x', 'y'},
+        ),
+        isFalse,
+      );
+      // 整部作品一起离开它自己的合集（没有可比的别的作品留下）→ 移空，拒绝；
+      // 别的来源的剧不可比，不算。
+      expect(
+        organizeIdentityForbidsRelease(
+          <String, OrganizeWorkIdentity>{'x': w, 'y': w, 'z': otherServer},
+          'x',
+          leaving: <String>{'x', 'y'},
+        ),
+        isTrue,
+      );
+      // …除非去处就是这部作品的合集（归拢）。
+      expect(
+        organizeIdentityForbidsRelease(
+          <String, OrganizeWorkIdentity>{'x': w},
+          'x',
+          destination: <OrganizeWorkIdentity>[w],
+        ),
+        isFalse,
+      );
+      // 一起离开的只是一部分 = 拆散，拒绝。
+      expect(
+        organizeIdentityForbidsRelease(
+          <String, OrganizeWorkIdentity>{'x': w, 'y': w, 'z': w, 'q': f},
+          'x',
+          leaving: <String>{'x', 'y'},
+        ),
+        isTrue,
+      );
+      // 刮到不同作品同样可比：整部移出放行。
+      expect(
+        organizeIdentityForbidsRelease(
+          <String, OrganizeWorkIdentity>{
+            'x': scraped,
+            'y': scraped,
+            'z': const OrganizeWorkIdentity(externalWorkKey: 'anilist:2'),
+          },
+          'x',
+          leaving: <String>{'x', 'y'},
+        ),
+        isFalse,
+      );
       // 没身份的不受限。
       expect(
         organizeIdentityForbidsRelease(<String, OrganizeWorkIdentity>{
@@ -525,6 +575,81 @@ void main() {
       expect(o.skipped.single['reason'], LibraryChangeSkip.workIdentity);
       expect(await members('Show B'), <String>{...f, 'g1'});
       expect(await members('Show A'), <String>{'h1', 'h2', 'h3'});
+    });
+
+    // 这个 bug 第 2 步造成的现场：一整部剧（不止一集）被塞进了另一部剧的合集。规则 1
+    // 只拦「拆散」与「把一部剧从它自己的合集里移空」，一整部剧从别人的合集里挪走要放行，
+    // 否则坏现场永远修不回来。
+    test('AI 整理：被塞进另一部剧合集的一整部剧能整体挪走', () async {
+      final List<String> h = await addShow('Show A', 'h', 3, adopt: false);
+      await addShow('Show B', 'f', 2);
+      final int showB = await collectionId('Show B');
+      for (final String u in h) {
+        await db.addToCollection(showB, MediaKind.video, u, userIntent: false);
+      }
+      final ({LibraryOrganizeFacts facts, OrganizeChunk chunk}) w =
+          await world();
+      final List<OrganizeAction> actions = plan(
+        w,
+        AiOrganizeReply(
+          evictions: <AiOrganizeEvictionProposal>[
+            AiOrganizeEvictionProposal(
+              collection: cRef(w.chunk, showB),
+              members: indexes(w.chunk, h),
+              confidence: AiOrganizeConfidence.high,
+              reason: 'Show A episodes are not Show B',
+            ),
+          ],
+        ),
+      );
+      expect(actions.single.kind, OrganizeActionKind.evict);
+      expect(
+        actions.single.entries.map((OrganizeEntry e) => e.entryKey).toSet(),
+        h.toSet(),
+      );
+      // 只挪一部分 = 拆散，仍然拒绝。
+      final List<OrganizeAction> partial = plan(
+        w,
+        AiOrganizeReply(
+          evictions: <AiOrganizeEvictionProposal>[
+            AiOrganizeEvictionProposal(
+              collection: cRef(w.chunk, showB),
+              members: indexes(w.chunk, h.sublist(0, 2)),
+              confidence: AiOrganizeConfidence.high,
+              reason: 'Show A episodes are not Show B',
+            ),
+          ],
+        ),
+      );
+      expect(partial, isEmpty);
+    });
+
+    test('AI 管库变更集：被塞进另一部剧合集的一整部剧能整体挪出；剧自己的合集不能移空', () async {
+      final List<String> h = await addShow('Show A', 'h', 3, adopt: false);
+      final List<String> f = await addShow('Show B', 'f', 2);
+      final int showB = await collectionId('Show B');
+      for (final String u in h) {
+        await db.addToCollection(showB, MediaKind.video, u, userIntent: false);
+      }
+      final LibraryChangesetOutcome o = await apply(<Map<String, Object?>>[
+        <String, Object?>{
+          'op': 'move',
+          'items': <String>[for (final String u in h) ref(u)],
+          'from': 'C$showB',
+          'to': 'new:Show A',
+          'why': 'Show A episodes are not Show B',
+        },
+        <String, Object?>{
+          'op': 'move',
+          'items': <String>[for (final String u in f) ref(u)],
+          'to': 'standalone',
+          'why': 'confusing',
+        },
+      ]);
+      expect(o.applied.single['i'], 0);
+      expect(o.skipped.single['reason'], LibraryChangeSkip.workIdentity);
+      expect(await members('Show A'), h.toSet());
+      expect(await members('Show B'), f.toSet());
     });
   });
 }
