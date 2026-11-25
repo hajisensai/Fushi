@@ -3397,6 +3397,35 @@ class AppModel
   DataRootUnavailableException? _dataRootUnavailable;
 
   /// Clears the error state and re-runs [initialise].
+  /// 降级屏 / 主库损坏屏「恢复更新前的数据」可选的还原点：本版本能打开的主库还原点，新的在前。
+  List<RestorePoint> restorePointsForRollback() =>
+      RestorePointStore(_databaseDirectory.path).compatibleMainDatabasePoints();
+
+  /// 与 [point] 出自同一次更新、要一起换回的复习库还原点（没有 = 复习库不动）。
+  RestorePoint? companionSrsRestorePoint(RestorePoint point) =>
+      RestorePointStore(_databaseDirectory.path).companionSrsPoint(point);
+
+  /// 把主库（与同一次更新的复习库）换回 [point]。只在开库被拒 / 失败的专屏上调用：
+  /// 先关复习库与主库连接（降级时 drift 的后台连接已经开着），再离线换文件；当前的库
+  /// 另存为回滚前还原点。之后由调用方重启 app。换不了时抛出、文件不动（或由下次启动补完）。
+  Future<void> rollbackToRestorePoint(RestorePoint point) async {
+    final RestorePointStore store = RestorePointStore(_databaseDirectory.path);
+    final RestorePoint? srs = store.companionSrsPoint(point);
+    await _closeSrsStorage();
+    if (_databaseOpened) {
+      try {
+        await _database.close();
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AppModel.rollback.close', e, stack);
+      }
+      _databaseOpened = false;
+    }
+    await store.rollback(<RestorePointRollbackPlan>[
+      RestorePointRollbackPlan(target: point),
+      if (srs != null) RestorePointRollbackPlan(target: srs),
+    ]);
+  }
+
   Future<void> retryInitialise() async {
     // BUG-815: if an init started by main() is still IN FLIGHT — a slow cold
     // start that merely tripped the 20s loading watchdog, NOT a hang — do NOT
@@ -5616,6 +5645,10 @@ class AppModel
       StartupTimeline.mark('data-roots');
       debugPrint('[Fushi] init: Drift database');
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
+      // 更新前还原点的元数据记下写它的 app 版本（fushi_core 自己不知道版本号）。
+      RestorePointStore.appVersion = runningVersion;
+      // 上次「恢复更新前的数据」崩在中途：在主库与复习库的任何连接之前补完。
+      await RestorePointStore(_databaseDirectory.path).recoverPendingRollback();
       _database = FushiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
       // 媒体服务器请求漏斗的自动换线路：按服务器共享、单飞，写回走现取的数据库

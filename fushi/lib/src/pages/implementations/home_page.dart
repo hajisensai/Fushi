@@ -127,6 +127,8 @@ import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
     show maybeShowBrowseMovedNotice;
 import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart'
     show maybeShowOverwriteSnapshotNotice;
+import 'package:fushi/src/pages/implementations/restore_point_notice.dart'
+    show maybeShowRestorePointFailureNotice;
 import 'package:fushi/src/pages/implementations/android_storage_move_prompt.dart'
     show maybeShowAndroidStorageMovePrompt;
 import 'package:fushi/src/sync/sync_settings_schema.dart'
@@ -777,6 +779,14 @@ class _HomePageState extends BasePageState<HomePage>
       // 立刻重启，提示只能在这里补上；与上面的弹框串行，排在更新弹窗之前。
       if (mounted) {
         await maybeShowOverwriteSnapshotNotice(
+          context: context,
+          appModel: appModelNoUpdate,
+        );
+      }
+
+      // 更新前还原点没保存成功（磁盘满等）：快照失败不挡启动，这里补一次提示。
+      if (mounted) {
+        await maybeShowRestorePointFailureNotice(
           context: context,
           appModel: appModelNoUpdate,
         );
