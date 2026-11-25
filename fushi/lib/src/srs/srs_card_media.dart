@@ -11,6 +11,7 @@
 library;
 
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
+import 'package:fushi_engine/srs/srs_card_tts.dart' show SrsTtsSound;
 
 import 'package:fushi/src/srs/srs_sound_tag.dart';
 
@@ -64,8 +65,20 @@ String _mediaUrl(String prefix, String rawName) =>
 /// 同时带 Anki reviewer 给 `[sound:]` 的类名 `replay-button soundLink`：导入的模板按它找音频键
 /// （eggrolls 背面 `document.querySelector('.VocabAudio .replay-button').click()` 强制播单词音频，
 /// 模板 CSS 也按它画键；反馈 uCPhpeCM35）。点击仍由 [kSrsCardMediaScript] 按 `data-sound` 接管。
+///
+/// 朗读键（`[sound:fushi-tts:…]`，srs_card_tts.dart）画成喇叭、多一个类名 `fushi-srs-tts`，
+/// 无障碍标签是要念的文字（不是编码后的伪名字）。
 String srsSoundButtonHtml(String name) {
-  final String n = srsEscapeHtml(srsSoundTagName(name));
+  final String raw = srsSoundTagName(name);
+  final String n = srsEscapeHtml(raw);
+  final SrsTtsSound? tts = SrsTtsSound.parse(raw);
+  if (tts != null) {
+    return '<button type="button" class="$kSrsSoundButtonClasses fushi-srs-tts" '
+        'data-sound="$n" aria-label="${srsEscapeHtml(tts.text)}">'
+        '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
+        '<path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05'
+        'A4.5 4.5 0 0 0 16.5 12z" fill="currentColor"/></svg></button>';
+  }
   return '<button type="button" class="$kSrsSoundButtonClasses" data-sound="$n" '
       'aria-label="$n">'
       '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'

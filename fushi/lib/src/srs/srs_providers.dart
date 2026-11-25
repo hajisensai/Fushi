@@ -49,6 +49,7 @@ import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
+import 'package:fushi/src/srs/srs_review_tts.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -193,6 +194,12 @@ final Provider<bool> srsReviewShowCountsProvider = Provider<bool>(
 final Provider<bool> srsReviewInlineEditProvider = Provider<bool>(
   (Ref ref) =>
       ref.watch(appProvider.select((AppModel app) => app.srsReviewInlineEdit)),
+);
+
+/// 复习朗读（按 profile 偏好，srs_review_tts.dart）：`{{tts}}`、选中朗读、没有音频的字段出朗读键。
+final Provider<SrsReviewTts> srsReviewTtsProvider = Provider<SrsReviewTts>(
+  (Ref ref) =>
+      ref.watch(appProvider.select((AppModel app) => app.srsReviewTts)),
 );
 
 /// 复习卡面音频音量（0–1，按 profile 偏好，默认 1）：卡面点播与自动连播都按它播。

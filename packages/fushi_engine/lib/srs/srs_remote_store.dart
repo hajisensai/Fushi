@@ -1503,7 +1503,11 @@ class SrsRemoteStoreService {
       (SrsDbStore s, _Args a) async => _detail(s, a.str('card')),
     ),
     'renderCard': _Op((SrsDbStore s, _Args a) async {
-      final SrsRenderedCard? r = await s.renderCard(a.str('card'));
+      // 朗读选项（srs_card_tts.dart）：老客户端不带 = 默认（认 `{{tts}}`、不填字段）。
+      final SrsRenderedCard? r = await s.renderCard(
+        a.str('card'),
+        tts: SrsCardTtsOptions.fromJson(a.raw('tts')),
+      );
       return r == null ? null : SrsRemoteWire.rendered(r);
     }),
     'preview': _Op(

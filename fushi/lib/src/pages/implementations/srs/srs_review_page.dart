@@ -42,6 +42,8 @@ import 'package:fushi_anki/fushi_anki_core.dart'
     show CardSourceLink, FushiCardBlock;
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_card_tts.dart'
+    show SrsTtsSound, srsIsTtsSoundName;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
     show SrsCardNativeFallback;
@@ -79,6 +81,8 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_card_tts_audio.dart'
+    show SrsTtsResolution, srsCardTtsAudioProvider, srsResolveTtsSound;
 import 'package:fushi/src/srs/srs_fushi_card_media.dart';
 import 'package:fushi/src/srs/srs_card_face_route.dart';
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;
@@ -90,6 +94,7 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_edit.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
+import 'package:fushi/src/srs/srs_review_tts.dart';
 import 'package:fushi/src/srs/srs_review_undo.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
@@ -465,6 +470,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       (int? previous, int next) =>
           srsRunLogged('SrsReviewPage.syncWithStore', _syncWithStore),
     );
+    // 「复习选项 › 朗读」里改了影响卡面渲染的开关（认 `{{tts}}` / 没有音频的字段出朗读键）：
+    // 预取的下一张按旧选项渲染，作废；当前这张原地重渲。
+    ref.listenManual<SrsCardTtsOptions>(
+      srsReviewTtsProvider.select((SrsReviewTts v) => v.renderOptions),
+      (SrsCardTtsOptions? previous, SrsCardTtsOptions next) {
+        if (previous == next) return;
+        _prefetch = null;
+        srsRunLogged('SrsReviewPage.reloadForTts', _reloadCurrent);
+      },
+    );
     _companion.startSnapshots(_companionSnapshot);
     unawaited(_start());
   }
@@ -621,6 +636,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         final SrsRenderedCard? rendered = await store.renderCard(
           id,
           detail: detail,
+          tts: _ttsRenderOptions,
         );
         SrsReviewPage.debugPhase?.call('prefetch:render');
         // 卡面预处理（媒体改写、抽样式、样式哈希）趁出题间隙算好，换卡时全命中。
@@ -760,7 +776,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       final SrsCardDetail? detail = await store.cardDetail(id);
       final SrsRenderedCard? rendered = detail == null
           ? null
-          : await store.renderCard(id, detail: detail);
+          : await store.renderCard(id, detail: detail, tts: _ttsRenderOptions);
       SrsReviewPage.debugPhase?.call('render');
       if (detail == null) {
         // 排程选中的卡读不到（例如刚被同步删掉）：报错，不把 null 当「还在读」——
@@ -1040,6 +1056,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     final Set<String> missing = <String>{};
     try {
       for (final String name in <String>{...m.question, ...m.answer}) {
+        // 朗读键不探：解析它就是合成（在线声音按次计费），换卡时不替用户把两面都念一遍；
+        // 真正播的时候再合成 / 取缓存。
+        if (srsIsTtsSoundName(name)) continue;
         if (await output.resolve(name) == null) missing.add(name);
       }
     } catch (e, stack) {
@@ -1075,13 +1094,18 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       return;
     }
     final ({List<String> question, List<String> answer}) m = _mediaOf(rendered);
-    final List<String> names = _present(
-      srsAutoplayOf(
-        question: m.question,
-        answer: m.answer,
-        answerSide: _showingAnswer,
-      ),
-    );
+    // 「自动播放也念朗读键」关着时只自动播卡里真有的音频（朗读键仍可点、可重播）。
+    final bool speakTts = ref.read(srsReviewTtsProvider).autoplay;
+    final List<String> names = <String>[
+      for (final String n in _present(
+        srsAutoplayOf(
+          question: m.question,
+          answer: m.answer,
+          answerSide: _showingAnswer,
+        ),
+      ))
+        if (speakTts || !srsIsTtsSoundName(n)) n,
+    ];
     srsRunLogged('SrsReviewPage.autoplay', () => _audio.play(names));
   }
 
@@ -1703,6 +1727,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     unawaited(_loadNext());
   }
 
+  /// 渲染卡面时的朗读选项（「复习选项 › 朗读」，srs_review_tts.dart）。
+  SrsCardTtsOptions get _ttsRenderOptions =>
+      ref.read(srsReviewTtsProvider).renderOptions;
+
   /// 原地刷新当前这张（库里关它的内容变了，经 [_syncWithStore]；或本页的标记等操作之后），保持正反面状态。
   ///
   /// 除了卡面内容与音频设置，间隔预览、顶栏计数与标题也现读（BUG-3547）：它们是本页
@@ -1729,7 +1757,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       await _loadNext();
       return;
     }
-    final SrsRenderedCard? rendered = await store.renderCard(id, detail: fresh);
+    final SrsRenderedCard? rendered = await store.renderCard(
+      id,
+      detail: fresh,
+      tts: _ttsRenderOptions,
+    );
     final _CardContext ctx = await _cardContextOf(store, fresh, mark);
     final SrsDeckSummary? sum = await _deckSummary();
     final SrsDayContext day = await store.dayContext();
@@ -2660,8 +2692,14 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   }) {
     final List<String> bridgeKeys = _currentBridgeKeys();
     final bool inlineEdit = ref.watch(srsReviewInlineEditProvider);
+    // 选区上报给「复习时编辑」与「朗读选中文字」共用（[_editSelection]）。
+    final bool reportSelection =
+        inlineEdit ||
+        ref.watch(
+          srsReviewTtsProvider.select((SrsReviewTts v) => v.speakSelection),
+        );
     final Object inputs = (
-      inlineEdit,
+      reportSelection,
       bridgeKeys,
       gestureArming,
       detail?.card.id,
@@ -2703,7 +2741,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       onVisibleSounds: _onVisibleSounds,
       onCardGesture: _onCardGesture,
       gestureArming: gestureArming,
-      onEditSelection: inlineEdit ? _onEditSelection : null,
+      onEditSelection: reportSelection ? _onEditSelection : null,
     );
     // 内置 Fushi 卡片（模板未改或只调了区块布局）走原生 + 释义 WebView 的混合渲染；其余卡片两面都在原生
     // 认得的 HTML / CSS 子集里就整面原生（[srsHtmlCardOf]），否则整面 WebView。
@@ -2871,19 +2909,26 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                       tokens.spacing.page,
                       tokens.spacing.gap * 1.5,
                     ),
-                    child: _withBottomReplay(
-                      context,
-                      AnimatedSwitcher(
-                        duration: fushiMotionDuration(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        _buildSpeakSelectionRow(context),
+                        _withBottomReplay(
                           context,
-                          FushiMotion.short,
+                          AnimatedSwitcher(
+                            duration: fushiMotionDuration(
+                              context,
+                              FushiMotion.short,
+                            ),
+                            switchInCurve: FushiMotion.enter,
+                            switchOutCurve: FushiMotion.exit,
+                            child: _showingAnswer
+                                ? _buildAnswerBar(context)
+                                : _buildShowAnswer(context),
+                          ),
                         ),
-                        switchInCurve: FushiMotion.enter,
-                        switchOutCurve: FushiMotion.exit,
-                        child: _showingAnswer
-                            ? _buildAnswerBar(context)
-                            : _buildShowAnswer(context),
-                      ),
+                      ],
                     ),
                   ),
                 ),
@@ -3069,6 +3114,66 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     );
   }
 
+  /// 「朗读选中文字」键单独占的一行（卡面上有选区、「复习选项 › 朗读」开着时淡入）。答案面开着
+  /// 「复习时直接编辑」时这个键在编辑键那一排里（[_buildAnswerBar]），这里不重复出。
+  Widget _buildSpeakSelectionRow(BuildContext context) {
+    final bool speak = ref.watch(srsReviewTtsProvider).speakSelection;
+    final bool inEditBar =
+        _showingAnswer &&
+        _detail != null &&
+        ref.watch(srsReviewInlineEditProvider);
+    final bool show =
+        speak && !inEditBar && (_editSelection?.key ?? '').isNotEmpty;
+    return FushiAnimatedSize(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      child: AnimatedSwitcher(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        switchInCurve: FushiMotion.enter,
+        switchOutCurve: FushiMotion.exit,
+        child: show
+            ? Padding(
+                key: const ValueKey<String>('srs-review-speak-row'),
+                padding: EdgeInsets.only(
+                  bottom: FushiDesignTokens.of(context).spacing.gap,
+                ),
+                child: Center(
+                  child: SrsReviewSpeakKey(
+                    hasSelection: true,
+                    enabled: !_busy,
+                    onTap: () => unawaited(_speakSelection()),
+                  ),
+                ),
+              )
+            : const SizedBox(width: double.infinity),
+      ),
+    );
+  }
+
+  /// 朗读卡面上选中的文字（拍板台 YmWT1x57XV）：按复习朗读的声音合成（落进媒体库缓存，下次同一段
+  /// 直接播），交给卡面的播放序列（打断正在播的那段，同一时刻只出一路声音）。合成失败带原因提示。
+  Future<void> _speakSelection() async {
+    final String text = _editSelection?.speechText ?? '';
+    if (text.isEmpty) {
+      FushiToast.show(msg: t.srs_review_edit_select_hint);
+      return;
+    }
+    final String name = SrsTtsSound(text: text).name;
+    // 不走 [_guarded]：朗读不写库，也不该在合成的这一两秒里把评分键锁住。
+    try {
+      final SrsTtsResolution r = await srsResolveTtsSound(
+        ref.read(srsCardTtsAudioProvider),
+        await ref.read(srsMediaStoreProvider.future),
+        name,
+        manual: true,
+      );
+      if (!mounted || r.file == null) return;
+      _playNames(<String>[name]);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsReviewPage.speakSelection', e, stack);
+    }
+  }
+
   /// 答案面底栏：评分按钮；开着「复习时直接编辑」时上面多一排编辑键（[SrsReviewEditBar]）。
   Widget _buildAnswerBar(BuildContext context) {
     final Widget rating = _buildRatingRow(context);
@@ -3093,6 +3198,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                   ? null
                   : () => unawaited(_reviewFieldAi()),
               onEditNote: () => unawaited(_editNote(detail)),
+              onSpeak: ref.watch(srsReviewTtsProvider).speakSelection
+                  ? () => unawaited(_speakSelection())
+                  : null,
             ),
             SizedBox(height: FushiDesignTokens.of(context).spacing.gap),
           ],
