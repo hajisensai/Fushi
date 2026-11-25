@@ -1,12 +1,78 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-25T15:01:09Z",
+ "generatedAt": "2026-11-25T15:40:05Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
   "seq": 32574
  },
  "builds": [
+  {
+   "seq": 32573,
+   "version": "3.4.0",
+   "sha": "a46839d71b5c659860dad756f9c79b386a956fa2",
+   "unknown": false,
+   "publishedAt": "2026-11-25T15:39:49Z",
+   "testflight": false,
+   "baseSeq": 32559,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "a46839d71b5c659860dad756f9c79b386a956fa2",
+     "subject": "Merge PR #4432"
+    },
+    {
+     "sha": "5182a3f005ef2490d29787953aea9aa2c4628890",
+     "subject": "Merge PR #4438"
+    },
+    {
+     "sha": "d8125d57b6386261654d95dd3fe5b9bbffd9d279",
+     "subject": "Merge PR #4439"
+    },
+    {
+     "sha": "b367ce6899292e04a4f065125840f4f4aee69f27",
+     "subject": "Merge PR #4437"
+    },
+    {
+     "sha": "4299e148e69ca4865e5b301fc6123920e77006fc",
+     "subject": "chore(readme): refresh development activity chart [skip ci]"
+    },
+    {
+     "sha": "aba13f1799f3428f82390d4b62226084d00aa807",
+     "subject": "docs(release): 3.4.0 修复条目只和 3.3.0 正式版比：删掉调试版期间引入又修掉的（Windows 输入失灵、Android 书库位置丢失），ANR / 闪退写明场景，去掉含调试版修复的「600 多项」计数"
+    },
+    {
+     "sha": "b5f71537795c4eda32d839b4b9d3d101e6d5d660",
+     "subject": "docs(release): 3.4.0 公告精简：各节只留主要功能，修复只留用户最可能碰到的，注意事项去掉没变化的说明"
+    },
+    {
+     "sha": "34e621c775a4485081c678e98514879bc2287c7b",
+     "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
+    },
+    {
+     "sha": "eb6196154301f02ba158dca9179a5fb5675fe119",
+     "subject": "docs(release): 3.4.0 公告补 #4416（书库布局记录丢失后整库「文件丢失」自愈）"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
+    },
+    "macos": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
+    }
+   }
+  },
   {
    "seq": 32559,
    "version": "3.4.0",
@@ -96,7 +162,7 @@
    "unknown": false,
    "publishedAt": "2026-11-24T22:28:13Z",
    "testflight": true,
-   "baseSeq": 32267,
+   "baseSeq": 32272,
    "prs": [],
    "direct": [
     {
@@ -238,18 +304,6 @@
     {
      "sha": "073033d43c75b31fb022d3d5882ee498af9d8a87",
      "subject": "Merge #4408 (claude/main-dev-branch-roles-3228aa) into develop"
-    },
-    {
-     "sha": "2f7a39313315812c5780de138ddcef295a9bef54",
-     "subject": "chore(bugs): reindex after merging #4373 #4375"
-    },
-    {
-     "sha": "d3c030cd418777a7d1db89939629c1f8b4861021",
-     "subject": "Merge #4375 (claude/fix-srs-close-anr) into develop"
-    },
-    {
-     "sha": "b0e0a8364b6969d67df4fcf3964ccca40d065445",
-     "subject": "Merge #4373 (claude/fix-srs4-migration-failed) into develop"
     }
    ],
    "truncated": false,
@@ -268,88 +322,6 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 32267,
-   "version": "3.4.0",
-   "sha": "43322ec35d7ccb75434980460cfa9582dcdf89b0",
-   "unknown": false,
-   "publishedAt": "2026-11-24T13:29:27Z",
-   "testflight": false,
-   "baseSeq": 32216,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "43322ec35d7ccb75434980460cfa9582dcdf89b0",
-     "subject": "chore(bugs): settle 撞号并重建索引（合并 #4364 #4362 #4356 #4365 #4358 #4349 #4352 #4350 #4351 #4345 #4355 #4354 #4370 #4372）"
-    },
-    {
-     "sha": "88f505b2aa26ffad9078c20152ee48157b61e089",
-     "subject": "Merge #4372 (claude/fix-backup-merge-fk-remap) into develop"
-    },
-    {
-     "sha": "03b1f265be94cc41b56f4d942f8a8f9399500c5b",
-     "subject": "Merge #4370 (claude/srs-deck-row-tap-review) into develop"
-    },
-    {
-     "sha": "222ea9a6d1d6baec5e4588dd979a2a35d3edd1fd",
-     "subject": "Merge #4355-4354 (claude/integrate-favorites-samutw) into develop"
-    },
-    {
-     "sha": "273cbe6394abedd0393ad708ca7ab603f7157c59",
-     "subject": "Merge #4349-4352-4350-4351-4345 (claude/integrate-books-samutw) into develop"
-    },
-    {
-     "sha": "5c0ed00cf2691bc04e294ba825e1b99e85350983",
-     "subject": "Merge #4358 (claude/reverent-jennings-2fd608) into develop"
-    },
-    {
-     "sha": "149f50f63d517cb4c5bd839696d8e3e4a67f0821",
-     "subject": "Merge #4365 (pr/music-lyrics-display-toggles) into develop"
-    },
-    {
-     "sha": "068aefacc01aab8dc6055993717b26d51b16a29b",
-     "subject": "Merge #4356 (claude/rcv76ppoi-fundamental-fix-e7dd4b) into develop"
-    },
-    {
-     "sha": "168a3ef457cd344ae7928dc6b501caa181d883f1",
-     "subject": "Merge #4362 (claude/distracted-bohr-94c80c) into develop"
-    },
-    {
-     "sha": "53a1eee53287a9ef68a52afefe3ae1a345ffa804",
-     "subject": "Merge #4364 (claude/sad-satoshi-52d205) into develop"
-    },
-    {
-     "sha": "b43da33f9e6dd64ca8f7df87c926d3aaedf4a494",
-     "subject": "fix(ci): 修 develop 三条基线红：bug.dart 索引原子写（并行 new 读到截断文件）、封面派生点登记随 #4360 挪到 video_cover_meta_loader、manga_page_identity_test 改用 package:test"
-    },
-    {
-     "sha": "07de68e36ad3f3c58bf39ec726a2b66a4ab11a0d",
-     "subject": "docs(agent): 开 PR 前不跑全量 analyze，只由合并任务在合并结果上跑一次（反馈 SBuUIb9dYT）"
-    },
-    {
-     "sha": "fb8ddd06dd5cc99920ece20b74d9c06fbff8d2d8",
-     "subject": "docs(release): 3.4.0 公告补本轮合入项（选集面板剧照、进度口径、插图浏览、制卡提示位置与四项修复）"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
-    }
-   }
   }
  ],
  "pending": {
@@ -360,61 +332,21 @@
    {
     "sha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
     "subject": "chore(bugs): settle BUG number collisions on a46839d71"
-   },
-   {
-    "sha": "a46839d71b5c659860dad756f9c79b386a956fa2",
-    "subject": "Merge PR #4432"
-   },
-   {
-    "sha": "5182a3f005ef2490d29787953aea9aa2c4628890",
-    "subject": "Merge PR #4438"
-   },
-   {
-    "sha": "d8125d57b6386261654d95dd3fe5b9bbffd9d279",
-    "subject": "Merge PR #4439"
-   },
-   {
-    "sha": "b367ce6899292e04a4f065125840f4f4aee69f27",
-    "subject": "Merge PR #4437"
-   },
-   {
-    "sha": "4299e148e69ca4865e5b301fc6123920e77006fc",
-    "subject": "chore(readme): refresh development activity chart [skip ci]"
-   },
-   {
-    "sha": "aba13f1799f3428f82390d4b62226084d00aa807",
-    "subject": "docs(release): 3.4.0 修复条目只和 3.3.0 正式版比：删掉调试版期间引入又修掉的（Windows 输入失灵、Android 书库位置丢失），ANR / 闪退写明场景，去掉含调试版修复的「600 多项」计数"
-   },
-   {
-    "sha": "b5f71537795c4eda32d839b4b9d3d101e6d5d660",
-    "subject": "docs(release): 3.4.0 公告精简：各节只留主要功能，修复只留用户最可能碰到的，注意事项去掉没变化的说明"
-   },
-   {
-    "sha": "34e621c775a4485081c678e98514879bc2287c7b",
-    "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
-   },
-   {
-    "sha": "eb6196154301f02ba158dca9179a5fb5675fe119",
-    "subject": "docs(release): 3.4.0 公告补 #4416（书库布局记录丢失后整库「文件丢失」自愈）"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682054"
+    "state": "none"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
+    "state": "none"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
+    "state": "none"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
+    "state": "none"
    }
   }
  },
