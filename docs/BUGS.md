@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4733 条。点号进各自文件。
+> 共 4734 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5454](bugs/BUG-5454-local-player-sidecar-audio-not-loaded.md) | ✅ | ✅ | 本机播放器不加载本地视频旁的外挂音轨 |
 | [BUG-5453](bugs/BUG-5453-download-organizer-strands-sidecars.md) | ✅ | ✅ | 下载整理只搬视频，发布自带的外挂字幕/外挂音轨留在原地 |
 | [BUG-5452](bugs/BUG-5452-music-mv-release-extras-unreachable.md) | ✅ | ✅ | 本地 MV 自动匹配找不到同一发布里被整理走的 NCOP/NCED/PV |
 | [BUG-5451](bugs/BUG-5451-download-release-audio-not-in-music.md) | ✅ | ✅ | 下载入库的发布里随附的 CD/OST 进不了音乐库 |

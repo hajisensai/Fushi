@@ -20,6 +20,7 @@ import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/video/video_resume.dart';
 import 'package:fushi/src/media/video/video_external_audio_tracks.dart';
+import 'package:fushi/src/media/video/video_local_sidecar_audio.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoExternalAudioTrack;
 import 'package:fushi/src/startup/media_handle_registry.dart';
@@ -3673,6 +3674,18 @@ class VideoPlayerController extends ChangeNotifier
     final String? dvdTitleUri = !openBlurayMenu && videoFile != null
         ? dvdPlaybackUriForTitlePath(videoFile.path)
         : null;
+    // 本地视频旁的外挂音轨（`ep01.jpn.mka`、`Audio 5.1/…mka`）：与 open 并行列目录，
+    // 下面和在线源的可选外挂音轨走同一条 `audio-add … auto`，不抢原声。原盘 / DVD
+    // 标题 / 播放列表不是一个文件旁的外挂件，不找。
+    final Future<List<RemoteVideoExternalAudioTrack>> localSidecarAudio =
+        videoFile != null &&
+            !openBlurayMenu &&
+            bluray == null &&
+            dvdTitleUri == null
+        ? discoverLocalSidecarAudioTracks(videoFile.path)
+        : Future<List<RemoteVideoExternalAudioTrack>>.value(
+            const <RemoteVideoExternalAudioTrack>[],
+          );
     final String? localPlaybackSource;
     try {
       localPlaybackSource = videoFile == null
@@ -4140,11 +4153,17 @@ class VideoPlayerController extends ChangeNotifier
       await player.setAudioTrack(AudioTrack.uri(audioNativeUri));
       if (!_isCurrentLoad(player, loadToken)) return; // 外挂音轨后换片/销毁。
     }
-    if (externalAudioTracks.isNotEmpty) {
+    final List<RemoteVideoExternalAudioTrack> optionalAudioTracks =
+        <RemoteVideoExternalAudioTrack>[
+          ...externalAudioTracks,
+          ...await localSidecarAudio,
+        ];
+    if (!_isCurrentLoad(player, loadToken)) return; // 列目录后换片/销毁。
+    if (optionalAudioTracks.isNotEmpty) {
       final dynamic native = player.platform;
       if (native != null) {
         final List<VideoExternalAudioAdd> adds = buildExternalAudioAddCommands(
-          externalAudioTracks,
+          optionalAudioTracks,
           nativeUri: nativePlaybackUri,
         );
         for (final VideoExternalAudioAdd add in adds) {

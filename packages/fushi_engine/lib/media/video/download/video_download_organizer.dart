@@ -11,7 +11,7 @@ import 'package:fushi_engine/media/video/scraper/scraper_types.dart'
     show ParsedMediaName;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
-    show isSidecarSubtitleSuffix;
+    show isSidecarAudioExtension, isSidecarSubtitleSuffix;
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
 
@@ -1517,22 +1517,14 @@ const Set<String> _textSubtitleExtensions = <String>{
   '.vtt',
 };
 
-/// 不在 [kAudioExtensions] 里、但发布组常用的裸音轨扩展名。
-const Set<String> _extraCompanionAudioExtensions = <String>{
-  '.dts',
-  '.dtshd',
-  '.thd',
-  '.truehd',
-};
-
 /// [relativePath] 若是外挂件候选，返回种类；否则 null（扫图、日志、字体等）。
 VideoReleaseCompanionKind? videoReleaseCompanionKindOf(String relativePath) {
   final String ext = p.extension(relativePath).toLowerCase();
   if (_companionSubtitleExtensions.contains(ext)) {
     return VideoReleaseCompanionKind.subtitle;
   }
-  if (kAudioExtensions.contains(ext) ||
-      _extraCompanionAudioExtensions.contains(ext)) {
+  // 与播放器发现本地外挂音轨同一份扩展名（[isSidecarAudioExtension]）。
+  if (isSidecarAudioExtension(ext)) {
     return VideoReleaseCompanionKind.audio;
   }
   return null;
