@@ -274,12 +274,9 @@ class MediaServerVideoLibrary {
         stack,
       );
     }
-    await MediaServerMetadataSync(database).sync(
-      browser,
-      work,
-      rows,
-      membership: mediaServerMembershipOf(infos),
-    );
+    await MediaServerMetadataSync(
+      database,
+    ).sync(browser, work, rows, membership: mediaServerMembershipOf(infos));
     return addedInfos;
   }
 
