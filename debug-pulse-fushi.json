@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-24T23:57:43Z",
+ "generatedAt": "2026-11-25T03:21:14Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "4f21942be4a461312fbcf5d6654facdca2b2a943",
-  "seq": 32553
+  "sha": "d67d663ae71e134f779aa912ed705e3deb2410c3",
+  "seq": 32559
  },
  "builds": [
   {
@@ -396,10 +396,22 @@
   }
  ],
  "pending": {
-  "headSha": "4f21942be4a461312fbcf5d6654facdca2b2a943",
-  "headSeq": 32553,
+  "headSha": "d67d663ae71e134f779aa912ed705e3deb2410c3",
+  "headSeq": 32559,
   "prs": [],
   "direct": [
+   {
+    "sha": "d67d663ae71e134f779aa912ed705e3deb2410c3",
+    "subject": "Merge PR #4415: server-release auto 计划加构建下限，旧 app release 不当候选"
+   },
+   {
+    "sha": "d06815a7dfe5e04197cc3c16fc23f1b701cf0df4",
+    "subject": "Merge PR #4416: Android 书库对账探所有内部布局，布局 / 容器名锚进锚点文件（BUG-5450）"
+   },
+   {
+    "sha": "2be7027e773132e28ae426dde01ab60aaa062aad",
+    "subject": "fix(licenses): 重生成原生许可清单指纹，跟上 c0f1f03d14 给 fushi_fsrs 的 rusqlite 加 hooks 特性（native_license_registry 守卫红）"
+   },
    {
     "sha": "4f21942be4a461312fbcf5d6654facdca2b2a943",
     "subject": "docs(release): 3.4.0 公告：生成字幕措辞跟上 #4400，修复条目放在「另有 600 多项」之前"
@@ -408,16 +420,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45539175576"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45539175817"
    },
    "macos": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45539175817"
    },
    "ios": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45539175817"
    }
   }
  },
