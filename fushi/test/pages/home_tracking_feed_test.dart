@@ -245,6 +245,32 @@ void main() {
     expect(feed.sitesOf(feed.hero), 'AniList · MyAnimeList');
   });
 
+  test('every tracked media type has a cover source; chapter links (manga, '
+      'light novels) use their book', () {
+    final Map<TrackingMediaType, HomeTrackingCoverSource> expected =
+        <TrackingMediaType, HomeTrackingCoverSource>{
+          TrackingMediaType.book: HomeTrackingCoverSource.book,
+          TrackingMediaType.bookChapter: HomeTrackingCoverSource.book,
+          TrackingMediaType.video: HomeTrackingCoverSource.video,
+          TrackingMediaType.videoCollection: HomeTrackingCoverSource.collection,
+          TrackingMediaType.bookCollection: HomeTrackingCoverSource.collection,
+          TrackingMediaType.game: HomeTrackingCoverSource.game,
+          TrackingMediaType.remoteVideo: HomeTrackingCoverSource.none,
+          TrackingMediaType.remoteSeries: HomeTrackingCoverSource.none,
+        };
+    // A new media type has to be added here (and given a cover source).
+    expect(expected.keys.toSet(), TrackingMediaType.values.toSet());
+    for (final MapEntry<TrackingMediaType, HomeTrackingCoverSource> e
+        in expected.entries) {
+      expect(
+        homeTrackingCoverSourceOf(e.key.value),
+        e.value,
+        reason: e.key.value,
+      );
+    }
+    expect(homeTrackingCoverSourceOf('unknown'), HomeTrackingCoverSource.none);
+  });
+
   group('HomeTrackingFeedCard', () {
     // The default 800×600 test surface would squeeze a 6-column cell (900).
     setUp(() {

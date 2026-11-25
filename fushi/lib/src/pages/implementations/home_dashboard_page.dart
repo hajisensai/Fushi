@@ -4917,9 +4917,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   }
 
   /// The local cover of a tracked item ([TrackingMediaType] `value` + key),
-  /// or null when the library has none to draw: a book, a video, a video or
-  /// book collection (its own cover, else for a book series the cover of a
-  /// volume in it), a game. Media server rows have no local cover.
+  /// or null when the library has none to draw; which library holds it is
+  /// [homeTrackingCoverSourceOf].
   Widget? _trackingCoverOf(
     AppModel appModel,
     List<MediaItem> books, {
@@ -4928,57 +4927,56 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     required String title,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    if (mediaType == TrackingMediaType.book.value) {
-      for (final MediaItem b in books) {
-        if ((ReaderFushiSource.parseBookKey(b.mediaIdentifier) ??
-                b.mediaIdentifier) ==
-            mediaKey) {
-          return _bookCover(tokens, appModel, b);
+    switch (homeTrackingCoverSourceOf(mediaType)) {
+      case HomeTrackingCoverSource.book:
+        for (final MediaItem b in books) {
+          if ((ReaderFushiSource.parseBookKey(b.mediaIdentifier) ??
+                  b.mediaIdentifier) ==
+              mediaKey) {
+            return _bookCover(tokens, appModel, b);
+          }
         }
-      }
-      return null;
-    }
-    if (mediaType == TrackingMediaType.video.value) {
-      for (final VideoBookRow v in _videos) {
-        if (v.bookUid == mediaKey) {
+        return null;
+      case HomeTrackingCoverSource.video:
+        for (final VideoBookRow v in _videos) {
+          if (v.bookUid == mediaKey) {
+            return _localCover(
+              tokens,
+              kind: MediaKind.video,
+              path: v.coverPath,
+              title: title,
+            );
+          }
+        }
+        return null;
+      case HomeTrackingCoverSource.collection:
+        final int? id = int.tryParse(mediaKey);
+        if (id == null) return null;
+        final bool video = mediaType == TrackingMediaType.videoCollection.value;
+        if (_collectionCoverById[id] case final List<String> paths
+            when paths.isNotEmpty) {
           return _localCover(
             tokens,
-            kind: MediaKind.video,
-            path: v.coverPath,
+            kind: video ? MediaKind.video : MediaKind.epub,
+            path: paths.first,
             title: title,
           );
         }
-      }
-      return null;
-    }
-    if (mediaType == TrackingMediaType.videoCollection.value ||
-        mediaType == TrackingMediaType.bookCollection.value) {
-      final int? id = int.tryParse(mediaKey);
-      if (id == null) return null;
-      final bool video = mediaType == TrackingMediaType.videoCollection.value;
-      if (_collectionCoverById[id] case final List<String> paths
-          when paths.isNotEmpty) {
-        return _localCover(
-          tokens,
-          kind: video ? MediaKind.video : MediaKind.epub,
-          path: paths.first,
-          title: title,
-        );
-      }
-      if (video) return null;
-      for (final MediaItem b in books) {
-        if (_primaryCollectionByEntry[_bookCollectionKey(b)] == id) {
-          return _bookCover(tokens, appModel, b, title: title);
+        if (video) return null;
+        for (final MediaItem b in books) {
+          if (_primaryCollectionByEntry[_bookCollectionKey(b)] == id) {
+            return _bookCover(tokens, appModel, b, title: title);
+          }
         }
-      }
-      return null;
+        return null;
+      case HomeTrackingCoverSource.game:
+        for (final GalgameEntry g in _games) {
+          if (g.id == mediaKey) return _gameCover(tokens, g, title: title);
+        }
+        return null;
+      case HomeTrackingCoverSource.none:
+        return null;
     }
-    if (mediaType == TrackingMediaType.game.value) {
-      for (final GalgameEntry g in _games) {
-        if (g.id == mediaKey) return _gameCover(tokens, g, title: title);
-      }
-    }
-    return null;
   }
 
   /// The tracking state of a Continue entry ([homeTrackingMark]); null for

@@ -29,7 +29,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaTrackingMappingRow;
 import 'package:fushi_engine/media/tracking/media_tracking_recent_sends.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart'
-    show TrackingKind;
+    show TrackingKind, TrackingMediaType;
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -253,6 +253,45 @@ IconData homeTrackingKindIcon(String kind) => switch (kind) {
   _ when kind == TrackingKind.game.value => FushiIcons.game,
   _ => FushiIcons.books,
 };
+
+/// Where the home page finds the local cover of a tracked item.
+enum HomeTrackingCoverSource {
+  /// A book in the library (a volume link, or a chapter link of a manga or
+  /// light novel; both keyed by the book).
+  book,
+
+  /// A local video.
+  video,
+
+  /// A video or book collection card (its own cover; a book series falls
+  /// back to a volume in it).
+  collection,
+
+  /// A game in the game library.
+  game,
+
+  /// No local cover (media server episodes and seasons): the kind icon.
+  none,
+}
+
+/// The cover source of a [TrackingMediaType] `value`; unknown values have
+/// none.
+HomeTrackingCoverSource homeTrackingCoverSourceOf(String mediaType) {
+  for (final TrackingMediaType type in TrackingMediaType.values) {
+    if (type.value != mediaType) continue;
+    return switch (type) {
+      TrackingMediaType.book ||
+      TrackingMediaType.bookChapter => HomeTrackingCoverSource.book,
+      TrackingMediaType.video => HomeTrackingCoverSource.video,
+      TrackingMediaType.videoCollection ||
+      TrackingMediaType.bookCollection => HomeTrackingCoverSource.collection,
+      TrackingMediaType.game => HomeTrackingCoverSource.game,
+      TrackingMediaType.remoteVideo ||
+      TrackingMediaType.remoteSeries => HomeTrackingCoverSource.none,
+    };
+  }
+  return HomeTrackingCoverSource.none;
+}
 
 /// A cover for a send, from the local library; null when none is known.
 typedef HomeTrackingCoverOf = Widget? Function(MediaTrackingRecentSend send);
