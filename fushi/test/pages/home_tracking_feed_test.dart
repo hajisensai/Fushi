@@ -231,6 +231,20 @@ void main() {
     });
   });
 
+  test('sites are named in registry order, whichever row came first', () {
+    final HomeTrackingFeed feed = feedOf(
+      snapshot(
+        activity: <MediaTrackingActivityRow>[
+          // MAL's row is the newer one, so the send lists MAL first.
+          sent('mal', 'frieren', 12, ago: const Duration(minutes: 3)),
+          sent('anilist', 'frieren', 12, ago: const Duration(minutes: 4)),
+        ],
+      ),
+    )!;
+    expect(feed.hero.siteIds, <String>['mal', 'anilist']);
+    expect(feed.sitesOf(feed.hero), 'AniList · MyAnimeList');
+  });
+
   group('HomeTrackingFeedCard', () {
     // The default 800×600 test surface would squeeze a 6-column cell (900).
     setUp(() {
@@ -277,9 +291,11 @@ void main() {
       ),
     );
 
-    // Real grid proportions: one column ≈ 140, one row ≈ 158, gap 12.
-    Size cell(int cols, int rows) =>
-        Size(cols * 140.0 + (cols - 1) * 12, rows * 158.0 + (rows - 1) * 12);
+    // Real grid metrics (`homeWidgetRowExtent`): the wide grid is about
+    // 180 × 118 per cell on a desktop (rows 104–140), the compact grid on a
+    // phone about 165 × 84 (rows 76–96); gap 12.
+    Size cell(int cols, int rows, {double column = 180, double row = 118}) =>
+        Size(cols * column + (cols - 1) * 12, rows * row + (rows - 1) * 12);
 
     const Map<String, ({bool poster, bool glass})> looks =
         <String, ({bool poster, bool glass})>{
@@ -288,7 +304,7 @@ void main() {
           'apple': (poster: false, glass: true),
         };
 
-    final List<(int, int)> sizes = <(int, int)>[
+    const List<(int, int)> wideSizes = <(int, int)>[
       (1, 1),
       (2, 1),
       (3, 1),
@@ -299,6 +315,23 @@ void main() {
       (4, 2),
       (6, 2),
     ];
+    const List<(int, int)> compactSizes = <(int, int)>[
+      (1, 1),
+      (2, 1),
+      (1, 2),
+      (2, 2),
+    ];
+    final List<(String, Size)> sizes = <(String, Size)>[
+      for (final double row in <double>[104, 118, 140])
+        for (final (int cols, int rows) in wideSizes)
+          ('wide ${cols}x$rows row $row', cell(cols, rows, row: row)),
+      for (final double row in <double>[76, 96])
+        for (final (int cols, int rows) in compactSizes)
+          (
+            'compact ${cols}x$rows row $row',
+            cell(cols, rows, column: 165, row: row),
+          ),
+    ];
 
     for (final MapEntry<String, ({bool poster, bool glass})> look
         in looks.entries) {
@@ -307,7 +340,7 @@ void main() {
           WidgetTester tester,
         ) async {
           final HomeTrackingFeed feed = feedOf(snapshot(activity: busyDay()))!;
-          for (final (int cols, int rows) in sizes) {
+          for (final (String label, Size size) in sizes) {
             await tester.pumpWidget(
               app(
                 HomeTrackingFeedCard(
@@ -316,7 +349,7 @@ void main() {
                   onOpen: () {},
                   poster: look.value.poster,
                 ),
-                size: cell(cols, rows),
+                size: size,
                 glass: look.value.glass,
                 textScale: scale,
               ),
@@ -325,14 +358,20 @@ void main() {
             expect(
               tester.takeException(),
               isNull,
-              reason: '${cols}x$rows ${look.key} ×$scale',
+              reason: '$label ${look.key} ×$scale',
             );
           }
         });
       }
     }
 
-    Future<void> pumpAt(WidgetTester tester, int cols, int rows) async {
+    Future<void> pumpAt(
+      WidgetTester tester,
+      int cols,
+      int rows, {
+      double column = 180,
+      double row = 118,
+    }) async {
       final HomeTrackingFeed feed = feedOf(snapshot(activity: busyDay()))!;
       await tester.pumpWidget(
         app(
@@ -342,7 +381,7 @@ void main() {
             onOpen: () {},
             poster: true,
           ),
-          size: cell(cols, rows),
+          size: cell(cols, rows, column: column, row: row),
         ),
       );
       await tester.pumpAndSettle();
@@ -368,7 +407,7 @@ void main() {
       expect(find.text('Title frieren'), findsNothing);
     });
 
-    testWidgets('2×1: the hero with sites, time and "+4 more today"', (
+    testWidgets('2×1: the hero with sites and time', (
       WidgetTester tester,
     ) async {
       await pumpAt(tester, 2, 1);
@@ -379,22 +418,32 @@ void main() {
         find.byKey(const ValueKey<String>('home-tracking-feed-meta')),
         findsOneWidget,
       );
-      expect(find.text(t.home_tracking_feed_more_today(n: 4)), findsOneWidget);
       expect(earlier(), findsNothing);
+    });
+
+    testWidgets('2×1 with the tallest rows: also "+4 more today"', (
+      WidgetTester tester,
+    ) async {
+      await pumpAt(tester, 2, 1, row: 140);
+      expect(
+        find.byKey(const ValueKey<String>('home-tracking-feed-meta')),
+        findsOneWidget,
+      );
+      expect(find.text(t.home_tracking_feed_more_today(n: 4)), findsOneWidget);
     });
 
     testWidgets('6×1: earlier sends line up beside the hero', (
       WidgetTester tester,
     ) async {
       await pumpAt(tester, 6, 1);
-      expect(earlier(), findsNWidgets(3));
+      expect(earlier(), findsNWidgets(4));
       expect(
         find.byKey(const ValueKey<String>('home-tracking-feed-more')),
         findsNothing,
       );
     });
 
-    testWidgets('2×2: the hero on top, a list below', (
+    testWidgets('2×2: the hero on top, two earlier sends below', (
       WidgetTester tester,
     ) async {
       await pumpAt(tester, 2, 2);
@@ -402,7 +451,18 @@ void main() {
         find.byKey(const ValueKey<String>('home-tracking-feed-list')),
         findsOneWidget,
       );
-      expect(earlier(), findsWidgets);
+      expect(earlier(), findsNWidgets(2));
+    });
+
+    testWidgets('2×2 on a phone: too short for a list, the hero says how '
+        'many more today', (WidgetTester tester) async {
+      await pumpAt(tester, 2, 2, column: 165, row: 84);
+      expect(
+        find.byKey(const ValueKey<String>('home-tracking-feed-list')),
+        findsNothing,
+      );
+      expect(find.text('Title frieren'), findsOneWidget);
+      expect(find.text(t.home_tracking_feed_more_today(n: 4)), findsOneWidget);
     });
 
     testWidgets('6×2: adds the site column and the 7-day counts', (
@@ -418,6 +478,12 @@ void main() {
         findsOneWidget,
       );
       expect(find.text(t.home_tracking_feed_earlier), findsOneWidget);
+      expect(earlier(), findsNWidgets(3));
+      // The list beside it already shows them.
+      expect(
+        find.byKey(const ValueKey<String>('home-tracking-feed-more')),
+        findsNothing,
+      );
     });
 
     testWidgets('4×2: no site column yet', (WidgetTester tester) async {
@@ -449,7 +515,7 @@ void main() {
             onOpen: () => opened++,
             poster: false,
           ),
-          size: cell(2, 1),
+          size: cell(2, 2),
         ),
       );
       await tester.pumpAndSettle();

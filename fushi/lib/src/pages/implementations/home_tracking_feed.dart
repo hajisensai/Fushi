@@ -170,9 +170,23 @@ class HomeTrackingFeed {
   /// Site id -> name as shown to the user.
   final Map<String, String> siteNames;
 
+  /// The site ids of [send] in registry order (the order the Activity rows
+  /// came in varies from send to send); sites no longer listed go last.
+  List<String> siteIdsOf(MediaTrackingRecentSend send) {
+    final List<String> ordered = <String>[
+      for (final HomeTrackingSiteLine site in sites)
+        if (send.siteIds.contains(site.id)) site.id,
+    ];
+    return <String>[
+      ...ordered,
+      for (final String id in send.siteIds)
+        if (!ordered.contains(id)) id,
+    ];
+  }
+
   /// The sites of [send], by name ("AniList · MyAnimeList").
   String sitesOf(MediaTrackingRecentSend send) => <String>[
-    for (final String id in send.siteIds) siteNames[id] ?? id,
+    for (final String id in siteIdsOf(send)) siteNames[id] ?? id,
   ].join(' · ');
 }
 
@@ -331,13 +345,26 @@ const double _kCompactMaxWidth = 200;
 /// The hero row (cover + text) at its narrowest beside the earlier sends.
 const double _kHeroRowMinWidth = 250;
 
-/// One earlier send beside the hero in a one-row cell.
+/// One earlier send beside the hero in a one-row cell: at least this wide,
+/// and up to [_kMiniMaxWidth] when the cell has room to spare.
 const double _kMiniWidth = 150;
+const double _kMiniMaxWidth = 200;
 const double _kMiniGap = 14;
 
-/// From this height the hero sits on top (or in its own column) and the
-/// earlier sends become a list.
-const double _kTallMinHeight = 210;
+/// From this content height the hero sits on top (or in its own column) and
+/// the earlier sends become a list. Two-row cells on the wide grid have about
+/// 165–225 (row 104–140, `homeWidgetRowExtent`); on the compact grid (row
+/// 76–96) they stay below and keep the one-row layout.
+const double _kTallMinHeight = 150;
+
+/// The hero above the list (2×2) at its shortest: cover, title, progress and
+/// where / when; a failed send also keeps its error line.
+const double _kStackedHeroMinHeight = 66;
+const double _kStackedFailedHeroMinHeight = 80;
+const double _kStackedHeroMaxHeight = 150;
+
+/// The divider between the stacked hero and the list, with its spacing.
+const double _kStackedDividerHeight = 17;
 
 /// Two columns (hero | list) from this width, three (… | sites) from the next.
 const double _kTwoColumnMinWidth = 520;
@@ -346,7 +373,7 @@ const double _kHeroColumnWidth = 300;
 const double _kSitesColumnWidth = 230;
 
 /// One row of the list (cover 30×44 plus the gap).
-const double _kListRowHeight = 54;
+const double _kListRowHeight = 50;
 
 /// Space between the columns, including the divider.
 const double _kColumnGap = 16;
@@ -411,29 +438,57 @@ class _FeedBody extends StatelessWidget {
           mark: feed.state,
         ),
         Expanded(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                homeTrackingSendLabel(feed.hero),
-                key: const ValueKey<String>('home-tracking-feed-progress'),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: context.fushiType.labelLarge.copyWith(
-                  fontWeight: FontWeight.w700,
-                  color: style.foreground,
-                ),
-              ),
-              Text(
-                feed.state == HomeTrackingFeedState.synced
-                    ? formatActivityRelativeTime(feed.hero.at, now)
-                    : homeTrackingFeedTitle(feed.state),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: context.fushiType.bodySmall.copyWith(color: style.muted),
-              ),
-            ],
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints box) {
+              // The progress first (a second line when it fits), then when;
+              // large text drops lines instead of overflowing.
+              final TextStyle progressStyle = context.fushiType.labelLarge
+                  .copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: style.foreground,
+                  );
+              final TextStyle whenStyle = context.fushiType.bodySmall.copyWith(
+                color: style.muted,
+              );
+              final double progressLine = homeWidgetLineHeight(
+                context,
+                progressStyle,
+              );
+              final double whenLine = homeWidgetLineHeight(context, whenStyle);
+              final bool showWhen = progressLine + whenLine <= box.maxHeight;
+              final int progressLines =
+                  progressLine * 2 + (showWhen ? whenLine : 0) <= box.maxHeight
+                  ? 2
+                  : 1;
+              final Widget column = Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    homeTrackingSendLabel(feed.hero),
+                    key: const ValueKey<String>('home-tracking-feed-progress'),
+                    maxLines: progressLines,
+                    overflow: TextOverflow.ellipsis,
+                    style: progressStyle,
+                  ),
+                  if (showWhen)
+                    Text(
+                      feed.state == HomeTrackingFeedState.synced
+                          ? formatActivityRelativeTime(feed.hero.at, now)
+                          : homeTrackingFeedTitle(feed.state),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: whenStyle,
+                    ),
+                ],
+              );
+              return progressLine > box.maxHeight
+                  ? HomeWidgetOverflowClip(child: column)
+                  : Align(
+                      alignment: AlignmentDirectional.bottomStart,
+                      child: column,
+                    );
+            },
           ),
         ),
       ],
@@ -442,17 +497,24 @@ class _FeedBody extends StatelessWidget {
 
   /// A one-row cell: the hero, then as many earlier sends as fit beside it.
   Widget _row(BuildContext context) {
-    final int fit =
-        ((area.width - _kHeroRowMinWidth - _kColumnGap - 1) /
-                (_kMiniWidth + _kMiniGap))
-            .floor()
-            .clamp(0, feed.earlier.length);
+    final double room = area.width - _kHeroRowMinWidth - _kColumnGap - 1;
+    final int fit = (room / (_kMiniWidth + _kMiniGap)).floor().clamp(
+      0,
+      feed.earlier.length,
+    );
     final List<MediaTrackingRecentSend> minis = feed.earlier.take(fit).toList();
+    // The minis share the spare room (so "Episode 8 · 40 min ago" is not cut
+    // short); the hero keeps the rest.
+    final double miniWidth = minis.isEmpty
+        ? 0
+        : (room / minis.length - _kMiniGap)
+              .clamp(_kMiniWidth, _kMiniMaxWidth)
+              .toDouble();
     final double heroWidth = minis.isEmpty
         ? area.width
         : area.width -
               (_kColumnGap + 1) -
-              minis.length * (_kMiniWidth + _kMiniGap);
+              minis.length * (miniWidth + _kMiniGap);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -474,7 +536,7 @@ class _FeedBody extends StatelessWidget {
               child: FushiStaggeredEntrance(
                 index: i,
                 child: SizedBox(
-                  width: _kMiniWidth,
+                  width: miniWidth,
                   child: _SendTile(
                     key: ValueKey<String>(
                       'home-tracking-feed-earlier-${minis[i].titleKey}',
@@ -496,12 +558,20 @@ class _FeedBody extends StatelessWidget {
 
   /// A tall but narrow cell (2×2): the hero on top, the list below.
   Widget _stacked(BuildContext context) {
-    final double heroHeight = (area.height * 0.45).clamp(88, 150).toDouble();
-    final double listHeight = area.height - heroHeight - 17;
-    final int rows = (listHeight / _kListRowHeight).floor().clamp(
-      0,
-      feed.earlier.length,
-    );
+    // As many list rows as fit under the shortest hero; the hero takes the
+    // rest (up to its cap; the list measures what it gets).
+    final double heroMin = feed.state == HomeTrackingFeedState.failed
+        ? _kStackedFailedHeroMinHeight
+        : _kStackedHeroMinHeight;
+    final int rows =
+        ((area.height - _kStackedDividerHeight - heroMin) / _kListRowHeight)
+            .floor()
+            .clamp(0, feed.earlier.length);
+    final double heroHeight = rows == 0
+        ? area.height
+        : (area.height - _kStackedDividerHeight - rows * _kListRowHeight)
+              .clamp(heroMin, _kStackedHeroMaxHeight)
+              .toDouble();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -539,7 +609,12 @@ class _FeedBody extends StatelessWidget {
       children: <Widget>[
         SizedBox(
           width: rows == 0 && !sites ? area.width : _kHeroColumnWidth,
-          child: _HeroColumn(feed: feed, cover: coverOf(feed.hero), now: now),
+          child: _HeroColumn(
+            feed: feed,
+            cover: coverOf(feed.hero),
+            now: now,
+            showMoreToday: rows == 0,
+          ),
         ),
         if (rows > 0) ...<Widget>[
           const _Divider(vertical: true),
@@ -744,11 +819,15 @@ class _HeroColumn extends StatelessWidget {
     required this.feed,
     required this.cover,
     required this.now,
+    required this.showMoreToday,
   });
 
   final HomeTrackingFeed feed;
   final Widget? cover;
   final DateTime now;
+
+  /// "+N more today" only when the earlier sends are not listed beside it.
+  final bool showMoreToday;
 
   @override
   Widget build(BuildContext context) {
@@ -772,6 +851,7 @@ class _HeroColumn extends StatelessWidget {
                 now: now,
                 coverHeight: coverHeight,
                 titleLines: 2,
+                showMoreToday: showMoreToday,
               ),
             ),
             Expanded(
@@ -781,7 +861,7 @@ class _HeroColumn extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   spacing: 4,
                   children: <Widget>[
-                    for (final String id in feed.hero.siteIds)
+                    for (final String id in feed.siteIdsOf(feed.hero))
                       Row(
                         spacing: 8,
                         children: <Widget>[
