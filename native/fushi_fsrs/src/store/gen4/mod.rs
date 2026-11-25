@@ -79,6 +79,7 @@ pub(crate) mod prepare;
 mod rebuild_scale_tests;
 pub mod receive;
 pub mod refresh;
+pub mod restore_point;
 pub mod retained;
 pub mod schema;
 pub(crate) mod scrub;

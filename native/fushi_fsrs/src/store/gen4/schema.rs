@@ -621,6 +621,9 @@ pub(crate) fn check_kind(conn: &Connection) -> Result<(), String> {
             "gen4 store: schema {v} is newer than this build ({SCHEMA})"
         ));
     }
+    // gen4 目前没有原地升级路径：任何比 SCHEMA 旧的 gen4 schema 一律在此拒绝。
+    // 日后若加升级阶梯，必须在改动任何内容之前先调用
+    // `restore_point::snapshot_before_upgrade(path, from, SCHEMA)` 留还原点（失败只记录，不阻断）。
     if v != SCHEMA {
         return Err(format!(
             "gen4 store: not a generation 4 library of this build (schema {v})"
