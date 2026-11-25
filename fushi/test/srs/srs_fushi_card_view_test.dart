@@ -756,6 +756,35 @@ void main() {
     expect(find.byKey(const ValueKey<String>('srs-fushi-term')), findsOne);
   });
 
+  testWidgets('注音颜色：默认跟随弱化文字色，自定义后词条与例句的注音都换色', (WidgetTester tester) async {
+    TextStyle rubyOf(String key) =>
+        tester.widget<SrsRubyText>(find.byKey(ValueKey<String>(key))).rubyStyle;
+    await pump(tester, answer: true);
+    final ColorScheme scheme = Theme.of(
+      tester.element(find.byKey(const ValueKey<String>('srs-fushi-term'))),
+    ).colorScheme;
+    expect(rubyOf('srs-fushi-term').color, scheme.onSurfaceVariant);
+    expect(rubyOf('srs-fushi-sentence').color, scheme.onSurfaceVariant);
+
+    await pump(
+      tester,
+      answer: true,
+      appearance: const SrsCardAppearance(rubyColor: 0xFFB3261E),
+    );
+    expect(rubyOf('srs-fushi-term').color, const Color(0xFFB3261E));
+    expect(rubyOf('srs-fushi-sentence').color, const Color(0xFFB3261E));
+    // 只换注音：基字颜色不跟着变。
+    expect(
+      tester
+          .widget<SrsRubyText>(
+            find.byKey(const ValueKey<String>('srs-fushi-term')),
+          )
+          .style
+          .color,
+      isNot(const Color(0xFFB3261E)),
+    );
+  });
+
   testWidgets('翻译模糊：默认模糊，点按显示，点字外空白再模糊', (WidgetTester tester) async {
     final Finder toggle = find.byKey(
       const ValueKey<String>('srs-fushi-translation-toggle'),

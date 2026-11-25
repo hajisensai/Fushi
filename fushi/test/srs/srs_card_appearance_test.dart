@@ -355,6 +355,58 @@ void main() {
       expect(bad.frontTextScale, SrsCardAppearance.maxTextScale);
     });
 
+    test('注音颜色：默认跟随（零注入），自定义后只覆盖词条 / 例句注音；JSON 往返、坏值回落', () {
+      const SrsCardAppearance d = SrsCardAppearance();
+      expect(d.followsRubyColor, isTrue);
+      expect(_css(d), isNot(contains('--fushi-srs-ruby')));
+      expect(_css(d), isNot(contains(' rt')));
+
+      final SrsCardAppearance red = d.copyWith(rubyColor: 0xFFB3261E);
+      final String css = _css(red);
+      expect(css, contains(':root{--fushi-srs-ruby:#b3261e;}'));
+      expect(
+        css,
+        contains(
+          ':root .fc-term rt,:root .fc-sentence rt'
+          '{color:var(--fushi-srs-ruby);}',
+        ),
+      );
+      // 释义区词典自带的注音不动。
+      expect(css, isNot(contains('.fc-gloss')));
+      expect(SrsCardAppearance.decode(red.encode()), red);
+      expect(red == d, isFalse);
+      expect(
+        red.copyWith(rubyColor: kSrsCardRubyColorFollow).followsRubyColor,
+        isTrue,
+      );
+
+      // 实际颜色：跟随 = 外观配色的 onSurfaceVariant（自定义强调色时取种子配色）。
+      final ColorScheme app = ColorScheme.fromSeed(
+        seedColor: const Color(0xFF3F5F90),
+      );
+      expect(srsCardRubyColor(d, app), app.onSurfaceVariant);
+      const SrsCardAppearance custom = SrsCardAppearance(
+        colorSource: SrsCardColorSource.custom,
+        customAccent: 0xFFB25E02,
+      );
+      expect(
+        srsCardRubyColor(custom, app),
+        srsCardColorScheme(custom, app).onSurfaceVariant,
+      );
+      expect(srsCardRubyColor(red, app), const Color(0xFFB3261E));
+
+      // 旧数据缺字段 / 半透明 / 非整数：回到跟随，不抛。
+      for (final Object? v in <Object?>[null, 0x80FF0000, 'red', -1, 1.5]) {
+        expect(
+          SrsCardAppearance.fromJson(<String, Object?>{
+            'rubyColor': v,
+          }).followsRubyColor,
+          isTrue,
+          reason: '$v',
+        );
+      }
+    });
+
     test('只换外观走换主题、不重放卡片', () async {
       final List<String> sent = <String>[];
       final SrsCardFaceSync sync = SrsCardFaceSync(
@@ -721,6 +773,36 @@ void main() {
             faceText(),
             'face:$layout:back:fushi-srs-gloss-expanded fushi-srs-freq-aggregate',
           );
+
+          // 注音颜色行（两套设计系统都在）：自定义时副标题标明；取色框里「跟随」改回默认。
+          await app.setSrsCardAppearance(
+            app.value.copyWith(rubyColor: 0xFFB3261E),
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+          final Finder rubyRow = find.byKey(
+            const ValueKey<String>('srs-card-ruby-color'),
+          );
+          expect(rubyRow, findsOneWidget);
+          expect(
+            find.descendant(
+              of: rubyRow,
+              matching: find.text(t.srs_card_appearance_ruby_color_custom),
+            ),
+            findsOneWidget,
+          );
+          tester.widget<AdaptiveSettingsRow>(rubyRow).onTap!();
+          await tester.pump(const Duration(milliseconds: 400));
+          await tester.tap(find.text(t.srs_card_appearance_ruby_color_follow));
+          await tester.pump(const Duration(milliseconds: 400));
+          expect(app.value.followsRubyColor, isTrue);
+          expect(
+            find.descendant(
+              of: rubyRow,
+              matching: find.text(t.srs_card_appearance_ruby_color_follow),
+            ),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull);
 
           // 预览与复习页一样走 Fushi 卡片的混合渲染：上面的卡面是释义区 WebView。
           expect(

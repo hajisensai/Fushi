@@ -1,17 +1,14 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';
+import 'package:fushi/src/utils/components/fushi_followable_color_dialog.dart';
 
 import 'package:fushi/src/settings/settings_cli_values.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 /// 桌面浮窗（galgame hook 台词浮窗 / 有声书悬浮字幕）共用的颜色设置行。
 ///
@@ -94,13 +91,14 @@ SettingsCustomItem overlayColorSettingItem({
           borderColor: colors.outlineVariant,
         ),
         onTap: () => unawaited(() async {
-          final _OverlayColorChoice? choice = await _pickOverlayColor(
-            settingsContext.context,
-            title: title,
-            initial: current,
-            enableAlpha: enableAlpha,
-            offerFollowTheme: !following,
-          );
+          final FushiFollowableColorChoice? choice =
+              await showFushiFollowableColorDialog(
+                settingsContext.context,
+                title: title,
+                initial: current,
+                enableAlpha: enableAlpha,
+                followLabel: following ? null : t.theme_role_follows_theme,
+              );
           if (choice == null) return;
           if (choice.followTheme) {
             await commit(settingsContext, followThemeValue);
@@ -114,60 +112,4 @@ SettingsCustomItem overlayColorSettingItem({
       );
     },
   );
-}
-
-class _OverlayColorChoice {
-  const _OverlayColorChoice.color(Color this.color) : followTheme = false;
-  const _OverlayColorChoice.followTheme() : color = null, followTheme = true;
-
-  final Color? color;
-  final bool followTheme;
-}
-
-Future<_OverlayColorChoice?> _pickOverlayColor(
-  BuildContext context, {
-  required String title,
-  required Color initial,
-  required bool enableAlpha,
-  required bool offerFollowTheme,
-}) async {
-  Color picked = initial;
-  _OverlayColorChoice? choice;
-  await showAppDialog<void>(
-    context: context,
-    builder: (BuildContext dialogContext) => FushiAlertDialog(
-      title: Text(title),
-      content: FushiDialogColorPicker(
-        pickerColor: initial,
-        onColorChanged: (Color color) {
-          picked = enableAlpha
-              ? color
-              : Color(0xFF000000 | (color.toARGB32() & 0x00FFFFFF));
-        },
-        enableAlpha: enableAlpha,
-      ),
-      actions: <Widget>[
-        if (offerFollowTheme)
-          FushiTextButton(
-            onPressed: () {
-              choice = const _OverlayColorChoice.followTheme();
-              Navigator.of(dialogContext).pop();
-            },
-            child: Text(t.theme_role_follows_theme),
-          ),
-        FushiTextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          child: Text(t.dialog_cancel),
-        ),
-        FushiFilledButton(
-          onPressed: () {
-            choice = _OverlayColorChoice.color(picked);
-            Navigator.of(dialogContext).pop();
-          },
-          child: Text(t.dialog_done),
-        ),
-      ],
-    ),
-  );
-  return choice;
 }

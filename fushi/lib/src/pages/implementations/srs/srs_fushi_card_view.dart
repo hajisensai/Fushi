@@ -606,7 +606,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           rubyStyle: s.text(
             s.tokens.hero,
             scale: _heroScale(s, c) * _kSrsRubyRatio,
-            color: s.muted,
+            color: s.ruby,
           ),
           textAlign: TextAlign.center,
           lookup: true,
@@ -889,7 +889,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       rubyStyle: s.text(
         s.tokens.termMin,
         scale: scale * _kSrsRubyRatio,
-        color: s.muted,
+        color: s.ruby,
       ),
       lookup: true,
     );
@@ -1086,7 +1086,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       rubyStyle: s.text(
         s.tokens.ruby,
         scale: s.appearance.textScale,
-        color: s.muted,
+        color: s.ruby,
       ),
       emphasis: s.scheme.primary,
       textAlign: centered ? TextAlign.center : TextAlign.start,
@@ -1763,6 +1763,9 @@ class _SrsCardStyle {
   final String? languageCode;
 
   Color get muted => scheme.onSurfaceVariant;
+
+  /// 卡片自带注音（词条 / 例句的 ruby）的颜色：默认跟随 [muted]，可在外观里单独设。
+  Color get ruby => srsCardRubyColor(appearance, scheme);
 
   double get gap => tokens.gap(appearance.density);
 
