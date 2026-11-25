@@ -28,6 +28,16 @@
       "dbSchemaVersion": 180
     },
     {
+      "name": "fushi-3.4.0-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0/fushi-3.4.0-windows-setup.exe",
+      "releaseSequence": 32563,
+      "tag": "v3.4.0",
+      "version": "3.4.0",
+      "size": 305856528,
+      "sha256": "d41b14e04e61b69d4013ccc955c9b5e2b45c8bdc97b63f8c4df35908d9ba4814",
+      "dbSchemaVersion": 180
+    },
+    {
       "name": "fushi-3.4.0-x86_64.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/v3.4.0/fushi-3.4.0-x86_64.apk",
       "releaseSequence": 32563,
