@@ -3868,8 +3868,11 @@ class FushiDatabase extends _$FushiDatabase
       if (from < 181) {
         // v181：表结构不变，清掉端点已不存在的合集 / 游戏连接（BUG-5457：删合集 /
         // 游戏之前不清 media_links，「同一作品」里留下标题是一串 id 的「未入库」
-        // 死卡）。删除路径起已同事务清理，这里清存量；幂等。
-        if (await _tableExists('media_links')) {
+        // 死卡）。删除路径起已同事务清理，这里清存量；幂等。清理语句要读两张宿主表：
+        // 真实库（≥ v75）三张表都在，只有迁移测试的局部建表夹具会缺。
+        if (await _tableExists('media_links') &&
+            await _tableExists('media_collections') &&
+            await _tableExists('galgames')) {
           await purgeDanglingMediaLinks();
         }
       }
