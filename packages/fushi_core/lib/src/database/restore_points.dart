@@ -24,6 +24,7 @@ import 'dart:isolate';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
+import '../utils/backup_retention.dart';
 import '../utils/fushi_debug_print.dart';
 import 'database.dart' show kMinSupportedSchemaVersion;
 import 'db_schema_version.dart';
@@ -43,6 +44,24 @@ const int kRestorePointKeepPreUpdate = 3;
 /// 每个库保留的回滚前还原点数。
 const int kRestorePointKeepPreRollback = 3;
 
+/// 操作前还原点（覆盖下载、复习迁移、从还原点页「替换」之前）保留的最新份数。
+const int kRestorePointKeepPreOperation = 5;
+
+/// 定时还原点的保留（D3）：48 小时内全留，之后 7 天每天、4 周每周、3 个月每月各留最新一份，
+/// 总大小不超过 5 GB（从最旧的定时还原点删起）。最新一份永远留。
+const BackupRetentionPolicy kRestorePointScheduledRetention =
+    BackupRetentionPolicy(
+      keepMinimum: 1,
+      keepAllWithin: Duration(hours: 48),
+      dailyDays: 7,
+      weeklyWeeks: 4,
+      monthlyMonths: 3,
+      maxTotalBytes: 5 * 1024 * 1024 * 1024,
+    );
+
+/// 定时还原点里的整包备份文件名（与手动导出同一格式的 zip）。
+const String kRestorePointArchiveFileName = 'backup.zip';
+
 /// 回滚进度日志（崩溃恢复用）。
 const String kRestorePointRollbackJournalFileName = 'rollback_pending.json';
 
@@ -52,12 +71,19 @@ const String _kRollbackTmpSuffix = '.rollback-tmp';
 /// 活库的侧车；回滚时随活库一起挪走（先挪侧车、最后挪主文件）。
 const List<String> _kSidecarSuffixes = <String>['-wal', '-shm', '-journal'];
 
-/// 还原点的种类（`scheduled` / `forced` 留给第二期）。
+/// 还原点的种类。
 enum RestorePointKind {
+  /// 主库 / 复习库迁移之前的原始库快照（第一期）。
   preUpdate('pre_update'),
+
+  /// 回滚 / 替换之前被换下来的活库（回滚本身可撤销）。
   preRollback('pre_rollback'),
+
+  /// 定时备份：一份整包备份 zip（[kRestorePointArchiveFileName]），内容按用户勾选的类别。
   scheduled('scheduled'),
-  forced('forced');
+
+  /// 有破坏性的操作之前强制拍的原始库快照（元数据 `reason` 写明是哪个操作）。
+  preOperation('pre_operation');
 
   const RestorePointKind(this.wire);
 
@@ -121,6 +147,10 @@ class RestorePoint {
     required this.toSchema,
     required this.files,
     this.appVersion,
+    this.reason,
+    this.categories,
+    this.excludedCategories,
+    this.includesSrsMedia,
   });
 
   /// 目录名。
@@ -142,6 +172,18 @@ class RestorePoint {
   final String? appVersion;
   final List<RestorePointFile> files;
 
+  /// 操作前还原点：是哪个操作之前拍的（`sync_download` / `srs_migration` / `replace` …）。
+  final String? reason;
+
+  /// 定时还原点：备份里带了哪些类别（`BackupCategory.name`）；其它种类为 null。
+  final List<String>? categories;
+
+  /// 定时还原点：用户没勾的类别。
+  final List<String>? excludedCategories;
+
+  /// 定时还原点：复习媒体（卡片图片 / 音频）有没有随包（D2，默认不带）。
+  final bool? includesSrsMedia;
+
   DateTime get createdAt =>
       DateTime.fromMillisecondsSinceEpoch(createdAtMs, isUtc: true);
 
@@ -151,6 +193,18 @@ class RestorePoint {
 
   /// 快照主文件的路径（与活库同名）。
   String get snapshotPath => p.join(directory, database.fileName);
+
+  /// [db] 的原始库快照路径（操作前还原点可能同时带主库与复习库）；不在这个点里返回 null。
+  String? rawDatabasePath(RestorePointDatabase db) {
+    if (!files.any((RestorePointFile f) => f.name == db.fileName)) return null;
+    return p.join(directory, db.fileName);
+  }
+
+  /// 整包备份 zip 的路径（定时还原点）；没有返回 null。
+  String? get archivePath =>
+      files.any((RestorePointFile f) => f.name == kRestorePointArchiveFileName)
+      ? p.join(directory, kRestorePointArchiveFileName)
+      : null;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'format': kRestorePointFormat,
@@ -163,6 +217,10 @@ class RestorePoint {
     'files': <Map<String, Object?>>[
       for (final RestorePointFile f in files) f.toJson(),
     ],
+    if (reason != null) 'reason': reason,
+    if (categories != null) 'categories': categories,
+    if (excludedCategories != null) 'excludedCategories': excludedCategories,
+    if (includesSrsMedia != null) 'srsMedia': includesSrsMedia,
   };
 
   /// 解析 [directory] 里的元数据；缺字段 / 不认识的种类 / 读不了返回 null（当作不完整）。
@@ -189,6 +247,14 @@ class RestorePoint {
         return null;
       }
       final Object? app = raw['appVersion'];
+      final Object? reason = raw['reason'];
+      final Object? srsMedia = raw['srsMedia'];
+      List<String>? strings(Object? v) => v is List<Object?>
+          ? <String>[
+              for (final Object? e in v)
+                if (e is String) e,
+            ]
+          : null;
       return RestorePoint(
         id: p.basename(directory),
         directory: directory,
@@ -208,6 +274,10 @@ class RestorePoint {
                 size: f['size']! as int,
               ),
         ],
+        reason: reason is String ? reason : null,
+        categories: strings(raw['categories']),
+        excludedCategories: strings(raw['excludedCategories']),
+        includesSrsMedia: srsMedia is bool ? srsMedia : null,
       );
     } on Object {
       return null;
@@ -286,9 +356,39 @@ class RestorePointSnapshotStatus {
 
 /// 一次回滚要换的库：[target] 换回来，当前活库挪进新的回滚前还原点。
 class RestorePointRollbackPlan {
-  const RestorePointRollbackPlan({required this.target});
+  const RestorePointRollbackPlan({required this.target, this.database});
 
   final RestorePoint target;
+
+  /// 换哪个库；null = [target] 自己的库。操作前还原点同时带两个库，换复习库时点名
+  /// [RestorePointDatabase.srs]。
+  final RestorePointDatabase? database;
+
+  /// 实际要换的库。
+  RestorePointDatabase get effectiveDatabase => database ?? target.database;
+
+  /// 目标快照文件。
+  String get snapshotPath =>
+      p.join(target.directory, effectiveDatabase.fileName);
+}
+
+/// 一个正在写的还原点：目录已占住，元数据还没写（[RestorePointStore.commit] 写元数据、
+/// [RestorePointStore.discard] 删目录）。进程内登记着，写的过程中 [RestorePointStore.prune]
+/// 不会把它当残留删掉。
+class RestorePointDraft {
+  const RestorePointDraft._({
+    required this.id,
+    required this.directory,
+    required this.kind,
+    required this.database,
+    required this.createdAtMs,
+  });
+
+  final String id;
+  final String directory;
+  final RestorePointKind kind;
+  final RestorePointDatabase database;
+  final int createdAtMs;
 }
 
 /// 仅供测试：在 `VACUUM INTO` 写出快照之后、校验之前返回 true，模拟快照失败（磁盘写满等
@@ -301,17 +401,26 @@ void Function(String step)? debugRestorePointRollbackStepForTesting;
 
 /// 一个库目录下的还原点存储。
 class RestorePointStore {
-  RestorePointStore(this.dbDirectory);
+  /// [rootDirectory] 缺省 = `<dbDirectory>/restore_points`；定时备份选了自定义文件夹时
+  /// 用那个文件夹（只放定时还原点，回滚与状态文件仍在默认位置）。
+  RestorePointStore(this.dbDirectory, {String? rootDirectory})
+    : _rootOverride = rootDirectory;
 
   /// 活库所在目录（`fushi.db` / `srs4.db` 都在这里）。
   final String dbDirectory;
+
+  final String? _rootOverride;
+
+  /// 进程内正在写的还原点目录（绝对路径）。
+  static final Set<String> _activeDrafts = <String>{};
 
   /// 宿主注入的 app 版本，写进新建还原点的元数据。fushi_core 自己不知道版本号，由 app /
   /// 服务端在开库前设置；没设置时元数据里为 null。
   static String? appVersion;
 
   /// 还原点根目录。
-  String get root => p.join(dbDirectory, kRestorePointsDirName);
+  String get root =>
+      _rootOverride ?? p.join(dbDirectory, kRestorePointsDirName);
 
   String _statusPath(RestorePointDatabase db) =>
       p.join(root, 'last_snapshot_status.${db.wire}.json');
@@ -580,6 +689,7 @@ class RestorePointStore {
       final String id = p.basename(e.path);
       if (!rollbackPending &&
           id.contains(marker) &&
+          !_activeDrafts.contains(e.path) &&
           !File(p.join(e.path, kRestorePointMetaFileName)).existsSync()) {
         _deleteDirQuietly(e.path);
       }
@@ -588,6 +698,7 @@ class RestorePointStore {
     for (final (RestorePointKind kind, int keep) in <(RestorePointKind, int)>[
       (RestorePointKind.preUpdate, kRestorePointKeepPreUpdate),
       (RestorePointKind.preRollback, kRestorePointKeepPreRollback),
+      (RestorePointKind.preOperation, kRestorePointKeepPreOperation),
     ]) {
       final List<RestorePoint> ofKind = <RestorePoint>[
         for (final RestorePoint point in points)
@@ -608,6 +719,170 @@ class RestorePointStore {
     return id;
   }
 
+  // ── 定时 / 操作前还原点（第二期） ─────────────────────────────────────────────
+
+  /// 占住一个新还原点目录（`<root>/<id>/`）。写完调 [commit]，失败调 [discard]。
+  RestorePointDraft begin({
+    required RestorePointKind kind,
+    RestorePointDatabase database = RestorePointDatabase.fushi,
+    int? nowMs,
+  }) {
+    final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    Directory(root).createSync(recursive: true);
+    final String id = _uniqueId(now, database, kind);
+    final String dir = p.join(root, id);
+    Directory(dir).createSync();
+    _activeDrafts.add(dir);
+    return RestorePointDraft._(
+      id: id,
+      directory: dir,
+      kind: kind,
+      database: database,
+      createdAtMs: now,
+    );
+  }
+
+  /// 写 [draft] 的元数据（完整标记，最后写）。[files] 缺省 = 目录里现有的文件。
+  RestorePoint commit(
+    RestorePointDraft draft, {
+    required int fromSchema,
+    required int toSchema,
+    String? reason,
+    List<String>? categories,
+    List<String>? excludedCategories,
+    bool? includesSrsMedia,
+  }) {
+    try {
+      final List<RestorePointFile> files =
+          <RestorePointFile>[
+            for (final FileSystemEntity f in Directory(
+              draft.directory,
+            ).listSync())
+              if (f is File && p.basename(f.path) != kRestorePointMetaFileName)
+                RestorePointFile(
+                  name: p.basename(f.path),
+                  size: f.lengthSync(),
+                ),
+          ]..sort(
+            (RestorePointFile a, RestorePointFile b) =>
+                a.name.compareTo(b.name),
+          );
+      final RestorePoint point = RestorePoint(
+        id: draft.id,
+        directory: draft.directory,
+        kind: draft.kind,
+        database: draft.database,
+        createdAtMs: draft.createdAtMs,
+        fromSchema: fromSchema,
+        toSchema: toSchema,
+        appVersion: appVersion,
+        files: files,
+        reason: reason,
+        categories: categories,
+        excludedCategories: excludedCategories,
+        includesSrsMedia: includesSrsMedia,
+      );
+      _writeAtomicSync(
+        p.join(draft.directory, kRestorePointMetaFileName),
+        jsonEncode(point.toJson()),
+      );
+      return point;
+    } finally {
+      _activeDrafts.remove(draft.directory);
+    }
+  }
+
+  /// 放弃 [draft]：删掉半截目录。
+  void discard(RestorePointDraft draft) {
+    _activeDrafts.remove(draft.directory);
+    _deleteDirQuietly(draft.directory);
+  }
+
+  /// 操作前还原点：[fushiDbPath] 非空时 `VACUUM INTO` 主库（活库开着也行：另开一条只读连接，
+  /// WAL 下读到一致的已提交状态），[snapshotSrs] 非空时由调用方把复习库快照写到给定路径
+  /// （复习库归 Rust 内核独占，走内核自己的快照命令）。主库副本再 `quick_check`，最后写元数据，
+  /// 然后按 [kRestorePointKeepPreOperation] 修剪。失败删掉半截目录并抛出，由调用方决定要不要
+  /// 继续那个操作。两个都没给时抛 [ArgumentError]。
+  Future<RestorePoint> createPreOperationPoint({
+    required String reason,
+    String? fushiDbPath,
+    Future<void> Function(String destPath)? snapshotSrs,
+  }) async {
+    if (fushiDbPath == null && snapshotSrs == null) {
+      throw ArgumentError('nothing to snapshot');
+    }
+    final RestorePointDraft draft = begin(
+      kind: RestorePointKind.preOperation,
+      database: fushiDbPath != null
+          ? RestorePointDatabase.fushi
+          : RestorePointDatabase.srs,
+    );
+    try {
+      int schema = 0;
+      if (fushiDbPath != null && File(fushiDbPath).existsSync()) {
+        final String dest = p.join(
+          draft.directory,
+          RestorePointDatabase.fushi.fileName,
+        );
+        await Isolate.run(() => _vacuumIntoSync(fushiDbPath, dest));
+        await Isolate.run(() => _quickCheckSync(dest));
+        schema = await Isolate.run(() => readSqliteUserVersionSync(dest));
+      }
+      if (snapshotSrs != null) {
+        await snapshotSrs(
+          p.join(draft.directory, RestorePointDatabase.srs.fileName),
+        );
+      }
+      if (Directory(draft.directory).listSync().isEmpty) {
+        throw const FileSystemException('no database to snapshot');
+      }
+      final RestorePoint point = commit(
+        draft,
+        fromSchema: schema,
+        toSchema: schema,
+        reason: reason,
+      );
+      prune(draft.database);
+      fushiDebugPrint('[restore-points] pre-operation ($reason): ${point.id}');
+      return point;
+    } on Object {
+      discard(draft);
+      rethrow;
+    }
+  }
+
+  /// 定时还原点的保留（[policy] 缺省 [kRestorePointScheduledRetention]）。[protectId] 那一份
+  /// （刚写好的）永不删；返回删掉的点。只动 [root] 下的定时还原点。
+  List<RestorePoint> pruneScheduled({
+    String? protectId,
+    DateTime? now,
+    BackupRetentionPolicy policy = kRestorePointScheduledRetention,
+  }) {
+    final List<RestorePoint> scheduled = <RestorePoint>[
+      for (final RestorePoint point in list())
+        if (point.kind == RestorePointKind.scheduled) point,
+    ];
+    final List<RestorePoint> doomed = planBackupRetention<RestorePoint>(
+      scheduled,
+      timestampOf: (RestorePoint point) => point.createdAt,
+      now: (now ?? DateTime.now()).toUtc(),
+      policy: policy,
+      sizeOf: (RestorePoint point) => point.totalBytes,
+      protect: (RestorePoint point) => point.id == protectId,
+    );
+    for (final RestorePoint point in doomed) {
+      _deleteDirQuietly(point.directory);
+    }
+    return doomed;
+  }
+
+  /// 删掉一个还原点（还原点页「删除」）。
+  void delete(RestorePoint point) {
+    final Directory dir = Directory(point.directory);
+    if (!dir.existsSync()) return;
+    dir.deleteSync(recursive: true);
+  }
+
   // ── 回滚 ────────────────────────────────────────────────────────────────────
 
   /// 把 [plans] 里每个库换回它的目标还原点。调用方保证这些库**都关着**（没有任何连接）。
@@ -622,19 +897,19 @@ class RestorePointStore {
     if (plans.isEmpty) return const <RestorePoint>[];
     if (hasPendingRollback) await recoverPendingRollback();
     for (final RestorePointRollbackPlan plan in plans) {
-      final String snapshot = plan.target.snapshotPath;
+      final String snapshot = plan.snapshotPath;
       await Isolate.run(() => _quickCheckSync(snapshot));
     }
     // 活库还被别的句柄占着（Windows 上改不了名）时在写日志之前就失败：否则日志落了盘，
     // 下次启动会把一次用户以为失败了的回滚补完。
     for (final RestorePointRollbackPlan plan in plans) {
-      _probeMovable(p.join(dbDirectory, plan.target.database.fileName));
+      _probeMovable(p.join(dbDirectory, plan.effectiveDatabase.fileName));
     }
     final int now = DateTime.now().millisecondsSinceEpoch;
     Directory(root).createSync(recursive: true);
     final List<_RollbackEntry> entries = <_RollbackEntry>[];
     for (final RestorePointRollbackPlan plan in plans) {
-      final RestorePointDatabase db = plan.target.database;
+      final RestorePointDatabase db = plan.effectiveDatabase;
       final String live = p.join(dbDirectory, db.fileName);
       int liveSchema = 0;
       if (File(live).existsSync()) {
