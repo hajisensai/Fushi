@@ -371,7 +371,12 @@ class RestorePointStore {
   /// 目前新代复习库没有原地升级阶梯（Rust 不会建复习库的更新前还原点），这条恒为 null；
   /// 阶梯落地后自动生效。
   RestorePoint? companionSrsPoint(RestorePoint mainPoint) {
-    if (mainPoint.database != RestorePointDatabase.fushi) return null;
+    // 只有「更新前」点有配对：别的种类（回滚前、以后的定时 / 操作前点）不是某次更新拍的，
+    // 拿时间窗去配一份复习库更新前快照，会把那次更新以来的复习记录悄悄换掉。
+    if (mainPoint.database != RestorePointDatabase.fushi ||
+        mainPoint.kind != RestorePointKind.preUpdate) {
+      return null;
+    }
     final List<RestorePoint> srsPoints = <RestorePoint>[
       for (final RestorePoint point in list(database: RestorePointDatabase.srs))
         if (point.kind == RestorePointKind.preUpdate) point,

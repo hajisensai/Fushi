@@ -373,6 +373,18 @@ void main() {
         store().companionSrsPoint(main)?.database,
         RestorePointDatabase.srs,
       );
+      // 不是「更新前」点（例如回滚前点）：不配对。
+      final RestorePoint notPreUpdate = RestorePoint(
+        id: main.id,
+        directory: main.directory,
+        kind: RestorePointKind.preRollback,
+        database: main.database,
+        createdAtMs: main.createdAtMs,
+        fromSchema: main.fromSchema,
+        toSchema: main.toSchema,
+        files: main.files,
+      );
+      expect(store().companionSrsPoint(notPreUpdate), isNull);
       // 复习库之后又被升过：不配对。
       sqlite3.sqlite3.open(live)
         ..execute("UPDATE srs_meta SET value = '40028'")
