@@ -4709,13 +4709,15 @@ const int kFushiHeaderMoreEntryOverflowPriority = -1000;
 
 /// 「⋯」菜单项 → 平铺的图标钮：文案只进 tooltip（[FushiIconButton] 由它出
 /// Semantics），沿用菜单项的 key（测试 / 焦点驱动按同一个 key 定位，无论它此刻
-/// 平铺还是在菜单里）、同一个回调、同一个禁用态。
+/// 平铺还是在菜单里）、同一个回调、同一个禁用态。[FushiHeaderMoreEntry.busy]
+/// 时这颗按钮置灰不可重入，并恒外露（进行中的状态不能藏进「⋯」）。
 FushiIconButton _headerActionOfMoreEntry(FushiHeaderMoreEntry entry) =>
     FushiIconButton(
       key: entry.key,
       icon: entry.icon,
       tooltip: entry.label,
-      enabled: entry.enabled,
+      enabled: entry.enabled && !entry.busy,
+      alwaysVisible: entry.busy,
       overflowPriority: kFushiHeaderMoreEntryOverflowPriority,
       onTap: entry.onSelected,
     );

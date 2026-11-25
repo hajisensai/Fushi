@@ -27,6 +27,7 @@ class FushiHeaderMoreEntry {
     required this.label,
     required this.onSelected,
     this.enabled = true,
+    this.busy = false,
     this.section,
   });
 
@@ -36,6 +37,11 @@ class FushiHeaderMoreEntry {
   final String label;
   final FutureOr<void> Function() onSelected;
   final bool enabled;
+
+  /// 动作正在跑（如全库刷新）：平铺成图标钮时就是这一颗按钮置灰锁住，且进行
+  /// 期间恒外露、不被收进「⋯」——页面不必为「进行中」另挂一颗同图标的按钮
+  /// （那样平铺后就是并排两颗刷新）；留在菜单里时同样置灰不可重入。
+  final bool busy;
 
   /// 所在分节的小标题（iOS / macOS 菜单的 section header）；相邻项分节不同时菜单里
   /// 插分隔线 + 小标题。null = 不分节。
@@ -159,7 +165,7 @@ class FushiHeaderMoreButton extends StatelessWidget {
   ) => PopupMenuItem<FushiHeaderMoreEntry>(
     key: entry.key,
     value: entry,
-    enabled: entry.enabled,
+    enabled: entry.enabled && !entry.busy,
     child: Row(
       children: <Widget>[
         FushiIcon(entry.icon, size: 20),
