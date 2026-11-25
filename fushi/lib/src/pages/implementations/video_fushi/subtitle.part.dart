@@ -2384,7 +2384,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }
 
   /// 远端直出容器里的**图形**轨（PGS / VobSub / DVB）交给 libmpv 自绘
-  /// （[VideoPlayerController.selectEmbeddedGraphicTrack]），选中即持久化选择。
+  /// （[VideoPlayerController.selectEmbeddedGraphicTrack]），选中即持久化选择
+  /// （[remember] 为 false 时不记：起播沿用兄弟成员来的轨，BUG-5464）。
   ///
   /// 逐句时间表照样有：边播边记恒开；整轨来源——互联 host 回传它抽好的整轨（client
   /// 不读整片，[buildRemoteGraphicSubtitleTimingInput]），其它来源（媒体服务器 / URL
@@ -2396,6 +2397,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     RemoteVideoEmbeddedSubtitleTrack track, {
     required String source,
     required String label,
+    bool remember = true,
   }) async {
     if (!_remoteGraphicTrackSelectable(track)) return false;
     final int seq = _episodeLoadSeq;
@@ -2420,7 +2422,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
     _rebuild(() => _currentSubtitleSource = source);
-    _rememberRemoteSubtitleSource(subUid, subEp, source);
+    if (remember) _rememberRemoteSubtitleSource(subUid, subEp, source);
     // 图形轨只能当画面渲染、逐字查词要暂停 OCR——是降级而非成功，配色与本地一致。
     _showOsd(
       t.video_subtitle_graphic_shown(label: label),

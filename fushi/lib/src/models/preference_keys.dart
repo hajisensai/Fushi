@@ -1269,6 +1269,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_remember_orientation',
   'video_remote_control_layout',
   'video_remote_subtitle',
+  // JSON map `{remoteSubtitleKey: RemoteSubtitleChoiceDescriptor.toJson}`：远端视频按集
+  // 记下的字幕选择附带的轨描述（语言 + 标题 + 文本 / 图形，或 host 外挂字幕的尾巴），
+  // 带着它描述的选择值；远端合集里没选过字幕的成员按它沿用兄弟成员最近的选择
+  // （BUG-5464）。值里没有路径，不进 kPathRebasePrefs。
+  'video_remote_subtitle_descriptor',
   // JSON map `{remoteSubtitleKey: [绝对路径...]}`：远端视频按集记下的本机字幕档
   // （在线下载 / 手动导入，落 <documents>/video_subtitles），重进 / 换集时重建字幕轨
   // 列表里的「本机字幕」行（Xt3RCTPKhX）。数据根迁移按 kPathRebasePrefs 改写。
