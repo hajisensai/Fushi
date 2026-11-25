@@ -20,10 +20,12 @@ import 'package:fushi_engine/sync/sync_channel_scope.dart'
 ///
 /// 这批用例钉的是「分槽」这件事本身：槽位怎么从后端推导、不同槽位互不可见、迁移
 /// 语义（旧全局键作初值 / folder 缓存丢弃重建）、以及键目录跟着一起展开。
-FushiDatabase _memDb() {
+Future<FushiDatabase> _memDb() async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   // 内存库默认关外键（cascade 用例会假绿）；本文件只碰 preferences，但仍按纪律开。
-  db.customStatement('PRAGMA foreign_keys = ON');
+  // 必须 await：close() 先封口（BUG-5406），不碰库的用例里没跑完的 PRAGMA 会在
+  // tearDown 封口后才到拦截器，被当成漏登记写手拦下，炸成未捕获异常。
+  await db.customStatement('PRAGMA foreign_keys = ON');
   return db;
 }
 
@@ -71,8 +73,8 @@ void main() {
     late FushiDatabase db;
     late SyncRepository repo;
 
-    setUp(() {
-      db = _memDb();
+    setUp(() async {
+      db = await _memDb();
       repo = SyncRepository(db);
     });
     tearDown(() => db.close());
@@ -170,8 +172,8 @@ void main() {
     late FushiDatabase db;
     late SyncRepository repo;
 
-    setUp(() {
-      db = _memDb();
+    setUp(() async {
+      db = await _memDb();
       repo = SyncRepository(db);
     });
     tearDown(() => db.close());
