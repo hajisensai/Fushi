@@ -1,12 +1,58 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-25T03:21:37Z",
+ "generatedAt": "2026-11-25T03:57:55Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "d67d663ae71e134f779aa912ed705e3deb2410c3",
-  "seq": 32559
+  "sha": "4299e148e69ca4865e5b301fc6123920e77006fc",
+  "seq": 32564
  },
  "builds": [
+  {
+   "seq": 32559,
+   "version": "3.4.0",
+   "sha": "d67d663ae71e134f779aa912ed705e3deb2410c3",
+   "unknown": false,
+   "publishedAt": "2026-11-25T03:57:38Z",
+   "testflight": false,
+   "baseSeq": 32552,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "d67d663ae71e134f779aa912ed705e3deb2410c3",
+     "subject": "Merge PR #4415: server-release auto 计划加构建下限，旧 app release 不当候选"
+    },
+    {
+     "sha": "d06815a7dfe5e04197cc3c16fc23f1b701cf0df4",
+     "subject": "Merge PR #4416: Android 书库对账探所有内部布局，布局 / 容器名锚进锚点文件（BUG-5450）"
+    },
+    {
+     "sha": "2be7027e773132e28ae426dde01ab60aaa062aad",
+     "subject": "fix(licenses): 重生成原生许可清单指纹，跟上 c0f1f03d14 给 fushi_fsrs 的 rusqlite 加 hooks 特性（native_license_registry 守卫红）"
+    },
+    {
+     "sha": "4f21942be4a461312fbcf5d6654facdca2b2a943",
+     "subject": "docs(release): 3.4.0 公告：生成字幕措辞跟上 #4400，修复条目放在「另有 600 多项」之前"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45539175817"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45539175817"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45539175817"
+    }
+   }
+  },
   {
    "seq": 32552,
    "version": "3.4.0",
@@ -335,105 +381,47 @@
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45395456521"
     }
    }
-  },
-  {
-   "seq": 32216,
-   "version": "3.4.0",
-   "sha": "58b4601e536e05ee724872e8e37574956fa3af8c",
-   "unknown": false,
-   "publishedAt": "2026-11-24T09:48:45Z",
-   "testflight": false,
-   "baseSeq": 32203,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "58b4601e536e05ee724872e8e37574956fa3af8c",
-     "subject": "chore(bugs): reindex after merging #4363 #4357 #4359 #4361 #4360"
-    },
-    {
-     "sha": "d8237eb7091001876eb303f367d59e40bc9e82de",
-     "subject": "Merge #4360 (claude/mine-toast-start-illustrations) into develop"
-    },
-    {
-     "sha": "af2ec3ca0de65eb93c74d0e12cf1321cc6c4de70",
-     "subject": "Merge #4361 (claude/fix-manga-ocr-page-identity) into develop"
-    },
-    {
-     "sha": "792114808fbabf7065b34e8ab7009156892857b0",
-     "subject": "Merge #4359 (claude/fix-popup-sentence-today-card) into develop"
-    },
-    {
-     "sha": "ad9e10089fddcdef955910ff03a3bd26367a8f9d",
-     "subject": "Merge #4357 (claude/player-episode-rail-stills) into develop"
-    },
-    {
-     "sha": "072d5c20f055acb039efb621ed4304fb133653f5",
-     "subject": "Merge #4363 (claude/fix-develop-guards) into develop"
-    },
-    {
-     "sha": "31b0a46cf4b40d0defef3d49938f02338a23294b",
-     "subject": "chore(bugs): settle BUG number collisions on f8f284717"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
-    },
-    "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
-    },
-    "macos": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
-    },
-    "ios": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45353855358"
-    }
-   }
   }
  ],
  "pending": {
-  "headSha": "d67d663ae71e134f779aa912ed705e3deb2410c3",
-  "headSeq": 32559,
+  "headSha": "4299e148e69ca4865e5b301fc6123920e77006fc",
+  "headSeq": 32564,
   "prs": [],
   "direct": [
    {
-    "sha": "d67d663ae71e134f779aa912ed705e3deb2410c3",
-    "subject": "Merge PR #4415: server-release auto 计划加构建下限，旧 app release 不当候选"
+    "sha": "4299e148e69ca4865e5b301fc6123920e77006fc",
+    "subject": "chore(readme): refresh development activity chart [skip ci]"
    },
    {
-    "sha": "d06815a7dfe5e04197cc3c16fc23f1b701cf0df4",
-    "subject": "Merge PR #4416: Android 书库对账探所有内部布局，布局 / 容器名锚进锚点文件（BUG-5450）"
+    "sha": "aba13f1799f3428f82390d4b62226084d00aa807",
+    "subject": "docs(release): 3.4.0 修复条目只和 3.3.0 正式版比：删掉调试版期间引入又修掉的（Windows 输入失灵、Android 书库位置丢失），ANR / 闪退写明场景，去掉含调试版修复的「600 多项」计数"
    },
    {
-    "sha": "2be7027e773132e28ae426dde01ab60aaa062aad",
-    "subject": "fix(licenses): 重生成原生许可清单指纹，跟上 c0f1f03d14 给 fushi_fsrs 的 rusqlite 加 hooks 特性（native_license_registry 守卫红）"
+    "sha": "b5f71537795c4eda32d839b4b9d3d101e6d5d660",
+    "subject": "docs(release): 3.4.0 公告精简：各节只留主要功能，修复只留用户最可能碰到的，注意事项去掉没变化的说明"
    },
    {
-    "sha": "4f21942be4a461312fbcf5d6654facdca2b2a943",
-    "subject": "docs(release): 3.4.0 公告：生成字幕措辞跟上 #4400，修复条目放在「另有 600 多项」之前"
+    "sha": "34e621c775a4485081c678e98514879bc2287c7b",
+    "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
+   },
+   {
+    "sha": "eb6196154301f02ba158dca9179a5fb5675fe119",
+    "subject": "docs(release): 3.4.0 公告补 #4416（书库布局记录丢失后整库「文件丢失」自愈）"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45539175576"
+    "state": "none"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45539175817"
+    "state": "none"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45539175817"
+    "state": "none"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45539175817"
+    "state": "none"
    }
   }
  },
