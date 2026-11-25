@@ -36,6 +36,7 @@ import 'music_server_ref.dart';
 import 'music_tables.dart';
 import 'music_video_match_cache_tables.dart';
 import 'pref_codec.dart';
+import 'restore_points.dart';
 import 'sql_functions.dart';
 import 'sqlite_busy_timeout.dart';
 import 'sync_tombstone_kind.dart';
@@ -987,12 +988,21 @@ LazyDatabase _openDb(
   _OpenedExecutorRef? ref,
 }) {
   return LazyDatabase(() async {
+    final RestorePointStore restorePoints = RestorePointStore(dbDirectory);
+    // 上次回滚崩在中途：先按日志补完（换回来的库要在任何连接之前就位）。只有主进程动文件。
+    if (isMainProcess) await restorePoints.recoverPendingRollback();
     await _rejectPreRenameDatabase(dbDirectory);
     final file = File(p.join(dbDirectory, fushiDatabaseFileName));
     final QueryExecutor executor = await _openWithRecovery(
       file,
       allowSidecarDelete: isMainProcess,
     );
+    // 更新前还原点：放在侧车恢复之后（WAL 已一致）、drift 首个查询跑迁移之前。
+    // `_openWithRecovery` 只做探测连接、交回惰性的后台连接，迁移要等首个查询的
+    // ensureOpen 才跑。只在主进程；全新库 / 同版本 / 降级 / 门槛以下都不建，失败只记录。
+    if (isMainProcess) {
+      await restorePoints.snapshotBeforeMigration(dbFilePath: file.path);
+    }
     ref?.executor = executor;
     return executor.interceptWith(_TypedOpenErrorInterceptor(file.path));
   });
