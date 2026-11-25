@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-25T04:22:22Z",
+ "generatedAt": "2026-11-25T14:59:00Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "4299e148e69ca4865e5b301fc6123920e77006fc",
-  "seq": 32564
+  "sha": "a46839d71b5c659860dad756f9c79b386a956fa2",
+  "seq": 32573
  },
  "builds": [
   {
@@ -353,10 +353,26 @@
   }
  ],
  "pending": {
-  "headSha": "4299e148e69ca4865e5b301fc6123920e77006fc",
-  "headSeq": 32564,
+  "headSha": "a46839d71b5c659860dad756f9c79b386a956fa2",
+  "headSeq": 32573,
   "prs": [],
   "direct": [
+   {
+    "sha": "a46839d71b5c659860dad756f9c79b386a956fa2",
+    "subject": "Merge PR #4432"
+   },
+   {
+    "sha": "5182a3f005ef2490d29787953aea9aa2c4628890",
+    "subject": "Merge PR #4438"
+   },
+   {
+    "sha": "d8125d57b6386261654d95dd3fe5b9bbffd9d279",
+    "subject": "Merge PR #4439"
+   },
+   {
+    "sha": "b367ce6899292e04a4f065125840f4f4aee69f27",
+    "subject": "Merge PR #4437"
+   },
    {
     "sha": "4299e148e69ca4865e5b301fc6123920e77006fc",
     "subject": "chore(readme): refresh development activity chart [skip ci]"
@@ -381,16 +397,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682054"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
    },
    "macos": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
    },
    "ios": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
    }
   }
  },
