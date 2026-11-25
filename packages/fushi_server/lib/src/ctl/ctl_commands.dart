@@ -256,6 +256,8 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   backup [ls] | create [--no-documents] | rm <name>
                                            整机备份（落 <data>/backups/；下载走
                                            GET /api/admin/backups/<name>）
+  backup run | schedule ['<json>']         立即跑一次自动备份 / 自动备份计划与状态（JSON 改计划：
+                                           interval、time、documents、maxTotalGb）
   device-backups [ls] | rm <设备键> <id> | rm <设备键> --yes
                                            已配对设备复制来的自动备份（下载走
                                            GET /api/admin/device-backups/<设备键>/<id>）
@@ -310,6 +312,8 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   backup [ls] | create [--no-documents] | rm <name>
                                            Whole-machine backup (stored in <data>/backups/; download via
                                            GET /api/admin/backups/<name>)
+  backup run | schedule ['<json>']         Run an automatic backup now / automatic backup schedule and status
+                                           (JSON changes it: interval, time, documents, maxTotalGb)
   device-backups [ls] | rm <device key> <id> | rm <device key> --yes
                                            Automatic backups copied here by paired devices (download via
                                            GET /api/admin/device-backups/<device key>/<id>)
@@ -1225,9 +1229,20 @@ _CtlRequest? _parseAction(
             'DELETE',
             '$_api/backups/${adminPathSegment(arg(0)!)}',
           );
+        // 自动备份（第 4B 期）：立即跑一次 / 计划与状态（带 JSON = 改计划）。
+        case 'run':
+          return const _CtlRequest('POST', '$_api/backups/run');
+        case 'schedule' || 'status' when arg(0) == null:
+          return const _CtlRequest('GET', '$_api/backups/schedule');
+        case 'schedule':
+          final Object? body = _jsonArg(arg(0)!, err);
+          return body == null
+              ? null
+              : _CtlRequest('PUT', '$_api/backups/schedule', body: body);
       }
       return usage(
-        'backup [ls] | backup create [--no-documents] | backup rm <name>',
+        'backup [ls] | backup create [--no-documents] | backup rm <name> | '
+        "backup run | backup schedule ['<json>']",
       );
 
     case kCtlDeviceBackupsAction:
@@ -1532,8 +1547,8 @@ void _renderBackups(Object? response, StringSink out) {
     if (item is Map) {
       out.writeln(
         tr(
-          '${item['name']}  ${item['bytes']} 字节',
-          '${item['name']}  ${item['bytes']} bytes',
+          '${item['name']}  ${item['kind'] ?? ''}  ${item['bytes']} 字节',
+          '${item['name']}  ${item['kind'] ?? ''}  ${item['bytes']} bytes',
         ),
       );
     }

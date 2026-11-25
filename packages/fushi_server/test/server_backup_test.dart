@@ -132,6 +132,7 @@ void main() {
 
       // 备份之后改动，再还原。
       await setPref('after');
+      _write(data('backups/fushi_server-auto-20261125-040000.zip'), 'auto');
       File(data('support/dictionaries/d.txt')).deleteSync();
       final String originalConfig = h.configFile.readAsStringSync();
       final ServerConfig cfg = await ServerConfig.load(h.configFile);
@@ -169,6 +170,14 @@ void main() {
         File(r['previousConfig']! as String).readAsStringSync(),
         contains('changed'),
       );
+      // 备份目录不在包里：留在原处（第 4B 期），还原之后自动 / 手动 / 更新前备份照样都在。
+      expect(
+        File(
+          data('backups/fushi_server-auto-20261125-040000.zip'),
+        ).readAsStringSync(),
+        'auto',
+      );
+      expect(Directory(p.join(previous.path, 'backups')).existsSync(), isFalse);
       await previous.delete(recursive: true);
     });
 

@@ -1,12 +1,19 @@
 /// admin API 的整机备份端点（`/api/admin/backups`）：在运行中的 serve 里做快照。
 ///
-/// - `GET  /api/admin/backups`          列出 `<data>/backups/` 里的备份 + 进行中 / 上次失败；
-/// - `POST /api/admin/backups`          后台开始一份（正文 `{"documents": false}` 跳过
-///                                       documents/），立即回 202 + 文件名；已在跑回 409；复习库正在换代迁移回
+/// - `GET  /api/admin/backups`          列出 `<data>/backups/` 里的备份（`kind`：manual / auto / pre_update）+ 进行中 /
+///                                       上次手动失败 + 自动备份的计划（`schedule`）与状态（`status`）+ 还原用的路径；
+/// - `POST /api/admin/backups`          后台开始一份**手动**备份（永不被自动删；正文 `{"documents": false}` 跳过
+///                                       documents/），立即回 202 + 文件名；已在跑（任何来源）回 409；复习库正在换代迁移回
 ///                                       409 `srs_migration_running`（提交点会改名出 `srs4.db`、原位封存 `srs.db`，中途拷
 ///                                       出来的包可能只有封存的旧库）。备份期间迁移不开始，备份完再判定（`ServerSrs.holdForBackup`）；
+/// - `GET  /api/admin/backups/schedule` 自动备份的计划 + 状态；
+/// - `PUT  /api/admin/backups/schedule` 改计划（`interval` / `time` / `documents` / `maxTotalGb`，缺的项不变），写回配置文件；
+/// - `POST /api/admin/backups/run`      立即跑一次自动备份（不看到期、不因「没变化」跳过；之后照常修剪），202 / 409；
 /// - `GET  /api/admin/backups/<name>`   下载；
-/// - `DELETE /api/admin/backups/<name>` 删除。
+/// - `DELETE /api/admin/backups/<name>` 删除（任何来源；正在写的那份 404）。
+///
+/// `<name>` 只认三种备份文件名（`server_backup_store.dart`），别的一律 404，也就不可能用 `..` 之类走出备份目录。
+/// 还原必须停服后用 CLI（`fushi_server backup restore <file> --yes`），这里不提供。
 ///
 /// 备份里有配置文件（admin_token / 凭据），所以这组端点只在 admin 面上，不进远端 AI
 /// 助手的操作目录（见 admin_ops.dart「不描述」）。
@@ -16,38 +23,26 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
-import 'package:fushi_server/src/backup/server_backup.dart';
-import 'package:fushi_server/src/server_srs.dart'
-    show ServerSrs, ServerSrsBackupHold;
+import 'package:fushi_server/src/backup/server_backup_service.dart';
+import 'package:fushi_server/src/backup/server_backup_store.dart';
+import 'package:fushi_server/src/config/server_backup_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 
 const String kAdminBackupsPath = '/api/admin/backups';
-
-/// admin API 生成的备份文件名（[serverBackupFileName] 的形状）；别的名字一律 404，
-/// 也就不可能用 `..` 之类走出备份目录。
-final RegExp _backupName = RegExp(
-  r'^fushi_server-backup-\d{8}-\d{6}(-\d+)?\.zip$',
-);
+const String _kSchedulePath = '$kAdminBackupsPath/schedule';
+const String _kRunPath = '$kAdminBackupsPath/run';
 
 class AdminBackups {
-  AdminBackups(this.ctx, {DateTime Function()? now})
-    : _now = now ?? DateTime.now;
+  AdminBackups(this.ctx);
 
   final AdminContext ctx;
-  final DateTime Function() _now;
 
-  String? _running;
-  Future<void>? _job;
-  String? _lastError;
-
-  Directory get _dir =>
-      Directory(p.join(ctx.config.dataDir, kServerBackupDirName));
+  ServerBackupService get _service => ctx.backups;
 
   /// 进行中的那份（测试用来等它跑完）。
-  Future<void>? get pending => _job;
+  Future<void>? get pending => _service.pending;
 
   Future<shelf.Response?> route(
     String method,
@@ -56,20 +51,33 @@ class AdminBackups {
   ) async {
     if (path == kAdminBackupsPath) {
       if (method == 'GET') return _list();
-      if (method == 'POST') return _start(request);
+      if (method == 'POST') return _startManual(request);
+      return null;
+    }
+    if (path == _kSchedulePath) {
+      if (method == 'GET') return _jsonResponse(_scheduleJson());
+      if (method == 'PUT') return _putSchedule(request);
+      return null;
+    }
+    if (path == _kRunPath) {
+      if (method == 'POST') return _runNow();
       return null;
     }
     if (!path.startsWith('$kAdminBackupsPath/')) return null;
+    if (method != 'GET' && method != 'DELETE') return null;
     final String name = Uri.decodeComponent(
       path.substring(kAdminBackupsPath.length + 1),
     );
-    if (method != 'GET' && method != 'DELETE') return null;
-    final File file = File(p.join(_dir.path, name));
-    if (!_backupName.hasMatch(name) || name == _running || !file.existsSync()) {
+    final File file = File(p.join(_service.dir.path, name));
+    if (!isServerBackupFileName(name) ||
+        name == _service.running ||
+        !file.existsSync()) {
       return _jsonResponse(<String, Object?>{'error': 'not found'}, 404);
     }
     if (method == 'DELETE') {
-      await file.delete();
+      if (!await _service.delete(name)) {
+        return _jsonResponse(<String, Object?>{'error': 'not found'}, 404);
+      }
       return _jsonResponse(const <String, Object?>{'ok': true});
     }
     return shelf.Response.ok(
@@ -83,88 +91,94 @@ class AdminBackups {
     );
   }
 
+  Map<String, Object?> _scheduleJson() => <String, Object?>{
+    'schedule': ctx.config.backup.toJson(),
+    'status': _service.status.toJson(),
+    'running': _service.running,
+    'runningKind': _service.runningKind?.wire,
+  };
+
   Future<shelf.Response> _list() async {
     final List<Map<String, Object?>> items = <Map<String, Object?>>[];
-    if (_dir.existsSync()) {
-      for (final FileSystemEntity e in _dir.listSync()) {
-        final String name = p.basename(e.path);
-        if (e is! File || !_backupName.hasMatch(name) || name == _running) {
-          continue;
-        }
-        final FileStat st = e.statSync();
-        items.add(<String, Object?>{
-          'name': name,
-          'bytes': st.size,
-          'modifiedAt': st.modified.toUtc().toIso8601String(),
-        });
+    for (final ServerBackupEntry e in _service.list()) {
+      final File f = File(p.join(_service.dir.path, e.name));
+      DateTime? modified;
+      try {
+        modified = f.statSync().modified;
+      } on FileSystemException {
+        modified = null;
       }
+      items.add(<String, Object?>{
+        ...e.toJson(),
+        'modifiedAt': modified?.toUtc().toIso8601String(),
+      });
     }
-    items.sort(
-      (Map<String, Object?> a, Map<String, Object?> b) =>
-          (b['name']! as String).compareTo(a['name']! as String),
-    );
     return _jsonResponse(<String, Object?>{
-      'running': _running,
-      'lastError': _lastError,
+      ..._scheduleJson(),
+      'lastError': _service.lastManualError,
       'items': items,
+      // WebUI 拼还原命令用（还原要停服，只能走 CLI）。
+      'backupsDir': _service.dir.path,
+      'configFile': ctx.configFile.path,
     });
   }
 
-  Future<shelf.Response> _start(shelf.Request request) async {
-    if (_running != null) {
-      return _jsonResponse(<String, Object?>{
-        'error': 'backup in progress',
-        'running': _running,
-      }, 409);
-    }
+  Future<shelf.Response> _startManual(shelf.Request request) async {
     final String raw = await request.readAsString();
     final Object? body = raw.trim().isEmpty ? null : jsonDecode(raw);
     final Object? docs = body is Map ? body['documents'] : null;
     if (docs != null && docs is! bool) {
       throw const FormatException('documents must be a boolean');
     }
-    // 复习库目录在迁移中不一致：拒绝；不在迁移就占住，备份期间不让迁移开始（复习关着 = 没有 ServerSrs，不用占）。
-    final ServerSrs? srs = ctx.host.srs;
-    final ServerSrsBackupHold? hold = srs?.holdForBackup();
-    if (srs != null && hold == null) {
-      return _jsonResponse(<String, Object?>{
-        'error': 'srs_migration_running',
-      }, 409);
-    }
-    String name = serverBackupFileName(_now());
-    for (int i = 2; File(p.join(_dir.path, name)).existsSync(); i++) {
-      name = serverBackupFileName(_now()).replaceFirst('.zip', '-$i.zip');
-    }
-    _running = name;
-    _lastError = null;
-    _job = _run(name, includeDocuments: docs as bool? ?? true, hold: hold);
-    return _jsonResponse(<String, Object?>{'name': name}, 202);
+    final ServerBackupStart start = _service.startManual(
+      includeDocuments: docs as bool? ?? true,
+    );
+    return _startResponse(start);
   }
 
-  Future<void> _run(
-    String name, {
-    required bool includeDocuments,
-    required ServerSrsBackupHold? hold,
-  }) async {
-    try {
-      // 备份目录只给属主：里面每份包都含全部凭据。
-      await _dir.create(recursive: true);
-      await restrictServerBackupPath(_dir.path, '700');
-      await createServerBackup(
-        db: ctx.db,
-        dataDir: ctx.config.dataDir,
-        configFile: ctx.configFile,
-        output: File(p.join(_dir.path, name)),
-        includeDocuments: includeDocuments,
-        snapshotSrs: ctx.host.srs?.snapshotFn,
-      );
-    } catch (e, stack) {
-      _lastError = '$e';
-      engineLog.log('AdminBackups.create', e, stack);
-    } finally {
-      _running = null;
-      hold?.release();
+  Future<shelf.Response> _runNow() async =>
+      _startResponse(_service.startAutomatic(force: true));
+
+  shelf.Response _startResponse(ServerBackupStart start) {
+    switch (start.refusal) {
+      case null:
+        return _jsonResponse(<String, Object?>{'name': start.name}, 202);
+      case ServerBackupRefusal.srsMigration:
+        return _jsonResponse(<String, Object?>{
+          'error': 'srs_migration_running',
+        }, 409);
+      case ServerBackupRefusal.busy ||
+          ServerBackupRefusal.disabled ||
+          ServerBackupRefusal.notDue:
+        return _jsonResponse(<String, Object?>{
+          'error': 'backup in progress',
+          'running': _service.running,
+        }, 409);
     }
+  }
+
+  Future<shelf.Response> _putSchedule(shelf.Request request) async {
+    final Object? body = jsonDecode(await request.readAsString());
+    if (body is! Map) throw const FormatException('JSON object body required');
+    final ServerBackupConfig current = ctx.config.backup;
+    final Object? docs = body['documents'];
+    if (docs != null && docs is! bool) {
+      throw const FormatException('documents must be a boolean');
+    }
+    final Object? gb = body['maxTotalGb'];
+    if (gb != null && gb is! int) {
+      throw const FormatException('maxTotalGb must be an integer');
+    }
+    final ServerBackupConfig next = current.copyWith(
+      interval: ServerBackupInterval.tryParse(body['interval']),
+      minuteOfDay: ServerBackupConfig.parseTime(body['time']),
+      includeDocuments: docs as bool?,
+      maxTotalGb: ServerBackupConfig.parseMaxTotalGb(gb),
+    );
+    if (next != current) {
+      await ctx.updateConfig(ctx.config.copyWith(backup: next));
+    }
+    return _jsonResponse(_scheduleJson());
   }
 }
 

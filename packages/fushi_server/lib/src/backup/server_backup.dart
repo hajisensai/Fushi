@@ -25,7 +25,8 @@
 ///
 /// 还原只在离线时做（拿数据目录锁，serve 在跑就拒绝）：新数据先解到旁边的暂存目录，
 /// 再把现有数据目录的内容整体挪到 `<data_dir>.pre-restore-<时间>/`，最后把暂存内容
-/// 挪进来；任何一步失败都挪回去。旧数据不删，确认无误后由用户自己删。
+/// 挪进来；任何一步失败都挪回去。旧数据不删，确认无误后由用户自己删。`backups/`（不在包里）
+/// 与锁文件留在原处：还原之后自动 / 手动 / 更新前备份照样都在。
 library;
 
 import 'dart:convert';
@@ -251,6 +252,21 @@ Future<File> createServerBackup({
   }
 }
 
+/// 一份备份读的全部源文件（数据目录里进包的文件 + 主库 / 新代复习库及其 `-wal`），给自动备份的
+/// 「没变化就跳过」算指纹用（`server_backup_service.dart`）。快照替代的 `-shm` / `-journal` 不算：读库也会动它们。
+List<String> serverBackupSourceFiles(
+  String dataDir, {
+  required bool includeDocuments,
+}) => <String>[
+  for (final String db in <String>[
+    fushiDatabaseFileName,
+    kSrsGen4DatabaseFileName,
+  ])
+    for (final String suffix in <String>['', '-wal'])
+      p.join(dataDir, 'support', '$db$suffix'),
+  ..._dataFiles(Directory(dataDir), includeDocuments: includeDocuments).values,
+];
+
 /// 数据目录里要进包的文件：zip 条目名 → 源路径。
 Map<String, String> _dataFiles(
   Directory data, {
@@ -422,7 +438,12 @@ Future<ServerRestoreResult> restoreServerBackup({
     await data.create(recursive: true);
     try {
       for (final FileSystemEntity e in data.listSync(followLinks: false)) {
-        if (p.basename(e.path) == kServerLockFileName) continue;
+        final String name = p.basename(e.path);
+        // 锁文件与备份目录留在原处：备份目录不在包里，挪走它 = 还原之后这台服务端的备份全看不见了
+        // （还原的那份包往往就在里面）。
+        if (name == kServerLockFileName || name == kServerBackupDirName) {
+          continue;
+        }
         await previous.create(recursive: true);
         await e.rename(p.join(previous.path, p.basename(e.path)));
         moved.add(p.basename(e.path));
@@ -599,7 +620,3 @@ String _stamp(DateTime t) {
   return '${t.year}${two(t.month)}${two(t.day)}-'
       '${two(t.hour)}${two(t.minute)}${two(t.second)}';
 }
-
-/// admin API 生成的备份文件名。
-String serverBackupFileName(DateTime t) =>
-    'fushi_server-backup-${_stamp(t)}.zip';
