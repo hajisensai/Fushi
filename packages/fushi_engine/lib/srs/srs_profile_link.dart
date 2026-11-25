@@ -60,8 +60,7 @@ import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
         srsLocationDirOf;
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart' show kSrs4Root;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
-import 'package:fushi_srs/fushi_srs.dart'
-    show SrsCore, SrsKernelIds, SrsProfileUnboundException;
+import 'package:fushi_srs/fushi_srs.dart' show SrsKernelIds;
 
 /// srs.db `srs_meta`：本设备改用别的 uid 之前用过的同步 v2 设备身份（JSON 数组）。换 uid 后本机在新集合里是新的
 /// v2 设备，旧集合的本机身份行也随并入删掉了——不记下来就认不出同步目录里那个旧 uid 目录是自己留下的孤儿。
@@ -242,6 +241,7 @@ String srsV2WriterName(String device) => 'v2:$device';
 /// 新代（[ownCollection] 非 null，[localUid] 是本机集合的目录名）：集合标识等于 [ownCollection] 或在 [joined]（已经并进
 /// 本机集合的）里的目录、读不出集合标识的目录（没立过根，认领不了）不算候选；本机目录里有指向别的集合的并入提示（[SrsRemoteProfile.joinHints]）、提示的集合在
 /// [remote] 里对得上且目录名比本机小时，直接交给用户再确认一次（D25），不看「已关联」。
+/// [otherLocalCollections] 已经属于本机其他 profile，同样不算候选。
 SrsProfileLinkDecision srsDecideProfileLink({
   required String localUid,
   required String localName,
@@ -253,6 +253,7 @@ SrsProfileLinkDecision srsDecideProfileLink({
   bool settled = false,
   String? ownCollection,
   Set<String> joined = const <String>{},
+  Set<String> otherLocalCollections = const <String>{},
 }) {
   bool own(String w) =>
       srsWriterOfDevice(w, deviceId) ||
@@ -263,7 +264,8 @@ SrsProfileLinkDecision srsDecideProfileLink({
         if (r.uid == localUid ||
             (r.collection != null &&
                 r.collection != ownCollection &&
-                !joined.contains(r.collection)))
+                !joined.contains(r.collection) &&
+                !otherLocalCollections.contains(r.collection)))
           r,
     ];
     final SrsRemoteProfile? self = remote
@@ -972,7 +974,10 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     }
     final List<SrsRemoteProfile> remote = await srsListRemoteProfiles(backend);
     await _removeRetiredFolders(backend, store, remote);
-    final _SrsOwnCollection own = await _ownCollection(store);
+    final _SrsOwnCollection own = await _ownCollection(
+      store,
+      includeOtherCollections: true,
+    );
     // 「本机有数据」看的是全部用户数据（[SrsDbStore.hasUserData]），不只是笔记：只建了牌组 / 改了预设、还没有笔记的
     // profile 也不能被当成空的自动采用（新代认领不删数据，但空不空决定是自动认领还是交给用户选）。
     final bool localHasNotes = await store.hasUserData();
@@ -988,6 +993,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       settled: binding?.settledElsewhere(directoryKey) ?? false,
       ownCollection: own.collection,
       joined: own.joined,
+      otherLocalCollections: own.otherCollections,
     );
     switch (decision) {
       case SrsProfileLinkKeep(:final bool linked):
@@ -1005,15 +1011,7 @@ class SrsDbProfileLinker implements SrsProfileLinker {
             .where((SrsRemoteProfile r) => r.uid == uid)
             .firstOrNull;
         final String? collection = target?.collection;
-        // 目录里还没有集合（只有说明文件、没立过根）：认领不了，等它立了根再判。那个集合已是本机另一个 profile 的：
-        // 用户切过去就能同步，不动（内核也会拒绝把它绑给第二个 profile）。
-        if (target == null ||
-            collection == null ||
-            await _collectionTakenLocally(
-              collection,
-              store.profileUid,
-              store.core,
-            )) {
+        if (target == null || collection == null) {
           return SrsProfileLinkOutcome(store);
         }
         await _adoptCollection(backend, store, target, remote);
@@ -1091,11 +1089,11 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     if (target == null || collection == null) {
       throw StateError('no collection under $uid on this location');
     }
-    if (await _collectionTakenLocally(
-      collection,
-      store.profileUid,
-      store.core,
-    )) {
+    final _SrsOwnCollection own = await _ownCollection(
+      store,
+      includeOtherCollections: true,
+    );
+    if (own.otherCollections.contains(collection)) {
       throw StateError('collection $collection is another local profile');
     }
     await _adoptCollection(backend, store, target, remote);
@@ -1104,10 +1102,15 @@ class SrsDbProfileLinker implements SrsProfileLinker {
   }
 
   /// 本机 profile 现在的集合：标识、目录名、已经并进来的集合标识（内核 `collection_info`）。
-  Future<_SrsOwnCollection> _ownCollection(SrsDbStore store) async {
-    final Map<String, Object?> info = (await store.sync2Command(
-      <String, Object?>{'op': 'collection_info'},
-    )).map;
+  Future<_SrsOwnCollection> _ownCollection(
+    SrsDbStore store, {
+    bool includeOtherCollections = false,
+  }) async {
+    final Map<String, Object?> info =
+        (await store.sync2Command(<String, Object?>{
+          'op': 'collection_info',
+          if (includeOtherCollections) 'includeOtherCollections': true,
+        })).map;
     final List<({String from, String? dir})> joins = srsTrustedJoins(
       info['joins'],
     );
@@ -1116,6 +1119,9 @@ class SrsDbProfileLinker implements SrsProfileLinker {
       dir: info['dir']! as String,
       joined: <String>{for (final j in joins) j.from},
       joins: joins,
+      otherCollections: includeOtherCollections
+          ? (info['otherCollections']! as List<Object?>).cast<String>().toSet()
+          : const <String>{},
     );
   }
 
@@ -1182,34 +1188,6 @@ class SrsDbProfileLinker implements SrsProfileLinker {
     for (final ({String from, String? dir}) j in own.joins)
       if (j.dir != null && j.dir != own.dir) j.dir!,
   }.toList()..sort();
-
-  /// 集合 [collection] 已绑在本机 [store] 之外的某个 profile 上（内核 `collections.collection` 唯一，`collection_adopt`
-  /// 会拒绝把它绑给第二个 profile）。按主库的 profile 逐个问内核（profile 不多，`collection_info` 是一次读）。
-  Future<bool> _collectionTakenLocally(
-    String collection,
-    String exceptUid,
-    SrsCore core,
-  ) async {
-    for (final QueryRow r
-        in await db
-            .customSelect(
-              "SELECT uid FROM profiles WHERE uid IS NOT NULL AND uid != '' "
-              'AND uid != ?',
-              variables: <Variable<Object>>[Variable<String>(exceptUid)],
-            )
-            .get()) {
-      try {
-        final Object? c = core.sync2(<String, Object?>{
-          'op': 'collection_info',
-          'profile': r.read<String>('uid'),
-        }).map['collection'];
-        if (c == collection) return true;
-      } on SrsProfileUnboundException {
-        // 还没绑定的 profile 没有集合。
-      }
-    }
-    return false;
-  }
 
   /// 本机 profile 认领位置上的集合 [target]（内核 `collection_adopt`，`confirmed`：调用方已按规则决定 / 用户已选定），
   /// 再在 [backend] 上收拾位置（[remote] 是这一轮列出来的目录）：
@@ -1458,4 +1436,5 @@ typedef _SrsOwnCollection = ({
   String dir,
   Set<String> joined,
   List<({String from, String? dir})> joins,
+  Set<String> otherCollections,
 });
