@@ -672,6 +672,9 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
         AndroidLibraryAnchor(
           location: location,
           layout: toInternal ? AppPaths.documentsLayoutNested : null,
+          // 迁回内部的目标 `app_flutter/<容器>/data` 用的就是本进程的容器名，锚死它，
+          // 下次启动不再依赖 prefs 里那份可能被别的进程冲掉的容器锚点。
+          container: AppPaths.defaultDocumentsChildSegments.first,
         ),
       );
     } catch (e) {

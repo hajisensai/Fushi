@@ -1,0 +1,8 @@
+## BUG-5450 · Android 书库对账只探当前配置的内部根，布局 / 容器锚点被冲掉后永不自愈
+- **报告**：2026-11-25（用户：反馈 RCv76PPoiJ 的同一台小米 23116PN5BC，#4366 作者；升到 3.4.0-debug.32552 后书库仍全部「文件丢失」）
+- **真实性**：✅ 真 bug（代码路径缺口；该用户机器上的书到底是错位还是真被删，没拿到设备目录列表，未定）。根因：
+  - `fushi/lib/src/storage/app_paths.dart` 的旧 `_reconcileAndroidLocationWithDisk` 只拿**当前配置**推出来的那一个内部根（`documents_layout` + `documents_container` 两个 SharedPreferences 键）去比。这两个键和 BUG-5375 的位置锚点一样存在 prefs 里，会被别的进程的旧副本整份冲掉；`documents_layout` 丢了以后，`_ensureDocumentsLayoutDecided` 看到主库存在就判成 flat，内部根变成 `app_flutter` 本身。真书库在 `app_flutter/Hibiki/data` 下时，对账认定「两个根都没有书」，锚点停在空根，永远不自愈（32552 现场：外部只有 `fushiExport/.nomedia`，对账 17 ms 沿用外部）。
+  - 旧 `hasLibraryFiles` 用一次 `list(recursive: true)` 扫整个顶层项，中途任何一处 IO 错误都会被外层 `catch` 吞成 `onTimeout`（内部根传的是 `false`），别的目录里明明有书也判「没有」。
+- **[x] ① 已修复** — 布局与容器名写进锚点文件 `android_library_location.json`（`AndroidLibraryAnchor.container`，迁移提交时一并锚定），启动时锚点优先于 prefs；对账抽成 `AppPaths.reconcileAndroidLibraryRoots`：锚定的根没有书时，依次探对面根和 flat、`Fushi/data`、`Hibiki/data` 三种内部布局，第一个有书的胜出，位置、布局、容器一起改正并回写锚点与 prefs；全都没有时也把每个根的探测结论写进诊断日志（`AppPaths.androidLocation`），下次反馈能直接看出书在不在磁盘上。探测改成三态 `probeLibraryFiles`，逐个目录列举、各自容错。
+- **[x] ② 已加自动化测试** — `fushi/test/storage/android_documents_location_test.dart`「布局 / 容器锚点丢失（32552 用户复现）」组：锚点指外部空根且布局被冲成 flat、书在 `Hibiki/data` → 改回内部 nested Hibiki；锚点指内部但当前布局为空 → 只改布局；哪里都没有 → 沿用并列出探测结论；锚定根有书 → 不探其余布局。另有探测三态和锚点 container 编解码的用例。逐目录容错这一条在 Windows 上造不出「目录列不出来」的错误，没有单测覆盖。
+- **备注**：如果该用户的书确实已被物理删除（另一份分析认为如此，依据只是 `dumpsys diskstats` 的占用量下降 4.68 GB），本修复救不回来；要定案需要 `adb shell run-as app.fushi.reader ls -la app_flutter app_flutter/Hibiki/data app_flutter/Fushi/data`。32203 及更早的版本「移回内部 / 移到外部」前会无条件整树删除迁移目标，锚点错指时目标恰好是真书库，这是删书的已知路径，已由 9cc5ff9167（32267 起）堵上。
