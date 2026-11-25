@@ -3,6 +3,113 @@ part of '../sync_orchestrator.dart';
 /// 书籍域互联 live 内容 / 进度 / 阅读位置同步的私有实现（B2 按域拆出）。
 /// 公开入口 [SyncOrchestrator.importRemoteBooks] 留在本体；方法逐字搬自 SyncOrchestrator。
 extension _SyncOrchestratorBooks on SyncOrchestrator {
+  /// Download content only for existing managed rows whose primary content
+  /// disappeared. Remote-only books stay in their explicit download flow.
+  Future<void> _recoverMissingLiveBooks(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) async {
+    final BookContentRecovery recovery = BookContentRecovery(
+      db: _db,
+      tempDir: _tempDir,
+    );
+    final List<EpubBookRow> missing = await recovery.missingBooks();
+    if (missing.isEmpty) return;
+
+    final InterconnectHostPin pin = (await backend.liveHostScope()).pin;
+    await backend.withLiveBookSourcePin(pin, () async {
+      final DeletionTombstoneEntries? tombstones =
+          await _loadHostPushVetoTombstones(report, backend, 'recover books');
+      if (tombstones == null) return;
+
+      final List<RemoteBookInfo> remote = await backend.listRemoteBooks();
+      backend.checkHostPin(pin);
+      final Map<String, String> aliases = await _db.getPeerToLocalBookKeys();
+      final Map<String, List<RemoteBookInfo>> byKey =
+          <String, List<RemoteBookInfo>>{};
+      for (final RemoteBookInfo item in remote) {
+        final String? key = item.bookKey;
+        if (key == null ||
+            key.isEmpty ||
+            item.locked ||
+            item.isSubtitleBookBody) {
+          continue;
+        }
+        byKey.putIfAbsent(key, () => <RemoteBookInfo>[]).add(item);
+        final String? alias = aliases[key];
+        if (alias != null && alias != key) {
+          byKey.putIfAbsent(alias, () => <RemoteBookInfo>[]).add(item);
+        }
+      }
+
+      for (final (int index, EpubBookRow book) in missing.indexed) {
+        _checkpoint();
+        final List<RemoteBookInfo>? candidates = byKey[book.bookKey];
+        if (candidates == null) continue;
+        final List<RemoteBookInfo> matches = candidates
+            .where((RemoteBookInfo item) => _matchesRecoverySource(book, item))
+            .toList();
+        if (matches.length != 1) continue;
+        final RemoteBookInfo match = matches.single;
+        if (_hostVetoesPush(
+          tombstones,
+          kinds: const <SyncTombstoneKind>[SyncTombstoneKind.book],
+          itemKeys: <String>{book.bookKey, match.downloadId},
+          presentSinceAt: book.localAddedAt,
+        )) {
+          continue;
+        }
+
+        try {
+          _emit(
+            SyncPhase.books,
+            itemIndex: index,
+            itemTotal: missing.length,
+            title: book.title,
+            itemKind: SyncItemKind.book,
+          );
+          final bool restored = await recovery.restore(
+            book,
+            download: (File file) => backend.getRemoteBook(
+              match.downloadId,
+              file,
+              onProgress: (double fraction) => _emit(
+                SyncPhase.books,
+                itemIndex: index,
+                itemTotal: missing.length,
+                title: book.title,
+                itemKind: SyncItemKind.book,
+                fileFraction: fraction,
+              ),
+            ),
+            checkCanPlace: () {
+              _checkpoint();
+              backend.checkHostPin(pin);
+            },
+          );
+          if (restored) report.booksRecovered++;
+        } on SyncCancelledException {
+          rethrow;
+        } on SyncAuthError {
+          rethrow;
+        } on InterconnectHostChangedException {
+          rethrow;
+        } on Exception catch (e) {
+          report.noteError('recover book "${book.title}"', e);
+        }
+      }
+    });
+  }
+
+  bool _matchesRecoverySource(EpubBookRow book, RemoteBookInfo item) {
+    if (book.title != item.title || book.format != item.format) return false;
+    return switch (BookFormat.parseOrEpub(book.format)) {
+      BookFormat.epub => item.hasContent,
+      BookFormat.manga => item.hasMangaContent,
+      BookFormat.pdf => item.hasPdfContent,
+    };
+  }
+
   /// 互联书籍内容 live 上传。
   ///
   /// 直打对端 `/api/library/books` 端点，按 `sanitizeTtuFilename(title)` 只处理

@@ -1833,7 +1833,7 @@ class InterconnectSyncBackend extends SyncBackend
     T Function(Map<String, Object?> json) parse, {
     bool degradeOn404 = false,
   }) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     final HttpClientRequest req = await _ops!.buildRequest(
       'GET',
       '$_apiBase$path',
@@ -1922,6 +1922,12 @@ class InterconnectSyncBackend extends SyncBackend
   RemoteBookSourceKind get remoteSourceKind =>
       RemoteBookSourceKind.interconnect;
 
+  /// Keep the book catalogue and any recovery download on the same peer.
+  Future<T> withLiveBookSourcePin<T>(
+    InterconnectHostPin pin,
+    Future<T> Function() body,
+  ) => _pinned(pin, body);
+
   /// 列出对端 host 当前书库清单（直打 `/api/library/books`）。
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() =>
@@ -1935,7 +1941,7 @@ class InterconnectSyncBackend extends SyncBackend
     File destination, {
     void Function(double progress)? onProgress,
   }) async {
-    await _ensureResolved();
+    await _resolvedForLive();
     await downloadContentFile(
       fileId: '$_apiBase/api/library/books/${Uri.encodeComponent(title)}',
       destination: destination,

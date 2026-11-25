@@ -38,6 +38,7 @@ import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/deletion_tombstone_bundle.dart';
 import 'package:fushi/src/sync/book_change_gate.dart';
+import 'package:fushi/src/sync/book_content_recovery.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/font_sync.dart';
 import 'package:fushi/src/sync/online_library_items.dart';
@@ -102,6 +103,7 @@ part 'sync_orchestrator/video_metadata.part.dart';
 part 'sync_orchestrator/tombstones.part.dart';
 part 'sync_orchestrator/books.part.dart';
 part 'sync_orchestrator/book_change.part.dart';
+part 'sync_orchestrator/book_recovery_cloud.part.dart';
 part 'sync_orchestrator/videos.part.dart';
 part 'sync_orchestrator/stream_videos.part.dart';
 part 'sync_orchestrator/audiobooks.part.dart';
@@ -336,6 +338,9 @@ class SyncRunReport {
     : errors = _ObservedErrorList(onError);
 
   int booksImported = 0;
+
+  /// Existing shelf rows whose missing content was restored on disk.
+  int booksRecovered = 0;
   int dictionariesImported = 0;
   int dictionariesExported = 0;
   int audiobooksImported = 0;
@@ -599,6 +604,7 @@ class SyncRunReport {
   /// local refresh.
   bool get needsLocalLibraryRefresh =>
       booksImported > 0 ||
+      booksRecovered > 0 ||
       dictionariesImported > 0 ||
       audiobooksImported > 0 ||
       localAudioImported > 0 ||
@@ -616,6 +622,7 @@ class SyncRunReport {
   /// 汇总成单一报告返回）。累加所有计数、拼接错误与冲突列表。
   void mergeFrom(SyncRunReport other) {
     booksImported += other.booksImported;
+    booksRecovered += other.booksRecovered;
     dictionariesImported += other.dictionariesImported;
     dictionariesExported += other.dictionariesExported;
     audiobooksImported += other.audiobooksImported;
@@ -1120,6 +1127,15 @@ class SyncOrchestrator {
       _checkpoint();
       await _syncServiceConfigLive(report, b);
       await _syncSourceShareLive(report, b);
+      try {
+        await _recoverMissingLiveBooks(report, b);
+      } on SyncAuthError {
+        rethrow;
+      } on SyncCancelledException {
+        rethrow;
+      } on Exception catch (e) {
+        report.noteError('recover books from peer', e);
+      }
       // 互联内容（EPUB / 漫画包）走 live 端点，书籍或漫画任一开关开时执行，进去后
       // 按格式各看各的开关。
       if (syncContent || syncMangaContent) {
@@ -1155,6 +1171,14 @@ class SyncOrchestrator {
         cloudVetoedBookKeys = await _cloudPushVetoedBookKeys(
           cloudTombstoneScan.remote,
         );
+        if (cloudTombstoneScan.complete) {
+          await _recoverMissingCloudBooks(
+            report,
+            root: root,
+            listing: listing,
+            vetoedBookKeys: cloudVetoedBookKeys,
+          );
+        }
       }
       mark('cloudTombstoneScan');
     }
