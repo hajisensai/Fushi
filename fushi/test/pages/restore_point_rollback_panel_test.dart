@@ -7,6 +7,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi/src/pages/implementations/restore_point_rollback_panel.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiCircularProgressIndicator;
 
 /// 降级屏 / 主库损坏屏上的「恢复更新前的数据」：没有还原点不显示；选一项 → 确认 →
 /// 换库 → 重启；换库失败显示原因、不重启。全程焦点驱动（Enter）。
@@ -90,10 +92,16 @@ void main() {
     // 第一项自动拿焦点：Enter 打开确认框，确认键自动拿焦点，再 Enter 确认。
     await pressEnter(tester);
     expect(find.text(t.db_restore_point_confirm_body), findsOneWidget);
-    await pressEnter(tester);
+    // 换库成功后面板停在进度态直到真正重启（假的 onRestart 不会拆掉页面），
+    // 转圈动画永不 settle，所以这里按帧推进而不是 pumpAndSettle。
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    for (int i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
 
     expect(rolledBack, <RestorePoint>[point]);
     expect(restarts, 1);
+    expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
   });
 
   testWidgets('换库失败：显示原因、不重启', (WidgetTester tester) async {
