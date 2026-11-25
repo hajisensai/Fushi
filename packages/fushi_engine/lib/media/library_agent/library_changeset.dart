@@ -1453,9 +1453,14 @@ Map<String, Object?> _relationReceiptJson(MediaLinkAiRelationWrite w) =>
       ],
     };
 
-/// 撤销一份变更集（[LibraryChangesetOutcome.undo]）：关系回执倒序退回，再撤销整理记录
-/// 里这次的全部合集改动（[undoLibraryOrganizeRun]）。后来被用户改过的那一处跳过
-/// （「已被后续修改覆盖」）。返回实际撤销的处数；载荷形状不对抛 [FormatException]。
+/// 撤销一份变更集（[LibraryChangesetOutcome.undo]）：先撤销整理记录里这次的全部合集
+/// 改动（[undoLibraryOrganizeRun]），再把关系回执倒序退回。后来被用户改过的那一处
+/// 跳过（「已被后续修改覆盖」）。返回实际撤销的处数；载荷形状不对抛 [FormatException]。
+///
+/// 合集在前：关系只能连在当时还在的合集上，这次又把它移空 / 并掉的话，删合集会连带
+/// 删掉它的连接（BUG-5462）、身份快照里记的是连上之后的样子。先按快照把合集原 id
+/// 还原（连接随之回来），关系回执才找得到那一行、退回连之前的状态（BUG-5461）；反过来
+/// 先退关系会扑空，随后还原的合集又把 AI 连上的那条带回来。
 ///
 /// 载荷：`{runId: int?, links: [{kind: "set", id, previous?, superseded: [row]} |
 /// {kind: "unlink", rows: [{id, previous, writtenAt}]}]}`（行是 `MediaLinkRow.toJson`）。
@@ -1470,6 +1475,7 @@ Future<int> undoLibraryChangeset(
   final Object rawLinks = undoPayload['links'] ?? const <Object?>[];
   if (rawLinks is! List) throw const FormatException('links must be an array');
   int undone = 0;
+  if (rawRun is int) undone += await undoLibraryOrganizeRun(db, rawRun);
   for (final Object? receipt in rawLinks.reversed) {
     if (receipt is! Map) throw const FormatException('bad link receipt');
     switch (receipt['kind']) {
@@ -1507,6 +1513,5 @@ Future<int> undoLibraryChangeset(
         throw const FormatException('unknown link receipt kind');
     }
   }
-  if (rawRun is int) undone += await undoLibraryOrganizeRun(db, rawRun);
   return undone;
 }
