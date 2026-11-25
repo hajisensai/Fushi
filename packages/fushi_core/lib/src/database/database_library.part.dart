@@ -1148,13 +1148,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     await (delete(
       mediaCollectionItems,
     )..where((t) => t.collectionId.equals(id))).go();
-    await deleteTagAssignmentsForHost(
-      TagHostKind.collection,
-      collectionTagEntryKey(id),
-    );
-    final int deleted = await (delete(
-      mediaCollections,
-    )..where((t) => t.id.equals(id))).go();
+    final int deleted = await _dropMediaCollectionRow(id);
     if (col != null && deleted > 0) {
       await (delete(collectionMemberTombstones)..where(
             (t) =>
@@ -1896,15 +1890,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     final List<MediaCollectionItemRow> remaining = await (select(
       mediaCollectionItems,
     )..where((t) => t.collectionId.equals(collectionId))).get();
-    if (remaining.isEmpty) {
-      await deleteTagAssignmentsForHost(
-        TagHostKind.collection,
-        collectionTagEntryKey(collectionId),
-      );
-      await (delete(
-        mediaCollections,
-      )..where((t) => t.id.equals(collectionId))).go();
-    }
+    if (remaining.isEmpty) await _dropMediaCollectionRow(collectionId);
   });
 
   /// 合集内重排：[ordered] 表达**它点名的那批成员之间的新相对顺序**，本方法负责把它
@@ -2043,11 +2029,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       );
     }
     for (final int cid in ids.difference(stillPopulated)) {
-      await deleteTagAssignmentsForHost(
-        TagHostKind.collection,
-        collectionTagEntryKey(cid),
-      );
-      await (delete(mediaCollections)..where((t) => t.id.equals(cid))).go();
+      await _dropMediaCollectionRow(cid);
     }
   });
 
@@ -2237,12 +2219,31 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     await (delete(
       mediaCollectionItems,
     )..where((t) => t.collectionId.equals(id))).go();
-    await deleteTagAssignmentsForHost(
-      TagHostKind.collection,
-      collectionTagEntryKey(id),
-    );
-    await (delete(mediaCollections)..where((t) => t.id.equals(id))).go();
+    await _dropMediaCollectionRow(id);
   });
+
+  /// 删一行合集，连同按合集 id 挂着、没有外键 cascade 的引用：合集标签映射与作品
+  /// 图谱里以它为端点（`video_collection:<id>`）的连接（BUG-5462）。全部删合集路径
+  /// （用户删除、移空自删、删条目连带清空、同步解散）都经这里，调用方负责事务与成员行。
+  ///
+  /// 连接**物理删除**而不是写墓碑：本机合集 id 自增不复用，端点一旦删掉就再也解析
+  /// 不回来，留着只是「不在库中」的死卡；墓碑在这里也不对——它的语义是「用户否决了
+  /// 这一对」。跨端不受影响：作品图谱同步按合集自然键 `<type>:<name>` 对齐，本机没有
+  /// 该合集的连接本来就不发出、对端发来也跳过（`media_link_sync.dart`）；同名合集
+  /// 以后再出现，对端的连接会照常同步回来。整理器撤销要还原的连接由
+  /// [FushiDatabase.captureMediaCollectionSnapshot] 在删之前记下。返回删掉的合集行数。
+  Future<int> _dropMediaCollectionRow(int id) async {
+    final String key = collectionTagEntryKey(id);
+    await deleteTagAssignmentsForHost(TagHostKind.collection, key);
+    final String kind = MediaLinkKind.videoCollection.dbValue;
+    await (delete(mediaLinks)..where(
+          (t) =>
+              (t.fromKind.equals(kind) & t.fromKey.equals(key)) |
+              (t.toKind.equals(kind) & t.toKey.equals(key)),
+        ))
+        .go();
+    return (delete(mediaCollections)..where((t) => t.id.equals(id))).go();
+  }
 
   // ── audio cues ──────────────────────────────────────────────────
   // [bookKey] is the owner key: either an audiobook bookKey OR an srt_books.uid

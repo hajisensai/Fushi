@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4730 条。点号进各自文件。
+> 共 4732 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5462](bugs/BUG-5462-deleted-collection-links-dangling.md) | ✅ | ✅ | 删掉的视频合集在作品图谱里留下「不在库中」的死连接 |
+| [BUG-5461](bugs/BUG-5461-organize-undo-collection-identity.md) | ✅ | ✅ | 撤销整理器移空 / 合并掉的合集后，合集换了新 id，挂在旧 id 上的作品图谱连接、标签、刮削资料全丢 |
 | [BUG-5450](bugs/BUG-5450-android-library-layout-anchor-lost.md) | ✅ | ✅ | Android 书库对账只探当前配置的内部根，布局 / 容器锚点被冲掉后永不自愈 |
 | [BUG-5449](bugs/BUG-5449-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
 | [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |

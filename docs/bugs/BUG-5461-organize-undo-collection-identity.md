@@ -1,0 +1,10 @@
+## BUG-5461 · 撤销整理器移空 / 合并掉的合集后，合集换了新 id，挂在旧 id 上的作品图谱连接、标签、刮削资料全丢
+- **报告**：2026-11-25（用户真实库：AI 库管家把一个媒体服务器播放列表合集的成员全部移出，合集随移空自删；用户撤销后成员回到一个同名的**新 id** 合集，12 条指向旧 id 的「同一作品」连接在作品图谱里成了「13 · 不在库中」的死卡）
+- **真实性**：✅ 真 bug。合集的本地身份是 `media_collections.id`，作品图谱 `video_collection` 端点、合集标签、`collection_scrape_meta`、`media_images`、`collection_relations`、`video_metadata_works` 等都挂在这个 id 上（后几张随删行 FK cascade 消失）。整理器的移出把最后一个成员移走时，`removeFromCollectionRaw` 移空自删合集（`packages/fushi_core/lib/src/database/database_library.part.dart:1899`）；撤销只按记录里的名字 / 来源重建：`packages/fushi_engine/lib/media/collections/library_organize/library_organize_apply.dart:475`（移出）、`:504`（挪走的来处）、`:575`（合并的败方）、`:1420`（接受「移出成员」建议），`createMediaCollection` 拿到的是新自增 id，旧 id 上的一切再也接不回来。
+- **[x] ① 已修复** — 不能「移空时留空壳」：空合集在数据模型里不存在，同步会把 0 成员的活合集解散（`collection_sync_engine.dart` 「活壳」分支），留壳要新增隐藏态并改同步，范围大得多。改为**删前记身份快照、撤销按原 id 还原**：
+  - `fushi_core` 新增 `captureMediaCollectionSnapshot` / `restoreMediaCollectionSnapshot`（`database_collection_identity.part.dart`）。快照按外键图通用收集：从 `media_collections` 沿全部 `ON DELETE CASCADE` 边收子行（含子表的子表），沿 `ON DELETE SET NULL` 边记被置空的引用，再加合集标签与作品图谱连接；以后新加挂在合集上的表只要声明外键就自动纳入。还原：同自然键合集已在 → 只把标签与连接挂回它；否则按原 id 插回合集行（全部列）、清合集级删除墓碑、插回子行（逐个外键核对父行、列按当前表结构取交集）、恢复被置空的引用、挂回标签与连接；原 id 被占时插成新 id 并把子行外键改指新 id。成员不在快照里，仍由各撤销路径按自己的语义（钉住、墓碑、顺序）还原。
+  - 整理器四处会删合集的改动（移出移空、挪走挪空来处、合并败方、接受移出建议移空）都在删之前记快照，确实删了才写进记录（`identity`）；四处撤销统一走 `_reviveCollection`。合并 / 用户删除会回收合集自有封面与附加图文件，还原后由 `dropMissingCollectionAssetRefs` 把指向已不存在文件的引用清掉。
+  - 变更集撤销（`undoLibraryChangeset`）改成先撤合集改动、再退关系回执：关系只能连在当时还在的合集上，这次又把它移空的话，先还原合集（连接随快照回来）关系回执才找得到那一行。
+  - 旧记录没有快照，照旧按名字重建。本修复不改 schema。已经发生的（用户库里指向旧 id 的连接）无法自动认回——旧记录没记旧 id；这些连接在作品图谱里显示为「不在库中」，可在弹窗里删掉后重连。
+- **[x] ② 已加自动化测试** — `fushi/test/database/collection_identity_snapshot_test.dart`（快照 → 删 → 还原同 id、全部列 / cascade 子行 / SET NULL 引用 / 标签 / 连接回来；JSON 往返；同名合集已重建；原 id 被占；父行已不在的子行跳过；读不懂的快照）、`fushi/test/media/collections/library_organize_identity_test.dart`（移出移空、挪空来处、合并败方、接受移出建议后撤销都回到原 id；没移空不记快照；旧记录照旧重建；变更集「先连再移空」整份撤销）。
+- **备注**：和 BUG-5462（删合集不清以它为端点的连接）一起修。

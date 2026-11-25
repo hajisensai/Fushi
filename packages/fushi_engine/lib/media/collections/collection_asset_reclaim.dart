@@ -98,6 +98,35 @@ Future<int> deleteMediaCollectionWithAssets(
   return removed;
 }
 
+/// 按身份快照还原一个被删掉的合集之后（整理撤销，BUG-5461），把指向已不存在文件的
+/// 自有资产引用清掉：自有封面 `coverPath` 置 null（回落成员借用链）、文件已不在的
+/// 附加图行删掉（重刮即回填）。合并 / 用户删除走 [deleteMediaCollectionWithAssets]
+/// 时这些文件已被回收，移空自删则不回收、文件还在——还原时按文件在不在取舍，不另记
+/// 是哪条删除路径。
+Future<void> dropMissingCollectionAssetRefs(
+  FushiDatabase db,
+  int collectionId,
+) async {
+  final MediaCollectionRow? row = await db.getMediaCollectionById(collectionId);
+  if (row == null) return;
+  final String? coverPath = row.coverPath;
+  if (coverPath != null &&
+      coverPath.isNotEmpty &&
+      !File(coverPath).existsSync()) {
+    await db.updateMediaCollectionCoverPath(collectionId, null);
+  }
+  final List<int> missing = <int>[
+    for (final MediaImageRow image in await db.getMediaImagesForCollection(
+      collectionId,
+    ))
+      if (!File(image.path).existsSync()) image.id,
+  ];
+  if (missing.isEmpty) return;
+  await (db.delete(
+    db.mediaImages,
+  )..where(($MediaImagesTable t) => t.id.isIn(missing))).go();
+}
+
 /// 清掉合集**自有**封面，回到自动推导（原盘竖版盘面图 → canonical 海报 → 成员
 /// 借用链，见 `collection_cover.dart`）。盘面图另存在附加图组、不在 `coverPath`，
 /// 所以清完重扫不会把它写回自有层。
