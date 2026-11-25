@@ -45,12 +45,15 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
+        FushiFloatingChromeController,
+        FushiFloatingChromeInset,
+        FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope,
         FushiHeightReporter,
         FushiTopFadeScrim,
         kFushiTopFadeExtent,
         kFushiTopScrimOverlayOpacity;
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
-import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart';
 import 'package:fushi/src/utils/components/fushi_static_masthead.dart'
     show FushiStaticMasthead;
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -73,6 +76,8 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
     show FushiAppleBarCluster;
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
+    show fushiNotificationDrivesPageChrome;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/glass/fushi_native_material.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -5596,6 +5601,12 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
   /// 页头恒在）。
   final FushiScrollAwayController _chrome = FushiScrollAwayController();
 
+  /// [FushiPageScaffold.header] 是模块页页头大字（[FushiStaticMasthead]）时的
+  /// 库页同款工具区 controller（显隐 + 大字随滚动收缩的偏移）。`late`：只有走
+  /// 这一形态的页面才建；热重载时已存在的 State 也能建出来。
+  late final FushiFloatingChromeController _moduleMastheadChrome =
+      FushiFloatingChromeController();
+
   /// [FushiPageScaffold.extendBodyBehindHeader] 下页头的实测高度（不含状态栏）。
   double _headerHeight = 0;
 
@@ -5681,6 +5692,7 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     PageScrollRegistry.pop(_scrollController);
     _scrollController.dispose();
     _chrome.dispose();
+    _moduleMastheadChrome.dispose();
     _scrolledUnder.dispose();
     _titleRevealed.dispose();
     _appleScrolledUnder.dispose();
@@ -5698,6 +5710,9 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     if (masthead && shellRedesignActive(context)) {
       return _buildMasthead(context);
     }
+    if (widget.header is FushiStaticMasthead && shellRedesignActive(context)) {
+      return _buildModuleMasthead(context);
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Widget? effectiveLeading =
         widget.leading ??
@@ -5707,12 +5722,6 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
     Widget buildHeader(bool? titleRevealed) => FushiScrollAwayChrome(
       controller: _chrome,
       enabled: floatingChrome,
-      // 页头大字不是胶囊行：手机上不整行缩，模块页大标题才与库页同一尺寸
-      // （设计稿 11-20 #18，规格 [FushiPageTitleMetrics]）。平板 / 桌面这次不在
-      // 范围内（用户 11-20：只核对、不改），仍按原样缩。
-      capsuleScale:
-          !(widget.header is FushiStaticMasthead &&
-              FushiPageTitleMetrics.isCompact(context)),
       child: widget.header != null
           ? Semantics(
               label: widget.title,
@@ -5860,6 +5869,71 @@ class _FushiPageScaffoldState extends State<FushiPageScaffold> {
                   ],
                 ),
               ),
+      ),
+    );
+  }
+
+  /// [FushiPageScaffold.header] 是模块页页头大字（[FushiStaticMasthead]，复习页
+  /// 等）：与首页 / 库页同一套页头大字工具区（`FushiFloatingChromeOverlay(
+  /// masthead: true)`）——大字随滚动收缩、往下滚收起往回滚弹出、内容从页头底下
+  /// 穿过、底板（90% 页面底色 + 模糊）随滚动渐入，MD3 与 Apple 同一口径。原来
+  /// 它走下面的「收起外壳 + 正文」：大字钉死不收、正文在页头下沿被硬切，与其它
+  /// 模块不一致。正文照 [FushiPageScaffold.extendBodyBehindHeader] 的约定从
+  /// `MediaQuery.paddingOf(context).top` 拿让位（= 工具区下沿）。
+  Widget _buildModuleMasthead(BuildContext context) {
+    return PrimaryScrollController(
+      controller: _scrollController,
+      automaticallyInheritForPlatforms: TargetPlatform.values.toSet(),
+      child: Scaffold(
+        backgroundColor: fushiPageBackgroundColor(context),
+        floatingActionButton: widget.floatingActionButton,
+        floatingActionButtonLocation: widget.floatingActionButtonLocation,
+        bottomNavigationBar: widget.bottomNavigationBar,
+        body: SafeArea(
+          // 底部安全区交给正文（同 [build] 里竖排形态的说明，BUG-2440）。
+          bottom: false,
+          child: FushiFloatingChromeScope(
+            controller: _moduleMastheadChrome,
+            child: FushiFloatingChromeOverlay(
+              masthead: true,
+              chrome: Semantics(
+                label: widget.title,
+                container: true,
+                explicitChildNodes: true,
+                child: widget.header,
+              ),
+              child: NotificationListener<ScrollNotification>(
+                onNotification: (ScrollNotification notification) {
+                  if (fushiNotificationDrivesPageChrome(notification)) {
+                    _moduleMastheadChrome.handleScrollNotification(
+                      notification,
+                    );
+                  }
+                  return false;
+                },
+                child: Builder(
+                  builder: (BuildContext context) {
+                    // 工具区让位改由 MediaQuery 顶部 padding 下发（正文按
+                    // [FushiPageScaffold.extendBodyBehindHeader] 的约定消费），
+                    // 子树里的 inset 归零，不重复让。
+                    final double inset = FushiFloatingChromeInset.of(context);
+                    final MediaQueryData media = MediaQuery.of(context);
+                    return MediaQuery(
+                      data: media.copyWith(
+                        padding: media.padding.copyWith(top: inset),
+                        viewPadding: media.viewPadding.copyWith(top: inset),
+                      ),
+                      child: FushiFloatingChromeInset(
+                        top: 0,
+                        child: widget.body,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
