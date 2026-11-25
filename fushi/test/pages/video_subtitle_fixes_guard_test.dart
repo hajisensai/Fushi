@@ -97,27 +97,38 @@ void main() {
     );
   });
 
-  test('BUG-165: 换集时导入字幕捷径按目录归属判定（剧集同目录 sidecar 不沿用）', () {
-    final String body = region(
+  test('BUG-165: 别的集的导入字幕不经恢复捷径搬到本集（沿用兄弟集选择走描述匹配）', () {
+    final String restore = region(
       'Future<({String persisted, List<AudioCue> cues, int? graphicStreamIndex})?>',
       'SubtitleSource? _firstMatching(',
     );
-    // 换集分支必须改用按目录归属区分的判定，而非只看扩展名的
-    // isImportedExternalSubtitlePath——否则上一集同目录 sidecar 会被原样沿用到新集。
+    // 持久化恢复只恢复**本行自己**的选择：精确匹配同一源，不再有「换集」分支——别的集
+    // 的选择由 _restoreInheritedSubtitle 按描述翻译（BUG-5464）。
     expect(
-      body.contains('shouldReusePersistedSubtitleAcrossEpisode('),
-      isTrue,
-      reason:
-          '换集（crossEpisode）时捷径必须按目录归属区分导入字幕 vs 剧集同目录 '
-          'sidecar，剧集同目录 sidecar 要落回枚举按新集名重新匹配（BUG-165）',
+      restore.contains('crossEpisode'),
+      isFalse,
+      reason: '换集已不经 _restorePersistedSubtitle，两套跨集机制不能并存',
     );
-    expect(
-      body.contains('crossEpisode'),
-      isTrue,
-      reason: '目录归属判定只能加在换集分支，不影响单视频恢复',
-    );
+    expect(restore.contains('_firstMatching(sources, persisted)'), isTrue);
     // 捷径条件仍要确认文件在磁盘上（async，BUG-3756）。
-    expect(body.contains('await File(persisted).exists()'), isTrue);
+    expect(restore.contains('await File(persisted).exists()'), isTrue);
+    final String inherit = region(
+      '  _restoreInheritedSubtitle({',
+      '_loadChosenSubtitleForLoad(SubtitleSource chosen',
+    );
+    expect(
+      inherit.contains('resolveInheritedSubtitleSource('),
+      isTrue,
+      reason: '沿用兄弟集选择必须按描述落到本集的源上',
+    );
+    expect(
+      inherit.contains('isImportedExternalSubtitlePath(') ||
+          inherit.contains('File('),
+      isFalse,
+      reason:
+          '兄弟集下载 / 导入的字幕档只属于那一集，沿用路径不得按路径直接加载它'
+          '（否则切到新集仍显示上一集的字幕，BUG-165）',
+    );
   });
 
   test('TODO-016: 字幕菜单只补入当前持久化的导入字幕源', () {

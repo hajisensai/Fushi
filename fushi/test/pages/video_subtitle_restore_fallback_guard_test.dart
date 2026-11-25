@@ -74,6 +74,59 @@ void main() {
     );
   });
 
+  test('本行没有选择时沿用兄弟集最近的选择：排在本行选择之后、自动探测之前（BUG-5464）', () {
+    final String code = compactCode(body);
+    // 只有本行自己没有选择（null / 空；`off:` 也是自己的选择）时才沿用。
+    expect(
+      code.contains(
+        'finalInheritedSubtitleIntent?inheritedSubtitle='
+        '(ownSubtitleChoice==null||ownSubtitleChoice.isEmpty)&&'
+        'siblingChoice!=null?inheritedSubtitleIntent(siblingChoice):null;',
+      ),
+      isTrue,
+      reason: '本行有选择（含显式关闭）时兄弟集的选择不得压过它',
+    );
+    // 独立的「还没拿到字幕」判据，不挂在 else-if 链上（BUG-1848 结构）。
+    expect(
+      code.contains(
+        'if(inheritedSubtitle!=null&&cues.isEmpty&&graphicStreamIndex==null){',
+      ),
+      isTrue,
+    );
+    final String masked = maskComments(body);
+    final int own = masked.indexOf('persisted: paths.subtitleSource');
+    final int inherit = masked.indexOf('_restoreInheritedSubtitle(');
+    final int sidecar = masked.indexOf('_detectSidecar(');
+    final int folder = masked.indexOf('_detectSubtitleFolderMatch(');
+    expect(own, greaterThanOrEqualTo(0));
+    expect(inherit, greaterThan(own), reason: '本行自己的选择优先于兄弟集的');
+    expect(sidecar, greaterThan(inherit), reason: '沿用的选择优先于 sidecar 探测');
+    expect(folder, greaterThan(inherit));
+    // 兄弟集关了字幕：本集同样关着起播，自动探测（sidecar / 文件夹 / 内封轨自动加载）短路。
+    expect(
+      code.contains(
+        'if(inheritedSubtitleisInheritSubtitleOff){'
+        'externalSub=SubtitleSource.offSentinel;',
+      ),
+      isTrue,
+    );
+    expect(
+      code.contains(
+        'if(!subtitleExplicitlyOff&&!SubtitleSource.isOff(externalSub)&&'
+        'cues.isEmpty&&graphicStreamIndex==null){',
+      ),
+      isTrue,
+      reason: '自动探测的门必须同时认本行关闭与沿用来的关闭',
+    );
+    expect(
+      masked.indexOf('!SubtitleSource.isOff(externalSub)'),
+      lessThan(sidecar),
+    );
+    // 沿用只管本次加载：不写回本行（用户在本集真正选了才写）。
+    expect(containsIdentifierCall(body, 'updateSubtitleSource'), isFalse);
+    expect(containsIdentifierCall(body, 'saveSubtitleSelection'), isFalse);
+  });
+
   test('显式关闭字幕仍然短路整条兜底（TODO-818 不倒退）', () {
     // video-20 起 DB 缓存 cue 改惰性读取：不再有「if (subtitleExplicitlyOff) { cues = [] }」
     // 这一支，改由每个可能产出 cue 的入口各自带关闭判据。逐个钉住这些入口。

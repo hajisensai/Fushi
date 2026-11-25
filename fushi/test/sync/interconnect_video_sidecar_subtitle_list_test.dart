@@ -42,7 +42,7 @@ LocalLibraryHostService _hostService({
   packages: SyncAssetPackageService(db: db),
   refreshDictionaryCache: () async {},
   runExclusive: (Future<void> Function() body) => body(),
-  videoSubtitleLangCode: 'ja',
+  videoSubtitleExplicitLanguage: () => 'ja',
 );
 
 Future<InterconnectSyncBackend> _clientBackend(String base) async {

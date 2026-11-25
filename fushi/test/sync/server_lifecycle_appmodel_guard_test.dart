@@ -73,7 +73,8 @@ void main() {
       );
     });
 
-    test('AppModel passes target language into video sidecar matcher', () {
+    test('AppModel passes live subtitle languages into the host, not a fixed '
+        'Japanese code', () {
       final String src = File(
         'lib/src/models/app_model.dart',
       ).readAsStringSync();
@@ -87,20 +88,17 @@ void main() {
         factory,
       );
       expect(removeLocalAudio, greaterThan(factory));
-      final int languageArg = src.indexOf(
-        'videoSubtitleLangCode: JapaneseLanguage.instance.languageCode',
-        factory,
-      );
-      expect(
-        languageArg,
-        greaterThan(factory),
-        reason: '生产 host service 不能落回构造器默认 ja',
-      );
-      expect(
-        languageArg,
-        lessThan(removeLocalAudio),
-        reason: 'sidecar 语言匹配应使用当前学习语言偏好',
-      );
+      for (final String arg in <String>[
+        'videoSubtitleExplicitLanguage: () => jimakuDefaultLanguage',
+        'videoDefaultContentLanguage: () => defaultContentLanguage',
+      ]) {
+        final int at = src.indexOf(arg, factory);
+        expect(at, greaterThan(factory), reason: '生产 host service 要接 $arg');
+        expect(at, lessThan(removeLocalAudio), reason: '$arg 必须在 host 构造里');
+      }
+      // 每个视频按自己的语言挑 sidecar：不许再把全库钉死成日语（BUG：字幕自动
+      // 加载硬编码日语）。
+      expect(src.contains('videoSubtitleLangCode: JapaneseLanguage'), isFalse);
     });
   });
 
