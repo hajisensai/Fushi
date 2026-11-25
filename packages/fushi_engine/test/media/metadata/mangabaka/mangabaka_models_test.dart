@@ -59,6 +59,27 @@ void main() {
       expect(s!.isMerged, isTrue);
       expect(s.mergedWith, 6199);
     });
+
+    test('source.anilist.id 记成 aniListId；缺失 / 非正数为 null', () {
+      MangaBakaSeries parse(Object? source) => MangaBakaSeries.fromJson(
+        <String, Object?>{'id': 6029, 'type': 'manga', 'source': source},
+      )!;
+      expect(
+        parse(<String, Object?>{
+          'anilist': <String, Object?>{'id': 72451, 'rating': 8.2},
+          'kitsu': <String, Object?>{'id': 22352},
+        }).aniListId,
+        72451,
+      );
+      expect(parse(null).aniListId, isNull);
+      expect(parse(<String, Object?>{'anilist': null}).aniListId, isNull);
+      expect(
+        parse(<String, Object?>{
+          'anilist': <String, Object?>{'id': 0},
+        }).aniListId,
+        isNull,
+      );
+    });
   });
 
   group('parseMangaBakaSeries', () {

@@ -196,8 +196,10 @@ List<OpDescription> describeBookMetadataOps(
     summary:
         'Fetch per-volume covers and a banner for the local books of a '
         'collection: MangaBaka first (sharpest image wins), Bangumi '
-        'tankobon covers as fallback; only replaces a volume when the new '
-        'image is sharper than the embedded cover. Stored apart from the '
+        'tankobon covers as fallback; banner from MangaBaka, else from '
+        'AniList (by the AniList id MangaBaka links, or the one AniList entry '
+        'with the exact same title and kind); only replaces a volume when '
+        'the new image is sharper than the embedded cover. Stored apart from the '
         'user\'s own cover override. Series with no confident match come '
         'back as needsConfirm with options; call again with seriesKey + '
         'source + seriesId to use one (remembered for later runs). Never '

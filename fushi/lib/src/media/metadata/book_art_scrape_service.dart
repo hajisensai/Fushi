@@ -10,7 +10,9 @@
 ///    或那张不够清晰时用。
 ///
 /// 每卷取面积最大的那张，且要比本地内嵌封面大 1.2 倍、比刮削层里已有的同系列那张大
-/// 才写（不降清晰度）；横幅只来自 MangaBaka，本次没拿到时同系列沿用旧横幅。
+/// 才写（不降清晰度）；横幅先取 MangaBaka，没有时回落 AniList（MangaBaka 记的 AniList id
+/// 直取，否则按名搜、只收唯一的严格同名同种类条目，见 anilist_banner.dart），本次都没
+/// 拿到时同系列沿用旧横幅。
 /// MangaBaka 判待确认时整组待确认（不让 Bangumi 自动采用接管）；Bangumi 补卷要求种类
 /// 与 MangaBaka 系列一致。用户钉死的系列记进刮削层，之后重刮沿用；单本移除的贴错封面
 /// 记为否决，重刮不再选。
@@ -27,9 +29,13 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
+import 'package:fushi_engine/media/metadata/book_art/anilist_banner.dart';
 import 'package:fushi_engine/media/metadata/book_art/bangumi_tankobon.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart';
+import 'package:fushi_engine/media/metadata/books/anilist_books.dart';
+import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
+    show BookCatalogException, BookCatalogHttp, BookCatalogRecord;
 import 'package:fushi_engine/media/metadata/books/book_search_query.dart'
     show bookSearchSeriesTitle, bookSeriesSearchQueries;
 import 'package:fushi_engine/media/metadata/image_download.dart'
@@ -338,10 +344,16 @@ class BookArtScrapeService {
     required this.store,
     http.Client? client,
     MangaBakaClient? mangaBaka,
+    BookCatalogHttp? catalogHttp,
     DateTime Function() now = DateTime.now,
   }) : _client = client ?? createAppHttpIoClient(),
        _ownsClient = client == null,
        _now = now {
+    // 不传 client 给 BookCatalogHttp 时它会自建一个；这里共用本服务的 client（由
+    // [close] 统一关），AniList 的按 host 节流照常生效。
+    _aniList = AniListBookClient(
+      catalogHttp ?? BookCatalogHttp(client: _client),
+    );
     _mangaBaka =
         mangaBaka ??
         MangaBakaClient(client: _client, userAgent: kBookScraperUserAgent);
@@ -358,6 +370,7 @@ class BookArtScrapeService {
   final DateTime Function() _now;
   late final MangaBakaClient _mangaBaka;
   late final BangumiApiClient _bangumi;
+  late final AniListBookClient _aniList;
 
   /// 一次运行内的缓存。
   final Map<String, List<MangaBakaSeries>> _searchCache =
@@ -469,7 +482,7 @@ class BookArtScrapeService {
     for (final EpubBookRow r in rows) {
       final BookArtRecord? record = store.recordFor(r.bookKey);
       if (record == null || !record.pinned || !record.hasSeries) continue;
-      final BookArtSource? source = BookArtSource.tryParse(record.source);
+      final BookArtSource? source = BookArtSource.tryParseSeries(record.source);
       if (source == null) continue;
       if (seen.add('${record.source}:${record.seriesId}')) {
         pin = BookArtSeriesPin(source: source, id: record.seriesId);
@@ -686,13 +699,29 @@ class BookArtScrapeService {
 
     // ── 逐卷选图 ──
     BookArtImageOption? banner;
+    // 横幅在刮削层里的键：`<源>_<该源的条目 id>`。
+    String? bannerStoreKey;
     if (mb != null) {
       try {
         banner = pickMangaBakaBanner(
           await _mangaBaka.fetchSeriesImages(mb.series.id, type: 'banner'),
         );
+        if (banner != null) {
+          bannerStoreKey = '${BookArtSource.mangabaka.wire}_${mb.series.id}';
+        }
       } on MangaBakaException catch (e) {
         errors.add('MangaBaka banner: ${e.message}');
+      }
+    }
+    // MangaBaka 没有横幅（或系列只在 Bangumi 上认定）：回落 AniList。
+    if (banner == null) {
+      try {
+        final ({BookArtImageOption option, String storeKey})? fallback =
+            await _aniListBanner(mb: mb, bgm: bgm, local: local);
+        banner = fallback?.option;
+        bannerStoreKey = fallback?.storeKey;
+      } on BookCatalogException catch (e) {
+        errors.add('AniList banner: ${e.message}');
       }
     }
     final Map<num, BookArtImageOption> bgmVolumes = <num, BookArtImageOption>{
@@ -804,12 +833,25 @@ class BookArtScrapeService {
     void Function()? releaseBanner;
     final Map<String, BookArtBookPlan> committed = <String, BookArtBookPlan>{};
     try {
-      if (banner != null && mb != null) {
-        final String key = '${BookArtSource.mangabaka.wire}_${mb.series.id}';
+      final BookArtImageOption? wanted = banner;
+      final String? key = bannerStoreKey;
+      if (wanted != null && key != null) {
         // 记录要等卷封面下完才落盘：期间持有横幅，别处删除触发的回收不删它。
         releaseBanner = store.holdBanner(key);
         try {
-          await store.writeBanner(key, await _download(banner.url));
+          final List<int> bytes = await _download(wanted.url);
+          // AniList 不给横幅尺寸：下载后量出来记进记录（与 MangaBaka 同一口径）。
+          final ({int width, int height})? dims = wanted.hasSize
+              ? null
+              : bookArtImageDimensions(bytes);
+          if (dims != null &&
+              dims.width / dims.height < kBookArtBannerMinAspect) {
+            throw _DownloadException(
+              'not a banner (${dims.width}x${dims.height})',
+            );
+          }
+          await store.writeBanner(key, bytes);
+          if (dims != null) banner = wanted.withSize(dims.width, dims.height);
           bannerKey = key;
         } on _DownloadException catch (e) {
           errors.add('banner: ${e.message}');
@@ -857,6 +899,44 @@ class BookArtScrapeService {
       books: <BookArtBookPlan>[
         for (final BookArtBookPlan p in plans) committed[p.bookKey] ?? p,
       ],
+    );
+  }
+
+  /// AniList 横幅回落：MangaBaka 记了 AniList id 就按 id 直取；否则按已认定系列的
+  /// 原名搜，只收唯一的严格同名、同种类、非成人向、作者不冲突的条目
+  /// （[pickAniListSameWork]）。没有可信条目或条目没有横幅返回 null；有则连同刮削层
+  /// 键（`anilist_<media id>`）一起返回。
+  Future<({BookArtImageOption option, String storeKey})?> _aniListBanner({
+    required _MangaBakaMatch? mb,
+    required _BangumiMatch? bgm,
+    required BookArtLocalSeries local,
+  }) async {
+    BookCatalogRecord? record;
+    final int? linkedId = mb?.series.aniListId;
+    if (linkedId != null) {
+      record = await _aniList.fetchById('$linkedId');
+    } else {
+      final BookArtCandidate? series = mb != null
+          ? mangaBakaCandidate(mb.series)
+          : bgm?.subject.toCandidate();
+      if (series == null ||
+          series.isAdult ||
+          series.kind == BookArtCandidateKind.other) {
+        return null;
+      }
+      record = pickAniListSameWork(
+        seriesTitles: series.titles,
+        kind: series.kind,
+        author: local.author,
+        records: await _aniList.search(series.displayTitle),
+      );
+    }
+    if (record == null) return null;
+    final BookArtImageOption? option = aniListBannerOption(record);
+    if (option == null) return null;
+    return (
+      option: option,
+      storeKey: '${BookArtSource.anilist.wire}_${record.id}',
     );
   }
 

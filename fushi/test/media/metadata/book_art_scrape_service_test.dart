@@ -13,6 +13,8 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_matcher.dart';
 import 'package:fushi_engine/media/metadata/book_art/book_art_plan.dart';
+import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
+    show BookCatalogHttp;
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_client.dart';
 import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_rate_gates.dart';
 import 'package:http/http.dart' as http;
@@ -99,6 +101,9 @@ void main() {
   late List<Uri> requests;
   late List<String> userAgents;
 
+  /// 发给 AniList GraphQL 的请求体（JSON 解码后）。
+  late List<Map<String, Object?>> aniListQueries;
+
   setUp(() async {
     BookArtStore.resetForTesting();
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -106,6 +111,7 @@ void main() {
     store = BookArtStore.of(thumbs);
     requests = <Uri>[];
     userAgents = <String>[];
+    aniListQueries = <Map<String, Object?>>[];
   });
 
   tearDown(() async {
@@ -128,12 +134,28 @@ void main() {
     ),
   );
 
+  /// AniList GraphQL 默认回答：搜不到、按 id 查无此条（不在测试里制造横幅）。
+  http.Response aniListEmpty(Map<String, Object?> body) =>
+      json(<String, Object?>{
+        'data': <String, Object?>{
+          'Page': <String, Object?>{'media': <Object?>[]},
+          'Media': null,
+        },
+      });
+
   BookArtScrapeService service(
     Future<http.Response> Function(http.Request req) handler, {
     Future<void> Function(Duration)? wait,
+    http.Response Function(Map<String, Object?> body)? aniList,
   }) {
     final MockClient client = MockClient((http.Request req) async {
       requests.add(req.url);
+      if (req.url.host == 'graphql.anilist.co') {
+        final Map<String, Object?> body =
+            jsonDecode(req.body) as Map<String, Object?>;
+        aniListQueries.add(body);
+        return (aniList ?? aniListEmpty)(body);
+      }
       userAgents.add(req.headers['User-Agent'] ?? '');
       return handler(req);
     });
@@ -141,6 +163,7 @@ void main() {
       database: db,
       store: store,
       client: client,
+      catalogHttp: BookCatalogHttp(client: client, throttle: false),
       mangaBaka: MangaBakaClient(
         client: client,
         userAgent: kBookScraperUserAgent,
@@ -159,6 +182,13 @@ void main() {
         req.url.path.startsWith('/banner')
             ? png(48, 16, shade: 30)
             : png(12, 18, shade: 60),
+        200,
+        headers: const <String, String>{'content-type': 'image/png'},
+      );
+    }
+    if (host == 's4.anilist.co') {
+      return http.Response.bytes(
+        png(57, 12, shade: 120),
         200,
         headers: const <String, String>{'content-type': 'image/png'},
       );
@@ -1162,5 +1192,229 @@ void main() {
     expect(store.hasCover('k2'), isFalse);
     expect(store.recordFor('k2'), isNull);
     expect(File(store.coverPathFor('k2')).existsSync(), isFalse);
+  });
+
+  // ── AniList 横幅回落 ──
+
+  /// AniList media（GraphQL 形状，字段同 anilist_books 的 `_mediaFields`）。
+  Map<String, Object?> aniListMedia({
+    int id = 555,
+    String native = 'テスト漫画',
+    String format = 'MANGA',
+    bool adult = false,
+    String? banner =
+        'https://s4.anilist.co/file/anilistcdn/media/manga/banner/555.jpg',
+    String author = 'Taro',
+  }) => <String, Object?>{
+    'id': id,
+    'siteUrl': 'https://anilist.co/manga/$id',
+    'isAdult': adult,
+    'bannerImage': banner,
+    'format': format,
+    'countryOfOrigin': 'JP',
+    'title': <String, Object?>{
+      'romaji': 'Tesuto Manga',
+      'english': null,
+      'native': native,
+    },
+    'coverImage': <String, Object?>{
+      'extraLarge': 'https://s4.anilist.co/file/cover/$id.jpg',
+    },
+    'startDate': <String, Object?>{'year': 2020},
+    'description': '',
+    'staff': <String, Object?>{
+      'edges': <Object?>[
+        <String, Object?>{
+          'role': 'Story & Art',
+          'node': <String, Object?>{
+            'name': <String, Object?>{'full': author, 'native': author},
+          },
+        },
+      ],
+    },
+  };
+
+  http.Response aniListSearch(List<Map<String, Object?>> media) =>
+      json(<String, Object?>{
+        'data': <String, Object?>{
+          'Page': <String, Object?>{'media': media},
+        },
+      });
+
+  http.Response aniListById(Map<String, Object?> media) =>
+      json(<String, Object?>{
+        'data': <String, Object?>{'Media': media},
+      });
+
+  bool isSearch(Map<String, Object?> body) =>
+      '${body['query']}'.contains('Page(');
+
+  /// MangaBaka 系列 100 带 AniList id 555，但没有横幅。
+  Future<http.Response> mangaBakaNoBanner(http.Request req) async {
+    final http.Response? img = image(req);
+    if (img != null) return img;
+    final String path = req.url.path;
+    if (path == '/v1/series/search') {
+      return page(<Object?>[
+        <String, Object?>{
+          ...mbSeries(),
+          'source': <String, Object?>{
+            'anilist': <String, Object?>{'id': 555, 'rating': 8.2},
+          },
+        },
+      ]);
+    }
+    if (path == '/v1/series/100/images') {
+      if (req.url.queryParameters['type'] == 'banner') {
+        return page(<Object?>[]);
+      }
+      return page(<Object?>[mbImage(1, '1'), mbImage(2, '2'), mbImage(3, '3')]);
+    }
+    return http.Response('unexpected ${req.url}', 500);
+  }
+
+  Future<http.Response> bangumiOnly(http.Request req) async {
+    if (req.url.host == 'api.mangabaka.org') {
+      return http.Response('boom', 500);
+    }
+    return bangumi(req) ?? image(req) ?? http.Response('?', 404);
+  }
+
+  test('MangaBaka 没有横幅：按它记的 AniList id 直取横幅，不按标题搜', () async {
+    await seed('k1', 'テスト漫画 1');
+    await seed('k2', 'テスト漫画 2');
+    final BookArtScrapeService svc = service(
+      mangaBakaNoBanner,
+      aniList: (Map<String, Object?> body) {
+        expect(isSearch(body), isFalse, reason: '有 AniList id 时不搜标题');
+        expect((body['variables']! as Map<String, Object?>)['id'], 555);
+        return aniListById(aniListMedia());
+      },
+    );
+    final BookArtRunResult result = await svc.run(<String>['k1', 'k2']);
+    svc.close();
+
+    final BookArtSeriesPlan plan = result.series.single;
+    expect(plan.source, BookArtSource.mangabaka);
+    expect(plan.errors, isEmpty);
+    expect(plan.banner?.source, BookArtSource.anilist);
+    expect(aniListQueries, hasLength(1));
+    final BookArtRecord record = store.recordFor('k1')!;
+    expect(record.bannerKey, 'anilist_555');
+    expect(record.bannerUrl, contains('s4.anilist.co'));
+    // AniList 不给尺寸：下载后量出来记进记录。
+    expect(record.bannerWidth, 57);
+    expect(record.bannerHeight, 12);
+    expect(store.recordFor('k2')!.bannerKey, 'anilist_555');
+    expect(store.backdropForCollection(<String>['k1', 'k2']), isNotNull);
+    // 卷封面仍来自 MangaBaka：署名照旧。
+    expect(result.usesMangaBaka, isTrue);
+  });
+
+  test('MangaBaka 有横幅：不去问 AniList', () async {
+    await seed('k1', 'テスト漫画 1');
+    final BookArtScrapeService svc = service(mangaBakaOk);
+    final BookArtRunResult result = await svc.run(<String>['k1']);
+    svc.close();
+    expect(result.series.single.banner?.source, BookArtSource.mangabaka);
+    expect(aniListQueries, isEmpty);
+    expect(store.recordFor('k1')!.bannerKey, 'mangabaka_100');
+  });
+
+  test('只在 Bangumi 上认定：AniList 唯一的严格同名同种类条目出横幅', () async {
+    await seed('k1', 'テスト漫画 1');
+    await seed('k2', 'テスト漫画 2');
+    final BookArtScrapeService svc = service(
+      bangumiOnly,
+      aniList: (Map<String, Object?> body) {
+        expect(isSearch(body), isTrue);
+        expect((body['variables']! as Map<String, Object?>)['search'], 'テスト漫画');
+        return aniListSearch(<Map<String, Object?>>[
+          // 同名轻小说（种类不同）与同名衍生作（副标题）都不算。
+          aniListMedia(id: 1, format: 'NOVEL'),
+          aniListMedia(id: 2, native: 'テスト漫画 外伝'),
+          aniListMedia(id: 555),
+        ]);
+      },
+    );
+    final BookArtRunResult result = await svc.run(<String>['k1', 'k2']);
+    svc.close();
+    final BookArtSeriesPlan plan = result.series.single;
+    expect(plan.source, BookArtSource.bangumi);
+    expect(plan.banner?.source, BookArtSource.anilist);
+    expect(store.recordFor('k1')!.bannerKey, 'anilist_555');
+    expect(store.recordFor('k1')!.coverSource, 'bangumi');
+    expect(result.usesMangaBaka, isFalse);
+  });
+
+  test('AniList 同名同种类有两条（重名作品）：不取横幅，也不报错', () async {
+    await seed('k1', 'テスト漫画 1');
+    final BookArtScrapeService svc = service(
+      bangumiOnly,
+      aniList: (Map<String, Object?> body) => aniListSearch(
+        <Map<String, Object?>>[aniListMedia(id: 555), aniListMedia(id: 556)],
+      ),
+    );
+    final BookArtRunResult result = await svc.run(<String>['k1']);
+    svc.close();
+    final BookArtSeriesPlan plan = result.series.single;
+    expect(plan.banner, isNull);
+    expect(plan.errors.where((String e) => e.startsWith('AniList')), isEmpty);
+    expect(store.recordFor('k1')!.bannerKey, isNull);
+    expect(store.hasCover('k1'), isTrue);
+  });
+
+  test('AniList 条目成人向 / 作者不同：不取横幅', () async {
+    await seed('k1', 'テスト漫画 1');
+    for (final Map<String, Object?> media in <Map<String, Object?>>[
+      aniListMedia(adult: true),
+      aniListMedia(author: 'Hanako'),
+    ]) {
+      final BookArtScrapeService svc = service(
+        bangumiOnly,
+        aniList: (Map<String, Object?> body) =>
+            aniListSearch(<Map<String, Object?>>[media]),
+      );
+      final BookArtRunResult result = await svc.run(<String>['k1']);
+      svc.close();
+      expect(result.series.single.banner, isNull);
+      expect(store.recordFor('k1')!.bannerKey, isNull);
+    }
+  });
+
+  test('AniList 出错：记进摘要，卷封面照写', () async {
+    await seed('k1', 'テスト漫画 1');
+    final BookArtScrapeService svc = service(
+      mangaBakaNoBanner,
+      aniList: (Map<String, Object?> body) =>
+          http.Response('upstream down', 503),
+    );
+    final BookArtRunResult result = await svc.run(<String>['k1']);
+    svc.close();
+    final BookArtSeriesPlan plan = result.series.single;
+    expect(plan.banner, isNull);
+    expect(plan.errors.single, startsWith('AniList banner'));
+    expect(store.hasCover('k1'), isTrue);
+    expect(store.recordFor('k1')!.bannerKey, isNull);
+  });
+
+  test('AniList 那张其实不是横幅（宽高比不够）：只丢横幅，卷封面照写', () async {
+    await seed('k1', 'テスト漫画 1');
+    final BookArtScrapeService svc = service((http.Request req) async {
+      if (req.url.host == 's4.anilist.co') {
+        return http.Response.bytes(
+          png(20, 20),
+          200,
+          headers: const <String, String>{'content-type': 'image/png'},
+        );
+      }
+      return mangaBakaNoBanner(req);
+    }, aniList: (Map<String, Object?> body) => aniListById(aniListMedia()));
+    final BookArtRunResult result = await svc.run(<String>['k1']);
+    svc.close();
+    expect(result.series.single.banner, isNull);
+    expect(result.series.single.errors.single, startsWith('banner'));
+    expect(store.recordFor('k1')!.bannerKey, isNull);
+    expect(store.hasCover('k1'), isTrue);
   });
 }
