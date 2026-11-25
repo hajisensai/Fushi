@@ -117,6 +117,7 @@ void main() {
       1,
     );
     final List<RestorePoint> gone = store.pruneScheduled(
+      deviceId: null,
       protectId: ancient.id,
       now: now,
     );
@@ -278,10 +279,12 @@ void main() {
     final void Function() releaseScheduled = RestorePointStore.hold(
       ancient.directory,
     );
-    expect(store.pruneScheduled(now: now), isEmpty);
+    expect(store.pruneScheduled(deviceId: null, now: now), isEmpty);
     releaseScheduled();
     expect(
-      store.pruneScheduled(now: now).map((RestorePoint e) => e.id),
+      store
+          .pruneScheduled(deviceId: null, now: now)
+          .map((RestorePoint e) => e.id),
       <String>[ancient.id],
     );
   });
@@ -303,7 +306,7 @@ void main() {
     final RestorePointDraft writing = store.begin(
       kind: RestorePointKind.scheduled,
     );
-    store.pruneScheduled(now: DateTime.utc(2026, 6));
+    store.pruneScheduled(deviceId: null, now: DateTime.utc(2026, 6));
     expect(stale.existsSync(), isFalse);
     expect(foreign.existsSync(), isTrue);
     expect(Directory(writing.directory).existsSync(), isTrue);

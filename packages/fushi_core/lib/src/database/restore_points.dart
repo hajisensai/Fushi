@@ -69,6 +69,30 @@ const String kRestorePointArchiveFileName = 'backup.zip';
 /// 回滚进度日志（崩溃恢复用）。
 const String kRestorePointRollbackJournalFileName = 'rollback_pending.json';
 
+/// 定时还原点目录里的「谁在写」标记（内容 = 写入设备的 id）：[RestorePointStore.begin] 一开始就写，
+/// 不算还原点的文件。共用文件夹（同步盘）里没有元数据的目录可能是别的设备正在写、或同步还没传完的点；
+/// 只有标记是本机的才当作本机写到一半的残留清掉（[RestorePointStore.cleanIncompleteScheduled]）。
+const String kRestorePointOwnerFileName = '.restore_point_owner';
+
+/// 定时还原点 id 的形状：`<UTC yyyyMMdd-HHmmss-SSS>-<库>-scheduled[-n]`。
+final RegExp _kScheduledIdPattern = RegExp(
+  r'^\d{8}-\d{6}-\d{3}-(fushi|srs)-scheduled(-\d{1,4})?$',
+);
+
+/// [id] 是不是一个合格的定时还原点目录名（用户文件夹 / 云端副本的 id 来自外部：Android 上是提供者给的
+/// 显示名，云端是列目录的结果；取回本机时按它拼路径，`..`、绝对路径之类会逃出存储根）。
+bool isScheduledRestorePointId(String id) =>
+    isPlainRestorePointFileName(id) && _kScheduledIdPattern.hasMatch(id);
+
+/// [name] 是不是目录里的一个普通名字（不空、不是 `.` / `..`、不带路径分隔符或 NUL）。
+bool isPlainRestorePointFileName(String name) =>
+    name.isNotEmpty &&
+    name != '.' &&
+    name != '..' &&
+    !name.contains('/') &&
+    !name.contains(r'\') &&
+    !name.contains('\x00');
+
 const String _kTmpSuffix = '.tmp';
 const String _kRollbackTmpSuffix = '.rollback-tmp';
 
@@ -158,6 +182,7 @@ class RestorePoint {
     this.fullDatabase,
     this.deviceId,
     this.deviceName,
+    this.copiedBackAtMs,
   });
 
   /// 目录名。
@@ -196,12 +221,16 @@ class RestorePoint {
   /// 老的定时点为 null（按类别剥过行）。
   final bool? fullDatabase;
 
-  /// 用户文件夹里的副本（第三期）：哪台设备写的（同步 / 设备本地的设备 id）。文件夹可能被几台设备
-  /// 共用（同步盘），保留规则只修剪本机写的副本；本地存储里的点为 null。
+  /// 哪台设备写的（同步 / 设备本地的设备 id）：定时还原点（本机存储、自定义文件夹）与用户文件夹 /
+  /// 云端副本都带。文件夹可能被几台设备共用（同步盘），保留规则只修剪本机写的点；更早的点为 null。
   final String? deviceId;
 
   /// [deviceId] 那台设备的显示名（还原点页标「来自另一台设备」用）。
   final String? deviceName;
+
+  /// 从用户文件夹 / 云端副本取回本机的时刻。取回的点**从不自动修剪**（用户在还原点页自己删）：否则
+  /// 下一次定时备份的保留规则会把刚取回、还没来得及用的旧点删掉。
+  final int? copiedBackAtMs;
 
   DateTime get createdAt =>
       DateTime.fromMillisecondsSinceEpoch(createdAtMs, isUtc: true);
@@ -243,6 +272,7 @@ class RestorePoint {
     if (fullDatabase != null) 'fullDatabase': fullDatabase,
     if (deviceId != null) 'deviceId': deviceId,
     if (deviceName != null) 'deviceName': deviceName,
+    if (copiedBackAtMs != null) 'copiedBackAtMs': copiedBackAtMs,
   };
 
   /// 解析 [directory] 里的元数据；缺字段 / 不认识的种类 / 读不了返回 null（当作不完整）。
@@ -295,17 +325,13 @@ class RestorePoint {
       // 拼路径，`../` 之类会写到目录外面）。有一个不合格就整份当作不完整。
       for (final Object? f in files) {
         final Object? name = f is Map<String, Object?> ? f['name'] : null;
-        if (name is String &&
-            (name.isEmpty ||
-                name == '.' ||
-                name == '..' ||
-                name.contains('/') ||
-                name.contains(r'\'))) {
+        if (name is String && !isPlainRestorePointFileName(name)) {
           return null;
         }
       }
       final Object? device = raw['deviceId'];
       final Object? deviceName = raw['deviceName'];
+      final Object? copiedBack = raw['copiedBackAtMs'];
       List<String>? strings(Object? v) => v is List<Object?>
           ? <String>[
               for (final Object? e in v)
@@ -340,6 +366,7 @@ class RestorePoint {
         deviceName: deviceName is String && deviceName.isNotEmpty
             ? deviceName
             : null,
+        copiedBackAtMs: copiedBack is int ? copiedBack : null,
       );
     } on Object {
       return null;
@@ -837,6 +864,7 @@ class RestorePointStore {
     required RestorePointKind kind,
     RestorePointDatabase database = RestorePointDatabase.fushi,
     int? nowMs,
+    String? ownerDeviceId,
   }) {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     Directory(root).createSync(recursive: true);
@@ -844,6 +872,12 @@ class RestorePointStore {
     final String dir = p.join(root, id);
     Directory(dir).createSync();
     _activeDrafts.add(dir);
+    if (ownerDeviceId != null) {
+      // 先落「谁在写」：共用文件夹里另一台设备据此认出这不是它的残留（[cleanIncompleteScheduled]）。
+      File(
+        p.join(dir, kRestorePointOwnerFileName),
+      ).writeAsStringSync(ownerDeviceId, flush: true);
+    }
     return RestorePointDraft._(
       id: id,
       directory: dir,
@@ -863,6 +897,8 @@ class RestorePointStore {
     List<String>? excludedCategories,
     bool? includesSrsMedia,
     bool? fullDatabase,
+    String? deviceId,
+    String? deviceName,
   }) {
     try {
       final List<RestorePointFile> files =
@@ -870,7 +906,9 @@ class RestorePointStore {
             for (final FileSystemEntity f in Directory(
               draft.directory,
             ).listSync())
-              if (f is File && p.basename(f.path) != kRestorePointMetaFileName)
+              if (f is File &&
+                  p.basename(f.path) != kRestorePointMetaFileName &&
+                  p.basename(f.path) != kRestorePointOwnerFileName)
                 RestorePointFile(
                   name: p.basename(f.path),
                   size: f.lengthSync(),
@@ -894,6 +932,8 @@ class RestorePointStore {
         excludedCategories: excludedCategories,
         includesSrsMedia: includesSrsMedia,
         fullDatabase: fullDatabase,
+        deviceId: deviceId,
+        deviceName: deviceName,
       );
       _writeAtomicSync(
         p.join(draft.directory, kRestorePointMetaFileName),
@@ -970,15 +1010,27 @@ class RestorePointStore {
   /// （刚写好的）与正被还原的点（[hold]）永不删；返回删掉的点。只动 [root] 下的定时还原点，
   /// 顺带清掉 [root] 下写到一半的定时点目录（[cleanIncompleteScheduled]）——自定义文件夹不归
   /// [prune] 管，没有这一步那里的半截 zip 永远不会被清。
+  ///
+  /// **只修剪本机写的点**（[isOwnScheduledPoint]）：别的设备写的（共用的同步文件夹、取回本机的副本）
+  /// 不占日 / 周 / 月桶、不算进大小上限、从不自动删；取回本机的点（[RestorePoint.copiedBackAtMs]）也从不
+  /// 自动删。[sharedRoot]：存储根可能被几台设备共用（桌面自定义文件夹），没有设备标记的点当作别人的。
   List<RestorePoint> pruneScheduled({
+    required String? deviceId,
+    bool sharedRoot = false,
     String? protectId,
     DateTime? now,
     BackupRetentionPolicy policy = kRestorePointScheduledRetention,
   }) {
-    cleanIncompleteScheduled();
+    cleanIncompleteScheduled(deviceId: deviceId, sharedRoot: sharedRoot);
     final List<RestorePoint> scheduled = <RestorePoint>[
       for (final RestorePoint point in list())
-        if (point.kind == RestorePointKind.scheduled) point,
+        if (point.kind == RestorePointKind.scheduled &&
+            isOwnScheduledPoint(
+              point,
+              deviceId: deviceId,
+              sharedRoot: sharedRoot,
+            ))
+          point,
     ];
     final List<RestorePoint> doomed = planBackupRetention<RestorePoint>(
       scheduled,
@@ -995,9 +1047,24 @@ class RestorePointStore {
     return doomed;
   }
 
+  /// [point] 算不算本机写的、可以自动修剪的定时还原点：取回本机的副本从不算；有设备标记的看是不是
+  /// [deviceId]；没有标记的（这一期之前写的）在私有存储里算本机的，在共用存储（[sharedRoot]）里不算。
+  static bool isOwnScheduledPoint(
+    RestorePoint point, {
+    required String? deviceId,
+    required bool sharedRoot,
+  }) {
+    if (point.copiedBackAtMs != null) return false;
+    final String? owner = point.deviceId;
+    if (owner == null) return !sharedRoot;
+    return owner == deviceId;
+  }
+
   /// 删掉 [root] 下写到一半的定时还原点目录（id 带 `-scheduled`、没有元数据、本进程没在写）。
-  /// 返回删掉的目录数。
-  int cleanIncompleteScheduled() {
+  /// [sharedRoot]（共用的自定义文件夹）时只删「谁在写」标记（[kRestorePointOwnerFileName]）是
+  /// [deviceId] 的：没有标记 / 标记是别人的目录可能是别的设备正在写、或同步盘还没传完元数据的点，删了
+  /// 会经同步把那台设备的点也删掉。返回删掉的目录数。
+  int cleanIncompleteScheduled({String? deviceId, bool sharedRoot = false}) {
     final Directory dir = Directory(root);
     if (!dir.existsSync()) return 0;
     final String marker = '-${RestorePointKind.scheduled.wire}';
@@ -1009,10 +1076,22 @@ class RestorePointStore {
           File(p.join(e.path, kRestorePointMetaFileName)).existsSync()) {
         continue;
       }
+      if (sharedRoot && _ownerOf(e.path) != deviceId) continue;
       _deleteDirQuietly(e.path);
       removed++;
     }
     return removed;
+  }
+
+  static String? _ownerOf(String directory) {
+    try {
+      final File f = File(p.join(directory, kRestorePointOwnerFileName));
+      if (!f.existsSync()) return null;
+      final String text = f.readAsStringSync().trim();
+      return text.isEmpty ? null : text;
+    } on Object {
+      return null;
+    }
   }
 
   /// 删掉一个还原点（还原点页「删除」）。
