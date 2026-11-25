@@ -12,6 +12,8 @@ library;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show FushiPageTitleStyle, pageTitleStyleOf;
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart'
     show WindowSizeClass, windowSizeClassReal;
@@ -162,6 +164,15 @@ class FushiPageTitleMetrics {
     ),
     FushiPageTitleTier.section => sectionTitle,
   };
+
+  /// 此处生效的 [tier] 档页名字阶：出厂字阶叠上用户的页面标题样式（字号比例、
+  /// 粗细，[pageTitleStyleOf]）。凡是有 context 的绘制 / 量宽处一律走这里，不直接
+  /// 读 [titleScale]——否则用户调了字号，量出来的行高与画出来的字对不上。
+  static FushiPageTitleScale titleScaleOf(
+    BuildContext context, {
+    required bool compact,
+    FushiPageTitleTier tier = FushiPageTitleTier.page,
+  }) => forCompact(compact).titleScale(tier).styled(pageTitleStyleOf(context));
 
   /// 一级切换（「媒体库 / 在线」）字号：副段，比页名小一档、未选项变淡；
   /// 页名不跟着缩。
@@ -329,6 +340,21 @@ class FushiPageTitleScale {
   /// 字距（em）与行高。
   final double letterSpacingEm;
   final double lineHeight;
+
+  /// 叠上用户的页面标题样式：字号（展开 / 收起 / 两行范围）一起乘比例，收缩
+  /// 比例不变；选过粗细时换字重。
+  FushiPageTitleScale styled(FushiPageTitleStyle user) {
+    if (user.fontScale == 1 && user.weight == null) return this;
+    return FushiPageTitleScale(
+      fontSize: user.scaleFont(fontSize),
+      collapsedFontSize: user.scaleFont(collapsedFontSize),
+      twoLineMinFontSize: user.scaleFont(twoLineMinFontSize),
+      twoLineMaxFontSize: user.scaleFont(twoLineMaxFontSize),
+      weight: user.weightOr(weight),
+      letterSpacingEm: letterSpacingEm,
+      lineHeight: lineHeight,
+    );
+  }
 
   /// 这一档的页名字样（颜色由调用方给）。
   TextStyle style(TextStyle base, {required Color color}) => base.copyWith(

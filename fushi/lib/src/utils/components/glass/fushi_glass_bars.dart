@@ -8,6 +8,8 @@ import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show FushiPageTitleStyle, pageTitleStyleOf;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiTopFadeScrim, kFushiTopFadeExtent, kFushiTopScrimOverlayOpacity;
@@ -22,6 +24,7 @@ import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
         FushiMastheadScope,
         fushiMastheadCompact,
         fushiMastheadTitleStyle,
+        fushiPageTitleColorOf,
         kFushiMastheadActionExtent;
 import 'package:fushi/src/utils/components/fushi_segment_widths.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart'
@@ -1158,7 +1161,8 @@ class _FushiMastheadBarTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool compact = fushiMastheadCompact(context);
-    final double size = compact ? 28 : 36;
+    // 与页头大字收起态同一字号，跟着用户的页面标题字号比例走（拍板台 DN2p82rNPg）。
+    final double size = pageTitleStyleOf(context).scaleFont(compact ? 28 : 36);
     final TextStyle base = fushiMastheadTitleStyle(
       context,
       compact: compact,
@@ -1688,17 +1692,32 @@ class FushiSliverAppBar extends StatelessWidget {
 const double _kAppleLargeTitleBand = 52;
 const double _kAppleLargeTitleBandDesktop = 44;
 
-/// 大标题字阶：iOS 34 bold、桌面 26 bold（label 色）。
+/// 大标题字阶：iOS 34 bold、桌面 26 bold（label 色），叠上用户的页面标题样式
+/// （字号比例 / 粗细 / 颜色，拍板台 DN2p82rNPg）。
 TextStyle _glassLargeTitleStyle(BuildContext context) {
   final bool desktop = _isDesktopBar(context);
+  final FushiPageTitleStyle user = pageTitleStyleOf(context);
   return (Theme.of(context).textTheme.headlineMedium ?? const TextStyle())
       .copyWith(
-        fontSize: desktop ? 26 * fushiAppleMacScale(context) : 34,
-        fontWeight: FontWeight.w700,
+        fontSize: user.scaleFont(
+          desktop ? 26 * fushiAppleMacScale(context) : 34,
+        ),
+        fontWeight: user.weightOr(FontWeight.w700),
         height: 1.2,
-        letterSpacing: desktop ? 0 : 0.37,
-        color: appleColorsOf(context).label,
+        letterSpacing: desktop ? 0 : user.scaleFont(0.37),
+        color: fushiPageTitleColorOf(context),
       );
+}
+
+/// MD3 外壳大标题行的展开态字阶：headlineMedium 加粗，叠上用户的页面标题样式。
+TextStyle _md3ShellLargeTitleStyle(BuildContext context, ThemeData theme) {
+  final FushiPageTitleStyle user = pageTitleStyleOf(context);
+  final TextStyle base = theme.textTheme.headlineMedium ?? const TextStyle();
+  return base.copyWith(
+    fontSize: base.fontSize == null ? null : user.scaleFont(base.fontSize!),
+    color: fushiPageTitleColorOf(context),
+    fontWeight: user.weightOr(FontWeight.w700),
+  );
 }
 
 /// 大标题收起后的内联小标题：17 semibold、居中（两端一致）。
@@ -2047,10 +2066,8 @@ class FushiShellLargeTitleBar extends StatelessWidget {
     final TextStyle largeStyle = apple
         ? _glassLargeTitleStyle(context)
         // M3E Emphasized 字阶：展开态大标题加粗。
-        : (theme.textTheme.headlineMedium ?? const TextStyle()).copyWith(
-            color: theme.colorScheme.onSurface,
-            fontWeight: FontWeight.w700,
-          );
+        // 叠上用户的页面标题样式（字号比例 / 粗细 / 颜色）。
+        : _md3ShellLargeTitleStyle(context, theme);
     final TextStyle smallStyle = apple
         ? _glassInlineTitleStyle(context)
         : FushiPageChromeTitle.titleStyleOf(context);

@@ -728,6 +728,7 @@ SettingsDestination buildAppearanceDestination() {
           ),
         ],
       ),
+      _pageTitleSection(),
       // 「应用图标」：图标入口与图标 ↔ 主题色的两个联动开关。分区 id 沿用旧
       // 「应用」分区（搜索 / 展开状态按 id 记忆）。
       SettingsSection(
@@ -1200,3 +1201,94 @@ String einkFullRefreshIntervalLabel(int interval) => switch (interval) {
 /// 「玻璃画质」设置行是否显示：只在 Apple（Cupertino）设计系统下（[isGlassDesign]
 /// 已排除墨水屏），M3E 不显示。
 bool glassQualitySettingVisible(BuildContext context) => isGlassDesign(context);
+
+/// 「页面标题」分区（拍板台 DN2p82rNPg，方案 B）：各页顶部大标题的字号 / 粗细 /
+/// 颜色。字号是连续比例滑条（维护者：「大小应该是调节字号大小而不是写死一个
+/// 值」），对 MD3 页头大字（手机 46 → 收起 28、宽窗 84）与 Apple 大标题（iOS 34）
+/// 等比生效，展开 / 收起一起缩，收缩动效比例不变；粗细 / 颜色是档位分段。三项
+/// 都随 [FushiShellTheme] 下发、随 Profile 走（`ThemeNotifier._profileThemePrefKeys`）。
+SettingsSection _pageTitleSection() {
+  return SettingsSection(
+    id: 'appearance.section.page_title',
+    presentation: SettingsSectionPresentation.alwaysExpanded,
+    title: t.settings_appearance_section_page_title,
+    items: <SettingsItem>[
+      // commitOnRelease：改字号要重建整套主题（ThemeExtension），拖动逐帧提交
+      // 会让整树逐帧重建；拖动时读数跟手，松手一次提交，页头随主题过渡平滑缩放。
+      SettingsSliderItem(
+        id: 'appearance.page_title_size',
+        title: t.appearance_page_title_size,
+        subtitle: t.appearance_page_title_size_hint,
+        icon: Icons.format_size_outlined,
+        min: FushiPageTitleStyle.minFontScale,
+        max: FushiPageTitleStyle.maxFontScale,
+        divisions: FushiPageTitleStyle.fontScaleDivisions,
+        label: (double value) => '${(value * 100).round()}%',
+        titleReadout: true,
+        commitOnRelease: true,
+        defaultValue: FushiPageTitleStyle.defaultFontScale,
+        value: (SettingsContext settingsContext) =>
+            settingsContext.appModel.pageTitleFontScale,
+        onChanged: (SettingsContext settingsContext, double value) =>
+            settingsContext.appModel.setPageTitleFontScale(value),
+      ),
+      // 没选过时跟各处的出厂字重走（MD3 模块页特粗、Apple 大标题粗），所以出厂
+      // 默认随设计系统变，恢复默认是删值而不是钉成此刻的档位。
+      SettingsSegmentedItem<PageTitleWeight>(
+        id: 'appearance.page_title_weight',
+        title: t.appearance_page_title_weight,
+        icon: Icons.format_bold_outlined,
+        options: <SettingsSegmentOption<PageTitleWeight>>[
+          SettingsSegmentOption<PageTitleWeight>(
+            value: PageTitleWeight.regular,
+            label: t.appearance_page_title_weight_regular,
+          ),
+          SettingsSegmentOption<PageTitleWeight>(
+            value: PageTitleWeight.bold,
+            label: t.appearance_page_title_weight_bold,
+          ),
+          SettingsSegmentOption<PageTitleWeight>(
+            value: PageTitleWeight.heavy,
+            label: t.appearance_page_title_weight_heavy,
+          ),
+        ],
+        selected: (SettingsContext settingsContext) =>
+            settingsContext.appModel.pageTitleWeight ??
+            _pageTitleWeightDefault(settingsContext),
+        onChanged: (SettingsContext settingsContext, PageTitleWeight value) =>
+            settingsContext.appModel.setPageTitleWeight(value),
+        defaultValueBuilder: _pageTitleWeightDefault,
+        storedChoice: SettingsStoredChoice(
+          isStored: (SettingsContext settingsContext) =>
+              settingsContext.appModel.pageTitleWeight != null,
+          clear: (SettingsContext settingsContext) =>
+              settingsContext.appModel.setPageTitleWeight(null),
+        ),
+      ),
+      SettingsSegmentedItem<PageTitleColor>(
+        id: 'appearance.page_title_color',
+        title: t.appearance_page_title_color,
+        icon: Icons.format_color_text_outlined,
+        options: <SettingsSegmentOption<PageTitleColor>>[
+          SettingsSegmentOption<PageTitleColor>(
+            value: PageTitleColor.accent,
+            label: t.appearance_page_title_color_accent,
+          ),
+          SettingsSegmentOption<PageTitleColor>(
+            value: PageTitleColor.body,
+            label: t.appearance_page_title_color_body,
+          ),
+        ],
+        selected: (SettingsContext settingsContext) =>
+            settingsContext.appModel.pageTitleColor,
+        onChanged: (SettingsContext settingsContext, PageTitleColor value) =>
+            settingsContext.appModel.setPageTitleColor(value),
+        defaultValue: PageTitleColor.defaultColor,
+      ),
+    ],
+  );
+}
+
+/// 没选过粗细时此刻生效的档位（随设计系统）。
+PageTitleWeight _pageTitleWeightDefault(SettingsContext settingsContext) =>
+    PageTitleWeight.defaultFor(apple: isGlassDesign(settingsContext.context));
