@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-25T14:59:00Z",
+ "generatedAt": "2026-11-25T15:01:09Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "a46839d71b5c659860dad756f9c79b386a956fa2",
-  "seq": 32573
+  "sha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
+  "seq": 32574
  },
  "builds": [
   {
@@ -353,10 +353,14 @@
   }
  ],
  "pending": {
-  "headSha": "a46839d71b5c659860dad756f9c79b386a956fa2",
-  "headSeq": 32573,
+  "headSha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
+  "headSeq": 32574,
   "prs": [],
   "direct": [
+   {
+    "sha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
+    "subject": "chore(bugs): settle BUG number collisions on a46839d71"
+   },
    {
     "sha": "a46839d71b5c659860dad756f9c79b386a956fa2",
     "subject": "Merge PR #4432"
