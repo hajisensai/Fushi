@@ -7,6 +7,8 @@ import 'package:fushi/src/models/preference_keys.dart'
     show
         kAnkiSettingsPrefKey,
         kAutoBackupCategoriesPrefKey,
+        kAutoBackupCloudMeteredPrefKey,
+        kAutoBackupCloudPrefKey,
         kAutoBackupFolderPrefKey,
         kAutoBackupIntervalPrefKey,
         kAutoBackupMirrorFolderPrefKey,
@@ -2063,6 +2065,8 @@ class SyncRepository {
     // 自动备份的节奏、内容与落点：描述这台设备（自定义文件夹是本机路径）；恢复备份不该
     // 替这台设备改掉它的备份设置。
     kAutoBackupCategoriesPrefKey,
+    kAutoBackupCloudMeteredPrefKey,
+    kAutoBackupCloudPrefKey,
     kAutoBackupFolderPrefKey,
     kAutoBackupIntervalPrefKey,
     // 移动端用户文件夹的授权句柄（SAF 树 URI / 安全作用域书签）只在这台设备有效。

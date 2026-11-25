@@ -139,6 +139,12 @@ const String kAutoBackupMirrorFolderPrefKey = 'auto_backup_mirror_folder';
 /// String：[kAutoBackupMirrorFolderPrefKey] 那个文件夹的显示名。
 const String kAutoBackupMirrorLabelPrefKey = 'auto_backup_mirror_label';
 
+/// bool（缺省 false）：每份定时还原点再复制一份到已配置的同步后端（云端副本，第三期 D8–D11）。
+const String kAutoBackupCloudPrefKey = 'auto_backup_cloud';
+
+/// bool（缺省 false = 只在 Wi-Fi / 不计流量的网络上传，D10）：云端副本也用移动数据上传。
+const String kAutoBackupCloudMeteredPrefKey = 'auto_backup_cloud_metered';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -267,6 +273,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 自动备份（定时还原点，docs/specs/2026-11-25-auto-backup-restore-points.md 第二层），
   // 全部设备本地（deviceLocalPrefKeys）：描述的是这台设备的备份节奏与落点。
   kAutoBackupCategoriesPrefKey,
+  kAutoBackupCloudMeteredPrefKey,
+  kAutoBackupCloudPrefKey,
   kAutoBackupFolderPrefKey,
   kAutoBackupIntervalPrefKey,
   kAutoBackupMirrorFolderPrefKey,

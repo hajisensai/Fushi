@@ -14,8 +14,10 @@
 /// 不 import AppModel（import 大环守卫）。
 library;
 
+import 'dart:io' show InternetAddressType, NetworkInterface;
+
 import 'package:flutter/foundation.dart'
-    show TargetPlatform, defaultTargetPlatform, kIsWeb;
+    show TargetPlatform, debugPrint, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/services.dart'
     show MethodChannel, MissingPluginException, PlatformException;
 import 'package:fushi/src/media/source_library/source_folder_access.dart'
@@ -203,10 +205,21 @@ Future<Object?> _invokeSaf(
   try {
     return await channel.invokeMethod<Object?>(method, args);
   } on PlatformException catch (e) {
-    if (e.code == 'UNAVAILABLE') {
-      throw BackupFolderUnavailableException(e.message ?? e.code);
-    }
-    rethrow;
+    // 原生错误码（`BackupFolderChannel.java` 类注释）→ 已知原因；原文（可能带 URI / 路径）只进调试日志。
+    debugPrint(
+      'AutoBackup: backup folder $method failed: ${e.code} ${e.message}',
+    );
+    throw switch (e.code) {
+      'UNAVAILABLE' => BackupFolderUnavailableException(e.code),
+      'NOT_FOUND' => const BackupMirrorException(kBackupMirrorErrorNotFound),
+      'LOCAL_IO' => const BackupMirrorException(kBackupMirrorErrorLocalIo),
+      'UNSUPPORTED' => const BackupMirrorException(
+        kBackupMirrorErrorUnsupported,
+      ),
+      'RENAMED' => const BackupMirrorException(kBackupMirrorErrorRenamed),
+      'LOADING' => const BackupMirrorException(kBackupMirrorErrorLoading),
+      _ => const BackupMirrorException(kBackupMirrorErrorFailed),
+    };
   } on MissingPluginException catch (e) {
     throw BackupFolderUnavailableException('$e');
   }
@@ -232,7 +245,9 @@ class SafBackupFolderMirror implements BackupFolderMirror {
         if (e is! Map<Object?, Object?>) continue;
         final Object? name = e['name'];
         final Object? meta = e['meta'];
+        // 名字来自提供者（显示名），按它拼路径前先认形状：`..`、带分隔符的一律不要。
         if (name is! String || meta is! String) continue;
+        if (!isScheduledRestorePointId(name)) continue;
         final RestorePoint? point = RestorePoint.tryParse(
           meta,
           id: name,
@@ -277,6 +292,54 @@ class SafBackupFolderMirror implements BackupFolderMirror {
       });
 
   @override
-  Future<void> delete(String id) =>
-      _invoke('delete', <String, Object?>{'dir': id});
+  Future<void> delete(String id) {
+    if (!isScheduledRestorePointId(id)) {
+      throw ArgumentError.value(id, 'id', 'not a restore point id');
+    }
+    return _invoke('delete', <String, Object?>{'dir': id});
+  }
+}
+
+// ── 网络：云端副本只在不计流量的网络上传（D10） ──────────────────────────────
+
+/// 当前网络是不是不计流量（Wi-Fi / 以太网）。
+///
+/// - Android：`ConnectivityManager.isActiveNetworkMetered()`（原生 `networkUnmetered`；按流量计费的
+///   Wi-Fi 热点也算计流量）。
+/// - iOS：Wi-Fi 接口 `en0` 有可路由的 IPv4 地址就算在 Wi-Fi 上（有 Wi-Fi 时系统默认走 Wi-Fi）。
+/// - 桌面：一律算不计流量（有线 / Wi-Fi）。
+/// 查不出来时按计流量处理（宁可晚传，不偷用移动数据）。
+Future<bool> currentNetworkUnmetered({MethodChannel? channel}) async {
+  if (kIsWeb) return false;
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.android:
+      try {
+        final Object? raw = await (channel ?? FushiChannels.backupFolder)
+            .invokeMethod<Object?>('networkUnmetered');
+        return raw == true;
+      } on PlatformException {
+        return false;
+      } on MissingPluginException {
+        return false;
+      }
+    case TargetPlatform.iOS:
+      try {
+        final List<NetworkInterface> interfaces = await NetworkInterface.list(
+          type: InternetAddressType.IPv4,
+        );
+        return interfaces.any(
+          (NetworkInterface i) =>
+              i.name == 'en0' &&
+              i.addresses.any((a) => !a.isLinkLocal && !a.isLoopback),
+        );
+      } on Object {
+        return false;
+      }
+    case TargetPlatform.fuchsia:
+      return false;
+    case TargetPlatform.linux:
+    case TargetPlatform.macOS:
+    case TargetPlatform.windows:
+      return true;
+  }
 }

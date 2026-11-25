@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
 import 'package:drift/drift.dart' show Variable;
@@ -9,12 +11,14 @@ import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart';
 import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart';
 import 'package:fushi/src/sync/auto_backup/backup_folder_platform.dart';
+import 'package:fushi/src/sync/auto_backup/cloud_backup_mirror.dart';
 import 'package:fushi/src/sync/auto_backup/restore_point_catalog.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite3;
 
+import 'fake_asset_store.dart';
 import 'temp_dir_cleanup.dart';
 
 /// 假宿主：真的备份服务 + 临时库目录，导出锁 / 提示记在字段里。
@@ -109,7 +113,23 @@ class _FakeHost implements AutoBackupHost {
   }
 
   @override
-  void notifyMirrorFailure(String reason) => mirrorFailures.add(reason);
+  void notifyMirrorFailure(AutoBackupMirrorKind kind, String reason) =>
+      mirrorFailures.add(
+        kind == AutoBackupMirrorKind.cloud ? 'cloud:$reason' : reason,
+      );
+
+  /// 云端副本目标（null = 没有可用的同步后端）。
+  AutoBackupMirrorTarget? cloud;
+  bool unmetered = true;
+
+  @override
+  Future<AutoBackupMirrorTarget?> cloudTarget() async => cloud;
+
+  @override
+  Future<String?> cloudBackendLabel() async => cloud?.label;
+
+  @override
+  Future<bool> networkUnmetered() async => unmetered;
 }
 
 /// 假的用户文件夹平台：「文件夹」是临时目录，经真的 [IoBackupFolderMirror] 读写。
@@ -120,6 +140,19 @@ class _FakeFolderPlatform implements BackupFolderPlatform {
   final Map<String, String> roots;
   bool available = true;
   bool failUpload = false;
+
+  /// 非空时 open 先等它（模拟卡住的提供者）。
+  Future<void>? listGate;
+
+  /// 上传前等它（模拟卡住的上传）；[uploadStarted] 在开始上传时完成。
+  Future<void>? uploadGate;
+  Completer<void>? uploadStarted;
+
+  /// 这些 id 删不掉（修剪 / 清理失败）。
+  final Set<String> undeletable = <String>{};
+
+  /// 所有删除都失败。
+  bool failAllDeletes = false;
   int opens = 0;
   int closes = 0;
 
@@ -135,36 +168,57 @@ class _FakeFolderPlatform implements BackupFolderPlatform {
   @override
   Future<BackupFolderSession> open(AutoBackupMirrorFolder folder) async {
     opens++;
+    final Future<void>? gate = listGate;
+    if (gate != null) await gate;
     final String? root = roots[folder.handle];
     if (!available || root == null) {
       throw BackupFolderUnavailableException(folder.label);
     }
     final IoBackupFolderMirror io = IoBackupFolderMirror(root);
     return BackupFolderSession(
-      mirror: failUpload ? _FailingUploadMirror(io) : io,
+      mirror: _ScriptedMirror(io, this),
       close: () async => closes++,
     );
   }
 }
 
-class _FailingUploadMirror implements BackupFolderMirror {
-  _FailingUploadMirror(this.inner);
+class _ScriptedMirror implements BackupFolderMirror {
+  _ScriptedMirror(this.inner, this.platform);
 
-  final BackupFolderMirror inner;
+  final IoBackupFolderMirror inner;
+  final _FakeFolderPlatform platform;
 
   @override
   Future<MirrorFolderListing> list() => inner.list();
 
   @override
-  Future<void> upload(RestorePoint local, {required String metaText}) =>
-      throw const FileSystemException('disk full');
+  Future<void> upload(RestorePoint local, {required String metaText}) async {
+    platform.uploadStarted?.complete();
+    final Future<void>? gate = platform.uploadGate;
+    if (gate != null) await gate;
+    if (platform.failUpload) {
+      // 写了一半就失败：留下没有元数据的半截目录。
+      final Directory dir = Directory(p.join(inner.root, local.id))
+        ..createSync(recursive: true);
+      File(
+        p.join(dir.path, kRestorePointArchiveFileName),
+      ).writeAsStringSync('ha');
+      throw FileSystemException('disk full', p.join(dir.path, 'x'));
+    }
+    return inner.upload(local, metaText: metaText);
+  }
 
   @override
   Future<void> download(MirroredRestorePoint copy, String destDirectory) =>
       inner.download(copy, destDirectory);
 
   @override
-  Future<void> delete(String id) => inner.delete(id);
+  Future<void> delete(String id) async {
+    if (platform.failAllDeletes || platform.undeletable.contains(id)) {
+      throw FileSystemException('locked', id);
+    }
+    return inner.delete(id);
+  }
 }
 
 /// 在 [folder] 里造一份别人（或本机）写的副本。
@@ -738,11 +792,15 @@ void main() {
       expect(host.mirrorFailures, hasLength(1));
     });
 
-    test('复制失败（写不进去）不留完整标记，状态记原因', () async {
+    test('复制失败（写不进去）不留完整标记，半截目录删掉，状态记错误码（不带路径原文）', () async {
       platform.failUpload = true;
       expect(await controller.checkNow(), AutoBackupOutcome.created);
-      expect(controller.status.value.mirror.error, contains('disk full'));
+      expect(controller.status.value.mirror.error, kBackupMirrorErrorFailed);
+      expect(controller.status.value.mirror.pendingId, isNull);
       expect((await IoBackupFolderMirror(folderDir).list()).points, isEmpty);
+      final String id = controller.status.value.lastSuccessPointId!;
+      expect(Directory(p.join(folderDir, id)).existsSync(), isFalse);
+      expect(controller.status.value.mirror.leftovers, isEmpty);
     });
 
     test('复制到一半进程没了：下次检查按 id 精确清掉半截副本并补复制', () async {
@@ -826,17 +884,298 @@ void main() {
       expect(File(restored.archivePath!).existsSync(), isTrue);
     });
 
-    test('有备份在跑：取回 / 删除副本报 busy，什么都不动', () async {
+    test('导出锁不挡文件夹操作；同一文件夹上已有操作在跑才报 busy', () async {
       expect(await controller.checkNow(), AutoBackupOutcome.created);
       final MirroredRestorePoint copy =
           (await controller.listMirrorCopies())!.points.single;
       final Object other = host.beginBackupExport()!;
+      // 别处拿着导出锁（手动导出 / 还原）：取回副本照样能做。
+      final RestorePoint back = await controller.copyMirrorCopyToDevice(copy);
+      expect(back.id, copy.id);
+      host.endBackupExport(other);
+      // 文件夹上有一个卡住的操作：第二个报 busy，什么都不动。
+      final Completer<void> gate = Completer<void>();
+      platform.listGate = gate.future;
+      final Future<MirrorFolderListing?> stuck = controller
+          .copyMirrorCopyToDevice(copy)
+          .then((_) => null);
+      await Future<void>.delayed(Duration.zero);
       await expectLater(
         controller.deleteMirrorCopy(copy),
         throwsA(isA<AutoBackupBusyException>()),
       );
-      host.endBackupExport(other);
+      gate.complete();
+      await stuck;
       expect((await controller.listMirrorCopies())!.points, hasLength(1));
+    });
+    test('被打断的记录只清没有元数据的那份：完整副本、别的文件夹的记录都不删', () async {
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      // 上次被杀在修剪途中：pendingId 那份元数据已经写好，是完整副本。
+      const String complete = '20261124-000000-000-fushi-scheduled';
+      _writeFolderCopy(
+        folderDir,
+        complete,
+        createdAt: DateTime.utc(2026, 11, 24),
+        deviceId: 'device-1',
+      );
+      writeAutoBackupStatus(
+        dbDir,
+        controller.status.value.withMirror(
+          controller.status.value.mirror.started(
+            folderKey: folder.key,
+            id: complete,
+          ),
+        ),
+      );
+      controller.reloadStatus();
+      now = now.add(const Duration(days: 1));
+      expect(await controller.backUpNow(), AutoBackupOutcome.created);
+      expect(Directory(p.join(folderDir, complete)).existsSync(), isTrue);
+
+      // 别的文件夹里被打断的 id：在这个文件夹里同名的半截目录也不碰（不是这里留下的）。
+      const String elsewhere = '20261123-000000-000-fushi-scheduled';
+      Directory(p.join(folderDir, elsewhere)).createSync();
+      writeAutoBackupStatus(
+        dbDir,
+        controller.status.value.withMirror(
+          const AutoBackupMirrorStatus(
+            target: 'another-folder',
+          ).started(folderKey: 'another-folder', id: elsewhere),
+        ),
+      );
+      controller.reloadStatus();
+      now = now.add(const Duration(days: 1));
+      expect(await controller.backUpNow(), AutoBackupOutcome.created);
+      expect(Directory(p.join(folderDir, elsewhere)).existsSync(), isTrue);
+    });
+
+    test('失败后删不掉的半截副本记进 leftovers，下一次复制时清掉', () async {
+      platform.failUpload = true;
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      final String id = controller.status.value.lastSuccessPointId!;
+      // 让删除也失败：残留记下来。
+      expect(Directory(p.join(folderDir, id)).existsSync(), isFalse);
+      platform.failAllDeletes = true;
+      now = now.add(const Duration(days: 1));
+      expect(await controller.backUpNow(), AutoBackupOutcome.created);
+      final String second = controller.status.value.lastSuccessPointId!;
+      expect(controller.status.value.mirror.leftovers, contains(second));
+      expect(controller.status.value.mirror.error, kBackupMirrorErrorFailed);
+      // 恢复正常：下一次复制先清掉残留（没有元数据），再复制。
+      platform
+        ..failUpload = false
+        ..failAllDeletes = false;
+      now = now.add(const Duration(days: 1));
+      expect(await controller.backUpNow(), AutoBackupOutcome.created);
+      expect(Directory(p.join(folderDir, second)).existsSync(), isFalse);
+      expect(controller.status.value.mirror.leftovers, isEmpty);
+      expect(controller.status.value.mirror.error, isNull);
+    });
+
+    test('修剪时一份删不掉：这份复制照样成功、不提示，删不掉的记进 pruneError', () async {
+      const String old = '20250101-000000-000-fushi-scheduled';
+      _writeFolderCopy(
+        folderDir,
+        old,
+        createdAt: DateTime.utc(2025),
+        deviceId: 'device-1',
+      );
+      platform.undeletable.add(old);
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      final AutoBackupMirrorStatus mirror = controller.status.value.mirror;
+      expect(
+        mirror.holds(folder.key, controller.status.value.lastSuccessPointId),
+        isTrue,
+      );
+      expect(mirror.error, isNull);
+      expect(mirror.pruneError, old);
+      expect(host.mirrorFailures, isEmpty);
+      platform.undeletable.clear();
+      now = now.add(const Duration(days: 1));
+      expect(await controller.backUpNow(), AutoBackupOutcome.created);
+      expect(controller.status.value.mirror.pruneError, isNull);
+      expect(Directory(p.join(folderDir, old)).existsSync(), isFalse);
+    });
+
+    test('复制不拿导出锁：上传卡住时还原 / 导出照样拿得到锁，本机点被钉住', () async {
+      final Completer<void> gate = Completer<void>();
+      platform
+        ..uploadGate = gate.future
+        ..uploadStarted = Completer<void>();
+      final Future<AutoBackupOutcome> run = controller.checkNow();
+      await platform.uploadStarted!.future;
+      expect(host.exportActive, isFalse);
+      final Object? token = host.beginBackupExport();
+      expect(token, isNotNull, reason: '卡住的复制不能挡住手动导出 / 还原');
+      host.endBackupExport(token!);
+      final RestorePoint local = controller.scheduledPoints().single;
+      expect(RestorePointStore.isHeld(local.directory), isTrue);
+      expect(controller.mirroring, isTrue);
+      gate.complete();
+      expect(await run, AutoBackupOutcome.created);
+      expect(RestorePointStore.isHeld(local.directory), isFalse);
+      expect(controller.mirroring, isFalse);
+    });
+
+    test('定时还原点带写入设备；取回本机的点之后不会被修剪', () async {
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      final RestorePoint first = controller.scheduledPoints().single;
+      expect(first.deviceId, 'device-1');
+      // 本机那份没了、从文件夹取回：记 copiedBackAtMs。
+      Directory(first.directory).deleteSync(recursive: true);
+      final MirroredRestorePoint copy =
+          (await controller.listMirrorCopies())!.points.single;
+      final RestorePoint back = await controller.copyMirrorCopyToDevice(copy);
+      expect(back.copiedBackAtMs, isNotNull);
+      // 很久之后的新备份：按保留规则取回的旧点早该被删，但取回的从不自动删。
+      now = now.add(const Duration(days: 400));
+      await addStat('changed');
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      expect(Directory(back.directory).existsSync(), isTrue);
+    });
+  });
+
+  group('云端副本（D8–D11）', () {
+    late FakeAssetStore store;
+
+    setUp(() {
+      store = FakeAssetStore(reportNullSizes: true);
+      host.cloud = AutoBackupMirrorTarget(
+        kind: AutoBackupMirrorKind.cloud,
+        key: 'cloud-test',
+        label: 'Test cloud',
+        policy: kCloudBackupRetention,
+        open: () async => BackupFolderSession(
+          mirror: SyncAssetStoreBackupMirror(
+            store: store,
+            namespace: () => store.ensureNamespace(kCloudBackupNamespace),
+            deviceFolder: 'device-1',
+          ),
+        ),
+      );
+      host.settings = host.settings.copyWith(cloudCopies: true);
+    });
+
+    Future<List<MirroredRestorePoint>> cloudCopies() async =>
+        (await controller.listCloudCopies())!.points;
+
+    test('写好的定时还原点传到云端（设备子目录），状态单独记', () async {
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      final String id = controller.status.value.lastSuccessPointId!;
+      final List<MirroredRestorePoint> copies = await cloudCopies();
+      expect(copies.single.id, id);
+      expect(copies.single.point.deviceId, 'device-1');
+      expect(controller.status.value.cloud.holds('cloud-test', id), isTrue);
+      expect(controller.status.value.mirror.target, isNull);
+    });
+
+    test('只在不计流量的网络上传（缺省）；允许移动数据就照传；没到期时补上', () async {
+      host.unmetered = false;
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      expect(await cloudCopies(), isEmpty);
+      expect(
+        controller.status.value.cloud.error,
+        isNull,
+        reason: '等 Wi-Fi 不算失败',
+      );
+      // 回到 Wi-Fi：没到期的检查补传。
+      host.unmetered = true;
+      now = now.add(const Duration(hours: 1));
+      expect(await controller.checkNow(), AutoBackupOutcome.notDue);
+      expect(await cloudCopies(), hasLength(1));
+      // 允许移动数据：计流量也传。
+      host
+        ..unmetered = false
+        ..settings = host.settings.copyWith(cloudAllowMetered: true);
+      now = now.add(const Duration(days: 1));
+      expect(await controller.backUpNow(), AutoBackupOutcome.created);
+      expect(await cloudCopies(), hasLength(2));
+    });
+
+    test('云端保留更少（7 天 + 4 周），只动本机写的副本', () async {
+      // 预先放一份别的设备的很旧的副本和一份本机的很旧的副本。
+      Future<void> seed(String device, String id, DateTime at) async {
+        final String ns = await store.ensureNamespace(kCloudBackupNamespace);
+        final String dev = await store.ensureFolder(ns, device);
+        final String dir = await store.ensureFolder(dev, id);
+        final File zip = File(p.join(root.path, 'seed.zip'))
+          ..writeAsStringSync('zip');
+        await store.putAsset(dir, kRestorePointArchiveFileName, zip);
+        final RestorePoint point = RestorePoint(
+          id: id,
+          directory: dir,
+          kind: RestorePointKind.scheduled,
+          database: RestorePointDatabase.fushi,
+          createdAtMs: at.millisecondsSinceEpoch,
+          fromSchema: kFushiDbSchemaVersion,
+          toSchema: kFushiDbSchemaVersion,
+          files: const <RestorePointFile>[
+            RestorePointFile(name: kRestorePointArchiveFileName, size: 3),
+          ],
+          deviceId: device,
+        );
+        await store.putBytesAsset(
+          dir,
+          kRestorePointMetaFileName,
+          Uint8List.fromList(utf8.encode(jsonEncode(point.toJson()))),
+        );
+      }
+
+      // 40 天前：本机的超出 7 天 + 4 周（28 天）该删；别人的不动。
+      final DateTime old = now.toUtc().subtract(const Duration(days: 40));
+      await seed('device-1', '20261016-000000-000-fushi-scheduled', old);
+      await seed('device-2', '20261016-000000-001-fushi-scheduled', old);
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      final Set<String> ids = <String>{
+        for (final MirroredRestorePoint c in await cloudCopies()) c.id,
+      };
+      expect(ids, isNot(contains('20261016-000000-000-fushi-scheduled')));
+      expect(ids, contains('20261016-000000-001-fushi-scheduled'));
+      expect(ids, contains(controller.status.value.lastSuccessPointId));
+    });
+
+    test('云端副本取回本机、删除；没有可用后端时报 cloud_auth', () async {
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      final String id = controller.status.value.lastSuccessPointId!;
+      Directory(
+        p.join(dbDir, kRestorePointsDirName, id),
+      ).deleteSync(recursive: true);
+      final MirroredRestorePoint copy = (await cloudCopies()).single;
+      final RestorePoint back = await controller.copyMirrorCopyToDevice(
+        copy,
+        kind: AutoBackupMirrorKind.cloud,
+      );
+      expect(File(back.archivePath!).existsSync(), isTrue);
+      expect(back.copiedBackAtMs, isNotNull);
+      await controller.deleteMirrorCopy(copy, kind: AutoBackupMirrorKind.cloud);
+      expect(await cloudCopies(), isEmpty);
+
+      host.cloud = null;
+      await expectLater(
+        controller.deleteMirrorCopy(copy, kind: AutoBackupMirrorKind.cloud),
+        throwsA(
+          isA<BackupMirrorException>().having(
+            (BackupMirrorException e) => e.code,
+            'code',
+            kBackupMirrorErrorCloudAuth,
+          ),
+        ),
+      );
+    });
+
+    test('上传失败：半截副本删掉，记错误码并提示一次（云端文案）', () async {
+      store.failPutAsset = true;
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      expect(
+        controller.status.value.cloud.error,
+        kBackupMirrorErrorCloudFailed,
+      );
+      expect(host.mirrorFailures, <String>[
+        'cloud:$kBackupMirrorErrorCloudFailed',
+      ]);
+      final String ns = await store.ensureNamespace(kCloudBackupNamespace);
+      final String dev = await store.ensureFolder(ns, 'device-1');
+      expect(await store.listChildren(dev), isEmpty);
     });
   });
 }

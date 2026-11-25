@@ -16,9 +16,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
-import 'package:flutter/foundation.dart' show immutable;
+import 'package:flutter/foundation.dart' show debugPrint, immutable;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+
+/// 写进还原点 / 副本元数据、云端设备子目录名的设备键：同步设备 id 的 sha1 前 16 位（副本在共用文件夹 /
+/// 云端，原始 id 不露出去；同一台设备永远同一个键）。
+String backupDeviceKey(String rawDeviceId) =>
+    sha1.convert(utf8.encode(rawDeviceId)).toString().substring(0, 16);
 
 /// 用户选的文件夹：平台句柄 + 显示名。
 @immutable
@@ -83,7 +88,49 @@ class BackupFolderUnavailableException implements Exception {
   String toString() => 'backup folder unavailable: $detail';
 }
 
-/// 一个用户文件夹上的副本操作（按还原点 id 寻址，不暴露平台句柄）。
+/// 副本操作失败的已知原因（[code] 写进状态文件、界面按码给本地化文案；不带平台原文，原文可能含路径 /
+/// 服务器地址）。
+class BackupMirrorException implements Exception {
+  const BackupMirrorException(this.code);
+
+  /// `kBackupMirrorError*` 之一。
+  final String code;
+
+  @override
+  String toString() => 'backup copy failed: $code';
+}
+
+/// 文件夹里找不到这份副本 / 副本里的文件（被别处删了、还没同步下来）。
+const String kBackupMirrorErrorNotFound = 'copy_not_found';
+
+/// 本机这一侧读写失败（本机的还原点文件不见了、本机目录写不进）。
+const String kBackupMirrorErrorLocalIo = 'copy_local_io';
+
+/// 文件夹所在的提供者不支持需要的操作（例如覆盖写）。
+const String kBackupMirrorErrorUnsupported = 'copy_unsupported';
+
+/// 提供者把新建的文件 / 目录改了名（同名已存在时加后缀）。
+const String kBackupMirrorErrorRenamed = 'copy_renamed';
+
+/// 文件夹还在从云端加载（提供者只给了一部分内容），稍后再试。
+const String kBackupMirrorErrorLoading = 'copy_loading';
+
+/// 其它读写失败。
+const String kBackupMirrorErrorFailed = 'copy_failed';
+
+/// 云端：登录失效 / 没有权限（去同步设置重新登录）。
+const String kBackupMirrorErrorCloudAuth = 'cloud_auth';
+
+/// 云端：连不上（没网、服务器 / 互联主机不在线）。
+const String kBackupMirrorErrorCloudUnreachable = 'cloud_unreachable';
+
+/// 云端：空间不够。
+const String kBackupMirrorErrorCloudQuota = 'cloud_quota';
+
+/// 云端：其它失败（原文只进调试日志的类型名，不进状态：可能含服务器地址）。
+const String kBackupMirrorErrorCloudFailed = 'cloud_failed';
+
+/// 一个副本目标（用户文件夹 / 云端）上的副本操作（按还原点 id 寻址，不暴露平台句柄）。
 abstract interface class BackupFolderMirror {
   /// 列出完整的定时还原点副本（新的在前）。
   Future<MirrorFolderListing> list();
@@ -141,14 +188,19 @@ List<MirroredRestorePoint> planMirrorRetention(
   );
 }
 
-/// 把文件夹副本 [copy] 取回本机还原点存储 [store]（之后它就是一个普通的定时还原点，补回 / 替换 /
-/// 导出照常）。先复制进 [store] 旁边的临时目录、写元数据，再整个目录改名进存储根：存储里永远看不到
-/// 半截的点，并发的修剪也删不到它。本机已有同 id 的完整点直接返回它。
+/// 把副本 [copy] 取回本机还原点存储 [store]（之后它就是一个普通的定时还原点，补回 / 替换 / 导出照常；
+/// 元数据记下 [RestorePoint.copiedBackAtMs]，定时备份的保留规则从不自动删它）。先复制进 [store] 旁边的
+/// 临时目录、写元数据，再整个目录改名进存储根：存储里永远看不到半截的点，并发的修剪也删不到它。本机已有
+/// 同 id 的完整点直接返回它。id 不是定时还原点的形状（外来的名字，可能是 `..`）时抛 [ArgumentError]。
 Future<RestorePoint> copyMirroredPointToStore(
   BackupFolderMirror mirror,
   MirroredRestorePoint copy,
-  RestorePointStore store,
-) async {
+  RestorePointStore store, {
+  int? nowMs,
+}) async {
+  if (!isScheduledRestorePointId(copy.id)) {
+    throw ArgumentError.value(copy.id, 'copy.id', 'not a restore point id');
+  }
   final String target = p.join(store.root, copy.id);
   final RestorePoint? existing = RestorePoint.tryRead(target);
   if (existing != null) return existing;
@@ -166,9 +218,13 @@ Future<RestorePoint> copyMirroredPointToStore(
         throw FileSystemException('incomplete copy of ${f.name}', local.path);
       }
     }
-    File(
-      p.join(work.path, kRestorePointMetaFileName),
-    ).writeAsStringSync(copy.metaText, flush: true);
+    File(p.join(work.path, kRestorePointMetaFileName)).writeAsStringSync(
+      copiedBackMetaText(
+        copy.metaText,
+        nowMs ?? DateTime.now().millisecondsSinceEpoch,
+      ),
+      flush: true,
+    );
     Directory(store.root).createSync(recursive: true);
     // 本机有一个同名的半截目录（没有元数据）：是坏的残留，换掉。
     final Directory stale = Directory(target);
@@ -188,6 +244,15 @@ Future<RestorePoint> copyMirroredPointToStore(
     throw FileSystemException('copied restore point is unreadable', target);
   }
   return point;
+}
+
+/// 取回本机的元数据：原文加上 `copiedBackAtMs`（其余字段原样保留）。
+String copiedBackMetaText(String metaText, int nowMs) {
+  final Object? raw = jsonDecode(metaText);
+  if (raw is! Map<String, Object?>) {
+    throw const FormatException('restore point meta is not an object');
+  }
+  return jsonEncode(<String, Object?>{...raw, 'copiedBackAtMs': nowMs});
 }
 
 /// iCloud Drive 没下载到本机的文件占位名：`.<原名>.icloud`。
@@ -214,27 +279,37 @@ class IoBackupFolderMirror implements BackupFolderMirror {
     for (final FileSystemEntity e in _dir.listSync(followLinks: false)) {
       if (e is! Directory) continue;
       final String id = p.basename(e.path);
-      final File meta = File(p.join(e.path, kRestorePointMetaFileName));
-      if (!meta.existsSync()) {
-        final bool placeholder = Directory(e.path)
-            .listSync(followLinks: false)
-            .any(
-              (FileSystemEntity f) => _isICloudPlaceholderOf(
-                p.basename(f.path),
-                kRestorePointMetaFileName,
-              ),
-            );
-        if (placeholder) notDownloaded++;
-        continue;
+      if (!isScheduledRestorePointId(id)) continue;
+      // 一份读不了（权限、坏的子目录、读到一半被删）只跳过它，不让整个文件夹列不出来。
+      try {
+        final File meta = File(p.join(e.path, kRestorePointMetaFileName));
+        if (!meta.existsSync()) {
+          final bool placeholder = Directory(e.path)
+              .listSync(followLinks: false)
+              .any(
+                (FileSystemEntity f) => _isICloudPlaceholderOf(
+                  p.basename(f.path),
+                  kRestorePointMetaFileName,
+                ),
+              );
+          if (placeholder) notDownloaded++;
+          continue;
+        }
+        final String text = meta.readAsStringSync();
+        final RestorePoint? point = RestorePoint.tryParse(
+          text,
+          id: id,
+          directory: e.path,
+        );
+        if (point == null || point.kind != RestorePointKind.scheduled) {
+          continue;
+        }
+        points.add(MirroredRestorePoint(point: point, metaText: text));
+      } on FileSystemException catch (err) {
+        debugPrint('AutoBackup: skipping unreadable copy $id: $err');
+      } on FormatException catch (err) {
+        debugPrint('AutoBackup: skipping unreadable copy $id: $err');
       }
-      final String text = meta.readAsStringSync();
-      final RestorePoint? point = RestorePoint.tryParse(
-        text,
-        id: id,
-        directory: e.path,
-      );
-      if (point == null || point.kind != RestorePointKind.scheduled) continue;
-      points.add(MirroredRestorePoint(point: point, metaText: text));
     }
     points.sort(
       (MirroredRestorePoint a, MirroredRestorePoint b) =>
@@ -277,6 +352,9 @@ class IoBackupFolderMirror implements BackupFolderMirror {
   @override
   Future<void> delete(String id) async {
     _requireRoot();
+    if (!isScheduledRestorePointId(id)) {
+      throw ArgumentError.value(id, 'id', 'not a restore point id');
+    }
     final Directory dir = Directory(p.join(root, id));
     if (dir.existsSync()) await dir.delete(recursive: true);
   }

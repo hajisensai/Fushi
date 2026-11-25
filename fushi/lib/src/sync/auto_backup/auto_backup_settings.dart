@@ -54,6 +54,8 @@ class AutoBackupSettings {
     this.includeSrsMedia = false,
     this.customFolder,
     this.mirrorFolder,
+    this.cloudCopies = false,
+    this.cloudAllowMetered = false,
   });
 
   final AutoBackupInterval interval;
@@ -73,6 +75,12 @@ class AutoBackupSettings {
   /// 移动端的用户文件夹（第三期，Android SAF 树 / iOS 书签）：定时还原点照旧写进本机存储，写好后
   /// 复制一份进这里。null = 不复制。只有支持的平台用（见 [effectiveMirrorFolder]）。
   final AutoBackupMirrorFolder? mirrorFolder;
+
+  /// 每份定时还原点再复制一份到已配置的同步后端（云端副本，D8–D11）。
+  final bool cloudCopies;
+
+  /// 云端副本也用移动数据 / 计流量的网络上传（缺省只在 Wi-Fi，D10）。
+  final bool cloudAllowMetered;
 
   bool get enabled => interval != AutoBackupInterval.off;
 
@@ -101,6 +109,8 @@ class AutoBackupSettings {
     bool? includeSrsMedia,
     String? Function()? customFolder,
     AutoBackupMirrorFolder? Function()? mirrorFolder,
+    bool? cloudCopies,
+    bool? cloudAllowMetered,
   }) => AutoBackupSettings(
     interval: interval ?? this.interval,
     preferredMinuteOfDay: preferredMinuteOfDay != null
@@ -110,6 +120,8 @@ class AutoBackupSettings {
     includeSrsMedia: includeSrsMedia ?? this.includeSrsMedia,
     customFolder: customFolder != null ? customFolder() : this.customFolder,
     mirrorFolder: mirrorFolder != null ? mirrorFolder() : this.mirrorFolder,
+    cloudCopies: cloudCopies ?? this.cloudCopies,
+    cloudAllowMetered: cloudAllowMetered ?? this.cloudAllowMetered,
   );
 
   @override
@@ -119,7 +131,9 @@ class AutoBackupSettings {
       other.preferredMinuteOfDay == preferredMinuteOfDay &&
       other.contentSignature == contentSignature &&
       other.customFolder == customFolder &&
-      other.mirrorFolder == mirrorFolder;
+      other.mirrorFolder == mirrorFolder &&
+      other.cloudCopies == cloudCopies &&
+      other.cloudAllowMetered == cloudAllowMetered;
 
   @override
   int get hashCode => Object.hash(
@@ -128,6 +142,8 @@ class AutoBackupSettings {
     contentSignature,
     customFolder,
     mirrorFolder,
+    cloudCopies,
+    cloudAllowMetered,
   );
 }
 
@@ -157,6 +173,8 @@ AutoBackupSettings readAutoBackupSettings(
                 : mirror,
           )
         : null,
+    cloudCopies: readPref(kAutoBackupCloudPrefKey) == true,
+    cloudAllowMetered: readPref(kAutoBackupCloudMeteredPrefKey) == true,
   );
 }
 
@@ -176,6 +194,8 @@ Future<void> writeAutoBackupSettings(
   kAutoBackupFolderPrefKey: settings.customFolder ?? '',
   kAutoBackupMirrorFolderPrefKey: settings.mirrorFolder?.handle ?? '',
   kAutoBackupMirrorLabelPrefKey: settings.mirrorFolder?.label ?? '',
+  kAutoBackupCloudPrefKey: settings.cloudCopies,
+  kAutoBackupCloudMeteredPrefKey: settings.cloudAllowMetered,
 });
 
 /// 偏好里存的类别清单 → 文件树集合。只认 [kBackupFileCategories]：老版本存下的数据类别

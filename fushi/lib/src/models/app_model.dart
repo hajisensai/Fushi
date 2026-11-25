@@ -460,8 +460,19 @@ import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
 import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart'
-    show AutoBackupMirrorFolder;
+    show
+        AutoBackupMirrorFolder,
+        backupDeviceKey,
+        kBackupMirrorErrorCloudAuth,
+        kBackupMirrorErrorCloudFailed,
+        kBackupMirrorErrorCloudQuota,
+        kBackupMirrorErrorCloudUnreachable;
 import 'package:fushi/src/sync/auto_backup/backup_folder_platform.dart';
+import 'package:fushi/src/sync/auto_backup/cloud_backup_mirror.dart';
+import 'package:fushi/src/sync/sync_resource_locks.dart'
+    show syncChannelResource, syncResourceLocks;
+import 'package:fushi/src/sync/sync_transient_error.dart'
+    show retryTransientSync;
 import 'package:fushi_engine/sync/interconnect_device_name.dart'
     show resolveInterconnectDeviceName;
 import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart'
@@ -17327,12 +17338,14 @@ class _AppAutoBackupHost implements AutoBackupHost {
   late final BackupFolderPlatform mirrorPlatform =
       currentBackupFolderPlatform();
 
+  /// 写进还原点 / 副本元数据的是设备键（同步设备 id 的 sha1 前缀），不是原始 id：副本在共用文件夹 /
+  /// 云端，原始 id 不必露出去。
   @override
   Future<({String id, String name})> deviceIdentity() async => (
-    id: await SyncRepository(_app.database).getOrCreateDeviceId(),
-    name: await resolveInterconnectDeviceName(
-      _app.platformServices.deviceInfo,
+    id: backupDeviceKey(
+      await SyncRepository(_app.database).getOrCreateDeviceId(),
     ),
+    name: await resolveInterconnectDeviceName(_app.platformServices.deviceInfo),
   );
 
   @override
@@ -17343,8 +17356,117 @@ class _AppAutoBackupHost implements AutoBackupHost {
       );
 
   @override
-  void notifyMirrorFailure(String reason) => FushiToast.show(
-    msg: t.auto_backup_mirror_failed(reason: autoBackupErrorText(reason)),
-    severity: ToastSeverity.warning,
-  );
+  void notifyMirrorFailure(AutoBackupMirrorKind kind, String reason) =>
+      FushiToast.show(
+        msg: switch (kind) {
+          AutoBackupMirrorKind.folder => t.auto_backup_mirror_failed(
+            reason: autoBackupErrorText(reason),
+          ),
+          AutoBackupMirrorKind.cloud => t.auto_backup_cloud_failed(
+            reason: autoBackupErrorText(reason),
+          ),
+        },
+        severity: ToastSeverity.warning,
+      );
+
+  /// 云端副本支持的后端（D9）：OneDrive 不在内。
+  static const Set<SyncBackendType> _cloudBackupBackends = <SyncBackendType>{
+    SyncBackendType.googleDrive,
+    SyncBackendType.fushiServer,
+    SyncBackendType.dropbox,
+    SyncBackendType.webDav,
+    SyncBackendType.ftp,
+    SyncBackendType.sftp,
+  };
+
+  static String _cloudBackendLabel(SyncBackendType type) => switch (type) {
+    SyncBackendType.googleDrive => t.sync_backend_google_drive,
+    SyncBackendType.fushiServer => t.sync_backend_fushi_server,
+    SyncBackendType.webDav => t.sync_backend_webdav,
+    SyncBackendType.oneDrive => t.sync_backend_onedrive,
+    SyncBackendType.dropbox => t.sync_backend_dropbox,
+    SyncBackendType.ftp => t.sync_backend_ftp,
+    SyncBackendType.sftp => t.sync_backend_sftp,
+  };
+
+  /// 后端异常 → 云端副本错误码。只看类型与消息里的配额字样，消息本身不往外传（可能带服务器地址 /
+  /// 响应正文）。
+  static String _classifyCloudError(Object error) {
+    if (error is SyncAuthError) return kBackupMirrorErrorCloudAuth;
+    if (error is SyncPeerUnreachableError ||
+        error is SocketException ||
+        error is TimeoutException ||
+        error is HttpException) {
+      return kBackupMirrorErrorCloudUnreachable;
+    }
+    final String text = '$error'.toLowerCase();
+    if (text.contains('quota') ||
+        text.contains('insufficient_space') ||
+        text.contains('insufficient storage') ||
+        text.contains('http 507')) {
+      return kBackupMirrorErrorCloudQuota;
+    }
+    return kBackupMirrorErrorCloudFailed;
+  }
+
+  /// 云端副本用的通道：已开的同步通道里（云在前、互联在后）第一条支持的。
+  Future<SyncChannel?> _cloudBackupChannel(SyncRepository repo) async {
+    for (final SyncChannel c in await enabledSyncChannelBackends(repo)) {
+      if (_cloudBackupBackends.contains(c.type)) return c;
+    }
+    return null;
+  }
+
+  @override
+  Future<String?> cloudBackendLabel() async {
+    final SyncChannel? channel = await _cloudBackupChannel(
+      SyncRepository(_app.database),
+    );
+    return channel == null ? null : _cloudBackendLabel(channel.type);
+  }
+
+  @override
+  Future<AutoBackupMirrorTarget?> cloudTarget() async {
+    final SyncRepository repo = SyncRepository(_app.database);
+    final SyncChannel? channel = await _cloudBackupChannel(repo);
+    if (channel == null) return null;
+    final SyncBackend backend = channel.backend;
+    // 后端是带可变状态（令牌、folder-id 缓存）的进程级单例：每一次调用都和同步一样独占这条通道。
+    final Set<String> resources = <String>{
+      syncChannelResource(syncChannelScopeOf(backend)),
+    };
+    final bool signedIn = await syncResourceLocks.withResources<bool>(
+      resources,
+      () => backend.restoreAuth(repo),
+    );
+    if (!signedIn) return null;
+    final ({String id, String name}) device = await deviceIdentity();
+    Future<T> guard<T>(Future<T> Function() body, {required bool idempotent}) =>
+        syncResourceLocks.withResources<T>(
+          resources,
+          () => idempotent ? retryTransientSync<T>(body) : body(),
+        );
+    return AutoBackupMirrorTarget(
+      kind: AutoBackupMirrorKind.cloud,
+      key: 'cloud-${channel.type.name}',
+      label: _cloudBackendLabel(channel.type),
+      policy: kCloudBackupRetention,
+      open: () async => BackupFolderSession(
+        mirror: SyncAssetStoreBackupMirror(
+          store: backend,
+          namespace: () async {
+            // FTP / SFTP / WebDAV 的 ensureNamespace 不建同步根，先确保它在。
+            await backend.findOrCreateRootFolder();
+            return backend.ensureNamespace(kCloudBackupNamespace);
+          },
+          deviceFolder: device.id,
+          guard: guard,
+          classify: _classifyCloudError,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Future<bool> networkUnmetered() => currentNetworkUnmetered();
 }
