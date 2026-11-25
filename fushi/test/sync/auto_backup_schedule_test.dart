@@ -9,7 +9,7 @@ void main() {
     interval: AutoBackupInterval.every3Days,
   );
 
-  group('没有偏好时刻：距上次满足满 N 天', () {
+  group('没有偏好时刻：按本地日历日（等同 0:00）', () {
     test('从没满足过立刻到期；关着永不到期', () {
       final DateTime now = DateTime(2026, 11, 25, 9);
       expect(
@@ -26,19 +26,32 @@ void main() {
       );
     });
 
-    test('间隔按天数算', () {
+    test('间隔按日历日算，不要求满 24 小时', () {
       final DateTime last = DateTime(2026, 11, 20, 9);
       bool due(AutoBackupSettings s, DateTime now) =>
           isAutoBackupDue(settings: s, now: now, lastSatisfied: last);
-      expect(due(daily, DateTime(2026, 11, 21, 8, 59)), isFalse);
-      expect(due(daily, DateTime(2026, 11, 21, 9)), isTrue);
+      // 同一天再打开不跑；第二天比昨天早打开也跑（不会隔天才备份一次）。
+      expect(due(daily, DateTime(2026, 11, 20, 23, 59)), isFalse);
+      expect(due(daily, DateTime(2026, 11, 21, 0, 1)), isTrue);
+      expect(due(daily, DateTime(2026, 11, 21, 8, 30)), isTrue);
       expect(due(every3, DateTime(2026, 11, 22, 23)), isFalse);
-      expect(due(every3, DateTime(2026, 11, 23, 9)), isTrue);
+      expect(due(every3, DateTime(2026, 11, 23, 0, 1)), isTrue);
       const AutoBackupSettings weekly = AutoBackupSettings(
         interval: AutoBackupInterval.weekly,
       );
-      expect(due(weekly, DateTime(2026, 11, 26, 9)), isFalse);
-      expect(due(weekly, DateTime(2026, 11, 27, 9)), isTrue);
+      expect(due(weekly, DateTime(2026, 11, 26, 23)), isFalse);
+      expect(due(weekly, DateTime(2026, 11, 27, 0, 1)), isTrue);
+    });
+
+    test('时钟往回拨（上次满足在将来）不到期', () {
+      expect(
+        isAutoBackupDue(
+          settings: daily,
+          now: DateTime(2026, 11, 20, 9),
+          lastSatisfied: DateTime(2026, 11, 21, 9),
+        ),
+        isFalse,
+      );
     });
   });
 

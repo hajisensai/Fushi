@@ -68,7 +68,7 @@ Differences from the design text below, and details the design left open:
   point claims its buckets. Pre-operation: newest 5. Pre-update / pre-rollback: unchanged (3 each).
 - **Schedule** (`fushi/lib/src/sync/auto_backup/`): due rule in `auto_backup_schedule.dart`. With a
   preferred time T and interval N: due when the last *satisfied* run (success, or skipped because nothing
-  changed) is before `latestSlot(T) - (N-1) days`; without T: `now - lastSatisfied >= N days`. The
+  changed) is before `latestSlot(T) - (N-1) days`; without T the slot is local midnight, i.e. calendar days (daily = first launch / resume of each day; a strict `>= N x 24 h` rule would skip every other day for someone who opens the app a little earlier each day). The
   overdue warning also uses "last satisfied" (a skipped run means the newest point is still current).
   Checks: first idle task after the home page is up (`AppModel.startUpdateChecks`), app resume, and every
   15 min on desktop. Status (`restore_points/auto_backup_status.json`, a file so it survives a DB replace)

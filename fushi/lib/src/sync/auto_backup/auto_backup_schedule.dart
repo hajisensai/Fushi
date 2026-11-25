@@ -6,7 +6,8 @@
 /// - **有偏好时刻 T、间隔 N 天**：最近一个已经过去的 T 时刻记作 S（今天的 T 还没到就是昨天的）。
 ///   上次「满足」（成功或「没变化、跳过」）早于 `S - (N-1) 天` 就到期。app 关着错过了 T，下次
 ///   启动 / 回前台立刻补跑（catch-up）；补跑之后下一次重新对齐到 T。
-/// - **没有偏好时刻**：距上次满足满 N 天到期。
+/// - **没有偏好时刻**：按本地日历日算，等同偏好时刻 = 0:00。每日 = 当天第一次启动 / 回前台
+///   就跑，不要求距上次满 24 小时（否则每天打开时间稍早一点就会隔天才备份一次）。
 /// - 从没满足过：立刻到期。
 library;
 
@@ -34,11 +35,7 @@ bool isAutoBackupDue({
   if (!settings.enabled) return false;
   if (lastSatisfied == null) return true;
   final int n = settings.interval.days;
-  final int? minute = settings.preferredMinuteOfDay;
-  if (minute == null) {
-    return !now.difference(lastSatisfied).isNegative &&
-        now.difference(lastSatisfied) >= Duration(days: n);
-  }
+  final int minute = settings.preferredMinuteOfDay ?? 0;
   final DateTime slot = latestAutoBackupSlot(now, minute);
   final DateTime threshold = DateTime(
     slot.year,
@@ -47,7 +44,7 @@ bool isAutoBackupDue({
     slot.hour,
     slot.minute,
   );
-  return lastSatisfied.isBefore(threshold);
+  return lastSatisfied.toLocal().isBefore(threshold);
 }
 
 /// 「上次成功太久了」的告警：上次满足早于两个间隔之前。关着时不告警。
