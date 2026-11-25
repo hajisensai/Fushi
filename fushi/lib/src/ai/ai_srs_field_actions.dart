@@ -1,13 +1,14 @@
-/// 卡片字段 AI 的「可编辑提示词」：内置模板（总体说明 + 四个任务）可原地改、可恢复默认；
-/// 任务模板可复制成具名变体（只属于一个任务，可改名 / 改正文 / 删除）。
+/// 卡片字段 AI 的「可编辑动作」：四个内置动作（写释义 / 翻译 / 改写 / 自定义）各有一份
+/// 模板（= 用户消息）、AI 说明（= 系统消息里用户可改的部分）与回复格式，可原地改、可恢复默认；
+/// 任何动作都可复制成具名变体（只属于一个任务，可改名 / 改三部分 / 删除）。
 ///
 /// 边界：
-/// - 只改**引导文字**：回复格式、JSON 结构、说明语言这份「契约」（[kAiSrsFieldContract]）由代码
-///   永远追加在总体说明之后，用户改不到；回复照旧经 `parseAiSrsFieldSuggestion` /
-///   `aiSrsSanitizeFieldHtml` 本地校验。
-/// - 没有任何改动时，发出去的系统消息与任务行与改造前逐字节一致（测试咬住）。
-/// - 持久化走偏好键 [kAiFieldActionsPrefKey]（一份 JSON）：没有条目 = 用内置；**不把默认值抄进
-///   存储**（改回与内置相同的正文 = 删掉这条覆盖）。逐条容错，坏条目只丢它自己。
+/// - 「写的就是发的」：模板就是用户消息，代码只代入占位符（`buildAiSrsFieldRequest`）；系统
+///   消息末尾的应用规则固定（`aiSrsFieldAppRules`），用户改不到。没有全局「总体说明」。
+/// - 持久化走偏好键 [kAiFieldActionsPrefKey]（一份 JSON，`"v": 2`）：没有条目 = 用内置；
+///   **不把默认值抄进存储**（改回与内置相同 = 删掉这条覆盖）。逐条容错，坏条目只丢它自己。
+///   旧形状（P1：没有 `v`，覆盖 / 变体只有一段任务正文，另有全局 `system` 说明）按
+///   [decodeAiSrsFieldActions] 的规则确定性迁移。
 /// - 覆盖记下它基于的内置版本（[AiSrsFieldPromptOverride.baseVersion]）：内置版本更新后编辑页
 ///   提示「内置提示词更新过」。不用哈希——以后内置文案可能本地化，哈希会误报。
 library;
@@ -15,134 +16,166 @@ library;
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:fushi_srs/fushi_srs.dart' show SrsFieldDef;
-
 import 'package:fushi/src/ai/ai_saved_prompts.dart'
     show AiPromptScene, AiSavedPrompt, kAiBuiltinPromptIdPrefix;
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
-import 'package:fushi/src/ai/ai_srs_template_assistant.dart'
-    show AiSrsFieldBrief;
-import 'package:fushi/src/srs/srs_field_catalog.dart' show srsFieldDisplayName;
+import 'package:fushi/src/ai/ai_srs_field_reply.dart';
 
-/// 偏好键：卡片字段 AI 的提示词覆盖与变体（JSON 对象）。
+/// 偏好键：卡片字段 AI 的动作覆盖与变体（JSON 对象）。
 const String kAiFieldActionsPrefKey = 'ai_field_actions';
 
-/// 每份模板 / 变体正文的长度上限（字符）。
+/// 存储形状的版本（`"v"`）。没有 `v` = P1 形状。
+const int kAiFieldActionsStorageVersion = 2;
+
+/// 模板 / AI 说明各自的长度上限（字符）。
 const int kAiSrsFieldPromptMax = 4000;
 
 /// 变体名称长度上限（字符）。
 const int kAiSrsFieldVariantNameMax = 60;
 
-/// 总体说明模板的 id（**冻结**）。
-const String kAiSrsFieldSystemTemplateId = 'system';
+/// 内置的 AI 说明（四个内置动作共用的默认值；每个动作各存各的）。
+const String kAiSrsFieldGuidance = '''
+You help a language learner edit ONE field of a flashcard note (Anki-compatible). The note's data (note type, fields with their meaning and current content) and the field to write are given in the request. Write only that field's new content.
 
-/// 占位符：AI 输出语言的语言名。
-const String kAiSrsFieldOutputLanguagePlaceholder = 'output_language';
+Field contents are plain text with line breaks. <b>…</b> in them marks the target word of the note.
 
-/// 占位符：正在写的字段的显示名。
-const String kAiSrsFieldTargetFieldPlaceholder = 'target_field';
+Languages: definitions, translations and explanations are written in {{output_language}}. New example sentences, and any text that belongs to the language being learned, are written in the language of the note's sentence and headword, unless the user's instruction says otherwise.
 
-/// 引用的字段为空时代入的文字。
-const String kAiSrsFieldEmptyFieldValue = '(empty)';
+Ground your answer in the note: prefer what its dictionary fields (definition, glossary) say over your own knowledge, and never invent senses, readings or facts that the note does not support.''';
 
-/// 一份内置模板。[id] 与 [version] 都**冻结**：id 是落盘键；改了内置正文就把 [version] 加一，
-/// 基于旧版本改过的用户才会看到「内置提示词更新过」。
+/// 内置模板末尾「用户补充要求」一段（自定义除外）。
+const String _kInstructionTail = '''
+Extra instruction from the user (may be "(none)"):
+{{instruction}}''';
+
+/// 内置「写释义」模板。
+const String kAiSrsFieldDefineTemplate = '''
+Write the definition of the headword of this flashcard note, in {{output_language}}.
+
+Note:
+{{note}}
+
+Field to write: {{target_field}}
+
+Rules:
+- Base it on the note's dictionary fields (definition, glossary) when they are present; do not invent senses.
+- Put the sense used in the note's sentence first and wrap it in <b>…</b>. Number the senses if there are several.
+- "value" holds only the definition. "explanation": one short sentence on which sense the sentence uses.
+
+$_kInstructionTail''';
+
+/// 内置「翻译例句」模板。规则按两类真实难句定：省略主语 / 宾语的整句
+/// （`それに気づいた時 完全に嫌いになった`）与带句末语气词的残句（`うっかりかあ`）。
+const String kAiSrsFieldTranslateTemplate = '''
+Translate the example sentence of this flashcard note into {{output_language}}.
+
+Note:
+{{note}}
+
+Field to write: {{target_field}}
+
+Rules:
+- Translate only the sentence. Use the other fields (target word, its definition, source) only to work out what it means.
+- Be faithful first, natural second: keep the meaning, tone and register (casual, polite, rough). Do not add or drop information, do not soften or intensify, do not explain.
+- Keep fragments, interjections and lines that trail off as they are: do not turn them into full sentences or add a subject or verb the original does not imply.
+- Add a missing subject or object only when the sentence needs one. Pick the most likely reading from the other fields; if they do not settle it, use a neutral choice ("I", "it", "them") and name the guess in "explanation".
+- Translate sentence-final particles and drawn-out endings with a natural equivalent ("huh", "right", "…") instead of dropping them.
+- Target word: if the sentence marks it with <b>…</b>, bold the words that translate that part. If there is no marker, find the headword (or an inflected form of it) in the sentence using the note's headword and dictionary fields; if it appears more than once, use the occurrence the note is about; if the target is a multi-word expression, bold the smallest natural phrase that translates it. If you cannot identify it confidently, bold nothing and say so in "explanation". Never bold the whole sentence.
+- "value" holds only the translation: one line, no quotes, no romanization, no alternatives, no notes.
+- "explanation": one short sentence naming any guess or ambiguity; if there was none, say the translation is direct.
+
+$_kInstructionTail''';
+
+/// 内置「改写」模板。
+const String kAiSrsFieldRewriteTemplate = '''
+Improve the field "{{target_field}}" of this flashcard note, using the note's other fields.
+
+Note:
+{{note}}
+
+Field to write: {{target_field}}
+
+Rules:
+- Keep the meaning; make it clearer and shorter. Never change the meaning.
+- Keep the tone and register unless the instruction says otherwise.
+- Do not add information the note does not support, and do not drop important details.
+- If the field quotes the note's sentence or headword, keep those quotes word for word.
+- "explanation": one short sentence on what you changed.
+
+$_kInstructionTail''';
+
+/// 内置「自定义」模板（纯文本回复）：用户的一句话在最前，后面附上笔记（不要可以删）。
+const String kAiSrsFieldCustomTemplate = '''
+{{instruction}}
+
+Field to write: {{target_field}}
+Note:
+{{note}}''';
+
+/// 一个内置动作。[id] 与 [version] 都**冻结**：id 是落盘键；改了模板 / 说明 / 回复格式中任何
+/// 一样就把 [version] 加一，基于旧版本改过的用户才会看到「内置提示词更新过」。
 class AiSrsFieldTemplate {
   const AiSrsFieldTemplate({
     required this.id,
     required this.version,
-    required this.text,
-    this.task,
+    required this.task,
+    required this.prompt,
   });
 
   final String id;
   final int version;
-  final String text;
-
-  /// 任务模板所属的任务；总体说明为 null。
-  final AiSrsFieldTask? task;
-
-  bool get isSystem => task == null;
+  final AiSrsFieldTask task;
+  final AiSrsFieldActionPrompt prompt;
 }
 
-/// 内置「写释义」任务正文。
-const String kAiSrsFieldDefineTask = '''
-Task: write the definition of the headword for this field, in
-{{output_language}}.
-- Base it on the note's dictionary fields (definition, glossary) when they are
-  present; do not invent senses.
-- Put the sense used in the note's sentence first and wrap it in <b>…</b>.
-  Number the senses if there are several.''';
-
-/// 内置「翻译例句」任务正文。规则按两类真实难句定：省略主语 / 宾语的整句
-/// （`それに気づいた時 完全に嫌いになった`）与带句末语气词的残句（`うっかりかあ`）。
-const String kAiSrsFieldTranslateTask = '''
-Task: translate the note's example sentence into {{output_language}}.
-- Translate only the sentence. Use the other fields (target word, its
-  definition, source) only to work out what it means.
-- Be faithful first, natural second: keep the meaning, tone and register
-  (casual, polite, rough). Do not add or drop information, do not soften or
-  intensify, do not explain.
-- Keep fragments, interjections and lines that trail off as they are: do not
-  turn them into full sentences or add a subject or verb the original does not
-  imply.
-- Add a missing subject or object only when the sentence needs one. Pick the
-  most likely reading from the other fields; if they do not settle it, use a
-  neutral choice ("I", "it", "them") and name the guess in "explanation".
-- Translate sentence-final particles and drawn-out endings with a natural
-  equivalent ("huh", "right", "…") instead of dropping them.
-- Wrap the words that translate the target word (the <b> part of the
-  sentence, or the headword) in <b>…</b>, once.
-- "value" holds only the translation: one line, no quotes, no romanization,
-  no alternatives, no notes.
-- "explanation": one short sentence naming any guess or ambiguity; if there
-  was none, say the translation is direct.''';
-
-/// 内置「改写」任务正文。
-const String kAiSrsFieldRewriteTask = '''
-Task: improve this field using the other fields of the note: keep the
-meaning, make it clearer and shorter. Never change the meaning, and do not
-rewrite the note's sentence or headword text itself.''';
-
-/// 全部内置模板（总体说明在前，任务按 [AiSrsFieldTask] 的顺序）。
+/// 四个内置动作（按 [AiSrsFieldTask] 的顺序）。
+///
+/// v3（「写的就是发的」）：模板写成完整可见的用户消息（笔记经 `{{note}}` 代入），AI 说明按动作
+/// 存，自定义改成纯文本回复。P1 的覆盖（版本 ≤ 2）迁移后都会看到更新提示。
 const List<AiSrsFieldTemplate> kAiSrsFieldTemplates = <AiSrsFieldTemplate>[
-  // v2：加「以笔记的词典字段为准、不编造」一段。
-  AiSrsFieldTemplate(
-    id: kAiSrsFieldSystemTemplateId,
-    version: 2,
-    text: kAiSrsFieldGuidance,
-  ),
-  // v2：以笔记的词典字段为准；句中用到的义项放第一、加粗。
   AiSrsFieldTemplate(
     id: 'task.define',
-    version: 2,
+    version: 3,
     task: AiSrsFieldTask.define,
-    text: kAiSrsFieldDefineTask,
+    prompt: AiSrsFieldActionPrompt(
+      template: kAiSrsFieldDefineTemplate,
+      guidance: kAiSrsFieldGuidance,
+      mode: AiSrsFieldResponseMode.structured,
+    ),
   ),
-  // v2：只译例句；忠实优先、保留语气；残句 / 句末语气词 / 省略的主语宾语怎么处理；
-  // 目标词译文加粗；value 只放译文；猜测写进 explanation。
   AiSrsFieldTemplate(
     id: 'task.translate',
-    version: 2,
+    version: 3,
     task: AiSrsFieldTask.translate,
-    text: kAiSrsFieldTranslateTask,
+    prompt: AiSrsFieldActionPrompt(
+      template: kAiSrsFieldTranslateTemplate,
+      guidance: kAiSrsFieldGuidance,
+      mode: AiSrsFieldResponseMode.structured,
+    ),
   ),
-  // v2：不许改意思，不改写例句 / 词头本身。
   AiSrsFieldTemplate(
     id: 'task.rewrite',
-    version: 2,
+    version: 3,
     task: AiSrsFieldTask.rewrite,
-    text: kAiSrsFieldRewriteTask,
+    prompt: AiSrsFieldActionPrompt(
+      template: kAiSrsFieldRewriteTemplate,
+      guidance: kAiSrsFieldGuidance,
+      mode: AiSrsFieldResponseMode.structured,
+    ),
   ),
   AiSrsFieldTemplate(
     id: 'task.custom',
-    version: 1,
+    version: 3,
     task: AiSrsFieldTask.custom,
-    text: 'Task: follow the user instruction below.',
+    prompt: AiSrsFieldActionPrompt(
+      template: kAiSrsFieldCustomTemplate,
+      guidance: kAiSrsFieldGuidance,
+      mode: AiSrsFieldResponseMode.plain,
+    ),
   ),
 ];
 
-/// 按 id 找内置模板；认不出返回 null。
+/// 按 id 找内置动作；认不出返回 null。
 AiSrsFieldTemplate? aiSrsFieldTemplateById(String id) {
   for (final AiSrsFieldTemplate template in kAiSrsFieldTemplates) {
     if (template.id == id) return template;
@@ -150,7 +183,7 @@ AiSrsFieldTemplate? aiSrsFieldTemplateById(String id) {
   return null;
 }
 
-/// [task] 的内置任务模板。
+/// [task] 的内置动作。
 AiSrsFieldTemplate aiSrsFieldTaskTemplate(AiSrsFieldTask task) =>
     kAiSrsFieldTemplates.firstWhere(
       (AiSrsFieldTemplate template) => template.task == task,
@@ -183,31 +216,61 @@ String _capName(String name) {
       : trimmed.substring(0, kAiSrsFieldVariantNameMax);
 }
 
-/// 用户对一份内置模板的改动。
+AiSrsFieldActionPrompt _capPrompt(AiSrsFieldActionPrompt p) =>
+    AiSrsFieldActionPrompt(
+      template: _capText(p.template),
+      guidance: _capText(p.guidance),
+      mode: p.mode,
+    );
+
+Map<String, Object?> _promptJson(AiSrsFieldActionPrompt p) => <String, Object?>{
+  'template': p.template,
+  'guidance': p.guidance,
+  'mode': aiSrsFieldResponseModeWire(p.mode),
+};
+
+/// v2 条目里的三部分：模板必须是字符串；说明缺失当空；回复格式认不出 / 缺失当 structured。
+AiSrsFieldActionPrompt? _promptFromJson(Map<Object?, Object?> raw) {
+  final Object? template = raw['template'];
+  final Object? guidance = raw['guidance'];
+  final Object? mode = raw['mode'];
+  if (template is! String) return null;
+  return _capPrompt(
+    AiSrsFieldActionPrompt(
+      template: template,
+      guidance: guidance is String ? guidance : '',
+      mode:
+          aiSrsFieldResponseModeFromWire(mode is String ? mode : null) ??
+          AiSrsFieldResponseMode.structured,
+    ),
+  );
+}
+
+/// 用户对一个内置动作的改动（三部分整份存）。
 class AiSrsFieldPromptOverride {
   const AiSrsFieldPromptOverride({
-    required this.text,
+    required this.prompt,
     required this.baseVersion,
   });
 
-  final String text;
+  final AiSrsFieldActionPrompt prompt;
 
-  /// 改动时内置模板的版本。
+  /// 改动时内置动作的版本。
   final int baseVersion;
 
   Map<String, Object?> toJson() => <String, Object?>{
-    'text': text,
+    ..._promptJson(prompt),
     'baseVersion': baseVersion,
   };
 
-  /// 逐条容错：不是对象 / 正文不是字符串返回 null；版本缺失当 0（= 比任何内置都旧）。
+  /// 逐条容错：不是对象 / 模板不是字符串返回 null；版本缺失当 0（= 比任何内置都旧）。
   static AiSrsFieldPromptOverride? fromJson(Object? raw) {
     if (raw is! Map) return null;
-    final Object? text = raw['text'];
+    final AiSrsFieldActionPrompt? prompt = _promptFromJson(raw);
+    if (prompt == null) return null;
     final Object? version = raw['baseVersion'];
-    if (text is! String) return null;
     return AiSrsFieldPromptOverride(
-      text: _capText(text),
+      prompt: prompt,
       baseVersion: version is int ? version : 0,
     );
   }
@@ -215,11 +278,11 @@ class AiSrsFieldPromptOverride {
   @override
   bool operator ==(Object other) =>
       other is AiSrsFieldPromptOverride &&
-      other.text == text &&
+      other.prompt == prompt &&
       other.baseVersion == baseVersion;
 
   @override
-  int get hashCode => Object.hash(text, baseVersion);
+  int get hashCode => Object.hash(prompt, baseVersion);
 }
 
 /// 用户复制出来的具名变体，只属于一个任务。
@@ -228,7 +291,7 @@ class AiSrsFieldVariant {
     required this.id,
     required this.taskWire,
     required this.name,
-    required this.text,
+    required this.prompt,
   });
 
   final String id;
@@ -236,22 +299,23 @@ class AiSrsFieldVariant {
   /// 所属任务的落盘值；认不出（新版本写的）原样保留，只是本版本不显示。
   final String taskWire;
   final String name;
-  final String text;
+  final AiSrsFieldActionPrompt prompt;
 
   AiSrsFieldTask? get task => aiSrsFieldTaskFromWire(taskWire);
 
-  AiSrsFieldVariant copyWith({String? name, String? text}) => AiSrsFieldVariant(
-    id: id,
-    taskWire: taskWire,
-    name: name ?? this.name,
-    text: text ?? this.text,
-  );
+  AiSrsFieldVariant copyWith({String? name, AiSrsFieldActionPrompt? prompt}) =>
+      AiSrsFieldVariant(
+        id: id,
+        taskWire: taskWire,
+        name: name ?? this.name,
+        prompt: prompt ?? this.prompt,
+      );
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
-    'task': taskWire,
     'name': name,
-    'text': text,
+    'task': taskWire,
+    ..._promptJson(prompt),
   };
 
   /// 逐条容错：字段缺失 / 类型不对 / id 为空返回 null（只丢这一条）。
@@ -260,15 +324,16 @@ class AiSrsFieldVariant {
     final Object? id = raw['id'];
     final Object? task = raw['task'];
     final Object? name = raw['name'];
-    final Object? text = raw['text'];
     if (id is! String || id.isEmpty) return null;
     if (task is! String || task.isEmpty) return null;
-    if (name is! String || text is! String) return null;
+    if (name is! String) return null;
+    final AiSrsFieldActionPrompt? prompt = _promptFromJson(raw);
+    if (prompt == null) return null;
     return AiSrsFieldVariant(
       id: id,
       taskWire: task,
       name: _capName(name),
-      text: _capText(text),
+      prompt: prompt,
     );
   }
 
@@ -278,16 +343,16 @@ class AiSrsFieldVariant {
       other.id == id &&
       other.taskWire == taskWire &&
       other.name == name &&
-      other.text == text;
+      other.prompt == prompt;
 
   @override
-  int get hashCode => Object.hash(id, taskWire, name, text);
+  int get hashCode => Object.hash(id, taskWire, name, prompt);
 
   @override
   String toString() => 'AiSrsFieldVariant($id, $taskWire, $name)';
 }
 
-/// 抽屉里选中的动作：一个任务 + 可选的变体（null = 用该任务的模板，内置或改过的）。
+/// 抽屉里选中的动作：一个任务 + 可选的变体（null = 用该任务的内置动作，原样或改过的）。
 class AiSrsFieldAction {
   const AiSrsFieldAction(this.task, {this.variantId});
 
@@ -324,17 +389,16 @@ class AiSrsFieldActions {
 
   static const AiSrsFieldActions empty = AiSrsFieldActions();
 
-  /// 模板 id → 覆盖。认不出的 id（新版本写的）原样保留。
+  /// 内置动作 id → 覆盖。认不出的 id（新版本写的）原样保留。
   final Map<String, AiSrsFieldPromptOverride> overrides;
   final List<AiSrsFieldVariant> variants;
 
   bool get isEmpty => overrides.isEmpty && variants.isEmpty;
 
-  /// 模板当前生效的正文（覆盖优先，否则内置）。
-  String textOf(String templateId) =>
-      overrides[templateId]?.text ??
-      aiSrsFieldTemplateById(templateId)?.text ??
-      '';
+  /// 内置动作当前生效的三部分（覆盖优先，否则内置）；认不出的 id 返回 null。
+  AiSrsFieldActionPrompt? promptOf(String templateId) =>
+      overrides[templateId]?.prompt ??
+      aiSrsFieldTemplateById(templateId)?.prompt;
 
   bool isOverridden(String templateId) => overrides.containsKey(templateId);
 
@@ -366,34 +430,37 @@ class AiSrsFieldActions {
     return null;
   }
 
-  /// [action] 实际要用的任务模板正文：变体存在且属于该任务就用变体，否则用任务模板。
-  String taskTextOf(AiSrsFieldAction action) {
+  /// [action] 实际要用的三部分：变体存在且属于该任务就用变体，否则用该任务的内置动作。
+  AiSrsFieldActionPrompt promptFor(AiSrsFieldAction action) {
     final String? variantId = action.variantId;
     final AiSrsFieldVariant? v = variantId == null ? null : variant(variantId);
-    if (v != null && v.task == action.task) return v.text;
-    return textOf(aiSrsFieldTaskTemplate(action.task).id);
+    if (v != null && v.task == action.task) return v.prompt;
+    return promptOf(aiSrsFieldTaskTemplate(action.task).id)!;
   }
 
-  /// 改一份内置模板的正文：与内置相同 = 删掉覆盖（不把默认值抄进存储）；超长截断；
-  /// 版本记成当前内置版本（编辑页看着提示改的，就算看过新版）。认不出的 id 原样返回。
-  AiSrsFieldActions withTemplateText(String templateId, String text) {
+  /// 改一个内置动作：与内置相同 = 删掉覆盖（不把默认值抄进存储）；超长截断；版本记成当前
+  /// 内置版本（编辑页看着提示改的，就算看过新版）。认不出的 id 原样返回。
+  AiSrsFieldActions withTemplatePrompt(
+    String templateId,
+    AiSrsFieldActionPrompt prompt,
+  ) {
     final AiSrsFieldTemplate? template = aiSrsFieldTemplateById(templateId);
     if (template == null) return this;
-    final String capped = _capText(text);
+    final AiSrsFieldActionPrompt capped = _capPrompt(prompt);
     final Map<String, AiSrsFieldPromptOverride> next =
         Map<String, AiSrsFieldPromptOverride>.of(overrides);
-    if (capped == template.text) {
+    if (capped == template.prompt) {
       next.remove(templateId);
     } else {
       next[templateId] = AiSrsFieldPromptOverride(
-        text: capped,
+        prompt: capped,
         baseVersion: template.version,
       );
     }
     return AiSrsFieldActions(overrides: next, variants: variants);
   }
 
-  /// 恢复默认：删掉覆盖。
+  /// 恢复默认：删掉覆盖（三部分一起回到内置）。
   AiSrsFieldActions resetTemplate(String templateId) {
     if (!overrides.containsKey(templateId)) return this;
     return AiSrsFieldActions(
@@ -407,14 +474,14 @@ class AiSrsFieldActions {
   (AiSrsFieldActions, AiSrsFieldVariant) addVariant({
     required AiSrsFieldTask task,
     required String name,
-    required String text,
+    required AiSrsFieldActionPrompt prompt,
     String? id,
   }) {
     final AiSrsFieldVariant created = AiSrsFieldVariant(
       id: id ?? _newVariantId(),
       taskWire: aiSrsFieldTaskWire(task),
       name: _capName(name),
-      text: _capText(text),
+      prompt: _capPrompt(prompt),
     );
     return (
       AiSrsFieldActions(
@@ -425,20 +492,23 @@ class AiSrsFieldActions {
     );
   }
 
-  /// 改变体的名称 / 正文（只改给出的）。
-  AiSrsFieldActions updateVariant(String id, {String? name, String? text}) =>
-      AiSrsFieldActions(
-        overrides: overrides,
-        variants: <AiSrsFieldVariant>[
-          for (final AiSrsFieldVariant v in variants)
-            v.id == id
-                ? v.copyWith(
-                    name: name == null ? null : _capName(name),
-                    text: text == null ? null : _capText(text),
-                  )
-                : v,
-        ],
-      );
+  /// 改变体的名称 / 三部分（只改给出的）。
+  AiSrsFieldActions updateVariant(
+    String id, {
+    String? name,
+    AiSrsFieldActionPrompt? prompt,
+  }) => AiSrsFieldActions(
+    overrides: overrides,
+    variants: <AiSrsFieldVariant>[
+      for (final AiSrsFieldVariant v in variants)
+        v.id == id
+            ? v.copyWith(
+                name: name == null ? null : _capName(name),
+                prompt: prompt == null ? null : _capPrompt(prompt),
+              )
+            : v,
+    ],
+  );
 
   AiSrsFieldActions removeVariant(String id) => AiSrsFieldActions(
     overrides: overrides,
@@ -449,6 +519,7 @@ class AiSrsFieldActions {
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
+    'v': kAiFieldActionsStorageVersion,
     'overrides': <String, Object?>{
       for (final MapEntry<String, AiSrsFieldPromptOverride> e
           in overrides.entries)
@@ -490,14 +561,32 @@ class AiSrsFieldActions {
 String encodeAiSrsFieldActions(AiSrsFieldActions actions) =>
     actions.isEmpty ? '' : jsonEncode(actions.toJson());
 
+/// P1 的一段任务正文 [text] 迁移成完整模板：P1 每次请求都在任务行前给笔记、要写的字段与输出
+/// 语言，后面给用户的一句话——迁移后把这些写成看得见的占位符，行为不变、用户也看得到。
+String aiSrsFieldMigrateP1TaskText(String text) =>
+    'Note:\n{{note}}\nField to write: {{target_field}}\n'
+    'Output language: {{output_language}}\n'
+    '$text\nUser instruction: {{instruction}}';
+
 /// 解码偏好值：空串 = 没有改动；整串不是 JSON 对象抛 [FormatException]（调用方记日志）；
 /// 单条坏掉只丢那一条；变体 id 重复只留第一条。
+///
+/// 没有 `"v"` 的是 P1 形状，确定性迁移：
+/// - 任务覆盖 / 变体的正文 `T` → 模板 [aiSrsFieldMigrateP1TaskText]、回复格式 structured，
+///   覆盖保留原 `baseVersion`（比 v3 旧，编辑页会提示内置更新过）；
+/// - 全局 `system` 说明 `G` → 作为 AI 说明写进每条迁移出的覆盖与变体；没有任务覆盖的内置
+///   动作，只在 `G` 与默认说明不同时才新建一条覆盖（模板 / 回复格式取内置）；
+/// - 认不出的覆盖 id 丢掉（那是 P1 形状，本版本读不懂）。
 AiSrsFieldActions decodeAiSrsFieldActions(String raw) {
   if (raw.trim().isEmpty) return AiSrsFieldActions.empty;
   final Object? decoded = jsonDecode(raw);
   if (decoded is! Map) {
     throw const FormatException('ai_field_actions is not a JSON object');
   }
+  return decoded.containsKey('v') ? _decodeV2(decoded) : _decodeP1(decoded);
+}
+
+AiSrsFieldActions _decodeV2(Map<Object?, Object?> decoded) {
   final Map<String, AiSrsFieldPromptOverride> overrides =
       <String, AiSrsFieldPromptOverride>{};
   final Object? rawOverrides = decoded['overrides'];
@@ -526,6 +615,78 @@ AiSrsFieldActions decodeAiSrsFieldActions(String raw) {
   );
 }
 
+/// P1 的条目：`{"text": "...", "baseVersion": n}`；不是对象 / 正文不是字符串返回 null。
+(String, int)? _p1Entry(Object? raw) {
+  if (raw is! Map) return null;
+  final Object? text = raw['text'];
+  final Object? version = raw['baseVersion'];
+  if (text is! String) return null;
+  return (text, version is int ? version : 0);
+}
+
+AiSrsFieldActions _decodeP1(Map<Object?, Object?> decoded) {
+  final Object? rawOverrides = decoded['overrides'];
+  final Map<Object?, Object?> p1Overrides = rawOverrides is Map
+      ? rawOverrides
+      : const <Object?, Object?>{};
+  final (String, int)? system = _p1Entry(p1Overrides['system']);
+  final String? p1Guidance = system?.$1;
+
+  AiSrsFieldActionPrompt migrated(String text) => _capPrompt(
+    AiSrsFieldActionPrompt(
+      template: aiSrsFieldMigrateP1TaskText(text),
+      guidance: p1Guidance ?? kAiSrsFieldGuidance,
+      mode: AiSrsFieldResponseMode.structured,
+    ),
+  );
+
+  final Map<String, AiSrsFieldPromptOverride> overrides =
+      <String, AiSrsFieldPromptOverride>{};
+  for (final AiSrsFieldTemplate template in kAiSrsFieldTemplates) {
+    final (String, int)? entry = _p1Entry(p1Overrides[template.id]);
+    if (entry != null) {
+      overrides[template.id] = AiSrsFieldPromptOverride(
+        prompt: migrated(entry.$1),
+        baseVersion: entry.$2,
+      );
+    } else if (p1Guidance != null && p1Guidance != template.prompt.guidance) {
+      overrides[template.id] = AiSrsFieldPromptOverride(
+        prompt: _capPrompt(template.prompt.copyWith(guidance: p1Guidance)),
+        baseVersion: system!.$2,
+      );
+    }
+  }
+
+  final List<AiSrsFieldVariant> variants = <AiSrsFieldVariant>[];
+  final Set<String> seen = <String>{};
+  final Object? rawVariants = decoded['variants'];
+  if (rawVariants is List) {
+    for (final Object? item in rawVariants) {
+      if (item is! Map) continue;
+      final Object? id = item['id'];
+      final Object? task = item['task'];
+      final Object? name = item['name'];
+      final Object? text = item['text'];
+      if (id is! String || id.isEmpty) continue;
+      if (task is! String || task.isEmpty) continue;
+      if (name is! String || text is! String) continue;
+      if (!seen.add(id)) continue;
+      variants.add(
+        AiSrsFieldVariant(
+          id: id,
+          taskWire: task,
+          name: _capName(name),
+          prompt: migrated(text),
+        ),
+      );
+    }
+  }
+  return AiSrsFieldActions(
+    overrides: Map<String, AiSrsFieldPromptOverride>.unmodifiable(overrides),
+    variants: List<AiSrsFieldVariant>.unmodifiable(variants),
+  );
+}
+
 /// 存取接口（[PreferencesRepository] 实现；测试可注入内存实现）。
 abstract interface class AiSrsFieldActionStore {
   AiSrsFieldActions get aiFieldActions;
@@ -534,94 +695,17 @@ abstract interface class AiSrsFieldActionStore {
   Future<void> setAiFieldActions(AiSrsFieldActions actions);
 }
 
-/// `{{名字}}` 占位符（名字两侧空白忽略）。
-final RegExp kAiSrsFieldPlaceholderPattern = RegExp(r'\{\{\s*([^{}]+?)\s*\}\}');
-
-/// 代入占位符（一趟替换，代入的字段内容里再出现 `{{…}}` 不会被二次展开）：
-/// - `{{output_language}}` → [outputLanguage]（语言名）；
-/// - `{{target_field}}` → [targetField]（正在写的字段的显示名）；
-/// - `{{字段名}}` → 该字段的内容，经 [aiSrsFieldSample] 整理（保留目标词 `<b>`），上限
-///   [kAiSrsFieldMax]；字段为空代入 [kAiSrsFieldEmptyFieldValue]；
-/// - 认不出的原样保留。
-String aiSrsFieldResolvePlaceholders(
-  String text, {
-  required String outputLanguage,
-  required String targetField,
-  required Map<String, String> fieldValuesByName,
-}) => text.replaceAllMapped(kAiSrsFieldPlaceholderPattern, (Match m) {
-  final String name = m.group(1)!;
-  if (name == kAiSrsFieldOutputLanguagePlaceholder) return outputLanguage;
-  if (name == kAiSrsFieldTargetFieldPlaceholder) return targetField;
-  final String? value = fieldValuesByName[name];
-  if (value == null) return m.group(0)!;
-  final String sample = aiSrsFieldSample(value, max: kAiSrsFieldMax);
-  return sample.isEmpty ? kAiSrsFieldEmptyFieldValue : sample;
-});
-
-/// [text] 里认不出的占位符名（去重，按出现顺序）：既不是保留名，也不是 [fieldNames] 里的字段。
-List<String> aiSrsFieldUnknownPlaceholders(
-  String text,
-  Iterable<String> fieldNames,
-) {
-  final Set<String> known = <String>{
-    kAiSrsFieldOutputLanguagePlaceholder,
-    kAiSrsFieldTargetFieldPlaceholder,
-    ...fieldNames,
-  };
-  final Set<String> out = <String>{};
-  for (final RegExpMatch m in kAiSrsFieldPlaceholderPattern.allMatches(text)) {
-    final String name = m.group(1)!;
-    if (!known.contains(name)) out.add(name);
-  }
-  return out.toList();
-}
-
-/// 拼一次请求的系统消息与用户消息（生产与编辑页预览同一份）。
-///
-/// [outputLanguage] 是语言**名**（不是标签）。[fields] 的样例照旧截到
-/// [kAiSrsFieldSampleMax]；模板里引用的字段按 [kAiSrsFieldMax] 代入。
-AiSrsFieldPrompt buildAiSrsFieldPrompt({
-  required String noteTypeName,
-  required List<SrsFieldDef> fields,
-  required Map<String, String> valuesById,
-  required String targetFieldId,
-  required AiSrsFieldAction action,
+/// 按 [actions] 里 [action] 的三部分给 [note] 拼一次请求（抽屉的生成与编辑页预览同一份）。
+AiSrsFieldRequest buildAiSrsFieldActionRequest({
+  required AiSrsFieldNoteContext note,
   required AiSrsFieldActions actions,
+  required AiSrsFieldAction action,
   required String instruction,
-  required String outputLanguage,
-}) {
-  final SrsFieldDef? target = fields
-      .where((SrsFieldDef f) => f.id == targetFieldId)
-      .firstOrNull;
-  final Map<String, String> byName = <String, String>{
-    for (final SrsFieldDef f in fields) f.name: valuesById[f.id] ?? '',
-  };
-  String resolve(String text) => aiSrsFieldResolvePlaceholders(
-    text,
-    outputLanguage: outputLanguage,
-    targetField: target == null ? targetFieldId : srsFieldDisplayName(target),
-    fieldValuesByName: byName,
-  );
-  return AiSrsFieldPrompt(
-    system: aiSrsFieldSystemMessage(
-      resolve(actions.textOf(kAiSrsFieldSystemTemplateId)),
-    ),
-    user: buildAiSrsFieldUserPrompt(
-      noteTypeName: noteTypeName,
-      fields: <AiSrsFieldBrief>[
-        for (final SrsFieldDef f in fields)
-          AiSrsFieldBrief.of(
-            f,
-            sample: aiSrsFieldSample(valuesById[f.id] ?? ''),
-          ),
-      ],
-      targetFieldId: targetFieldId,
-      taskText: resolve(actions.taskTextOf(action)),
-      instruction: instruction,
-      outputLanguage: outputLanguage,
-    ),
-  );
-}
+}) => buildAiSrsFieldRequest(
+  note: note,
+  prompt: actions.promptFor(action),
+  instruction: instruction,
+);
 
 /// 字段 AI 抽屉里内置的「已保存的提示词」预设按任务筛选（只管
 /// [AiPromptScene.srsField] 的内置；用户保存的不筛）：`concise` → 释义 / 改写，

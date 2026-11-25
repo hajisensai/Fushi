@@ -81,13 +81,28 @@ void main() {
     await pumpContext(tester);
     expect(section().presentation, SettingsSectionPresentation.collapsed);
     expect(section().summaryBuilder!(settingsContext), isNull);
-    // 每份内置模板一行。
+    // 每个内置动作一行；没有全局「总体说明」行了（AI 说明按动作存）。
     for (final AiSrsFieldTemplate template in kAiSrsFieldTemplates) {
       expect(item('ai.field_prompt.${template.id}'), isA<SettingsCustomItem>());
     }
+    expect(
+      section().items.map((SettingsItem i) => i.id),
+      isNot(contains('ai.field_prompt.system')),
+    );
+    expect(
+      section().items.where(
+        (SettingsItem i) => i.id.startsWith('ai.field_prompt.task.'),
+      ),
+      hasLength(4),
+    );
 
     await prefs.setAiFieldActions(
-      AiSrsFieldActions.empty.withTemplateText('task.define', 'Mine.'),
+      AiSrsFieldActions.empty.withTemplatePrompt(
+        'task.define',
+        aiSrsFieldTaskTemplate(
+          AiSrsFieldTask.define,
+        ).prompt.copyWith(template: 'Mine.'),
+      ),
     );
     expect(
       section().summaryBuilder!(settingsContext),
@@ -102,7 +117,9 @@ void main() {
     final (AiSrsFieldActions withVariant, _) = prefs.aiFieldActions.addVariant(
       task: AiSrsFieldTask.translate,
       name: 'Literal',
-      text: 'Task: literal.',
+      prompt: aiSrsFieldTaskTemplate(
+        AiSrsFieldTask.translate,
+      ).prompt.copyWith(template: 'Translate literally: {{Sentence}}'),
     );
     await prefs.setAiFieldActions(withVariant);
     expect(
@@ -120,7 +137,7 @@ void main() {
     expect(prefs.aiFieldActions.variants, hasLength(1), reason: '变体不受影响');
     expect(
       settingsResetSpecFor(
-        item('ai.field_prompt.system'),
+        item('ai.field_prompt.task.translate'),
         settingsContext,
       )!.modified,
       isFalse,

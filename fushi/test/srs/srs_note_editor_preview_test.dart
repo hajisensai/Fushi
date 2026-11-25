@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
@@ -386,8 +385,7 @@ void main() {
     tester.view.physicalSize = const Size(900, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    final List<(AiSrsFieldAction, String)> calls =
-        <(AiSrsFieldAction, String)>[];
+    final List<AiSrsFieldPrompt> calls = <AiSrsFieldPrompt>[];
     String? result;
     await tester.pumpWidget(
       TranslationProvider(
@@ -403,11 +401,24 @@ void main() {
                       fieldLabel: 'Sentence translation',
                       fieldName: 'SentenceTranslation',
                       current: 'old',
-                      run: (AiSrsFieldAction action, String instruction) async {
-                        calls.add((action, instruction));
-                        return const AiSrsFieldSuggestion(
-                          value: 'I go <b>every day</b>.',
-                        );
+                      note: () => const AiSrsFieldNoteContext(
+                        noteTypeName: 'T',
+                        fields: <SrsFieldDef>[
+                          SrsFieldDef(id: 'f0', name: 'Sentence', ord: 0),
+                          SrsFieldDef(
+                            id: 'f1',
+                            name: 'SentenceTranslation',
+                            ord: 1,
+                          ),
+                        ],
+                        valuesById: <String, String>{'f0': '毎日<b>通う</b>'},
+                        targetFieldId: 'f1',
+                        outputLanguage: 'English',
+                      ),
+                      send: (AiSrsFieldPrompt prompt) async {
+                        calls.add(prompt);
+                        return '{"value": "I go <b>every day</b>.", '
+                            '"explanation": "direct"}';
                       },
                     );
                   },
@@ -424,8 +435,8 @@ void main() {
     await tester.tap(_key('srs-field-ai-run'));
     await tester.pumpAndSettle();
     expect(
-      calls.single.$1,
-      const AiSrsFieldAction(AiSrsFieldTask.translate),
+      calls.single.user,
+      startsWith('Translate the example sentence'),
       reason: '翻译字段默认翻译',
     );
     expect(find.text('I go every day.'), findsOneWidget);

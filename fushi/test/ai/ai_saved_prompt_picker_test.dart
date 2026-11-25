@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
-import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsFieldDef;
 import 'package:material_ui/material_ui.dart';
 
 /// 内存实现：记录每次写回。
@@ -42,8 +42,7 @@ void main() {
         sceneWire: 'theme',
       ),
     ]);
-    final List<(AiSrsFieldAction, String)> calls =
-        <(AiSrsFieldAction, String)>[];
+    final List<AiSrsFieldPrompt> calls = <AiSrsFieldPrompt>[];
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
@@ -58,9 +57,18 @@ void main() {
                     fieldName: 'MainDefinition',
                     current: '',
                     promptStore: store,
-                    run: (AiSrsFieldAction action, String instruction) async {
-                      calls.add((action, instruction));
-                      return const AiSrsFieldSuggestion(value: 'ok');
+                    note: () => const AiSrsFieldNoteContext(
+                      noteTypeName: 'T',
+                      fields: <SrsFieldDef>[
+                        SrsFieldDef(id: 'f0', name: 'MainDefinition', ord: 0),
+                      ],
+                      valuesById: <String, String>{},
+                      targetFieldId: 'f0',
+                      outputLanguage: 'English',
+                    ),
+                    send: (AiSrsFieldPrompt prompt) async {
+                      calls.add(prompt);
+                      return '{"value": "ok"}';
                     },
                   ),
                   child: const Text('open'),
@@ -98,7 +106,8 @@ void main() {
     expect(find.text(presetText), findsOneWidget);
     await tester.tap(_key('srs-field-ai-run'));
     await tester.pumpAndSettle();
-    expect(calls.single.$2, presetText);
+    // 内置「写释义」模板用 {{instruction}} 收用户的一句话。
+    expect(calls.single.user, contains('\n$presetText'));
 
     // 3. 改写输入框后「保存当前」：命名对话框提交 → 写回存储并出现在列表里。
     await tester.enterText(_key('srs-field-ai-instruction'), 'my own rule');

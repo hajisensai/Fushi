@@ -230,7 +230,7 @@ SettingsDestination buildAiDestination() {
         items: buildAiWebSearchItems(),
       ),
       // 卡片字段 AI（笔记编辑页 / 复习页 / 浏览检查器里字段旁的 AI 键）：输出语言 + 可编辑的
-      // 提示词。提示词行一律 userOnly——AI 助手经控制通道既写不进也恢复不了默认；内置模板行
+      // 提示词（每个内置动作一行 + 变体行）。提示词行一律 userOnly——AI 助手经控制通道既写不进也恢复不了默认；内置动作行
       // 声明 reset，参与页级「恢复本页默认」与折叠摘要的改动计数。偏好只在渲染时读。
       SettingsSection(
         id: 'ai.field_actions',
@@ -602,7 +602,7 @@ Future<void> _openFieldPromptEditor(
   c.refresh();
 }
 
-/// 一份内置模板的设置行：点开编辑；改过 = 「已修改」，可单项 / 页级恢复默认。
+/// 一个内置动作的设置行：点开编辑；改过 = 「已修改」，可单项 / 页级恢复默认。
 SettingsCustomItem _fieldPromptTemplateItem(AiSrsFieldTemplate template) {
   final SrsFieldAiPromptRef ref = SrsFieldAiPromptRef.template(template.id);
   final String title = srsFieldAiPromptTitle(ref, AiSrsFieldActions.empty);
@@ -637,12 +637,8 @@ SettingsCustomItem _fieldPromptTemplateItem(AiSrsFieldTemplate template) {
           subtitle: edited
               ? t.srs_field_ai_prompt_edited
               : t.srs_field_ai_prompt_builtin,
-          icon: template.isSystem ? FushiIcons.aiAssistant : FushiIcons.edit,
-          onTap: () => _openFieldPromptEditor(
-            c,
-            ref,
-            template.task ?? AiSrsFieldTask.define,
-          ),
+          icon: FushiIcons.edit,
+          onTap: () => _openFieldPromptEditor(c, ref, template.task),
         ),
       );
     },

@@ -1,11 +1,15 @@
-/// 笔记编辑页单个字段的「AI 改写 / 补全」抽屉：选任务（写释义 / 翻译 / 改写 / 自定义）、
-/// 可选补一句要求 → 生成 → 预览 → 「替换」或「追加到末尾」。结果只回给编辑页草稿，点保存才落库。
+/// 笔记编辑页单个字段的「AI 改写 / 补全」抽屉：选任务（写释义 / 翻译 / 改写 / 自定义）与变体、
+/// 按需补一句要求 → 生成 → 预览 → 「替换」或「追加到末尾」。结果只回给调用方，什么都不会在
+/// 点替换 / 追加之前写进字段。
 ///
-/// 请求怎么发由调用方注入（[SrsFieldAiRunner]，生产走 ai_srs_field_assistant.dart，测试给假的）。
+/// 请求在抽屉里按 [buildAiSrsFieldActionRequest] 拼（与提示词编辑页预览同一份），发送由调用方注入
+/// （[SrsFieldAiSender]，生产走 `sendAiSrsFieldPrompt`，测试给假的），回复按动作的回复格式解析。
 ///
-/// 任务有用户复制的变体时，任务选择下面多一个「默认 / 变体」下拉；「编辑提示词」打开当前
-/// 任务 / 变体的编辑页（[SrsFieldAiPromptEditorOpener]），关掉后重读提示词——不另设「试一下」，
-/// 现有的生成键就是试，替换 / 追加前什么都不写。
+/// - 动作的提示词里没有 `{{instruction}}`：要求框禁用并提示，预设按钮隐藏。
+/// - 自定义任务要求为空、拼出的请求超限 / 为空：生成键禁用；认不出的占位符 / 截断 / 超限提示在
+///   生成键上方。
+/// - 回复读不懂：说明 + 「显示回复」（原文可选中）；结构化回复格式不对时多一个「把回复当作文字
+///   使用」，按纯文本重新解析成普通结果（照旧要点替换 / 追加才写）。
 library;
 
 import 'dart:async';
@@ -18,9 +22,12 @@ import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
+import 'package:fushi/src/ai/ai_srs_field_reply.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiExpansionTile;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -33,12 +40,8 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 
-/// 跑一次字段 AI。
-typedef SrsFieldAiRunner =
-    Future<AiSrsFieldSuggestion> Function(
-      AiSrsFieldAction action,
-      String instruction,
-    );
+/// 把拼好的两条消息原样发出去，返回模型的原始回复（失败抛 [AiChatFailure]）。
+typedef SrsFieldAiSender = Future<String> Function(AiSrsFieldPrompt prompt);
 
 /// 打开 [action] 的提示词编辑页；返回编辑页关掉时该选中的动作（复制出变体后选它；
 /// null = 保持原选择，变体被删了抽屉自己退回默认）。
@@ -73,13 +76,59 @@ String srsApplyFieldAi(String current, String value, {required bool append}) {
   return '$current<br>$value';
 }
 
+/// 拼好的请求要提示用户的事：认不出的占位符、截断（提示色）、超限（错误色）。抽屉与编辑页共用。
+List<Widget> srsFieldAiRequestNotices(
+  BuildContext context,
+  AiSrsFieldRequest request,
+) {
+  final ColorScheme scheme = Theme.of(context).colorScheme;
+  final TextStyle warn = context.fushiType.bodySmall.copyWith(
+    color: scheme.tertiary,
+  );
+  return <Widget>[
+    if (request.unknownPlaceholders.isNotEmpty)
+      Text(
+        t.srs_field_ai_prompt_unknown(
+          names: request.unknownPlaceholders
+              .map((String n) => '{{$n}}')
+              .join(', '),
+        ),
+        key: const ValueKey<String>('srs-field-ai-notice-unknown'),
+        style: warn,
+      ),
+    if (request.truncations.isNotEmpty)
+      Text(
+        t.srs_field_ai_request_truncated(
+          names: <String>{
+            for (final AiSrsFieldTruncation x in request.truncations)
+              x.source.startsWith('note:') ? x.source.substring(5) : x.source,
+          }.join(', '),
+        ),
+        key: const ValueKey<String>('srs-field-ai-notice-truncated'),
+        style: warn,
+      ),
+    if (request.overLimit)
+      Text(
+        t.srs_field_ai_request_over_limit(
+          n: request.length,
+          max: kAiSrsFieldRequestMax,
+        ),
+        key: const ValueKey<String>('srs-field-ai-notice-over-limit'),
+        style: context.fushiType.bodySmall.copyWith(color: scheme.error),
+      ),
+  ];
+}
+
 /// 打开抽屉；返回字段的新值（null = 没采用）。
+///
+/// [note] 取拼请求用的笔记（打开时与每次生成前现取：别的字段可能刚改过）。
 Future<String?> showSrsFieldAiSheet(
   BuildContext context, {
   required String fieldLabel,
   required String fieldName,
   required String current,
-  required SrsFieldAiRunner run,
+  required AiSrsFieldNoteContext Function() note,
+  required SrsFieldAiSender send,
   AiSavedPromptStore? promptStore,
   AiSrsFieldActionStore? actionStore,
   SrsFieldAiPromptEditorOpener? editPrompt,
@@ -89,7 +138,8 @@ Future<String?> showSrsFieldAiSheet(
     fieldLabel: fieldLabel,
     fieldName: fieldName,
     current: current,
-    run: run,
+    note: note,
+    send: send,
     promptStore: promptStore,
     actionStore: actionStore,
     editPrompt: editPrompt,
@@ -102,7 +152,8 @@ class SrsFieldAiSheet extends StatefulWidget {
     required this.fieldLabel,
     required this.fieldName,
     required this.current,
-    required this.run,
+    required this.note,
+    required this.send,
     this.promptStore,
     this.actionStore,
     this.editPrompt,
@@ -111,13 +162,14 @@ class SrsFieldAiSheet extends StatefulWidget {
   final String fieldLabel;
   final String fieldName;
   final String current;
-  final SrsFieldAiRunner run;
+  final AiSrsFieldNoteContext Function() note;
+  final SrsFieldAiSender send;
 
   /// 「已保存的提示词」的存取实现（生产 = 应用偏好仓库，测试注入内存实现）；
   /// null = 不显示该按钮。
   final AiSavedPromptStore? promptStore;
 
-  /// 卡片字段 AI 的提示词改动（变体下拉读它）；null = 只有内置、不显示变体下拉。
+  /// 卡片字段 AI 的动作改动（提示词与变体下拉读它）；null = 只有内置、不显示变体下拉。
   final AiSrsFieldActionStore? actionStore;
 
   /// 「编辑提示词」；null = 不显示该按钮。
@@ -130,14 +182,26 @@ class SrsFieldAiSheet extends StatefulWidget {
 class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
   late AiSrsFieldTask _task = srsDefaultFieldAiTask(widget.fieldName);
 
-  /// 选中的变体；null = 该任务的模板（内置或改过的）。
+  /// 选中的变体；null = 该任务的内置动作（原样或改过的）。
   String? _variantId;
   late AiSrsFieldActions _actions =
       widget.actionStore?.aiFieldActions ?? AiSrsFieldActions.empty;
+  late AiSrsFieldNoteContext _note = widget.note();
   final TextEditingController _instruction = TextEditingController();
   bool _busy = false;
+
+  /// 请求失败（网络 / 提供商）的文案。
   String? _error;
+
+  /// 回复读不懂（带原始回复）。
+  AiSrsFieldReplyError? _replyError;
   AiSrsFieldSuggestion? _result;
+
+  @override
+  void initState() {
+    super.initState();
+    _instruction.addListener(_onInstruction);
+  }
 
   @override
   void dispose() {
@@ -145,8 +209,31 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
     super.dispose();
   }
 
+  void _onInstruction() {
+    if (mounted) setState(() {});
+  }
+
   AiSrsFieldAction get _action =>
       AiSrsFieldAction(_task, variantId: _variantId);
+
+  AiSrsFieldRequest _request() => buildAiSrsFieldActionRequest(
+    note: _note,
+    actions: _actions,
+    action: _action,
+    instruction: _instruction.text,
+  );
+
+  /// 自定义任务的提示词要用户的一句话、而用户什么都没写。
+  bool _missingInstruction(AiSrsFieldRequest request) =>
+      _task == AiSrsFieldTask.custom &&
+      request.usesInstruction &&
+      _instruction.text.trim().isEmpty;
+
+  bool _canRun(AiSrsFieldRequest request) =>
+      !_busy &&
+      !request.overLimit &&
+      !request.isEmpty &&
+      !_missingInstruction(request);
 
   Future<void> _editPrompt(SrsFieldAiPromptEditorOpener open) async {
     final AiSrsFieldAction? picked = await open(context, _action);
@@ -165,19 +252,20 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
 
   Future<void> _generate() async {
     if (_busy) return;
-    if (_task == AiSrsFieldTask.custom && _instruction.text.trim().isEmpty) {
-      setState(() => _error = t.srs_note_field_ai_custom_hint);
+    _note = widget.note();
+    final AiSrsFieldRequest request = _request();
+    if (!_canRun(request)) {
+      setState(() {});
       return;
     }
     setState(() {
       _busy = true;
       _error = null;
+      _replyError = null;
     });
     try {
-      final AiSrsFieldSuggestion s = await widget.run(
-        _action,
-        _instruction.text,
-      );
+      final String reply = await widget.send(request.prompt);
+      final AiSrsFieldSuggestion s = parseAiSrsFieldReply(reply, request.mode);
       if (mounted) setState(() => _result = s);
     } on AiChatFailure catch (failure) {
       if (mounted) {
@@ -187,10 +275,26 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
           ),
         );
       }
-    } on AiSrsFieldEmpty {
-      if (mounted) setState(() => _error = t.ai_assist_empty);
+    } on AiSrsFieldReplyError catch (e) {
+      if (mounted) setState(() => _replyError = e);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 结构化回复格式不对：用户明确选择把原始回复当纯文本用（仍要点替换 / 追加才写）。
+  void _useReplyAsText(AiSrsFieldReplyError error) {
+    try {
+      final AiSrsFieldSuggestion s = parseAiSrsFieldReply(
+        error.raw,
+        AiSrsFieldResponseMode.plain,
+      );
+      setState(() {
+        _replyError = null;
+        _result = s;
+      });
+    } on AiSrsFieldReplyError catch (e) {
+      setState(() => _replyError = e);
     }
   }
 
@@ -212,6 +316,8 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final AiSrsFieldSuggestion? result = _result;
     final List<AiSrsFieldVariant> variants = _actions.variantsFor(_task);
+    final AiSrsFieldRequest request = _request();
+    final bool usesInstruction = request.usesInstruction;
     final List<Widget> children = <Widget>[
       adaptiveSegmentedButton<AiSrsFieldTask>(
         context: context,
@@ -266,6 +372,7 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
             child: FushiTextField(
               key: const ValueKey<String>('srs-field-ai-instruction'),
               controller: _instruction,
+              enabled: usesInstruction && !_busy,
               hintText: _task == AiSrsFieldTask.custom
                   ? t.srs_note_field_ai_custom_hint
                   : t.srs_note_field_ai_instruction_hint,
@@ -274,17 +381,27 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
               onSubmitted: (_) => unawaited(_generate()),
             ),
           ),
-          if (widget.promptStore case final AiSavedPromptStore store)
-            AiSavedPromptButton(
-              scene: AiPromptScene.srsField,
-              controller: _instruction,
-              enabled: !_busy,
-              storeOf: () => store,
-              builtinFilter: (AiSavedPrompt p) =>
-                  aiSrsFieldBuiltinPresetVisible(p, _task),
-            ),
+          if (usesInstruction)
+            if (widget.promptStore case final AiSavedPromptStore store)
+              AiSavedPromptButton(
+                scene: AiPromptScene.srsField,
+                controller: _instruction,
+                enabled: !_busy,
+                storeOf: () => store,
+                builtinFilter: (AiSavedPrompt p) =>
+                    aiSrsFieldBuiltinPresetVisible(p, _task),
+              ),
         ],
       ),
+      if (!usesInstruction)
+        Text(
+          t.srs_note_field_ai_instruction_unused,
+          key: const ValueKey<String>('srs-field-ai-instruction-unused'),
+          style: context.fushiType.bodySmall.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      ...srsFieldAiRequestNotices(context, request),
       Row(
         spacing: tokens.spacing.gap,
         children: <Widget>[
@@ -294,7 +411,7 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
             label: Text(
               result == null ? t.srs_visual_ai_run : t.srs_note_field_ai_again,
             ),
-            onPressed: _busy ? null : () => unawaited(_generate()),
+            onPressed: _canRun(request) ? () => unawaited(_generate()) : null,
           ),
           if (_busy)
             const SizedBox.square(
@@ -321,6 +438,15 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
         duration: fushiMotionDuration(context, FushiMotion.short),
         curve: FushiMotion.standard,
         alignment: Alignment.topCenter,
+        child: switch (_replyError) {
+          null => const SizedBox(width: double.infinity),
+          final AiSrsFieldReplyError e => _replyErrorCard(context, e),
+        },
+      ),
+      FushiAnimatedSize(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        curve: FushiMotion.standard,
+        alignment: Alignment.topCenter,
         child: result == null
             ? const SizedBox(width: double.infinity)
             : _resultCard(context, result),
@@ -341,6 +467,54 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
               FushiStaggeredEntrance(index: i, child: w),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _replyErrorCard(BuildContext context, AiSrsFieldReplyError error) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool malformed = error.kind == AiSrsFieldReplyErrorKind.malformed;
+    return FushiCard(
+      key: const ValueKey<String>('srs-field-ai-reply-error'),
+      tone: FushiCardTone.neutral,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          Text(
+            malformed
+                ? t.srs_note_field_ai_reply_unreadable
+                : t.ai_assist_empty,
+            key: const ValueKey<String>('srs-field-ai-reply-error-text'),
+            style: context.fushiType.bodyMedium.copyWith(color: scheme.error),
+          ),
+          if (error.raw.trim().isNotEmpty)
+            FushiExpansionTile(
+              key: const ValueKey<String>('srs-field-ai-show-reply'),
+              title: Text(t.srs_note_field_ai_show_reply),
+              expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                SelectableText(
+                  error.raw,
+                  key: const ValueKey<String>('srs-field-ai-raw-reply'),
+                  style: context.fushiType.bodySmall.copyWith(
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+          if (malformed)
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: FushiOutlinedButton.icon(
+                key: const ValueKey<String>('srs-field-ai-use-as-text'),
+                icon: const FushiIcon(FushiIcons.textFields),
+                label: Text(t.srs_note_field_ai_use_as_text),
+                onPressed: () => _useReplyAsText(error),
+              ),
+            ),
+        ],
       ),
     );
   }

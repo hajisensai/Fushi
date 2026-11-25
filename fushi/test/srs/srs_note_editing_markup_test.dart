@@ -5,6 +5,7 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
+import 'package:fushi/src/ai/ai_srs_field_reply.dart';
 import 'package:fushi/src/ai/ai_srs_template_assistant.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rich_text_controller.dart';
 import 'package:fushi/src/srs/srs_field_markup.dart';
@@ -194,10 +195,10 @@ void main() {
     });
   });
 
-  group('字段 AI 回复的本地校验', () {
+  group('字段 AI 回复的本地校验（解析器在 ai_srs_field_reply.dart）', () {
     test('白名单标签去属性；脚本 / 样式整段丢；未知标签只留文字', () {
       expect(
-        aiSrsSanitizeFieldHtml(
+        aiSrsFieldSanitizeHtml(
           '<b onclick="x()">食べる</b><script>alert(1)</script>'
           '<a href="javascript:x">link</a><br/><img src=x onerror=y>'
           '<style>b{}</style><ol class="k"><li>1</li></ol>',
@@ -206,55 +207,42 @@ void main() {
       );
     });
 
-    test('解析 value；空值 / 非 JSON 视为失败', () {
-      final AiSrsFieldSuggestion s = parseAiSrsFieldSuggestion(
+    test('结构化回复解析 value；空值 / 非 JSON 视为失败并带原文', () {
+      final AiSrsFieldSuggestion s = parseAiSrsFieldReply(
         '```json\n{"value": "to eat <i>(v)</i>", "explanation": "ok"}\n```',
+        AiSrsFieldResponseMode.structured,
       );
       expect(s.value, 'to eat <i>(v)</i>');
       expect(s.explanation, 'ok');
       expect(
-        () => parseAiSrsFieldSuggestion('{"value": "<b></b>"}'),
-        throwsA(isA<AiSrsFieldEmpty>()),
+        () => parseAiSrsFieldReply(
+          '{"value": "<b></b>"}',
+          AiSrsFieldResponseMode.structured,
+        ),
+        throwsA(
+          isA<AiSrsFieldReplyError>().having(
+            (AiSrsFieldReplyError e) => e.kind,
+            'kind',
+            AiSrsFieldReplyErrorKind.empty,
+          ),
+        ),
       );
       expect(
-        () => parseAiSrsFieldSuggestion('sorry'),
-        throwsA(isA<AiSrsFieldEmpty>()),
+        () => parseAiSrsFieldReply('sorry', AiSrsFieldResponseMode.structured),
+        throwsA(
+          isA<AiSrsFieldReplyError>()
+              .having(
+                (AiSrsFieldReplyError e) => e.kind,
+                'kind',
+                AiSrsFieldReplyErrorKind.malformed,
+              )
+              .having((AiSrsFieldReplyError e) => e.raw, 'raw', 'sorry'),
+        ),
       );
     });
 
-    test('提示词带目标字段与任务', () {
-      final String p = buildAiSrsFieldUserPrompt(
-        noteTypeName: 'Lapis',
-        fields: const <AiSrsFieldBrief>[
-          AiSrsFieldBrief(id: 'a', name: 'Sentence', sample: '毎日通う'),
-          AiSrsFieldBrief(id: 'b', name: 'SentenceTranslation'),
-        ],
-        targetFieldId: 'b',
-        taskText: 'Task: translate the example sentence into zh-CN.',
-        instruction: '',
-        outputLanguage: 'zh-CN',
-      );
-      expect(p, contains('Field to write: SentenceTranslation'));
-      expect(p, contains('translate the example sentence into zh-CN'));
-      expect(p, isNot(contains('User instruction')));
-    });
-
-    test('每个任务都带输出语言（改写 / 自定义的任务行本身不写语言）', () {
-      for (final AiSrsFieldTask task in AiSrsFieldTask.values) {
-        final String p = buildAiSrsFieldUserPrompt(
-          noteTypeName: 'Lapis',
-          fields: const <AiSrsFieldBrief>[],
-          targetFieldId: 'b',
-          taskText: aiSrsFieldTaskTemplate(task).text,
-          instruction: 'x',
-          outputLanguage: 'en',
-        );
-        expect(p, contains('Output language: en'), reason: task.name);
-      }
-    });
-
-    test('系统提示写明加粗 = 目标词、新例句用笔记的语言', () {
-      final String flat = kAiSrsFieldSystemPrompt.replaceAll('\n', ' ');
+    test('内置 AI 说明写明加粗 = 目标词、新例句用笔记的语言', () {
+      final String flat = kAiSrsFieldGuidance.replaceAll('\n', ' ');
       expect(flat, contains('<b>…</b> in them marks the target word'));
       expect(
         flat,
@@ -322,15 +310,17 @@ void main() {
           model: 'm',
           protocol: AiWireProtocol.openAiCompatible,
         ),
-        prompt: buildAiSrsFieldPrompt(
-          noteTypeName: noteType.name,
-          fields: noteType.fields,
-          valuesById: const <String, String>{'f0': 'それに<b>気づいた</b>時'},
-          targetFieldId: 'f1',
-          action: const AiSrsFieldAction(AiSrsFieldTask.translate),
+        request: buildAiSrsFieldActionRequest(
+          note: AiSrsFieldNoteContext(
+            noteTypeName: noteType.name,
+            fields: noteType.fields,
+            valuesById: const <String, String>{'f0': 'それに<b>気づいた</b>時'},
+            targetFieldId: 'f1',
+            outputLanguage: 'English',
+          ),
           actions: AiSrsFieldActions.empty,
+          action: const AiSrsFieldAction(AiSrsFieldTask.translate),
           instruction: '',
-          outputLanguage: 'English',
         ),
       );
       final String user = client.sent.last.content;
