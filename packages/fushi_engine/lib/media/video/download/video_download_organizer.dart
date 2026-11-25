@@ -1598,9 +1598,9 @@ class VideoCompanionMove {
 /// * 文字字幕的后缀不合这条（`.sc.forced.ass`、`.chs&jpn.ass`）时，把标记里的点和
 ///   非法字符折成 `_`（`.sc_forced.ass`），否则搬过去播放器也认不出；
 /// * `_Eng_Audio_5.1.mka` → `<目标主干>.Eng_Audio_5.1.mka`、`.Audio Guide.mka` 原样：
-///   本机播放器目前不自动挂本地外挂音轨，可依赖的发现规则是音乐库规则 2（与视频
-///   同目录的音频不收）和 2b（`<主干>.` 开头），落在视频同目录、以「主干.」开头两条
-///   都满足，也合 mpv `audio-file-auto` 的前缀约定。
+///   本机播放器按 `listSidecarAudioTracks`（`video_sidecar.dart`）认它（同目录、
+///   `<主干>` 开头）；音乐库规则 2（与视频同目录的音频不收）和 2b（`<主干>.` 开头）
+///   也都满足，不会被当成「歌」，也合 mpv `audio-file-auto` 的前缀约定。
 ///
 /// [reservedTargets] 是计划里已占用的目标（视频、盘内文件）；与它或与先排的外挂件
 /// 撞名（不分大小写）的外挂件不搬，原地不动。[legacyUnderscoreNames] 与视频同一套

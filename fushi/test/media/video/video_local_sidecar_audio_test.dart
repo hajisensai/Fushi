@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi/src/media/video/video_local_sidecar_audio.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoExternalAudioTrack;
