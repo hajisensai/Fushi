@@ -3,6 +3,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/ai/ai_srs_template_assistant.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rich_text_controller.dart';
@@ -229,7 +230,7 @@ void main() {
           AiSrsFieldBrief(id: 'b', name: 'SentenceTranslation'),
         ],
         targetFieldId: 'b',
-        task: AiSrsFieldTask.translate,
+        taskText: 'Task: translate the example sentence into zh-CN.',
         instruction: '',
         outputLanguage: 'zh-CN',
       );
@@ -244,7 +245,7 @@ void main() {
           noteTypeName: 'Lapis',
           fields: const <AiSrsFieldBrief>[],
           targetFieldId: 'b',
-          task: task,
+          taskText: aiSrsFieldTaskTemplate(task).text,
           instruction: 'x',
           outputLanguage: 'en',
         );
@@ -306,6 +307,10 @@ void main() {
     test('requestAiSrsField 发出去的就是整理后的内容', () async {
       final _CapturingClient client = _CapturingClient();
       addTearDown(client.close);
+      final SrsNoteTypeView noteType = _noteType(<String>[
+        'Sentence',
+        'SentenceTranslation',
+      ]);
       await requestAiSrsField(
         client: client,
         provider: AiProviderConfig(
@@ -317,11 +322,16 @@ void main() {
           model: 'm',
           protocol: AiWireProtocol.openAiCompatible,
         ),
-        noteType: _noteType(<String>['Sentence', 'SentenceTranslation']),
-        valuesById: const <String, String>{'f0': 'それに<b>気づいた</b>時'},
-        targetFieldId: 'f1',
-        task: AiSrsFieldTask.translate,
-        outputLanguage: 'en',
+        prompt: buildAiSrsFieldPrompt(
+          noteTypeName: noteType.name,
+          fields: noteType.fields,
+          valuesById: const <String, String>{'f0': 'それに<b>気づいた</b>時'},
+          targetFieldId: 'f1',
+          action: const AiSrsFieldAction(AiSrsFieldTask.translate),
+          actions: AiSrsFieldActions.empty,
+          instruction: '',
+          outputLanguage: 'English',
+        ),
       );
       final String user = client.sent.last.content;
       expect(user, contains(r'それに<b>気づいた</b>時'));

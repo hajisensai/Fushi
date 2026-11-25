@@ -13,15 +13,13 @@ import 'dart:convert';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_reply_json.dart';
-import 'package:fushi_srs/fushi_srs.dart';
-
 import 'package:fushi/src/ai/ai_srs_template_assistant.dart'
     show AiSrsFieldBrief, aiSrsPlainText;
 
 /// 字段新内容的长度上限（字符，清洗后）。
 const int kAiSrsFieldMax = 2000;
 
-/// 预设任务。
+/// 预设任务（各自的内置任务模板见 `ai_srs_field_actions.dart`）。
 enum AiSrsFieldTask {
   /// 给词条写释义。
   define,
@@ -153,21 +151,9 @@ String aiSrsFieldSample(String raw, {int max = kAiSrsFieldSampleMax}) {
   return s;
 }
 
-String _taskLine(AiSrsFieldTask task, String outputLanguage) => switch (task) {
-  AiSrsFieldTask.define =>
-    'Task: write a concise definition of the headword for this field, in '
-        '$outputLanguage. Number senses if there are several.',
-  AiSrsFieldTask.translate =>
-    'Task: translate the example sentence into $outputLanguage. Keep the '
-        'target word recognisable (wrap its translation in <b>).',
-  AiSrsFieldTask.rewrite =>
-    'Task: fill in or improve this field using the other fields of the note: '
-        'keep the meaning, make it clearer and shorter.',
-  AiSrsFieldTask.custom => 'Task: follow the user instruction below.',
-};
-
-/// 系统提示。
-const String kAiSrsFieldSystemPrompt = '''
+/// 系统提示里**用户可改**的部分（角色、字段内容、语言规则）：内置的「总体说明」模板正文
+/// （`ai_srs_field_actions.dart`），用户的覆盖代替它。
+const String kAiSrsFieldGuidance = '''
 You help a language learner edit ONE field of a flashcard note (Anki-compatible).
 You get the note type, every field with its meaning and current content, the
 field to write, and a task. Write only that field's new content.
@@ -178,8 +164,11 @@ target word of the note.
 Languages: definitions, translations and explanations are written in the
 output language given in the request. New example sentences, and any text that
 belongs to the language being learned, are written in the language of the
-note's sentence and headword, unless the user instruction says otherwise.
+note's sentence and headword, unless the user instruction says otherwise.''';
 
+/// 系统提示里**锁定**的契约（排版白名单、回复 JSON、说明的语言）：不论总体说明怎么改，
+/// 代码都把它接在后面——回复的本地校验（[parseAiSrsFieldSuggestion]）依赖它。
+const String kAiSrsFieldContract = '''
 Formatting: plain text or simple inline HTML only: <b>, <i>, <u>, <br>, <ul>,
 <ol>, <li>, <ruby>/<rt>. No attributes, no styles, no scripts, no links.
 
@@ -189,12 +178,32 @@ The explanation must be written in the same language as the user instruction
 (or the output language if there is no instruction).
 ''';
 
-/// 用户侧提示。
+/// 没有任何改动时的系统提示（= 总体说明 + 契约）。
+const String kAiSrsFieldSystemPrompt =
+    '$kAiSrsFieldGuidance\n\n$kAiSrsFieldContract';
+
+/// 拼系统消息：[guidance]（已代入占位符）后面永远接上 [kAiSrsFieldContract]；
+/// 说明为空就只有契约。
+String aiSrsFieldSystemMessage(String guidance) {
+  final String g = guidance.trimRight();
+  return g.trim().isEmpty ? kAiSrsFieldContract : '$g\n\n$kAiSrsFieldContract';
+}
+
+/// 一次请求的两条消息。
+class AiSrsFieldPrompt {
+  const AiSrsFieldPrompt({required this.system, required this.user});
+
+  final String system;
+  final String user;
+}
+
+/// 用户侧提示。骨架固定（笔记类型、字段 JSON、要写的字段、输出语言），[taskText] 是已代入
+/// 占位符的任务行（内置或用户改过的模板，见 `buildAiSrsFieldPrompt`），最后是用户一句话。
 String buildAiSrsFieldUserPrompt({
   required String noteTypeName,
   required List<AiSrsFieldBrief> fields,
   required String targetFieldId,
-  required AiSrsFieldTask task,
+  required String taskText,
   required String instruction,
   required String outputLanguage,
 }) {
@@ -208,7 +217,7 @@ String buildAiSrsFieldUserPrompt({
     )
     ..writeln('Field to write: ${target?.name ?? targetFieldId}')
     ..writeln('Output language: $outputLanguage')
-    ..writeln(_taskLine(task, outputLanguage));
+    ..writeln(taskText);
   if (instruction.trim().isNotEmpty) {
     b.writeln('User instruction: ${instruction.trim()}');
   }
@@ -231,37 +240,18 @@ AiSrsFieldSuggestion parseAiSrsFieldSuggestion(String reply) {
   );
 }
 
-/// 跑一次。失败原样抛 [AiChatFailure]（文案已脱敏）或 [AiSrsFieldEmpty]，由 UI 转成提示。
+/// 跑一次（消息由 `buildAiSrsFieldPrompt` 拼好）。失败原样抛 [AiChatFailure]（文案已脱敏）或
+/// [AiSrsFieldEmpty]，由 UI 转成提示。
 Future<AiSrsFieldSuggestion> requestAiSrsField({
   required AiChatClient client,
   required AiProviderConfig provider,
-  required SrsNoteTypeView noteType,
-  required Map<String, String> valuesById,
-  required String targetFieldId,
-  required AiSrsFieldTask task,
-  String instruction = '',
-  required String outputLanguage,
+  required AiSrsFieldPrompt prompt,
 }) async {
   final String reply = await client.complete(
     provider: provider,
     messages: <AiChatMessage>[
-      const AiChatMessage.system(kAiSrsFieldSystemPrompt),
-      AiChatMessage.user(
-        buildAiSrsFieldUserPrompt(
-          noteTypeName: noteType.name,
-          fields: <AiSrsFieldBrief>[
-            for (final SrsFieldDef f in noteType.fields)
-              AiSrsFieldBrief.of(
-                f,
-                sample: aiSrsFieldSample(valuesById[f.id] ?? ''),
-              ),
-          ],
-          targetFieldId: targetFieldId,
-          task: task,
-          instruction: instruction,
-          outputLanguage: outputLanguage,
-        ),
-      ),
+      AiChatMessage.system(prompt.system),
+      AiChatMessage.user(prompt.user),
     ],
   );
   return parseAiSrsFieldSuggestion(reply);

@@ -632,6 +632,7 @@ SettingsIndexEntry requireSettingsIndexEntry(
 
 /// 模型（AI 助手的 `settings.set`）能不能写这一行：
 /// - [SettingsSwitchItem.userOnly] 的授权开关只能由用户拨；
+/// - [SettingsCustomItem.userOnly] 的自绘行（用户亲手写的内容）只能由用户改；
 /// - 带凭据服务的地址（[ctlCredentialEndpoints]）：改了就把已存凭据发去新地址；
 /// - 机密项本身（spec §10：AI 不读写凭据）。
 /// 用户自己（设置页、`fushi_cli`、撤销）不受影响。
@@ -641,6 +642,7 @@ bool isModelWritableSetting(
   CtlCredentialEndpoints? endpoints,
 }) {
   if (item is SettingsSwitchItem && item.userOnly) return false;
+  if (item is SettingsCustomItem && item.userOnly) return false;
   if (item is SettingsTextItem &&
       isCtlSecretSetting(key, declaredSecret: item.secret)) {
     return false;

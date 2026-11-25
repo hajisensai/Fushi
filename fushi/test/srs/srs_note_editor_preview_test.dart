@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
@@ -385,7 +386,8 @@ void main() {
     tester.view.physicalSize = const Size(900, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    final List<(AiSrsFieldTask, String)> calls = <(AiSrsFieldTask, String)>[];
+    final List<(AiSrsFieldAction, String)> calls =
+        <(AiSrsFieldAction, String)>[];
     String? result;
     await tester.pumpWidget(
       TranslationProvider(
@@ -401,8 +403,8 @@ void main() {
                       fieldLabel: 'Sentence translation',
                       fieldName: 'SentenceTranslation',
                       current: 'old',
-                      run: (AiSrsFieldTask task, String instruction) async {
-                        calls.add((task, instruction));
+                      run: (AiSrsFieldAction action, String instruction) async {
+                        calls.add((action, instruction));
                         return const AiSrsFieldSuggestion(
                           value: 'I go <b>every day</b>.',
                         );
@@ -421,7 +423,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(_key('srs-field-ai-run'));
     await tester.pumpAndSettle();
-    expect(calls.single.$1, AiSrsFieldTask.translate, reason: '翻译字段默认翻译');
+    expect(
+      calls.single.$1,
+      const AiSrsFieldAction(AiSrsFieldTask.translate),
+      reason: '翻译字段默认翻译',
+    );
     expect(find.text('I go every day.'), findsOneWidget);
     await tester.tap(_key('srs-field-ai-append'));
     await tester.pumpAndSettle();

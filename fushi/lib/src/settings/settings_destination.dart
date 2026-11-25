@@ -888,6 +888,7 @@ class SettingsCustomItem extends SettingsItem {
     this.reset,
     this.cliValue,
     this.cliList,
+    this.userOnly = false,
     super.subtitle,
     super.icon,
     super.visible,
@@ -908,6 +909,7 @@ class SettingsCustomItem extends SettingsItem {
     this.searchKeywords,
     this.cliValue,
     this.cliList,
+    this.userOnly = false,
     super.subtitle,
     super.icon,
     super.visible,
@@ -945,6 +947,11 @@ class SettingsCustomItem extends SettingsItem {
 
   /// 控制通道上的记录列表操作（见 [SettingsCliList]）。
   final SettingsCliList? cliList;
+
+  /// 只能由用户自己改（同 [SettingsSwitchItem.userOnly]）：AI 助手经控制通道读得到、
+  /// 写不进也恢复不了默认（`settings.set` / `settings.reset` 按 `CtlCall.fromModel` 拒）。
+  /// 给用户亲手写的内容用（例如卡片字段 AI 的提示词）。
+  final bool userOnly;
 }
 
 /// [SettingsCustomItem.reset]：自绘行改没改过默认值、怎么恢复、恢复确认框里

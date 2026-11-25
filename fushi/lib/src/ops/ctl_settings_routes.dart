@@ -496,6 +496,12 @@ Future<Object?> _resetSetting(OpContext context, CtlCall call) async {
   if (!entry.visible) {
     throw CtlFailure.rejected('设置项「${entry.key}」在当前平台 / 模块 / 状态下不可见，设置页里也改不了');
   }
+  // 恢复默认也是一次写：模型写不进的项（userOnly 等）同样恢复不了。
+  if (call.fromModel && !isModelWritableSetting(entry.key, entry.item)) {
+    throw CtlFailure.rejected(
+      '「${entry.title}」只能由用户自己改，也只能由用户恢复默认；请用户在设置页或 fushi_cli 里操作',
+    );
+  }
   final SettingsItem? item = entry.item;
   final SettingsResetSpec? spec = item == null
       ? null

@@ -34,6 +34,7 @@ class AiSavedPromptButton extends StatelessWidget {
     this.enabled = true,
     this.showLabel = false,
     required this.storeOf,
+    this.builtinFilter,
     super.key,
   });
 
@@ -52,12 +53,17 @@ class AiSavedPromptButton extends StatelessWidget {
   /// 取存取实现（生产 = 应用偏好仓库）；点开时才取，偏好未就绪的早期构建不碰它。
   final AiSavedPromptStore Function() storeOf;
 
+  /// 只筛**内置预设**（用户保存的不筛）：返回 false 的预设不显示。null = 全部显示。
+  /// 点开时求值，调用方可据当前状态（例如字段 AI 选中的任务）决定。
+  final bool Function(AiSavedPrompt builtin)? builtinFilter;
+
   Future<void> _open(BuildContext context) async {
     final String? picked = await showAiSavedPromptSheet(
       context,
       scene: scene,
       current: controller.text,
       store: storeOf(),
+      builtinFilter: builtinFilter,
     );
     if (picked == null) return;
     controller.value = TextEditingValue(
@@ -93,10 +99,15 @@ Future<String?> showAiSavedPromptSheet(
   required AiPromptScene scene,
   required String current,
   required AiSavedPromptStore store,
+  bool Function(AiSavedPrompt builtin)? builtinFilter,
 }) => adaptiveModalSheet<String>(
   context: context,
-  builder: (BuildContext context) =>
-      AiSavedPromptSheet(scene: scene, current: current, store: store),
+  builder: (BuildContext context) => AiSavedPromptSheet(
+    scene: scene,
+    current: current,
+    store: store,
+    builtinFilter: builtinFilter,
+  ),
 );
 
 enum _EntryAction { rename, toggleScope, delete }
@@ -108,6 +119,7 @@ class AiSavedPromptSheet extends StatefulWidget {
     required this.scene,
     required this.current,
     required this.store,
+    this.builtinFilter,
     super.key,
   });
 
@@ -117,6 +129,9 @@ class AiSavedPromptSheet extends StatefulWidget {
   final String current;
 
   final AiSavedPromptStore store;
+
+  /// 见 [AiSavedPromptButton.builtinFilter]。
+  final bool Function(AiSavedPrompt builtin)? builtinFilter;
 
   @override
   State<AiSavedPromptSheet> createState() => _AiSavedPromptSheetState();
@@ -256,7 +271,10 @@ class _AiSavedPromptSheetState extends State<AiSavedPromptSheet> {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<AiSavedPrompt> saved = aiSavedPromptsFor(_all, widget.scene);
-    final List<AiSavedPrompt> builtins = aiBuiltinPrompts(widget.scene);
+    final List<AiSavedPrompt> builtins = <AiSavedPrompt>[
+      for (final AiSavedPrompt p in aiBuiltinPrompts(widget.scene))
+        if (widget.builtinFilter?.call(p) ?? true) p,
+    ];
     final List<Widget> children = <Widget>[
       Align(
         alignment: AlignmentDirectional.centerStart,
@@ -276,8 +294,10 @@ class _AiSavedPromptSheetState extends State<AiSavedPromptSheet> {
         )
       else
         for (final AiSavedPrompt p in saved) _entry(p),
-      FushiSectionTitle(t.ai_prompt_library_presets_header),
-      for (final AiSavedPrompt p in builtins) _entry(p),
+      if (builtins.isNotEmpty) ...<Widget>[
+        FushiSectionTitle(t.ai_prompt_library_presets_header),
+        for (final AiSavedPrompt p in builtins) _entry(p),
+      ],
     ];
     return FushiModalSheetFrame(
       key: const ValueKey<String>('ai-saved-prompt-sheet'),

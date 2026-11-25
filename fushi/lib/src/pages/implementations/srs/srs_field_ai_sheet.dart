@@ -2,6 +2,10 @@
 /// 可选补一句要求 → 生成 → 预览 → 「替换」或「追加到末尾」。结果只回给编辑页草稿，点保存才落库。
 ///
 /// 请求怎么发由调用方注入（[SrsFieldAiRunner]，生产走 ai_srs_field_assistant.dart，测试给假的）。
+///
+/// 任务有用户复制的变体时，任务选择下面多一个「默认 / 变体」下拉；「编辑提示词」打开当前
+/// 任务 / 变体的编辑页（[SrsFieldAiPromptEditorOpener]），关掉后重读提示词——不另设「试一下」，
+/// 现有的生成键就是试，替换 / 追加前什么都不写。
 library;
 
 import 'dart:async';
@@ -12,7 +16,9 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
+import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
+import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -30,8 +36,16 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 /// 跑一次字段 AI。
 typedef SrsFieldAiRunner =
     Future<AiSrsFieldSuggestion> Function(
-      AiSrsFieldTask task,
+      AiSrsFieldAction action,
       String instruction,
+    );
+
+/// 打开 [action] 的提示词编辑页；返回编辑页关掉时该选中的动作（复制出变体后选它；
+/// null = 保持原选择，变体被删了抽屉自己退回默认）。
+typedef SrsFieldAiPromptEditorOpener =
+    Future<AiSrsFieldAction?> Function(
+      BuildContext context,
+      AiSrsFieldAction action,
     );
 
 /// 按字段名猜默认任务：翻译类字段默认翻译，释义类默认写释义，其余改写。
@@ -67,6 +81,8 @@ Future<String?> showSrsFieldAiSheet(
   required String current,
   required SrsFieldAiRunner run,
   AiSavedPromptStore? promptStore,
+  AiSrsFieldActionStore? actionStore,
+  SrsFieldAiPromptEditorOpener? editPrompt,
 }) => adaptiveModalSheet<String>(
   context: context,
   builder: (BuildContext context) => SrsFieldAiSheet(
@@ -75,6 +91,8 @@ Future<String?> showSrsFieldAiSheet(
     current: current,
     run: run,
     promptStore: promptStore,
+    actionStore: actionStore,
+    editPrompt: editPrompt,
   ),
 );
 
@@ -86,6 +104,8 @@ class SrsFieldAiSheet extends StatefulWidget {
     required this.current,
     required this.run,
     this.promptStore,
+    this.actionStore,
+    this.editPrompt,
   });
 
   final String fieldLabel;
@@ -97,12 +117,23 @@ class SrsFieldAiSheet extends StatefulWidget {
   /// null = 不显示该按钮。
   final AiSavedPromptStore? promptStore;
 
+  /// 卡片字段 AI 的提示词改动（变体下拉读它）；null = 只有内置、不显示变体下拉。
+  final AiSrsFieldActionStore? actionStore;
+
+  /// 「编辑提示词」；null = 不显示该按钮。
+  final SrsFieldAiPromptEditorOpener? editPrompt;
+
   @override
   State<SrsFieldAiSheet> createState() => _SrsFieldAiSheetState();
 }
 
 class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
   late AiSrsFieldTask _task = srsDefaultFieldAiTask(widget.fieldName);
+
+  /// 选中的变体；null = 该任务的模板（内置或改过的）。
+  String? _variantId;
+  late AiSrsFieldActions _actions =
+      widget.actionStore?.aiFieldActions ?? AiSrsFieldActions.empty;
   final TextEditingController _instruction = TextEditingController();
   bool _busy = false;
   String? _error;
@@ -112,6 +143,24 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
   void dispose() {
     _instruction.dispose();
     super.dispose();
+  }
+
+  AiSrsFieldAction get _action =>
+      AiSrsFieldAction(_task, variantId: _variantId);
+
+  Future<void> _editPrompt(SrsFieldAiPromptEditorOpener open) async {
+    final AiSrsFieldAction? picked = await open(context, _action);
+    if (!mounted) return;
+    setState(() {
+      _actions = widget.actionStore?.aiFieldActions ?? AiSrsFieldActions.empty;
+      if (picked != null) {
+        _task = picked.task;
+        _variantId = picked.variantId;
+      }
+      // 变体在编辑页里被删了 / 不属于这个任务：退回默认。
+      final String? id = _variantId;
+      if (id != null && _actions.variant(id)?.task != _task) _variantId = null;
+    });
   }
 
   Future<void> _generate() async {
@@ -125,7 +174,10 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
       _error = null;
     });
     try {
-      final AiSrsFieldSuggestion s = await widget.run(_task, _instruction.text);
+      final AiSrsFieldSuggestion s = await widget.run(
+        _action,
+        _instruction.text,
+      );
       if (mounted) setState(() => _result = s);
     } on AiChatFailure catch (failure) {
       if (mounted) {
@@ -159,6 +211,7 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final AiSrsFieldSuggestion? result = _result;
+    final List<AiSrsFieldVariant> variants = _actions.variantsFor(_task);
     final List<Widget> children = <Widget>[
       adaptiveSegmentedButton<AiSrsFieldTask>(
         context: context,
@@ -170,9 +223,42 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
             ),
         ],
         selected: <AiSrsFieldTask>{_task},
-        onSelectionChanged: (Set<AiSrsFieldTask> s) =>
-            setState(() => _task = s.first),
+        onSelectionChanged: (Set<AiSrsFieldTask> s) => setState(() {
+          _task = s.first;
+          _variantId = null;
+        }),
       ),
+      if (variants.isNotEmpty || widget.editPrompt != null)
+        Row(
+          spacing: tokens.spacing.gap,
+          children: <Widget>[
+            if (variants.isNotEmpty)
+              Expanded(
+                child: GamepadMenuDropdown<String>(
+                  key: const ValueKey<String>('srs-field-ai-variant'),
+                  label: t.srs_note_field_ai_variant_label,
+                  entries: <GamepadDropdownEntry<String>>[
+                    (value: '', label: t.srs_note_field_ai_variant_default),
+                    for (final AiSrsFieldVariant v in variants)
+                      (value: v.id, label: v.name),
+                  ],
+                  selected: _variantId ?? '',
+                  enabled: !_busy,
+                  onChanged: (String id) =>
+                      setState(() => _variantId = id.isEmpty ? null : id),
+                ),
+              )
+            else
+              const Spacer(),
+            if (widget.editPrompt case final SrsFieldAiPromptEditorOpener open)
+              FushiTextButton.icon(
+                key: const ValueKey<String>('srs-field-ai-edit-prompt'),
+                icon: const FushiIcon(FushiIcons.edit),
+                label: Text(t.srs_note_field_ai_prompt_edit),
+                onPressed: _busy ? null : () => unawaited(_editPrompt(open)),
+              ),
+          ],
+        ),
       Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -194,6 +280,8 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
               controller: _instruction,
               enabled: !_busy,
               storeOf: () => store,
+              builtinFilter: (AiSavedPrompt p) =>
+                  aiSrsFieldBuiltinPresetVisible(p, _task),
             ),
         ],
       ),

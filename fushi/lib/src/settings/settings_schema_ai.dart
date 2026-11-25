@@ -4,6 +4,19 @@ import 'package:fushi_engine/ai/mcp_client/mcp_client_toolbox.dart'
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/ai/ai_srs_field_actions.dart';
+import 'package:fushi/src/ai/ai_srs_field_assistant.dart' show AiSrsFieldTask;
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_action.dart'
+    show
+        srsFieldAiOutputLanguage,
+        srsFieldAiOutputLanguageName,
+        srsFieldAiOutputLanguageTags;
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_prompt_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart'
+    show srsFieldAiTaskLabel;
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsNavigationRow;
 import 'package:fushi/src/ai/agent/ai_agent_controller.dart'
     show AiAgentController;
 import 'package:fushi/src/ai/mcp/ai_mcp_access.dart';
@@ -215,6 +228,52 @@ SettingsDestination buildAiDestination() {
         summaryBuilder: (SettingsContext c) =>
             _aiSectionModifiedSummary('ai.web_search', c),
         items: buildAiWebSearchItems(),
+      ),
+      // 卡片字段 AI（笔记编辑页 / 复习页 / 浏览检查器里字段旁的 AI 键）：输出语言 + 可编辑的
+      // 提示词。提示词行一律 userOnly——AI 助手经控制通道既写不进也恢复不了默认；内置模板行
+      // 声明 reset，参与页级「恢复本页默认」与折叠摘要的改动计数。偏好只在渲染时读。
+      SettingsSection(
+        id: 'ai.field_actions',
+        title: t.ai_field_actions_section,
+        footer: t.ai_field_actions_section_hint,
+        presentation: SettingsSectionPresentation.collapsed,
+        summaryBuilder: (SettingsContext c) =>
+            _aiSectionModifiedSummary('ai.field_actions', c),
+        items: <SettingsItem>[
+          SettingsSegmentedItem<String>(
+            id: 'ai.output_language',
+            dropdown: true,
+            title: t.ai_output_language,
+            subtitle: t.ai_output_language_hint,
+            options: <SettingsSegmentOption<String>>[
+              SettingsSegmentOption<String>(
+                value: '',
+                label: t.ai_output_language_app,
+              ),
+              // 语言名用各语言的自称（与交给 AI 的语言名同一函数），不随界面语言变。
+              for (final String tag in srsFieldAiOutputLanguageTags())
+                SettingsSegmentOption<String>(
+                  value: tag,
+                  label: srsFieldAiOutputLanguageName(tag),
+                ),
+            ],
+            selected: (SettingsContext c) =>
+                c.appModel.prefsRepo.aiOutputLanguage,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.prefsRepo.setAiOutputLanguage(value),
+            defaultValue: '',
+          ),
+          for (final AiSrsFieldTemplate template in kAiSrsFieldTemplates)
+            _fieldPromptTemplateItem(template),
+          SettingsCustomItem.rows(
+            id: 'ai.field_prompt.variants',
+            searchTitle: t.ai_field_actions_variants,
+            userOnly: true,
+            rowsBuilder: (SettingsContext c) => c.appModel.isPreferencesReady
+                ? _fieldPromptVariantRows(c)
+                : const <Widget>[],
+          ),
+        ],
       ),
       SettingsSection(
         id: 'ai.video_download',
@@ -524,6 +583,92 @@ String? _aiSectionModifiedSummary(String sectionId, SettingsContext context) {
       .length;
   return count == 0 ? null : t.settings_section_modified_count(n: count);
 }
+
+/// 打开卡片字段 AI 提示词编辑页（设置里没有笔记，预览用示例笔记），关页后重建本页。
+Future<void> _openFieldPromptEditor(
+  SettingsContext c,
+  SrsFieldAiPromptRef target,
+  AiSrsFieldTask task,
+) async {
+  await openSrsFieldAiPromptEditor(
+    c.context,
+    store: c.appModel.prefsRepo,
+    target: target,
+    preview: srsFieldAiSamplePreview(
+      task: task,
+      outputLanguage: srsFieldAiOutputLanguage(c.appModel),
+    ),
+  );
+  c.refresh();
+}
+
+/// 一份内置模板的设置行：点开编辑；改过 = 「已修改」，可单项 / 页级恢复默认。
+SettingsCustomItem _fieldPromptTemplateItem(AiSrsFieldTemplate template) {
+  final SrsFieldAiPromptRef ref = SrsFieldAiPromptRef.template(template.id);
+  final String title = srsFieldAiPromptTitle(ref, AiSrsFieldActions.empty);
+  return SettingsCustomItem(
+    id: 'ai.field_prompt.${template.id}',
+    searchTitle: title,
+    userOnly: true,
+    reset: SettingsCustomReset(
+      isModified: (SettingsContext c) =>
+          c.appModel.prefsRepo.aiFieldActions.isOverridden(template.id),
+      reset: (SettingsContext c) async {
+        final AiSrsFieldActions actions = c.appModel.prefsRepo.aiFieldActions;
+        await c.appModel.prefsRepo.setAiFieldActions(
+          actions.resetTemplate(template.id),
+        );
+        c.refresh();
+      },
+      currentLabel: (SettingsContext c) =>
+          c.appModel.prefsRepo.aiFieldActions.isOverridden(template.id)
+          ? t.srs_field_ai_prompt_edited
+          : t.srs_field_ai_prompt_builtin,
+      defaultLabel: (SettingsContext c) => t.srs_field_ai_prompt_builtin,
+    ),
+    builder: (SettingsContext c) {
+      final bool edited =
+          c.appModel.isPreferencesReady &&
+          c.appModel.prefsRepo.aiFieldActions.isOverridden(template.id);
+      return FushiPressScale(
+        child: AdaptiveSettingsNavigationRow(
+          key: ValueKey<String>('ai-field-prompt-${template.id}'),
+          title: title,
+          subtitle: edited
+              ? t.srs_field_ai_prompt_edited
+              : t.srs_field_ai_prompt_builtin,
+          icon: template.isSystem ? FushiIcons.aiAssistant : FushiIcons.edit,
+          onTap: () => _openFieldPromptEditor(
+            c,
+            ref,
+            template.task ?? AiSrsFieldTask.define,
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// 用户复制出来的变体：每个一行，点开编辑（改名 / 改正文 / 删除都在编辑页）。
+List<Widget> _fieldPromptVariantRows(SettingsContext c) => <Widget>[
+  for (final AiSrsFieldVariant v
+      in c.appModel.prefsRepo.aiFieldActions.knownVariants)
+    FushiPressScale(
+      child: AdaptiveSettingsNavigationRow(
+        key: ValueKey<String>('ai-field-prompt-variant-${v.id}'),
+        title: v.name,
+        subtitle: t.srs_field_ai_prompt_variant_of(
+          task: srsFieldAiTaskLabel(v.task!),
+        ),
+        icon: FushiIcons.copy,
+        onTap: () => _openFieldPromptEditor(
+          c,
+          SrsFieldAiPromptRef.variant(v.id),
+          v.task!,
+        ),
+      ),
+    ),
+];
 
 /// 「AI › 交给互联电脑办」的跳转：登记一次性定位挂点，推出下载设置页，由那一行的
 /// `SettingsSearchTarget` 消费（滚入视口 + 闪烁高亮）。

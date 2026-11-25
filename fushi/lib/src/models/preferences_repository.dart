@@ -53,6 +53,12 @@ import 'package:fushi_engine/stats/study_goal_language.dart'
 import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
+import 'package:fushi/src/ai/ai_srs_field_actions.dart'
+    show
+        AiSrsFieldActionStore,
+        AiSrsFieldActions,
+        decodeAiSrsFieldActions,
+        encodeAiSrsFieldActions;
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
@@ -272,7 +278,11 @@ enum FloatingLyricColorRole {
 }
 
 class PreferencesRepository extends ChangeNotifier
-    implements PrefStore, AiSettingsSource, AiSavedPromptStore {
+    implements
+        PrefStore,
+        AiSettingsSource,
+        AiSavedPromptStore,
+        AiSrsFieldActionStore {
   PreferencesRepository(this._db) : _readOnly = false;
 
   /// 反馈 biLEesNqWb：某个配置（Profile）的**只读**偏好视图——浏览器扩展选了一个不是
@@ -2940,6 +2950,38 @@ class PreferencesRepository extends ChangeNotifier
   @override
   Future<void> setAiSavedPrompts(Iterable<AiSavedPrompt> prompts) async {
     await setPref('ai_saved_prompts', encodeAiSavedPrompts(prompts));
+    notifyListeners();
+  }
+
+  /// 卡片字段 AI 的提示词覆盖与变体（`ai/ai_srs_field_actions.dart`）。逐条容错在
+  /// [decodeAiSrsFieldActions] 里；整串坏掉记日志并当没有改动（用内置）。
+  @override
+  AiSrsFieldActions get aiFieldActions {
+    final String raw = getPref('ai_field_actions', defaultValue: '') as String;
+    try {
+      return decodeAiSrsFieldActions(raw);
+    } on FormatException catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.aiFieldActions.decode',
+        error,
+        stack,
+      );
+      return AiSrsFieldActions.empty;
+    }
+  }
+
+  @override
+  Future<void> setAiFieldActions(AiSrsFieldActions actions) async {
+    await setPref('ai_field_actions', encodeAiSrsFieldActions(actions));
+    notifyListeners();
+  }
+
+  /// 「AI 输出语言」的语言标签；`''` = 跟随界面语言。
+  String get aiOutputLanguage =>
+      getPref('ai_output_language', defaultValue: '') as String;
+
+  Future<void> setAiOutputLanguage(String tag) async {
+    await setPref('ai_output_language', tag);
     notifyListeners();
   }
 

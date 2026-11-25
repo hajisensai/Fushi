@@ -1966,6 +1966,9 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // harness 里没有 TTS 引擎。窄测试咬住读写夹范围 + 合成按倍速变速且按倍速分缓存。
   'cardCreation/Fallback voice speed':
       'test/creator/mining_tts_fallback_test.dart',
+  // AI 输出语言：生效点是卡片字段 AI 拼请求时交给模型的语言名（harness 里没有 AI 提供商），
+  // 专项测试咬住写穿 + 语言名 + 空值跟随界面语言。
+  'ai/AI output language': 'test/settings/ai_field_actions_settings_test.dart',
   'ai/Default quality':
       'test/settings/ai_video_download_settings_test.dart + '
       'test/ai/ai_video_acquisition_preferences_test.dart',
