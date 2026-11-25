@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import 'package:fushi/src/pages/implementations/android_storage_move_prompt.dart'
     show shouldShowAndroidStorageMovePrompt;
@@ -565,7 +566,26 @@ void main() {
           expect(r.notes.single, contains('=none'));
         });
 
-        test('锚定的根有书 → 不去探其余内部布局，也不写诊断', () async {
+        test('只有锚定的根有书 → 沿用，不写诊断', () async {
+          File(
+            p.join(ext.path, 'audiobooks', 'a', 'b.m4b'),
+          ).createSync(recursive: true);
+          final AndroidLibraryReconciliation r =
+              await AppPaths.reconcileAndroidLibraryRoots(
+                anchored: external,
+                external: ext,
+                internalCandidates: candidates(
+                  layout: AppPaths.documentsLayoutNested,
+                  container: AppPaths.documentsContainerFushi,
+                ),
+                supportRoot: tmp,
+              );
+          expect(r.location, external);
+          expect(r.notes, isEmpty);
+          expect(r.strayRoot, isNull);
+        });
+
+        test('锚定的根和另一种内部布局都有书、读不到主库 → 沿用锚点、不合并，诊断列出各根', () async {
           File(
             p.join(ext.path, 'audiobooks', 'a', 'b.m4b'),
           ).createSync(recursive: true);
@@ -589,7 +609,71 @@ void main() {
                 supportRoot: tmp,
               );
           expect(r.location, external);
-          expect(r.notes, isEmpty);
+          expect(r.strayRoot, isNull);
+          expect(r.notes.single, contains('主库读不到'));
+        });
+
+        group('错根运行期间自己写进了证据文件（锚定的根「有书」但不是真书库）', () {
+          late Directory support;
+          late Directory hibikiRoot;
+          setUp(() {
+            support = Directory(p.join(tmp.path, 'support'))..createSync();
+            hibikiRoot = Directory(p.join(appFlutter.path, 'Hibiki', 'data'));
+            // 真书库：nested Hibiki。
+            File(
+              p.join(hibikiRoot.path, 'fushi_books', 'k1', 'book.epub'),
+            ).createSync(recursive: true);
+            File(
+              p.join(hibikiRoot.path, 'fushi_books', 'k2', 'book.epub'),
+            ).createSync(recursive: true);
+            // 布局被冲成 flat 后，app 以 app_flutter 为根跑过：自动备份写了进去。
+            File(
+              p.join(appFlutter.path, 'srs_backups', 'auto.zip'),
+            ).createSync(recursive: true);
+            final sqlite.Database db = sqlite.sqlite3.open(
+              p.join(support.path, fushiDatabaseFileName),
+            );
+            db.execute('CREATE TABLE epub_books (extract_dir TEXT)');
+            for (final String key in <String>['k1', 'k2']) {
+              db.execute('INSERT INTO epub_books VALUES (?)', <Object?>[
+                p.join(hibikiRoot.path, 'fushi_books', key),
+              ]);
+            }
+            db.dispose();
+          });
+
+          test('锚点指内部 flat → 主库作证改回 nested Hibiki，flat 根交给散书合并', () async {
+            final AndroidLibraryReconciliation r =
+                await AppPaths.reconcileAndroidLibraryRoots(
+                  anchored: internal,
+                  external: ext,
+                  internalCandidates: candidates(
+                    layout: AppPaths.documentsLayoutFlat,
+                    container: AppPaths.documentsContainerFushi,
+                  ),
+                  supportRoot: support,
+                );
+            expect(r.location, internal);
+            expect(r.internal.layout, AppPaths.documentsLayoutNested);
+            expect(r.internal.container, AppPaths.documentsContainerHibiki);
+            expect(r.strayRoot?.path, appFlutter.path);
+            expect(r.notes.single, contains('改为'));
+          });
+
+          test('外部存储不可用时内部各布局照样对账', () async {
+            final AndroidLibraryReconciliation r =
+                await AppPaths.reconcileAndroidLibraryRoots(
+                  anchored: internal,
+                  external: null,
+                  internalCandidates: candidates(
+                    layout: AppPaths.documentsLayoutFlat,
+                    container: AppPaths.documentsContainerFushi,
+                  ),
+                  supportRoot: support,
+                );
+            expect(r.location, internal);
+            expect(r.internal.root.path, hibikiRoot.path);
+          });
         });
       });
 
