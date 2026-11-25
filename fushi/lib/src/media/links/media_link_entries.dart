@@ -18,6 +18,7 @@ class MediaLinkEntry {
     required this.title,
     required this.inLibrary,
     this.coverPath,
+    this.hasRemoteMembers = false,
   });
 
   final MediaLinkEndpoint endpoint;
@@ -30,6 +31,11 @@ class MediaLinkEntry {
 
   /// 本地封面绝对路径（可空）。
   final String? coverPath;
+
+  /// 视频合集里有「本机没有对应视频行」的成员——合集清单是跨端 union，这些是
+  /// Jellyfin / Emby 混排或互联 host 上的集（`CollectionEpisodeSlot` 文件头）。卡片
+  /// 据此画云图标，与视频库合集卡同一提示；其余种类恒为 false。
+  final bool hasRemoteMembers;
 }
 
 /// 某个详情页视角下的一条连接：[other] 是另一端，[otherIsFrom] 表示另一端是不是
@@ -147,6 +153,7 @@ Future<MediaLinkEntry> resolveMediaLinkEntry(
         coverPath: await firstExistingCoverPath(
           await loadCollectionOwnCoverCandidates(db, collection),
         ),
+        hasRemoteMembers: await _collectionHasRemoteMembers(db, collection.id),
       );
     case MediaLinkKind.game:
       final GalgameRow? game = await db.getGalgame(endpoint.key);
@@ -342,4 +349,19 @@ Future<List<MediaLinkEntry>> loadMediaLinkCandidates(
   }
   out.sort((MediaLinkEntry a, MediaLinkEntry b) => a.title.compareTo(b.title));
   return out;
+}
+
+/// 视频合集 [collectionId] 是否有本机没有视频行的成员（远端集，见
+/// [MediaLinkEntry.hasRemoteMembers]）。
+Future<bool> _collectionHasRemoteMembers(
+  FushiDatabase db,
+  int collectionId,
+) async {
+  for (final MediaCollectionItemRow item in await db.getCollectionItems(
+    collectionId,
+  )) {
+    if (item.mediaType != MediaKind.video.dbValue) continue;
+    if (await db.getVideoBookByBookUid(item.entryKey) == null) return true;
+  }
+  return false;
 }

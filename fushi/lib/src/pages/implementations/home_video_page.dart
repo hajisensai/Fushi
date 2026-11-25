@@ -59,6 +59,7 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/video_collection_open_request.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -1109,10 +1110,43 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       onResume: _onVideoRemoteConfigChanged,
     );
     unawaited(_refreshVideoRemoteTargets());
+    // 别处（「同一作品」等）要打开某个视频合集 = 请本页用唯一出口打开
+    // （[requestVideoCollectionOpen]）。tab 懒构建时请求先于本页存在，补查一次。
+    videoCollectionOpenRequest.addListener(_onVideoCollectionOpenRequested);
+    if (videoCollectionOpenRequest.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _onVideoCollectionOpenRequested(),
+      );
+    }
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
     }());
+  }
+
+  /// 接「打开视频合集」请求（[requestVideoCollectionOpen]），用与视频库合集卡同一个
+  /// 出口 [_openCollectionDetail] 打开，详情页因此带着本页的远端上下文
+  /// （Jellyfin / 互联上「本机没有」的集照常出现、可流播）。
+  void _onVideoCollectionOpenRequested() {
+    if (!mounted) return;
+    final int? collectionId = takeVideoCollectionOpenRequest();
+    if (collectionId == null) return;
+    unawaited(_openRequestedVideoCollection(collectionId));
+  }
+
+  Future<void> _openRequestedVideoCollection(int collectionId) async {
+    // 远端来源平时由首轮远端取数（[_loadRemoteVideos]）产出，请求可能先于它到达
+    // （tab 刚懒构建、清单还在取）。不等整份清单——Jellyfin 大库全量枚举要几十秒，
+    // 切过来干等就像没反应——只按同一条判据解析来源（不发清单请求）就打开；详情页
+    // 自己的成员加载经共享 [RemoteLibraryCache] 拿清单，正在取的那一次会被复用。
+    // 没有来源时详情页拿不到远端上下文、远端集全被丢弃（「合集为空」）。
+    if (_remoteVideoSource == null && _shouldLoadRemoteVideos) {
+      _remoteVideoSource = await _resolveRemoteVideoSource();
+    }
+    final MediaCollectionRow? collection = await appModelNoUpdate.database
+        .getMediaCollectionById(collectionId);
+    if (collection == null || !mounted) return;
+    _openCollectionDetail(collection);
   }
 
   // BUG-994：顶层 tab 保活后，切回视频 tab 不再隐式重拉远端 → 远端视频要手动
@@ -1266,6 +1300,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   @override
   void dispose() {
+    videoCollectionOpenRequest.removeListener(_onVideoCollectionOpenRequested);
     _continueShare.clearOwner(this);
     _companion.dispose();
     _collectionDisplayCounts.dispose();
@@ -2251,6 +2286,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// [_maybeBackfillCovers] 里书架重列的最小间隔。
   static const Duration _coverBackfillRefreshInterval = Duration(seconds: 1);
 
+  /// 当前远端视频来源（TODO-2119：互联优先、次选 Jellyfin 媒体服务器、否则回退
+  /// 云盘）。只解析来源、不取清单；库页取数与「打开视频合集」请求共用这一条判据。
+  Future<RemoteVideoSource?> _resolveRemoteVideoSource() async =>
+      await _resolveRemoteVideoClient() ??
+      await _resolveJellyfinVideoClient() ??
+      await _resolveCloudRemoteVideoClient();
+
   Future<RemoteVideoClient?> _resolveRemoteVideoClient() async {
     final Future<RemoteVideoClient?> Function()? injected =
         widget.remoteVideoClientLoader;
@@ -2362,10 +2404,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // TODO-2119：互联优先、次选 Jellyfin 媒体服务器、否则回退云盘；三者都是
     // [RemoteVideoSource]，所以下面「列清单 → 去重 → 出占位卡」这条主干只写
     // 一遍，不再按后端类型分叉。
-    final RemoteVideoSource? source =
-        await _resolveRemoteVideoClient() ??
-        await _resolveJellyfinVideoClient() ??
-        await _resolveCloudRemoteVideoClient();
+    final RemoteVideoSource? source = await _resolveRemoteVideoSource();
     if (source == null) return null;
     try {
       // BUG-1180：经共享缓存取清单——切回视频 tab（[onTabActivated]）不再必然打一轮

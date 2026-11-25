@@ -1,20 +1,24 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fushi/src/media/collections/collection_episode_slot.dart';
+import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/home_tab.dart';
+import 'package:fushi/src/models/module_registry.dart' show isHomeTabVisible;
+import 'package:fushi/src/models/video_collection_open_request.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
-import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
+    show FushiSnackBar;
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/music_cover_source.dart';
@@ -79,7 +83,8 @@ ValueChanged<String>? mediaLinkSearchAction({
 
 /// 打开作品图谱另一端在本机的条目：各模块已有的那个出口，不另起页面。
 ///
-/// - 视频合集 → 合集详情页（与「相关作品」打开已绑定合集同一形态）；
+/// - 视频合集 → 切到视频 tab，由视频库页用它的合集出口打开（带远端上下文，
+///   [requestVideoCollectionOpen]）；
 /// - 单个视频 → 播放器（属于合集就作为合集一集打开，与统计页 / ctl 同一口径）；
 /// - 书 / 有声书 → 漫画进作品页，其余与书架点卡同一条 [AppModel.openMedia]；
 /// - 游戏 → 游戏详情页；
@@ -100,35 +105,21 @@ Future<void> openMediaLinkEntry({
           ? null
           : await db.getMediaCollectionById(id);
       if (target == null || !navigator.mounted) return;
-      final VideoBookRepository repo = VideoBookRepository(db);
-      unawaited(
-        navigator.push<void>(
-          adaptivePageRoute<void>(
-            context: navigator.context,
-            builder: (BuildContext pageContext) => MediaCollectionDetailPage(
-              database: db,
-              collection: target,
-              loadEpisodes: () => loadCollectionEpisodeSlots(
-                repository: repo,
-                collectionId: target.id,
-              ),
-              onOpenEpisode: (VideoBookRow episode) {
-                Navigator.of(pageContext).push<void>(
-                  adaptivePageRoute<void>(
-                    context: pageContext,
-                    builder: (_) => VideoFushiPage.neutralized(
-                      bookUid: episode.bookUid,
-                      repo: repo,
-                      playlistCollectionId: target.id,
-                    ),
-                  ),
-                );
-              },
-              onChanged: () {},
-            ),
-          ),
-        ),
-      );
+      // 视频合集只由视频库页打开（[requestVideoCollectionOpen] 文件头）：成员可能是
+      // Jellyfin / 互联上「本机没有」的集，只有视频库页持有解析它们的远端上下文。
+      // 回到首页壳、切到视频 tab、发请求——与追踪卡片打开书架合集同一形态。
+      if (!isHomeTabVisible(HomeTab.video, appModel.moduleVisibility)) {
+        ScaffoldMessenger.of(navigator.context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(FushiSnackBar(content: Text(t.module_disabled_hint)));
+        return;
+      }
+      Navigator.of(
+        navigator.context,
+        rootNavigator: true,
+      ).popUntil((Route<Object?> route) => route.isFirst);
+      homeShellTabNotifier.value = HomeTab.video;
+      requestVideoCollectionOpen(target.id);
     case MediaLinkKind.videoEpisode:
       final VideoBookRepository repo = VideoBookRepository(db);
       final VideoBookRow? row = await repo.getByBookUid(e.key);

@@ -4,6 +4,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/links/media_links_section.dart';
 import 'package:fushi/src/media/links/work_graph_store.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -215,5 +217,48 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('可能相关'), findsNothing);
+  });
+
+  testWidgets('合集有本机没有的集（Jellyfin / 互联远端集）→ 卡片带云图标；全本地的不带', (
+    WidgetTester tester,
+  ) async {
+    // 「某动画」只有一集远端集：成员行的 entryKey 是服务器条目 id，本机没有视频行。
+    await db.addToCollection(animeId, MediaKind.video, 'jellyfin-item-1');
+    // 另一部全是本地集。
+    final int localId = await db.createMediaCollection('本地动画');
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'local-ep-1',
+        title: '本地动画 01',
+        videoPath: '/tmp/local01.mkv',
+      ),
+    );
+    await db.addToCollection(localId, MediaKind.video, 'local-ep-1');
+    for (final int id in <int>[animeId, localId]) {
+      await db.upsertManualMediaLink(
+        relation: MediaLinkRelation.sameWork,
+        from: book,
+        to: (
+          kind: MediaLinkKind.videoCollection,
+          key: collectionTagEntryKey(id),
+        ),
+      );
+    }
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    Finder cloudIn(int collectionId) => find.descendant(
+      of: find.byKey(
+        ValueKey<String>(
+          'media-link-card-video_collection-'
+          '${collectionTagEntryKey(collectionId)}',
+        ),
+      ),
+      matching: find.byWidgetPredicate(
+        (Widget w) => w is FushiIcon && w.icon == FushiIcons.cloud,
+      ),
+    );
+    expect(cloudIn(animeId), findsOneWidget, reason: '有远端集 = 云图标');
+    expect(cloudIn(localId), findsNothing, reason: '全本地 = 无云图标');
   });
 }

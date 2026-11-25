@@ -256,6 +256,7 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
       title: series.name,
       inLibrary: entry.inLibrary,
       coverPath: entry.coverPath,
+      hasRemoteMembers: entry.hasRemoteMembers,
     );
   }
 
@@ -471,6 +472,8 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
             child: ShelfCardMeta(
               title: other.title,
               subtitle: <String>[_cardRelationLabel(spec), ?status].join(' · '),
+              // 与视频库合集卡同一提示：有只在 Jellyfin / 互联上的集。
+              leadingIcon: other.hasRemoteMembers ? FushiIcons.cloud : null,
             ),
           ),
         ],
