@@ -9,11 +9,13 @@
 import 'dart:convert';
 import 'dart:math' show Rectangle;
 
+import 'package:fushi/src/mining/gal_measured_text_feed.dart';
+
 /// 观察脚本推送 JSON 的格式版本（payload 的 `v`）。
 const int kTyranoDomPayloadVersion = 1;
 
 /// 一个字形：在 [TyranoDomFrame.text] 里的 UTF-16 区间与客户区物理像素矩形。
-class TyranoDomGlyph {
+class TyranoDomGlyph implements GalMeasuredTextGlyph {
   /// 创建字形。
   const TyranoDomGlyph({
     required this.textStart,
@@ -23,15 +25,19 @@ class TyranoDomGlyph {
   });
 
   /// 在 [TyranoDomFrame.text] 里的起始下标（UTF-16）。
+  @override
   final int textStart;
 
   /// UTF-16 长度（一般为 1，代理对为 2）。
+  @override
   final int textLength;
 
   /// 客户区物理像素矩形（ruby 字只含 rb 部分）。
+  @override
   final Rectangle<double> rect;
 
   /// 逐字显示动画里是否已显示（opacity > 0 且非 hidden）。
+  @override
   final bool shown;
 
   @override
@@ -47,7 +53,7 @@ class TyranoDomGlyph {
 }
 
 /// 一帧快照。
-class TyranoDomFrame {
+class TyranoDomFrame implements GalMeasuredTextFrame {
   /// 创建快照。
   const TyranoDomFrame({
     required this.text,
@@ -66,27 +72,33 @@ class TyranoDomFrame {
 
   /// 台词正文：可见消息层（`messageN_fore`，display != none）里的字形按 DOM 顺序拼接，
   /// 不含 `<rt>` 注音。
+  @override
   final String text;
 
   /// 正文变化才 +1（从 1 起；会话第一帧正文为空时为 0）。
   final int generation;
 
   /// 本句已显示完：`is_adding_text == false` 且所有非空白字形都已显示。
+  @override
   final bool complete;
 
   /// 角色名（`.chara_name_area`，可能为空串）。
   final String speaker;
 
   /// 字形，与 [text] 一一覆盖（按顺序首尾相接）。
+  @override
   final List<TyranoDomGlyph> glyphs;
 
   /// 页面的 devicePixelRatio。
+  @override
   final double devicePixelRatio;
 
   /// 视口的物理像素宽（`round(innerWidth × dpr)`）。
+  @override
   final int clientWidth;
 
   /// 视口的物理像素高（`round(innerHeight × dpr)`）。
+  @override
   final int clientHeight;
 
   /// TyranoScript 纵排（`TYRANO.kag.config.vertical == "true"`）。

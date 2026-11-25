@@ -41,6 +41,10 @@ inline constexpr size_t kMaximumGlyphs = 32768;
 // (runtime_layout kind 1, id 6).  Only an allow-listed measured source may
 // drive the surface; the string is diagnostic identity, not a registry owner.
 inline constexpr char kSourceTyranoDom[] = "tyrano_dom";
+// OCR game mode (BUG-5299): one rectangle per recognized glyph, derived from
+// the OCR line / word boxes of a window capture and mapped back onto the
+// source client by the Dart mining layer.  Same contract as the DOM source.
+inline constexpr char kSourceScreenOcr[] = "screen_ocr";
 
 struct MeasuredGlyph {
   uint32_t text_position = 0;
@@ -50,7 +54,7 @@ struct MeasuredGlyph {
 };
 
 inline bool IsSupportedSource(const std::string &source) {
-  return source == kSourceTyranoDom;
+  return source == kSourceTyranoDom || source == kSourceScreenOcr;
 }
 
 inline bool IsHighSurrogate(wchar_t value) {

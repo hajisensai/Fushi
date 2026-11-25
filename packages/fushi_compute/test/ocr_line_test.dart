@@ -65,17 +65,23 @@ void main() {
   test('text: CJK spacing removed, dedup, extend, empty', () {
     final FfcOcrLineTracker tracker = FfcOcrLineTracker();
     addTearDown(tracker.close);
-    expect(tracker.feedText('今日は と て も\nいい天気ですね'), (
-      kind: FfcOcrLineTextKind.newLine,
-      text: '今日はとてもいい天気ですね',
+    (FfcOcrLineTextKind, String) feed(String text) {
+      final FfcOcrLineText r = tracker.feedText(text);
+      return (r.kind, r.text);
+    }
+
+    expect(feed('今日は と て も\nいい天気ですね'), (
+      FfcOcrLineTextKind.newLine,
+      '今日はとてもいい天気ですね',
     ));
-    expect(
-      tracker.feedText('今日はとてもいい天気ですね').kind,
+    // 重复句交出上一句的显示文本。
+    expect(feed('今日はとてもいい天気ですね'), (
       FfcOcrLineTextKind.duplicate,
-    );
-    expect(tracker.feedText('今日はとてもいい天気ですね、散歩に行こう'), (
-      kind: FfcOcrLineTextKind.extend,
-      text: '今日はとてもいい天気ですね、散歩に行こう',
+      '今日はとてもいい天気ですね',
+    ));
+    expect(feed('今日はとてもいい天気ですね、散歩に行こう'), (
+      FfcOcrLineTextKind.extend,
+      '今日はとてもいい天気ですね、散歩に行こう',
     ));
     expect(tracker.feedText('  ').kind, FfcOcrLineTextKind.empty);
     tracker.reset();
@@ -103,6 +109,54 @@ void main() {
       isTrue,
       reason: 'binarized frame is pure black / white',
     );
+  });
+
+  test('geometry: char boxes come back in full-screenshot pixels', () {
+    final FfcOcrLineTracker tracker = FfcOcrLineTracker();
+    addTearDown(tracker.close);
+    // 200×80 的整窗截图，下半是台词框（8 px 高的小字，Rust 放 3 倍再交出，BUG-5299 ②）。
+    final Uint8List shot = _png(200, 80, textRows: (56, 64));
+    FfcOcrLineFrame feed() =>
+        tracker.feedPng(shot, left: 0, top: 0.5, width: 1, height: 0.5);
+    feed();
+    final FfcOcrLineFrame frame = feed();
+    expect(frame.action, FfcOcrLineFrameAction.ocr);
+    expect((frame.width, frame.height), (600, 120));
+    // 识别器在放大图上给的框：「あ」(30..60, 48..72)、换行占位、「い」(60..90, 48..72)。
+    final FfcOcrLineText r = tracker.feedText(
+      'あ\nい',
+      charBoxes: Float32List.fromList(<double>[
+        30, 48, 60, 72, //
+        0, 0, 0, 0, //
+        60, 48, 90, 72,
+      ]),
+    );
+    expect((r.kind, r.text), (FfcOcrLineTextKind.newLine, 'あい'));
+    expect((r.imageWidth, r.imageHeight), (200, 80));
+    expect(r.glyphs, const <FfcOcrLineGlyph>[
+      FfcOcrLineGlyph(
+        start: 0,
+        length: 1,
+        left: 10,
+        top: 56,
+        right: 20,
+        bottom: 64,
+      ),
+      FfcOcrLineGlyph(
+        start: 1,
+        length: 1,
+        left: 20,
+        top: 56,
+        right: 30,
+        bottom: 64,
+      ),
+    ]);
+    expect(
+      () => tracker.feedText('あい', charBoxes: Float32List(4)),
+      throwsArgumentError,
+    );
+    // 不带框：没有几何。
+    expect(tracker.feedText('あい').glyphs, isNull);
   });
 
   test('closed tracker refuses calls', () {

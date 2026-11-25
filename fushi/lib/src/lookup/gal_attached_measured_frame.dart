@@ -1,4 +1,5 @@
-// TyranoScript DOM 帧 → attached surface 实测排版载荷（纯函数）。
+// 实测排版帧（TyranoScript DOM / OCR 游戏模式，见 mining `gal_measured_text_feed.dart`）→
+// attached surface 实测排版载荷（纯函数）。
 //
 // 坐标契约（runner `attached_measured_layout.h`）：原点是游戏顶层窗口客户区左上角，物理
 // 像素，right/bottom 不含；[GalAttachedMeasuredPayload.clientWidth]/[clientHeight] 是
@@ -18,7 +19,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_frame.dart';
+import 'package:fushi/src/mining/gal_measured_text_feed.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart'
     show normalizeTexthookerLineBreaks;
@@ -101,8 +102,8 @@ int galAttachedMeasuredClientSizeTolerance(double devicePixelRatio) {
   return devicePixelRatio == ceiled ? ceiled - 1 : ceiled;
 }
 
-/// DOM 正文进 texthooker 后的行文本（`appendLine` 同一收口）；收口带出注音 span 时返回 null。
-String? tyranoDomTexthookerText(String domText) {
+/// 帧正文进 texthooker 后的行文本（`appendLine` 同一收口）；收口带出注音 span 时返回 null。
+String? galMeasuredTexthookerText(String domText) {
   final RubyMarkupText parsed = parseRubyMarkup(
     normalizeTexthookerLineBreaks(domText),
   ).trimmed();
@@ -121,13 +122,13 @@ String? tyranoDomTexthookerText(String domText) {
 /// 字形矩形 left/top 向下取整、right/bottom 向上取整（框只会略大不会漏字），再夹进
 /// `[0, clientWidth] x [0, clientHeight]`；只发 `shown` 的字形，空框丢弃。
 GalAttachedMeasuredPayload galAttachedMeasuredPayloadForFrame(
-  TyranoDomFrame frame,
+  GalMeasuredTextFrame frame,
 ) {
   const GalAttachedMeasuredPayload clear = GalAttachedMeasuredPayload.clear();
   final int width = frame.clientWidth;
   final int height = frame.clientHeight;
   if (!frame.complete || width <= 0 || height <= 0) return clear;
-  final String? lineText = tyranoDomTexthookerText(frame.text);
+  final String? lineText = galMeasuredTexthookerText(frame.text);
   if (lineText == null || lineText.isEmpty) return clear;
   // 收口只做了 trim 时 lineText 是原文的子串，首个匹配就是真实前导偏移（前面被
   // 切掉的全是空白，lineText 首字符不是空白）。
@@ -135,7 +136,7 @@ GalAttachedMeasuredPayload galAttachedMeasuredPayloadForFrame(
   if (lead < 0) return clear;
   final int end = lead + lineText.length;
   final List<GalAttachedMeasuredGlyph> glyphs = <GalAttachedMeasuredGlyph>[];
-  for (final TyranoDomGlyph glyph in frame.glyphs) {
+  for (final GalMeasuredTextGlyph glyph in frame.glyphs) {
     if (!glyph.shown || glyph.textLength <= 0) continue;
     final int start = glyph.textStart;
     if (start < lead || start + glyph.textLength > end) continue;

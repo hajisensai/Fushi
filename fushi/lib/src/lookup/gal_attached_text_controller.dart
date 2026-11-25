@@ -5,8 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/lookup/gal_attached_measured_frame.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
-import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_feed.dart';
-import 'package:fushi/src/mining/tyrano_dom/tyrano_dom_frame.dart';
+import 'package:fushi/src/mining/gal_measured_text_feed.dart';
 import 'package:fushi/src/platform/gal_hook_text_overlay_channel.dart';
 
 typedef GalAttachedPreferenceReader = Object? Function(String key);
@@ -380,13 +379,13 @@ class GalAttachedTextController extends ChangeNotifier {
   int _calibrationGeneration = 0;
   int? _committedCalibrationGeneration;
 
-  // -- 实测排版路线（TyranoScript DOM 源）--
-  // 有 DOM feed 时不走校准 profile：inspect -> attachedOnly 交接 -> configureMeasured，
+  // -- 实测排版路线（TyranoScript DOM 源 / OCR 游戏模式，[GalMeasuredTextFeed]）--
+  // 有实测 feed 时不走校准 profile：inspect -> attachedOnly 交接 -> configureMeasured，
   // 之后由 DOM 帧驱动 updateMeasuredText。texthooker 送来的 sourceText 在这条路线上
   // 不参与几何（它与 DOM 正文同源，但下标契约只对 DOM 帧成立）。
-  TyranoDomFeed? _measuredFeed;
+  GalMeasuredTextFeed? _measuredFeed;
   bool _measuredConfigured = false;
-  StreamSubscription<TyranoDomFrame>? _measuredFrameSubscription;
+  StreamSubscription<GalMeasuredTextFrame>? _measuredFrameSubscription;
   GalAttachedMeasuredPayload? _measuredLastPayload;
   GalAttachedMeasuredPayload? _measuredRejectedPayload;
 
@@ -395,7 +394,7 @@ class GalAttachedTextController extends ChangeNotifier {
   /// 被拒的那份测量重新有效，必须允许重发（BUG：切屏后查词要等下一句才恢复）。
   ({int width, int height})? _measuredRejectedClientSize;
   String? _measuredStaleReason;
-  TyranoDomFrame? _measuredPendingFrame;
+  GalMeasuredTextFrame? _measuredPendingFrame;
   bool _measuredPendingForce = false;
   bool _measuredPushing = false;
   Future<void>? _measuredDrain;
@@ -403,7 +402,7 @@ class GalAttachedTextController extends ChangeNotifier {
 
   GalAttachedTextStatus get status => _status;
 
-  /// 当前 surface 走实测排版路线（有 TyranoScript DOM 源）。
+  /// 当前 surface 走实测排版路线（有实测数据源：TyranoScript DOM / OCR 游戏模式）。
   bool get measuredLayoutActive => _measuredFeed != null;
 
   /// 等当前排队的实测载荷全部发完（测试用）。
@@ -570,8 +569,8 @@ class GalAttachedTextController extends ChangeNotifier {
     bool inspectOnly = false,
     bool Function()? stillCurrent,
 
-    /// TyranoScript DOM 源（会话控制器发布）；非 null 时走实测排版路线。
-    TyranoDomFeed? measuredFeed,
+    /// 实测数据源（会话控制器发布：TyranoScript DOM / OCR 游戏模式）；非 null 时走实测排版路线。
+    GalMeasuredTextFeed? measuredFeed,
   }) async {
     if (stillCurrent != null && !stillCurrent()) return;
     final bool hasTarget =
@@ -731,7 +730,7 @@ class GalAttachedTextController extends ChangeNotifier {
     required String? launchExePath,
     required bool inspectOnly,
     bool Function()? stillCurrent,
-    TyranoDomFeed? measuredFeed,
+    GalMeasuredTextFeed? measuredFeed,
   }) async {
     await detach();
     if (stillCurrent != null && !stillCurrent()) return;
@@ -2725,7 +2724,7 @@ class GalAttachedTextController extends ChangeNotifier {
     GalAttachedSurfaceTarget target, {
     bool Function()? stillCurrent,
   }) async {
-    final TyranoDomFeed? feed = _measuredFeed;
+    final GalMeasuredTextFeed? feed = _measuredFeed;
     if (feed == null) return;
     final GalLookupSurfaceMode mode =
         _profile?.mode ?? GalLookupSurfaceMode.auto;
@@ -2759,7 +2758,7 @@ class GalAttachedTextController extends ChangeNotifier {
     if (!claimed) return;
     final GalAttachedCallResult result = await _surfacePort.configureMeasured(
       target: target,
-      measuredSource: galAttachedMeasuredSourceTyranoDom,
+      measuredSource: feed.measuredSource,
     );
     if (!_isCurrent(operation, target) ||
         (stillCurrent != null && !stillCurrent()) ||
@@ -2780,20 +2779,22 @@ class GalAttachedTextController extends ChangeNotifier {
     }
     _measuredConfigured = true;
     _surfaceVisible = false;
-    _measuredFrameSubscription ??= feed.frames.listen((TyranoDomFrame frame) {
+    _measuredFrameSubscription ??= feed.frames.listen((
+      GalMeasuredTextFrame frame,
+    ) {
       if (identical(feed, _measuredFeed)) _scheduleMeasuredPush(frame);
     }, onDone: () => unawaited(_onMeasuredFeedEnded(feed)));
     _refreshMeasuredStatus();
     _scheduleMeasuredPush(feed.latest);
   }
 
-  /// DOM 源断开（游戏退出 / CDP 断开 / 会话停源）：撤掉实测几何。
+  /// 实测源断开（游戏退出 / CDP 断开 / 会话停源 / OCR 会话结束）：撤掉实测几何。
   ///
   /// 旧句的命中框绝不能比数据源活得久；之后由 central sync 按「没有 feed」重新接管
   /// （回到校准路线，没有 profile 时安静挂起）。
-  Future<void> _onMeasuredFeedEnded(TyranoDomFeed feed) async {
+  Future<void> _onMeasuredFeedEnded(GalMeasuredTextFeed feed) async {
     if (!identical(feed, _measuredFeed) || _target == null) return;
-    _measuredDiagnostic('feed_ended port=${feed.port}');
+    _measuredDiagnostic('feed_ended ${feed.diagnosticLabel}');
     await detach();
   }
 
@@ -2891,7 +2892,10 @@ class GalAttachedTextController extends ChangeNotifier {
   }
 
   /// 排队发布一帧；同一时刻只有一个 updateMeasuredText 在途，期间到达的帧只保留最新一帧。
-  void _scheduleMeasuredPush(TyranoDomFrame? frame, {bool force = false}) {
+  void _scheduleMeasuredPush(
+    GalMeasuredTextFrame? frame, {
+    bool force = false,
+  }) {
     if (frame == null || !_measuredConfigured || _target == null) return;
     _measuredPendingFrame = frame;
     _measuredPendingForce = _measuredPendingForce || force;
@@ -2903,7 +2907,7 @@ class GalAttachedTextController extends ChangeNotifier {
   Future<void> _drainMeasuredPushes() async {
     try {
       while (true) {
-        final TyranoDomFrame? frame = _measuredPendingFrame;
+        final GalMeasuredTextFrame? frame = _measuredPendingFrame;
         if (frame == null) break;
         final bool force = _measuredPendingForce;
         _measuredPendingFrame = null;
@@ -2932,7 +2936,7 @@ class GalAttachedTextController extends ChangeNotifier {
   };
 
   Future<void> _pushMeasuredFrame(
-    TyranoDomFrame frame, {
+    GalMeasuredTextFrame frame, {
     required bool force,
   }) async {
     final GalAttachedSurfaceTarget? target = _target;

@@ -6,6 +6,7 @@
 library;
 
 import 'dart:typed_data';
+import 'dart:ui' show Rect;
 
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/mining/gal_ocr_line_source.dart';
@@ -62,11 +63,88 @@ Future<GalOcrRecognizerResolution> resolveGalOcrRecognizerFromPrefs(
 bool galOcrModelMissing(GalOcrRecognizerResolution resolution) =>
     resolution.unavailableReason == kSystemOcrModelUnavailableReason;
 
-/// 识别行 → 全文（按平台给的阅读顺序，行间 `\n`；CJK 拼接交给 Rust 判定核心）。
-String galOcrTextOf(SystemOcrPageResult result) => <String>[
-  for (final SystemOcrTextLine line in result.lines)
-    if (line.text.trim().isNotEmpty) line.text,
-].join('\n');
+/// 识别行 → 全文 + 逐字框（按平台给的阅读顺序，行间 `\n`；CJK 拼接交给 Rust 判定核心）。
+///
+/// 逐字框（BUG-5299 ②，游戏画面内嵌查词）与 `text.runes` 一一对应，每个字 `[l, t, r, b]`，
+/// 坐标是送检图像素（与 [SystemOcrTextLine.rect] 同一空间）；行间的 `\n` 填空框。框怎么映回游戏
+/// 客户区由 Rust 判定核心（撤放大、加裁框原点）与 [GalOcrLineSource]（截图 → 客户区）接着做。
+GalOcrRecognition galOcrRecognitionOf(SystemOcrPageResult result) {
+  final StringBuffer text = StringBuffer();
+  final List<double> boxes = <double>[];
+  for (final SystemOcrTextLine line in result.lines) {
+    if (line.text.trim().isEmpty) continue;
+    if (text.isNotEmpty) {
+      text.write('\n');
+      boxes.addAll(const <double>[0, 0, 0, 0]);
+    }
+    text.write(line.text);
+    boxes.addAll(galOcrLineCharBoxes(line));
+  }
+  return GalOcrRecognition(
+    text.toString(),
+    charBoxes: Float32List.fromList(boxes),
+  );
+}
+
+/// 一行里每个字（`line.text.runes`）的框，展平成 `[l, t, r, b, …]`。
+///
+/// 与截屏识字的逐字命中同一套估法（`screen_ocr_picker.dart`，BUG-4367）：落在平台词框
+/// （[SystemOcrTextLine.segments]，Windows OCR 对日文多半逐字）里的字在词框内等分，其余在行框内
+/// 按字数等分；竖排沿高度、横排沿宽度。
+List<double> galOcrLineCharBoxes(SystemOcrTextLine line) {
+  final List<int> starts = <int>[];
+  final List<int> lengths = <int>[];
+  int offset = 0;
+  for (final int rune in line.text.runes) {
+    final int length = rune > 0xFFFF ? 2 : 1;
+    starts.add(offset);
+    lengths.add(length);
+    offset += length;
+  }
+  final int count = starts.length;
+  final List<double> out = List<double>.filled(count * 4, 0);
+  void put(int index, Rect rect, int slot, int slots) {
+    final Rect box = line.isVertical
+        ? Rect.fromLTWH(
+            rect.left,
+            rect.top + rect.height * slot / slots,
+            rect.width,
+            rect.height / slots,
+          )
+        : Rect.fromLTWH(
+            rect.left + rect.width * slot / slots,
+            rect.top,
+            rect.width / slots,
+            rect.height,
+          );
+    out
+      ..[index * 4] = box.left
+      ..[index * 4 + 1] = box.top
+      ..[index * 4 + 2] = box.right
+      ..[index * 4 + 3] = box.bottom;
+  }
+
+  final List<bool> placed = List<bool>.filled(count, false);
+  for (final SystemOcrTextSegment segment in line.segments) {
+    final List<int> members = <int>[
+      for (int i = 0; i < count; i++)
+        if (starts[i] >= segment.start &&
+            starts[i] + lengths[i] <= segment.end &&
+            !placed[i])
+          i,
+    ];
+    for (int k = 0; k < members.length; k++) {
+      put(members[k], segment.rect, k, members.length);
+      placed[members[k]] = true;
+    }
+  }
+  if (placed.contains(false)) {
+    for (int i = 0; i < count; i++) {
+      if (!placed[i]) put(i, line.rect, i, count);
+    }
+  }
+  return out;
+}
 
 /// 按设置解析识别器。[local] 是本机模型识别器（调用方持有、跟会话走）；[system] 默认
 /// [MethodChannelSystemOcr]。本机模型被选中却没下载时返回 [kSystemOcrModelUnavailableReason]。
@@ -96,22 +174,24 @@ Future<GalOcrRecognizerResolution> resolveGalOcrRecognizer({
     }
     return (
       engine: engine,
-      recognize: (Uint8List rgba, int width, int height) async => galOcrTextOf(
-        await local.recognizeRgba(rgba, width: width, height: height),
-      ),
+      recognize: (Uint8List rgba, int width, int height) async =>
+          galOcrRecognitionOf(
+            await local.recognizeRgba(rgba, width: width, height: height),
+          ),
       unavailableReason: null,
     );
   }
   return (
     engine: engine,
-    recognize: (Uint8List rgba, int width, int height) async => galOcrTextOf(
-      await system.recognizePixels(
-        rgba,
-        width: width,
-        height: height,
-        language: language,
-      ),
-    ),
+    recognize: (Uint8List rgba, int width, int height) async =>
+        galOcrRecognitionOf(
+          await system.recognizePixels(
+            rgba,
+            width: width,
+            height: height,
+            language: language,
+          ),
+        ),
     unavailableReason: null,
   );
 }
