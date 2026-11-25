@@ -131,4 +131,53 @@ void main() {
       r'D:\v\Show\Season 01',
     );
   });
+
+  test('外挂件补搬后：只重扫装着这些旧路径曲目的音乐来源，每个来源一次', () async {
+    Future<int> addMusic(String rootPath) => db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: rootPath,
+        mediaKind: 'music',
+        rootPath: rootPath,
+        createdAt: 1,
+      ),
+    );
+    final int tenki = await addMusic(at(<String>['Tenki']));
+    final int other = await addMusic(at(<String>['Other']));
+    Future<void> track(String uid, String path, int sourceId) =>
+        db.writeMusicScanBatch(
+          MusicScanBatchWrite(
+            tracks: <MusicTracksCompanion>[
+              MusicTracksCompanion.insert(
+                trackUid: uid,
+                path: path,
+                title: uid,
+                sourceId: Value<int?>(sourceId),
+                fileMtimeAt: 1,
+                fileSize: 1,
+                addedAt: 1,
+              ),
+            ],
+            albums: const <MusicAlbumsCompanion>[],
+            artists: const <MusicArtistsCompanion>[],
+            credits: const <MusicTrackCreditsCompanion>[],
+          ),
+        );
+    final String eng = at(<String>['Tenki', 'Audio 5.1', 'x_Eng.mka']);
+    final String jpn = at(<String>['Tenki', 'Audio 5.1', 'x_Jpn.mka']);
+    await track('eng', eng, tenki);
+    await track('jpn', jpn, tenki);
+    await track('song', at(<String>['Other', '01.flac']), other);
+    final List<int> rescanned = <int>[];
+    final int n = await rescanMusicSourcesOfMovedFiles(
+      db: db,
+      movedFromPaths: <String>[
+        eng.toUpperCase(),
+        jpn,
+        at(<String>['x.ass']),
+      ],
+      rescan: (MediaSourceRow s) async => rescanned.add(s.id),
+    );
+    expect(n, 1);
+    expect(rescanned, <int>[tenki]);
+  });
 }

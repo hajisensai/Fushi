@@ -65,3 +65,31 @@ Future<MusicAudioIntakeResult> adoptDownloadedReleaseAudio({
     videoFilePaths: videoFiles,
   );
 }
+
+/// 下载管线把滞留的外挂件从原发布目录搬走后（[movedFromPaths] 是搬走前的路径）：
+/// 早先被当纯音频收进音乐库的那些文件现在不在原处了，重扫它们所在的音乐来源，
+/// 让扫描按「文件已不在」对账掉曲目（每个来源一次）。返回重扫的来源数。
+Future<int> rescanMusicSourcesOfMovedFiles({
+  required FushiDatabase db,
+  required List<String> movedFromPaths,
+  required Future<void> Function(MediaSourceRow source) rescan,
+}) async {
+  final Set<String> moved = <String>{
+    for (final String path in movedFromPaths) musicTrackPathKey(path),
+  };
+  final Set<int> sourceIds = <int>{
+    for (final MusicTrackRow t in await db.listMusicTracks())
+      if (t.deletedAt == null &&
+          t.sourceId != null &&
+          moved.contains(musicTrackPathKey(t.path)))
+        t.sourceId!,
+  };
+  int done = 0;
+  for (final int id in sourceIds) {
+    final MediaSourceRow? source = await db.getMediaSourceById(id);
+    if (source == null) continue;
+    await rescan(source);
+    done++;
+  }
+  return done;
+}

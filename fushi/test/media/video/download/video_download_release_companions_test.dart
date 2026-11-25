@@ -331,7 +331,10 @@ void main() {
 
   group('存量补搬（流水线启动时）', () {
     test('已完成任务遗留在原发布目录的配对外挂件经后端改名补搬，幂等；CD 不动', () async {
-      final _Env env = await _Env.create();
+      final List<List<String>> relocated = <List<String>>[];
+      final _Env env = await _Env.create(
+        onRelocated: (List<String> from) async => relocated.add(from),
+      );
       addTearDown(env.close);
       const String rel = '[Grp] Show [1080p]';
       const String videoOriginal = '$rel/[Grp] Show [01][1080p].mkv';
@@ -407,10 +410,19 @@ void main() {
       expect(rows[3]!.currentRelativePath, '$rel/CDs/01.flac');
       expect(rows[3]!.targetRelativePath, isNull);
       expect(env.backend.renameCalls, 2);
+      // 搬走前的本机路径报给宿主（误收进音乐库的整片外挂音轨要按它对账）。
+      expect(
+        relocated.single,
+        unorderedEquals(<String>[
+          p.join(env.root.path, rel, '[Grp] Show [01][1080p].chs.ass'),
+          p.join(env.root.path, rel, 'Audio', '[Grp] Show [01][1080p]_Eng.mka'),
+        ]),
+      );
 
-      // 再跑一次：没有可搬的了，后端也不再碰。
+      // 再跑一次：没有可搬的了，后端也不再碰，也不再通知。
       expect(await env.service.relocateStrandedReleaseCompanions(), 0);
       expect(env.backend.renameCalls, 2);
+      expect(relocated, hasLength(1));
     });
 
     test('上一轮后端已改名、没来得及写库：只补写文件行', () async {
@@ -512,7 +524,9 @@ class _Env {
   final _RenamingBackend backend;
   final VideoDownloadPipelineService service;
 
-  static Future<_Env> create() async {
+  static Future<_Env> create({
+    Future<void> Function(List<String> movedFrom)? onRelocated,
+  }) async {
     final FushiDatabase database = FushiDatabase.forTesting(
       NativeDatabase.memory(),
     );
@@ -541,6 +555,7 @@ class _Env {
         ),
       ),
       workerId: 'companion-test-worker',
+      onReleaseCompanionsRelocated: onRelocated,
     );
     return _Env._(database, root, sourceId, backend, service);
   }

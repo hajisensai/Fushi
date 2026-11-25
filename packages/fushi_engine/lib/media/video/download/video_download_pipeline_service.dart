@@ -1081,6 +1081,7 @@ class VideoDownloadPipelineService {
     this.defaultTargetSourceId,
     this.onDiscCollectionImported,
     this.onReleaseAudioImported,
+    this.onReleaseCompanionsRelocated,
     DateTime Function()? now,
   }) : assert(
          subtitleRegistry == null || subtitleRegistrySource == null,
@@ -1174,6 +1175,13 @@ class VideoDownloadPipelineService {
   /// 还会再交一次）。
   final Future<void> Function(MediaSourceRow source, List<String> audioPaths)?
   onReleaseAudioImported;
+
+  /// 存量补搬（[relocateStrandedReleaseCompanions]）把外挂件从原发布目录搬走后调用，
+  /// 参数是它们**搬走前**的本机绝对路径。早先滞留在原位、旁边没有视频的整片外挂音轨
+  /// 被视频来源扫描当纯音频收进了音乐库，app 据此重扫那些曲目所在的音乐来源，把
+  /// 已不在的曲目对账掉。抛错只记日志。
+  final Future<void> Function(List<String> movedFromPaths)?
+  onReleaseCompanionsRelocated;
 
   /// 订阅新集提醒的配图抽取（默认 [extractVideoCover]，ffmpeg 抽帧）；测试注入。
   final VideoCoverExtractor _coverExtractor;
@@ -3500,6 +3508,7 @@ class VideoDownloadPipelineService {
   /// 绑定对不上、视频已不在磁盘上的，跳过并记日志，不硬搬。
   Future<int> relocateStrandedReleaseCompanions() async {
     int moved = 0;
+    final List<String> movedFrom = <String>[];
     for (final VideoDownloadJobRow job
         in await database.getVideoDownloadJobs()) {
       if (_disposed) break;
@@ -3534,12 +3543,26 @@ class VideoDownloadPipelineService {
           job,
           backend: binding!.backend,
           torrentId: torrentId,
+          movedFrom: movedFrom,
         );
       } on Object catch (error, stack) {
         engineLog.log(
           'VideoDownloadCompanions',
           'Skip job ${job.jobId}: failed to relocate release companions: '
               '$error',
+          stack,
+        );
+      }
+    }
+    final Future<void> Function(List<String>)? hook =
+        onReleaseCompanionsRelocated;
+    if (hook != null && movedFrom.isNotEmpty) {
+      try {
+        await hook(movedFrom);
+      } catch (error, stack) {
+        engineLog.log(
+          'VideoDownloadPipelineService.onReleaseCompanionsRelocated',
+          error,
           stack,
         );
       }
@@ -3558,6 +3581,7 @@ class VideoDownloadPipelineService {
     required TorrentBackend backend,
     required String torrentId,
     void Function()? checkpoint,
+    List<String>? movedFrom,
   }) async {
     final List<VideoDownloadJobFileRow> rows = await database
         .getVideoDownloadJobFiles(job.jobId);
@@ -3640,6 +3664,15 @@ class VideoDownloadPipelineService {
           kind: const Value<String>(videoDownloadCompanionFileKind),
           status: const Value<String>(VideoDownloadJobFileStatus.organized),
           updatedAt: Value<int>(_now().millisecondsSinceEpoch),
+        ),
+      );
+      // 上一轮已改名、没来得及写库的也报：那一轮的通知同样没发出去。
+      movedFrom?.add(
+        p.normalize(
+          p.joinAll(<String>[
+            root,
+            ..._portableRelative(move.originalRelativePath).split('/'),
+          ]),
         ),
       );
       moved++;

@@ -17,7 +17,7 @@ import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart'
-    show applyBlurayDiscCollectionArtwork;
+    show SourceLibraryScanner, applyBlurayDiscCollectionArtwork;
 import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
@@ -9564,6 +9564,16 @@ class AppModel
             intake: MusicAudioIntake(database),
             source: source,
             audioPaths: audio,
+          ),
+      // 补搬走的外挂件里，早先被误收成「歌」的整片外挂音轨：重扫所在音乐来源对账掉。
+      onReleaseCompanionsRelocated: (List<String> movedFrom) =>
+          rescanMusicSourcesOfMovedFiles(
+            db: database,
+            movedFromPaths: movedFrom,
+            rescan: (MediaSourceRow source) => SourceLibraryScanner(
+              database,
+              transcribeAudiobook: null,
+            ).scan(source),
           ),
     )..start();
     _videoDownloadPipelineService = pipeline;
