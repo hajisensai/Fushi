@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import 'package:fushi/src/pages/implementations/android_storage_move_prompt.dart'
     show shouldShowAndroidStorageMovePrompt;
@@ -455,6 +456,247 @@ void main() {
         );
       });
 
+      group('布局 / 容器锚点丢失（32552 用户复现）：对账探所有内部布局', () {
+        late Directory appFlutter;
+        late Directory ext;
+        setUp(() {
+          appFlutter = Directory(p.join(tmp.path, 'app_flutter'))
+            ..createSync(recursive: true);
+          ext = Directory(p.join(tmp.path, 'ext', 'data'))
+            ..createSync(recursive: true);
+          // 外部根：只有冷启动建出的空运行目录与 .nomedia。
+          Directory(p.join(ext.path, 'thumbnails')).createSync();
+          File(
+            p.join(ext.path, 'fushiExport', '.nomedia'),
+          ).createSync(recursive: true);
+        });
+
+        List<AndroidInternalLibraryCandidate> candidates({
+          required String layout,
+          required String container,
+        }) => AppPaths.androidInternalLibraryCandidates(
+          platformDocuments: appFlutter,
+          configuredLayout: layout,
+          configuredContainer: container,
+        );
+
+        test('候选：当前配置在前，其余布局去重排在后', () {
+          final List<AndroidInternalLibraryCandidate> c = candidates(
+            layout: AppPaths.documentsLayoutNested,
+            container: AppPaths.documentsContainerHibiki,
+          );
+          expect(
+            c.map((AndroidInternalLibraryCandidate x) => x.root.path),
+            <String>[
+              p.join(appFlutter.path, 'Hibiki', 'data'),
+              appFlutter.path,
+              p.join(appFlutter.path, 'Fushi', 'data'),
+            ],
+          );
+        });
+
+        test(
+          '锚点指外部空根、布局被冲成 flat、书在 Hibiki/data → 改回内部 nested Hibiki',
+          () async {
+            File(
+              p.join(
+                appFlutter.path,
+                'Hibiki',
+                'data',
+                'audiobooks',
+                'a',
+                'b.m4b',
+              ),
+            ).createSync(recursive: true);
+            final List<AndroidInternalLibraryCandidate> c = candidates(
+              layout: AppPaths.documentsLayoutFlat,
+              container: AppPaths.documentsContainerFushi,
+            );
+            final AndroidLibraryReconciliation r =
+                await AppPaths.reconcileAndroidLibraryRoots(
+                  anchored: external,
+                  external: ext,
+                  internalCandidates: c,
+                  supportRoot: tmp,
+                );
+            expect(r.location, internal);
+            expect(r.internal.layout, AppPaths.documentsLayoutNested);
+            expect(r.internal.container, AppPaths.documentsContainerHibiki);
+            expect(
+              r.notes.single,
+              contains('Hibiki'),
+              reason: '纠正要进诊断日志，带上各根的探测结论',
+            );
+          },
+        );
+
+        test('锚点指内部、当前配置的内部根是空的、书在另一种布局 → 改布局不改位置', () async {
+          File(
+            p.join(appFlutter.path, 'fushi_books', 'x', 'book.epub'),
+          ).createSync(recursive: true);
+          final AndroidLibraryReconciliation r =
+              await AppPaths.reconcileAndroidLibraryRoots(
+                anchored: internal,
+                external: ext,
+                internalCandidates: candidates(
+                  layout: AppPaths.documentsLayoutNested,
+                  container: AppPaths.documentsContainerFushi,
+                ),
+                supportRoot: tmp,
+              );
+          expect(r.location, internal);
+          expect(r.internal.layout, AppPaths.documentsLayoutFlat);
+          expect(r.internal.root.path, appFlutter.path);
+        });
+
+        test('哪里都没有书 → 沿用锚点，诊断里列出每个根的探测结论', () async {
+          final AndroidLibraryReconciliation r =
+              await AppPaths.reconcileAndroidLibraryRoots(
+                anchored: external,
+                external: ext,
+                internalCandidates: candidates(
+                  layout: AppPaths.documentsLayoutNested,
+                  container: AppPaths.documentsContainerFushi,
+                ),
+                supportRoot: tmp,
+              );
+          expect(r.location, external);
+          expect(r.strayRoot, isNull);
+          expect(r.notes.single, contains('其余候选也都没有'));
+          expect(r.notes.single, contains('=none'));
+        });
+
+        test('只有锚定的根有书 → 沿用，不写诊断', () async {
+          File(
+            p.join(ext.path, 'audiobooks', 'a', 'b.m4b'),
+          ).createSync(recursive: true);
+          final AndroidLibraryReconciliation r =
+              await AppPaths.reconcileAndroidLibraryRoots(
+                anchored: external,
+                external: ext,
+                internalCandidates: candidates(
+                  layout: AppPaths.documentsLayoutNested,
+                  container: AppPaths.documentsContainerFushi,
+                ),
+                supportRoot: tmp,
+              );
+          expect(r.location, external);
+          expect(r.notes, isEmpty);
+          expect(r.strayRoot, isNull);
+        });
+
+        test('锚定的根和另一种内部布局都有书、读不到主库 → 沿用锚点、不合并，诊断列出各根', () async {
+          File(
+            p.join(ext.path, 'audiobooks', 'a', 'b.m4b'),
+          ).createSync(recursive: true);
+          File(
+            p.join(
+              appFlutter.path,
+              'Hibiki',
+              'data',
+              'fushi_books',
+              'old.epub',
+            ),
+          ).createSync(recursive: true);
+          final AndroidLibraryReconciliation r =
+              await AppPaths.reconcileAndroidLibraryRoots(
+                anchored: external,
+                external: ext,
+                internalCandidates: candidates(
+                  layout: AppPaths.documentsLayoutNested,
+                  container: AppPaths.documentsContainerFushi,
+                ),
+                supportRoot: tmp,
+              );
+          expect(r.location, external);
+          expect(r.strayRoot, isNull);
+          expect(r.notes.single, contains('主库读不到'));
+        });
+
+        group('错根运行期间自己写进了证据文件（锚定的根「有书」但不是真书库）', () {
+          late Directory support;
+          late Directory hibikiRoot;
+          setUp(() {
+            support = Directory(p.join(tmp.path, 'support'))..createSync();
+            hibikiRoot = Directory(p.join(appFlutter.path, 'Hibiki', 'data'));
+            // 真书库：nested Hibiki。
+            File(
+              p.join(hibikiRoot.path, 'fushi_books', 'k1', 'book.epub'),
+            ).createSync(recursive: true);
+            File(
+              p.join(hibikiRoot.path, 'fushi_books', 'k2', 'book.epub'),
+            ).createSync(recursive: true);
+            // 布局被冲成 flat 后，app 以 app_flutter 为根跑过：自动备份写了进去。
+            File(
+              p.join(appFlutter.path, 'srs_backups', 'auto.zip'),
+            ).createSync(recursive: true);
+            final sqlite.Database db = sqlite.sqlite3.open(
+              p.join(support.path, fushiDatabaseFileName),
+            );
+            db.execute('CREATE TABLE epub_books (extract_dir TEXT)');
+            for (final String key in <String>['k1', 'k2']) {
+              db.execute('INSERT INTO epub_books VALUES (?)', <Object?>[
+                p.join(hibikiRoot.path, 'fushi_books', key),
+              ]);
+            }
+            db.dispose();
+          });
+
+          test('锚点指内部 flat → 主库作证改回 nested Hibiki，flat 根交给散书合并', () async {
+            final AndroidLibraryReconciliation r =
+                await AppPaths.reconcileAndroidLibraryRoots(
+                  anchored: internal,
+                  external: ext,
+                  internalCandidates: candidates(
+                    layout: AppPaths.documentsLayoutFlat,
+                    container: AppPaths.documentsContainerFushi,
+                  ),
+                  supportRoot: support,
+                );
+            expect(r.location, internal);
+            expect(r.internal.layout, AppPaths.documentsLayoutNested);
+            expect(r.internal.container, AppPaths.documentsContainerHibiki);
+            expect(r.strayRoot?.path, appFlutter.path);
+            expect(r.notes.single, contains('改为'));
+          });
+
+          test('外部存储不可用时内部各布局照样对账', () async {
+            final AndroidLibraryReconciliation r =
+                await AppPaths.reconcileAndroidLibraryRoots(
+                  anchored: internal,
+                  external: null,
+                  internalCandidates: candidates(
+                    layout: AppPaths.documentsLayoutFlat,
+                    container: AppPaths.documentsContainerFushi,
+                  ),
+                  supportRoot: support,
+                );
+            expect(r.location, internal);
+            expect(r.internal.root.path, hibikiRoot.path);
+          });
+        });
+      });
+
+      test('探测三态：有 / 没有 / 探不清（超时）各归各，探不清按调用方的保守值', () async {
+        expect(await AppPaths.probeLibraryFiles(tmp), LibraryProbe.none);
+        File(
+          p.join(tmp.path, 'fushi_books', 'a', 'b.epub'),
+        ).createSync(recursive: true);
+        expect(await AppPaths.probeLibraryFiles(tmp), LibraryProbe.found);
+        expect(
+          await AppPaths.probeLibraryFiles(tmp, timeout: Duration.zero),
+          LibraryProbe.unknown,
+        );
+        expect(
+          await AppPaths.hasLibraryFiles(
+            tmp,
+            onTimeout: false,
+            timeout: Duration.zero,
+          ),
+          isFalse,
+        );
+      });
+
       group('迁移前清理固定目标（#4366 指出）', () {
         late Directory source;
         late Directory target;
@@ -547,6 +789,19 @@ void main() {
         AndroidLibraryAnchor.tryParse('{"location":"internal","layout":"x"}'),
         const AndroidLibraryAnchor(location: internal),
         reason: '布局是垃圾值时当没给',
+      );
+      const AndroidLibraryAnchor full = AndroidLibraryAnchor(
+        location: internal,
+        layout: AppPaths.documentsLayoutNested,
+        container: AppPaths.documentsContainerHibiki,
+      );
+      expect(AndroidLibraryAnchor.tryParse(full.encode()), full);
+      expect(
+        AndroidLibraryAnchor.tryParse(
+          '{"location":"internal","container":"Other"}',
+        ),
+        const AndroidLibraryAnchor(location: internal),
+        reason: '容器名是垃圾值时当没给',
       );
     });
 
