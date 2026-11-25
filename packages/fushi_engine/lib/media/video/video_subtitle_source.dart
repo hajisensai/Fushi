@@ -217,35 +217,6 @@ bool isImportedExternalSubtitlePath(String persisted) {
   return subtitleFormatForPath(persisted) != null;
 }
 
-/// **纯函数**：换集时是否应「原样沿用」上一集持久化的外挂字幕路径 [persisted]，
-/// 而非按新集名重新匹配同目录 sidecar。
-///
-/// 背景（BUG-165 / BUG-132）：BUG-132 给播放列表恢复加了「持久化值是显式导入字幕
-/// （[isImportedExternalSubtitlePath]）且文件在磁盘上就按路径直接加载」的捷径，救
-/// 「导入字幕住在 `<appDocs>/video_subtitles/`、不在剧集目录里、换集枚举不到」的丢
-/// 失。但该捷径只看扩展名，把**剧集自带、住在视频同目录**的 sidecar（如上一集
-/// `EP01.ja.srt`）也截下来跨集原样沿用 → 切到 `EP02` 仍显示 `EP01` 字幕（BUG-165）。
-///
-/// 区分依据是**目录归属**，不是扩展名：真正的导入/下载字幕住在独立目录
-/// （video_subtitles 等），与剧集目录无关；剧集自带 sidecar 与新集视频**同目录**。
-/// 规则：
-/// - [persisted] 非导入外挂字幕（内嵌 `embedded:` / 空 / 非字幕扩展名）→ false
-///   （捷径本就不该接管，交给原有同类匹配/枚举）。
-/// - [persisted] 的目录 == 新集视频 [episodeVideoPath] 的目录 → false：这是上一集
-///   的同目录 sidecar，换集应按新集 basename 重新匹配（走 [pickEpisodeSubtitleSource]）。
-/// - 否则（导入字幕，住别处）→ true：与剧集目录无关，跨集沿用同一文件。
-///
-/// 不碰文件系统（是否真在磁盘上由调用方另查），可单测。
-bool shouldReusePersistedSubtitleAcrossEpisode(
-  String persisted,
-  String episodeVideoPath,
-) {
-  if (!isImportedExternalSubtitlePath(persisted)) return false;
-  final String subtitleDir = p.canonicalize(p.dirname(persisted));
-  final String episodeDir = p.canonicalize(p.dirname(episodeVideoPath));
-  return subtitleDir != episodeDir;
-}
-
 /// 从一组拖入文件路径 [paths] 中挑出第一个受支持的字幕文件
 /// （srt/ass/ssa/vtt），无则 null。
 ///
@@ -815,60 +786,6 @@ List<String> pickSameNameSubs(
   return <String>[...langFirst, ...rest];
 }
 
-/// **纯函数**：换集时按「同类偏好」从新集可用字幕源 [sources] 里挑一个。
-///
-/// [lastPersisted] 是上一集持久化的字幕源（外挂路径 / `embedded:<n>` / null）。
-/// 规则：
-/// - null（无偏好）→ 返回 null（调用方走默认 sidecar 检测）。
-/// - `embedded:<n>` → 优先新集同 streamIndex 的内嵌轨；无则回退第一个内嵌轨；
-///   无内嵌轨则 null。
-/// - 外挂路径 → 取其语言/扩展名后缀（如 `.ja.srt` / `.ass`），优先新集同后缀的
-///   外挂源；无同后缀则回退新集第一个外挂源；无外挂源则 null。
-///
-/// 不碰文件系统，可单测。
-SubtitleSource? pickEpisodeSubtitleSource(
-  String? lastPersisted,
-  List<SubtitleSource> sources,
-) {
-  if (lastPersisted == null || lastPersisted.isEmpty) return null;
-  if (sources.isEmpty) return null;
-
-  final List<SubtitleSource> embedded = sources
-      .where((SubtitleSource s) => s.isEmbedded)
-      .toList();
-  final List<SubtitleSource> external = sources
-      .where((SubtitleSource s) => !s.isEmbedded)
-      .toList();
-
-  if (lastPersisted.startsWith(SubtitleSource.embeddedPrefix)) {
-    final int? wantIndex = int.tryParse(
-      lastPersisted.substring(SubtitleSource.embeddedPrefix.length),
-    );
-    for (final SubtitleSource s in embedded) {
-      if (s.streamIndex == wantIndex) return s;
-    }
-    return embedded.isNotEmpty ? embedded.first : null;
-  }
-
-  // 外挂偏好：按「语言+扩展名」后缀匹配（去掉同名 base 前缀后剩下的尾巴）。
-  final String wantSuffix = _externalSubtitleSuffix(lastPersisted);
-  for (final SubtitleSource s in external) {
-    if (_externalSubtitleSuffix(s.externalPath!) == wantSuffix) return s;
-  }
-  return external.isNotEmpty ? external.first : null;
-}
-
-/// 取外挂字幕路径的「语言+扩展名」后缀（小写），用于换集同类匹配。
-///
-/// `S01E01.ja.srt` → `.ja.srt`；`S01E01.ass` → `.ass`。规则：basename 去掉首个
-/// `.` 之前的主名后剩下的全部（含中间语言段），保证 `.ja.srt` 与 `.srt` 区分开。
-String _externalSubtitleSuffix(String path) {
-  final String name = p.basename(path).toLowerCase();
-  final int firstDot = name.indexOf('.');
-  if (firstDot < 0) return '';
-  return name.substring(firstDot);
-}
-
 /// 枚举 [videoPath] 的全部字幕源：① 内嵌轨 ② 同目录**同名前缀**外挂字幕文件。
 ///
 /// 返回合并列表（内嵌在前，外挂在后）。外挂只收与视频同 basename（去扩展名）前缀的
@@ -1057,7 +974,7 @@ bool sameSubtitleFilePath(String a, String b) =>
 ///
 /// 与 [isImportedExternalSubtitlePath] 是**两件事**，不要合并：那个判的是「一条**持久化
 /// 值**是否可以按路径直接重放」，扩展名是它的必要条件（restore 时要真去解析这个档），
-/// 消费方在 [shouldReusePersistedSubtitleAcrossEpisode] 与视频页的换集恢复链路上，保持
+/// 消费方是视频页的持久化字幕恢复链路（`_restorePersistedSubtitle` 的导入字幕捷径），保持
 /// 不变。
 bool isExternalSubtitleFilePathForMenu(String path) {
   if (path.trim().isEmpty) return false;
