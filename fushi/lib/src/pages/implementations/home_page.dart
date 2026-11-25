@@ -788,7 +788,7 @@ class _HomePageState extends BasePageState<HomePage>
       if (mounted) {
         await maybeShowRestorePointFailureNotice(
           context: context,
-          appModel: appModelNoUpdate,
+          databaseDirectory: appModelNoUpdate.databaseDirectory.path,
         );
       }
 

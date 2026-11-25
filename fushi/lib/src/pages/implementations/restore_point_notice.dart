@@ -10,7 +10,6 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -35,13 +34,14 @@ RestorePointSnapshotStatus? takeRestorePointFailureNotice(String dbDirectory) {
   }
 }
 
-/// 首页首帧调用：有没提示过的快照失败就弹一次。
+/// 首页首帧调用：有没提示过的快照失败就弹一次。[databaseDirectory] = 活库目录（由首页传入，
+/// 本文件不 import AppModel，不进 import 大环）。
 Future<void> maybeShowRestorePointFailureNotice({
   required BuildContext context,
-  required AppModel appModel,
+  required String databaseDirectory,
 }) async {
   final RestorePointSnapshotStatus? failure = takeRestorePointFailureNotice(
-    appModel.databaseDirectory.path,
+    databaseDirectory,
   );
   if (failure == null || !context.mounted) return;
   await showAppDialog<void>(
