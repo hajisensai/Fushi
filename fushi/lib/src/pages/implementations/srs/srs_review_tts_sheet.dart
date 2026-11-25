@@ -8,19 +8,16 @@
 ///
 /// 改了立即生效（按 profile 的偏好 `srs_review_tts`，srs_review_tts.dart）：复习页监听渲染选项，
 /// 当前卡原地重渲。合成的音频怎么缓存见 srs_card_tts_audio.dart。
+///
+/// 当前值、写回与朗读声音的选择器由打开它的「复习选项」注入（不 import AppModel / provider / 声音
+/// 选择器：本文件不进 AppModel 的 import 环，test/build/import_cycle_guard_test.dart）。
 library;
 
 import 'package:fushi_engine/srs/srs_card_tts.dart' show kSrsSentenceAudioField;
 import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardFields;
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/creator/mining_tts_fallback.dart';
-import 'package:fushi/src/creator/mining_tts_fallback_picker.dart';
-import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
-import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_tts.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -34,62 +31,64 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
-/// 打开「朗读」面板。
-Future<void> showSrsReviewTtsSheet(BuildContext context) =>
-    adaptiveModalSheet<void>(
-      context: context,
-      builder: (BuildContext context) => const SrsReviewTtsSheet(),
-    );
+/// 打开「朗读」面板。[initial] 是当前设置，[onChanged] 写回偏好；朗读声音那一行的摘要与选择器由
+/// [voiceSummary] / [pickVoice] 给（「复习选项」接到 TTS 兜底声音的选择器上）。
+Future<void> showSrsReviewTtsSheet(
+  BuildContext context, {
+  required SrsReviewTts initial,
+  required ValueChanged<SrsReviewTts> onChanged,
+  required String Function() voiceSummary,
+  required Future<void> Function(BuildContext context) pickVoice,
+}) => adaptiveModalSheet<void>(
+  context: context,
+  builder: (BuildContext context) => SrsReviewTtsSheet(
+    initial: initial,
+    onChanged: onChanged,
+    voiceSummary: voiceSummary,
+    pickVoice: pickVoice,
+  ),
+);
 
 /// 「朗读」面板正文。
-class SrsReviewTtsSheet extends ConsumerStatefulWidget {
-  const SrsReviewTtsSheet({super.key});
+class SrsReviewTtsSheet extends StatefulWidget {
+  const SrsReviewTtsSheet({
+    super.key,
+    required this.initial,
+    required this.onChanged,
+    required this.voiceSummary,
+    required this.pickVoice,
+  });
+
+  final SrsReviewTts initial;
+  final ValueChanged<SrsReviewTts> onChanged;
+
+  /// 朗读声音的当前选择（设置行副标题）。
+  final String Function() voiceSummary;
+
+  /// 弹出声音选择器并写回（取消时什么也不做）。
+  final Future<void> Function(BuildContext context) pickVoice;
 
   @override
-  ConsumerState<SrsReviewTtsSheet> createState() => _SrsReviewTtsSheetState();
+  State<SrsReviewTtsSheet> createState() => _SrsReviewTtsSheetState();
 }
 
-class _SrsReviewTtsSheetState extends ConsumerState<SrsReviewTtsSheet> {
-  AppModel get _app => ref.read(appProvider);
+class _SrsReviewTtsSheetState extends State<SrsReviewTtsSheet> {
+  late SrsReviewTts _tts = widget.initial;
 
-  TtsServices get _services => TtsServices.of(_app.prefsRepo);
-
-  void _set(SrsReviewTts value) => _app.setSrsReviewTts(value);
-
-  Future<void> _pickVoice() async {
-    final MiningTtsFallbackVoice? picked =
-        await showMiningTtsFallbackVoicePicker(
-          context,
-          _services,
-          current: miningTtsFallbackVoiceOf(_app.prefsRepo),
-        );
-    if (picked == null) return;
-    await setMiningTtsFallbackVoice(_app.prefsRepo, picked);
-    // 声音偏好不经 provider：这里自己刷新摘要。
-    if (mounted) setState(() {});
+  void _set(SrsReviewTts value) {
+    setState(() => _tts = value);
+    widget.onChanged(value);
   }
 
-  String _voiceSummary() {
-    final MiningTtsFallbackVoice configured = miningTtsFallbackVoiceOf(
-      _app.prefsRepo,
-    );
-    // 「不使用」管的是查词 / 制卡的自动兜底；卡面上的朗读键按系统语音念（srsTtsPlanOf）。
-    final MiningTtsFallbackVoice effective =
-        configured.kind == MiningTtsFallbackKind.none
-        ? const MiningTtsFallbackVoice.system()
-        : configured;
-    final String summary = miningTtsFallbackSummary(
-      choice: effective,
-      presets: _services.store.loadPresets(),
-      descriptorOf: (String id) => _services.registry[id],
-      systemEngineName: systemTtsEngineName(),
-    );
-    return '$summary\n${t.srs_review_tts_voice_shared}';
+  Future<void> _pickVoice() async {
+    await widget.pickVoice(context);
+    // 声音偏好不经 provider：选完自己刷新摘要。
+    if (mounted) setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    final SrsReviewTts tts = ref.watch(srsReviewTtsProvider);
+    final SrsReviewTts tts = _tts;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     int step = 0;
     Widget stagger(Widget child) =>
@@ -176,7 +175,7 @@ class _SrsReviewTtsSheetState extends ConsumerState<SrsReviewTtsSheet> {
               AdaptiveSettingsNavigationRow(
                 key: const ValueKey<String>('srs-review-tts-voice'),
                 title: t.srs_review_tts_voice,
-                subtitle: _voiceSummary(),
+                subtitle: widget.voiceSummary(),
                 icon: FushiIcons.voice,
                 showIcon: true,
                 onTap: () => _pickVoice(),

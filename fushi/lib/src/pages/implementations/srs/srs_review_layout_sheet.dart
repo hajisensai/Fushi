@@ -8,8 +8,12 @@
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/creator/mining_tts_fallback.dart';
+import 'package:fushi/src/creator/mining_tts_fallback_picker.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_gestures_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_tts_sheet.dart';
@@ -146,7 +150,14 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
             subtitle: t.srs_review_tts_hint,
             icon: FushiIcons.volumeUp,
             showIcon: true,
-            onTap: () => showSrsReviewTtsSheet(context),
+            onTap: () => showSrsReviewTtsSheet(
+              context,
+              initial: app.srsReviewTts,
+              onChanged: app.setSrsReviewTts,
+              voiceSummary: () => _ttsVoiceSummary(app.prefsRepo),
+              pickVoice: (BuildContext context) =>
+                  _pickTtsVoice(context, app.prefsRepo),
+            ),
           ),
           AdaptiveSettingsNavigationRow(
             key: const ValueKey<String>('srs-review-layout-gestures'),
@@ -194,4 +205,32 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
           app.setSrsCardAppearance(a.copyWith(designSkin: v)),
     );
   }
+}
+
+/// 「朗读」面板里朗读声音一行的摘要：卡面朗读键用 TTS 兜底声音念，那项设成「不使用」时按系统
+/// 语音念（srs_card_tts_audio.dart 的 `srsTtsPlanOf`），这里照实显示；另起一行说明是共用的一项。
+String _ttsVoiceSummary(PrefStore prefs) {
+  final TtsServices services = TtsServices.of(prefs);
+  final MiningTtsFallbackVoice configured = miningTtsFallbackVoiceOf(prefs);
+  final MiningTtsFallbackVoice effective =
+      configured.kind == MiningTtsFallbackKind.none
+      ? const MiningTtsFallbackVoice.system()
+      : configured;
+  final String summary = miningTtsFallbackSummary(
+    choice: effective,
+    presets: services.store.loadPresets(),
+    descriptorOf: (String id) => services.registry[id],
+    systemEngineName: systemTtsEngineName(),
+  );
+  return '$summary\n${t.srs_review_tts_voice_shared}';
+}
+
+/// 选朗读声音（与查词 / 制卡的 TTS 兜底声音同一个选择器、同一项偏好）。
+Future<void> _pickTtsVoice(BuildContext context, PrefStore prefs) async {
+  final MiningTtsFallbackVoice? picked = await showMiningTtsFallbackVoicePicker(
+    context,
+    TtsServices.of(prefs),
+    current: miningTtsFallbackVoiceOf(prefs),
+  );
+  if (picked != null) await setMiningTtsFallbackVoice(prefs, picked);
 }

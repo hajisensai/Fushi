@@ -42,6 +42,7 @@ import 'package:fushi/src/models/preference_keys.dart'
     show kSrsLapisMigrationReminderPrefKey;
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_tts_audio.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
 import 'package:fushi/src/srs/srs_persisted_ids.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
@@ -201,6 +202,16 @@ final Provider<SrsReviewTts> srsReviewTtsProvider = Provider<SrsReviewTts>(
   (Ref ref) =>
       ref.watch(appProvider.select((AppModel app) => app.srsReviewTts)),
 );
+
+/// 复习卡面朗读键的合成与落盘缓存（srs_card_tts_audio.dart），全应用一份（进行中的合成按它去重）。
+final Provider<SrsCardTtsAudio> srsCardTtsAudioProvider =
+    Provider<SrsCardTtsAudio>((Ref ref) {
+      final AppModel app = ref.read(appProvider);
+      return SrsCardTtsAudio.of(
+        prefs: app.prefsRepo,
+        dictionaryLanguages: () => app.installedDictionarySourceLanguages,
+      );
+    });
 
 /// 复习卡面音频音量（0–1，按 profile 偏好，默认 1）：卡面点播与自动连播都按它播。
 final Provider<double> srsReviewVolumeProvider = Provider<double>(

@@ -82,7 +82,7 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_card_tts_audio.dart'
-    show SrsTtsResolution, srsCardTtsAudioProvider, srsResolveTtsSound;
+    show SrsTtsResolution, srsResolveTtsSound;
 import 'package:fushi/src/srs/srs_fushi_card_media.dart';
 import 'package:fushi/src/srs/srs_card_face_route.dart';
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;

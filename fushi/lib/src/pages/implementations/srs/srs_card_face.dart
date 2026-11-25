@@ -55,7 +55,7 @@ import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_card_remote_audio.dart';
 import 'package:fushi_engine/utils/net/app_http.dart' show createAppHttpClient;
 import 'package:fushi/src/srs/srs_card_tts_audio.dart'
-    show SrsTtsResolution, srsCardTtsAudioProvider, srsResolveTtsSound;
+    show SrsTtsResolution, srsResolveTtsSound;
 import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_card_translation_blur.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';

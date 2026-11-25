@@ -15,6 +15,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_edit.dart';
+import 'package:fushi/src/srs/srs_review_tts.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -81,6 +82,10 @@ Future<void> _pumpReview(
         srsCardAudioOutputProvider.overrideWithValue(_SilentAudio()),
         srsReviewChromeFloatingProvider.overrideWithValue(false),
         srsReviewInlineEditProvider.overrideWithValue(inlineEdit),
+        // 「朗读选中文字」也要选区上报（srs_review_tts_test.dart 管它）；这里只看复习时编辑。
+        srsReviewTtsProvider.overrideWithValue(
+          const SrsReviewTts(speakSelection: false),
+        ),
         srsCardFaceBuilderProvider.overrideWithValue((
           BuildContext context,
           SrsCardFace face,

@@ -27,7 +27,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/srs/srs_card_tts.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
@@ -37,7 +37,6 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/creator/mining_tts_fallback.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/system_tts.dart'
     show resolveSystemTtsLanguageTag;
 import 'package:fushi/src/utils/misc/tts_channel.dart';
@@ -234,13 +233,18 @@ class SrsCardTtsAudio {
        _synthesize = synthesize,
        _scratch = scratch;
 
-  /// 生产实例：声音 / 倍速读 [app] 的偏好，合成走系统语音或朗读声音预设。
-  factory SrsCardTtsAudio.of(AppModel app) {
-    TtsServices services() => TtsServices.of(app.prefsRepo);
+  /// 生产实例：声音 / 倍速读 [prefs]，系统语音按文字与 [dictionaryLanguages]（已装词典的词头
+  /// 语言）判语言，合成走系统语音或朗读声音预设。参数注入而不是拿 AppModel：本文件不进 AppModel
+  /// 的 import 环（test/build/import_cycle_guard_test.dart）。
+  factory SrsCardTtsAudio.of({
+    required PrefStore prefs,
+    required List<String?> Function() dictionaryLanguages,
+  }) {
+    TtsServices services() => TtsServices.of(prefs);
     return SrsCardTtsAudio(
       plan: (SrsTtsSound sound) => srsTtsPlanOf(
         sound,
-        configured: miningTtsFallbackVoiceOf(app.prefsRepo),
+        configured: miningTtsFallbackVoiceOf(prefs),
         presets: services().store.loadPresets(),
         identityOf: (TtsVoicePreset preset) {
           final TtsProviderDescriptor? d =
@@ -253,10 +257,10 @@ class SrsCardTtsAudio {
                 }
               : d.audioIdentity(preset);
         },
-        defaultTempo: ttsFallbackSpeedOf(app.prefsRepo),
+        defaultTempo: ttsFallbackSpeedOf(prefs),
         detectLanguage: (String text) => resolveSystemTtsLanguageTag(
           text: text,
-          installedDictionaryLanguages: app.installedDictionarySourceLanguages,
+          installedDictionaryLanguages: dictionaryLanguages(),
         ),
         platform: Platform.operatingSystem,
       ),
@@ -298,11 +302,11 @@ class SrsCardTtsAudio {
     final File? hit = await srsTtsCachedFile(store, key);
     if (hit != null) return hit;
     final String slot = '${store.root.path}|$key';
-    return _inFlight[slot] ??= _create(
-      plan,
-      key,
-      store,
-    ).whenComplete(() => _inFlight.remove(slot));
+    return _inFlight[slot] ??= _create(plan, key, store).whenComplete(() {
+      // 不能写成 `=> _inFlight.remove(slot)`：remove 交回的正是这个 Future，whenComplete 会等它
+      // 自己完成，永远等不到。
+      _inFlight.remove(slot);
+    });
   }
 
   Future<File?> _create(
@@ -329,12 +333,6 @@ class SrsCardTtsAudio {
     }
   }
 }
-
-/// 全应用一份（进行中的合成按它去重）。
-final Provider<SrsCardTtsAudio> srsCardTtsAudioProvider =
-    Provider<SrsCardTtsAudio>(
-      (Ref ref) => SrsCardTtsAudio.of(ref.read(appProvider)),
-    );
 
 /// 卡面发音名 [name] 若是朗读键（`fushi-tts:`）：合成 / 取缓存后返回本地文件。
 ///
